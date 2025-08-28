@@ -43,18 +43,10 @@ jobs:
       debug: false
       pgo: ${{ toJSON(inputs.pgo) == 'true' }}
 
-  mac-amd64:
-    name: Mac amd x64 build
-    needs: part-1
-    uses: ./.github/workflows/wrapper-build-mac.yml
-    secrets: inherit
-    with:
-      debug: false
-      pgo: ${{ toJSON(inputs.pgo) == 'true' }}
 
   platform-tests:
     name: Platform Tests
-    needs: [windows-amd64, linux-amd64, mac-amd64]
+    needs: [windows-amd64, linux-amd64]
     uses: ./.github/workflows/patch-test.yml
     with:
       platform: ubuntu
@@ -139,45 +131,6 @@ jobs:
           cd ./artifact/linux/ini
           zip -r ../Linux-x64-application-ini.zip .
 
-      # ───────── Mac Artifacts ─────────
-      - name: Download Mac Main Artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: noraneko-mac-universal-moz-artifact-dev
-          path: ./artifact/mac
-
-      - name: Download Mac Release Artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: noraneko-mac-universal-moz-artifact-release
-          path: ./artifact/mac-release
-
-      - name: Download Mac Dist-Host
-        uses: actions/download-artifact@v4
-        with:
-          name: macOS-universal-dist-host
-          path: ./artifact/mac/host
-
-      - name: Zip Mac Dist-Host
-        run: |
-          cd ./artifact/mac/host
-          zip -r ../macOS-x64-dist-host.zip .
-
-      - name: Download Mac Application INI
-        uses: actions/download-artifact@v4
-        with:
-          name: macOS-universal-application-ini
-          path: ./artifact/mac/ini
-
-      - name: Zip Mac Application INI
-        run: |
-          cd ./artifact/mac/ini
-          zip -r ../macOS-x64-application-ini.zip .
-
-      - name: Zip Mac Release Artifact
-        run: |
-          cd ./artifact/mac-release
-          zip -r ./noraneko-mac-universal-moz-artifact-release.zip .
 
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
@@ -193,9 +146,8 @@ jobs:
             ./artifact/linux/noraneko-linux-amd64-moz-artifact.tar.xz
             ./artifact/linux/Linux-x64-dist-host.zip
             ./artifact/linux/Linux-x64-application-ini.zip
-            ./artifact/mac/noraneko-macOS-universal-moz-artifact.dmg
-            ./artifact/mac/macOS-x64-dist-host.zip
-            ./artifact/mac/macOS-x64-application-ini.zip
-            ./artifact/mac-release/noraneko-mac-universal-moz-artifact-release.zip
+            ./artifact/linux/noraneko-linux-amd64-moz-artifact.tar.xz
+            ./artifact/linux/Linux-x64-dist-host.zip
+            ./artifact/linux/Linux-x64-application-ini.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

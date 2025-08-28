@@ -81,20 +81,6 @@ jobs:
           Write-Host "Preparing artifact from $env:ARTIFACT_PATH"
           # Placeholder: if artifact is zipped, expand here. Adjust as needed.
  
-      - name: Prepare artifact (macOS)
-        if: runner.os == 'macOS'
-        run: |
-          echo "Preparing macOS artifact in $ARTIFACT_PATH"
-          mkdir -p ./noraneko || true
-          # Expect callers to place the artifact under ARTIFACT_PATH (e.g. ~/downloads/artifacts)
-          # Use upload-artifact-name for artifact name if provided, else fallback
-          ARTIFACT="${UPLOAD_ARTIFACT_NAME:-${TARGET_ARCH}-apple-darwin-output.tar.xz}"
-          if [ -f "${ARTIFACT_PATH}/${ARTIFACT}" ]; then
-            cp "${ARTIFACT_PATH}/${ARTIFACT}" ./
-            tar xf "./${ARTIFACT}"
-          else
-            echo "No tar.xz found at ${ARTIFACT_PATH}/${ARTIFACT} - adjust ARTIFACT_PATH/inputs as needed"
-          fi
  
       - name: Prepare artifact (Unix)
         if: runner.os != 'Windows' && runner.os != 'macOS'
@@ -104,28 +90,6 @@ jobs:
  
       # Run profile generation or usage steps (placeholder).
       # Call existing scripts in workflows/scripts/ when applicable.
-      - name: Generate Profdata and Jarlog (macOS)
-        if: runner.os == 'macOS' && env.PROFILE_MODE == 'generate'
-        env:
-          LLVM_PROFDATA: ${{ env.HOME }}/.mozbuild/clang/bin/llvm-profdata
-          JARLOG_FILE: en-US.log
-        run: |
-          # macOS-specific flow: attach DMG from the extracted tar output and run profileserver
-          set -e
-          # The extracted tree is expected to contain obj-*/dist/*.dmg
-          echo "Looking for dmg in ./obj-*/dist/"
-          ls ./obj-*/dist || true
-          sudo hdiutil attach ./obj-*/dist/*.dmg
-          # Copy out the mounted volume contents to a local directory to avoid permission issues
-          mkdir -p temptemp
-          sudo cp -rP /Volumes/* ./temptemp || true
-          sudo hdiutil unmount /Volumes/* || true
-          # Run profileserver against the app binary inside the mounted content
-          if [ -x ./temptemp/*.app/Contents/MacOS/* ]; then
-            ./mach python build/pgo/profileserver.py --binary ./temptemp/*.app/Contents/MacOS/* || true
-          else
-            echo "Binary not found in mounted DMG – adjust extraction or ARTIFACT_PATH"
-          fi
  
       - name: Generate Profdata and Jarlog (Windows)
         if: runner.os == 'Windows' && env.PROFILE_MODE == 'generate'

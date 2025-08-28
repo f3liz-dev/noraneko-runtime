@@ -25,13 +25,7 @@ cd "$GITHUB_WORKSPACE"
 git -C noraneko config remote.origin.fetch +refs/heads/*:refs/remotes/origin/*
 git submodule update --remote noraneko
 
-if [[ "$PLATFORM" == "mac" ]]; then
-  if [[ "$ARCH" == "x86_64" ]]; then
-    cp ./.github/workflows/mozconfigs/macosx64-x86_64.mozconfig mozconfig
-  else
-    cp ./.github/workflows/mozconfigs/macosx64-aarch64.mozconfig mozconfig
-  fi
-elif [[ "$PLATFORM" == "windows" ]]; then
+if [[ "$PLATFORM" == "windows" ]]; then
   cp ./.github/workflows/mozconfigs/windows-x86_64.mozconfig mozconfig
 elif [[ "$PLATFORM" == "linux" ]]; then
   if [[ "$ARCH" == "aarch64" ]]; then
@@ -44,9 +38,7 @@ fi
 cp -r ./noraneko/static/gecko/branding/* ./browser/branding/
 
 # Set Branding/Flat Chrome
-if [[ "$PLATFORM" == "mac" ]]; then
-  echo "ac_add_options --with-branding=browser/branding/noraneko-unofficial" >> mozconfig
-fi
+echo "ac_add_options --with-branding=browser/branding/noraneko-unofficial" >> mozconfig
 echo "ac_add_options --enable-chrome-format=flat" >> mozconfig
 
 sudo apt install msitools -y
