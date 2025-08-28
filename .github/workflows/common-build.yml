@@ -108,6 +108,8 @@ jobs:
       # Unified Build & Package
       - name: Build & Package
         run: ./.github/workflows/scripts/build-and-package.sh ${{ inputs.platform }} ${{ inputs.arch }} ${{ inputs.profile-generate-mode }} ${{ inputs.MOZ_BUILD_DATE }}
+        env:
+          SCCACHE_GHA_ENABLED: "on"
 
       # Windows-specific artifact extraction
       - name: Remove same name uploaded artifacts
