@@ -43,10 +43,21 @@ jobs:
       debug: false
       pgo: ${{ toJSON(inputs.pgo) == 'true' }}
 
+  linux-aarch64:
+    name: Linux aarch64 build
+    needs: part-1
+    uses: ./.github/workflows/common-build.yml
+    secrets: inherit
+    with:
+      platform: linux
+      arch: aarch64
+      debug: false
+      pgo: ${{ toJSON(inputs.pgo) == 'true' }}
+
 
   platform-tests:
     name: Platform Tests
-    needs: [windows-amd64, linux-amd64]
+    needs: [windows-amd64, linux-amd64, linux-aarch64]
     uses: ./.github/workflows/patch-test.yml
     with:
       platform: ubuntu
@@ -109,6 +120,12 @@ jobs:
           name: noraneko-linux-amd64-moz-artifact
           path: ./artifact/linux
 
+      - name: Download Linux aarch64 Main Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: noraneko-linux-aarch64-moz-artifact
+          path: ./artifact/linux-aarch64
+
       - name: Download Linux Dist-Host
         uses: actions/download-artifact@v4
         with:
@@ -120,6 +137,17 @@ jobs:
           cd ./artifact/linux/host
           zip -r ../Linux-x64-dist-host.zip .
 
+      - name: Download Linux aarch64 Dist-Host
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-aarch64-dist-host
+          path: ./artifact/linux-aarch64/host
+
+      - name: Zip Linux aarch64 Dist-Host
+        run: |
+          cd ./artifact/linux-aarch64/host
+          zip -r ../Linux-aarch64-dist-host.zip .
+
       - name: Download Linux Application INI
         uses: actions/download-artifact@v4
         with:
@@ -130,6 +158,17 @@ jobs:
         run: |
           cd ./artifact/linux/ini
           zip -r ../Linux-x64-application-ini.zip .
+
+      - name: Download Linux aarch64 Application INI
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-aarch64-application-ini
+          path: ./artifact/linux-aarch64/ini
+
+      - name: Zip Linux aarch64 Application INI
+        run: |
+          cd ./artifact/linux-aarch64/ini
+          zip -r ../Linux-aarch64-application-ini.zip .
 
 
       - name: Create GitHub release
@@ -146,8 +185,8 @@ jobs:
             ./artifact/linux/noraneko-linux-amd64-moz-artifact.tar.xz
             ./artifact/linux/Linux-x64-dist-host.zip
             ./artifact/linux/Linux-x64-application-ini.zip
-            ./artifact/linux/noraneko-linux-amd64-moz-artifact.tar.xz
-            ./artifact/linux/Linux-x64-dist-host.zip
-            ./artifact/linux/Linux-x64-application-ini.zip
+            ./artifact/linux-aarch64/noraneko-linux-aarch64-moz-artifact.tar.xz
+            ./artifact/linux-aarch64/Linux-aarch64-dist-host.zip
+            ./artifact/linux-aarch64/Linux-aarch64-application-ini.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
