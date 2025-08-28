@@ -10,17 +10,7 @@ PLATFORM="$1"
 ARCH="$2"
 PGO_ARTIFACT_NAME="$3"
 
-if [[ "$PLATFORM" == "mac" ]]; then
-  if [[ -n "$PGO_ARTIFACT_NAME" ]]; then
-    rustup toolchain install 1.81.0
-    rustup default 1.81.0
-  fi
-  if [[ "$ARCH" == "x86_64" ]]; then
-    rustup target add x86_64-apple-darwin
-  else
-    rustup target add aarch64-apple-darwin
-  fi
-elif [[ "$PLATFORM" == "windows" ]]; then
+if [[ "$PLATFORM" == "windows" ]]; then
   if [[ -n "$PGO_ARTIFACT_NAME" ]]; then
     rustup toolchain install 1.81.0
     rustup default 1.81.0
