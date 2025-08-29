@@ -104,6 +104,8 @@ jobs:
       # Unified Setup noraneko
       - name: Setup noraneko
         run: ./.github/workflows/scripts/setup-noraneko.sh ${{ inputs.platform }} ${{ inputs.arch }} ${{ inputs.debug }} ${{ inputs.pgo || inputs.profile-generate-mode || '' }} ${{ inputs.MOZ_BUILD_DATE }}
+        env:
+          SCCACHE_GHA_ENABLED: "on"
 
       # Unified Build & Package
       - name: Build & Package
