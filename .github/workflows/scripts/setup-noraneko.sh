@@ -42,16 +42,16 @@ echo "ac_add_options --with-branding=browser/branding/noraneko-unofficial" >> mo
 echo "ac_add_options --enable-chrome-format=flat" >> mozconfig
 
 sudo apt install msitools -y
-# https://github.com/actions/runner-images/issues/6283#issuecomment-1260049630
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
-brew install sccache
+# # https://github.com/actions/runner-images/issues/6283#issuecomment-1260049630
+# /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+# eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
+# brew install sccache
 
 # SCCACHE
 {
-  echo "mk_add_options 'export RUSTC_WRAPPER=/home/linuxbrew/.linuxbrew/bin/sccache'"
+  echo "mk_add_options 'export RUSTC_WRAPPER=sccache'"
   echo "mk_add_options 'export CCACHE_CPP2=yes'"
-  echo "ac_add_options --with-ccache=/home/linuxbrew/.linuxbrew/bin/sccache"
+  echo "ac_add_options --with-ccache=sccache"
   echo "mk_add_options 'export SCCACHE_GHA_ENABLED=on'"
 } >> mozconfig
 
