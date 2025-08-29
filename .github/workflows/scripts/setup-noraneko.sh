@@ -49,9 +49,9 @@ sudo apt install msitools -y
 
 # SCCACHE
 {
-  echo "mk_add_options 'export RUSTC_WRAPPER=sccache'"
+  echo "mk_add_options 'export RUSTC_WRAPPER=/opt/hostedtoolcache/sccache/0.10.0/x64/sccache'"
   echo "mk_add_options 'export CCACHE_CPP2=yes'"
-  echo "ac_add_options --with-ccache=sccache"
+  echo "ac_add_options --with-ccache=/opt/hostedtoolcache/sccache/0.10.0/x64/sccache"
   echo "mk_add_options 'export SCCACHE_GHA_ENABLED=on'"
 } >> mozconfig
 
