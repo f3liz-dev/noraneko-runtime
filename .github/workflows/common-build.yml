@@ -128,6 +128,14 @@ jobs:
           name: noraneko-${{ inputs.platform }}-${{ inputs.arch }}-moz-artifact
           path: ${{ inputs.platform == 'windows' && format('~/output/noraneko-{0}-{1}-moz-artifact.zip', inputs.platform, inputs.arch) || format('~/output/noraneko-{0}-{1}-moz-artifact.tar.xz', inputs.platform, inputs.arch) }}
 
+      # Publish profile-generate-mode package
+      - name: Publish Profile Generate Mode Package
+        if: inputs.profile-generate-mode && inputs.platform == 'windows' && inputs.arch == 'amd64'
+        uses: actions/upload-artifact@v4
+        with:
+          name: noraneko-win-amd64-profile-generate-mode-package
+          path: ${{ format('~/output/noraneko-{0}-{1}-moz-artifact.zip', inputs.platform, inputs.arch) }}
+
       - name: Publish dist/host for MAR
         uses: actions/upload-artifact@v4
         with:
