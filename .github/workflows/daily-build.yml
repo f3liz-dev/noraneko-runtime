@@ -25,8 +25,8 @@ jobs:
     uses: ./.github/workflows/misc-pull-upstream.yml
     secrets: inherit
 
-  windows-amd64:
-    name: Windows amd x64 build
+  windows-x86_64:
+    name: Windows x86_64 build
     needs: part-1
     uses: ./.github/workflows/wrapper-build-windows.yml
     secrets: inherit
@@ -34,8 +34,8 @@ jobs:
       debug: false
       pgo: ${{ toJSON(inputs.pgo) == 'true' }}
 
-  linux-amd64:
-    name: Linux amd x64 build
+  linux-x86_64:
+    name: Linux x86_64 build
     needs: part-1
     uses: ./.github/workflows/wrapper-build-linux.yml
     secrets: inherit
@@ -57,7 +57,7 @@ jobs:
 
   platform-tests:
     name: Platform Tests
-    needs: [windows-amd64, linux-amd64, linux-aarch64]
+    needs: [windows-x86_64, linux-x86_64, linux-aarch64]
     uses: ./.github/workflows/patch-test.yml
     with:
       platform: ubuntu
