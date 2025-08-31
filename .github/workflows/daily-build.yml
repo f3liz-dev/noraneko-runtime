@@ -83,41 +83,41 @@ jobs:
       - name: Download Windows Main Artifact
         uses: actions/download-artifact@v4
         with:
-          name: noraneko-win-amd64-moz-artifact
+          name: noraneko-windows-x86_64-moz-artifact
           path: ./artifact/win/main
 
       - name: Zip Windows Main Artifact
         run: |
           cd ./artifact/win/main
-          zip -r ../noraneko-win-amd64-moz-artifact.zip .
+          zip -r ../noraneko-windows-x86_64-moz-artifact.zip .
 
       - name: Download Windows Dist-Host
         uses: actions/download-artifact@v4
         with:
-          name: win-amd64-dist-host
+          name: windows-x86_64-dist-host
           path: ./artifact/win/host
 
       - name: Zip Windows Dist-Host
         run: |
           cd ./artifact/win/host
-          zip -r ../Windows-x64-dist-host.zip .
+          zip -r ../windows-x86_64-dist-host.zip .
 
       - name: Download Windows Application INI
         uses: actions/download-artifact@v4
         with:
-          name: win-amd64-application-ini
+          name: windows-x86_64-application-ini
           path: ./artifact/win/ini
 
       - name: Zip Windows Application INI
         run: |
           cd ./artifact/win/ini
-          zip -r ../Windows-x64-application-ini.zip .
+          zip -r ../windows-x86_64-application-ini.zip .
 
       # ───────── Linux Artifacts ─────────
       - name: Download Linux Main Artifact
         uses: actions/download-artifact@v4
         with:
-          name: noraneko-linux-amd64-moz-artifact
+          name: noraneko-linux-x86_64-moz-artifact
           path: ./artifact/linux
 
       - name: Download Linux aarch64 Main Artifact
@@ -129,13 +129,13 @@ jobs:
       - name: Download Linux Dist-Host
         uses: actions/download-artifact@v4
         with:
-          name: linux-amd64-dist-host
+          name: linux-x86_64-dist-host
           path: ./artifact/linux/host
 
       - name: Zip Linux Dist-Host
         run: |
           cd ./artifact/linux/host
-          zip -r ../Linux-x64-dist-host.zip .
+          zip -r ../linux-x86_64-dist-host.zip .
 
       - name: Download Linux aarch64 Dist-Host
         uses: actions/download-artifact@v4
@@ -146,18 +146,18 @@ jobs:
       - name: Zip Linux aarch64 Dist-Host
         run: |
           cd ./artifact/linux-aarch64/host
-          zip -r ../Linux-aarch64-dist-host.zip .
+          zip -r ../linux-aarch64-dist-host.zip .
 
       - name: Download Linux Application INI
         uses: actions/download-artifact@v4
         with:
-          name: linux-amd64-application-ini
+          name: linux-x86_64-application-ini
           path: ./artifact/linux/ini
 
       - name: Zip Linux Application INI
         run: |
           cd ./artifact/linux/ini
-          zip -r ../Linux-x64-application-ini.zip .
+          zip -r ../linux-x86_64-application-ini.zip .
 
       - name: Download Linux aarch64 Application INI
         uses: actions/download-artifact@v4
@@ -168,7 +168,7 @@ jobs:
       - name: Zip Linux aarch64 Application INI
         run: |
           cd ./artifact/linux-aarch64/ini
-          zip -r ../Linux-aarch64-application-ini.zip .
+          zip -r ../linux-aarch64-application-ini.zip .
 
 
       - name: Create GitHub release
@@ -179,14 +179,14 @@ jobs:
           name: "Runtime Release - ${{ steps.set_tag.outputs.tag }}"
           body: "This is a runtime release for Noraneko. \n\n **Test Status:** ${{ needs.platform-tests.outputs.test_status }} \n\n **WARNING:** This release is not a Noraneko installer. Visit the [releases page](https://github.com/nyanrus/noraneko/releases/) to download the official installer."
           files: |
-            ./artifact/win/noraneko-win-amd64-moz-artifact.zip
-            ./artifact/win/Windows-x64-dist-host.zip
-            ./artifact/win/Windows-x64-application-ini.zip
-            ./artifact/linux/noraneko-linux-amd64-moz-artifact.tar.xz
-            ./artifact/linux/Linux-x64-dist-host.zip
-            ./artifact/linux/Linux-x64-application-ini.zip
+            ./artifact/win/noraneko-windows-x86_64-moz-artifact.zip
+            ./artifact/win/windows-x86_64-dist-host.zip
+            ./artifact/win/windows-x86_64-application-ini.zip
+            ./artifact/linux/noraneko-linux-x86_64-moz-artifact.tar.xz
+            ./artifact/linux/linux-x86_64-dist-host.zip
+            ./artifact/linux/linux-x86_64-application-ini.zip
             ./artifact/linux-aarch64/noraneko-linux-aarch64-moz-artifact.tar.xz
-            ./artifact/linux-aarch64/Linux-aarch64-dist-host.zip
-            ./artifact/linux-aarch64/Linux-aarch64-application-ini.zip
+            ./artifact/linux-aarch64/linux-aarch64-dist-host.zip
+            ./artifact/linux-aarch64/linux-aarch64-application-ini.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

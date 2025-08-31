@@ -36,20 +36,20 @@ jobs:
         - name: Download artifact
           uses: actions/download-artifact@v4
           with:
-            name: noraneko-linux-amd64-moz-artifact
+            name: noraneko-linux-x86_64-moz-artifact
             path: /tmp/artifact
 
         - name: Compress artifact
           shell: bash
           run: |
             cd /tmp/artifact
-            mv noraneko-linux-amd64-moz-artifact.tar.xz $GITHUB_WORKSPACE/
+            mv noraneko-linux-x86_64-moz-artifact.tar.xz $GITHUB_WORKSPACE/
 
         - name: upload artifact
           uses: actions/upload-artifact@v4
           with:
-            name: noraneko-linux-amd64-moz-artifact-dev-patch-test
-            path: noraneko-linux-amd64-moz-artifact-dev.zip
+            name: noraneko-linux-x86_64-moz-artifact-dev-patch-test
+            path: noraneko-linux-x86_64-moz-artifact-dev.zip
 
         - name: Running Test
           id: test-unix
@@ -59,7 +59,7 @@ jobs:
             Xvfb :2 -screen 0 1024x768x24 &
             export DISPLAY=:2
             deno install
-            deno run dev &
+            deno task feles-build dev &
             sleep 100
             if pgrep -f "noraneko" > /dev/null; then
                 echo "Test passed"

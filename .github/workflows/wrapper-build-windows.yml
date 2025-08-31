@@ -8,9 +8,11 @@ on:
   workflow_dispatch:
     inputs:
       debug:
+        description: 'Enable debug build'
         type: boolean
         required: true
       pgo:
+        description: 'Enable PGO/profile generation'
         type: boolean
         default: false
         required: true
@@ -18,9 +20,11 @@ on:
   workflow_call:
     inputs:
       debug:
+        description: 'Enable debug build'
         type: boolean
         required: true
       pgo:
+        description: 'Enable PGO/profile generation'
         type: boolean
         default: false
         required: true
@@ -43,12 +47,12 @@ jobs:
     uses: ./.github/workflows/pgo-build.yml
     secrets: inherit
     with:
-      browser-artifact-name: noraneko-win-amd64-profile-generate-mode-package
+      browser-artifact-name: noraneko-windows-x86_64-profile-generate-mode-package
       artifact-path: C:\artifact
       runner: windows-latest
       target-arch: x86_64
       profile-mode: generate
-      upload-artifact-name: noraneko-win-amd64-profile-generate-output
+      upload-artifact-name: noraneko-windows-x86_64-profile-generate-output
 
   part-3:
     name: Windows x64 build${{toJSON(inputs.debug) == 'true' && ' Debug' || ''}}
@@ -59,4 +63,4 @@ jobs:
       platform: windows
       arch: x86_64
       debug: ${{inputs.debug}}
-      pgo_artifact_name: noraneko-win-amd64-profile-generate-output
+      pgo_artifact_name: noraneko-windows-x86_64-profile-generate-output

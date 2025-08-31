@@ -116,9 +116,9 @@ jobs:
         uses: geekyeggo/delete-artifact@v5
         with:
           name: |
-            noraneko-win-x86_64-moz-artifact
-            dist-host
-            application-ini
+            noraneko-windows-x86_64-moz-artifact
+            windows-x86_64-dist-host
+            windows-x86_64-application-ini
 
       # Publish artifact (unified)
       - name: Publish Package Mozilla Artifact 🎁
@@ -129,10 +129,10 @@ jobs:
 
       # Publish profile-generate-mode package
       - name: Publish Profile Generate Mode Package
-        if: inputs.profile-generate-mode && inputs.platform == 'windows' && inputs.arch == 'amd64'
+        if: inputs.profile-generate-mode && inputs.platform == 'windows' && inputs.arch == 'x86_64'
         uses: actions/upload-artifact@v4
         with:
-          name: noraneko-win-amd64-profile-generate-mode-package
+          name: noraneko-windows-x86_64-profile-generate-mode-package
           path: ${{ format('~/output/noraneko-{0}-{1}-moz-artifact.zip', inputs.platform, inputs.arch) }}
 
       - name: Publish dist/host for MAR
