@@ -3561,7 +3561,7 @@ static bool CheckCompatibility(nsIFile* aProfileDir, const nsCString& aVersion,
     if (NS_FAILED(rv)) {
         return false;
     }
-    
+
     nsCOMPtr<nsIFile> buildid2_appDir;
     aAppDir->Clone(getter_AddRefs(buildid2_appDir));
     if (!buildid2_appDir) return false;
