@@ -1,5 +1,5 @@
 diff --git a/python/mozbuild/mozbuild/artifacts.py b/python/mozbuild/mozbuild/artifacts.py
-index 9fb1d6afb3..df9a2bafdd 100644
+index f36976b2f5..23a53d35ae 100644
 --- a/python/mozbuild/mozbuild/artifacts.py
 +++ b/python/mozbuild/mozbuild/artifacts.py
 @@ -91,7 +91,7 @@ UNFILTERED_PROJECT_PACKAGE_PROCESSED_SUFFIX = (

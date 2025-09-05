@@ -1,0 +1,13 @@
+browser/installer/linux/app/debian/install.in
+browser/installer/removed-files.in
+browser/installer/windows/nsis/shared.nsh
+browser/moz.configure
+python/mozboot/mozboot/bootstrap.py
+python/mozbuild/mozbuild/artifacts.py
+toolkit/components/extensions/MatchPattern.cpp
+toolkit/crashreporter/google-breakpad/.gitignore
+toolkit/mozapps/installer/windows/nsis/common.nsh
+toolkit/mozapps/update/UpdateService.sys.mjs
+toolkit/mozapps/update/common/commonupdatedir.cpp
+toolkit/mozapps/update/nsIUpdateService.idl
+toolkit/xre/nsAppRunner.cpp
