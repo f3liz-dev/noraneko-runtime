@@ -21,6 +21,19 @@ jobs:
         with:
           ref: 'the-tailed-one'
           path: noraneko_runtime
+  
+      - name: Checkout main branch for .github files
+        uses: actions/checkout@v4
+        with:
+          ref: 'main'
+          path: main_branch_checkout
+
+      - name: Copy .github directory from main
+        run: |
+          # Remove the old .github directory to ensure a clean copy
+          rm -rf noraneko_runtime/.github
+          # Copy the .github directory from the main branch checkout
+          cp -r main_branch_checkout/.github noraneko_runtime/
 
       - name: Clone upstream firefox repository
         run: git clone -b release --single-branch https://github.com/mozilla-firefox/firefox --depth 1 upstream_release
