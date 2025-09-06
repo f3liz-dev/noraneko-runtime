@@ -65,16 +65,13 @@
 # support. This made it possible to delete all of the removal instructions in
 # this file.
 
-# --- Noraneko Patch Start ---
-# This blocks to package with `ac_add_options --enable-chrome-format=flat`
-# # Remove the toplevel chrome.manifest added by bug 1295542.
-# #ifndef MOZ_GTK
-#   @DIR_MACOS@chrome.manifest
-#   #ifdef XP_MACOSX
-#     @DIR_RESOURCES@chrome.manifest
-#   #endif
-# #endif
-# --- Noraneko Patch End   ---
+# Remove the toplevel chrome.manifest added by bug 1295542.
+#ifndef MOZ_GTK
+  @DIR_MACOS@chrome.manifest
+  #ifdef XP_MACOSX
+    @DIR_RESOURCES@chrome.manifest
+  #endif
+#endif
 
 # channel-prefs.js has been removed on macOS.
 #ifdef XP_MACOSX
