@@ -4,6 +4,8 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+include("../noraneko/static/gecko/config/moz.configure")
+
 imply_option("MOZ_PLACES", True)
 imply_option("MOZ_SERVICES_HEALTHREPORT", True)
 imply_option("MOZ_SERVICES_SYNC", True)
@@ -13,7 +15,7 @@ imply_option("MOZ_NORMANDY", True)
 imply_option("MOZ_PROFILE_MIGRATOR", True)
 
 
-imply_option("MOZ_APP_VENDOR", "Mozilla")
+# imply_option("MOZ_APP_VENDOR", "Mozilla")
 imply_option("MOZ_APP_ID", "{ec8030f7-c20a-464f-9b0e-13a3a9e97384}")
 # Include the DevTools client, not just the server (which is the default)
 imply_option("MOZ_DEVTOOLS", "all")

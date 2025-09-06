@@ -1,0 +1,9 @@
+browser/installer/linux/app/debian/changelog.in
+browser/installer/linux/app/debian/control.in
+browser/installer/linux/app/debian/manpage.1.in
+browser/installer/linux/app/rpm/firefox.spec.j2
+browser/installer/linux/app/rpm/manpage.1.in
+other-licenses/7zstub/firefox/7zSD.ARM64.sfx
+other-licenses/7zstub/firefox/7zSD.Win32.sfx
+other-licenses/7zstub/firefox/setup.ico
+toolkit/xre/nsAppRunner.cpp

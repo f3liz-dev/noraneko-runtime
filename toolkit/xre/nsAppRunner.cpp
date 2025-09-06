@@ -3584,7 +3584,6 @@ static bool CheckCompatibility(nsIFile* aProfileDir, const nsCString& aVersion,
   * END
   */
 
-
   // If we get here, the version matched, but there may still be other
   // differences between us and the build that the profile last ran under.
 
