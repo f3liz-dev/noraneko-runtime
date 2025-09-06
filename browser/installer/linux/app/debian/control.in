@@ -1,5 +1,5 @@
 Source: ${PKG_NAME}
-Maintainer: Mozilla <release@mozilla.com>
+Maintainer: nyanrus <nyanrus.dev+noraneko@gmail.com>
 Priority: optional
 Section: web
 Build-Depends: debhelper (>= 9)
