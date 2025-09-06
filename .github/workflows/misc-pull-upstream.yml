@@ -27,6 +27,7 @@ jobs:
         with:
           ref: 'main'
           path: main_branch_checkout
+          sparse-checkout: .github
 
       - name: Copy .github directory from main
         run: |
