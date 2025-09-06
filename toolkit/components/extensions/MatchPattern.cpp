@@ -82,7 +82,7 @@ bool AtomSet::Intersects(const AtomSet& aOther) const {
     return atomSet.forget();                         \
   }
 
-DEFINE_STATIC_ATOM_SET(PermittedSchemes, nsGkAtoms::http, nsGkAtoms::https, nsGkAtoms::about,
+DEFINE_STATIC_ATOM_SET(PermittedSchemes, nsGkAtoms::http, nsGkAtoms::https,
                        nsGkAtoms::ws, nsGkAtoms::wss, nsGkAtoms::file,
                        nsGkAtoms::ftp, nsGkAtoms::data);
 
