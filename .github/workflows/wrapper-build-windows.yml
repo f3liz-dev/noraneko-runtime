@@ -8,9 +8,11 @@ on:
   workflow_dispatch:
     inputs:
       debug:
+        description: 'Enable debug build'
         type: boolean
         required: true
       pgo:
+        description: 'Enable PGO/profile generation'
         type: boolean
         default: false
         required: true
@@ -18,9 +20,11 @@ on:
   workflow_call:
     inputs:
       debug:
+        description: 'Enable debug build'
         type: boolean
         required: true
       pgo:
+        description: 'Enable PGO/profile generation'
         type: boolean
         default: false
         required: true
@@ -29,29 +33,34 @@ run-name: ${{toJSON(inputs.pgo) == 'true' && '[PGO] ' || ''}}Windows x64 build${
 jobs:
   part-1:
     name: Windows x64 build${{toJSON(inputs.debug) == 'true' && ' Debug' || ''}}
-    uses: ./.github/workflows/build.yml
+    uses: ./.github/workflows/common-build.yml
     with:
       platform: windows
       arch: x86_64
       debug: ${{inputs.debug}}
-      profile-generate-mode: ${{inputs.pgo}}
+      profile-generate-mode: ${{ toJSON(inputs.pgo) == 'true' }}
 
   part-2:
     name: Windows x64 Generate Profile for Guided Optimization
-    if: inputs.pgo
+    if: ${{ toJSON(inputs.pgo) == 'true' }}
     needs: part-1
-    uses: ./.github/workflows/pgo-windows.yml
+    uses: ./.github/workflows/pgo-build.yml
     secrets: inherit
     with:
-      browser-artifact-name: noraneko-win-amd64-profile-generate-mode-package
+      browser-artifact-name: noraneko-windows-x86_64-profile-generate-mode-package
+      artifact-path: C:\artifact
+      runner: windows-latest
+      target-arch: x86_64
+      profile-mode: generate
+      upload-artifact-name: noraneko-windows-x86_64-profile-generate-output
 
   part-3:
     name: Windows x64 build${{toJSON(inputs.debug) == 'true' && ' Debug' || ''}}
-    if: inputs.pgo
+    if: ${{ toJSON(inputs.pgo) == 'true' }}
     needs: part-2
-    uses: ./.github/workflows/build.yml
+    uses: ./.github/workflows/common-build.yml
     with:
       platform: windows
       arch: x86_64
       debug: ${{inputs.debug}}
-      pgo_artifact_name: noraneko-win-amd64-profile-generate-output
+      pgo_artifact_name: noraneko-windows-x86_64-profile-generate-output

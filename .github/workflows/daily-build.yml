@@ -22,39 +22,42 @@ run-name: "(B) 📅 Daily Runtime Build with Pull Upstream"
 jobs:
   part-1:
     name: Pull Upstream from Mozilla-Central
-    uses: ./.github/workflows/pull-upstream.yml
+    uses: ./.github/workflows/misc-pull-upstream.yml
     secrets: inherit
 
-  windows-amd64:
-    name: Windows amd x64 build
+  windows-x86_64:
+    name: Windows x86_64 build
     needs: part-1
     uses: ./.github/workflows/wrapper-build-windows.yml
     secrets: inherit
     with:
       debug: false
-      pgo: ${{ inputs.pgo || true }}
+      pgo: ${{ toJSON(inputs.pgo) == 'true' }}
 
-  linux-amd64:
-    name: Linux amd x64 build
+  linux-x86_64:
+    name: Linux x86_64 build
     needs: part-1
     uses: ./.github/workflows/wrapper-build-linux.yml
     secrets: inherit
     with:
       debug: false
-      pgo: ${{ inputs.pgo || true }}
+      pgo: ${{ toJSON(inputs.pgo) == 'true' }}
 
-  mac-amd64:
-    name: Mac amd x64 build
+  linux-aarch64:
+    name: Linux aarch64 build
     needs: part-1
-    uses: ./.github/workflows/wrapper-build-mac.yml
+    uses: ./.github/workflows/common-build.yml
     secrets: inherit
     with:
+      platform: linux
+      arch: aarch64
       debug: false
-      pgo: ${{ inputs.pgo || true }}
+      pgo: ${{ toJSON(inputs.pgo) == 'true' }}
+
 
   platform-tests:
     name: Platform Tests
-    needs: [windows-amd64, linux-amd64, mac-amd64]
+    needs: [windows-x86_64, linux-x86_64, linux-aarch64]
     uses: ./.github/workflows/patch-test.yml
     with:
       platform: ubuntu
@@ -80,104 +83,93 @@ jobs:
       - name: Download Windows Main Artifact
         uses: actions/download-artifact@v4
         with:
-          name: noraneko-win-amd64-moz-artifact
+          name: noraneko-windows-x86_64-moz-artifact
           path: ./artifact/win/main
 
       - name: Zip Windows Main Artifact
         run: |
           cd ./artifact/win/main
-          zip -r ../noraneko-win-amd64-moz-artifact.zip .
+          zip -r ../noraneko-windows-x86_64-moz-artifact.zip .
 
       - name: Download Windows Dist-Host
         uses: actions/download-artifact@v4
         with:
-          name: win-amd64-dist-host
+          name: windows-x86_64-dist-host
           path: ./artifact/win/host
 
       - name: Zip Windows Dist-Host
         run: |
           cd ./artifact/win/host
-          zip -r ../Windows-x64-dist-host.zip .
+          zip -r ../windows-x86_64-dist-host.zip .
 
       - name: Download Windows Application INI
         uses: actions/download-artifact@v4
         with:
-          name: win-amd64-application-ini
+          name: windows-x86_64-application-ini
           path: ./artifact/win/ini
 
       - name: Zip Windows Application INI
         run: |
           cd ./artifact/win/ini
-          zip -r ../Windows-x64-application-ini.zip .
+          zip -r ../windows-x86_64-application-ini.zip .
 
       # ───────── Linux Artifacts ─────────
       - name: Download Linux Main Artifact
         uses: actions/download-artifact@v4
         with:
-          name: noraneko-linux-amd64-moz-artifact
+          name: noraneko-linux-x86_64-moz-artifact
           path: ./artifact/linux
+
+      - name: Download Linux aarch64 Main Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: noraneko-linux-aarch64-moz-artifact
+          path: ./artifact/linux-aarch64
 
       - name: Download Linux Dist-Host
         uses: actions/download-artifact@v4
         with:
-          name: linux-amd64-dist-host
+          name: linux-x86_64-dist-host
           path: ./artifact/linux/host
 
       - name: Zip Linux Dist-Host
         run: |
           cd ./artifact/linux/host
-          zip -r ../Linux-x64-dist-host.zip .
+          zip -r ../linux-x86_64-dist-host.zip .
+
+      - name: Download Linux aarch64 Dist-Host
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-aarch64-dist-host
+          path: ./artifact/linux-aarch64/host
+
+      - name: Zip Linux aarch64 Dist-Host
+        run: |
+          cd ./artifact/linux-aarch64/host
+          zip -r ../linux-aarch64-dist-host.zip .
 
       - name: Download Linux Application INI
         uses: actions/download-artifact@v4
         with:
-          name: linux-amd64-application-ini
+          name: linux-x86_64-application-ini
           path: ./artifact/linux/ini
 
       - name: Zip Linux Application INI
         run: |
           cd ./artifact/linux/ini
-          zip -r ../Linux-x64-application-ini.zip .
+          zip -r ../linux-x86_64-application-ini.zip .
 
-      # ───────── Mac Artifacts ─────────
-      - name: Download Mac Main Artifact
+      - name: Download Linux aarch64 Application INI
         uses: actions/download-artifact@v4
         with:
-          name: noraneko-mac-universal-moz-artifact-dev
-          path: ./artifact/mac
+          name: linux-aarch64-application-ini
+          path: ./artifact/linux-aarch64/ini
 
-      - name: Download Mac Release Artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: noraneko-mac-universal-moz-artifact-release
-          path: ./artifact/mac-release
-
-      - name: Download Mac Dist-Host
-        uses: actions/download-artifact@v4
-        with:
-          name: macOS-universal-dist-host
-          path: ./artifact/mac/host
-
-      - name: Zip Mac Dist-Host
+      - name: Zip Linux aarch64 Application INI
         run: |
-          cd ./artifact/mac/host
-          zip -r ../macOS-x64-dist-host.zip .
+          cd ./artifact/linux-aarch64/ini
+          zip -r ../linux-aarch64-application-ini.zip .
 
-      - name: Download Mac Application INI
-        uses: actions/download-artifact@v4
-        with:
-          name: macOS-universal-application-ini
-          path: ./artifact/mac/ini
-
-      - name: Zip Mac Application INI
-        run: |
-          cd ./artifact/mac/ini
-          zip -r ../macOS-x64-application-ini.zip .
-
-      - name: Zip Mac Release Artifact
-        run: |
-          cd ./artifact/mac-release
-          zip -r ./noraneko-mac-universal-moz-artifact-release.zip .
 
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
@@ -187,15 +179,14 @@ jobs:
           name: "Runtime Release - ${{ steps.set_tag.outputs.tag }}"
           body: "This is a runtime release for Noraneko. \n\n **Test Status:** ${{ needs.platform-tests.outputs.test_status }} \n\n **WARNING:** This release is not a Noraneko installer. Visit the [releases page](https://github.com/nyanrus/noraneko/releases/) to download the official installer."
           files: |
-            ./artifact/win/noraneko-win-amd64-moz-artifact.zip
-            ./artifact/win/Windows-x64-dist-host.zip
-            ./artifact/win/Windows-x64-application-ini.zip
-            ./artifact/linux/noraneko-linux-amd64-moz-artifact.tar.xz
-            ./artifact/linux/Linux-x64-dist-host.zip
-            ./artifact/linux/Linux-x64-application-ini.zip
-            ./artifact/mac/noraneko-macOS-universal-moz-artifact.dmg
-            ./artifact/mac/macOS-x64-dist-host.zip
-            ./artifact/mac/macOS-x64-application-ini.zip
-            ./artifact/mac-release/noraneko-mac-universal-moz-artifact-release.zip
+            ./artifact/win/noraneko-windows-x86_64-moz-artifact.zip
+            ./artifact/win/windows-x86_64-dist-host.zip
+            ./artifact/win/windows-x86_64-application-ini.zip
+            ./artifact/linux/noraneko-linux-x86_64-moz-artifact.tar.xz
+            ./artifact/linux/linux-x86_64-dist-host.zip
+            ./artifact/linux/linux-x86_64-application-ini.zip
+            ./artifact/linux-aarch64/noraneko-linux-aarch64-moz-artifact.tar.xz
+            ./artifact/linux-aarch64/linux-aarch64-dist-host.zip
+            ./artifact/linux-aarch64/linux-aarch64-application-ini.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

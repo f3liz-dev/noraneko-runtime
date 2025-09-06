@@ -1,9 +1,9 @@
 diff --git a/browser/installer/package-manifest.in b/browser/installer/package-manifest.in
-index 861ba1c484..83f8d4cf87 100644
+index 2b4d35e060..795398058f 100644
 --- a/browser/installer/package-manifest.in
 +++ b/browser/installer/package-manifest.in
-@@ -196,6 +196,11 @@
- @RESPATH@/chrome/remote.manifest
+@@ -214,6 +214,11 @@
+ @RESPATH@/browser/chrome/icons/default/default128.png
  #endif
  
 +; [Noraneko Files]
@@ -11,6 +11,6 @@ index 861ba1c484..83f8d4cf87 100644
 +@RESPATH@/chrome/noraneko@JAREXT@
 +@RESPATH@/browser/buildid2
 +
- ; [Extensions]
- @RESPATH@/components/extensions-toolkit.manifest
- @RESPATH@/browser/components/extensions-browser.manifest
+ ; [DevTools Startup Files]
+ @RESPATH@/browser/chrome/devtools-startup@JAREXT@
+ @RESPATH@/browser/chrome/devtools-startup.manifest

@@ -1,8 +1,8 @@
 diff --git a/python/mozboot/mozboot/bootstrap.py b/python/mozboot/mozboot/bootstrap.py
-index 8fbdb93a48..e03e6bbbf5 100644
+index 7460eb1942..6cbdf70d2d 100644
 --- a/python/mozboot/mozboot/bootstrap.py
 +++ b/python/mozboot/mozboot/bootstrap.py
-@@ -47,27 +47,14 @@ from mozboot.void import VoidBootstrapper
+@@ -43,27 +43,14 @@ from mozboot.void import VoidBootstrapper
  from mozboot.windows import WindowsBootstrapper
  
  APPLICATION_CHOICE = """
@@ -33,7 +33,7 @@ index 8fbdb93a48..e03e6bbbf5 100644
      ]
  )
  
-@@ -477,7 +464,8 @@ class Bootstrapper:
+@@ -454,7 +441,8 @@ class Bootstrapper:
          elif git and checkout_type == "git":
              should_configure_git = False
              if not self.instance.no_interactive:

@@ -1,5 +1,5 @@
 diff --git a/toolkit/mozapps/update/UpdateService.sys.mjs b/toolkit/mozapps/update/UpdateService.sys.mjs
-index 26d633f4f4..fd31a7eac9 100644
+index 5d5a3f2c46..0f556ff065 100644
 --- a/toolkit/mozapps/update/UpdateService.sys.mjs
 +++ b/toolkit/mozapps/update/UpdateService.sys.mjs
 @@ -16,6 +16,21 @@ import {
@@ -35,7 +35,7 @@ index 26d633f4f4..fd31a7eac9 100644
  /**
   * Simple container and constructor for a Promise and its resolve function.
   */
-@@ -1818,15 +1837,150 @@ function pingStateAndStatusCodes(aUpdate, aStartup, aStatus) {
+@@ -1819,15 +1838,150 @@ function pingStateAndStatusCodes(aUpdate, aStartup, aStatus) {
    AUSTLMY.pingStateCode(suffix, stateCode);
  }
  
@@ -187,7 +187,7 @@ index 26d633f4f4..fd31a7eac9 100644
    return (
      versionComparison < 0 ||
      (versionComparison == 0 && update.buildID == buildID)
-@@ -1836,12 +1990,26 @@ function updateIsAtLeastAsOldAs(update, version, buildID) {
+@@ -1837,12 +1991,26 @@ function updateIsAtLeastAsOldAs(update, version, buildID) {
  /**
   * This returns true if the passed update is the same version or older than
   * currently installed Firefox version.
@@ -214,7 +214,7 @@ index 26d633f4f4..fd31a7eac9 100644
    );
  }
  
-@@ -1862,6 +2030,19 @@ function updateIsAtLeastAsOldAsReadyUpdate(update) {
+@@ -1863,6 +2031,19 @@ function updateIsAtLeastAsOldAsReadyUpdate(update) {
      update,
      lazy.UM.internal.readyUpdate.appVersion,
      lazy.UM.internal.readyUpdate.buildID
@@ -234,7 +234,7 @@ index 26d633f4f4..fd31a7eac9 100644
    );
  }
  
-@@ -1968,6 +2149,10 @@ function pollForStagingEnd() {
+@@ -1969,6 +2150,10 @@ function pollForStagingEnd() {
    lazy.setTimeout(pollingFn, pollingIntervalMs);
  }
  
@@ -245,7 +245,7 @@ index 26d633f4f4..fd31a7eac9 100644
  class UpdatePatch {
    // nsIUpdatePatch attribute names used to prevent nsIWritablePropertyBag from
    // over writing nsIUpdatePatch attributes.
-@@ -2168,6 +2353,10 @@ class UpdatePatch {
+@@ -2169,6 +2354,10 @@ class UpdatePatch {
    ]);
  }
  
@@ -256,7 +256,7 @@ index 26d633f4f4..fd31a7eac9 100644
  class Update {
    // nsIUpdate attribute names used to prevent nsIWritablePropertyBag from over
    // writing nsIUpdate attributes.
-@@ -2190,6 +2379,19 @@ class Update {
+@@ -2191,6 +2380,19 @@ class Update {
      "type",
      "unsupported",
      "platformVersion",
@@ -276,7 +276,7 @@ index 26d633f4f4..fd31a7eac9 100644
    ];
  
    /**
-@@ -2287,6 +2489,19 @@ class Update {
+@@ -2288,6 +2490,19 @@ class Update {
            case "statusText":
            case "type":
            case "platformVersion":
@@ -296,7 +296,7 @@ index 26d633f4f4..fd31a7eac9 100644
              this[attr.name] = attr.value;
              break;
            default:
-@@ -2431,6 +2646,23 @@ class Update {
+@@ -2432,6 +2647,23 @@ class Update {
      if (this.elevationFailure) {
        update.setAttribute("elevationFailure", this.elevationFailure);
      }
@@ -320,7 +320,7 @@ index 26d633f4f4..fd31a7eac9 100644
  
      for (let [name, value] of Object.entries(this._properties)) {
        if (value.present && !this._attrNames.includes(name)) {
-@@ -2540,6 +2772,10 @@ class Update {
+@@ -2541,6 +2773,10 @@ class Update {
    ]);
  }
  
@@ -331,7 +331,7 @@ index 26d633f4f4..fd31a7eac9 100644
  export class UpdateService {
    #initPromise;
  
-@@ -3594,11 +3830,13 @@ export class UpdateService {
+@@ -3595,11 +3831,13 @@ export class UpdateService {
      return true;
    }
  
@@ -346,7 +346,7 @@ index 26d633f4f4..fd31a7eac9 100644
     *          An array of available nsIUpdate items
     * @return  The nsIUpdate to offer.
     */
-@@ -3619,6 +3857,8 @@ export class UpdateService {
+@@ -3620,6 +3858,8 @@ export class UpdateService {
      var vc = Services.vc;
      let lastCheckCode = AUSTLMY.CHK_NO_COMPAT_UPDATE_FOUND;
  
@@ -355,7 +355,7 @@ index 26d633f4f4..fd31a7eac9 100644
      for (const update of updates) {
        // Ignore updates for older versions of the application and updates for
        // the same version of the application with the same build ID.
-@@ -3651,6 +3891,8 @@ export class UpdateService {
+@@ -3652,6 +3892,8 @@ export class UpdateService {
          continue;
        }
  
@@ -364,7 +364,7 @@ index 26d633f4f4..fd31a7eac9 100644
        switch (update.type) {
          case "major":
            if (!majorUpdate || majorUpdate.unsupported) {
-@@ -3658,6 +3900,18 @@ export class UpdateService {
+@@ -3659,6 +3901,18 @@ export class UpdateService {
            } else if (
              !update.unsupported &&
              vc.compare(majorUpdate.appVersion, update.appVersion) <= 0
@@ -383,7 +383,7 @@ index 26d633f4f4..fd31a7eac9 100644
            ) {
              majorUpdate = update;
            }
-@@ -3668,6 +3922,18 @@ export class UpdateService {
+@@ -3669,6 +3923,18 @@ export class UpdateService {
            } else if (
              !update.unsupported &&
              vc.compare(minorUpdate.appVersion, update.appVersion) <= 0
@@ -402,7 +402,7 @@ index 26d633f4f4..fd31a7eac9 100644
            ) {
              minorUpdate = update;
            }
-@@ -4450,6 +4716,10 @@ export class UpdateService {
+@@ -4451,6 +4717,10 @@ export class UpdateService {
    ]);
  }
  
@@ -413,7 +413,7 @@ index 26d633f4f4..fd31a7eac9 100644
  export class UpdateManager {
    /**
     * The nsIUpdate object for the update that has been downloaded.
-@@ -5168,6 +5438,10 @@ export class UpdateManager {
+@@ -5169,6 +5439,10 @@ export class UpdateManager {
    QueryInterface = ChromeUtils.generateQI([Ci.nsIUpdateManager]);
  }
  
@@ -424,7 +424,7 @@ index 26d633f4f4..fd31a7eac9 100644
  /**
   * CheckerService
   * Provides an interface for checking for new updates. When more checks are
-@@ -5745,6 +6019,10 @@ export class CheckerService {
+@@ -5746,6 +6020,10 @@ export class CheckerService {
    QueryInterface = ChromeUtils.generateQI([Ci.nsIUpdateChecker]);
  }
  
@@ -435,7 +435,7 @@ index 26d633f4f4..fd31a7eac9 100644
  class Downloader {
    /**
     * The nsIUpdatePatch that we are downloading
-@@ -7204,6 +7482,10 @@ class Downloader {
+@@ -7205,6 +7483,10 @@ class Downloader {
    ]);
  }
  

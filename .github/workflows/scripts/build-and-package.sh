@@ -32,10 +32,7 @@ rm -rf ~/.cargo
 mkdir -p ~/output
 
 ARTIFACT_NAME="noraneko-${PLATFORM}-${ARCH}-moz-artifact"
-if [[ "$PLATFORM" == "mac" ]]; then
-  tar -cJf ~/output/${ARTIFACT_NAME}.tar.xz ./obj-${ARCH}-apple-darwin/dist/
-  cp ./obj-${ARCH}-apple-darwin/dist/bin/application.ini ./nora-application.ini || true
-elif [[ "$PLATFORM" == "windows" ]]; then
+if [[ "$PLATFORM" == "windows" ]]; then
   mv obj-x86_64-pc-windows-msvc/dist/noraneko-*win64.zip ~/output/${ARTIFACT_NAME}.zip
   cp ./obj-x86_64-pc-windows-msvc/dist/bin/application.ini ./nora-application.ini || true
 elif [[ "$PLATFORM" == "linux" ]]; then

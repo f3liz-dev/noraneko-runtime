@@ -1,0 +1,126 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+#
+# Reusable PGO build template.
+# Inputs:
+# - browser-artifact-name (required): artifact produced by build job to download
+# - artifact-path (optional): path on runner where artifact is placed (default: build/artifacts)
+# - runner (optional): runner label to run on (default: ubuntu-latest). Callers may pass windows-latest.
+# - target-arch (optional): architecture string (e.g., x86_64)
+# - profile-mode (optional): generate | use (default: generate)
+# - upload-artifact-name (optional): artifact name to upload the profdata/jarlog under
+#
+on:
+  workflow_call:
+    # Callers may pass secrets using `secrets: inherit` when they invoke this reusable workflow.
+    # Do not hardcode secrets here; the caller should specify `secrets: inherit`.
+    inputs:
+      browser-artifact-name:
+        description: 'Artifact to download'
+        required: true
+        type: string
+      artifact-path:
+        description: 'Path on the runner where the browser artifact will be placed'
+        required: false
+        type: string
+        default: 'build/artifacts'
+      runner:
+        description: 'Runner label to execute the job on (ubuntu-latest or windows-latest)'
+        required: false
+        type: string
+        default: 'ubuntu-latest'
+      target-arch:
+        description: 'Target architecture (e.g., x86_64)'
+        required: false
+        type: string
+      profile-mode:
+        description: 'Profile mode: generate or use'
+        required: false
+        type: string
+        default: 'generate'
+        # allowed values can't be strictly enforced here; document only
+      upload-artifact-name:
+        description: 'Name for the uploaded profdata/jarlog artifact'
+        required: false
+        type: string
+
+jobs:
+  generate-profdata-and-jarlog:
+    name: Generate PGO Profile Data and Jarlog
+    runs-on: ${{ inputs.runner }}
+    # expose inputs as env for steps
+    env:
+      ARTIFACT_PATH: ${{ inputs.artifact-path }}
+      TARGET_ARCH: ${{ inputs.target-arch }}
+      PROFILE_MODE: ${{ inputs.profile-mode }}
+      BROWSER_ARTIFACT_NAME: ${{ inputs.browser-artifact-name }}
+      UPLOAD_ARTIFACT_NAME: ${{ inputs.upload-artifact-name || format('{0}-profile-generate-output', inputs.browser-artifact-name) }}
+
+    steps:
+      # Checkout the repository so scripts and mach are available
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      # Download the browser build artifact produced by build workflows
+      - name: Download Build Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.browser-artifact-name }}
+          path: ${{ env.ARTIFACT_PATH }}
+
+      # Place or extract the artifact into the expected location.
+      # OS-specific handling is split into separate steps for clarity.
+      - name: Prepare artifact (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          # On Windows the artifact is placed under the provided ARTIFACT_PATH (e.g. C:\artifact)
+          Write-Host "Preparing artifact from $env:ARTIFACT_PATH"
+          # Placeholder: if artifact is zipped, expand here. Adjust as needed.
+ 
+ 
+      - name: Prepare artifact (Unix)
+        if: runner.os != 'Windows' && runner.os != 'macOS'
+        run: |
+          echo "Preparing artifact in $ARTIFACT_PATH"
+          # Placeholder: if artifact is an archive, extract it here (tar/ unzip)
+ 
+      # Run profile generation or usage steps (placeholder).
+      # Call existing scripts in workflows/scripts/ when applicable.
+ 
+      - name: Generate Profdata and Jarlog (Windows)
+        if: runner.os == 'Windows' && env.PROFILE_MODE == 'generate'
+        shell: pwsh
+        run: |
+          $Env:USE_MINTTY = "0"
+          $workspace_dir = [regex]::replace($env:GITHUB_WORKSPACE, "^([A-Z]):", { "/" + $args.value.Substring(0, 1).toLower() }) -replace "\\","/"
+          echo "cd $workspace_dir" '' >> mozilla-build-run.sh
+          echo 'export PATH=/c/mozilla-build/msys2/usr/bin:$PATH' '' >> mozilla-build-run.sh
+          echo './mach --no-interactive bootstrap --application-choice browser' '' >> mozilla-build-run.sh
+          echo 'LLVM_PROFDATA=/c/Users/runneradmin/.mozbuild/clang/bin/llvm-profdata.exe JARLOG_FILE=en-US.log ./mach python build/pgo/profileserver.py --binary /c/artifact/noraneko/noraneko.exe' '' >> mozilla-build-run.sh
+          C:\mozilla-build\start-shell.bat $workspace_dir\mozilla-build-run.sh
+ 
+      - name: Generate Profdata and Jarlog (Unix)
+        if: runner.os != 'Windows' && runner.os != 'macOS' && env.PROFILE_MODE == 'generate'
+        run: |
+          # Ensure helper scripts are executable and run bootstrap + profileserver.
+          chmod +x workflows/scripts/setup-noraneko.sh || true
+          ./workflows/scripts/setup-noraneko.sh
+          # Placeholder: invoke profileserver using the expected binary path inside ARTIFACT_PATH
+          echo "Running profileserver against ${ARTIFACT_PATH}"
+          # e.g. LLVM_PROFDATA=/usr/bin/llvm-profdata JARLOG_FILE=en-US.log ./mach python build/pgo/profileserver.py --binary ${ARTIFACT_PATH}/noraneko/noraneko.exe
+
+      # Upload profdata and jarlog for downstream jobs to consume.
+      - name: Upload Profdata and Jarlog
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.UPLOAD_ARTIFACT_NAME }}
+          path: |
+            merged.profdata
+            en-US.log
+
+      # Note: keep steps concise and well-commented. Future maintainers should
+      # adjust extraction/paths and profile invocation specifics per product.

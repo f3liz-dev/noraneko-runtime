@@ -25,13 +25,7 @@ cd "$GITHUB_WORKSPACE"
 git -C noraneko config remote.origin.fetch +refs/heads/*:refs/remotes/origin/*
 git submodule update --remote noraneko
 
-if [[ "$PLATFORM" == "mac" ]]; then
-  if [[ "$ARCH" == "x86_64" ]]; then
-    cp ./.github/workflows/mozconfigs/macosx64-x86_64.mozconfig mozconfig
-  else
-    cp ./.github/workflows/mozconfigs/macosx64-aarch64.mozconfig mozconfig
-  fi
-elif [[ "$PLATFORM" == "windows" ]]; then
+if [[ "$PLATFORM" == "windows" ]]; then
   cp ./.github/workflows/mozconfigs/windows-x86_64.mozconfig mozconfig
 elif [[ "$PLATFORM" == "linux" ]]; then
   if [[ "$ARCH" == "aarch64" ]]; then
@@ -44,22 +38,20 @@ fi
 cp -r ./noraneko/static/gecko/branding/* ./browser/branding/
 
 # Set Branding/Flat Chrome
-if [[ "$PLATFORM" == "mac" ]]; then
-  echo "ac_add_options --with-branding=browser/branding/noraneko-unofficial" >> mozconfig
-fi
+echo "ac_add_options --with-branding=browser/branding/noraneko-unofficial" >> mozconfig
 echo "ac_add_options --enable-chrome-format=flat" >> mozconfig
 
 sudo apt install msitools -y
-# https://github.com/actions/runner-images/issues/6283#issuecomment-1260049630
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
-brew install sccache
+# # https://github.com/actions/runner-images/issues/6283#issuecomment-1260049630
+# /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+# eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
+# brew install sccache
 
 # SCCACHE
 {
-  echo "mk_add_options 'export RUSTC_WRAPPER=/home/linuxbrew/.linuxbrew/bin/sccache'"
+  echo "mk_add_options 'export RUSTC_WRAPPER=/opt/hostedtoolcache/sccache/0.10.0/x64/sccache'"
   echo "mk_add_options 'export CCACHE_CPP2=yes'"
-  echo "ac_add_options --with-ccache=/home/linuxbrew/.linuxbrew/bin/sccache"
+  echo "ac_add_options --with-ccache=/opt/hostedtoolcache/sccache/0.10.0/x64/sccache"
   echo "mk_add_options 'export SCCACHE_GHA_ENABLED=on'"
 } >> mozconfig
 
