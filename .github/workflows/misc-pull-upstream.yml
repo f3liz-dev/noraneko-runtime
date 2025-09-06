@@ -6,45 +6,80 @@ name: Pull Upstream
 on:
   workflow_dispatch:
   workflow_call:
+
 permissions:
   contents: write
 
 jobs:
+  # Job 1: Pull the latest upstream code and update the 'the-tailed-one' branch.
+  # This branch will act as a clean, unpatched mirror of the upstream repository.
   pull-upstream:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        variant:
-          - name: patched
-            skip-patch: false
-            push-branch: main
-          - name: non-patched
-            skip-patch: true
-            push-branch: the-tailed-one
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout the-tailed-one branch
+        uses: actions/checkout@v4
         with:
-          path: nyanrus_release
-          fetch-depth: 0
+          ref: 'the-tailed-one'
+          path: noraneko_runtime
 
-      - name: Clone upstream
+      - name: Clone upstream firefox repository
+        run: git clone -b release --single-branch https://github.com/mozilla-firefox/firefox --depth 1 upstream_release
+
+      - name: Sync upstream files into working directory
         run: |
-          git clone -b release --single-branch https://github.com/mozilla-firefox/firefox --depth 1 upstream_release
-          rm -rf ./upstream_release/.git ./upstream_release/.github
-          mv ./upstream_release/README.md ./upstream_release/MOZ_README.md
+          # Copy the upstream content into the noraneko_runtime checkout folder.
+          # The --delete flag removes files that no longer exist upstream.
+          # We exclude .git and .github to preserve our repository history and workflow files.
+          rsync -a --delete --exclude='.git' --exclude='.github' --exclude='noraneko' --exclude='.gitmodules' upstream_release/ noraneko_runtime/
+          mv noraneko_runtime/README.md noraneko_runtime/MOZ_README.md
 
-      - name: Copy upstream to working dir
+      - name: Commit and push changes to the-tailed-one
+        working-directory: ./noraneko_runtime
         run: |
-          rsync -aq --progress upstream_release/ temp_release
-          cp -r ./nyanrus_release/.git temp_release
-          cp -r ./nyanrus_release/.github temp_release
-          cp ./nyanrus_release/.gitmodules temp_release
-          cp -r ./nyanrus_release/noraneko temp_release || true
-          cp ./nyanrus_release/README.md temp_release
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          
+          # If there are no changes, exit gracefully.
+          if git diff --quiet --exit-code; then
+            echo "No changes from upstream. Exiting."
+            exit 0
+          fi
+          
+          export FF_VERSION=$(cat browser/config/version.txt)
+          git add .
+          git commit -m "sync: upstream gecko-dev $FF_VERSION"
+          git push origin the-tailed-one
 
-      - id: normalize-patch-files
-        if: ${{ matrix.variant.skip-patch == false }}
-        name: Normalize patch files for cross-platform compatibility
+  # Job 2: Merge the updated 'the-tailed-one' branch into 'main' and apply patches.
+  # This job depends on the successful completion of the 'pull-upstream' job.
+  merge-and-patch-main:
+    runs-on: ubuntu-latest
+    needs: pull-upstream
+    defaults:
+      run:
+        working-directory: ./noraneko_runtime
+    steps:
+      - name: Checkout main branch
+        uses: actions/checkout@v4
+        with:
+          ref: 'main'
+          fetch-depth: 0 # Full history is needed for merging
+          path: noraneko_runtime
+
+      - name: Set git config
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+
+      - name: Merge the-tailed-one into main
+        run: |
+          git fetch
+          # Create a merge commit to log that we are syncing from 'the-tailed-one'.
+          # --no-ff ensures a merge commit is always created for traceability.
+          # '-X theirs' strategy prefers incoming changes in case of conflicts during the merge.
+          git merge --no-ff -X theirs origin/the-tailed-one -m "feat: merge upstream changes from the-tailed-one"
+
+      - name: Normalize patch files for cross-platform compatibility
         run: |
           echo "Normalizing patch files..."
           find .github/patches/upstream -name "*.patch" -exec dos2unix {} \; 2>/dev/null || true
@@ -52,17 +87,12 @@ jobs:
             if [ -s "$patch_file" ] && [ "$(tail -c1 "$patch_file" | wc -l)" -eq 0 ]; then
               echo "" >> "$patch_file"
             fi
-            if ! git apply --check "$patch_file" >/dev/null 2>&1; then
-              echo "Warning: $patch_file may have format issues"
-            fi
           done
 
       - id: apply-git-patches
-        if: ${{ matrix.variant.skip-patch == false }}
         name: Apply git patches
         continue-on-error: true
         run: |
-          cd temp_release
           echo "Applying patches one by one..."
           for patch_file in .github/patches/upstream/*.patch; do
             patch_name=$(basename "$patch_file")
@@ -76,6 +106,8 @@ jobs:
               fi
             fi
           done
+          # Ensure target directory exists before copying assets
+          mkdir -p other-licenses/7zstub/firefox
           cp -f .github/assets/installer/setup.ico other-licenses/7zstub/firefox/setup.ico
           cp -f .github/assets/installer/7zSD.ARM64.sfx other-licenses/7zstub/firefox/7zSD.ARM64.sfx
           cp -f .github/assets/installer/7zSD.Win32.sfx other-licenses/7zstub/firefox/7zSD.Win32.sfx
@@ -83,15 +115,17 @@ jobs:
       - name: Detect patch error
         if: ${{ steps.apply-git-patches.outcome == 'failure' }}
         run: |
-          echo "Patch Error!"
+          echo "Patching failed after merge!"
           exit 1
 
-      - name: Push changes
+      - name: Commit patched files and push to main
         run: |
-          cd temp_release
-          export FF_VERSION=$(cat browser/config/version.txt)
-          git config user.name github-actions
-          git config user.email github-actions@github.com
-          git add .
-          git commit -m "sync upstream gecko-dev $FF_VERSION" || echo "No changes to commit."
-          git push origin HEAD:${{ matrix.variant.push-branch }}
+          # Check if applying patches created any changes
+          if ! git diff --quiet HEAD; then
+            git add .
+            git commit -m "feat: apply custom patches"
+          else
+            echo "No changes to commit after patching."
+          fi
+          git push origin main
+
