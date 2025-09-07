@@ -156,18 +156,23 @@ jobs:
       - name: Store patch directory contents
         if: success() && steps.patch_check.conclusion == 'success'
         run: |
-          # Stage the new patch files
           git add .github/patches/upstream/
+
+      - name: Identify New Patches
+        if: success() && steps.patch_check.conclusion == 'success'
+        id: new_patches
+        run: |
+          echo 'patches<<EOF' >> $GITHUB_OUTPUT
+          git diff --cached --name-only --diff-filter=AM ".github/patches/upstream/" >> $GITHUB_OUTPUT
+          echo 'EOF' >> $GITHUB_OUTPUT
 
       - name: Revert changes to tracked files (keep only patches)
         if: success() && steps.patch_check.conclusion == 'success'
         run: |
           BASE=base_branch
           
-          # Get list of files that were changed (excluding .github directory)
           git diff --name-only $BASE | grep -vE '^(\.github|noraneko|browser/branding/noraneko)($|/)' > files_to_revert.txt || true
           
-          # Revert each changed file to base state
           while read file; do
             [ -z "$file" ] && continue
             if [ -f "$file" ]; then
@@ -176,13 +181,11 @@ jobs:
             fi
           done < files_to_revert.txt
           
-          # Clean up temporary files
           rm -f changed_files.txt files_to_revert.txt f3liz_rm_list.txt
 
       - name: Commit and push patch files only
         if: success() && steps.patch_check.conclusion == 'success'
         run: |
-          # Check if there are any changes to commit (should only be patch files now)
           if git diff --cached --quiet; then
             echo "No patch changes to commit."
           else
@@ -197,7 +200,6 @@ jobs:
           github-token: ${{ secrets.F3LIZ_BOT_TOKEN }}
           script: |
             const fs = require('fs');
-            const { execSync } = require('child_process');
             let changelog = "## F3liz Bot Patch Update\n\n";
 
             try {
@@ -211,29 +213,22 @@ jobs:
               }
             } catch (e) { }
 
-            try {
-              const changedPatchesRaw = execSync('git diff --cached --name-only --diff-filter=AM ".github/patches/upstream/"', { encoding: 'utf8' }).trim();
-              // The 'changedPatches' array now contains ALL new/modified patches
-              const changedPatches = changedPatchesRaw ? changedPatchesRaw.split('\n').filter(p => p) : [];
-              const patchCount = changedPatches.length;
+            const changedPatchesRaw = `${{ steps.new_patches.outputs.patches }}`;
+            const changedPatches = changedPatchesRaw ? changedPatchesRaw.trim().split('\n').filter(p => p) : [];
+            const patchCount = changedPatches.length;
 
-              if (patchCount > 0) {
-                changelog += `### Generated/Updated Patches: ${patchCount} files\n\n`;
-                changelog += "**Note:** Source files have been reverted to base state - only patch files are kept.\n\n";
-                
-                changelog += "### Patch Files Created/Updated For:\n";
-                // This will now loop through the entire list of patches
-                changedPatches.forEach(patch => {
-                  const filename = patch.replace('.github/patches/upstream/', '').replace('.patch', '').replace(/-/g, '/');
-                  changelog += `- ${filename}\n`;
-                });
+            if (patchCount > 0) {
+              changelog += `### Generated/Updated Patches: ${patchCount} files\n\n`;
+              changelog += "**Note:** Source files have been reverted to base state - only patch files are kept.\n\n";
+              
+              changelog += "### Patch Files Created/Updated For:\n";
+              changedPatches.forEach(patch => {
+                const filename = patch.replace('.github/patches/upstream/', '').replace('.patch', '').replace(/-/g, '/');
+                changelog += `- ${filename}\n`;
+              });
 
-              } else {
-                 changelog += "### No new patches were generated or updated.\n";
-              }
-            } catch (e) {
-              changelog += "### Could not determine list of generated patches.\n";
-              console.log(e);
+            } else {
+               changelog += "### No new patches were generated or updated.\n";
             }
 
             await github.rest.issues.createComment({
