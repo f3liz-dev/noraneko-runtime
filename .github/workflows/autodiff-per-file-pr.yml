@@ -194,7 +194,7 @@ jobs:
         if: success() && github.event_name == 'issue_comment' && contains(github.event.comment.body, '@f3liz-bot patch')
         uses: actions/github-script@v7
         with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+          github-token: ${{ secrets.F3LIZ_BOT_TOKEN }}
           script: |
             const fs = require('fs');
             let changelog = "## F3liz Bot Patch Update\n\n";
@@ -243,7 +243,7 @@ jobs:
         if: failure() && github.event_name == 'issue_comment' && contains(github.event.comment.body, '@f3liz-bot patch')
         uses: actions/github-script@v7
         with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+          github-token: ${{ secrets.F3LIZ_BOT_TOKEN }}
           script: |
             const runUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
             const failureMessage = `## F3liz Bot Patch Update Failed\n\nThe patch update workflow encountered an error. Please check the [workflow run](${runUrl}) for details.`;
