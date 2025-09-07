@@ -5,8 +5,6 @@ name: F3liz Bot Per File Patches
 on:
   issue_comment:
     types: [created]
-  pull_request:
-    types: [synchronize]
 
 jobs:
   f3liz-bot-per-file:
@@ -155,14 +153,40 @@ jobs:
             fi
           done < changed_files.txt
 
-      - name: Commit and push new patches
+      - name: Store patch directory contents
         if: success() && steps.patch_check.conclusion == 'success'
         run: |
-          git add .
+          # Stage the new patch files
+          git add .github/patches/upstream/
+
+      - name: Revert changes to tracked files (keep only patches)
+        if: success() && steps.patch_check.conclusion == 'success'
+        run: |
+          BASE=base_branch
+          
+          # Get list of files that were changed (excluding .github directory)
+          git diff --name-only $BASE | grep -vE '^(\.github|noraneko|browser/branding/noraneko)($|/)' > files_to_revert.txt || true
+          
+          # Revert each changed file to base state
+          while read file; do
+            [ -z "$file" ] && continue
+            if [ -f "$file" ]; then
+              git checkout $BASE -- "$file"
+              echo "Reverted $file to base state"
+            fi
+          done < files_to_revert.txt
+          
+          # Clean up temporary files
+          rm -f changed_files.txt files_to_revert.txt f3liz_rm_list.txt
+
+      - name: Commit and push patch files only
+        if: success() && steps.patch_check.conclusion == 'success'
+        run: |
+          # Check if there are any changes to commit (should only be patch files now)
           if git diff --cached --quiet; then
             echo "No patch changes to commit."
           else
-            git commit -m "chore: f3liz-bot per file patches"
+            git commit -m "chore: f3liz-bot per file patches (reverted source changes)"
             git push
           fi
 
@@ -191,10 +215,11 @@ jobs:
             try {
               const patchCount = execSync('find .github/patches/upstream -name "*.patch" -type f | wc -l', { encoding: 'utf8' }).trim();
               changelog += `### Generated Patches: ${patchCount} files\n\n`;
+              changelog += "**Note:** Source files have been reverted to base state - only patch files are kept.\n\n";
               
               const patchFiles = execSync('find .github/patches/upstream -name "*.patch" -type f | head -10', { encoding: 'utf8' }).trim().split('\n').filter(p => p);
               if (patchFiles.length > 0) {
-                changelog += "### Updated Files:\n";
+                changelog += "### Patch Files Created For:\n";
                 patchFiles.forEach(patch => {
                   const filename = patch.replace('.github/patches/upstream/', '').replace('.patch', '').replace(/-/g, '/');
                   changelog += `- ${filename}\n`;
