@@ -1,0 +1,17 @@
+diff --git a/browser/installer/linux/app/rpm/firefox.spec.j2 b/browser/installer/linux/app/rpm/firefox.spec.j2
+index 185577b71a..2395716842 100644
+--- a/browser/installer/linux/app/rpm/firefox.spec.j2
++++ b/browser/installer/linux/app/rpm/firefox.spec.j2
+@@ -2,10 +2,10 @@ Name:           {{ PKG_NAME }}
+ Version:        {{ PKG_VERSION }}
+ Release:        {{ PKG_BUILD_NUMBER }}%{?dist}
+ Summary:        {{ DESCRIPTION }}
+-URL:            https://www.mozilla.org/firefox/
++URL:            https://github.com/f3liz-dev/noraneko
+ Group:          Applications/Internet
+ License:        MPL-2
+-Vendor:         Mozilla
++Vendor:         f3liz-dev
+ Source0:        %{name}.tar.xz
+ Source1:        %{name}.desktop
+ Source2:        %{name}.1
