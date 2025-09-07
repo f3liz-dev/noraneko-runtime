@@ -197,8 +197,9 @@ jobs:
           github-token: ${{ secrets.F3LIZ_BOT_TOKEN }}
           script: |
             const fs = require('fs');
+            const { execSync } = require('child_process');
             let changelog = "## F3liz Bot Patch Update\n\n";
-            
+
             try {
               const removedPatches = fs.readFileSync('f3liz_rm_list.txt', 'utf8').trim().split('\n').filter(p => p);
               if (removedPatches.length > 0 && removedPatches[0] !== '') {
@@ -208,30 +209,33 @@ jobs:
                 });
                 changelog += "\n";
               }
-            } catch (e) {
-            }
-            
-            const { execSync } = require('child_process');
+            } catch (e) { }
+
             try {
-              const patchCount = execSync('find .github/patches/upstream -name "*.patch" -type f | wc -l', { encoding: 'utf8' }).trim();
-              changelog += `### Generated Patches: ${patchCount} files\n\n`;
-              changelog += "**Note:** Source files have been reverted to base state - only patch files are kept.\n\n";
-              
-              const patchFiles = execSync('find .github/patches/upstream -name "*.patch" -type f | head -10', { encoding: 'utf8' }).trim().split('\n').filter(p => p);
-              if (patchFiles.length > 0) {
-                changelog += "### Patch Files Created For:\n";
-                patchFiles.forEach(patch => {
+              const changedPatchesRaw = execSync('git diff --cached --name-only --diff-filter=AM ".github/patches/upstream/"', { encoding: 'utf8' }).trim();
+              // The 'changedPatches' array now contains ALL new/modified patches
+              const changedPatches = changedPatchesRaw ? changedPatchesRaw.split('\n').filter(p => p) : [];
+              const patchCount = changedPatches.length;
+
+              if (patchCount > 0) {
+                changelog += `### Generated/Updated Patches: ${patchCount} files\n\n`;
+                changelog += "**Note:** Source files have been reverted to base state - only patch files are kept.\n\n";
+                
+                changelog += "### Patch Files Created/Updated For:\n";
+                // This will now loop through the entire list of patches
+                changedPatches.forEach(patch => {
                   const filename = patch.replace('.github/patches/upstream/', '').replace('.patch', '').replace(/-/g, '/');
                   changelog += `- ${filename}\n`;
                 });
-                if (parseInt(patchCount) > 10) {
-                  changelog += `- ... and ${parseInt(patchCount) - 10} more files\n`;
-                }
+
+              } else {
+                 changelog += "### No new patches were generated or updated.\n";
               }
             } catch (e) {
-              changelog += "### No patches generated\n";
+              changelog += "### Could not determine list of generated patches.\n";
+              console.log(e);
             }
-            
+
             await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
