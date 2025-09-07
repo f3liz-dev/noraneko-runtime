@@ -1,27 +1,5 @@
-# This Source Code Form is subject to the terms of the Mozilla Public
-# License, v. 2.0. If a copy of the MPL was not distributed with this
-# file, You can obtain one at http://mozilla.org/MPL/2.0/.
-#
-# Reusable common build template.
-# Inputs:
-# - platform (string, required)
-# - arch (string, required)
-# - debug (boolean, required, default: true)
-# - release (boolean, optional, default: true)
-# - code-coverage (boolean, optional, default: false)
-# - profile-generate-mode (boolean, optional, default: false)
-# - build-with-profdata-and-jarlog (boolean, optional)
-# - pgo (boolean, optional, default: false)
-# - pgo_artifact_name (string, optional)
-# - MOZ_BUILD_DATE (string, optional, default: "")
-#
-# Compatibility notes:
-# - This file reproduces the behavior from workflows/build.yml. Keep it in sync
-#   with that file when updating build logic.
-# - Callers that need to forward repository secrets should invoke this reusable
-#   workflow with: secrets: inherit
-#   (Do not hardcode secrets in this file — callers must provide them.)
-# - Callers can pass MOZ_BUILD_DATE and pgo_artifact_name to preserve compatibility.
+# SPDX-License-Identifier: MPL-2.0
+
 on:
   workflow_call:
     inputs:
@@ -67,29 +45,38 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # Shared: Node.js, checkout, sccache
       - name: Use Node.js
         uses: actions/setup-node@v4
         with:
           node-version: "latest"
 
-      - name: Clone 🧬
+      - name: Clone
         uses: actions/checkout@v4
         with:
           submodules: ${{ inputs.platform == 'mac' && 'recursive' || 'true' }}
 
+      - name: Apply upstream patches
+        run: |
+          PATCH_DIR=".github/patches/upstream"
+          if [ -d "$PATCH_DIR" ]; then
+            for patch in "$PATCH_DIR"/*.patch; do
+              [ -e "$patch" ] || continue
+              echo "Applying patch: $(basename "$patch")"
+              git apply --verbose "$patch"
+            done
+          else
+            echo "Patch directory not found, skipping patch application."
+          fi
+
       - name: Run sccache-cache
         uses: mozilla-actions/sccache-action@v0.0.9
 
-      # Optimized Setup Rust
       - name: Setup Rust
         run: ./.github/workflows/scripts/setup-rust.sh ${{ inputs.platform }} ${{ inputs.arch }} ${{ inputs.pgo_artifact_name }}
 
-      # Shared: Allocate swap
       - name: Allocate swap
         run: ./.github/workflows/scripts/allocate-swap.sh ${{ inputs.arch }}
 
-      # Unified: Download PGO Artifact if exists
       - name: Download PGO Artifact if exists
         if: inputs.pgo_artifact_name
         uses: actions/download-artifact@v4
@@ -97,20 +84,16 @@ jobs:
           name: ${{ inputs.pgo_artifact_name }}
           path: ~/artifacts
 
-
-      # Unified Setup noraneko
       - name: Setup noraneko
         run: ./.github/workflows/scripts/setup-noraneko.sh ${{ inputs.platform }} ${{ inputs.arch }} ${{ inputs.debug }} ${{ inputs.pgo || inputs.profile-generate-mode || '' }} ${{ inputs.MOZ_BUILD_DATE }}
         env:
           SCCACHE_GHA_ENABLED: "on"
 
-      # Unified Build & Package
       - name: Build & Package
         run: ./.github/workflows/scripts/build-and-package.sh ${{ inputs.platform }} ${{ inputs.arch }} ${{ inputs.profile-generate-mode }} ${{ inputs.MOZ_BUILD_DATE }}
         env:
           SCCACHE_GHA_ENABLED: "on"
 
-      # Windows-specific artifact extraction
       - name: Remove same name uploaded artifacts
         if: inputs.platform == 'windows'
         uses: geekyeggo/delete-artifact@v5
@@ -120,14 +103,12 @@ jobs:
             windows-x86_64-dist-host
             windows-x86_64-application-ini
 
-      # Publish artifact (unified)
-      - name: Publish Package Mozilla Artifact 🎁
+      - name: Publish Package Mozilla Artifact
         uses: actions/upload-artifact@v4
         with:
           name: noraneko-${{ inputs.platform }}-${{ inputs.arch }}-moz-artifact
           path: ${{ inputs.platform == 'windows' && format('~/output/noraneko-{0}-{1}-moz-artifact.zip', inputs.platform, inputs.arch) || format('~/output/noraneko-{0}-{1}-moz-artifact.tar.xz', inputs.platform, inputs.arch) }}
 
-      # Publish profile-generate-mode package
       - name: Publish Profile Generate Mode Package
         if: inputs.profile-generate-mode && inputs.platform == 'windows' && inputs.arch == 'x86_64'
         uses: actions/upload-artifact@v4
