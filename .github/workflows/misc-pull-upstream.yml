@@ -1,6 +1,4 @@
-# This Source Code Form is subject to the terms of the Mozilla Public
-# License, v. 2.0. If a copy of the MPL was not distributed with this
-# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+# SPDX-License-Identifier: MPL-2.0
 
 name: Pull Upstream
 on:
@@ -11,87 +9,27 @@ permissions:
   contents: write
 
 jobs:
-  # Job 1: Pull the latest upstream code and update the 'the-tailed-one' branch.
-  # This branch will act as a clean, unpatched mirror of the upstream repository.
-  pull-upstream:
+  pull-upstream-and-check-patches:
     runs-on: ubuntu-latest
-    steps:
-      - name: Checkout the-tailed-one branch
-        uses: actions/checkout@v4
-        with:
-          ref: 'the-tailed-one'
-          path: noraneko_runtime
-  
-      - name: Checkout main branch for .github files
-        uses: actions/checkout@v4
-        with:
-          ref: 'main'
-          path: main_branch_checkout
-          sparse-checkout: .github
-
-      - name: Copy .github directory from main
-        run: |
-          # Remove the old .github directory to ensure a clean copy
-          rm -rf noraneko_runtime/.github
-          # Copy the .github directory from the main branch checkout
-          cp -r main_branch_checkout/.github noraneko_runtime/
-
-      - name: Clone upstream firefox repository
-        run: git clone -b release --single-branch https://github.com/mozilla-firefox/firefox --depth 1 upstream_release
-
-      - name: Sync upstream files into working directory
-        run: |
-          # Copy the upstream content into the noraneko_runtime checkout folder.
-          # The --delete flag removes files that no longer exist upstream.
-          # We exclude .git and .github to preserve our repository history and workflow files.
-          rsync -a --delete --exclude='.git' --exclude='.github' --exclude='noraneko' --exclude='.gitmodules' upstream_release/ noraneko_runtime/
-          mv noraneko_runtime/README.md noraneko_runtime/MOZ_README.md
-
-      - name: Commit and push changes to the-tailed-one
-        working-directory: ./noraneko_runtime
-        run: |
-          git config user.name 'github-actions[bot]'
-          git config user.email 'github-actions[bot]@users.noreply.github.com'
-          
-          # If there are no changes, exit gracefully.
-          if git diff --quiet --exit-code; then
-            echo "No changes from upstream. Exiting."
-            exit 0
-          fi
-          
-          export FF_VERSION=$(cat browser/config/version.txt)
-          git add .
-          git commit -m "sync: upstream gecko-dev $FF_VERSION"
-          git push origin the-tailed-one
-
-  # Job 2: Merge the updated 'the-tailed-one' branch into 'main' and apply patches.
-  # This job depends on the successful completion of the 'pull-upstream' job.
-  merge-and-patch-main:
-    runs-on: ubuntu-latest
-    needs: pull-upstream
-    defaults:
-      run:
-        working-directory: ./noraneko_runtime
     steps:
       - name: Checkout main branch
         uses: actions/checkout@v4
         with:
           ref: 'main'
-          fetch-depth: 0 # Full history is needed for merging
-          path: noraneko_runtime
+          fetch-depth: 0
+
+      - name: Clone upstream firefox repository
+        run: git clone -b release --single-branch https://github.com/mozilla-firefox/firefox --depth 1 upstream_release
 
       - name: Set git config
         run: |
-          git config user.name 'github-actions[bot]'
-          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git config user.name "f3liz-bot[bot]"
+          git config user.email "230694705+f3liz-bot@users.noreply.github.com"
 
-      - name: Merge the-tailed-one into main
+      - name: Sync upstream files into working directory
         run: |
-          git fetch
-          # Create a merge commit to log that we are syncing from 'the-tailed-one'.
-          # --no-ff ensures a merge commit is always created for traceability.
-          # '-X theirs' strategy prefers incoming changes in case of conflicts during the merge.
-          git merge --no-ff -X theirs origin/the-tailed-one -m "feat: merge upstream changes from the-tailed-one"
+          rsync -a --delete --exclude='.git' --exclude='.github' --exclude='noraneko' --exclude='.gitmodules' upstream_release/ ./
+          mv README.md MOZ_README.md
 
       - name: Normalize patch files for cross-platform compatibility
         run: |
@@ -103,42 +41,46 @@ jobs:
             fi
           done
 
-      - id: apply-git-patches
-        name: Apply git patches
-        continue-on-error: true
+      - name: Check all patches apply cleanly
+        id: patch_check
         run: |
-          echo "Applying patches one by one..."
-          for patch_file in .github/patches/upstream/*.patch; do
-            patch_name=$(basename "$patch_file")
-            echo "Applying: $patch_name"
-            if ! git apply --ignore-space-change --ignore-whitespace --whitespace=fix "$patch_file"; then
-              echo "Failed to apply: $patch_name"
-              echo "Trying with 3-way merge..."
-              if ! git apply --3way --ignore-space-change --ignore-whitespace "$patch_file"; then
-                echo "ERROR: Could not apply $patch_name"
-                exit 1
+          echo "Checking patches for compatibility..."
+          HAS_FAILED=0
+          FAILED_PATCHES=""
+          
+          if [ -d ".github/patches/upstream" ]; then
+            for patch_file in .github/patches/upstream/*.patch; do
+              [ -e "$patch_file" ] || continue
+              patch_name=$(basename "$patch_file")
+              
+              if git apply --check --ignore-space-change --ignore-whitespace "$patch_file"; then
+                echo "✓ $patch_name applies cleanly"
+              else
+                echo "✗ $patch_name failed to apply"
+                FAILED_PATCHES="$FAILED_PATCHES\n- $patch_name"
+                HAS_FAILED=1
               fi
-            fi
-          done
-          # Ensure target directory exists before copying assets
-          mkdir -p other-licenses/7zstub/firefox
-          cp -f .github/assets/installer/setup.ico other-licenses/7zstub/firefox/setup.ico
-          cp -f .github/assets/installer/7zSD.ARM64.sfx other-licenses/7zstub/firefox/7zSD.ARM64.sfx
-          cp -f .github/assets/installer/7zSD.Win32.sfx other-licenses/7zstub/firefox/7zSD.Win32.sfx
-
-      - name: Detect patch error
-        if: ${{ steps.apply-git-patches.outcome == 'failure' }}
-        run: |
-          echo "Patching failed after merge!"
-          exit 1
-
-      - name: Commit patched files and push to main
-        run: |
-          # Check if applying patches created any changes
-          if ! git diff --quiet HEAD; then
-            git add .
-            git commit -m "feat: apply custom patches"
-          else
-            echo "No changes to commit after patching."
+            done
           fi
+          
+          if [ "$HAS_FAILED" -ne 0 ]; then
+            echo "FAILED_PATCHES<<EOF" >> $GITHUB_ENV
+            echo -e "$FAILED_PATCHES" >> $GITHUB_ENV
+            echo "EOF" >> $GITHUB_ENV
+            echo "Some patches failed compatibility check"
+            exit 1
+          else
+            echo "All patches are compatible with upstream changes"
+          fi
+
+      - name: Commit upstream sync without patches
+        run: |
+          if git diff --quiet --exit-code; then
+            echo "No changes from upstream. Exiting."
+            exit 0
+          fi
+          
+          export FF_VERSION=$(cat browser/config/version.txt)
+          git add .
+          git commit -m "sync: upstream gecko-dev $FF_VERSION"
           git push origin main
