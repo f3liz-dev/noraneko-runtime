@@ -11,15 +11,19 @@ permissions:
 jobs:
   pull-upstream-and-check-patches:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./noraneko_runtime
     steps:
       - name: Checkout main branch
         uses: actions/checkout@v4
         with:
           ref: 'main'
           fetch-depth: 0
+          path: noraneko_runtime
 
       - name: Clone upstream firefox repository
-        run: git clone -b release --single-branch https://github.com/mozilla-firefox/firefox --depth 1 upstream_release
+        run: git clone -b release --single-branch https://github.com/mozilla-firefox/firefox --depth 1 ../upstream_release
 
       - name: Set git config
         run: |
@@ -28,21 +32,8 @@ jobs:
 
       - name: Sync upstream files into working directory
         run: |
-          set +e
-          rsync -a --delete --exclude='.git' --exclude='.github' --exclude='noraneko' --exclude='.gitmodules' upstream_release/ ./
-          RSYNC_EXIT=$?
-          set -e
-          
+          rsync -a --delete --exclude='.git' --exclude='.github' --exclude='noraneko' --exclude='.gitmodules' ../upstream_release/ ./
           mv README.md MOZ_README.md
-          
-          if [ $RSYNC_EXIT -eq 0 ]; then
-            echo "::notice::Rsync completed successfully"
-          elif [ $RSYNC_EXIT -eq 24 ]; then
-            echo "::warning::Some files vanished during rsync (code 24) - this is normal for complex repos"
-          else
-            echo "::error::Rsync failed with exit code $RSYNC_EXIT"
-            exit $RSYNC_EXIT
-          fi
 
       - name: Normalize patch files for cross-platform compatibility
         run: |
