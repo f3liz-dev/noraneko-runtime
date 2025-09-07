@@ -1,0 +1,26 @@
+diff --git a/browser/installer/linux/app/rpm/manpage.1.in b/browser/installer/linux/app/rpm/manpage.1.in
+index 9cc6bb1c04..c005d8bce7 100644
+--- a/browser/installer/linux/app/rpm/manpage.1.in
++++ b/browser/installer/linux/app/rpm/manpage.1.in
+@@ -39,7 +39,7 @@ Don't use X shared memory extension
+ .B \-\-g\-fatal\-warnings
+ Make all warnings fatal
+ 
+-.SS "Mozilla options"
++.SS "Noraneko options"
+ .TP
+ .B \-h, \-help
+ Show summary of options.
+@@ -96,9 +96,9 @@ Load the specified chrome.
+ .br
+ 
+ .SH BUGS
+-To report a bug, please visit \fIhttp://bugzilla.mozilla.org/\fR
++To report a bug, please visit \fIhttp://github.com/f3liz-dev/noraneko/\fR
+ 
+ .SH AUTHORS
+ .TP
+-.B The Mozilla Organization
+-.I https://www.mozilla.org/en-US/about/
++.B f3liz-dev
++.I http://github.com/f3liz-dev

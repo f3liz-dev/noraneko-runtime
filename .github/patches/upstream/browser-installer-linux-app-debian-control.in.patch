@@ -1,0 +1,11 @@
+diff --git a/browser/installer/linux/app/debian/control.in b/browser/installer/linux/app/debian/control.in
+index bf57a6af41..d478f42b31 100644
+--- a/browser/installer/linux/app/debian/control.in
++++ b/browser/installer/linux/app/debian/control.in
+@@ -1,5 +1,5 @@
+ Source: ${PKG_NAME}
+-Maintainer: Mozilla <release@mozilla.com>
++Maintainer: nyanrus <nyanrus.dev+noraneko@gmail.com>
+ Priority: optional
+ Section: web
+ Build-Depends: debhelper (>= 9)

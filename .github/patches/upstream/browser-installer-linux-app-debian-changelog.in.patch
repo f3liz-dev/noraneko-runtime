@@ -1,0 +1,10 @@
+diff --git a/browser/installer/linux/app/debian/changelog.in b/browser/installer/linux/app/debian/changelog.in
+index 2746e14556..42299feb32 100644
+--- a/browser/installer/linux/app/debian/changelog.in
++++ b/browser/installer/linux/app/debian/changelog.in
+@@ -2,4 +2,4 @@ ${PKG_NAME} (${PKG_VERSION}) UNRELEASED; urgency=medium
+ 
+   * N/A
+ 
+- -- Mozilla <release@mozilla.com>  ${CHANGELOG_DATE}
++ -- nyanrus <nyanrus.dev+noraneko@gmail.com>  ${CHANGELOG_DATE}
