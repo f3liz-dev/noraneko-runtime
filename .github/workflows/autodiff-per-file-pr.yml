@@ -9,9 +9,11 @@ on:
 jobs:
   f3liz-bot-per-file:
     if: |
-      (github.event_name == 'issue_comment' && 
+      (github.event_name == 'issue_comment' &&
        github.event.issue.pull_request &&
-       contains(github.event.comment.body, '@f3liz-bot patch'))
+       contains(github.event.comment.body, '@f3liz-bot patch')) ||
+      (github.event_name == 'pull_request' &&
+       contains(github.event.pull_request.body, '@f3liz-bot patch'))
     runs-on: ubuntu-latest
     permissions:
       contents: write
