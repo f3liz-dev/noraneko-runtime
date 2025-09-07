@@ -43,14 +43,27 @@ from mozboot.void import VoidBootstrapper
 from mozboot.windows import WindowsBootstrapper
 
 APPLICATION_CHOICE = """
-Please choose the version of Noraneko you want to build:
+Note on Artifact Mode:
+
+Artifact builds download prebuilt C++ components rather than building
+them locally. Artifact builds are faster!
+
+Artifact builds are recommended for people working on Firefox or
+Firefox for Android frontends, or the GeckoView Java API. They are unsuitable
+for those working on C++ code. For more information see:
+https://firefox-source-docs.mozilla.org/contributing/build/artifact_builds.html.
+
+Please choose the version of Firefox you want to build (see note above):
 %s
 Your choice: """
 
 APPLICATIONS = OrderedDict(
     [
-        ("Noraneko for Desktop Artifact Mode", "browser_artifact_mode"),
-        ("Noraneko for Desktop", "browser"),
+        ("Firefox for Desktop Artifact Mode", "browser_artifact_mode"),
+        ("Firefox for Desktop", "browser"),
+        ("GeckoView/Firefox for Android Artifact Mode", "mobile_android_artifact_mode"),
+        ("GeckoView/Firefox for Android", "mobile_android"),
+        ("SpiderMonkey JavaScript engine", "js"),
     ]
 )
 
@@ -441,8 +454,7 @@ class Bootstrapper:
         elif git and checkout_type == "git":
             should_configure_git = False
             if not self.instance.no_interactive:
-                # ! No need to configure git-cinnabar because of noraneko repo cannot be merged to mozilla-central by compartibility.
-                should_configure_git = False
+                should_configure_git = self.instance.prompt_yesno(prompt=CONFIGURE_GIT)
             else:
                 # Assuming default configuration setting applies to all VCS.
                 should_configure_git = self.hg_configure
