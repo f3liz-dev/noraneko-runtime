@@ -16,24 +16,20 @@ jobs:
         working-directory: ./noraneko_runtime
     steps:
       - name: Checkout main branch
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: 'main'
           fetch-depth: 0
           path: noraneko_runtime
 
-      - name: Set git config
-        run: |
-          git config --global user.name "f3liz-bot[bot]"
-          git config --global user.email "230694705+f3liz-bot@users.noreply.github.com"
-
       - name: Clone upstream firefox repository
-        run: git clone -b release --single-branch https://github.com/mozilla-firefox/firefox --depth 1 ../upstream_release
+        run: |
+          git clone -b release --single-branch https://github.com/mozilla-firefox/firefox --depth 1 ../upstream_release
 
       - name: Sync upstream files into working directory
         run: |
           mv ../upstream_release/README.md ../upstream_release/MOZ_README.md
-          rsync -a --delete --exclude='./.git' --exclude='./.github' --exclude='./noraneko' --exclude='./.gitmodules' --exclude='./README.md' ../upstream_release/ ./
+          rsync -a --delete --exclude='.git' --exclude='./.github' --exclude='./noraneko' --exclude='./.gitmodules' --exclude='./README.md' ../upstream_release/ ./
 
       - name: Normalize patch files for cross-platform compatibility
         run: |
@@ -85,6 +81,8 @@ jobs:
           fi
           
           export FF_VERSION=$(cat browser/config/version.txt)
+          git config user.name "f3liz-bot[bot]"
+          git config user.email "230694705+f3liz-bot@users.noreply.github.com"
           git add .
           git commit -m "sync: upstream gecko-dev $FF_VERSION"
           git push origin main
