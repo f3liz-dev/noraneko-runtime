@@ -21,17 +21,18 @@ on:
         type: boolean
         required: false
         default: false
-      profile-generate-mode:
-        type: boolean
-        required: false
-        default: false
       pgo:
         type: boolean
         required: false
         default: false
+      pgo_mode:
+        type: string
+        required: false
+        default: "" # e.g., "native", "generate", "use"
       pgo_artifact_name:
         type: string
         required: false
+        default: ""
       MOZ_BUILD_DATE:
         type: string
         required: false
@@ -75,19 +76,27 @@ jobs:
         run: ./.github/workflows/scripts/allocate-swap.sh ${{ inputs.arch }}
 
       - name: Download PGO Artifact if exists
-        if: inputs.pgo_artifact_name
+        if: inputs.pgo_mode == 'use' && inputs.pgo_artifact_name != ''
         uses: actions/download-artifact@v4
         with:
           name: ${{ inputs.pgo_artifact_name }}
           path: ~/artifacts
 
       - name: Setup noraneko
-        run: ./.github/workflows/scripts/setup-noraneko.sh ${{ inputs.platform }} ${{ inputs.arch }} ${{ inputs.debug }} ${{ inputs.pgo || inputs.profile-generate-mode || '' }} ${{ inputs.MOZ_BUILD_DATE }}
+        run: |
+          ./.github/workflows/scripts/setup-noraneko.sh \
+            "${{ inputs.platform }}" \
+            "${{ inputs.arch }}" \
+            "${{ toJSON(inputs.debug) }}" \
+            "${{ toJSON(inputs.pgo) }}" \
+            "${{ inputs.pgo_mode }}" \
+            "${{ inputs.pgo_artifact_name }}" \
+            "${{ inputs.MOZ_BUILD_DATE }}"
         env:
           SCCACHE_GHA_ENABLED: "on"
 
       - name: Build & Package
-        run: ./.github/workflows/scripts/build-and-package.sh ${{ inputs.platform }} ${{ inputs.arch }} ${{ inputs.profile-generate-mode }} ${{ inputs.MOZ_BUILD_DATE }}
+        run: ./.github/workflows/scripts/build-and-package.sh ${{ inputs.platform }} ${{ inputs.arch }} ${{ inputs.MOZ_BUILD_DATE }}
         env:
           SCCACHE_GHA_ENABLED: "on"
 
@@ -107,7 +116,7 @@ jobs:
           path: ${{ inputs.platform == 'windows' && format('~/output/noraneko-{0}-{1}-moz-artifact.zip', inputs.platform, inputs.arch) || format('~/output/noraneko-{0}-{1}-moz-artifact.tar.xz', inputs.platform, inputs.arch) }}
 
       - name: Publish Profile Generate Mode Package
-        if: inputs.profile-generate-mode && inputs.platform == 'windows' && inputs.arch == 'x86_64'
+        if: inputs.pgo_mode == 'generate' && inputs.platform == 'windows' && inputs.arch == 'x86_64'
         uses: actions/upload-artifact@v4
         with:
           name: noraneko-windows-x86_64-profile-generate-mode-package
