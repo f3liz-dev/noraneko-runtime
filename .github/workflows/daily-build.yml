@@ -31,7 +31,6 @@ jobs:
     with:
       debug: ${{ inputs.debug }}
       pgo: ${{ inputs.pgo }}
-      pgo_mode: ${{ toJSON(inputs.pgo) == 'true' && 'generate' || '' }}
 
   linux-x86_64:
     name: Linux x86_64 build
@@ -40,7 +39,6 @@ jobs:
     with:
       debug: ${{ inputs.debug }}
       pgo: ${{ inputs.pgo }}
-      pgo_mode: ${{ toJSON(inputs.pgo) == 'true' && 'native' || '' }}
 
   linux-aarch64:
     name: Linux aarch64 build
@@ -59,3 +57,4 @@ jobs:
     uses: ./.github/workflows/patch-test.yml
     with:
       platform: ubuntu
+
