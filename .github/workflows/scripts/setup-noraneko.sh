@@ -6,7 +6,7 @@ set -e
 #   $1: platform (linux|mac|windows)
 #   $2: arch (optional, for mac: x86_64|aarch64)
 #   $3: debug (true|false)
-#   $4: pgo (true|false or artifact name)
+#   $4: pgo (true|false, generate, or artifact name)
 #   $5: MOZ_BUILD_DATE (optional)
 
 PLATFORM="$1"
@@ -64,14 +64,14 @@ fi
 # PGO
 if [[ "$PGO" == "true" ]]; then
   if [[ "$PLATFORM" == "linux" && "$ARCH" == "x86_64" ]]; then
-    # Use native Linux PGO - automatically handles 3-stage build process
+    # Use native Linux PGO for 3-stage build process
     echo "ac_add_options MOZ_PGO=1" >> mozconfig
-  else
-    # Fallback to profile-generate for other platforms
-    echo 'ac_add_options --enable-profile-generate=cross' >> mozconfig
   fi
+elif [[ "$PGO" == "generate" ]]; then
+  # Use profile-generate for other platforms like Windows
+  echo 'ac_add_options --enable-profile-generate=cross' >> mozconfig
 elif [[ -n "$PGO" && "$PGO" != "false" ]]; then
-  # Profile-use mode (for Windows artifacts)
+  # Profile-use mode (PGO parameter contains artifact name)
   echo 'export MOZ_LTO=cross' >> mozconfig
   echo 'ac_add_options --enable-profile-use=cross' >> mozconfig
   echo 'ac_add_options --with-pgo-profile-path=$(echo ~)/artifacts/merged.profdata' >> mozconfig
