@@ -19,7 +19,7 @@ on:
         description: 'Enable Profile-Guided Optimization (PGO)'
         required: false
         type: boolean
-        default: false
+        default: true
 
 run-name: "(B) 📅 Daily Runtime Build with Pull Upstream"
 # pull-upstream don't affect continuous workflow but in next running
