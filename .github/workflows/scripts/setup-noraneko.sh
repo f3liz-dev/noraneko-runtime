@@ -4,16 +4,20 @@ set -e
 
 # Arguments:
 #   $1: platform (linux|mac|windows)
-#   $2: arch (optional, for mac: x86_64|aarch64)
+#   $2: arch (x86_64|aarch64)
 #   $3: debug (true|false)
-#   $4: pgo (true|false, generate, or artifact name)
-#   $5: MOZ_BUILD_DATE (optional)
+#   $4: pgo (true|false)
+#   $5: pgo_mode ("native"|"generate"|"use")
+#   $6: pgo_artifact_name (string, for "use" mode)
+#   $7: MOZ_BUILD_DATE (optional)
 
 PLATFORM="$1"
 ARCH="$2"
 DEBUG="$3"
 PGO="$4"
-MOZ_BUILD_DATE="$5"
+PGO_MODE="$5"
+PGO_ARTIFACT_NAME="$6"
+MOZ_BUILD_DATE="$7"
 
 if [[ -n "$MOZ_BUILD_DATE" ]]; then
   export MOZ_BUILD_DATE="$MOZ_BUILD_DATE"
@@ -43,10 +47,6 @@ echo "ac_add_options --with-branding=browser/branding/noraneko-unofficial" >> mo
 echo "ac_add_options --enable-chrome-format=flat" >> mozconfig
 
 sudo apt install msitools -y
-# # https://github.com/actions/runner-images/issues/6283#issuecomment-1260049630
-# /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-# eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
-# brew install sccache
 
 # SCCACHE
 {
@@ -63,19 +63,19 @@ fi
 
 # PGO
 if [[ "$PGO" == "true" ]]; then
-  if [[ "$PLATFORM" == "linux" && "$ARCH" == "x86_64" ]]; then
+  if [[ "$PGO_MODE" == "native" && "$PLATFORM" == "linux" && "$ARCH" == "x86_64" ]]; then
     # Use native Linux PGO for 3-stage build process
     echo "ac_add_options MOZ_PGO=1" >> mozconfig
+  elif [[ "$PGO_MODE" == "generate" ]]; then
+    # Use profile-generate for other platforms like Windows
+    echo 'ac_add_options --enable-profile-generate=cross' >> mozconfig
+  elif [[ "$PGO_MODE" == "use" && -n "$PGO_ARTIFACT_NAME" ]]; then
+    # Use a downloaded profile by its artifact name
+    echo 'export MOZ_LTO=cross' >> mozconfig
+    echo 'ac_add_options --enable-profile-use=cross' >> mozconfig
+    echo 'ac_add_options --with-pgo-profile-path=$(echo ~)/artifacts/merged.profdata' >> mozconfig
+    echo 'ac_add_options --with-pgo-jarlog=$(echo ~)/artifacts/en-US.log' >> mozconfig
   fi
-elif [[ "$PGO" == "generate" ]]; then
-  # Use profile-generate for other platforms like Windows
-  echo 'ac_add_options --enable-profile-generate=cross' >> mozconfig
-elif [[ -n "$PGO" && "$PGO" != "false" ]]; then
-  # Profile-use mode (PGO parameter contains artifact name)
-  echo 'export MOZ_LTO=cross' >> mozconfig
-  echo 'ac_add_options --enable-profile-use=cross' >> mozconfig
-  echo 'ac_add_options --with-pgo-profile-path=$(echo ~)/artifacts/merged.profdata' >> mozconfig
-  echo 'ac_add_options --with-pgo-jarlog=$(echo ~)/artifacts/en-US.log' >> mozconfig
 fi
 
 # Update Channel
