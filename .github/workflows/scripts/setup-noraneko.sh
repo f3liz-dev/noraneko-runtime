@@ -63,8 +63,15 @@ fi
 
 # PGO
 if [[ "$PGO" == "true" ]]; then
-  echo 'ac_add_options --enable-profile-generate=cross' >> mozconfig
+  if [[ "$PLATFORM" == "linux" && "$ARCH" == "x86_64" ]]; then
+    # Use native Linux PGO - automatically handles 3-stage build process
+    echo "ac_add_options MOZ_PGO=1" >> mozconfig
+  else
+    # Fallback to profile-generate for other platforms
+    echo 'ac_add_options --enable-profile-generate=cross' >> mozconfig
+  fi
 elif [[ -n "$PGO" && "$PGO" != "false" ]]; then
+  # Profile-use mode (for Windows artifacts)
   echo 'export MOZ_LTO=cross' >> mozconfig
   echo 'ac_add_options --enable-profile-use=cross' >> mozconfig
   echo 'ac_add_options --with-pgo-profile-path=$(echo ~)/artifacts/merged.profdata' >> mozconfig
