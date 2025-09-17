@@ -19,7 +19,7 @@ on:
         description: 'Enable Profile-Guided Optimization (PGO)'
         required: false
         type: boolean
-        default: true
+        default: false
 
 run-name: "(B) 📅 Daily Runtime Build with Pull Upstream"
 # pull-upstream don't affect continuous workflow but in next running
@@ -30,7 +30,7 @@ jobs:
     secrets: inherit
     with:
       debug: ${{ toJSON(inputs.debug) != 'false' }}
-      pgo: ${{ toJSON(inputs.pgo) == 'true' }}
+      pgo: ${{ inputs.pgo && 'generate' || 'false' }}
 
   linux-x86_64:
     name: Linux x86_64 build
@@ -38,7 +38,7 @@ jobs:
     secrets: inherit
     with:
       debug: ${{ toJSON(inputs.debug) != 'false' }}
-      pgo: ${{ toJSON(inputs.pgo) == 'true' }}
+      pgo: ${{ inputs.pgo }}
 
   linux-aarch64:
     name: Linux aarch64 build
@@ -48,7 +48,7 @@ jobs:
       platform: linux
       arch: aarch64
       debug: ${{ toJSON(inputs.debug) != 'false' }}
-      pgo: ${{ toJSON(inputs.pgo) == 'true' }}
+      pgo: ${{ inputs.pgo }}
 
   platform-tests:
     name: Platform Tests
