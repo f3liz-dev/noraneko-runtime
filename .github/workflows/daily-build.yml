@@ -10,6 +10,11 @@ on:
     - cron: "0 6 * * *"
   workflow_dispatch:
     inputs:
+      debug:
+        description: 'Enable Debug Mode'
+        required: false
+        type: boolean
+        default: true
       pgo:
         description: 'Enable Profile-Guided Optimization (PGO)'
         required: false
@@ -18,33 +23,32 @@ on:
 
 run-name: "(B) 📅 Daily Runtime Build with Pull Upstream"
 # pull-upstream don't affect continuous workflow but in next running
-jobs:
+jobs:
   windows-x86_64:
-    name: Windows x86_64 build
+    name: Windows x86_64 build
     uses: ./.github/workflows/wrapper-build-windows.yml
     secrets: inherit
     with:
-      debug: false
+      debug: ${{ toJSON(inputs.debug) != 'false' }}
       pgo: ${{ toJSON(inputs.pgo) == 'true' }}
 
   linux-x86_64:
-    name: Linux x86_64 build
+    name: Linux x86_64 build
     uses: ./.github/workflows/wrapper-build-linux.yml
     secrets: inherit
     with:
-      debug: false
+      debug: ${{ toJSON(inputs.debug) != 'false' }}
       pgo: ${{ toJSON(inputs.pgo) == 'true' }}
 
   linux-aarch64:
-    name: Linux aarch64 build
+    name: Linux aarch64 build
     uses: ./.github/workflows/common-build.yml
     secrets: inherit
     with:
       platform: linux
       arch: aarch64
-      debug: false
+      debug: ${{ toJSON(inputs.debug) != 'false' }}
       pgo: ${{ toJSON(inputs.pgo) == 'true' }}
-
 
   platform-tests:
     name: Platform Tests
@@ -52,132 +56,3 @@ jobs:
     uses: ./.github/workflows/patch-test.yml
     with:
       platform: ubuntu
-
-  release:
-    name: Publish Dev Release
-    needs: platform-tests
-    runs-on: ubuntu-latest
-    steps:
-      - name: Determine tag based on patch test status
-        id: set_tag
-        shell: bash
-        run: |
-          timestamp=$(date +%Y%m%d%H%M%S)
-          if [ "${{ needs.platform-tests.outputs.test_status }}" = "success" ]; then
-            tag="passed-${timestamp}"
-          else
-            tag="failed-${timestamp}"
-          fi
-          echo "tag=${tag}" >> $GITHUB_OUTPUT
-
-      # ───────── Windows Artifacts ─────────
-      - name: Download Windows Main Artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: noraneko-windows-x86_64-moz-artifact
-          path: ./artifact/win/main
-
-      - name: Zip Windows Main Artifact
-        run: |
-          cd ./artifact/win/main
-          zip -r ../noraneko-windows-x86_64-moz-artifact.zip .
-
-      - name: Download Windows Dist-Host
-        uses: actions/download-artifact@v4
-        with:
-          name: windows-x86_64-dist-host
-          path: ./artifact/win/host
-
-      - name: Zip Windows Dist-Host
-        run: |
-          cd ./artifact/win/host
-          zip -r ../windows-x86_64-dist-host.zip .
-
-      - name: Download Windows Application INI
-        uses: actions/download-artifact@v4
-        with:
-          name: windows-x86_64-application-ini
-          path: ./artifact/win/ini
-
-      - name: Zip Windows Application INI
-        run: |
-          cd ./artifact/win/ini
-          zip -r ../windows-x86_64-application-ini.zip .
-
-      # ───────── Linux Artifacts ─────────
-      - name: Download Linux Main Artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: noraneko-linux-x86_64-moz-artifact
-          path: ./artifact/linux
-
-      - name: Download Linux aarch64 Main Artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: noraneko-linux-aarch64-moz-artifact
-          path: ./artifact/linux-aarch64
-
-      - name: Download Linux Dist-Host
-        uses: actions/download-artifact@v4
-        with:
-          name: linux-x86_64-dist-host
-          path: ./artifact/linux/host
-
-      - name: Zip Linux Dist-Host
-        run: |
-          cd ./artifact/linux/host
-          zip -r ../linux-x86_64-dist-host.zip .
-
-      - name: Download Linux aarch64 Dist-Host
-        uses: actions/download-artifact@v4
-        with:
-          name: linux-aarch64-dist-host
-          path: ./artifact/linux-aarch64/host
-
-      - name: Zip Linux aarch64 Dist-Host
-        run: |
-          cd ./artifact/linux-aarch64/host
-          zip -r ../linux-aarch64-dist-host.zip .
-
-      - name: Download Linux Application INI
-        uses: actions/download-artifact@v4
-        with:
-          name: linux-x86_64-application-ini
-          path: ./artifact/linux/ini
-
-      - name: Zip Linux Application INI
-        run: |
-          cd ./artifact/linux/ini
-          zip -r ../linux-x86_64-application-ini.zip .
-
-      - name: Download Linux aarch64 Application INI
-        uses: actions/download-artifact@v4
-        with:
-          name: linux-aarch64-application-ini
-          path: ./artifact/linux-aarch64/ini
-
-      - name: Zip Linux aarch64 Application INI
-        run: |
-          cd ./artifact/linux-aarch64/ini
-          zip -r ../linux-aarch64-application-ini.zip .
-
-
-      - name: Create GitHub release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ steps.set_tag.outputs.tag }}
-          prerelease: ${{ needs.platform-tests.outputs.test_status != 'success' }}
-          name: "Runtime Release - ${{ steps.set_tag.outputs.tag }}"
-          body: "This is a runtime release for Noraneko. \n\n **Test Status:** ${{ needs.platform-tests.outputs.test_status }} \n\n **WARNING:** This release is not a Noraneko installer. Visit the [releases page](https://github.com/nyanrus/noraneko/releases/) to download the official installer."
-          files: |
-            ./artifact/win/noraneko-windows-x86_64-moz-artifact.zip
-            ./artifact/win/windows-x86_64-dist-host.zip
-            ./artifact/win/windows-x86_64-application-ini.zip
-            ./artifact/linux/noraneko-linux-x86_64-moz-artifact.tar.xz
-            ./artifact/linux/linux-x86_64-dist-host.zip
-            ./artifact/linux/linux-x86_64-application-ini.zip
-            ./artifact/linux-aarch64/noraneko-linux-aarch64-moz-artifact.tar.xz
-            ./artifact/linux-aarch64/linux-aarch64-dist-host.zip
-            ./artifact/linux-aarch64/linux-aarch64-application-ini.zip
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
