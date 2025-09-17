@@ -25,9 +25,6 @@ on:
         type: boolean
         required: false
         default: false
-      build-with-profdata-and-jarlog:
-        type: boolean
-        required: false
       pgo:
         type: boolean
         required: false
