@@ -25,7 +25,7 @@ on:
         default: false
         required: true
 
-run-name: ${{ toJSON(inputs.pgo) == 'true' && '[Native PGO] '||'' }}Linux x64 build${{ toJSON(inputs.debug) == 'true' && ' Debug'||'' }}
+run-name: ${{ toJSON(inputs.pgo) == 'true' && '[Native PGO] ' || '' }}Linux x64 build${{ toJSON(inputs.debug) == 'true' && ' Debug' || '' }}
 jobs:
   run-main:
     name: Linux-x64
@@ -35,3 +35,4 @@ jobs:
       arch: x86_64
       debug: ${{ inputs.debug }}
       pgo: ${{ inputs.pgo }}
+      pgo_mode: ${{ toJSON(inputs.pgo) == 'true' && 'native' || '' }}
