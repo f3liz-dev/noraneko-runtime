@@ -9,6 +9,7 @@ on:
         type: boolean
         required: true
       pgo:
+        description: 'Enable native Profile-Guided Optimization (PGO)'
         type: boolean
         default: false
         required: true
@@ -19,11 +20,12 @@ on:
         type: boolean
         required: true
       pgo:
+        description: 'Enable native Profile-Guided Optimization (PGO)'
         type: boolean
         default: false
         required: true
 
-run-name: ${{toJSON(inputs.pgo) == 'true' && '[PGO] ' || ''}}Linux x64 build${{toJSON(inputs.debug) == 'true' && ' Debug' || ''}}
+run-name: ${{ toJSON(inputs.pgo) == 'true' && '[Native PGO] '||'' }}Linux x64 build${{ toJSON(inputs.debug) == 'true' && ' Debug'||'' }}
 jobs:
   run-main:
     name: Linux-x64
@@ -31,5 +33,5 @@ jobs:
     with:
       platform: linux
       arch: x86_64
-      debug: ${{inputs.debug}}
-      pgo: ${{ toJSON(inputs.pgo) == 'true' }}
+      debug: ${{ inputs.debug }}
+      pgo: ${{ inputs.pgo }}
