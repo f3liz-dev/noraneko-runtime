@@ -5,13 +5,11 @@ set -e
 # Arguments:
 #   $1: platform (linux|mac|windows)
 #   $2: arch (x86_64|aarch64)
-#   $3: profile-generate-mode (true|false)
-#   $4: MOZ_BUILD_DATE (optional)
+#   $3: MOZ_BUILD_DATE (optional)
 
 PLATFORM="$1"
 ARCH="$2"
-PROFGEN="$3"
-MOZ_BUILD_DATE="$4"
+MOZ_BUILD_DATE="$3"
 
 if [[ -n "$MOZ_BUILD_DATE" ]]; then
   export MOZ_BUILD_DATE="$MOZ_BUILD_DATE"
@@ -42,6 +40,6 @@ elif [[ "$PLATFORM" == "linux" ]]; then
     cp ./obj-aarch64-unknown-linux-gnu/dist/bin/application.ini ./nora-application.ini || true
   else
     mv obj-x86_64-pc-linux-gnu/dist/noraneko-*.tar.xz ~/output/${ARTIFACT_NAME}.tar.xz
-    cp ./obj-x86_64-pc-linux-gnu/dist/bin/application.ini ./nora-application.ini || true
+    cp obj-x86_64-pc-linux-gnu/dist/bin/application.ini ./nora-application.ini || true
   fi
 fi
