@@ -29,7 +29,8 @@ jobs:
       - name: Sync upstream files into working directory
         run: |
           mv ../upstream_release/README.md ../upstream_release/MOZ_README.md
-          rsync -a --delete --exclude='.git' --exclude='./.github/**' --exclude='./noraneko/**' --exclude='./.gitmodules' --exclude='./README.md' ../upstream_release/ ./
+          # https://serverfault.com/a/310190
+          rsync -a --delete --exclude='.git' --exclude='/.github/' --exclude='/noraneko/' --exclude='/.gitmodules' --exclude='/README.md' ../upstream_release/ ./
 
       - name: Normalize patch files for cross-platform compatibility
         run: |
