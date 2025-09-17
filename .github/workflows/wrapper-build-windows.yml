@@ -28,20 +28,35 @@ on:
         required: true
 
 run-name: ${{toJSON(inputs.pgo) == 'true' && '[PGO] ' || ''}}Windows x64 build${{toJSON(inputs.debug) == 'true' && ' Debug' || ''}}
+
 jobs:
-  part-1:
+  # Non-PGO build (single stage)
+  build-normal:
     name: Windows x64 build${{toJSON(inputs.debug) == 'true' && ' Debug' || ''}}
+    if: ${{ toJSON(inputs.pgo) != 'true' }}
     uses: ./.github/workflows/common-build.yml
     with:
       platform: windows
       arch: x86_64
       debug: ${{inputs.debug}}
-      profile-generate-mode: ${{ toJSON(inputs.pgo) == 'true' }}
+      pgo: false
 
-  part-2:
-    name: Windows x64 Generate Profile for Guided Optimization
+  # PGO build stage 1: Profile generation
+  build-pgo-stage1:
+    name: Windows x64 PGO Stage 1 - Profile Generation${{toJSON(inputs.debug) == 'true' && ' Debug' || ''}}
     if: ${{ toJSON(inputs.pgo) == 'true' }}
-    needs: part-1
+    uses: ./.github/workflows/common-build.yml
+    with:
+      platform: windows
+      arch: x86_64
+      debug: ${{inputs.debug}}
+      profile-generate-mode: true
+
+  # PGO build stage 2: Run profile collection
+  collect-profiles:
+    name: Windows x64 PGO Stage 2 - Collect Profiles
+    if: ${{ toJSON(inputs.pgo) == 'true' }}
+    needs: build-pgo-stage1
     uses: ./.github/workflows/pgo-build.yml
     secrets: inherit
     with:
@@ -52,13 +67,15 @@ jobs:
       profile-mode: generate
       upload-artifact-name: noraneko-windows-x86_64-profile-generate-output
 
-  part-3:
-    name: Windows x64 build${{toJSON(inputs.debug) == 'true' && ' Debug' || ''}}
+  # PGO build stage 3: Build with collected profiles
+  build-pgo-final:
+    name: Windows x64 PGO Stage 3 - Final Build${{toJSON(inputs.debug) == 'true' && ' Debug' || ''}}
     if: ${{ toJSON(inputs.pgo) == 'true' }}
-    needs: part-2
+    needs: collect-profiles
     uses: ./.github/workflows/common-build.yml
     with:
       platform: windows
       arch: x86_64
       debug: ${{inputs.debug}}
+      pgo: noraneko-windows-x86_64-profile-generate-output
       pgo_artifact_name: noraneko-windows-x86_64-profile-generate-output
