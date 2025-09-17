@@ -341,9 +341,9 @@ def _desktop_entry_attribute(key, value, locale=None, localizations=None):
     if not locale and not localizations:
         return f"{key}={value}"
     if locale and locale == "en-US":
-        return f"{key}={localizations[locale].format_value(value)}"
+        return f"{key}={localizations[locale].format_value(value).replace('Firefox','Noraneko')}"
     else:
-        return f"{key}[{locale.replace('-', '_')}]={localizations[locale].format_value(value)}"
+        return f"{key}[{locale.replace('-', '_')}]={localizations[locale].format_value(value).replace('Firefox','Noraneko')}"
 
 
 def _desktop_entry_section(header, attributes, localizations):
