@@ -15,16 +15,18 @@ if [[ -n "$MOZ_BUILD_DATE" ]]; then
   export MOZ_BUILD_DATE="$MOZ_BUILD_DATE"
 fi
 
-if [[ "$PLATFORM" == "linux" ]]; then
-  Xvfb :2 -screen 0 1024x768x24 &
-  export DISPLAY=:2
-fi
-
-./mach configure
-
 export MOZ_NUM_JOBS=$(( $(nproc) * 3 / 4 ))
-nice -n 10 ./mach build --jobs=$MOZ_NUM_JOBS
-./mach package
+if [[ "$PLATFORM" == "linux" ]]; then
+  sudo apt-get install -y xvfb mesa-utils
+  export LIBGL_ALWAYS_SOFTWARE=1
+  xvfb-run -a -s "-screen 0 1024x768x24" ./mach configure
+  xvfb-run -a -s "-screen 0 1024x768x24" nice -n 10 ./mach build --jobs=$MOZ_NUM_JOBS
+  xvfb-run -a -s "-screen 0 1024x768x24" ./mach package
+else
+  ./mach configure
+  nice -n 10 ./mach build --jobs=$MOZ_NUM_JOBS
+  ./mach package
+fi
 rm -rf ~/.cargo
 
 # Artifact packaging
