@@ -6,7 +6,10 @@ ac_add_options --disable-maintenance-service
 # ac_add_options --disable-updater
 ## this implies disable geckodriver, and puppeteer seems using the geckodriver impl.
 ## so you should not disable test
-ac_add_options --disable-tests
+
+## We should not disable tests if we attempt pgo.
+## https://searchfox.org/firefox-release/search?q=intl_compare_against_brokered_complex_line_breaks&path=&case=true&regexp=false
+# ac_add_options --disable-tests
 ac_add_options --disable-crashreporter
 ac_add_options --enable-bootstrap
 ac_add_options --enable-rust-simd
