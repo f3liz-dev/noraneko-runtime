@@ -20,17 +20,6 @@ jobs:
       pull-requests: write
 
     steps:
-      - name: Checkout PR branch
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.head.ref || github.event.issue.pull_request.head.ref }}
-          fetch-depth: 0
-
-      - name: Set up Git config
-        run: |
-          git config user.name "f3liz-bot[bot]"
-          git config user.email "230694705+f3liz-bot@users.noreply.github.com"
-
       - name: Get PR info
         id: pr_info
         env:
@@ -38,25 +27,42 @@ jobs:
         run: |
           if [ "${{ github.event_name }}" = "issue_comment" ]; then
             PR_NUMBER=${{ github.event.issue.number }}
-            PR_INFO=$(gh pr view $PR_NUMBER --json headRefName,baseRefName)
+            PR_INFO=$(gh pr view $PR_NUMBER --json headRefName,baseRefName,headRepository)
             HEAD_REF=$(echo "$PR_INFO" | jq -r .headRefName)
             BASE_REF=$(echo "$PR_INFO" | jq -r .baseRefName)
+            HEAD_REPO=$(echo "$PR_INFO" | jq -r .headRepository.name)
+            HEAD_OWNER=$(echo "$PR_INFO" | jq -r .headRepository.owner.login)
           else
             PR_NUMBER=${{ github.event.pull_request.number }}
             HEAD_REF=${{ github.event.pull_request.head.ref }}
             BASE_REF=${{ github.event.pull_request.base.ref }}
+            HEAD_REPO=${{ github.event.pull_request.head.repo.name }}
+            HEAD_OWNER=${{ github.event.pull_request.head.repo.owner.login }}
           fi
           
-          echo "PR_NUMBER=$PR_NUMBER" >> $GITHUB_ENV
-          echo "HEAD_REF=$HEAD_REF" >> $GITHUB_ENV
-          echo "BASE_REF=$BASE_REF" >> $GITHUB_ENV
+          echo "pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
+          echo "head_ref=$HEAD_REF" >> $GITHUB_OUTPUT
+          echo "base_ref=$BASE_REF" >> $GITHUB_OUTPUT
+          echo "head_repo=$HEAD_REPO" >> $GITHUB_OUTPUT
+          echo "head_owner=$HEAD_OWNER" >> $GITHUB_OUTPUT
 
-      - name: Checkout correct branch for comment events
-        if: github.event_name == 'issue_comment'
-        run: git checkout $HEAD_REF
+      - name: Checkout PR
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ steps.pr_info.outputs.head_owner }}/${{ steps.pr_info.outputs.head_repo }}
+          ref: ${{ steps.pr_info.outputs.head_ref }}
+          token: ${{ secrets.F3LIZ_BOT_TOKEN }}
+          fetch-depth: 0
 
-      - name: Fetch PR base
-        run: git fetch origin $BASE_REF:base_branch
+      - name: Add upstream remote and fetch base
+        run: |
+          git remote add upstream https://github.com/${{ github.repository }}.git
+          git fetch upstream ${{ steps.pr_info.outputs.base_ref }}:base_branch
+
+      - name: Set up Git config
+        run: |
+          git config user.name "f3liz-bot[bot]"
+          git config user.email "230694705+f3liz-bot@users.noreply.github.com"
 
       - name: Check for valid bot command and abort if needed
         if: github.event_name == 'issue_comment'
@@ -78,14 +84,14 @@ jobs:
           PATCH_DIR=".github/patches/upstream"
           rm -f f3liz_rm_list.txt
 
-          gh pr view $PR_NUMBER --json comments -q '.comments[].body' \
+          gh pr view ${{ steps.pr_info.outputs.pr_number }} --repo ${{ github.repository }} --json comments -q '.comments[].body' \
             | grep -E '@f3liz-bot.*patch' \
             | grep -oE 'rm=[^ ]+' \
             | sed 's/rm=//' \
             | tr ',' '\n' \
             | sed 's/$/\.patch/' > f3liz_rm_list.txt || true
 
-          gh pr view $PR_NUMBER --json body -q .body \
+          gh pr view ${{ steps.pr_info.outputs.pr_number }} --repo ${{ github.repository }} --json body -q .body \
             | grep -E '@f3liz-bot.*patch' \
             | grep -oE 'rm=[^ ]+' \
             | sed 's/rm=//' \
@@ -185,15 +191,16 @@ jobs:
           
           rm -f changed_files.txt files_to_revert.txt f3liz_rm_list.txt
 
-      - name: Commit and push patch files only
+      - name: Commit and push patch files to PR branch
         if: success() && steps.patch_check.conclusion == 'success'
         run: |
           if git diff --cached --quiet; then
             echo "No patch changes to commit."
           else
             git commit -m "chore: f3liz-bot per file patches (reverted source changes)"
-            git push
-          fi
+            
+            # Push directly to the PR branch (works for both internal and external PRs with "allow edits" enabled)
+            git push origin HEAD:${{ steps.pr_info.outputs.head_ref }}
 
       - name: Comment on success with changelog
         if: success() && github.event_name == 'issue_comment' && contains(github.event.comment.body, '@f3liz-bot patch')
