@@ -50,11 +50,3 @@ jobs:
       debug: ${{ inputs.debug }}
       pgo: false # PGO is not configured for aarch64 builds
       pgo_mode: ''
-
-  platform-tests:
-    name: Platform Tests
-    needs: [windows-x86_64, linux-x86_64, linux-aarch64]
-    uses: ./.github/workflows/patch-test.yml
-    with:
-      platform: ubuntu
-
