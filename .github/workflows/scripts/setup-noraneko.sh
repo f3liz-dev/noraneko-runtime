@@ -25,11 +25,6 @@ fi
 
 cd "$GITHUB_WORKSPACE"
 
-# update noraneko to latest
-# https://github.com/orgs/community/discussions/26818
-git -C noraneko config remote.origin.fetch +refs/heads/*:refs/remotes/origin/*
-git submodule update --remote noraneko
-
 if [[ "$PLATFORM" == "windows" ]]; then
   cp ./.github/workflows/mozconfigs/windows-x86_64.mozconfig mozconfig
 elif [[ "$PLATFORM" == "linux" ]]; then
@@ -40,7 +35,7 @@ elif [[ "$PLATFORM" == "linux" ]]; then
   fi
 fi
 
-cp -r ./noraneko/static/gecko/branding/* ./browser/branding/
+cp -r ./.github/assets/branding/* ./browser/branding/
 
 # Set Branding/Flat Chrome
 echo "ac_add_options --with-branding=browser/branding/noraneko-unofficial" >> mozconfig
@@ -79,7 +74,7 @@ if [[ "$PGO" == "true" ]]; then
 fi
 
 # Update Channel
-echo "ac_add_options --with-version-file-path=noraneko/static/gecko/config" >> mozconfig
+#echo "ac_add_options --with-version-file-path=noraneko/static/gecko/config" >> mozconfig
 echo "ac_add_options --enable-update-channel=alpha" >> mozconfig
 
 sed -i 's|https://@MOZ_APPUPDATE_HOST@/update/6/%PRODUCT%/%VERSION%/%BUILD_ID%/%BUILD_TARGET%/%LOCALE%/%CHANNEL%/%OS_VERSION%/%SYSTEM_CAPABILITIES%/%DISTRIBUTION%/%DISTRIBUTION_VERSION%/update.xml|https://github.com/nyanrus/noraneko/releases/download/%CHANNEL%/%BUILD_TARGET%.update.xml|g' ./build/application.ini.in
