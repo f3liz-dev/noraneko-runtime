@@ -35,7 +35,7 @@ name: Common Build Workflow
         required: false
         default: false
       pgo_mode:
-        description: 'PGO mode: native, generate, or use'
+        description: 'PGO mode: generate or use'
         type: string
         required: false
         default: ""
