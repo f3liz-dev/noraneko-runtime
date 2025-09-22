@@ -49,7 +49,7 @@ sudo apt install msitools -y
   echo "mk_add_options 'export CCACHE_CPP2=yes'"
   echo "ac_add_options --with-ccache=/opt/hostedtoolcache/sccache/0.10.0/x64/sccache"
   echo "mk_add_options 'export SCCACHE_GHA_ENABLED=on'"
-  echo "mk_add_options 'export SCCACHE_MAX_COMPILE_SIZE=1048576'"
+  echo "mk_add_options 'export SCCACHE_MAX_FRAME_LENGTH=1048576'"
 } >> mozconfig
 
 # Debug
