@@ -9,7 +9,7 @@ echo
 
 sudo swapoff /mnt/swapfile
 sudo rm /mnt/swapfile
-sudo fallocate -l 8G /mnt/swapfile
+sudo fallocate -l 16G /mnt/swapfile
 sudo chmod 600 /mnt/swapfile
 sudo mkswap /mnt/swapfile
 sudo swapon /mnt/swapfile
