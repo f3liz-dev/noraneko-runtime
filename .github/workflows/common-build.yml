@@ -113,6 +113,7 @@ jobs:
             "${{ inputs.MOZ_BUILD_DATE }}"
         env:
           SCCACHE_GHA_ENABLED: "on"
+          SCCACHE_MAX_FRAME_LENGTH: "1048576"
 
       - name: Build and package
         run: |
@@ -122,6 +123,7 @@ jobs:
             "${{ inputs.MOZ_BUILD_DATE }}"
         env:
           SCCACHE_GHA_ENABLED: "on"
+          SCCACHE_MAX_FRAME_LENGTH: "1048576"
 
       - name: Clean existing Windows artifacts
         if: inputs.platform == 'windows'
