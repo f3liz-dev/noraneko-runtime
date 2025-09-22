@@ -1,12 +1,13 @@
 # SPDX-License-Identifier: MPL-2.0
 
-echo Before:
+echo "Before:"
 free -h
 df -h
 
 echo
 echo
 
+# Swap operations (keep your original - it's optimal)
 sudo swapoff /mnt/swapfile
 sudo rm /mnt/swapfile
 sudo fallocate -l 16G /mnt/swapfile
@@ -14,30 +15,49 @@ sudo chmod 600 /mnt/swapfile
 sudo mkswap /mnt/swapfile
 sudo swapon /mnt/swapfile
 
-sudo apt autoremove -y
+# APT operations with quiet flags
+sudo apt autoremove -y -qq
 sudo apt clean
-sudo rm -rf  ./git
-sudo rm -rf /home/linuxbrew
-sudo rm -rf /usr/share/dotnet
-sudo rm -rf /usr/local/lib/android
-sudo rm -rf /usr/local/graalvm
-sudo rm -rf /usr/local/share/powershell
-sudo rm -rf /usr/local/share/chromium
-sudo rm -rf /opt/ghc
-sudo rm -rf /usr/local/share/boost
-sudo rm -rf /etc/apache2
-sudo rm -rf /etc/nginx
-sudo rm -rf /usr/local/share/chrome_driver
-sudo rm -rf /usr/local/share/edge_driver
-sudo rm -rf /usr/local/share/gecko_driver
-sudo rm -rf /usr/share/java
-sudo rm -rf /usr/share/miniconda
-sudo rm -rf /usr/local/share/vcpkg
 
+# Optimized directory removal using rsync method
+# Create empty directory for rsync deletion
+mkdir -p /tmp/empty
+
+# Function to safely remove directory using rsync
+remove_dir() {
+    local dir="$1"
+    if [ -d "$dir" ]; then
+        echo "Removing: $dir"
+        sudo rsync -a --delete /tmp/empty/ "$dir/" 2>/dev/null
+        sudo rmdir "$dir" 2>/dev/null
+    fi
+}
+
+# Remove directories - using rsync method for large directories
+remove_dir "./git"
+remove_dir "/home/linuxbrew"
+remove_dir "/usr/share/dotnet"
+remove_dir "/usr/local/lib/android"
+remove_dir "/usr/local/graalvm"
+remove_dir "/usr/local/share/powershell"
+remove_dir "/usr/local/share/chromium"
+remove_dir "/opt/ghc"
+remove_dir "/usr/local/share/boost"
+remove_dir "/etc/apache2"
+remove_dir "/etc/nginx"
+remove_dir "/usr/local/share/chrome_driver"
+remove_dir "/usr/local/share/edge_driver"
+remove_dir "/usr/local/share/gecko_driver"
+remove_dir "/usr/share/java"
+remove_dir "/usr/share/miniconda"
+remove_dir "/usr/local/share/vcpkg"
+
+# Cleanup
+rmdir /tmp/empty 2>/dev/null
 
 echo
 echo
 
-echo After:
+echo "After:"
 free -h
 df -h
