@@ -166,6 +166,9 @@ jobs:
           Write-Host "BROWSER_BINARY_PATH=$binaryPath" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           Write-Host "Browser binary found at: $binaryPath"
 
+          # Debug: Show the binary path that will be converted
+          Write-Host "Binary path to convert: $binaryPath"
+
       - name: Generate profile data
         shell: pwsh
         run: |
@@ -176,11 +179,32 @@ jobs:
             exit 1
           }
 
-          $workspace_dir = $env:GITHUB_WORKSPACE -replace "^([A-Z]):", { "/" + $_.Groups[1].Value.toLower() } -replace "\\","/"
+          # Debug: Show the binary path that will be converted
+          Write-Host "Binary path to convert: $env:BROWSER_BINARY_PATH"
+
+          if (-not $env:BROWSER_BINARY_PATH) {
+            Write-Error "BROWSER_BINARY_PATH environment variable is empty or not set"
+            exit 1
+          }
+
+          $workspace_dir = $env:GITHUB_WORKSPACE -replace "^([A-Z]):", { "/c" } -replace "\\","/"
+          if ($workspace_dir -match "^([A-Z]):") {
+            $drive = $matches[1].ToLower()
+            $workspace_dir = $workspace_dir -replace "^[A-Z]:", "/$drive"
+          }
           Write-Host "Workspace directory: $workspace_dir"
 
-          $unixBinaryPath = $env:BROWSER_BINARY_PATH -replace "^([A-Z]):", { "/" + $_.Groups[1].Value.toLower() } -replace "\\","/"
+          $unixBinaryPath = $env:BROWSER_BINARY_PATH -replace "^([A-Z]):", { "/c" } -replace "\\","/"
+          if ($env:BROWSER_BINARY_PATH -match "^([A-Z]):") {
+            $drive = $matches[1].ToLower()
+            $unixBinaryPath = $env:BROWSER_BINARY_PATH -replace "^[A-Z]:", "/$drive" -replace "\\","/"
+          }
           Write-Host "Unix binary path: $unixBinaryPath"
+          
+          if (-not $unixBinaryPath) {
+            Write-Error "Failed to convert binary path to Unix format"
+            exit 1
+          }
 
           cd $env:GITHUB_WORKSPACE
 

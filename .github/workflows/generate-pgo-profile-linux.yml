@@ -122,16 +122,17 @@ jobs:
           echo "Extracting browser artifact from ${{ env.ARTIFACT_PATH }}..."
           cd ${{ env.ARTIFACT_PATH }}
 
-          if [[ -f *.tar.xz ]]; then
+          # Check for supported archive formats using proper file existence patterns
+          if compgen -G "*.tar.xz" > /dev/null; then
             echo "Extracting .tar.xz archive..."
             tar -xf *.tar.xz
-          elif [[ -f *.tar.bz2 ]]; then
+          elif compgen -G "*.tar.bz2" > /dev/null; then
             echo "Extracting .tar.bz2 archive..."
             tar -xf *.tar.bz2
-          elif [[ -f *.tar.gz ]]; then
+          elif compgen -G "*.tar.gz" > /dev/null; then
             echo "Extracting .tar.gz archive..."
             tar -xf *.tar.gz
-          elif [[ -f *.zip ]]; then
+          elif compgen -G "*.zip" > /dev/null; then
             echo "Extracting .zip archive..."
             unzip -q *.zip
           else
