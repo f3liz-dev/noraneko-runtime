@@ -7,12 +7,13 @@ df -h
 echo
 echo
 
-sudo swapoff /mnt/swapfile
-sudo rm /mnt/swapfile
-sudo fallocate -l 30G /mnt/swapfile
-sudo chmod 600 /mnt/swapfile
-sudo mkswap /mnt/swapfile
-sudo swapon /mnt/swapfile
+# remove swap because current github actions have 16GB RAM, and it's same as taskcluster's RAM
+#sudo swapoff /mnt/swapfile
+#sudo rm /mnt/swapfile
+#sudo fallocate -l 30G /mnt/swapfile
+#sudo chmod 600 /mnt/swapfile
+#sudo mkswap /mnt/swapfile
+#sudo swapon /mnt/swapfile
 
 sudo apt autoremove -y
 sudo apt clean
