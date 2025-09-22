@@ -76,7 +76,6 @@ jobs:
       artifact-path: /home/runner/artifact
       runner: ${{ (inputs.arch == 'aarch64' || inputs.arch == 'arm64') && 'ubuntu-22.04-arm' || 'ubuntu-latest' }}
       target-arch: ${{ inputs.arch || 'x86_64' }}
-      profile-mode: generate
       upload-artifact-name: noraneko-linux-${{ inputs.arch || 'x86_64' }}-profile-generate-output
 
   # PGO build stage 3: Build with collected profiles

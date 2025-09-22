@@ -10,7 +10,6 @@
 # - artifact-path (optional): path on runner where artifact is placed
 # - runner (optional): runner label to run on (default: ubuntu-latest for Linux, ubuntu-22.04-arm for ARM)
 # - target-arch (optional): architecture string (x86_64, aarch64)
-# - profile-mode (optional): generate | use (default: generate)
 # - upload-artifact-name (optional): artifact name to upload the profdata/jarlog under
 #
 
@@ -38,11 +37,6 @@ on:
         required: false
         type: string
         default: 'x86_64'
-      profile-mode:
-        description: 'Profile mode: generate or use'
-        required: false
-        type: string
-        default: 'generate'
       upload-artifact-name:
         description: 'Name for the uploaded profdata/jarlog artifact'
         required: false
@@ -56,7 +50,6 @@ jobs:
     env:
       ARTIFACT_PATH: ${{ inputs.artifact-path }}
       TARGET_ARCH: ${{ inputs.target-arch }}
-      PROFILE_MODE: ${{ inputs.profile-mode }}
       BROWSER_ARTIFACT_NAME: ${{ inputs.browser-artifact-name }}
       UPLOAD_ARTIFACT_NAME: ${{ inputs.upload-artifact-name || format('{0}-profile-generate-output', inputs.browser-artifact-name) }}
 
@@ -84,7 +77,6 @@ jobs:
 
       # Setup Mozilla Build environment and dependencies
       - name: Bootstrap Mozilla Build Environment 🪛
-        if: env.PROFILE_MODE == 'generate'
         shell: bash
         run: |
           # Use our bootstrap script
@@ -114,7 +106,7 @@ jobs:
 
       # Generate Profdata and Jarlog (Linux)
       - name: Generate Profile Data 🔄
-        if: runner.os == 'Linux' && env.PROFILE_MODE == 'generate'
+        if: runner.os == 'Linux'
         run: |
           cd $GITHUB_WORKSPACE
           
