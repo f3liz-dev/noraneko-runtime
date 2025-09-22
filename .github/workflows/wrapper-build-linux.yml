@@ -69,7 +69,7 @@ jobs:
     name: Linux ${{ inputs.arch || 'x86_64' }} PGO Stage 2 - Collect Profiles
     if: ${{ toJSON(inputs.pgo) == 'true' }}
     needs: build-pgo-stage1
-    uses: ./.github/workflows/generate_pgo_profile.yml
+    uses: ./.github/workflows/generate-pgo-profile-linux.yml
     secrets: inherit
     with:
       browser-artifact-name: noraneko-linux-${{ inputs.arch || 'x86_64' }}-moz-artifact

@@ -42,11 +42,9 @@ jobs:
 
   linux-aarch64:
     name: Linux aarch64 build
-    uses: ./.github/workflows/common-build.yml
+    uses: ./.github/workflows/wrapper-build-linux.yml
     secrets: inherit
     with:
-      platform: linux
-      arch: aarch64
       debug: ${{ inputs.debug }}
       pgo: false # PGO is not configured for aarch64 builds
-      pgo_mode: ''
+      arch: aarch64
