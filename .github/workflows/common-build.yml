@@ -94,6 +94,24 @@ jobs:
         run: |
           ./.github/workflows/scripts/allocate-swap.sh "${{ inputs.arch }}"
 
+      - name: Install latest LLVM
+        if: inputs.platform == 'linux'
+        run: |
+          # Add LLVM APT repository and install latest version
+          wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | \
+            sudo apt-key add -
+          sudo add-apt-repository \
+            "deb http://apt.llvm.org/jammy/ llvm-toolchain-jammy main"
+          sudo apt-get update
+          # Install the latest stable LLVM (version 20)
+          sudo apt-get install -y clang-20 clang++-20 llvm-20
+          # Create symlinks for easy access
+          sudo ln -sf /usr/bin/clang-20 /usr/local/bin/clang-latest
+          sudo ln -sf /usr/bin/clang++-20 /usr/local/bin/clang++-latest
+          # Verify installation
+          /usr/local/bin/clang-latest --version
+          /usr/local/bin/clang++-latest --version
+
       - name: Download PGO artifact
         if: inputs.pgo_mode == 'use' && inputs.pgo_artifact_name != ''
         uses: actions/download-artifact@v4
