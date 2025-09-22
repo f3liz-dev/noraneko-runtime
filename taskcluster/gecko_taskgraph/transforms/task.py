@@ -468,6 +468,8 @@ def build_docker_worker_payload(config, task, task_def):
         worker["env"]["SCCACHE_GCS_PROJECT"] = SCCACHE_GCS_PROJECT
         # Disable sccache idle shutdown.
         worker["env"]["SCCACHE_IDLE_TIMEOUT"] = "0"
+        # Limit max entry size to 1MB to improve cache efficiency
+        worker["env"]["SCCACHE_MAX_COMPILE_SIZE"] = "1048576"
     else:
         worker["env"]["SCCACHE_DISABLE"] = "1"
 
@@ -738,6 +740,8 @@ def build_generic_worker_payload(config, task, task_def):
         worker["env"]["SCCACHE_GCS_PROJECT"] = SCCACHE_GCS_PROJECT
         # Disable sccache idle shutdown.
         env["SCCACHE_IDLE_TIMEOUT"] = "0"
+        # Limit max entry size to 1MB to improve cache efficiency
+        env["SCCACHE_MAX_COMPILE_SIZE"] = "1048576"
     else:
         env["SCCACHE_DISABLE"] = "1"
 
