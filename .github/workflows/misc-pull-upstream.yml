@@ -1,7 +1,9 @@
+---
 # SPDX-License-Identifier: MPL-2.0
 
 name: Pull Upstream
-on:
+
+'on':
   workflow_dispatch:
   workflow_call:
 
@@ -10,10 +12,12 @@ permissions:
 
 jobs:
   pull-upstream-and-check-patches:
+    name: Pull upstream changes and validate patches
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: ./noraneko_runtime
+
     steps:
       - name: Checkout main branch
         uses: actions/checkout@v5
@@ -22,39 +26,49 @@ jobs:
           fetch-depth: 0
           path: noraneko_runtime
 
-      - name: Clone upstream firefox repository
+      - name: Clone upstream Firefox repository
         run: |
-          git clone -b release --single-branch https://github.com/mozilla-firefox/firefox --depth 1 ../upstream_release
+          git clone -b release --single-branch \
+            https://github.com/mozilla-firefox/firefox \
+            --depth 1 ../upstream_release
 
-      - name: Sync upstream files into working directory
+      - name: Sync upstream files
         run: |
           mv ../upstream_release/README.md ../upstream_release/MOZ_README.md
-          # https://serverfault.com/a/310190
-          rsync -a --delete --exclude='.git' --exclude='/.github/' --exclude='/noraneko/' --exclude='/.gitmodules' --exclude='/README.md' ../upstream_release/ ./
+          rsync -a --delete \
+            --exclude='.git' \
+            --exclude='/.github/' \
+            --exclude='/noraneko/' \
+            --exclude='/.gitmodules' \
+            --exclude='/README.md' \
+            ../upstream_release/ ./
 
-      - name: Normalize patch files for cross-platform compatibility
+      - name: Normalize patch files
         run: |
           echo "Normalizing patch files..."
-          find .github/patches/upstream -name "*.patch" -exec dos2unix {} \; 2>/dev/null || true
+          find .github/patches/upstream -name "*.patch" \
+            -exec dos2unix {} \; 2>/dev/null || true
           for patch_file in .github/patches/upstream/*.patch; do
-            if [ -s "$patch_file" ] && [ "$(tail -c1 "$patch_file" | wc -l)" -eq 0 ]; then
+            if [ -s "$patch_file" ] && \
+               [ "$(tail -c1 "$patch_file" | wc -l)" -eq 0 ]; then
               echo "" >> "$patch_file"
             fi
           done
 
-      - name: Check all patches apply cleanly
+      - name: Check patches compatibility
         id: patch_check
         run: |
           echo "Checking patches for compatibility..."
           HAS_FAILED=0
           FAILED_PATCHES=""
-          
+
           if [ -d ".github/patches/upstream" ]; then
             for patch_file in .github/patches/upstream/*.patch; do
               [ -e "$patch_file" ] || continue
               patch_name=$(basename "$patch_file")
-              
-              if git apply --check --ignore-space-change --ignore-whitespace "$patch_file"; then
+
+              if git apply --check --ignore-space-change \
+                 --ignore-whitespace "$patch_file"; then
                 echo "✓ $patch_name applies cleanly"
               else
                 echo "✗ $patch_name failed to apply"
@@ -63,7 +77,7 @@ jobs:
               fi
             done
           fi
-          
+
           if [ "$HAS_FAILED" -ne 0 ]; then
             echo "FAILED_PATCHES<<EOF" >> $GITHUB_ENV
             echo -e "$FAILED_PATCHES" >> $GITHUB_ENV
@@ -74,13 +88,13 @@ jobs:
             echo "All patches are compatible with upstream changes"
           fi
 
-      - name: Commit upstream sync without patches
+      - name: Commit upstream sync
         run: |
           if git diff --quiet --exit-code; then
             echo "No changes from upstream. Exiting."
             exit 0
           fi
-          
+
           export FF_VERSION=$(cat browser/config/version.txt)
           git config user.name "f3liz-bot[bot]"
           git config user.email "230694705+f3liz-bot@users.noreply.github.com"

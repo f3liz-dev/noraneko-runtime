@@ -1,14 +1,16 @@
+---
 # SPDX-License-Identifier: MPL-2.0
 
 name: F3liz Bot Per File Patches
 
-on:
+'on':
   issue_comment:
     types: [created]
 
 jobs:
   f3liz-bot-per-file:
-    if: |
+    name: Generate per-file patches for PR
+    if: >-
       (github.event_name == 'issue_comment' &&
        github.event.issue.pull_request &&
        contains(github.event.comment.body, '@f3liz-bot patch')) ||
@@ -20,7 +22,7 @@ jobs:
       pull-requests: write
 
     steps:
-      - name: Get PR info
+      - name: Get PR information
         id: pr_info
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -39,17 +41,18 @@ jobs:
             HEAD_REPO=${{ github.event.pull_request.head.repo.name }}
             HEAD_OWNER=${{ github.event.pull_request.head.repo.owner.login }}
           fi
-          
+
           echo "pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
           echo "head_ref=$HEAD_REF" >> $GITHUB_OUTPUT
           echo "base_ref=$BASE_REF" >> $GITHUB_OUTPUT
           echo "head_repo=$HEAD_REPO" >> $GITHUB_OUTPUT
           echo "head_owner=$HEAD_OWNER" >> $GITHUB_OUTPUT
 
-      - name: Checkout PR
+      - name: Checkout PR branch
         uses: actions/checkout@v4
         with:
-          repository: ${{ steps.pr_info.outputs.head_owner }}/${{ steps.pr_info.outputs.head_repo }}
+          repository: >-
+            ${{ steps.pr_info.outputs.head_owner }}/${{ steps.pr_info.outputs.head_repo }}
           ref: ${{ steps.pr_info.outputs.head_ref }}
           token: ${{ secrets.F3LIZ_BOT_TOKEN }}
           fetch-depth: 0
@@ -59,12 +62,12 @@ jobs:
           git remote add upstream https://github.com/${{ github.repository }}.git
           git fetch upstream ${{ steps.pr_info.outputs.base_ref }}:base_branch
 
-      - name: Set up Git config
+      - name: Configure Git
         run: |
           git config user.name "f3liz-bot[bot]"
           git config user.email "230694705+f3liz-bot@users.noreply.github.com"
 
-      - name: Check for valid bot command and abort if needed
+      - name: Validate bot command
         if: github.event_name == 'issue_comment'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -76,7 +79,7 @@ jobs:
           fi
           echo "Valid @f3liz-bot patch command found."
 
-      - name: Get list of patches to remove from bot commands
+      - name: Get patches to remove from bot commands
         id: list_rm_patches
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -84,14 +87,18 @@ jobs:
           PATCH_DIR=".github/patches/upstream"
           rm -f f3liz_rm_list.txt
 
-          gh pr view ${{ steps.pr_info.outputs.pr_number }} --repo ${{ github.repository }} --json comments -q '.comments[].body' \
+          gh pr view ${{ steps.pr_info.outputs.pr_number }} \
+            --repo ${{ github.repository }} \
+            --json comments -q '.comments[].body' \
             | grep -E '@f3liz-bot.*patch' \
             | grep -oE 'rm=[^ ]+' \
             | sed 's/rm=//' \
             | tr ',' '\n' \
             | sed 's/$/\.patch/' > f3liz_rm_list.txt || true
 
-          gh pr view ${{ steps.pr_info.outputs.pr_number }} --repo ${{ github.repository }} --json body -q .body \
+          gh pr view ${{ steps.pr_info.outputs.pr_number }} \
+            --repo ${{ github.repository }} \
+            --json body -q .body \
             | grep -E '@f3liz-bot.*patch' \
             | grep -oE 'rm=[^ ]+' \
             | sed 's/rm=//' \
@@ -104,7 +111,7 @@ jobs:
           echo "Patches to remove:"
           cat f3liz_rm_list.txt || echo "No patches to remove"
 
-      - name: Remove patches listed by f3liz-bot commands
+      - name: Remove specified patches
         run: |
           PATCH_DIR=".github/patches/upstream"
           if [ -d "$PATCH_DIR" ]; then
@@ -118,17 +125,17 @@ jobs:
             done < f3liz_rm_list.txt
           fi
 
-      - name: Check all patches apply cleanly
+      - name: Validate patches compatibility
         id: patch_check
         run: |
           PATCH_DIR=".github/patches/upstream"
           HAS_FAILED=0
-          
+
           if [ -d "$PATCH_DIR" ]; then
             for patch in "$PATCH_DIR"/*.patch; do
               [ -e "$patch" ] || continue
               PATCH_NAME="$(basename "$patch")"
-              
+
               if git apply --check "$patch"; then
                 echo "Patch $PATCH_NAME applies cleanly."
               else
@@ -137,7 +144,7 @@ jobs:
               fi
             done
           fi
-          
+
           if [ "$HAS_FAILED" -ne 0 ]; then
             echo "One or more patches failed to apply cleanly. Aborting."
             exit 1
@@ -149,9 +156,11 @@ jobs:
           PATCH_DIR=".github/patches/upstream"
           mkdir -p "$PATCH_DIR"
           BASE=base_branch
-          
-          git diff --name-only $BASE | grep -vE '^(\.github|noraneko|browser/branding/noraneko)($|/)' > changed_files.txt || true
-          
+
+          git diff --name-only $BASE | \
+            grep -vE '^(\.github|noraneko|browser/branding/noraneko)($|/)' \
+            > changed_files.txt || true
+
           while read file; do
             [ -z "$file" ] && continue
             patchfile="$PATCH_DIR/${file//\//-}.patch"
@@ -161,12 +170,12 @@ jobs:
             fi
           done < changed_files.txt
 
-      - name: Store patch directory contents
+      - name: Stage patch directory changes
         if: success() && steps.patch_check.conclusion == 'success'
         run: |
           git add .github/patches/upstream/
 
-      - name: Identify New Patches
+      - name: Identify new patches
         if: success() && steps.patch_check.conclusion == 'success'
         id: new_patches
         run: |
@@ -174,13 +183,15 @@ jobs:
           git diff --cached --name-only --diff-filter=AM ".github/patches/upstream/" >> $GITHUB_OUTPUT
           echo 'EOF' >> $GITHUB_OUTPUT
 
-      - name: Revert changes to tracked files (keep only patches)
+      - name: Revert source changes (keep only patches)
         if: success() && steps.patch_check.conclusion == 'success'
         run: |
           BASE=base_branch
-          
-          git diff --name-only $BASE | grep -vE '^(\.github|noraneko|browser/branding/noraneko)($|/)' > files_to_revert.txt || true
-          
+
+          git diff --name-only $BASE | \
+            grep -vE '^(\.github|noraneko|browser/branding/noraneko)($|/)' \
+            > files_to_revert.txt || true
+
           while read file; do
             [ -z "$file" ] && continue
             if [ -f "$file" ]; then
@@ -188,22 +199,23 @@ jobs:
               echo "Reverted $file to base state"
             fi
           done < files_to_revert.txt
-          
+
           rm -f changed_files.txt files_to_revert.txt f3liz_rm_list.txt
 
-      - name: Commit and push patch files to PR branch
+      - name: Commit and push patch files
         if: success() && steps.patch_check.conclusion == 'success'
         run: |
           if git diff --cached --quiet; then
             echo "No patch changes to commit."
           else
             git commit -m "chore: f3liz-bot per file patches (reverted source changes)"
-            
-            # Push directly to the PR branch (works for both internal and external PRs with "allow edits" enabled)
+
             git push origin HEAD:${{ steps.pr_info.outputs.head_ref }}
 
-      - name: Comment on success with changelog
-        if: success() && github.event_name == 'issue_comment' && contains(github.event.comment.body, '@f3liz-bot patch')
+      - name: Comment on success
+        if: >-
+          success() && github.event_name == 'issue_comment' &&
+          contains(github.event.comment.body, '@f3liz-bot patch')
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.F3LIZ_BOT_TOKEN }}
@@ -229,7 +241,7 @@ jobs:
             if (patchCount > 0) {
               changelog += `### Generated/Updated Patches: ${patchCount} files\n\n`;
               changelog += "**Note:** Source files have been reverted to base state - only patch files are kept.\n\n";
-              
+
               changelog += "### Patch Files Created/Updated For:\n";
               changedPatches.forEach(patch => {
                 const filename = patch.replace('.github/patches/upstream/', '').replace('.patch', '').replace(/-/g, '/');
@@ -247,15 +259,17 @@ jobs:
               body: changelog
             });
 
-      - name: Comment on failure with workflow link
-        if: failure() && github.event_name == 'issue_comment' && contains(github.event.comment.body, '@f3liz-bot patch')
+      - name: Comment on failure
+        if: >-
+          failure() && github.event_name == 'issue_comment' &&
+          contains(github.event.comment.body, '@f3liz-bot patch')
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.F3LIZ_BOT_TOKEN }}
           script: |
             const runUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
             const failureMessage = `## F3liz Bot Patch Update Failed\n\nThe patch update workflow encountered an error. Please check the [workflow run](${runUrl}) for details.`;
-            
+
             await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,

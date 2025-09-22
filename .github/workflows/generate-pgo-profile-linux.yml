@@ -1,34 +1,22 @@
+---
 # SPDX-License-Identifier: MPL-2.0
-#
-# Advanced PGO profile generation workflow with improved robustness and cross-architecture support.
-# 
-# This workflow handles profile data collection for Profile-Guided Optimization (PGO) builds.
-# It supports both Linux and Windows platforms with architecture-specific optimizations.
-#
-# Inputs:
-# - browser-artifact-name (required): artifact produced by build job to download
-# - artifact-path (optional): path on runner where artifact is placed
-# - runner (optional): runner label to run on (default: ubuntu-latest for Linux, ubuntu-22.04-arm for ARM)
-# - target-arch (optional): architecture string (x86_64, aarch64)
-# - upload-artifact-name (optional): artifact name to upload the profdata/jarlog under
-#
 
-on:
+name: Generate PGO Profile (Linux)
+
+'on':
   workflow_call:
-    # Callers may pass secrets using `secrets: inherit` when they invoke this reusable workflow.
-    # Do not hardcode secrets here; the caller should specify `secrets: inherit`.
     inputs:
       browser-artifact-name:
-        description: 'Artifact to download'
+        description: 'Browser artifact to download'
         required: true
         type: string
       artifact-path:
-        description: 'Path on the runner where the browser artifact will be placed'
+        description: 'Path where browser artifact will be placed'
         required: false
         type: string
         default: '/home/runner/artifact'
       runner:
-        description: 'Runner label to execute the job on'
+        description: 'Runner label to execute on'
         required: false
         type: string
         default: 'ubuntu-latest'
@@ -38,41 +26,38 @@ on:
         type: string
         default: 'x86_64'
       upload-artifact-name:
-        description: 'Name for the uploaded profdata/jarlog artifact'
+        description: 'Name for uploaded profile data artifact'
         required: false
         type: string
 
 jobs:
   generate-profdata-and-jarlog:
-    name: Generate PGO Profile Data and Jarlog (${{ inputs.target-arch }})
+    name: Generate PGO Profile Data (${{ inputs.target-arch }})
     runs-on: ${{ inputs.runner }}
-    # expose inputs as env for steps
     env:
       ARTIFACT_PATH: ${{ inputs.artifact-path }}
       TARGET_ARCH: ${{ inputs.target-arch }}
       BROWSER_ARTIFACT_NAME: ${{ inputs.browser-artifact-name }}
-      UPLOAD_ARTIFACT_NAME: ${{ inputs.upload-artifact-name || format('{0}-profile-generate-output', inputs.browser-artifact-name) }}
+      UPLOAD_ARTIFACT_NAME: >-
+        ${{ inputs.upload-artifact-name ||
+        format('{0}-profile-generate-output', inputs.browser-artifact-name) }}
 
     steps:
-      # Download the browser build artifact produced by build workflows
-      - name: Download Build Artifact 📥
+      - name: Download build artifact
         uses: actions/download-artifact@v4
         with:
           name: ${{ inputs.browser-artifact-name }}
           path: ${{ env.ARTIFACT_PATH }}
 
-      # Checkout the repository so scripts and mach are available
-      - name: Checkout source 🧬
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      # Setup system dependencies for Linux (Ubuntu 24.04 compatible)
-      - name: Setup System Dependencies (Linux) 🔧
+      - name: Setup system dependencies
         if: runner.os == 'Linux'
         run: |
-          echo "Installing system dependencies for Ubuntu 24.04..."
+          echo "Installing system dependencies..."
           sudo apt-get update -qq
-          
-          # Install dependencies without deprecated packages
+
           sudo apt-get install -y --no-install-recommends \
             python3-dev python3-pip python3-setuptools python3-venv \
             xvfb mesa-utils xauth \
@@ -91,36 +76,33 @@ jobs:
             fonts-liberation fonts-dejavu-core \
             pkg-config autotools-dev \
             curl wget unzip
-          
+
           export LIBGL_ALWAYS_SOFTWARE=1
-          
-          # Verify critical tools
+
           if ! command -v llvm-profdata >/dev/null 2>&1; then
             echo "ERROR: llvm-profdata not found after installation"
             exit 1
           fi
-          
+
           echo "System dependencies installed successfully"
           llvm-profdata --version
 
-      # Setup Mozilla Build environment and dependencies
-      - name: Bootstrap Mozilla Build Environment 🪛
+      - name: Bootstrap Mozilla build environment
         shell: bash
         run: |
           echo "Bootstrapping Mozilla build environment..."
-          
-          # Make mach executable
+
           chmod +x ./mach
-          
-          # Bootstrap with timeout and retry logic to handle potential issues
+
           BOOTSTRAP_ATTEMPTS=0
           MAX_ATTEMPTS=2
-          
+
           while [ $BOOTSTRAP_ATTEMPTS -lt $MAX_ATTEMPTS ]; do
             BOOTSTRAP_ATTEMPTS=$((BOOTSTRAP_ATTEMPTS + 1))
             echo "Bootstrap attempt $BOOTSTRAP_ATTEMPTS of $MAX_ATTEMPTS..."
-            
-            if timeout 600 ./mach --no-interactive bootstrap --application-choice browser; then
+
+            if timeout 600 ./mach --no-interactive bootstrap \
+               --application-choice browser; then
               echo "Bootstrap completed successfully"
               break
             else
@@ -130,19 +112,16 @@ jobs:
                 rm -rf ~/.mozbuild/python* 2>/dev/null || true
                 sleep 10
               else
-                echo "All bootstrap attempts failed, but continuing with system tools"
-                # Don't exit - we have system tools installed
+                echo "All bootstrap attempts failed, continuing with system tools"
               fi
             fi
           done
 
-      # Extract browser artifact
-      - name: Extract Browser Artifact 📦
+      - name: Extract browser artifact
         run: |
           echo "Extracting browser artifact from ${{ env.ARTIFACT_PATH }}..."
           cd ${{ env.ARTIFACT_PATH }}
-          
-          # Handle different archive formats
+
           if [[ -f *.tar.xz ]]; then
             echo "Extracting .tar.xz archive..."
             tar -xf *.tar.xz
@@ -160,146 +139,129 @@ jobs:
             ls -la
             exit 1
           fi
-          
+
           echo "Archive extracted, contents:"
           find . -maxdepth 3 -type f | head -20
-          
-          # Find the extracted browser binary with comprehensive search
+
           BROWSER_PATH=""
-          
-          # Search patterns in order of preference
+
           for pattern in "noraneko/noraneko" "*/noraneko" "noraneko-*/noraneko"; do
             matches=($(find . -path "./$pattern" -type f 2>/dev/null))
             if [[ ${#matches[@]} -gt 0 ]]; then
               BROWSER_PATH="${matches[0]}"
-              echo "Found browser binary with pattern '$pattern': $BROWSER_PATH"
+              echo "Found browser binary: $BROWSER_PATH"
               break
             fi
           done
-          
-          # Fallback search
+
           if [[ -z "$BROWSER_PATH" ]]; then
             echo "Pattern search failed, looking for any noraneko executable..."
             BROWSER_PATH=$(find . -name "noraneko" -type f -executable 2>/dev/null | head -1)
           fi
-          
+
           if [[ -z "$BROWSER_PATH" ]]; then
             echo "ERROR: Browser binary not found!"
             echo "Available files:"
             find . -type f -name "*noraneko*" -o -name "*firefox*" | head -20
             exit 1
           fi
-          
-          # Convert to absolute path and make executable
+
           BROWSER_BINARY_PATH="$(cd "$(dirname "$BROWSER_PATH")" && pwd)/$(basename "$BROWSER_PATH")"
           chmod +x "$BROWSER_BINARY_PATH"
-          
+
           echo "BROWSER_BINARY_PATH=$BROWSER_BINARY_PATH" >> $GITHUB_ENV
           echo "Browser binary found at: $BROWSER_BINARY_PATH"
-          
-          # Verify binary
+
           file "$BROWSER_BINARY_PATH" || echo "File command failed"
           ldd "$BROWSER_BINARY_PATH" 2>/dev/null | head -5 || echo "Dynamic linking check failed"
 
-      # Generate Profdata and Jarlog (Linux)
-      - name: Generate Profile Data 🔄
+      - name: Generate profile data
         if: runner.os == 'Linux'
         run: |
           cd $GITHUB_WORKSPACE
           echo "Starting profile generation..."
-          
-          # Set up environment for profile generation
+
           export DISPLAY=:99
           export LIBGL_ALWAYS_SOFTWARE=1
           export MOZ_HEADLESS=1
           export MOZ_DISABLE_CONTENT_SANDBOX=1
-          
-          # Start Xvfb for headless operation with better configuration
+
           echo "Starting Xvfb..."
           Xvfb :99 -screen 0 1280x1024x24 -extension GLX -extension RANDR &
           XVFB_PID=$!
           sleep 5
-          
-          # Verify Xvfb started
+
           if ! kill -0 $XVFB_PID 2>/dev/null; then
             echo "ERROR: Xvfb failed to start"
             exit 1
           fi
-          
-          # Find LLVM profdata tool
+
           LLVM_PROFDATA_CMD=""
           if command -v llvm-profdata >/dev/null 2>&1; then
             LLVM_PROFDATA_CMD="llvm-profdata"
           else
-            # Try to find it in the Mozilla build environment
             MOZBUILD_PATH="$HOME/.mozbuild"
             if [[ -d "$MOZBUILD_PATH" ]]; then
               LLVM_PROFDATA_CMD=$(find "$MOZBUILD_PATH" -name "llvm-profdata" -type f -executable 2>/dev/null | head -1)
             fi
-            
+
             if [[ -z "$LLVM_PROFDATA_CMD" ]]; then
               echo "Warning: llvm-profdata not found, using system default"
               LLVM_PROFDATA_CMD="llvm-profdata"
             fi
           fi
-          
+
           echo "Using LLVM_PROFDATA: $LLVM_PROFDATA_CMD"
-          
-          # Verify profileserver.py exists
+
           if [[ ! -f "build/pgo/profileserver.py" ]]; then
             echo "ERROR: profileserver.py not found"
             find . -name "*profileserver*" -type f || echo "No profileserver files found"
             exit 1
           fi
-          
-          # Run profile generation with proper error handling
+
           echo "Running profile generation with binary: $BROWSER_BINARY_PATH"
           set -x
-          
+
           timeout 1200 env \
             LLVM_PROFDATA="$LLVM_PROFDATA_CMD" \
             JARLOG_FILE=en-US.log \
             MOZ_LOG=PGO:3 \
             python3 build/pgo/profileserver.py --binary "$BROWSER_BINARY_PATH" || {
-            
+
             PROFILE_EXIT_CODE=$?
             echo "Profile generation failed with exit code: $PROFILE_EXIT_CODE"
-            
-            # Kill Xvfb process
+
             kill $XVFB_PID 2>/dev/null || true
-            
-            # Show any generated files
+
             echo "Checking for partial results..."
             ls -la *.profdata *.log 2>/dev/null || echo "No profile files found"
-            
+
             if [[ $PROFILE_EXIT_CODE -eq 124 ]]; then
               echo "Profile generation timed out after 20 minutes"
             fi
-            
+
             exit 1
           }
-          
+
           set +x
-          
-          # Kill Xvfb process
+
           kill $XVFB_PID 2>/dev/null || true
-          
-          # Verify generated files
+
           echo "Verifying generated profile data..."
-          
+
           if [[ -f "merged.profdata" && -f "en-US.log" ]]; then
             PROFDATA_SIZE=$(stat -c%s "merged.profdata")
             JARLOG_SIZE=$(stat -c%s "en-US.log")
-            
+
             echo "Profile generation successful!"
             echo "  merged.profdata: $PROFDATA_SIZE bytes"
             echo "  en-US.log: $JARLOG_SIZE bytes"
-            
+
             if [[ $PROFDATA_SIZE -eq 0 ]]; then
               echo "WARNING: merged.profdata is empty"
             fi
             if [[ $JARLOG_SIZE -eq 0 ]]; then
-              echo "WARNING: en-US.log is empty"  
+              echo "WARNING: en-US.log is empty"
             fi
           else
             echo "ERROR: Profile generation failed - required files not found"
@@ -308,8 +270,7 @@ jobs:
             exit 1
           fi
 
-      # Upload profdata and jarlog for downstream jobs to consume.
-      - name: Upload Profile Data 🎁
+      - name: Upload profile data
         uses: actions/upload-artifact@v4
         with:
           name: ${{ env.UPLOAD_ARTIFACT_NAME }}

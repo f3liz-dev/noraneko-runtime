@@ -1,57 +1,71 @@
+---
 # SPDX-License-Identifier: MPL-2.0
 
-on:
+name: Common Build Workflow
+
+'on':
   workflow_call:
     inputs:
       platform:
+        description: 'Target platform (linux, windows, mac)'
         type: string
         required: true
       arch:
+        description: 'Target architecture (x86_64, aarch64)'
         type: string
         required: true
       debug:
+        description: 'Enable debug build'
         type: boolean
         required: true
         default: true
       release:
+        description: 'Enable release build'
         type: boolean
         required: false
         default: true
       code-coverage:
+        description: 'Enable code coverage'
         type: boolean
         required: false
         default: false
       pgo:
+        description: 'Enable Profile-Guided Optimization'
         type: boolean
         required: false
         default: false
       pgo_mode:
+        description: 'PGO mode: native, generate, or use'
         type: string
         required: false
-        default: "" # e.g., "native", "generate", "use"
+        default: ""
       pgo_artifact_name:
+        description: 'PGO artifact name for use mode'
         type: string
         required: false
         default: ""
       MOZ_BUILD_DATE:
+        description: 'Build date override'
         type: string
         required: false
         default: ""
 
 jobs:
   build:
+    name: Build ${{ inputs.platform }}-${{ inputs.arch }}
     runs-on: ubuntu-latest
 
     steps:
-      - name: Use Node.js
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: "latest"
 
-      - name: Clone
+      - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          submodules: ${{ inputs.platform == 'mac' && 'recursive' || 'true' }}
+          submodules: >-
+            ${{ inputs.platform == 'mac' && 'recursive' || 'true' }}
 
       - name: Apply upstream patches
         run: |
@@ -63,26 +77,31 @@ jobs:
               git apply --verbose "$patch"
             done
           else
-            echo "Patch directory not found, skipping patch application."
+            echo "No patches to apply"
           fi
 
-      - name: Run sccache-cache
+      - name: Setup sccache
         uses: mozilla-actions/sccache-action@v0.0.9
 
-      - name: Setup Rust
-        run: ./.github/workflows/scripts/setup-rust.sh ${{ inputs.platform }} ${{ inputs.arch }} ${{ inputs.pgo_artifact_name }}
+      - name: Setup Rust toolchain
+        run: |
+          ./.github/workflows/scripts/setup-rust.sh \
+            "${{ inputs.platform }}" \
+            "${{ inputs.arch }}" \
+            "${{ inputs.pgo_artifact_name }}"
 
-      - name: Allocate swap
-        run: ./.github/workflows/scripts/allocate-swap.sh ${{ inputs.arch }}
+      - name: Allocate swap space
+        run: |
+          ./.github/workflows/scripts/allocate-swap.sh "${{ inputs.arch }}"
 
-      - name: Download PGO Artifact if exists
+      - name: Download PGO artifact
         if: inputs.pgo_mode == 'use' && inputs.pgo_artifact_name != ''
         uses: actions/download-artifact@v4
         with:
           name: ${{ inputs.pgo_artifact_name }}
           path: ~/artifacts
 
-      - name: Setup noraneko
+      - name: Setup noraneko configuration
         run: |
           ./.github/workflows/scripts/setup-noraneko.sh \
             "${{ inputs.platform }}" \
@@ -95,12 +114,16 @@ jobs:
         env:
           SCCACHE_GHA_ENABLED: "on"
 
-      - name: Build & Package
-        run: ./.github/workflows/scripts/build-and-package.sh ${{ inputs.platform }} ${{ inputs.arch }} ${{ inputs.MOZ_BUILD_DATE }}
+      - name: Build and package
+        run: |
+          ./.github/workflows/scripts/build-and-package.sh \
+            "${{ inputs.platform }}" \
+            "${{ inputs.arch }}" \
+            "${{ inputs.MOZ_BUILD_DATE }}"
         env:
           SCCACHE_GHA_ENABLED: "on"
 
-      - name: Remove same name uploaded artifacts
+      - name: Clean existing Windows artifacts
         if: inputs.platform == 'windows'
         uses: geekyeggo/delete-artifact@v5
         with:
@@ -109,27 +132,40 @@ jobs:
             windows-x86_64-dist-host
             windows-x86_64-application-ini
 
-      - name: Publish Package Mozilla Artifact
+      - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
           name: noraneko-${{ inputs.platform }}-${{ inputs.arch }}-moz-artifact
-          path: ${{ inputs.platform == 'windows' && format('~/output/noraneko-{0}-{1}-moz-artifact.zip', inputs.platform, inputs.arch) || format('~/output/noraneko-{0}-{1}-moz-artifact.tar.xz', inputs.platform, inputs.arch) }}
+          path: >-
+            ${{ inputs.platform == 'windows' &&
+            format('~/output/noraneko-{0}-{1}-moz-artifact.zip',
+            inputs.platform, inputs.arch) ||
+            format('~/output/noraneko-{0}-{1}-moz-artifact.tar.xz',
+            inputs.platform, inputs.arch) }}
 
-      - name: Publish Profile Generate Mode Package
-        if: inputs.pgo_mode == 'generate' && inputs.platform == 'windows' && inputs.arch == 'x86_64'
+      - name: Upload PGO profile generation package
+        if: >-
+          inputs.pgo_mode == 'generate' &&
+          inputs.platform == 'windows' &&
+          inputs.arch == 'x86_64'
         uses: actions/upload-artifact@v4
         with:
           name: noraneko-windows-x86_64-profile-generate-mode-package
-          path: ${{ format('~/output/noraneko-{0}-{1}-moz-artifact.zip', inputs.platform, inputs.arch) }}
+          path: >-
+            ${{ format('~/output/noraneko-{0}-{1}-moz-artifact.zip',
+            inputs.platform, inputs.arch) }}
 
-      - name: Publish dist/host for MAR
+      - name: Upload dist/host for MAR
         uses: actions/upload-artifact@v4
         with:
           name: ${{ inputs.platform }}-${{ inputs.arch }}-dist-host
-          path: ${{ inputs.platform == 'windows' && 'obj-x86_64-pc-windows-msvc/dist/host/' || format('obj-{0}-*-linux-gnu/dist/host/', inputs.arch) }}
+          path: >-
+            ${{ inputs.platform == 'windows' &&
+            'obj-x86_64-pc-windows-msvc/dist/host/' ||
+            format('obj-{0}-*-linux-gnu/dist/host/', inputs.arch) }}
           overwrite: true
 
-      - name: Publish nora-application.ini for MAR
+      - name: Upload application.ini for MAR
         uses: actions/upload-artifact@v4
         with:
           name: ${{ inputs.platform }}-${{ inputs.arch }}-application-ini
