@@ -83,7 +83,7 @@ jobs:
       artifact-path: /home/runner/artifact
       runner: >-
         ${{ (inputs.arch == 'aarch64' || inputs.arch == 'arm64') &&
-        'ubuntu-22.04-arm' || 'ubuntu-latest' }}
+        'ubuntu-24.04-arm' || 'ubuntu-latest' }}
       target-arch: ${{ inputs.arch || 'x86_64' }}
       upload-artifact-name: >-
         noraneko-linux-${{ inputs.arch || 'x86_64' }}-profile-generate-output

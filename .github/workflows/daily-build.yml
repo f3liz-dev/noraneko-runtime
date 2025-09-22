@@ -47,5 +47,5 @@ jobs:
     secrets: inherit
     with:
       debug: ${{ github.event.inputs.debug == 'true' || github.event_name == 'schedule' }}
-      pgo: false  # PGO not configured for aarch64
+      pgo: ${{ github.event.inputs.pgo == 'true' || (github.event.inputs.pgo != 'false' && github.event_name == 'schedule') }}
       arch: aarch64

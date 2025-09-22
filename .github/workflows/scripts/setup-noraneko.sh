@@ -59,11 +59,11 @@ fi
 
 # PGO
 if [[ "$PGO" == "true" ]]; then
-  if [[ "$PGO_MODE" == "native" && "$PLATFORM" == "linux" && "$ARCH" == "x86_64" ]]; then
-    # Use native Linux PGO for 3-stage build process
+  if [[ "$PGO_MODE" == "native" && "$PLATFORM" == "linux" && ("$ARCH" == "x86_64" || "$ARCH" == "aarch64") ]]; then
+    # Use native Linux PGO for 3-stage build process (supports both x86_64 and aarch64)
     echo "ac_add_options MOZ_PGO=1" >> mozconfig
   elif [[ "$PGO_MODE" == "generate" ]]; then
-    # Use profile-generate for other platforms like Windows
+    # Use profile-generate for cross-platform builds
     echo 'ac_add_options --enable-profile-generate=cross' >> mozconfig
   elif [[ "$PGO_MODE" == "use" && -n "$PGO_ARTIFACT_NAME" ]]; then
     # Use a downloaded profile by its artifact name
