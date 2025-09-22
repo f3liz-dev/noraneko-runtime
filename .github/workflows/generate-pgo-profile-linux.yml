@@ -77,12 +77,35 @@ jobs:
             unzip -q *.zip
           fi
           
-          # Find browser directory and move it
-          BROWSER_DIR=$(find . -name "*noraneko*" -o -name "*firefox*" | head -1)
-          if [[ -d "$BROWSER_DIR" ]]; then
+          echo "Contents after extraction:"
+          ls -la
+          
+          # Find browser directory - look for directories first, then check subdirectories
+          BROWSER_DIR=""
+          
+          # Look for top-level directories containing browser
+          for dir in */; do
+            if [[ -d "$dir" ]]; then
+              if find "$dir" -name "noraneko" -o -name "firefox" -o -name "firefox-bin" | grep -q .; then
+                BROWSER_DIR="$dir"
+                break
+              fi
+            fi
+          done
+          
+          # If not found, look for any directory with noraneko or firefox in name
+          if [[ -z "$BROWSER_DIR" ]]; then
+            BROWSER_DIR=$(find . -maxdepth 1 -type d \( -name "*noraneko*" -o -name "*firefox*" \) | head -1)
+          fi
+          
+          if [[ -n "$BROWSER_DIR" && -d "$BROWSER_DIR" ]]; then
+            echo "Found browser directory: $BROWSER_DIR"
             mv "$BROWSER_DIR" $GITHUB_WORKSPACE/obj-firefox/dist/firefox
           else
-            echo "Browser directory not found"
+            echo "Browser directory not found. Available contents:"
+            find . -type d -maxdepth 2
+            echo "Files:"
+            find . -name "*noraneko*" -o -name "*firefox*"
             exit 1
           fi
 
