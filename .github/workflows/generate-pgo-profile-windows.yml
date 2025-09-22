@@ -221,51 +221,12 @@ jobs:
               echo "Bootstrap failed, but continuing with system tools..."
           }
 
-          echo "Verifying profileserver.py exists..."
-          if [[ ! -f "build/pgo/profileserver.py" ]]; then
-              echo "ERROR: profileserver.py not found"
-              find . -name "*profileserver*" -type f || echo "No profileserver files found"
-              exit 1
-          fi
+          echo "Making profile generation script executable..."
+          chmod +x ./.github/workflows/scripts/profile_generation.sh
 
-          echo "Setting up environment for profile generation..."
-          export DISPLAY=:0
-
-          LLVM_PROFDATA_PATH="/c/Users/runneradmin/.mozbuild/clang/bin/llvm-profdata.exe"
-          if [[ ! -f "`$LLVM_PROFDATA_PATH" ]]; then
-              echo "Warning: LLVM profdata not found at expected location, trying alternatives..."
-              LLVM_PROFDATA_PATH=`$(find /c/Users/runneradmin/.mozbuild -name "llvm-profdata.exe" -type f 2>/dev/null | head -1)
-
-              if [[ -z "`$LLVM_PROFDATA_PATH" ]]; then
-                  echo "Warning: Using system llvm-profdata"
-                  LLVM_PROFDATA_PATH="llvm-profdata"
-              fi
-          fi
-
-          echo "Using LLVM_PROFDATA: `$LLVM_PROFDATA_PATH"
-
-          echo "Starting profile generation..."
-          echo "Binary path: $unixBinaryPath"
-
-          timeout 1200 env LLVM_PROFDATA="`$LLVM_PROFDATA_PATH" JARLOG_FILE=en-US.log \
-              python3 build/pgo/profileserver.py --binary "$unixBinaryPath" || {
-              echo "Profile generation failed with exit code: `$?"
-              echo "Checking for any generated files..."
-              ls -la *.profdata *.log 2>/dev/null || echo "No profile files found"
-              exit 1
-          }
-
-          echo "Profile generation completed"
-
-          if [[ -f "merged.profdata" && -f "en-US.log" ]]; then
-              echo "Profile generation successful!"
-              echo "merged.profdata size: `$(stat -c%s merged.profdata 2>/dev/null || echo "unknown") bytes"
-              echo "en-US.log size: `$(stat -c%s en-US.log 2>/dev/null || echo "unknown") bytes"
-          else
-              echo "ERROR: Required profile files not generated"
-              ls -la . | grep -E "(profdata|log)" || echo "No profile files found"
-              exit 1
-          fi
+          echo "Running profile generation script..."
+          export BROWSER_BINARY_PATH="$unixBinaryPath"
+          ./.github/workflows/scripts/profile_generation.sh --binary "$unixBinaryPath" --platform windows
           "@
 
           $scriptContent | Out-File -FilePath "mozilla-build-run.sh" -Encoding UTF8
