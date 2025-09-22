@@ -1,14 +1,18 @@
 # SPDX-License-Identifier: MPL-2.0
 #
-# Reusable PGO build template.
+# PGO profile generation workflow for Windows platform.
+# 
+# This workflow handles profile data collection for Profile-Guided Optimization (PGO) builds on Windows.
+# It downloads a browser artifact, extracts it, and runs profile collection workloads.
+#
 # Inputs:
 # - browser-artifact-name (required): artifact produced by build job to download
-# - artifact-path (optional): path on runner where artifact is placed (default: build/artifacts)
-# - runner (optional): runner label to run on (default: ubuntu-latest). Callers may pass windows-latest.
-# - target-arch (optional): architecture string (e.g., x86_64)
-# - profile-mode (optional): generate | use (default: generate)
+# - artifact-path (optional): path on runner where artifact is placed
+# - runner (optional): runner label to run on (default: windows-latest)
+# - target-arch (optional): architecture string (x86_64)
 # - upload-artifact-name (optional): artifact name to upload the profdata/jarlog under
 #
+
 on:
   workflow_call:
     # Callers may pass secrets using `secrets: inherit` when they invoke this reusable workflow.
@@ -24,19 +28,15 @@ on:
         type: string
         default: 'C:\artifact'
       runner:
-        description: 'Runner label to execute the job on (ubuntu-latest or windows-latest)'
+        description: 'Runner label to execute the job on'
         required: false
         type: string
         default: 'windows-latest'
       target-arch:
-        description: 'Target architecture (e.g., x86_64)'
+        description: 'Target architecture (x86_64)'
         required: false
         type: string
-      profile-mode:
-        description: 'Profile mode: generate or use'
-        required: false
-        type: string
-        default: 'generate'
+        default: 'x86_64'
       upload-artifact-name:
         description: 'Name for the uploaded profdata/jarlog artifact'
         required: false
@@ -44,13 +44,12 @@ on:
 
 jobs:
   generate-profdata-and-jarlog:
-    name: Generate PGO Profile Data and Jarlog
+    name: Generate PGO Profile Data and Jarlog (${{ inputs.target-arch }})
     runs-on: ${{ inputs.runner }}
     # expose inputs as env for steps
     env:
       ARTIFACT_PATH: ${{ inputs.artifact-path }}
       TARGET_ARCH: ${{ inputs.target-arch }}
-      PROFILE_MODE: ${{ inputs.profile-mode }}
       BROWSER_ARTIFACT_NAME: ${{ inputs.browser-artifact-name }}
       UPLOAD_ARTIFACT_NAME: ${{ inputs.upload-artifact-name || format('{0}-profile-generate-output', inputs.browser-artifact-name) }}
 
@@ -66,17 +65,38 @@ jobs:
       - name: Checkout source 🧬
         uses: actions/checkout@v4
 
-      # Setup Mozilla Build environment (Windows only)
+      # Setup Mozilla Build environment (Windows)
       - name: Setup Mozilla Build 🪛
-        if: runner.os == 'Windows'
         shell: pwsh
         run: |
           (New-Object System.Net.WebClient).DownloadFile("https://ftp.mozilla.org/pub/mozilla/libraries/win32/MozillaBuildSetup-Latest.exe","C:\MozillaBuildSetup-Latest.exe")
           C:\MozillaBuildSetup-Latest.exe /S | out-null
 
+      # Extract browser artifact
+      - name: Extract Browser Artifact 📦
+        shell: pwsh
+        run: |
+          cd $env:ARTIFACT_PATH
+          if (Test-Path "*.zip") {
+            $zipFile = Get-ChildItem -Name "*.zip" | Select-Object -First 1
+            Expand-Archive -Path $zipFile -DestinationPath . -Force
+            Write-Output "Extracted: $zipFile"
+          }
+          
+          # Find the extracted browser binary
+          $binaryPath = Get-ChildItem -Recurse -Name "noraneko.exe" | Select-Object -First 1
+          if (-not $binaryPath) {
+            Write-Output "Browser binary not found!"
+            Get-ChildItem -Recurse -Name "*noraneko*" | ForEach-Object { Write-Output $_ }
+            exit 1
+          }
+          
+          $fullBinaryPath = Join-Path $env:ARTIFACT_PATH $binaryPath
+          Write-Output "BROWSER_BINARY_PATH=$fullBinaryPath" | Out-File -FilePath $env:GITHUB_ENV -Append
+          Write-Output "Browser binary found at: $fullBinaryPath"
+
       # Generate Profdata and Jarlog (Windows)
       - name: Generate Profile Data 🔄
-        if: runner.os == 'Windows' && env.PROFILE_MODE == 'generate'
         shell: pwsh
         run: |
           $Env:USE_MINTTY = "0"
@@ -86,26 +106,27 @@ jobs:
           echo 'export PATH=/c/mozilla-build/msys2/usr/bin:$PATH' '' >> mozilla-build-run.sh
           echo './mach --no-interactive bootstrap --application-choice browser' '' >> mozilla-build-run.sh
           
-          # Determine the binary path based on artifact structure
-          $binaryPath = "/c/artifact/floorp/floorp.exe"
-          if (Test-Path "$env:ARTIFACT_PATH\noraneko\noraneko.exe") {
-            $binaryPath = "/c/artifact/noraneko/noraneko.exe"
-          }
+          # Convert Windows path to Unix path for use in Mozilla Build shell
+          $unixBinaryPath = [regex]::replace($env:BROWSER_BINARY_PATH, "^([A-Z]):", { "/" + $args.value.Substring(0, 1).toLower() }) -replace "\\","/"
           
-          echo "LLVM_PROFDATA=/c/Users/runneradmin/.mozbuild/clang/bin/llvm-profdata.exe JARLOG_FILE=en-US.log ./mach python build/pgo/profileserver.py --binary $binaryPath" '' >> mozilla-build-run.sh
+          # Run profile generation with proper error handling and timeout
+          echo "timeout 600 env LLVM_PROFDATA=/c/Users/runneradmin/.mozbuild/clang/bin/llvm-profdata.exe JARLOG_FILE=en-US.log ./mach python build/pgo/profileserver.py --binary `"$unixBinaryPath`"" '' >> mozilla-build-run.sh
+          
+          # Execute the profile generation
           C:\mozilla-build\start-shell.bat $workspace_dir\mozilla-build-run.sh
-
-      # Generate Profdata and Jarlog (Unix)
-      - name: Generate Profile Data 🔄
-        if: runner.os != 'Windows' && env.PROFILE_MODE == 'generate'
-        run: |
-          # Ensure helper scripts are executable and run bootstrap + profileserver.
-          chmod +x workflows/scripts/setup-noraneko.sh || true
-          ./workflows/scripts/setup-noraneko.sh
           
-          # Run profileserver using the expected binary path
-          echo "Running profileserver against ${ARTIFACT_PATH}"
-          LLVM_PROFDATA=llvm-profdata JARLOG_FILE=en-US.log ./mach python build/pgo/profileserver.py --binary ${ARTIFACT_PATH}/noraneko/noraneko
+          # Verify generated files
+          if ((Test-Path "merged.profdata") -and (Test-Path "en-US.log")) {
+            Write-Output "Profile generation successful!"
+            Get-ChildItem -Name "merged.profdata", "en-US.log" | ForEach-Object { 
+              $item = Get-Item $_
+              Write-Output "$($item.Name): $($item.Length) bytes"
+            }
+          } else {
+            Write-Output "Profile generation failed - required files not found"
+            Get-ChildItem -Name "*.profdata", "*.log" | ForEach-Object { Write-Output $_ }
+            exit 1
+          }
 
       # Upload profdata and jarlog for downstream jobs to consume.
       - name: Upload Profile Data 🎁
@@ -115,3 +136,4 @@ jobs:
           path: |
             merged.profdata
             en-US.log
+          retention-days: 7

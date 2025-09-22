@@ -58,14 +58,13 @@ jobs:
     name: Windows x64 PGO Stage 2 - Collect Profiles
     if: ${{ toJSON(inputs.pgo) == 'true' }}
     needs: build-pgo-stage1
-    uses: ./.github/workflows/pgo-build.yml
+    uses: ./.github/workflows/generate-pgo-profile-windows.yml
     secrets: inherit
     with:
       browser-artifact-name: noraneko-windows-x86_64-profile-generate-mode-package
       artifact-path: C:\artifact
       runner: windows-latest
       target-arch: x86_64
-      profile-mode: generate
       upload-artifact-name: noraneko-windows-x86_64-profile-generate-output
 
   # PGO build stage 3: Build with collected profiles

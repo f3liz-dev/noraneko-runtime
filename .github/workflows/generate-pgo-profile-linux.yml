@@ -1,0 +1,170 @@
+# SPDX-License-Identifier: MPL-2.0
+#
+# Advanced PGO profile generation workflow with improved robustness and cross-architecture support.
+# 
+# This workflow handles profile data collection for Profile-Guided Optimization (PGO) builds.
+# It supports both Linux and Windows platforms with architecture-specific optimizations.
+#
+# Inputs:
+# - browser-artifact-name (required): artifact produced by build job to download
+# - artifact-path (optional): path on runner where artifact is placed
+# - runner (optional): runner label to run on (default: ubuntu-latest for Linux, ubuntu-22.04-arm for ARM)
+# - target-arch (optional): architecture string (x86_64, aarch64)
+# - upload-artifact-name (optional): artifact name to upload the profdata/jarlog under
+#
+
+on:
+  workflow_call:
+    # Callers may pass secrets using `secrets: inherit` when they invoke this reusable workflow.
+    # Do not hardcode secrets here; the caller should specify `secrets: inherit`.
+    inputs:
+      browser-artifact-name:
+        description: 'Artifact to download'
+        required: true
+        type: string
+      artifact-path:
+        description: 'Path on the runner where the browser artifact will be placed'
+        required: false
+        type: string
+        default: '/home/runner/artifact'
+      runner:
+        description: 'Runner label to execute the job on'
+        required: false
+        type: string
+        default: 'ubuntu-latest'
+      target-arch:
+        description: 'Target architecture (x86_64, aarch64)'
+        required: false
+        type: string
+        default: 'x86_64'
+      upload-artifact-name:
+        description: 'Name for the uploaded profdata/jarlog artifact'
+        required: false
+        type: string
+
+jobs:
+  generate-profdata-and-jarlog:
+    name: Generate PGO Profile Data and Jarlog (${{ inputs.target-arch }})
+    runs-on: ${{ inputs.runner }}
+    # expose inputs as env for steps
+    env:
+      ARTIFACT_PATH: ${{ inputs.artifact-path }}
+      TARGET_ARCH: ${{ inputs.target-arch }}
+      BROWSER_ARTIFACT_NAME: ${{ inputs.browser-artifact-name }}
+      UPLOAD_ARTIFACT_NAME: ${{ inputs.upload-artifact-name || format('{0}-profile-generate-output', inputs.browser-artifact-name) }}
+
+    steps:
+      # Download the browser build artifact produced by build workflows
+      - name: Download Build Artifact 📥
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.browser-artifact-name }}
+          path: ${{ env.ARTIFACT_PATH }}
+
+      # Checkout the repository so scripts and mach are available
+      - name: Checkout source 🧬
+        uses: actions/checkout@v4
+
+      # Setup system dependencies for Linux
+      - name: Setup System Dependencies (Linux) 🔧
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb mesa-utils python3-pip python3-venv
+          # Install additional dependencies for profile generation
+          sudo apt-get install -y libasound2-dev libgtk-3-dev libdbus-glib-1-dev
+          export LIBGL_ALWAYS_SOFTWARE=1
+
+      # Setup Mozilla Build environment and dependencies
+      - name: Bootstrap Mozilla Build Environment 🪛
+        shell: bash
+        run: |
+          # Use our bootstrap script
+          chmod +x ./.github/workflows/scripts/bootstrap_mozilla.sh
+          ./.github/workflows/scripts/bootstrap_mozilla.sh ${{ env.TARGET_ARCH }}
+
+      # Extract browser artifact
+      - name: Extract Browser Artifact 📦
+        run: |
+          cd ${{ env.ARTIFACT_PATH }}
+          if [[ -f *.tar.xz ]]; then
+            tar -xf *.tar.xz
+          elif [[ -f *.zip ]]; then
+            unzip -q *.zip
+          fi
+          
+          # Find the extracted browser binary
+          BROWSER_PATH=$(find . -name "noraneko" -type f -executable | head -1)
+          if [[ -z "$BROWSER_PATH" ]]; then
+            echo "Browser binary not found!"
+            find . -type f -name "*noraneko*" || true
+            exit 1
+          fi
+          
+          echo "BROWSER_BINARY_PATH=$(realpath $BROWSER_PATH)" >> $GITHUB_ENV
+          echo "Browser binary found at: $(realpath $BROWSER_PATH)"
+
+      # Generate Profdata and Jarlog (Linux)
+      - name: Generate Profile Data 🔄
+        if: runner.os == 'Linux'
+        run: |
+          cd $GITHUB_WORKSPACE
+          
+          # Set up environment for profile generation
+          export DISPLAY=:99
+          export LIBGL_ALWAYS_SOFTWARE=1
+          
+          # Start Xvfb for headless operation
+          Xvfb :99 -screen 0 1280x1024x24 &
+          XVFB_PID=$!
+          sleep 3
+          
+          # Ensure we have proper paths for LLVM tools
+          if command -v llvm-profdata >/dev/null 2>&1; then
+            LLVM_PROFDATA_CMD="llvm-profdata"
+          else
+            # Try to find it in the Mozilla build environment
+            MOZBUILD_PATH="$HOME/.mozbuild"
+            if [[ -d "$MOZBUILD_PATH" ]]; then
+              LLVM_PROFDATA_CMD=$(find "$MOZBUILD_PATH" -name "llvm-profdata" -type f -executable | head -1)
+            fi
+            
+            if [[ -z "$LLVM_PROFDATA_CMD" ]]; then
+              echo "Warning: llvm-profdata not found, will try to use system default"
+              LLVM_PROFDATA_CMD="llvm-profdata"
+            fi
+          fi
+          
+          echo "Using LLVM_PROFDATA: $LLVM_PROFDATA_CMD"
+          
+          # Run profile generation with proper error handling
+          timeout 600 env LLVM_PROFDATA="$LLVM_PROFDATA_CMD" JARLOG_FILE=en-US.log \
+            ./mach python build/pgo/profileserver.py --binary "$BROWSER_BINARY_PATH" || {
+            echo "Profile generation failed or timed out"
+            # Kill Xvfb process
+            kill $XVFB_PID 2>/dev/null || true
+            exit 1
+          }
+          
+          # Kill Xvfb process
+          kill $XVFB_PID 2>/dev/null || true
+          
+          # Verify generated files
+          if [[ -f "merged.profdata" && -f "en-US.log" ]]; then
+            echo "Profile generation successful!"
+            ls -la merged.profdata en-US.log
+          else
+            echo "Profile generation failed - required files not found"
+            ls -la . | grep -E "(profdata|log)" || true
+            exit 1
+          fi
+
+      # Upload profdata and jarlog for downstream jobs to consume.
+      - name: Upload Profile Data 🎁
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.UPLOAD_ARTIFACT_NAME }}
+          path: |
+            merged.profdata
+            en-US.log
+          retention-days: 7
