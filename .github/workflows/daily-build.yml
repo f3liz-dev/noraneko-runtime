@@ -30,22 +30,22 @@ jobs:
     uses: ./.github/workflows/wrapper-build-windows.yml
     secrets: inherit
     with:
-      debug: ${{ inputs.debug || true }}
-      pgo: ${{ inputs.pgo || true }}
+      debug: ${{ github.event.inputs.debug == 'true' || github.event_name == 'schedule' }}
+      pgo: ${{ github.event.inputs.pgo == 'true' || (github.event.inputs.pgo != 'false' && github.event_name == 'schedule') }}
 
   linux-x86_64:
     name: Linux x86_64
     uses: ./.github/workflows/wrapper-build-linux.yml
     secrets: inherit
     with:
-      debug: ${{ inputs.debug || true }}
-      pgo: ${{ inputs.pgo || true }}
+      debug: ${{ github.event.inputs.debug == 'true' || github.event_name == 'schedule' }}
+      pgo: ${{ github.event.inputs.pgo == 'true' || (github.event.inputs.pgo != 'false' && github.event_name == 'schedule') }}
 
   linux-aarch64:
     name: Linux aarch64
     uses: ./.github/workflows/wrapper-build-linux.yml
     secrets: inherit
     with:
-      debug: ${{ inputs.debug || true }}
+      debug: ${{ github.event.inputs.debug == 'true' || github.event_name == 'schedule' }}
       pgo: false  # PGO not configured for aarch64
       arch: aarch64
