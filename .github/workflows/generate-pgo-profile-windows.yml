@@ -83,17 +83,32 @@ jobs:
             Write-Output "Extracted: $zipFile"
           }
           
-          # Find the extracted browser binary
-          $binaryPath = Get-ChildItem -Recurse -Name "noraneko.exe" | Select-Object -First 1
+          # List all contents to understand the structure
+          Write-Output "Contents after extraction:"
+          Get-ChildItem -Recurse | ForEach-Object { Write-Output $_.FullName }
+          
+          # Try to find the browser binary with specific names only
+          $possibleNames = @("noraneko.exe", "floorp.exe")
+          $binaryPath = $null
+          
+          foreach ($name in $possibleNames) {
+            $found = Get-ChildItem -Recurse -Filter $name | Select-Object -First 1
+            if ($found) {
+              $binaryPath = $found.FullName
+              Write-Output "Found browser binary: $name at $binaryPath"
+              break
+            }
+          }
+          
           if (-not $binaryPath) {
-            Write-Output "Browser binary not found!"
-            Get-ChildItem -Recurse -Name "*noraneko*" | ForEach-Object { Write-Output $_ }
+            Write-Output "No suitable browser binary found!"
+            Write-Output "Available files:"
+            Get-ChildItem -Recurse | ForEach-Object { Write-Output "  $($_.FullName)" }
             exit 1
           }
           
-          $fullBinaryPath = Join-Path $env:ARTIFACT_PATH $binaryPath
-          Write-Output "BROWSER_BINARY_PATH=$fullBinaryPath" | Out-File -FilePath $env:GITHUB_ENV -Append
-          Write-Output "Browser binary found at: $fullBinaryPath"
+          Write-Output "BROWSER_BINARY_PATH=$binaryPath" | Out-File -FilePath $env:GITHUB_ENV -Append
+          Write-Output "Browser binary found at: $binaryPath"
 
       # Generate Profdata and Jarlog (Windows)
       - name: Generate Profile Data 🔄
