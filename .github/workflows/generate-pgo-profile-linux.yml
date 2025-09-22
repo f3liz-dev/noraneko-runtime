@@ -69,8 +69,8 @@ jobs:
             libpango1.0-dev \
             libatk1.0-dev \
             libx11-dev libxext-dev \
-            libxt-dev libxss1-dev \
-            libgl1-mesa-glx libgl1-mesa-dri \
+            libxt-dev libxss-dev \
+            libgl1 libglx-mesa0 libgl1-mesa-dri \
             libasound2-dev libpulse-dev \
             llvm llvm-dev clang \
             fonts-liberation fonts-dejavu-core \
