@@ -9,9 +9,17 @@ on:
         type: boolean
         required: true
       pgo:
-        description: 'Enable native Profile-Guided Optimization (PGO)'
+        description: 'Enable Profile-Guided Optimization (PGO)'
         type: boolean
         default: false
+        required: true
+      arch:
+        description: 'Target architecture'
+        type: choice
+        options:
+          - x86_64
+          - aarch64
+        default: x86_64
         required: true
 
   workflow_call:
@@ -20,19 +28,67 @@ on:
         type: boolean
         required: true
       pgo:
-        description: 'Enable native Profile-Guided Optimization (PGO)'
+        description: 'Enable Profile-Guided Optimization (PGO)'
         type: boolean
         default: false
         required: true
+      arch:
+        description: 'Target architecture'
+        type: string
+        default: x86_64
+        required: false
 
-run-name: ${{ toJSON(inputs.pgo) == 'true' && '[Native PGO] ' || '' }}Linux x64 build${{ toJSON(inputs.debug) == 'true' && ' Debug' || '' }}
+run-name: ${{ toJSON(inputs.pgo) == 'true' && '[PGO] ' || '' }}Linux ${{ inputs.arch || 'x64' }} build${{ toJSON(inputs.debug) == 'true' && ' Debug' || '' }}
+
 jobs:
-  run-main:
-    name: Linux-x64
+  # Non-PGO build (single stage)
+  build-normal:
+    name: Linux ${{ inputs.arch || 'x86_64' }} build${{ toJSON(inputs.debug) == 'true' && ' Debug' || '' }}
+    if: ${{ toJSON(inputs.pgo) != 'true' }}
     uses: ./.github/workflows/common-build.yml
     with:
       platform: linux
-      arch: x86_64
+      arch: ${{ inputs.arch || 'x86_64' }}
       debug: ${{ inputs.debug }}
-      pgo: ${{ inputs.pgo }}
-      pgo_mode: ${{ toJSON(inputs.pgo) == 'true' && 'native' || '' }}
+      pgo: false
+
+  # PGO build stage 1: Profile generation build
+  build-pgo-stage1:
+    name: Linux ${{ inputs.arch || 'x86_64' }} PGO Stage 1 - Profile Generation Build${{ toJSON(inputs.debug) == 'true' && ' Debug' || '' }}
+    if: ${{ toJSON(inputs.pgo) == 'true' }}
+    uses: ./.github/workflows/common-build.yml
+    with:
+      platform: linux
+      arch: ${{ inputs.arch || 'x86_64' }}
+      debug: ${{ inputs.debug }}
+      pgo: true
+      pgo_mode: 'generate'
+
+  # PGO build stage 2: Run profile collection on native architecture
+  collect-profiles:
+    name: Linux ${{ inputs.arch || 'x86_64' }} PGO Stage 2 - Collect Profiles
+    if: ${{ toJSON(inputs.pgo) == 'true' }}
+    needs: build-pgo-stage1
+    uses: ./.github/workflows/generate_pgo_profile.yml
+    secrets: inherit
+    with:
+      browser-artifact-name: noraneko-linux-${{ inputs.arch || 'x86_64' }}-moz-artifact
+      artifact-path: /home/runner/artifact
+      runner: ${{ (inputs.arch == 'aarch64' || inputs.arch == 'arm64') && 'ubuntu-22.04-arm' || 'ubuntu-latest' }}
+      target-arch: ${{ inputs.arch || 'x86_64' }}
+      profile-mode: generate
+      upload-artifact-name: noraneko-linux-${{ inputs.arch || 'x86_64' }}-profile-generate-output
+
+  # PGO build stage 3: Build with collected profiles
+  build-pgo-final:
+    name: Linux ${{ inputs.arch || 'x86_64' }} PGO Stage 3 - Final Build${{ toJSON(inputs.debug) == 'true' && ' Debug' || '' }}
+    if: ${{ toJSON(inputs.pgo) == 'true' }}
+    needs: collect-profiles
+    uses: ./.github/workflows/common-build.yml
+    with:
+      platform: linux
+      arch: ${{ inputs.arch || 'x86_64' }}
+      debug: ${{ inputs.debug }}
+      pgo: true
+      pgo_mode: 'use'
+      pgo_artifact_name: noraneko-linux-${{ inputs.arch || 'x86_64' }}-profile-generate-output
