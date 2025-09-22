@@ -1,15 +1,17 @@
+---
 # SPDX-License-Identifier: MPL-2.0
 
-name: "(A) ⚒ Linux build"
+name: Linux Build
 
-on:
+'on':
   workflow_dispatch:
     inputs:
       debug:
+        description: 'Enable debug build'
         type: boolean
         required: true
       pgo:
-        description: 'Enable Profile-Guided Optimization (PGO)'
+        description: 'Enable Profile-Guided Optimization'
         type: boolean
         default: false
         required: true
@@ -25,10 +27,11 @@ on:
   workflow_call:
     inputs:
       debug:
+        description: 'Enable debug build'
         type: boolean
         required: true
       pgo:
-        description: 'Enable Profile-Guided Optimization (PGO)'
+        description: 'Enable Profile-Guided Optimization'
         type: boolean
         default: false
         required: true
@@ -38,13 +41,16 @@ on:
         default: x86_64
         required: false
 
-run-name: ${{ toJSON(inputs.pgo) == 'true' && '[PGO] ' || '' }}Linux ${{ inputs.arch || 'x64' }} build${{ toJSON(inputs.debug) == 'true' && ' Debug' || '' }}
+run-name: >-
+  ${{ inputs.pgo && '[PGO] ' || '' }}Linux ${{ inputs.arch || 'x64' }}
+  ${{ inputs.debug && ' Debug' || '' }}
 
 jobs:
-  # Non-PGO build (single stage)
   build-normal:
-    name: Linux ${{ inputs.arch || 'x86_64' }} build${{ toJSON(inputs.debug) == 'true' && ' Debug' || '' }}
-    if: ${{ toJSON(inputs.pgo) != 'true' }}
+    name: >-
+      Linux ${{ inputs.arch || 'x86_64' }}
+      ${{ inputs.debug && ' Debug' || '' }}
+    if: ${{ !inputs.pgo }}
     uses: ./.github/workflows/common-build.yml
     with:
       platform: linux
@@ -52,10 +58,11 @@ jobs:
       debug: ${{ inputs.debug }}
       pgo: false
 
-  # PGO build stage 1: Profile generation build
   build-pgo-stage1:
-    name: Linux ${{ inputs.arch || 'x86_64' }} PGO Stage 1 - Profile Generation Build${{ toJSON(inputs.debug) == 'true' && ' Debug' || '' }}
-    if: ${{ toJSON(inputs.pgo) == 'true' }}
+    name: >-
+      Linux ${{ inputs.arch || 'x86_64' }} PGO Stage 1
+      ${{ inputs.debug && ' Debug' || '' }}
+    if: ${{ inputs.pgo }}
     uses: ./.github/workflows/common-build.yml
     with:
       platform: linux
@@ -64,24 +71,28 @@ jobs:
       pgo: true
       pgo_mode: 'generate'
 
-  # PGO build stage 2: Run profile collection on native architecture
   collect-profiles:
-    name: Linux ${{ inputs.arch || 'x86_64' }} PGO Stage 2 - Collect Profiles
-    if: ${{ toJSON(inputs.pgo) == 'true' }}
+    name: Linux ${{ inputs.arch || 'x86_64' }} PGO Stage 2
+    if: ${{ inputs.pgo }}
     needs: build-pgo-stage1
     uses: ./.github/workflows/generate-pgo-profile-linux.yml
     secrets: inherit
     with:
-      browser-artifact-name: noraneko-linux-${{ inputs.arch || 'x86_64' }}-moz-artifact
+      browser-artifact-name: >-
+        noraneko-linux-${{ inputs.arch || 'x86_64' }}-moz-artifact
       artifact-path: /home/runner/artifact
-      runner: ${{ (inputs.arch == 'aarch64' || inputs.arch == 'arm64') && 'ubuntu-22.04-arm' || 'ubuntu-latest' }}
+      runner: >-
+        ${{ (inputs.arch == 'aarch64' || inputs.arch == 'arm64') &&
+        'ubuntu-22.04-arm' || 'ubuntu-latest' }}
       target-arch: ${{ inputs.arch || 'x86_64' }}
-      upload-artifact-name: noraneko-linux-${{ inputs.arch || 'x86_64' }}-profile-generate-output
+      upload-artifact-name: >-
+        noraneko-linux-${{ inputs.arch || 'x86_64' }}-profile-generate-output
 
-  # PGO build stage 3: Build with collected profiles
   build-pgo-final:
-    name: Linux ${{ inputs.arch || 'x86_64' }} PGO Stage 3 - Final Build${{ toJSON(inputs.debug) == 'true' && ' Debug' || '' }}
-    if: ${{ toJSON(inputs.pgo) == 'true' }}
+    name: >-
+      Linux ${{ inputs.arch || 'x86_64' }} PGO Stage 3
+      ${{ inputs.debug && ' Debug' || '' }}
+    if: ${{ inputs.pgo }}
     needs: collect-profiles
     uses: ./.github/workflows/common-build.yml
     with:
@@ -90,4 +101,5 @@ jobs:
       debug: ${{ inputs.debug }}
       pgo: true
       pgo_mode: 'use'
-      pgo_artifact_name: noraneko-linux-${{ inputs.arch || 'x86_64' }}-profile-generate-output
+      pgo_artifact_name: >-
+        noraneko-linux-${{ inputs.arch || 'x86_64' }}-profile-generate-output
