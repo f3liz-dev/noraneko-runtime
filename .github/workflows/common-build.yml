@@ -103,7 +103,7 @@ jobs:
           sudo ./llvm.sh 21
           sudo apt update
           # Install the latest stable LLVM (version 21)
-          sudo apt install -y clang-21 llvm-21 lld-21
+          sudo apt install -y clang-21 llvm-21 lld-21 libclang-common-21-dev libclang-21-dev libclang1-21
           sudo apt install -y libclang-rt-21-dev-wasm32 libc++-21-dev-wasm32 libc++abi-21-dev-wasm32
           # Create symlinks for easy access
           sudo ln -sf /usr/bin/clang-21 /usr/local/bin/clang-latest
