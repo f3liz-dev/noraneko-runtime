@@ -53,7 +53,7 @@ name: Common Build Workflow
 jobs:
   build:
     name: Build ${{ inputs.platform }}-${{ inputs.arch }}
-    runs-on: ${{ inputs.platform == 'linux' && inputs.arch == 'aarch64' && 'ubuntu-24.04-arm64' || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
 
     steps:
       - name: Setup Node.js
@@ -94,23 +94,7 @@ jobs:
         run: |
           ./.github/workflows/scripts/allocate-swap.sh "${{ inputs.arch }}"
 
-      - name: Install latest LLVM
-        if: inputs.platform == 'linux'
-        run: |
-          # Add LLVM APT repository and install latest version
-          wget https://apt.llvm.org/llvm.sh
-          chmod +x llvm.sh
-          sudo ./llvm.sh 21
-          sudo apt update
-          # Install the latest stable LLVM (version 21)
-          sudo apt install -y clang-21 llvm-21 lld-21 libclang-common-21-dev libclang-21-dev libclang1-21 libclang-rt-21-dev
-          sudo apt install -y libclang-rt-21-dev-wasm32 libc++-21-dev-wasm32 libc++abi-21-dev-wasm32
-          # Create symlinks for easy access
-          sudo ln -sf /usr/bin/clang-21 /usr/local/bin/clang-latest
-          sudo ln -sf /usr/bin/clang++-21 /usr/local/bin/clang++-latest
-          # Verify installation
-          /usr/local/bin/clang-latest --version
-          /usr/local/bin/clang++-latest --version
+
 
       - name: Download PGO artifact
         if: inputs.pgo_mode == 'use' && inputs.pgo_artifact_name != ''
