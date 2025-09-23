@@ -121,9 +121,36 @@ jobs:
           XVFB_PID=$!
           sleep 3
           
-          # Find browser binary
-          BROWSER=$(find obj-firefox/dist/firefox -name "noraneko" -o -name "firefox*" | head -1)
+          # Find browser binary (look for actual executable files, not directories)
+          echo "Looking for browser binary in obj-firefox/dist/firefox/..."
+          ls -la obj-firefox/dist/firefox/ || echo "Directory doesn't exist or is empty"
+          
+          BROWSER=""
+          for binary_name in noraneko firefox firefox-bin; do
+            if [[ -f "obj-firefox/dist/firefox/$binary_name" ]]; then
+              BROWSER="obj-firefox/dist/firefox/$binary_name"
+              break
+            fi
+          done
+          
+          if [[ -z "$BROWSER" ]]; then
+            echo "No browser binary found. Available files:"
+            find obj-firefox/dist/firefox -type f -executable 2>/dev/null || echo "No executable files found"
+            find obj-firefox/dist/firefox -name "*" -type f | head -10
+            kill $XVFB_PID
+            exit 1
+          fi
+          
+          echo "Found browser binary: $BROWSER"
           chmod +x "$BROWSER"
+          
+          # Verify it's executable
+          if [[ ! -x "$BROWSER" ]]; then
+            echo "Browser binary is not executable after chmod"
+            ls -la "$BROWSER"
+            kill $XVFB_PID
+            exit 1
+          fi
           
           # Generate profile
           ./mach python build/pgo/profileserver.py --binary "$BROWSER"
