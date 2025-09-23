@@ -81,9 +81,7 @@ jobs:
       browser-artifact-name: >-
         noraneko-linux-${{ inputs.arch || 'x86_64' }}-moz-artifact
       artifact-path: /home/runner/artifact
-      runner: >-
-        ${{ (inputs.arch == 'aarch64' || inputs.arch == 'arm64') &&
-        'ubuntu-24.04-arm' || 'ubuntu-latest' }}
+      runner: ubuntu-latest
       target-arch: ${{ inputs.arch || 'x86_64' }}
       upload-artifact-name: >-
         noraneko-linux-${{ inputs.arch || 'x86_64' }}-profile-generate-output

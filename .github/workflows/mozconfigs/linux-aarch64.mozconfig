@@ -28,7 +28,3 @@ ac_add_options MOZ_TELEMETRY_REPORTING=
 ac_add_options --with-branding=browser/branding/noraneko-unofficial
 # Package js shell.
 export MOZ_PACKAGE_JSSHELL=1
-
-# Use latest LLVM from system
-export CC="/usr/local/bin/clang-latest"
-export CXX="/usr/local/bin/clang++-latest"
