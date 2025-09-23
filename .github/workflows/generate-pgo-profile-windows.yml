@@ -99,7 +99,7 @@ jobs:
             Write-Warning "Failed to install Python dependencies: $_"
           }
 
-      - name: Extract browser artifact
+      - name: Extract browser artifact and find binary
         shell: pwsh
         run: |
           Write-Host "Extracting browser artifact from $env:ARTIFACT_PATH..."
@@ -163,11 +163,10 @@ jobs:
             Write-Warning "Binary execution test failed, but continuing: $_"
           }
 
-          Write-Host "BROWSER_BINARY_PATH=$binaryPath" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          # Set environment variable for next step
+          "BROWSER_BINARY_PATH=$binaryPath" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           Write-Host "Browser binary found at: $binaryPath"
-
-          # Debug: Show the binary path that will be converted
-          Write-Host "Binary path to convert: $binaryPath"
+          Write-Host "Set BROWSER_BINARY_PATH environment variable"
 
       - name: Generate profile data
         shell: pwsh
@@ -180,28 +179,35 @@ jobs:
           }
 
           # Debug: Show the binary path that will be converted
-          Write-Host "Binary path to convert: $env:BROWSER_BINARY_PATH"
+          Write-Host "Binary path from environment: '$env:BROWSER_BINARY_PATH'"
 
-          if (-not $env:BROWSER_BINARY_PATH) {
+          if ([string]::IsNullOrWhiteSpace($env:BROWSER_BINARY_PATH)) {
             Write-Error "BROWSER_BINARY_PATH environment variable is empty or not set"
+            Write-Host "Current environment variables:"
+            Get-ChildItem Env: | Where-Object { $_.Name -like "*BROWSER*" } | ForEach-Object { Write-Host "  $($_.Name) = $($_.Value)" }
             exit 1
           }
 
-          $workspace_dir = $env:GITHUB_WORKSPACE -replace "^([A-Z]):", { "/c" } -replace "\\","/"
+          if (-not (Test-Path $env:BROWSER_BINARY_PATH)) {
+            Write-Error "Browser binary does not exist at: $env:BROWSER_BINARY_PATH"
+            exit 1
+          }
+
+          $workspace_dir = $env:GITHUB_WORKSPACE -replace "\\","/"
           if ($workspace_dir -match "^([A-Z]):") {
             $drive = $matches[1].ToLower()
             $workspace_dir = $workspace_dir -replace "^[A-Z]:", "/$drive"
           }
           Write-Host "Workspace directory: $workspace_dir"
 
-          $unixBinaryPath = $env:BROWSER_BINARY_PATH -replace "^([A-Z]):", { "/c" } -replace "\\","/"
+          $unixBinaryPath = $env:BROWSER_BINARY_PATH -replace "\\","/"
           if ($env:BROWSER_BINARY_PATH -match "^([A-Z]):") {
             $drive = $matches[1].ToLower()
-            $unixBinaryPath = $env:BROWSER_BINARY_PATH -replace "^[A-Z]:", "/$drive" -replace "\\","/"
+            $unixBinaryPath = $env:BROWSER_BINARY_PATH -replace "^[A-Z]:", "/$drive"
           }
           Write-Host "Unix binary path: $unixBinaryPath"
           
-          if (-not $unixBinaryPath) {
+          if ([string]::IsNullOrWhiteSpace($unixBinaryPath)) {
             Write-Error "Failed to convert binary path to Unix format"
             exit 1
           }
@@ -213,7 +219,7 @@ jobs:
           set -e
           set -x
 
-          cd $workspace_dir
+          cd "$workspace_dir"
           export PATH=/c/mozilla-build/msys2/usr/bin:`$PATH
 
           echo "Starting Mozilla bootstrap..."
@@ -270,9 +276,7 @@ jobs:
 
           $scriptContent | Out-File -FilePath "mozilla-build-run.sh" -Encoding UTF8
 
-          Write-Host "Created Mozilla Build script:"
-          Get-Content "mozilla-build-run.sh" | Select-Object -First 10
-          Write-Host "..."
+          Write-Host "Created Mozilla Build script"
 
           Write-Host "Executing profile generation via Mozilla Build shell..."
           try {
