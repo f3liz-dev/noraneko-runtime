@@ -29,7 +29,7 @@ jobs:
         run: |
           if [ "${{ github.event_name }}" = "issue_comment" ]; then
             PR_NUMBER=${{ github.event.issue.number }}
-            PR_INFO=$(gh pr view $PR_NUMBER --json headRefName,baseRefName,headRepository)
+            PR_INFO=$(gh pr view $PR_NUMBER --repo ${{ github.repository }} --json headRefName,baseRefName,headRepository)
             HEAD_REF=$(echo "$PR_INFO" | jq -r .headRefName)
             BASE_REF=$(echo "$PR_INFO" | jq -r .baseRefName)
             HEAD_REPO=$(echo "$PR_INFO" | jq -r .headRepository.name)
