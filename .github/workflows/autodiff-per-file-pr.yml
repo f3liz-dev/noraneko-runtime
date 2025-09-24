@@ -30,8 +30,6 @@ jobs:
           if [ "${{ github.event_name }}" = "issue_comment" ]; then
             PR_NUMBER=${{ github.event.issue.number }}
             PR_INFO=$(gh pr view $PR_NUMBER --repo ${{ github.repository }} --json headRefName,baseRefName,headRepository)
-            echo "DEBUG: PR_INFO JSON structure:"
-            echo "$PR_INFO" | jq .
             HEAD_REF=$(echo "$PR_INFO" | jq -r .headRefName)
             BASE_REF=$(echo "$PR_INFO" | jq -r .baseRefName)
             HEAD_REPO=$(echo "$PR_INFO" | jq -r .headRepository.name)
@@ -40,7 +38,7 @@ jobs:
             # If still null/empty, use the repository owner as fallback
             if [ -z "$HEAD_OWNER" ] || [ "$HEAD_OWNER" = "null" ]; then
               HEAD_OWNER="${{ github.repository_owner }}"
-              echo "DEBUG: Using fallback repository owner: $HEAD_OWNER"
+              echo "INFO: Using fallback repository owner: $HEAD_OWNER"
             fi
           else
             PR_NUMBER=${{ github.event.pull_request.number }}
@@ -51,16 +49,11 @@ jobs:
             # Add fallback for pull_request event as well
             if [ -z "$HEAD_OWNER" ] || [ "$HEAD_OWNER" = "null" ]; then
               HEAD_OWNER="${{ github.repository_owner }}"
-              echo "DEBUG: Using fallback repository owner: $HEAD_OWNER"
+              echo "INFO: Using fallback repository owner: $HEAD_OWNER"
             fi
           fi
 
-          echo "DEBUG: Extracted values:"
-          echo "PR_NUMBER=$PR_NUMBER"
-          echo "HEAD_REF=$HEAD_REF"
-          echo "BASE_REF=$BASE_REF" 
-          echo "HEAD_REPO=$HEAD_REPO"
-          echo "HEAD_OWNER=$HEAD_OWNER"
+          echo "Repository: $HEAD_OWNER/$HEAD_REPO (branch: $HEAD_REF)"
 
           # Final validation before setting outputs
           if [ -z "$HEAD_OWNER" ] || [ "$HEAD_OWNER" = "null" ]; then
