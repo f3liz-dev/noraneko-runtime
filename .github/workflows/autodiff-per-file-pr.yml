@@ -222,6 +222,8 @@ jobs:
 
       - name: Commit and push patch files
         if: success() && steps.patch_check.conclusion == 'success'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           if git diff --cached --quiet; then
             echo "No patch changes to commit."
