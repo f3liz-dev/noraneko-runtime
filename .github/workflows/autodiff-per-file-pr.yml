@@ -30,16 +30,42 @@ jobs:
           if [ "${{ github.event_name }}" = "issue_comment" ]; then
             PR_NUMBER=${{ github.event.issue.number }}
             PR_INFO=$(gh pr view $PR_NUMBER --repo ${{ github.repository }} --json headRefName,baseRefName,headRepository)
+            echo "DEBUG: PR_INFO JSON structure:"
+            echo "$PR_INFO" | jq .
             HEAD_REF=$(echo "$PR_INFO" | jq -r .headRefName)
             BASE_REF=$(echo "$PR_INFO" | jq -r .baseRefName)
             HEAD_REPO=$(echo "$PR_INFO" | jq -r .headRepository.name)
-            HEAD_OWNER=$(echo "$PR_INFO" | jq -r .headRepository.owner.login)
+            # Use proper fallback for head_owner - fallback to current repo owner if null
+            HEAD_OWNER=$(echo "$PR_INFO" | jq -r '.headRepository.owner.login // empty')
+            # If still null/empty, use the repository owner as fallback
+            if [ -z "$HEAD_OWNER" ] || [ "$HEAD_OWNER" = "null" ]; then
+              HEAD_OWNER="${{ github.repository_owner }}"
+              echo "DEBUG: Using fallback repository owner: $HEAD_OWNER"
+            fi
           else
             PR_NUMBER=${{ github.event.pull_request.number }}
             HEAD_REF=${{ github.event.pull_request.head.ref }}
             BASE_REF=${{ github.event.pull_request.base.ref }}
             HEAD_REPO=${{ github.event.pull_request.head.repo.name }}
             HEAD_OWNER=${{ github.event.pull_request.head.repo.owner.login }}
+            # Add fallback for pull_request event as well
+            if [ -z "$HEAD_OWNER" ] || [ "$HEAD_OWNER" = "null" ]; then
+              HEAD_OWNER="${{ github.repository_owner }}"
+              echo "DEBUG: Using fallback repository owner: $HEAD_OWNER"
+            fi
+          fi
+
+          echo "DEBUG: Extracted values:"
+          echo "PR_NUMBER=$PR_NUMBER"
+          echo "HEAD_REF=$HEAD_REF"
+          echo "BASE_REF=$BASE_REF" 
+          echo "HEAD_REPO=$HEAD_REPO"
+          echo "HEAD_OWNER=$HEAD_OWNER"
+
+          # Final validation before setting outputs
+          if [ -z "$HEAD_OWNER" ] || [ "$HEAD_OWNER" = "null" ]; then
+            echo "ERROR: HEAD_OWNER is still null or empty after fallback"
+            exit 1
           fi
 
           echo "pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
@@ -51,8 +77,7 @@ jobs:
       - name: Checkout PR branch
         uses: actions/checkout@v4
         with:
-          repository: >-
-            ${{ steps.pr_info.outputs.head_owner }}/${{ steps.pr_info.outputs.head_repo }}
+          repository: ${{ steps.pr_info.outputs.head_owner }}/${{ steps.pr_info.outputs.head_repo }}
           ref: ${{ steps.pr_info.outputs.head_ref }}
           token: ${{ secrets.F3LIZ_BOT_TOKEN }}
           fetch-depth: 0
