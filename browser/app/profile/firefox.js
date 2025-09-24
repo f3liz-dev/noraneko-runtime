@@ -1314,10 +1314,12 @@ pref("accessibility.typeaheadfind.flashBar", 1);
 
 // Whether we can show the "Firefox Labs" section.
 // pref("browser.preferences.experimental", true);
+pref("browser.preferences.experimental", false);
 // Whether we had to hide the "Firefox Labs" section because it would be empty.
 // pref("browser.preferences.experimental.hidden", false);
 // Whether we show the "More from Mozilla" section.
 // pref("browser.preferences.moreFromMozilla", true);
+pref("browser.preferences.moreFromMozilla", false);
 
 // Used by settings to track whether the user customized advanced
 // performance settings. Not used directly elsewhere.
