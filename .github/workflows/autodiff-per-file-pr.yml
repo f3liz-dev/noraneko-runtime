@@ -229,6 +229,7 @@ jobs:
             git commit -m "chore: f3liz-bot per file patches (reverted source changes)"
 
             git push origin HEAD:${{ steps.pr_info.outputs.head_ref }}
+          fi
 
       - name: Comment on success
         if: >-
