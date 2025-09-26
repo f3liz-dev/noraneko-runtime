@@ -20,6 +20,11 @@ on:
         required: false
         type: string
         default: 'windows-latest'
+      target-arch:
+        description: 'Target architecture (x86_64)'
+        required: false
+        type: string
+        default: 'x86_64'
       upload-artifact-name:
         description: 'Name for uploaded profile data artifact'
         required: false
@@ -27,10 +32,11 @@ on:
 
 jobs:
   generate-profdata-and-jarlog:
-    name: Generate PGO Profile Data
+    name: Generate PGO Profile Data (${{ inputs.target-arch }})
     runs-on: ${{ inputs.runner }}
     env:
       ARTIFACT_PATH: ${{ inputs.artifact-path }}
+      TARGET_ARCH: ${{ inputs.target-arch }}
       UPLOAD_ARTIFACT_NAME: >-
         ${{ inputs.upload-artifact-name ||
         format('{0}-profile-generate-output', inputs.browser-artifact-name) }}
