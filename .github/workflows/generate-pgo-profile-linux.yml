@@ -52,7 +52,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt update -qq
-          sudo apt install -y xvfb llvm-19 clang-19 mesa-utils llvm-profdata-19
+          sudo apt install -y xvfb llvm-19 clang-19 mesa-utils
 
       - name: Bootstrap Mozilla build
         run: |
