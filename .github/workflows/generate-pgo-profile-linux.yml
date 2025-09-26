@@ -96,8 +96,8 @@ jobs:
             # Use Docker container to get ARM64 LLVM tools
             docker run --rm -v /tmp/clang:/tmp/clang --platform linux/arm64 ubuntu:22.04 bash -c "
               apt update -qq && 
-              apt install -y llvm-14 && 
-              cp /usr/bin/llvm-profdata-14 /tmp/clang/llvm-profdata-arm64
+              apt install -y llvm-19 && 
+              cp /usr/bin/llvm-profdata-19 /tmp/clang/llvm-profdata-arm64
             "
             ln -sf /tmp/clang/llvm-profdata-arm64 /tmp/clang/bin/llvm-profdata
           else
