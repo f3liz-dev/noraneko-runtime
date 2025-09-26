@@ -52,7 +52,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt update -qq
-          sudo apt install -y xvfb llvm-19 clang-19 mesa-utils
+          sudo apt install -y xvfb llvm-19 clang-19 mesa-utils llvm-profdata-19
 
       - name: Bootstrap Mozilla build
         run: |
@@ -64,7 +64,7 @@ jobs:
           mkdir -p obj-firefox/dist
           mkdir -p /tmp/output
           mkdir -p /tmp/clang/bin
-          ln -sf $(which llvm-profdata) /tmp/clang/bin/llvm-profdata
+          ln -sf $(which llvm-profdata-19) /tmp/clang/bin/llvm-profdata
 
       - name: Extract and prepare browser
         run: |
