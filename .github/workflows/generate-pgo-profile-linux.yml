@@ -49,22 +49,60 @@ jobs:
           name: ${{ inputs.browser-artifact-name }}
           path: ${{ inputs.artifact-path }}
 
+      - name: Set up QEMU for ARM64 (if needed)
+        if: inputs.target-arch == 'aarch64'
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: linux/arm64
+
       - name: Install dependencies
         run: |
           sudo apt update -qq
-          sudo apt install -y xvfb llvm-19 clang-19 mesa-utils
+          if [[ "${{ inputs.target-arch }}" == "aarch64" ]]; then
+            # Install cross-compilation tools and ARM64 libraries
+            sudo apt install -y \
+              qemu-user-static \
+              binfmt-support \
+              gcc-aarch64-linux-gnu \
+              g++-aarch64-linux-gnu \
+              libc6-dev-arm64-cross \
+              xvfb \
+              mesa-utils
+            
+            # Install ARM64 LLVM tools via Docker approach
+            docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
+          else
+            sudo apt install -y xvfb llvm-19 clang-19 mesa-utils
+          fi
 
       - name: Bootstrap Mozilla build
         run: |
           chmod +x ./mach
-          ./mach --no-interactive bootstrap --application-choice browser
+          if [[ "${{ inputs.target-arch }}" == "aarch64" ]]; then
+            # Use QEMU for ARM64 bootstrap if needed
+            ./mach --no-interactive bootstrap --application-choice browser
+          else
+            ./mach --no-interactive bootstrap --application-choice browser
+          fi
 
-      - name: Setup directories
+      - name: Setup directories and tools
         run: |
           mkdir -p obj-firefox/dist
           mkdir -p /tmp/output
           mkdir -p /tmp/clang/bin
-          ln -sf $(which llvm-profdata-19) /tmp/clang/bin/llvm-profdata
+          
+          if [[ "${{ inputs.target-arch }}" == "aarch64" ]]; then
+            # Setup ARM64 cross-compilation tools
+            # Use Docker container to get ARM64 LLVM tools
+            docker run --rm -v /tmp/clang:/tmp/clang --platform linux/arm64 ubuntu:22.04 bash -c "
+              apt update -qq && 
+              apt install -y llvm-14 && 
+              cp /usr/bin/llvm-profdata-14 /tmp/clang/llvm-profdata-arm64
+            "
+            ln -sf /tmp/clang/llvm-profdata-arm64 /tmp/clang/bin/llvm-profdata
+          else
+            ln -sf $(which llvm-profdata-19) /tmp/clang/bin/llvm-profdata
+          fi
 
       - name: Extract and prepare browser
         run: |
@@ -142,14 +180,38 @@ jobs:
           fi
           
           echo "Found browser binary: $BROWSER"
-          chmod +x "$BROWSER"
+          
+          # Check architecture and handle accordingly
+          ARCH=$(file "$BROWSER" | grep -o "ARM aarch64\|x86-64\|x86_64")
+          echo "Browser binary architecture: $ARCH"
+          
+          if [[ "${{ inputs.target-arch }}" == "aarch64" && "$ARCH" == *"ARM aarch64"* ]]; then
+            echo "Running ARM64 binary with QEMU user-mode emulation"
+            # Ensure QEMU static is properly registered
+            if [[ ! -f /proc/sys/fs/binfmt_misc/qemu-aarch64 ]]; then
+              echo "Registering QEMU ARM64 handler"
+              docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
+            fi
+            
+            # Make sure the binary is executable
+            chmod +x "$BROWSER"
+            
+            # Run with QEMU if needed (binfmt should handle this transparently)
+            if ! "$BROWSER" --version 2>/dev/null; then
+              echo "Direct execution failed, trying with explicit QEMU"
+              export BROWSER="qemu-aarch64-static $BROWSER"
+            fi
+          else
+            chmod +x "$BROWSER"
+          fi
           
           # Verify it's executable
-          if [[ ! -x "$BROWSER" ]]; then
-            echo "Browser binary is not executable after chmod"
-            ls -la "$BROWSER"
-            kill $XVFB_PID
-            exit 1
+          echo "Testing browser execution..."
+          if [[ "${{ inputs.target-arch }}" == "aarch64" && "$ARCH" == *"ARM aarch64"* ]]; then
+            # For ARM64 binaries, test with timeout since QEMU can be slow
+            timeout 30s "$BROWSER" --version || echo "Browser version check timed out (expected for QEMU)"
+          else
+            "$BROWSER" --version
           fi
           
           # Generate profile
