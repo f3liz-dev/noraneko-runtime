@@ -51,8 +51,8 @@ jobs:
 
       - name: Install dependencies
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y xvfb llvm clang
+          sudo apt update -qq
+          sudo apt install -y xvfb llvm clang mesa-utils
 
       - name: Bootstrap Mozilla build
         run: |
