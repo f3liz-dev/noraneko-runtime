@@ -136,6 +136,24 @@ jobs:
             windows-x86_64-dist-host
             windows-x86_64-application-ini
 
+      - name: Clean existing Linux x86_64 artifacts
+        if: inputs.platform == 'linux' && inputs.arch == 'x86_64'
+        uses: geekyeggo/delete-artifact@v5
+        with:
+          name: |
+            noraneko-linux-x86_64-moz-artifact
+            linux-x86_64-dist-host
+            linux-x86_64-application-ini
+
+      - name: Clean existing Linux aarch64 artifacts
+        if: inputs.platform == 'linux' && inputs.arch == 'aarch64'
+        uses: geekyeggo/delete-artifact@v5
+        with:
+          name: |
+            noraneko-linux-aarch64-moz-artifact
+            linux-aarch64-dist-host
+            linux-aarch64-application-ini
+
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
