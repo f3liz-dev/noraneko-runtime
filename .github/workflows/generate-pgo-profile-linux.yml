@@ -185,21 +185,45 @@ jobs:
           ARCH=$(file "$BROWSER" | grep -o "ARM aarch64\|x86-64\|x86_64")
           echo "Browser binary architecture: $ARCH"
           
-          if [[ "${{ inputs.target-arch }}" == "aarch64" && "$ARCH" == *"ARM aarch64"* ]]; then
+          if [[ "aarch64" == "aarch64" && "$ARCH" == *"ARM aarch64"* ]]; then
             echo "Running ARM64 binary with QEMU user-mode emulation"
+            
+            # Ensure QEMU is available and create symlink if needed
+            QEMU_PATH=""
+            if [[ -f "/usr/bin/qemu-aarch64-static" ]]; then
+              QEMU_PATH="/usr/bin/qemu-aarch64-static"
+            elif [[ -f "/usr/local/bin/qemu-aarch64-static" ]]; then
+              QEMU_PATH="/usr/local/bin/qemu-aarch64-static"
+            else
+              echo "ERROR: qemu-aarch64-static not found in standard locations"
+              kill $XVFB_PID
+              exit 1
+            fi
+            
+            echo "Found QEMU at: $QEMU_PATH"
+            
+            # Create symlink in current directory for convenience
+            if [[ ! -f "./qemu-aarch64-static" ]]; then
+              ln -sf "$QEMU_PATH" ./qemu-aarch64-static
+            fi
+            
             # Ensure QEMU static is properly registered
             if [[ ! -f /proc/sys/fs/binfmt_misc/qemu-aarch64 ]]; then
               echo "Registering QEMU ARM64 handler"
               docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
+              sleep 2
             fi
             
             # Make sure the binary is executable
             chmod +x "$BROWSER"
             
-            # Run with QEMU if needed (binfmt should handle this transparently)
-            if ! "$BROWSER" --version 2>/dev/null; then
-              echo "Direct execution failed, trying with explicit QEMU"
-              export BROWSER="qemu-aarch64-static $BROWSER"
+            # Test if binfmt handles ARM64 execution transparently
+            echo "Testing direct ARM64 execution..."
+            if timeout 10s "$BROWSER" --version >/dev/null 2>&1; then
+              echo "Direct ARM64 execution successful (binfmt working)"
+            else
+              echo "Direct execution failed, using explicit QEMU"
+              BROWSER="$QEMU_PATH $BROWSER"
             fi
           else
             chmod +x "$BROWSER"
@@ -207,14 +231,31 @@ jobs:
           
           # Verify it's executable
           echo "Testing browser execution..."
-          if [[ "${{ inputs.target-arch }}" == "aarch64" && "$ARCH" == *"ARM aarch64"* ]]; then
+          if [[ "aarch64" == "aarch64" && "$ARCH" == *"ARM aarch64"* ]]; then
             # For ARM64 binaries, test with timeout since QEMU can be slow
-            timeout 30s "$BROWSER" --version || echo "Browser version check timed out (expected for QEMU)"
+            timeout 30s $BROWSER --version || echo "Browser version check timed out or failed (this may be expected for QEMU)"
           else
             "$BROWSER" --version
           fi
           
+          # Check if browser test was successful enough to proceed
+          if [[ $? -ne 0 ]] && [[ "aarch64" == "aarch64" && "$ARCH" == *"ARM aarch64"* ]]; then
+            echo "Browser execution test failed. Checking QEMU setup..."
+            
+            # Debug QEMU setup
+            echo "QEMU debug info:"
+            which qemu-aarch64-static || echo "qemu-aarch64-static not in PATH"
+            ls -la /proc/sys/fs/binfmt_misc/qemu-aarch64 || echo "QEMU ARM64 binfmt not registered"
+            
+            # Try one more time with explicit QEMU
+            echo "Final attempt with explicit QEMU path..."
+            BROWSER="$QEMU_PATH $(echo $BROWSER | sed 's/.*qemu-aarch64-static //')"
+          fi
+          
+          echo "Final browser command: $BROWSER"
+          
           # Generate profile
+          echo "Starting profile generation..."
           ./mach python build/pgo/profileserver.py --binary "$BROWSER"
           
           # Cleanup
