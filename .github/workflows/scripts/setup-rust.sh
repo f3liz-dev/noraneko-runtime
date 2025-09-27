@@ -13,16 +13,18 @@ PGO_ARTIFACT_NAME="$3"
 
 if [[ "$PLATFORM" == "windows" ]]; then
   if [[ -n "$PGO_ARTIFACT_NAME" ]]; then
-    rustup toolchain install 1.81.0
-    rustup default 1.81.0
+    # for llvm 19
+    # https://github.com/rust-lang/rust/commits/master/src/llvm-project
+    # check here to match rust version with llvm
+    rustup default 1.86.0
   fi
   rustup target add x86_64-pc-windows-msvc
 elif [[ "$PLATFORM" == "linux" ]]; then
   if [[ "$ARCH" == "aarch64" ]]; then
-    rustup default stable
+    rustup default 1.86.0
     rustup target add aarch64-unknown-linux-gnu
   else
-    rustup default stable
+    rustup default 1.86.0
     rustup target add x86_64-unknown-linux-gnu
   fi
 fi
