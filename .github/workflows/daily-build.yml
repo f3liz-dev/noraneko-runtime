@@ -22,7 +22,7 @@ permissions:
         type: boolean
         default: true
 
-run-name: Daily Runtime Build${{ inputs.debug && ' (Debug)' || '' }}
+run-name: Daily Runtime Build${{ (inputs.debug || github.event_name == 'schedule') && ' (Debug)' || '' }}
 
 jobs:
   windows-x86_64:
