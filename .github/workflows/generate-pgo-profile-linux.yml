@@ -56,10 +56,6 @@ jobs:
           name: ${{ inputs.browser-artifact-name }}
           path: ${{ inputs.artifact-path }}
 
-      # ============================================
-      # System Setup
-      # ============================================
-      
       - name: Set up QEMU for ARM64 emulation
         if: env.IS_ARM64 == 'true'
         uses: docker/setup-qemu-action@v3
@@ -71,24 +67,10 @@ jobs:
           sudo apt update -qq
           
           if [[ "$IS_ARM64" == "true" ]]; then
-            # ARM64 emulation requirements
-            sudo apt install -y \
-              qemu-user-static \
-              qemu-system-aarch64 \
-              binfmt-support \
-              xvfb \
-              mesa-utils
-            
-            # Register QEMU binary format handlers
+            sudo apt install -y qemu-user-static binfmt-support xvfb
             docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
-            
-            # Verify registration
-            echo "Verifying QEMU registration:"
-            ls -la /proc/sys/fs/binfmt_misc/ | grep qemu || \
-              echo "Warning: QEMU handlers may not be registered"
           else
-            # x86_64 native build requirements
-            sudo apt install -y xvfb llvm-19 clang-19 mesa-utils
+            sudo apt install -y xvfb llvm-19 clang-19 ruby
           fi
 
       - name: Bootstrap Mozilla build environment
@@ -96,20 +78,13 @@ jobs:
           chmod +x ./mach
           ./mach --no-interactive bootstrap --application-choice browser
 
-      # ============================================
-      # Build Tools Setup
-      # ============================================
-      
       - name: Prepare build directories
         run: |
-          mkdir -p "$BROWSER_DIST_PATH"
-          mkdir -p "$PROFILE_OUTPUT_DIR"
-          mkdir -p "$CLANG_TOOLS_DIR/bin"
+          mkdir -p "$BROWSER_DIST_PATH" "$PROFILE_OUTPUT_DIR" "$CLANG_TOOLS_DIR/bin"
 
       - name: Setup LLVM profdata tool
         run: |
           if [[ "$IS_ARM64" == "true" ]]; then
-            # Extract ARM64 LLVM tools using Docker
             docker run --rm \
               -v "$CLANG_TOOLS_DIR:$CLANG_TOOLS_DIR" \
               --platform linux/arm64 \
@@ -120,211 +95,144 @@ jobs:
                 chmod +x $CLANG_TOOLS_DIR/llvm-profdata-arm64
               "
             
-            # Create QEMU wrapper for llvm-profdata
             cat > "$CLANG_TOOLS_DIR/bin/llvm-profdata" << 'EOF'
           #!/bin/bash
           exec $CLANG_TOOLS_DIR/llvm-profdata-arm64 "$@"
           EOF
             chmod +x "$CLANG_TOOLS_DIR/bin/llvm-profdata"
           else
-            # Use native x86_64 LLVM tools
             ln -sf $(which llvm-profdata-19) "$CLANG_TOOLS_DIR/bin/llvm-profdata"
           fi
 
-      # ============================================
-      # Browser Setup
-      # ============================================
-      
       - name: Extract browser artifact
         run: |
           cd "${{ inputs.artifact-path }}"
           
-          # Extract archive (supports tar and zip formats)
           if ls *.tar.* >/dev/null 2>&1; then
             tar -xf *.tar.*
           elif ls *.zip >/dev/null 2>&1; then
             unzip -q *.zip
           fi
-          
-          echo "Extracted contents:"
-          ls -la
 
       - name: Locate and install browser
+        shell: ruby {0}
         run: |
-          cd "${{ inputs.artifact-path }}"
+          require 'fileutils'
+          require 'find'
           
-          # Search for browser directory
-          BROWSER_DIR=""
+          artifact_path = '${{ inputs.artifact-path }}'
+          browser_dist_path = "#{ENV['GITHUB_WORKSPACE']}/#{ENV['BROWSER_DIST_PATH']}"
+          binary_names = ['noraneko', 'noraneko-bin', 'firefox', 'firefox-bin']
           
-          # First pass: look for directories with browser binaries
-          for dir in */; do
-            if [[ -d "$dir" ]] && \
-               find "$dir" -name "noraneko" -o -name "firefox" -o -name "firefox-bin" | grep -q .; then
-              BROWSER_DIR="$dir"
+          Dir.chdir(artifact_path)
+          
+          browser_dir = nil
+          Dir.glob('**/*').each do |path|
+            if File.file?(path) && binary_names.any? { |name| File.basename(path) == name }
+              browser_dir = File.dirname(path)
+              puts "Found browser binary: #{path}"
               break
-            fi
-          done
+            end
+          end
           
-          # Second pass: fallback to name-based search
-          if [[ -z "$BROWSER_DIR" ]]; then
-            BROWSER_DIR=$(find . -maxdepth 1 -type d \
-              \( -name "*noraneko*" -o -name "*firefox*" \) | head -1)
-          fi
+          browser_dir ||= Dir.glob('*').find { |dir| File.directory?(dir) && (dir.include?('noraneko') || dir.include?('firefox')) }
           
-          # Validate and move browser
-          if [[ -n "$BROWSER_DIR" && -d "$BROWSER_DIR" ]]; then
-            echo "Found browser directory: $BROWSER_DIR"
-            mv "$BROWSER_DIR" "$GITHUB_WORKSPACE/$BROWSER_DIST_PATH"
+          if browser_dir && File.directory?(browser_dir)
+            FileUtils.mkdir_p(browser_dist_path)
+            FileUtils.cp_r("#{browser_dir}/.", browser_dist_path)
           else
-            echo "ERROR: Browser directory not found"
-            echo "Available directories:"
-            find . -type d -maxdepth 2
-            echo "Matching files:"
-            find . -name "*noraneko*" -o -name "*firefox*"
+            puts "ERROR: Browser directory not found"
             exit 1
-          fi
+          end
 
-      # ============================================
-      # Profile Generation
-      # ============================================
-      
       - name: Create profile generation script
+        shell: ruby {0}
         run: |
-          cat > /tmp/generate_profile.sh << 'SCRIPT_EOF'
+          require 'fileutils'
+          require 'find'
+          
+          browser_dist_path = ENV['BROWSER_DIST_PATH']
+          binary_names = ['noraneko', 'noraneko-bin', 'firefox', 'firefox-bin']
+          
+          browser = nil
+          Find.find(browser_dist_path) do |path|
+            if File.file?(path) && binary_names.include?(File.basename(path))
+              browser = path
+              break
+            end
+          end
+          
+          if browser.nil?
+            puts "ERROR: No browser binary found"
+            exit 1
+          end
+          
+          FileUtils.chmod(0755, browser)
+          
+          script = <<~SCRIPT
           #!/bin/bash
           set -e
-          
-          # Environment configuration
           export MOZ_FETCHES_DIR=/tmp
           export JARLOG_FILE=en-US.log
           export LLVM_PROFDATA="$CLANG_TOOLS_DIR/bin/llvm-profdata"
           export DISPLAY=:99
+          "#{browser}" --version || echo "Version check failed"
+          ./mach python build/pgo/profileserver.py --binary "#{browser}"
+          SCRIPT
           
-          # Locate browser binary
-          echo "Searching for browser binary..."
-          BROWSER=""
-          for binary_name in noraneko firefox firefox-bin; do
-            candidate="$BROWSER_DIST_PATH/$binary_name"
-            if [[ -f "$candidate" ]]; then
-              BROWSER="$candidate"
-              echo "Found: $BROWSER"
-              break
-            fi
-          done
-          
-          # Validate browser binary
-          if [[ -z "$BROWSER" ]]; then
-            echo "ERROR: No browser binary found"
-            echo "Available executables:"
-            find "$BROWSER_DIST_PATH" -type f -executable 2>/dev/null || \
-              echo "No executable files found"
-            exit 1
-          fi
-          
-          chmod +x "$BROWSER"
-          
-          # Test browser
-          echo "Testing browser execution..."
-          "$BROWSER" --version || echo "Version check failed (may be expected)"
-          
-          # Run profile generation
-          echo "Starting PGO profile generation..."
-          ./mach python build/pgo/profileserver.py --binary "$BROWSER"
-          SCRIPT_EOF
-          
-          chmod +x /tmp/generate_profile.sh
+          File.write('/tmp/generate_profile.sh', script)
+          FileUtils.chmod(0755, '/tmp/generate_profile.sh')
 
       - name: Generate PGO profile data
         run: |
-          # Start virtual display
+          set -e
           export DISPLAY=:99
           Xvfb :99 -screen 0 1024x768x24 &
           XVFB_PID=$!
           sleep 3
           
-          # Execute profile generation based on architecture
           if [[ "$IS_ARM64" == "true" ]]; then
-            echo "Running profile generation via QEMU (ARM64)..."
+            [[ -f "/usr/bin/qemu-aarch64-static" ]] || { echo "ERROR: qemu-aarch64-static not found"; kill $XVFB_PID; exit 1; }
             
-            # Validate QEMU installation
-            if [[ ! -f "/usr/bin/qemu-aarch64-static" ]]; then
-              echo "ERROR: qemu-aarch64-static not found"
-              kill $XVFB_PID
-              exit 1
-            fi
-            
-            qemu-aarch64-static --version
-            
-            # Re-register binfmt if needed
-            if [[ ! -f /proc/sys/fs/binfmt_misc/qemu-aarch64 ]]; then
-              echo "Re-registering binfmt_misc for ARM64..."
+            [[ -f /proc/sys/fs/binfmt_misc/qemu-aarch64 ]] || {
               docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
               sleep 2
-            fi
+            }
             
-            # Increase timeout for emulated execution
-            export MOZ_PGO_TIMEOUT_MULTIPLIER=5
-            
-            # Run in ARM64 Docker container
-            docker run --rm \
-              --platform linux/arm64 \
-              -v "$PWD:/workspace" \
-              -v /tmp:/tmp \
-              -e MOZ_FETCHES_DIR=/tmp \
-              -e JARLOG_FILE=en-US.log \
+            docker run --rm --platform linux/arm64 \
+              -v "$PWD:/workspace" -v /tmp:/tmp \
+              -e MOZ_FETCHES_DIR=/tmp -e JARLOG_FILE=en-US.log \
               -e LLVM_PROFDATA="$CLANG_TOOLS_DIR/bin/llvm-profdata" \
-              -e DISPLAY=:99 \
-              -e MOZ_PGO_TIMEOUT_MULTIPLIER=5 \
-              --network host \
-              -w /workspace \
+              -e DISPLAY=:99 -e MOZ_PGO_TIMEOUT_MULTIPLIER=5 \
+              --network host -w /workspace \
               ubuntu:24.04 \
-              bash -c "
-                apt update -qq && 
-                apt install -y python3 file &&
-                /tmp/generate_profile.sh
-              "
+              bash -c "apt update -qq && apt install -y python3 file && /tmp/generate_profile.sh"
             PROFILE_EXIT=$?
           else
-            echo "Running profile generation natively (x86_64)..."
             /tmp/generate_profile.sh
             PROFILE_EXIT=$?
           fi
           
-          # Cleanup
           kill $XVFB_PID 2>/dev/null || true
           
-          # Check execution status
-          if [[ $PROFILE_EXIT -ne 0 ]]; then
-            echo "ERROR: Profile generation failed (exit code: $PROFILE_EXIT)"
-            exit $PROFILE_EXIT
-          fi
-          
-          echo "Profile generation completed successfully"
+          [[ $PROFILE_EXIT -eq 0 ]] || { echo "ERROR: Profile generation failed"; exit $PROFILE_EXIT; }
 
-      # ============================================
-      # Validation and Upload
-      # ============================================
-      
       - name: Verify generated profile data
+        shell: ruby {0}
         run: |
-          echo "Validating profile data files..."
+          ['merged.profdata', 'en-US.log'].each do |f|
+            unless File.exist?(f)
+              puts "ERROR: #{f} not found"
+              exit 1
+            end
+          end
           
-          # Check file existence
-          if [[ ! -f merged.profdata ]] || [[ ! -f en-US.log ]]; then
-            echo "ERROR: Required profile data files not found"
-            ls -la merged.profdata en-US.log 2>/dev/null || true
+          if File.zero?('merged.profdata')
+            puts "ERROR: merged.profdata is empty"
             exit 1
-          fi
+          end
           
-          # Check file size
-          if [[ ! -s merged.profdata ]]; then
-            echo "ERROR: merged.profdata is empty"
-            exit 1
-          fi
-          
-          echo "✓ Profile data validation successful"
-          echo "  merged.profdata: $(du -h merged.profdata | cut -f1)"
-          echo "  en-US.log: $(du -h en-US.log | cut -f1)"
+          puts "✓ Profile data validation successful"
 
       - name: Upload profile artifacts
         uses: actions/upload-artifact@v4
