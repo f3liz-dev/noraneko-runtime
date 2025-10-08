@@ -168,13 +168,16 @@ jobs:
           FileUtils.chmod(0755, browser)
           
           script = <<~SCRIPT
-          #!/bin/sh
+          #!/bin/bash
           set -e
           export MOZ_FETCHES_DIR=/tmp
           export JARLOG_FILE=en-US.log
           export LLVM_PROFDATA="$CLANG_TOOLS_DIR/bin/llvm-profdata"
           export DISPLAY=:99
           "#{browser}" --version || echo "Version check failed"
+          
+          # mach python automatically handles the Mozilla Python environment
+          # It uses the packages from python/moz* in the source tree
           ./mach python build/pgo/profileserver.py --binary "#{browser}"
           SCRIPT
           
@@ -207,13 +210,13 @@ jobs:
               # Install system dependencies
               apt-get update -qq
               apt-get install -y --no-install-recommends \
-                gcc file curl ca-certificates \
+                gcc file curl ca-certificates bash \
                 libgtk-3-0 libdbus-glib-1-2 libxt6 libx11-xcb1 \
                 libasound2 libpulse0 libgl1 libglib2.0-0 \
                 fonts-liberation xdg-utils \
                 libdrm2 libgbm1 libxcomposite1 libxdamage1 \
                 libxrandr2 libxshmfence1 libxtst6 \
-                xvfb python3 python3-yaml
+                xvfb python3
               
               # Start Xvfb in background
               Xvfb :99 -screen 0 1024x768x24 &
@@ -221,6 +224,8 @@ jobs:
               sleep 3
               
               # Run profile generation
+              # Note: ./mach python handles all Python dependencies from the source tree
+              # including PyYAML (third_party/python/PyYAML) and psutil
               /tmp/generate_profile.sh
               PROFILE_EXIT=\$?
               
