@@ -316,6 +316,7 @@
     <ID>UndocumentedPublicClass:PocketCategoriesViewHolder.kt$PocketCategoriesViewHolder$Companion</ID>
     <ID>UndocumentedPublicClass:PocketRecommendationsHeaderViewHolder.kt$PocketRecommendationsHeaderViewHolder$Companion</ID>
     <ID>UndocumentedPublicClass:PocketStoriesViewHolder.kt$PocketStoriesViewHolder$Companion</ID>
+    <ID>UndocumentedPublicClass:PlayStoreReviewPromptController.kt$PlayStoreReviewPromptController$Companion</ID>
     <ID>UndocumentedPublicClass:PoweredByNotification.kt$PoweredByNotification$Companion</ID>
     <ID>UndocumentedPublicClass:PrivateBrowserPageViewHolder.kt$PrivateBrowserPageViewHolder$Companion</ID>
     <ID>UndocumentedPublicClass:PrivateBrowserTrayList.kt$PrivateBrowserTrayList : AbstractBrowserTrayList</ID>
