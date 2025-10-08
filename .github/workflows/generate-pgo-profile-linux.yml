@@ -76,22 +76,23 @@ jobs:
         run: |
           mkdir -p "$BROWSER_DIST_PATH" "$PROFILE_OUTPUT_DIR" "$CLANG_TOOLS_DIR/bin"
 
-      - name: Setup LLVM profdata tool in Alpine container
+      - name: Setup LLVM profdata tool in container
         run: |
           PLATFORM="linux/amd64"
-          PROFDATA_NAME="llvm19-profdata-x86_64"
+          PROFDATA_NAME="llvm-profdata-x86_64"
           
           if [[ "$IS_ARM64" == "true" ]]; then
             PLATFORM="linux/arm64"
-            PROFDATA_NAME="llvm19-profdata-arm64"
+            PROFDATA_NAME="llvm-profdata-arm64"
           fi
           
           docker run --rm \
             -v "$CLANG_TOOLS_DIR:$CLANG_TOOLS_DIR" \
             --platform "$PLATFORM" \
-            alpine:latest sh -c "
-              apk add --no-cache llvm19 && 
-              cp /usr/bin/llvm19-profdata $CLANG_TOOLS_DIR/$PROFDATA_NAME &&
+            debian:bookworm-slim sh -c "
+              apt-get update -qq && \
+              apt-get install -y --no-install-recommends llvm && \
+              cp /usr/bin/llvm-profdata $CLANG_TOOLS_DIR/$PROFDATA_NAME &&
               chmod +x $CLANG_TOOLS_DIR/$PROFDATA_NAME
             "
           
@@ -199,19 +200,20 @@ jobs:
             -e MOZ_DISABLE_CONTENT_SANDBOX=1 \
             -e MOZ_DISABLE_GMP_SANDBOX=1 \
             --network host -w /workspace \
-            alpine:latest \
-            sh -c "
+            debian:bookworm-slim \
+            bash -c "
               set -e
               
               # Install system dependencies
-              apk add --no-cache \
-                gcc libc-dev file curl ca-certificates bash \
-                gtk+3.0 dbus-glib libxt libx11 \
-                alsa-lib-dev pulseaudio-dev mesa-gl glib \
-                ttf-liberation xdg-utils \
-                libdrm mesa-gbm libxcomposite libxdamage \
-                libxrandr libxshmfence libxtst xvfb xvfb-run \
-                python3 py3-pip py3-yaml
+              apt-get update -qq
+              apt-get install -y --no-install-recommends \
+                gcc file curl ca-certificates \
+                libgtk-3-0 libdbus-glib-1-2 libxt6 libx11-xcb1 \
+                libasound2t64 libpulse0 libgl1 libglib2.0-0 \
+                fonts-liberation xdg-utils \
+                libdrm2 libgbm1 libxcomposite1 libxdamage1 \
+                libxrandr2 libxshmfence1 libxtst6 \
+                xvfb python3 python3-pip python3-yaml
               
               # Start Xvfb in background
               Xvfb :99 -screen 0 1024x768x24 &
