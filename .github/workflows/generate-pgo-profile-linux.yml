@@ -62,16 +62,10 @@ jobs:
         with:
           platforms: linux/arm64
 
-      - name: Install system dependencies
+      - name: Install host system dependencies
         run: |
           sudo apt update -qq
-          
-          if [[ "$IS_ARM64" == "true" ]]; then
-            sudo apt install -y qemu-user-static binfmt-support xvfb
-            docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
-          else
-            sudo apt install -y xvfb llvm-19 clang-19 ruby
-          fi
+          sudo apt install -y ruby
 
       - name: Bootstrap Mozilla build environment
         run: |
@@ -82,27 +76,30 @@ jobs:
         run: |
           mkdir -p "$BROWSER_DIST_PATH" "$PROFILE_OUTPUT_DIR" "$CLANG_TOOLS_DIR/bin"
 
-      - name: Setup LLVM profdata tool
+      - name: Setup LLVM profdata tool in Alpine container
         run: |
+          PLATFORM="linux/amd64"
+          PROFDATA_NAME="llvm19-profdata-x86_64"
+          
           if [[ "$IS_ARM64" == "true" ]]; then
-            docker run --rm \
-              -v "$CLANG_TOOLS_DIR:$CLANG_TOOLS_DIR" \
-              --platform linux/arm64 \
-              ubuntu:24.04 bash -c "
-                apt update -qq && 
-                apt install -y llvm-19 && 
-                cp /usr/bin/llvm-profdata-19 $CLANG_TOOLS_DIR/llvm-profdata-arm64 &&
-                chmod +x $CLANG_TOOLS_DIR/llvm-profdata-arm64
-              "
-            
-            cat > "$CLANG_TOOLS_DIR/bin/llvm-profdata" << 'EOF'
-          #!/bin/bash
-          exec $CLANG_TOOLS_DIR/llvm-profdata-arm64 "$@"
-          EOF
-            chmod +x "$CLANG_TOOLS_DIR/bin/llvm-profdata"
-          else
-            ln -sf $(which llvm-profdata-19) "$CLANG_TOOLS_DIR/bin/llvm-profdata"
+            PLATFORM="linux/arm64"
+            PROFDATA_NAME="llvm19-profdata-arm64"
           fi
+          
+          docker run --rm \
+            -v "$CLANG_TOOLS_DIR:$CLANG_TOOLS_DIR" \
+            --platform "$PLATFORM" \
+            alpine:latest sh -c "
+              apk add --no-cache llvm19 && 
+              cp /usr/bin/llvm19-profdata $CLANG_TOOLS_DIR/$PROFDATA_NAME &&
+              chmod +x $CLANG_TOOLS_DIR/$PROFDATA_NAME
+            "
+          
+          cat > "$CLANG_TOOLS_DIR/bin/llvm-profdata" << EOF
+          #!/bin/sh
+          exec $CLANG_TOOLS_DIR/$PROFDATA_NAME "\$@"
+          EOF
+          chmod +x "$CLANG_TOOLS_DIR/bin/llvm-profdata"
 
       - name: Extract browser artifact
         run: |
@@ -170,7 +167,7 @@ jobs:
           FileUtils.chmod(0755, browser)
           
           script = <<~SCRIPT
-          #!/bin/bash
+          #!/bin/sh
           set -e
           export MOZ_FETCHES_DIR=/tmp
           export JARLOG_FILE=en-US.log
@@ -186,65 +183,50 @@ jobs:
       - name: Generate PGO profile data
         run: |
           set -e
-          export DISPLAY=:99
-          Xvfb :99 -screen 0 1024x768x24 &
-          XVFB_PID=$!
-          sleep 3
           
+          PLATFORM="linux/amd64"
           if [[ "$IS_ARM64" == "true" ]]; then
-            [[ -f "/usr/bin/qemu-aarch64-static" ]] || { echo "ERROR: qemu-aarch64-static not found"; kill $XVFB_PID; exit 1; }
-            
-            [[ -f /proc/sys/fs/binfmt_misc/qemu-aarch64 ]] || {
-              docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
-              sleep 2
-            }
-            
-            docker run --rm --platform linux/arm64 \
-              -v "$PWD:/workspace" -v /tmp:/tmp \
-              -e MOZ_FETCHES_DIR=/tmp \
-              -e JARLOG_FILE=en-US.log \
-              -e LLVM_PROFDATA="$CLANG_TOOLS_DIR/bin/llvm-profdata" \
-              -e DISPLAY=:99 \
-              -e MOZ_PGO_TIMEOUT_MULTIPLIER=5 \
-              -e MOZ_DISABLE_CONTENT_SANDBOX=1 \
-              -e MOZ_DISABLE_GMP_SANDBOX=1 \
-              --network host -w /workspace \
-              ubuntu:24.04 \
-              bash -c "
-                set -e
-                apt update -qq
-                
-                # Install system dependencies
-                apt install -y \
-                  gcc file curl ca-certificates \
-                  libgtk-3-0 libdbus-glib-1-2 libxt6 libx11-xcb1 \
-                  libasound2 libpulse0 libgl1 libglib2.0-0 \
-                  fonts-liberation libappindicator3-1 xdg-utils \
-                  libdrm2 libgbm1 libxcomposite1 libxdamage1 \
-                  libxrandr2 libxshmfence1 libxtst6
-                
-                # Install uv
-                curl -LsSf https://astral.sh/uv/install.sh | sh
-                export PATH=\"/root/.cargo/bin:\$PATH\"
-                
-                # Install Python with uv
-                uv python install 3.12
-                
-                # Install Python dependencies
-                uv pip install --system pyyaml==6.0.3
-                
-                # Run profile generation
-                /tmp/generate_profile.sh
-              "
-            PROFILE_EXIT=$?
-          else
-            /tmp/generate_profile.sh
-            PROFILE_EXIT=$?
+            PLATFORM="linux/arm64"
           fi
           
-          kill $XVFB_PID 2>/dev/null || true
-          
-          [[ $PROFILE_EXIT -eq 0 ]] || { echo "ERROR: Profile generation failed"; exit $PROFILE_EXIT; }
+          docker run --rm --platform "$PLATFORM" \
+            -v "$PWD:/workspace" -v /tmp:/tmp \
+            -e MOZ_FETCHES_DIR=/tmp \
+            -e JARLOG_FILE=en-US.log \
+            -e LLVM_PROFDATA="$CLANG_TOOLS_DIR/bin/llvm-profdata" \
+            -e DISPLAY=:99 \
+            -e MOZ_PGO_TIMEOUT_MULTIPLIER=5 \
+            -e MOZ_DISABLE_CONTENT_SANDBOX=1 \
+            -e MOZ_DISABLE_GMP_SANDBOX=1 \
+            --network host -w /workspace \
+            alpine:latest \
+            sh -c "
+              set -e
+              
+              # Install system dependencies
+              apk add --no-cache \
+                gcc libc-dev file curl ca-certificates bash \
+                gtk+3.0 dbus-glib libxt libx11 \
+                alsa-lib-dev pulseaudio-dev mesa-gl glib \
+                ttf-liberation xdg-utils \
+                libdrm mesa-gbm libxcomposite libxdamage \
+                libxrandr libxshmfence libxtst xvfb xvfb-run \
+                python3 py3-pip py3-yaml
+              
+              # Start Xvfb in background
+              Xvfb :99 -screen 0 1024x768x24 &
+              XVFB_PID=\$!
+              sleep 3
+              
+              # Run profile generation
+              /tmp/generate_profile.sh
+              PROFILE_EXIT=\$?
+              
+              # Cleanup
+              kill \$XVFB_PID 2>/dev/null || true
+              
+              exit \$PROFILE_EXIT
+            "
 
       - name: Verify generated profile data
         shell: ruby {0}
