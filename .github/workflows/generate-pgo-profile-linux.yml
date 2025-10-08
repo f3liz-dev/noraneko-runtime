@@ -89,10 +89,10 @@ jobs:
           docker run --rm \
             -v "$CLANG_TOOLS_DIR:$CLANG_TOOLS_DIR" \
             --platform "$PLATFORM" \
-            debian:bookworm-slim sh -c "
+            debian:bookworm-slim bash -c "
               apt-get update -qq && \
-              apt-get install -y --no-install-recommends llvm && \
-              cp /usr/bin/llvm-profdata $CLANG_TOOLS_DIR/$PROFDATA_NAME &&
+              apt-get install -y --no-install-recommends llvm-19 && \
+              cp /usr/bin/llvm-profdata-19 $CLANG_TOOLS_DIR/$PROFDATA_NAME &&
               chmod +x $CLANG_TOOLS_DIR/$PROFDATA_NAME
             "
           
@@ -209,11 +209,11 @@ jobs:
               apt-get install -y --no-install-recommends \
                 gcc file curl ca-certificates \
                 libgtk-3-0 libdbus-glib-1-2 libxt6 libx11-xcb1 \
-                libasound2t64 libpulse0 libgl1 libglib2.0-0 \
+                libasound2 libpulse0 libgl1 libglib2.0-0 \
                 fonts-liberation xdg-utils \
                 libdrm2 libgbm1 libxcomposite1 libxdamage1 \
                 libxrandr2 libxshmfence1 libxtst6 \
-                xvfb python3 python3-pip python3-yaml
+                xvfb python3 python3-yaml
               
               # Start Xvfb in background
               Xvfb :99 -screen 0 1024x768x24 &
