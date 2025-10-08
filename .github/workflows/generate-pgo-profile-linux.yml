@@ -62,10 +62,22 @@ jobs:
         with:
           platforms: linux/arm64
 
+      - name: Install aria2c for apt-fast
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y aria2
+
+      - name: Setup apt-fast
+        run: |
+          sudo cp .github/assets/apt-fast/apt-fast /usr/local/sbin/apt-fast
+          sudo chmod +x /usr/local/sbin/apt-fast
+          sudo cp .github/assets/apt-fast/apt-fast.conf /etc/apt-fast.conf
+          echo "✓ apt-fast installed and configured"
+
       - name: Install host system dependencies
         run: |
-          sudo apt update -qq
-          sudo apt install -y ruby
+          sudo apt-fast update -qq
+          sudo apt-fast install -y ruby
 
       - name: Bootstrap Mozilla build environment
         run: |
@@ -193,6 +205,11 @@ jobs:
             PLATFORM="linux/arm64"
           fi
           
+          # Copy vendored apt-fast into container volume
+          mkdir -p /tmp/apt-fast-vendor
+          cp .github/assets/apt-fast/apt-fast /tmp/apt-fast-vendor/
+          cp .github/assets/apt-fast/apt-fast.conf /tmp/apt-fast-vendor/
+          
           docker run --rm --platform "$PLATFORM" \
             -v "$PWD:/workspace" -v /tmp:/tmp \
             -e MOZ_FETCHES_DIR=/tmp \
@@ -207,9 +224,20 @@ jobs:
             bash -c "
               set -e
               
-              # Install system dependencies
+              # Install aria2c first (required for apt-fast)
               apt-get update -qq
-              apt-get install -y --no-install-recommends \
+              apt-get install -y --no-install-recommends aria2
+              
+              # Setup apt-fast from vendored files
+              cp /tmp/apt-fast-vendor/apt-fast /usr/local/sbin/apt-fast
+              chmod +x /usr/local/sbin/apt-fast
+              cp /tmp/apt-fast-vendor/apt-fast.conf /etc/apt-fast.conf
+              
+              # Update package lists
+              apt-fast update -qq
+              
+              # Install system dependencies with apt-fast
+              apt-fast install -y --no-install-recommends \
                 gcc file curl ca-certificates bash \
                 libgtk-3-0 libdbus-glib-1-2 libxt6 libx11-xcb1 \
                 libasound2 libpulse0 libgl1 libglib2.0-0 \
