@@ -1,5 +1,5 @@
 diff --git a/toolkit/xre/nsAppRunner.cpp b/toolkit/xre/nsAppRunner.cpp
-index b83637c971..cd7bc1f639 100644
+index 62a5420abf..b86777affb 100644
 --- a/toolkit/xre/nsAppRunner.cpp
 +++ b/toolkit/xre/nsAppRunner.cpp
 @@ -271,6 +271,19 @@
@@ -19,10 +19,10 @@ index b83637c971..cd7bc1f639 100644
 +* END
 +*/
 +
- extern uint32_t gRestartMode;
  extern void InstallSignalHandlers(const char* ProgramName);
  
-@@ -3528,6 +3541,48 @@ static bool CheckCompatibility(nsIFile* aProfileDir, const nsCString& aVersion,
+ #define FILE_COMPATIBILITY_INFO "compatibility.ini"_ns
+@@ -3560,6 +3573,47 @@ static bool CheckCompatibility(nsIFile* aProfileDir, const nsCString& aVersion,
      return false;
    }
  
@@ -33,28 +33,27 @@ index b83637c971..cd7bc1f639 100644
 +  */
 +  {
 +    auto _NRReadString = [](nsIFile* aFile, nsACString& buildid) -> nsresult {
-+        MOZ_TRY_VAR(buildid, URLPreloader::ReadFile(aFile));
-+        return NS_OK;
++      MOZ_TRY_VAR(buildid, URLPreloader::ReadFile(aFile));
++      return NS_OK;
 +    };
++  
 +    nsCOMPtr<nsIFile> buildid2_profile;
 +    aProfileDir->Clone(getter_AddRefs(buildid2_profile));
 +    if (!buildid2_profile) return false;
 +    buildid2_profile->AppendNative("buildid2"_ns);
 +
 +    nsCString buildid2_profile_string;
-+    rv = _NRReadString(buildid2_profile,buildid2_profile_string);
-+    if (NS_FAILED(rv)) {
-+        return false;
++    if (NS_FAILED(_NRReadString(buildid2_profile, buildid2_profile_string))) {
++      return false;
 +    }
-+    
++  
 +    nsCOMPtr<nsIFile> buildid2_appDir;
 +    aAppDir->Clone(getter_AddRefs(buildid2_appDir));
 +    if (!buildid2_appDir) return false;
 +    buildid2_appDir->AppendNative("buildid2"_ns);
 +
 +    nsCString buildid2_appDir_string;
-+    rv = _NRReadString(buildid2_appDir,buildid2_appDir_string);
-+    if (NS_FAILED(rv)) {
++    if (NS_FAILED(_NRReadString(buildid2_appDir, buildid2_appDir_string))) {
 +      return false;
 +    }
 +
