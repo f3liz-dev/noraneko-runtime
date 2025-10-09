@@ -14,7 +14,7 @@ name: Generate PGO Profile (Linux)
         description: 'Path where browser artifact will be placed'
         required: false
         type: string
-        default: '/home/runner/artifact'
+        default: '/tmp/artifact'
       runner:
         description: 'Runner label to execute on'
         required: false
@@ -38,13 +38,14 @@ env:
 jobs:
   generate-profdata-and-jarlog:
     name: Generate PGO Profile Data (${{ inputs.target-arch }})
-    runs-on: ${{ inputs.runner }}
+    runs-on: ${{ inputs.target-arch == 'aarch64' && 'macos-26' || inputs.runner }}
     
     env:
       UPLOAD_ARTIFACT_NAME: >-
         ${{ inputs.upload-artifact-name ||
         format('{0}-profile-generate-output', inputs.browser-artifact-name) }}
       IS_ARM64: ${{ inputs.target-arch == 'aarch64' }}
+      PLATFORM: ${{ inputs.target-arch == 'aarch64' && 'linux/arm64' || 'linux/amd64' }}
     
     steps:
       - name: Checkout repository
@@ -56,61 +57,41 @@ jobs:
           name: ${{ inputs.browser-artifact-name }}
           path: ${{ inputs.artifact-path }}
 
-      - name: Set up QEMU for ARM64 emulation
-        if: env.IS_ARM64 == 'true'
-        uses: docker/setup-qemu-action@v3
-        with:
-          platforms: linux/arm64
-
-      - name: Install aria2c for apt-fast
+      - name: Setup Docker (macOS)
+        if: runner.os == 'macOS'
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y aria2
+          # Docker Desktop is pre-installed on macOS runners
+          # Just verify it's running
+          docker info
 
-      - name: Setup apt-fast
-        run: |
-          sudo cp .github/assets/apt-fast/apt-fast /usr/local/sbin/apt-fast
-          sudo chmod +x /usr/local/sbin/apt-fast
-          sudo cp .github/assets/apt-fast/apt-fast.conf /etc/apt-fast.conf
-          echo "✓ apt-fast installed and configured"
-
-      - name: Install host system dependencies
-        run: |
-          sudo apt-fast update -qq
-          sudo apt-fast install -y ruby
-
-      - name: Bootstrap Mozilla build environment
-        run: |
-          chmod +x ./mach
-          ./mach --no-interactive bootstrap --application-choice browser
-
-      - name: Prepare build directories
+      - name: Prepare host directories
         run: |
           mkdir -p "$BROWSER_DIST_PATH" "$PROFILE_OUTPUT_DIR" "$CLANG_TOOLS_DIR/bin"
 
       - name: Setup LLVM profdata tool in container
         run: |
-          PLATFORM="linux/amd64"
-          PROFDATA_NAME="llvm-profdata-x86_64"
-          
-          if [[ "$IS_ARM64" == "true" ]]; then
-            PLATFORM="linux/arm64"
-            PROFDATA_NAME="llvm-profdata-arm64"
-          fi
-          
           docker run --rm \
             -v "$CLANG_TOOLS_DIR:$CLANG_TOOLS_DIR" \
             --platform "$PLATFORM" \
             debian:bookworm-slim bash -c "
               apt-get update -qq && \
               apt-get install -y --no-install-recommends llvm-19 && \
-              cp /usr/bin/llvm-profdata-19 $CLANG_TOOLS_DIR/$PROFDATA_NAME &&
-              chmod +x $CLANG_TOOLS_DIR/$PROFDATA_NAME
+              PROFDATA_NAME='llvm-profdata-x86_64'
+              if [[ '$IS_ARM64' == 'true' ]]; then
+                PROFDATA_NAME='llvm-profdata-arm64'
+              fi
+              cp /usr/bin/llvm-profdata-19 $CLANG_TOOLS_DIR/\$PROFDATA_NAME &&
+              chmod +x $CLANG_TOOLS_DIR/\$PROFDATA_NAME
             "
           
-          cat > "$CLANG_TOOLS_DIR/bin/llvm-profdata" << EOF
+          cat > "$CLANG_TOOLS_DIR/bin/llvm-profdata" << 'EOF'
           #!/bin/sh
-          exec $CLANG_TOOLS_DIR/$PROFDATA_NAME "\$@"
+          SCRIPT_DIR="$(dirname "$(readlink -f "$0" 2>/dev/null || realpath "$0")")"
+          PROFDATA_NAME="llvm-profdata-x86_64"
+          if [ "$(uname -m)" = "aarch64" ]; then
+            PROFDATA_NAME="llvm-profdata-arm64"
+          fi
+          exec "$SCRIPT_DIR/../$PROFDATA_NAME" "$@"
           EOF
           chmod +x "$CLANG_TOOLS_DIR/bin/llvm-profdata"
 
@@ -155,10 +136,10 @@ jobs:
             exit 1
           end
 
-      - name: Create profile generation script
+      - name: Find browser binary path
+        id: find-binary
         shell: ruby {0}
         run: |
-          require 'fileutils'
           require 'find'
           
           browser_dist_path = ENV['BROWSER_DIST_PATH']
@@ -179,39 +160,48 @@ jobs:
           
           FileUtils.chmod(0755, browser)
           
-          script = <<~SCRIPT
-          #!/bin/bash
-          set -e
-          export MOZ_FETCHES_DIR=/tmp
-          export JARLOG_FILE=en-US.log
-          export LLVM_PROFDATA="$CLANG_TOOLS_DIR/bin/llvm-profdata"
-          export DISPLAY=:99
-          "#{browser}" --version || echo "Version check failed"
+          # Export for next steps
+          File.open(ENV['GITHUB_OUTPUT'], 'a') do |f|
+            f.puts "binary-path=#{browser}"
+          end
           
-          # mach python automatically handles the Mozilla Python environment
-          # It uses the packages from python/moz* in the source tree
-          ./mach python build/pgo/profileserver.py --binary "#{browser}"
-          SCRIPT
-          
-          File.write('/tmp/generate_profile.sh', script)
-          FileUtils.chmod(0755, '/tmp/generate_profile.sh')
+          puts "Found binary: #{browser}"
+
+      - name: Setup Python and uv (host)
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+
+      - name: Setup uv (host)
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+          cache-dependency-glob: ".github/scripts/firefox-profileserver/pyproject.toml"
+
+      - name: Sync uv dependencies (host)
+        working-directory: .github/scripts/firefox-profileserver
+        run: |
+          uv sync
 
       - name: Generate PGO profile data
+        env:
+          MOZ_FETCHES_DIR: /tmp
+          JARLOG_FILE: en-US.log
+          LLVM_PROFDATA: ${{ env.CLANG_TOOLS_DIR }}/bin/llvm-profdata
+          MOZ_PGO_TIMEOUT_MULTIPLIER: 5
+          MOZ_DISABLE_CONTENT_SANDBOX: 1
+          MOZ_DISABLE_GMP_SANDBOX: 1
         run: |
           set -e
           
-          PLATFORM="linux/amd64"
-          if [[ "$IS_ARM64" == "true" ]]; then
-            PLATFORM="linux/arm64"
-          fi
-          
-          # Copy vendored apt-fast into container volume
-          mkdir -p /tmp/apt-fast-vendor
-          cp .github/assets/apt-fast/apt-fast /tmp/apt-fast-vendor/
-          cp .github/assets/apt-fast/apt-fast.conf /tmp/apt-fast-vendor/
+          # Get absolute paths
+          WORKSPACE_ABS="$(cd "$GITHUB_WORKSPACE" && pwd)"
+          BINARY_ABS="$(cd "$(dirname "${{ steps.find-binary.outputs.binary-path }}")" && pwd)/$(basename "${{ steps.find-binary.outputs.binary-path }}")"
           
           docker run --rm --platform "$PLATFORM" \
-            -v "$PWD:/workspace" -v /tmp:/tmp \
+            -v "$WORKSPACE_ABS:/workspace" \
+            -v "$CLANG_TOOLS_DIR:$CLANG_TOOLS_DIR" \
+            -v /tmp:/tmp \
             -e MOZ_FETCHES_DIR=/tmp \
             -e JARLOG_FILE=en-US.log \
             -e LLVM_PROFDATA="$CLANG_TOOLS_DIR/bin/llvm-profdata" \
@@ -219,32 +209,31 @@ jobs:
             -e MOZ_PGO_TIMEOUT_MULTIPLIER=5 \
             -e MOZ_DISABLE_CONTENT_SANDBOX=1 \
             -e MOZ_DISABLE_GMP_SANDBOX=1 \
-            --network host -w /workspace \
+            --network host \
+            -w /workspace \
             debian:bookworm-slim \
             bash -c "
               set -e
               
-              # Install aria2c first (required for apt-fast)
+              # Install system dependencies
               apt-get update -qq
-              apt-get install -y --no-install-recommends aria2
-              
-              # Setup apt-fast from vendored files
-              cp /tmp/apt-fast-vendor/apt-fast /usr/local/sbin/apt-fast
-              chmod +x /usr/local/sbin/apt-fast
-              cp /tmp/apt-fast-vendor/apt-fast.conf /etc/apt-fast.conf
-              
-              # Update package lists
-              apt-fast update -qq
-              
-              # Install system dependencies with apt-fast
-              apt-fast install -y --no-install-recommends \
-                gcc file curl ca-certificates bash \
+              apt-get install -y --no-install-recommends \
+                curl ca-certificates bash file \
                 libgtk-3-0 libdbus-glib-1-2 libxt6 libx11-xcb1 \
                 libasound2 libpulse0 libgl1 libglib2.0-0 \
                 fonts-liberation xdg-utils \
                 libdrm2 libgbm1 libxcomposite1 libxdamage1 \
                 libxrandr2 libxshmfence1 libxtst6 \
-                xvfb python3
+                xvfb
+              
+              # Install uv
+              curl -LsSf https://astral.sh/uv/install.sh | sh
+              export PATH=\"\$HOME/.local/bin:\$PATH\"
+              
+              # Sync uv dependencies inside container
+              cd /workspace/.github/scripts/firefox-profileserver
+              uv sync
+              cd /workspace
               
               # Start Xvfb in background
               Xvfb :99 -screen 0 1024x768x24 &
@@ -252,9 +241,9 @@ jobs:
               sleep 3
               
               # Run profile generation
-              # Note: ./mach python handles all Python dependencies from the source tree
-              # including PyYAML (third_party/python/PyYAML) and psutil
-              /tmp/generate_profile.sh
+              uv run /workspace/.github/scripts/firefox-profileserver/profileserver.py \
+                --source-dir /workspace \
+                --binary \"$BINARY_ABS\"
               PROFILE_EXIT=\$?
               
               # Cleanup
