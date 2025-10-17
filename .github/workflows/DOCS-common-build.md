@@ -133,8 +133,7 @@ for patch in .github/patches/upstream/*.patch; do
   git apply --verbose "$patch"
 done
 ```
-- **Why this exists**: Maintains upstream compatibility while applying Noraneko-specific changes
-- **State after**: Source tree includes all modifications from patch files
+- **Effect**: Source tree includes all modifications from patch files
 
 **2. Patched Source → Configured Build** (Setup noraneko configuration)
 ```bash
@@ -147,7 +146,7 @@ cp -r .github/assets/branding/* ./browser/branding/
 # Appends configuration to mozconfig
 echo "ac_add_options --with-branding=browser/branding/noraneko-unofficial" >> mozconfig
 ```
-- **State after**: 
+- **Result**: 
   - `mozconfig` file exists at repo root
   - Branding files copied to `browser/branding/`
   - Build directory ready for `mach configure`
@@ -158,7 +157,7 @@ echo "ac_add_options --with-branding=browser/branding/noraneko-unofficial" >> mo
 ./mach build      # Compiles source → object files
 ./mach package    # Object files → browser archive
 ```
-- **State after**:
+- **Result**:
   - Linux: `obj-{arch}-*-linux-gnu/dist/noraneko-*.tar.xz`
   - Windows: `obj-x86_64-pc-windows-msvc/dist/noraneko-*win64.zip`
   - Compilation artifacts in obj-* directory
@@ -170,7 +169,7 @@ mkdir -p ~/output
 mv obj-*/dist/noraneko-*.{zip|tar.xz} ~/output/
 cp obj-*/dist/bin/application.ini ./nora-application.ini
 ```
-- **State after**:
+- **Result**:
   - Browser package in ~/output/
   - application.ini copied for MAR generation
   - Original obj-* directory remains (for dist/host tools)
@@ -263,13 +262,10 @@ For pgo_mode='use':
     Build fails immediately (cannot proceed without profile data)
 ```
 
-### Why Artifact Cleanup Exists
+### Artifact Cleanup Process
 
-**Problem**: GitHub Actions artifacts are immutable once uploaded with a name
-- Multiple builds (or PGO stages) want to upload with same artifact name
-- Without cleanup, upload fails with "artifact already exists"
+GitHub Actions artifacts are immutable once uploaded. The workflow deletes existing artifacts before uploading new ones:
 
-**Solution**: Delete existing artifacts before uploading new ones
 ```yaml
 - name: Clean existing Windows artifacts
   if: inputs.platform == 'windows'
@@ -281,10 +277,9 @@ For pgo_mode='use':
       windows-x86_64-application-ini
 ```
 
-**When this matters**:
+**When cleanup occurs**:
 - PGO Stage 1 uploads instrumented browser
-- PGO Stage 3 wants to upload optimized browser with same name
-- Without cleanup, Stage 3 upload fails
+- PGO Stage 3 deletes previous artifact, then uploads optimized browser with same name
 
 ## Architecture Variations
 
@@ -297,9 +292,9 @@ xvfb-run -a -s "-screen 0 1024x768x24" ./mach configure
 xvfb-run -a -s "-screen 0 1024x768x24" nice -n 10 ./mach build --jobs=$MOZ_NUM_JOBS
 xvfb-run -a -s "-screen 0 1024x768x24" ./mach package
 ```
-- **Why Xvfb**: Some build steps require X11 display (even for headless)
-- **Why nice -n 10**: Reduces priority to avoid starving system processes
-- **Jobs**: (nproc * 3/4) to leave resources for other tasks
+- **Xvfb**: Provides X11 display for build steps (even headless)
+- **nice -n 10**: Reduces process priority
+- **Jobs**: (nproc * 3/4) parallel build jobs
 
 **Windows**:
 ```bash
@@ -307,8 +302,8 @@ xvfb-run -a -s "-screen 0 1024x768x24" ./mach package
 nice -n 10 ./mach build --jobs=$MOZ_NUM_JOBS
 ./mach package
 ```
-- **No Xvfb**: Windows has native windowing system
-- **Same nice/jobs logic**: Prevents resource exhaustion
+- **No Xvfb needed**: Windows has native windowing system
+- **Same nice/jobs configuration** as Linux
 
 ### PGO Mode Differences
 
@@ -320,7 +315,7 @@ ac_add_options --enable-profile-generate=cross
 - **Output**: Browser with profiling instrumentation
 - **Size**: ~20-30% larger due to instrumentation code
 - **Performance**: ~50% slower due to profiling overhead
-- **Purpose**: Collects execution data during Stage 2
+- **Function**: Collects execution data during Stage 2
 
 **pgo_mode='use'**:
 ```bash
@@ -333,15 +328,14 @@ ac_add_options --with-pgo-jarlog=~/artifacts/en-US.log
 - **Output**: Optimized browser using profile data
 - **Size**: Normal (instrumentation removed)
 - **Performance**: ~15-30% faster than non-PGO build
-- **Purpose**: Final optimized build for distribution
+- **Function**: Final optimized build for distribution
 
-### Why 'cross' PGO Mode
+### Cross-Platform PGO Mode
 
-**cross vs default**:
+**'cross' mode configuration**:
 - `--enable-profile-generate=cross`: Generates portable profile data
-- `--enable-profile-use=cross`: Can use profile data from different machine
-- **Why needed**: Stage 1 and Stage 3 may run on different runners
-- **Alternative**: `--enable-lto` (Link-Time Optimization) without cross would require same hardware
+- `--enable-profile-use=cross`: Uses profile data from different machine
+- **Effect**: Stage 1 and Stage 3 can run on different runners
 
 ## Process Logic
 
@@ -356,9 +350,9 @@ submodules: >-
 - macOS: Recursive submodules (includes nested submodules)
 - Others: Non-recursive (only immediate submodules)
 
-**Why this difference**:
-- macOS builds may need additional submodules for frameworks
-- Linux/Windows: Flatter dependency structure
+**Configuration**:
+- macOS builds use additional submodules for frameworks
+- Linux/Windows use flatter dependency structure
 
 ### Parallel Job Calculation
 
@@ -371,10 +365,10 @@ export MOZ_NUM_JOBS=$(( $(nproc) * 3 / 4 ))
 - 8 cores → 6 jobs
 - 16 cores → 12 jobs
 
-**Why 75% instead of 100%**:
+**Effect**:
 - Leaves resources for system processes
-- Prevents build failures due to memory exhaustion
-- Reduces chance of timeout due to resource contention
+- Prevents build failures from memory exhaustion
+- Reduces timeout risk from resource contention
 
 ### Artifact Overwrite Strategy
 
@@ -385,36 +379,36 @@ export MOZ_NUM_JOBS=$(( $(nproc) * 3 / 4 ))
     overwrite: true  # Allows replacing existing artifact
 ```
 
-**Why overwrite is needed**:
+**Function**:
 - dist/host contains build tools (e.g., mar tool for update packages)
-- Multiple builds (PGO stages) need to upload this
+- Multiple builds (PGO stages) upload this artifact
 - Overwrite allows latest version to replace previous
 
-## When Timing Is Critical
+## Timing Requirements
 
-### Swap Allocation First
+### Swap Allocation Timing
 ```yaml
 - name: Allocate swap space
   run: ./.github/workflows/scripts/allocate-swap.sh "${{ inputs.arch }}"
 ```
 
-**Why early**: 
+**Sequence**: 
+- Runs before heavy compilation starts
 - Large C++ compilations can exceed RAM (especially during linking)
 - Swap prevents OOM killer from terminating build
-- Must happen before heavy compilation starts
 
-**Time cost**: ~5 minutes to allocate 30GB swap
+**Duration**: ~5 minutes to allocate 30GB swap
 
-### sccache Setup Early
+### sccache Setup Timing
 ```yaml
 - name: Setup sccache
   uses: mozilla-actions/sccache-action@v0.0.9
 ```
 
-**Why early**:
-- Must be available before first compilation
+**Sequence**:
+- Runs before first compilation
 - Caches compilation results for future builds
-- Dramatically reduces incremental build time (hours → minutes)
+- Reduces incremental build time (hours → minutes)
 
 **Time saved**: 50-80% on repeated builds with warm cache
 
@@ -424,10 +418,10 @@ export MOZ_NUM_JOBS=$(( $(nproc) * 3 / 4 ))
 - name: Setup noraneko configuration (runs mach bootstrap)
 ```
 
-**Why ordered**:
+**Sequence**:
+- Rust installed before mach bootstrap runs
 - mach bootstrap checks Rust version
-- If wrong version installed, bootstrap may install its own
-- Installing correct version first prevents duplicate downloads
+- Correct version first prevents duplicate downloads
 
 ## When Steps Can Be Skipped
 
@@ -456,10 +450,10 @@ export MOZ_NUM_JOBS=$(( $(nproc) * 3 / 4 ))
     inputs.arch == 'x86_64'
 ```
 
-**Why Windows-only**:
-- Windows PGO profile generation has different artifact name
+**Platform-specific behavior**:
+- Windows PGO profile generation uses different artifact name
 - Linux uses standard artifact name
-- This is a duplicate upload with alternate name for Windows PGO Stage 2
+- Duplicate upload with alternate name for Windows PGO Stage 2
 
 ### Conditional PGO Download
 
@@ -468,31 +462,31 @@ export MOZ_NUM_JOBS=$(( $(nproc) * 3 / 4 ))
   if: inputs.pgo_mode == 'use' && inputs.pgo_artifact_name != ''
 ```
 
-**Only Stage 3 downloads**: Stage 1 and normal builds skip
+**When downloads occur**: Only Stage 3 (PGO use mode), Stage 1 and normal builds skip
 
 ## Common Failure Points
 
 ### 1. Out of Disk Space
 **When**: During linking or packaging
-**Why**: Object files can exceed 50GB
+**Cause**: Object files can exceed 50GB
 **Solution**: allocate-swap.sh frees ~30GB
 **Detection**: Error message contains "No space left on device"
 
 ### 2. Patch Application Failure
 **When**: After checkout
-**Why**: Upstream changed file that patch modifies
+**Cause**: Upstream changed file that patch modifies
 **Solution**: Update patch files via autodiff-per-file-pr.yml
 **Detection**: "patch does not apply"
 
 ### 3. PGO Profile Missing
 **When**: Stage 3 (pgo_mode='use')
-**Why**: Stage 2 failed or artifact expired (7-day retention)
+**Cause**: Stage 2 failed or artifact expired (7-day retention)
 **Solution**: Re-run full PGO pipeline (Stage 1 → 2 → 3)
 **Detection**: "Artifact not found" in Download PGO artifact step
 
 ### 4. Timeout
 **When**: Build exceeds 6 hours
-**Why**: Cold cache + large codebase
+**Cause**: Cold cache + large codebase
 **Solution**: Enable sccache (automatic in this workflow)
 **Detection**: GitHub Actions "The job running on runner... has exceeded the maximum execution time of 360 minutes"
 

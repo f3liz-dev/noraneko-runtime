@@ -139,8 +139,8 @@ LIBGL_ALWAYS_SOFTWARE=1  # Software OpenGL rendering
 
 ## Critical Timing Requirements
 
-| Step | Timing | Why |
-|------|--------|-----|
+| Step | Timing | Effect |
+|------|--------|--------|
 | Xvfb startup | 3 seconds | Display must be ready before browser starts |
 | Swap allocation | Before build | Prevents OOM during linking |
 | PGO profile generation | 20 minutes | Instrumented browser is slow |
@@ -150,8 +150,8 @@ LIBGL_ALWAYS_SOFTWARE=1  # Software OpenGL rendering
 
 ## Artifact Lifetimes
 
-| Artifact | Retention | Size | Purpose |
-|----------|-----------|------|---------|
+| Artifact | Retention | Size | Function |
+|----------|-----------|------|----------|
 | Browser packages | 90 days (default) | 100-200 MB | Final distributable |
 | PGO profiles | 7 days | 5-50 MB | Input to Stage 3 build |
 | dist/host tools | 90 days | 10-20 MB | MAR update package creation |
@@ -284,7 +284,7 @@ done
 | Windows | x86_64 | windows-latest | None | No |
 | macOS | (Not implemented) | - | - | - |
 
-### Why These Choices
+### Architecture Implementation
 - **Linux x86_64**: Native build on ubuntu-latest (fast)
 - **Linux aarch64**: Docker ARM64 on macOS (GitHub has no native Linux ARM64 runners)
 - **Windows**: Native build (no containerization needed on Windows)

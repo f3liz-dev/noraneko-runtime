@@ -63,20 +63,20 @@ echo "ac_add_options --with-branding=browser/branding/noraneko-unofficial" >> mo
 echo "ac_add_options --enable-chrome-format=flat" >> mozconfig
 ```
 
-**Why flat chrome format**:
-- Faster startup (no need to unpack omni.ja every time)
-- Better for development builds
+**Flat chrome format effects**:
+- Faster startup (omni.ja not unpacked every time)
 - Standard for modern Firefox builds
+- Better for development builds
 
 #### 4. Install msitools (Windows Installer Support)
 ```bash
 sudo apt install msitools -y
 ```
 
-**Why needed on Linux runners**:
+**Function on Linux runners**:
 - Cross-compiling Windows builds on Linux
 - Creates MSI installer packages
-- Even Windows builds run on Linux with cross-compilation tools
+- Windows builds run on Linux with cross-compilation tools
 
 #### 5. Configure sccache (Compiler Cache)
 ```bash
@@ -89,9 +89,9 @@ sudo apt install msitools -y
 } >> mozconfig
 ```
 
-**Why hardcoded path**:
-- `mozilla-actions/sccache-action@v0.0.9` installs to this specific location
-- Ensures consistent cache location across runs
+**sccache configuration**:
+- `mozilla-actions/sccache-action@v0.0.9` installs to specific location
+- Hardcoded path ensures consistent cache location across runs
 - GHA_ENABLED integrates with GitHub Actions cache
 
 #### 6. Configure Debug Build
@@ -151,7 +151,7 @@ echo "ac_add_options --enable-update-channel=alpha" >> mozconfig
 sed -i 's|https://@MOZ_APPUPDATE_HOST@/update/6/%PRODUCT%/...|https://github.com/nyanrus/noraneko/releases/download/%CHANNEL%/%BUILD_TARGET%.update.xml|g' ./build/application.ini.in
 ```
 
-**Why modify**:
+**Update URL modification**:
 - Default points to Mozilla update servers
 - Noraneko updates hosted on GitHub releases
 - Format: `https://github.com/{owner}/{repo}/releases/download/{channel}/{platform}.update.xml`
@@ -218,7 +218,7 @@ export MOZ_NUM_JOBS=$(( $(nproc) * 3 / 4 ))
 - 8 cores → 6 jobs
 - 16 cores → 12 jobs
 
-**Why 75% not 100%**:
+**Resource allocation**:
 - Leaves CPU for system processes
 - Prevents memory exhaustion
 - Reduces I/O contention
@@ -234,18 +234,18 @@ xvfb-run -a -s "-screen 0 1024x768x24" nice -n 10 ./mach build --jobs=$MOZ_NUM_J
 xvfb-run -a -s "-screen 0 1024x768x24" ./mach package
 ```
 
-**Why Xvfb**:
-- Some build steps need X11 display (even for headless builds)
+**Xvfb function**:
+- Some build steps need X11 display (even headless)
 - Xvfb provides virtual display
 - `-a`: Automatically choose display number
 - `-s "-screen 0 1024x768x24"`: Virtual screen configuration
 
-**Why LIBGL_ALWAYS_SOFTWARE**:
+**LIBGL_ALWAYS_SOFTWARE effect**:
 - Forces software OpenGL rendering
 - No GPU required (headless environment)
 - Prevents GPU driver issues
 
-**Why nice -n 10**:
+**nice -n 10 effect**:
 - Reduces process priority
 - Prevents starving system processes
 - Still gets most CPU time but yields to higher priority tasks
@@ -286,11 +286,11 @@ nice -n 10 ./mach build --jobs=$MOZ_NUM_JOBS
 rm -rf ~/.cargo
 ```
 
-**Why delete .cargo**:
+**Cleanup rationale**:
 - Saves 1-2 GB disk space
 - Rust artifacts not needed after build
 - ~/.cargo includes downloaded crates
-- Build already complete, no longer needed
+- Build already complete
 
 #### 5. Package Artifacts
 ```bash
@@ -373,8 +373,8 @@ if [[ "$PLATFORM" == "windows" ]]; then
   rustup target add x86_64-pc-windows-msvc
 ```
 
-**Why Rust 1.86.0 for PGO**:
-- Compiled with LLVM 19
+**Rust version for PGO**:
+- Rust 1.86.0 compiled with LLVM 19
 - PGO uses llvm-profdata from LLVM 19
 - Version mismatch causes profile format errors
 - Reference: https://github.com/rust-lang/rust/commits/master/src/llvm-project
@@ -456,12 +456,12 @@ sudo mkswap /mnt/swapfile           # Format as swap
 sudo swapon /mnt/swapfile           # Enable new swap
 ```
 
-**Why 30GB**:
-- Firefox linking can use 20-25 GB memory
+**Swap configuration**:
+- 30GB provides headroom for Firefox linking (20-25 GB memory usage)
 - 8 GB RAM + 30 GB swap = 38 GB total
 - Comfortable margin for peak usage
 
-**Why fallocate not dd**:
+**fallocate vs dd**:
 - `fallocate`: Instant (reserves space without writing)
 - `dd`: 5-10 minutes (writes zeros to fill file)
 - Both create swap file, fallocate much faster
@@ -489,7 +489,7 @@ remove_dir() {
 }
 ```
 
-**Why rsync method**:
+**rsync deletion method**:
 - `rm -rf /huge/directory`: Very slow (processes each file)
 - `rsync --delete /empty/ /huge/`: Fast (batch deletion)
 - Can save 10-20 minutes on large directories
@@ -536,7 +536,7 @@ Filesystem      Size  Used Avail Use%
 
 **Result**: +30 GB swap, +30 GB free disk space
 
-### Why This Script Runs Early
+### Script Execution Timing
 
 **Execution order**:
 ```
@@ -549,15 +549,17 @@ Filesystem      Size  Used Avail Use%
 7. Build
 ```
 
-**Why before mach bootstrap**:
-- mach bootstrap downloads ~2-3 GB of dependencies
-- Needs free disk space
-- Swap not needed yet (no compilation)
-
-**Why before build**:
-- Linking step can use 20+ GB memory
-- Without swap, OOM killer terminates build
+**Sequencing**:
+- Runs before mach bootstrap (which downloads ~2-3 GB dependencies)
+- Runs before build (linking step can use 20+ GB memory)
 - Too late to allocate swap during build
+
+**Timing**:
+- mach bootstrap needs free disk space
+- Swap not needed yet (no compilation)
+- Linking step requires swap (prevents OOM killer)
+
+**Duration**: ~5 minutes to allocate 30GB swap
 
 ### Hidden Dependencies
 
@@ -591,7 +593,7 @@ This script is more comprehensive than the workflow's inline bootstrap:
 8. **Setup LLVM tools** (for PGO)
 9. **Export environment variables** (for subsequent scripts)
 
-### Why Not Used
+### Current Usage Status
 
 **Current approach**:
 - Workflows handle each step individually
@@ -599,7 +601,7 @@ This script is more comprehensive than the workflow's inline bootstrap:
 - Easier to debug specific step failures
 - Can cache individual steps
 
-**If this script were used**:
+**Alternative if this script were used**:
 - Single script for entire environment setup
 - Harder to cache individual steps
 - Failure in late step requires re-running entire script

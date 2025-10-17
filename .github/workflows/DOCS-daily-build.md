@@ -114,7 +114,7 @@ This orchestration workflow doesn't change repository state directly. All state 
 - Runs on macOS runner with Docker ARM64 container
 - Requires QEMU emulation
 
-### Why These Variations Exist
+### Architecture Implementation Details
 - **Windows separate**: Completely different toolchain (MSVC vs GCC/Clang)
 - **Linux unified**: Same toolchain, different targets
 - **aarch64 on macOS**: GitHub doesn't provide native Linux ARM64 runners; macOS + Docker is the workaround
@@ -136,7 +136,7 @@ pgo: ${{ github.event.inputs.pgo == 'true' && github.event_name != 'schedule' }}
 - **Manual builds**: User controls (opt-in for optimized builds)
 - **Logic**: Only enabled if manually requested AND not a scheduled run
 
-### Why Order Doesn't Matter
+### Independent Platform Builds
 - Three platform builds are independent
 - No shared artifacts between platforms during build
 - Each workflow is self-contained with its own:
@@ -197,7 +197,7 @@ permissions:
   contents: write
 ```
 
-**Why write access**: 
+**Required permissions**: 
 - Called workflows upload artifacts
 - Artifact upload requires write permissions
 - Inherited by all sub-workflows via `secrets: inherit`

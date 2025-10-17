@@ -141,7 +141,7 @@ Complete branding package for Noraneko:
 ### apt-fast (assets/apt-fast/)
 Faster apt package manager wrapper using parallel downloads (not currently used in workflows).
 
-## Hidden Dependencies & Prerequisites
+## Dependencies & Prerequisites
 
 ### System Requirements
 - **Linux runners**: Ubuntu-latest with 30GB swap space
@@ -149,18 +149,17 @@ Faster apt package manager wrapper using parallel downloads (not currently used 
 - **Build time**: 2-4 hours per platform (standard), 6-8 hours (PGO-enabled)
 
 ### Required Tools (Auto-installed)
-- **Rust 1.86.0**: Specific version required for LLVM 19 compatibility in PGO builds
+- **Rust 1.86.0**: For LLVM 19 compatibility in PGO builds
 - **LLVM 19**: For PGO profile data processing (llvm-profdata)
 - **sccache**: Compiler cache for incremental builds
 - **Node.js**: For workflow scripts
 - **Python 3.11+**: For Mozilla build scripts and PGO profiling
 
-### Implicit Execution Order
-1. Swap allocation must complete before build starts (prevents OOM)
-2. Rust setup must complete before Mozilla bootstrap
-3. Patches must apply before `mach configure`
-4. PGO Stage 2 requires Stage 1 completion (depends on instrumented build)
-5. PGO Stage 3 requires Stage 2 completion (depends on profile data)
+### Execution Order Requirements
+1. Swap allocation → build starts
+2. Rust setup → Mozilla bootstrap
+3. Patches apply → `mach configure`
+4. PGO Stage 1 → PGO Stage 2 → PGO Stage 3
 
 ## Data Flow Between Jobs
 
@@ -230,7 +229,7 @@ common-build.yml (Stage 3)
 ### Cache Cleanup
 - **Automatic**: cleanup-large-caches.yml runs daily at 2 AM UTC
 - **Threshold**: Removes caches larger than 1MB (configurable)
-- **Purpose**: Prevents hitting GitHub's 10GB cache limit
+- **Effect**: Maintains usage below GitHub's 10GB cache limit
 
 ## Upstream Sync Strategy
 
@@ -254,7 +253,7 @@ common-build.yml (Stage 3)
 ### autodiff-per-file-pr.yml
 **Trigger**: Comment `@f3liz-bot patch` on a PR
 
-**What it does**:
+**Process**:
 1. Generates per-file patches for all modified upstream files
 2. Stores patches in `.github/patches/upstream/`
 3. Reverts source file changes (keeps only patches)
@@ -262,7 +261,7 @@ common-build.yml (Stage 3)
 
 **Patch removal**: `@f3liz-bot patch rm=file1,file2` removes specified patches
 
-**Purpose**: Maintains separation between Noraneko-specific changes and upstream modifications
+**Effect**: Maintains separation between Noraneko-specific changes and upstream modifications
 
 ## License
 
