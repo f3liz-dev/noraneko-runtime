@@ -99,6 +99,10 @@ typedef struct ZipEnd_ {
 #define IMPLODED 6
 #define TOKENIZED 7
 #define DEFLATED 8
+#define DEFLATED64 9
+#define BZIP2 12
+#define LZ4 99   /* Custom method ID for LZ4 */
+#define ZSTD 93  /* Official PKWARE method ID for Zstandard */
 #define UNSUPPORTED 0xFF
 
 #endif /* _zipstruct_h */

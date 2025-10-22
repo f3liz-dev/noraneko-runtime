@@ -15,7 +15,22 @@ from mozbuild.util import ensure_bytes
 
 JAR_STORED = ZIP_STORED
 JAR_DEFLATED = ZIP_DEFLATED
+JAR_LZ4 = 99  # Custom method ID for LZ4
+JAR_ZSTD = 93  # Official PKWARE method ID for Zstandard
 MAX_WBITS = 15
+
+# Try to import optional compression libraries
+try:
+    import lz4.frame as lz4
+    HAS_LZ4 = True
+except ImportError:
+    HAS_LZ4 = False
+
+try:
+    import zstandard as zstd
+    HAS_ZSTD = True
+except ImportError:
+    HAS_ZSTD = False
 
 
 class JarReaderError(Exception):
@@ -281,7 +296,12 @@ class JarFileReader:
         corresponding to the file in the jar archive, data a buffer containing
         the file data.
         """
-        assert header["compression"] in [JAR_DEFLATED, JAR_STORED]
+        valid_compressions = [JAR_DEFLATED, JAR_STORED]
+        if HAS_LZ4:
+            valid_compressions.append(JAR_LZ4)
+        if HAS_ZSTD:
+            valid_compressions.append(JAR_ZSTD)
+        assert header["compression"] in valid_compressions
         self._data = data
         # Copy some local file header fields.
         for name in ["compressed_size", "uncompressed_size", "crc32"]:
@@ -355,8 +375,17 @@ class JarFileReader:
             data = data.tobytes()
         elif self.compress == JAR_DEFLATED:
             data = zlib.decompress(data.tobytes(), -MAX_WBITS)
+        elif self.compress == JAR_LZ4:
+            if not HAS_LZ4:
+                raise JarReaderError("LZ4 support not available (install lz4 package)")
+            data = lz4.decompress(data.tobytes())
+        elif self.compress == JAR_ZSTD:
+            if not HAS_ZSTD:
+                raise JarReaderError("Zstandard support not available (install zstandard package)")
+            dctx = zstd.ZstdDecompressor()
+            data = dctx.decompress(data.tobytes())
         else:
-            assert False  # Can't be another value per __init__
+            raise JarReaderError("Unsupported compression method: %d" % self.compress)
         if len(data) != self.uncompressed_size:
             raise JarReaderError("Corrupted file? %s" % self.filename)
         self._uncompressed_data = BytesIO(data)
@@ -730,8 +759,21 @@ class Deflater:
         elif compress is False:
             compress = JAR_STORED
         self.compress = compress
+        self._compress_level = compress_level
         if compress == JAR_DEFLATED:
             self._deflater = zlib.compressobj(compress_level, zlib.DEFLATED, -MAX_WBITS)
+            self._deflated = BytesIO()
+        elif compress == JAR_LZ4:
+            if not HAS_LZ4:
+                raise JarWriterError("LZ4 support not available (install lz4 package)")
+            self._deflater = None  # LZ4 compresses all at once
+            self._deflated = BytesIO()
+        elif compress == JAR_ZSTD:
+            if not HAS_ZSTD:
+                raise JarWriterError("Zstandard support not available (install zstandard package)")
+            # Create a compressor with the specified level
+            cctx = zstd.ZstdCompressor(level=compress_level)
+            self._deflater = cctx.compressobj()
             self._deflated = BytesIO()
         else:
             assert compress == JAR_STORED
@@ -748,11 +790,14 @@ class Deflater:
             data = data.encode()
         self._data.write(data)
 
-        if self.compress:
+        if self.compress == JAR_DEFLATED or self.compress == JAR_ZSTD:
             if self._deflater:
                 self._deflated.write(self._deflater.compress(data))
             else:
                 raise JarWriterError("Can't write after flush")
+        elif self.compress == JAR_LZ4:
+            # LZ4 compression happens at flush time
+            pass
 
         self.crc32 = zlib.crc32(data, self.crc32) & 0xFFFFFFFF
 
@@ -766,9 +811,18 @@ class Deflater:
 
     def _flush(self):
         """
-        Flush the underlying zlib compression object.
+        Flush the underlying compression object.
         """
-        if self.compress and self._deflater:
+        if not self.compress:
+            return
+        
+        if self.compress == JAR_LZ4:
+            # LZ4 compression happens all at once
+            if not self._deflated.tell():  # Only compress if not already done
+                uncompressed_data = self._data.getvalue()
+                compressed_data = lz4.compress(uncompressed_data, compression_level=self._compress_level)
+                self._deflated.write(compressed_data)
+        elif self._deflater:
             self._deflated.write(self._deflater.flush())
             self._deflater = None
 
