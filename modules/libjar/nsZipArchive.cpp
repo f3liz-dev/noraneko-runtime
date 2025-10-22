@@ -1156,7 +1156,7 @@ nsZipCursor::nsZipCursor(nsZipItem* item, nsZipArchive* aZip, uint8_t* aBuf,
     NS_ASSERTION(aBuf, "Must pass in a buffer for ZSTD nsZipItem");
     size_t const initResult = ZSTD_initDStream(mZstdDStream);
     NS_ASSERTION(!ZSTD_isError(initResult), "ZSTD initialization failed");
-  } else if (compression == LZ4) {
+  } else if (compression == COMPRESSION_METHOD_LZ4) {
     NS_ASSERTION(aBuf, "Must pass in a buffer for LZ4 nsZipItem");
   }
 
@@ -1208,7 +1208,7 @@ uint8_t* nsZipCursor::ReadOrCopy(uint32_t* aBytesRead, bool aCopy) {
       *aBytesRead = mZs.next_out - buf;
       verifyCRC = (zerr == Z_STREAM_END);
       break;
-    case LZ4: {
+    case COMPRESSION_METHOD_LZ4: {
       buf = mBuf;
       // LZ4 decompression - decompress entire block at once
       int decompSize = LZ4_decompress_safe(
@@ -1256,7 +1256,7 @@ nsZipItemPtr_base::nsZipItemPtr_base(nsZipArchive* aZip,
 
   uint32_t size = 0;
   uint16_t compression = item->Compression();
-  bool compressed = (compression == DEFLATED || compression == LZ4 || compression == ZSTD);
+  bool compressed = (compression == DEFLATED || compression == COMPRESSION_METHOD_LZ4 || compression == ZSTD);
   if (compressed) {
     size = item->RealSize();
     mAutoBuf = MakeUniqueFallible<uint8_t[]>(size);
