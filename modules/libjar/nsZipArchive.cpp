@@ -10,7 +10,7 @@
 #define READTYPE int32_t
 #include "zlib.h"
 #include "lz4.h"
-#include "zstd.h"
+#include "zstd/zstd.h"
 #include "nsISupportsUtils.h"
 #include "mozilla/MmapFaultHandler.h"
 #include "prio.h"

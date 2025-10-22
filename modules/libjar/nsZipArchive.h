@@ -13,7 +13,7 @@
   (4 * 1024) /* Used as output buffer when deflating items to a file */
 
 #include "zlib.h"
-#include "zstd.h"
+#include "zstd/zstd.h"
 #include "zipstruct.h"
 #include "nsIFile.h"
 #include "nsISupportsImpl.h"  // For mozilla::ThreadSafeAutoRefCnt
