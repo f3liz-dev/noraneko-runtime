@@ -49,6 +49,11 @@ name: Common Build Workflow
         type: string
         required: false
         default: ""
+      omnijar_compress:
+        description: 'Omni.ja compression algorithm'
+        type: string
+        required: false
+        default: "deflate"
 
 jobs:
   build:
@@ -122,7 +127,8 @@ jobs:
           ./.github/workflows/scripts/build-and-package.sh \
             "${{ inputs.platform }}" \
             "${{ inputs.arch }}" \
-            "${{ inputs.MOZ_BUILD_DATE }}"
+            "${{ inputs.MOZ_BUILD_DATE }}" \
+            "${{ inputs.omnijar_compress }}"
         env:
           SCCACHE_GHA_ENABLED: "on"
           SCCACHE_MAX_FRAME_LENGTH: "1048576"

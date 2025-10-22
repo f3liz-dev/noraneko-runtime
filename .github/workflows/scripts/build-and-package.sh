@@ -6,10 +6,12 @@ set -e
 #   $1: platform (linux|mac|windows)
 #   $2: arch (x86_64|aarch64)
 #   $3: MOZ_BUILD_DATE (optional)
+#   $4: omnijar_compress (deflate|zstd|lz4|none, optional, default: deflate)
 
 PLATFORM="$1"
 ARCH="$2"
 MOZ_BUILD_DATE="$3"
+OMNIJAR_COMPRESS="${4:-deflate}"
 
 if [[ -n "$MOZ_BUILD_DATE" ]]; then
   export MOZ_BUILD_DATE="$MOZ_BUILD_DATE"
@@ -21,11 +23,11 @@ if [[ "$PLATFORM" == "linux" ]]; then
   export LIBGL_ALWAYS_SOFTWARE=1
   xvfb-run -a -s "-screen 0 1024x768x24" ./mach configure
   xvfb-run -a -s "-screen 0 1024x768x24" nice -n 10 ./mach build --jobs=$MOZ_NUM_JOBS
-  xvfb-run -a -s "-screen 0 1024x768x24" ./mach package
+  xvfb-run -a -s "-screen 0 1024x768x24" ./mach package --compress="$OMNIJAR_COMPRESS"
 else
   ./mach configure
   nice -n 10 ./mach build --jobs=$MOZ_NUM_JOBS
-  ./mach package
+  ./mach package --compress="$OMNIJAR_COMPRESS"
 fi
 rm -rf ~/.cargo
 
