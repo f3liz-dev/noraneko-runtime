@@ -15,6 +15,16 @@ name: Windows Build
         type: boolean
         default: false
         required: true
+      omnijar_compress:
+        description: 'Omni.ja compression algorithm'
+        type: choice
+        options:
+          - deflate
+          - zstd
+          - lz4
+          - none
+        default: deflate
+        required: false
 
   workflow_call:
     inputs:
@@ -27,6 +37,11 @@ name: Windows Build
         type: boolean
         default: false
         required: true
+      omnijar_compress:
+        description: 'Omni.ja compression algorithm'
+        type: string
+        default: deflate
+        required: false
 
 run-name: >-
   ${{ inputs.pgo && '[PGO] ' || '' }}Windows x64
@@ -42,6 +57,7 @@ jobs:
       arch: x86_64
       debug: ${{ inputs.debug }}
       pgo: false
+      omnijar_compress: ${{ inputs.omnijar_compress || 'deflate' }}
 
   build-pgo-stage1:
     name: >-
@@ -54,6 +70,7 @@ jobs:
       debug: ${{ inputs.debug }}
       pgo: true
       pgo_mode: 'generate'
+      omnijar_compress: ${{ inputs.omnijar_compress || 'deflate' }}
 
   collect-profiles:
     name: Windows x64 PGO Stage 2
@@ -84,3 +101,4 @@ jobs:
       pgo_mode: 'use'
       pgo_artifact_name: >-
         noraneko-windows-x86_64-profile-generate-output
+      omnijar_compress: ${{ inputs.omnijar_compress || 'deflate' }}

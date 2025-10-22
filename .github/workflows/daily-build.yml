@@ -21,6 +21,16 @@ permissions:
         required: false
         type: boolean
         default: true
+      omnijar_compress:
+        description: 'Omni.ja compression algorithm'
+        required: false
+        type: choice
+        options:
+          - deflate
+          - zstd
+          - lz4
+          - none
+        default: deflate
 
 run-name: Daily Runtime Build${{ (inputs.debug || github.event_name == 'schedule') && ' (Debug)' || '' }}
 
@@ -32,6 +42,7 @@ jobs:
     with:
       debug: ${{ github.event.inputs.debug == 'true' || github.event_name == 'schedule' }}
       pgo:  ${{ github.event.inputs.pgo == 'true' && github.event_name != 'schedule' }}
+      omnijar_compress: ${{ github.event.inputs.omnijar_compress || 'deflate' }}
 
   linux-x86_64:
     name: Linux x86_64
@@ -40,6 +51,7 @@ jobs:
     with:
       debug: ${{ github.event.inputs.debug == 'true' || github.event_name == 'schedule' }}
       pgo:  ${{ github.event.inputs.pgo == 'true' && github.event_name != 'schedule' }}
+      omnijar_compress: ${{ github.event.inputs.omnijar_compress || 'deflate' }}
 
   linux-aarch64:
     name: Linux aarch64
@@ -49,3 +61,4 @@ jobs:
       debug: ${{ github.event.inputs.debug == 'true' || github.event_name == 'schedule' }}
       pgo:  ${{ github.event.inputs.pgo == 'true' && github.event_name != 'schedule' }}
       arch: aarch64
+      omnijar_compress: ${{ github.event.inputs.omnijar_compress || 'deflate' }}
