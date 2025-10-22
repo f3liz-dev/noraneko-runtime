@@ -44,10 +44,19 @@ echo "ac_add_options --enable-chrome-format=flat" >> mozconfig
 sudo apt install msitools -y
 
 # SCCACHE
+# Use absolute path to sccache from GHA to avoid using mozbuild's sccache
+# which doesn't support current GHA cache system
+SCCACHE_PATH=$(which sccache)
+if [ -z "$SCCACHE_PATH" ]; then
+  echo "ERROR: sccache not found in PATH"
+  exit 1
+fi
+echo "Using sccache at: $SCCACHE_PATH"
+
 {
-  echo "mk_add_options 'export RUSTC_WRAPPER=sccache'"
+  echo "mk_add_options 'export RUSTC_WRAPPER=$SCCACHE_PATH'"
   echo "mk_add_options 'export CCACHE_CPP2=yes'"
-  echo "ac_add_options --with-ccache=sccache"
+  echo "ac_add_options --with-ccache=$SCCACHE_PATH"
   echo "mk_add_options 'export SCCACHE_GHA_ENABLED=on'"
   echo "mk_add_options 'export SCCACHE_MAX_FRAME_LENGTH=1048576'"
 } >> mozconfig
