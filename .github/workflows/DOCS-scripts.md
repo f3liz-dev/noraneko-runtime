@@ -28,14 +28,15 @@ Scripts in `.github/workflows/scripts/`.
 
 ## build-and-package.sh
 
-**Parameters**: platform, arch, MOZ_BUILD_DATE
+**Parameters**: platform, arch, MOZ_BUILD_DATE, omnijar_compress
 
 **Steps**:
 1. Calculate jobs: `MOZ_NUM_JOBS=$(nproc * 3/4)`
-2. Linux: Run in Xvfb, `LIBGL_ALWAYS_SOFTWARE=1`
-3. `./mach configure` → `./mach build` → `./mach package`
-4. Clean `~/.cargo` (saves 1-2GB)
-5. Package → `~/output/noraneko-{platform}-{arch}-moz-artifact.{zip|tar.xz}`
+2. Set `JAR_COMPRESSION` env var for omnijar compression (deflate|zstd|lz4|none)
+3. Linux: Run in Xvfb, `LIBGL_ALWAYS_SOFTWARE=1`
+4. `./mach configure` → `./mach build` → `./mach package`
+5. Clean `~/.cargo` (saves 1-2GB)
+6. Package → `~/output/noraneko-{platform}-{arch}-moz-artifact.{zip|tar.xz}`
 
 **Timing**: 2-3 hours (cold), 30-60 min (warm cache)
 
@@ -87,7 +88,7 @@ for patch in .github/patches/upstream/*.patch; do git apply "$patch"; done
 ./.github/workflows/scripts/setup-rust.sh linux x86_64
 ./.github/workflows/scripts/allocate-swap.sh
 ./.github/workflows/scripts/setup-noraneko.sh linux x86_64 true false "" "" ""
-./.github/workflows/scripts/build-and-package.sh linux x86_64
+./.github/workflows/scripts/build-and-package.sh linux x86_64 "" deflate
 
 # Check results
 ls -lh ~/output/
