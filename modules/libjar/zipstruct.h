@@ -101,7 +101,7 @@ typedef struct ZipEnd_ {
 #define DEFLATED 8
 #define DEFLATED64 9
 #define BZIP2 12
-#define LZ4 99   /* Custom method ID for LZ4 */
+#define COMPRESSION_METHOD_LZ4 99   /* Custom method ID for LZ4 */
 #define ZSTD 93  /* Official PKWARE method ID for Zstandard */
 #define UNSUPPORTED 0xFF
 
