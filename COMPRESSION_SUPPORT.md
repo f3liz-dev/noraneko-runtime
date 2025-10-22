@@ -46,6 +46,27 @@ This implementation adds support for modern compression algorithms (LZ4 and ZSTD
 
 ## Usage Examples
 
+### Command Line (mach package)
+
+The build system now supports command-line flags to choose the compression method for omni.ja:
+
+```bash
+# Package with ZSTD compression (best compression ratio)
+./mach package --compress=zstd
+
+# Package with LZ4 compression (fastest decompression)
+./mach package --compress=lz4
+
+# Package with standard DEFLATE compression
+./mach package --compress=deflate
+
+# Package with no compression
+./mach package --compress=none
+
+# Multi-locale packaging also supports compression
+./mach package-multi-locale --locales ja de fr --compress=zstd
+```
+
 ### Python (Build/Packaging)
 
 ```python
@@ -155,7 +176,7 @@ Potential improvements for future work:
    - Profile CPU usage during decompression
 
 2. **Build System Integration**
-   - Add command-line flags to choose compression method
+   - ✓ Add command-line flags to choose compression method (implemented via `--compress` flag)
    - Auto-select best compression based on file type
    - Create hybrid archives (different compression per file)
 
