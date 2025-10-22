@@ -346,5 +346,56 @@ class TestJarLog(unittest.TestCase):
         )
 
 
+class TestCompressionMethods(unittest.TestCase):
+    """Test new compression methods (LZ4 and ZSTD) if available."""
+    
+    def setUp(self):
+        from mozpack.mozjar import HAS_LZ4, HAS_ZSTD, JAR_LZ4, JAR_ZSTD
+        self.HAS_LZ4 = HAS_LZ4
+        self.HAS_ZSTD = HAS_ZSTD
+        self.JAR_LZ4 = JAR_LZ4
+        self.JAR_ZSTD = JAR_ZSTD
+    
+    def test_lz4_compression_available(self):
+        """Test that LZ4 constants are defined."""
+        self.assertIsNotNone(self.JAR_LZ4)
+        self.assertEqual(self.JAR_LZ4, 99)
+    
+    def test_zstd_compression_available(self):
+        """Test that ZSTD constants are defined."""
+        self.assertIsNotNone(self.JAR_ZSTD)
+        self.assertEqual(self.JAR_ZSTD, 93)
+    
+    def test_lz4_deflater_if_available(self):
+        """Test LZ4 deflater if library is available."""
+        if not self.HAS_LZ4:
+            self.skipTest("LZ4 library not available")
+        
+        from mozpack.mozjar import Deflater
+        deflater = Deflater(compress=self.JAR_LZ4)
+        test_data = b"Hello, World! " * 100
+        deflater.write(test_data)
+        
+        self.assertEqual(deflater.uncompressed_size, len(test_data))
+        self.assertGreater(deflater.crc32, 0)
+        # Compressed data should exist
+        self.assertGreater(len(deflater.compressed_data), 0)
+    
+    def test_zstd_deflater_if_available(self):
+        """Test ZSTD deflater if library is available."""
+        if not self.HAS_ZSTD:
+            self.skipTest("ZSTD library not available")
+        
+        from mozpack.mozjar import Deflater
+        deflater = Deflater(compress=self.JAR_ZSTD)
+        test_data = b"Hello, World! " * 100
+        deflater.write(test_data)
+        
+        self.assertEqual(deflater.uncompressed_size, len(test_data))
+        self.assertGreater(deflater.crc32, 0)
+        # Compressed data should exist
+        self.assertGreater(len(deflater.compressed_data), 0)
+
+
 if __name__ == "__main__":
     mozunit.main()
