@@ -28,7 +28,15 @@ mk_add_options AUTOCLOBBER=1
 ac_add_options MOZ_TELEMETRY_REPORTING=
 # Set branding
 ac_add_options --with-branding=browser/branding/noraneko-unofficial
-# Package js shell.
-export MOZ_PACKAGE_JSSHELL=1
+# Binary size optimizations
+# Enable Link-Time Optimization for smaller binaries (10-30% size reduction)
+ac_add_options --enable-lto=cross
+# Disable debug symbols in release builds to reduce size
+ac_add_options --disable-debug-symbols
+# Optimize for size instead of speed
+export MOZ_OPTIMIZE_FLAGS="-Os"
+# Disable JS shell packaging to save space (not needed for end users)
+export MOZ_PACKAGE_JSSHELL=
+
 ac_add_options --enable-unverified-updates
 ac_add_options --enable-update-channel=release
