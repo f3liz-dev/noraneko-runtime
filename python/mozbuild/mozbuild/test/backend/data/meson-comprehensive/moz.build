@@ -1,0 +1,17 @@
+# -*- Mode: python; indent-tabs-mode: nil; tab-width: 40 -*-
+# Any copyright is dedicated to the Public Domain.
+# http://creativecommons.org/publicdomain/zero/1.0/
+
+# Comprehensive test for Meson backend with multiple features
+
+SOURCES += ['main.cpp', 'utils.cpp']
+
+DEFINES['FEATURE_ENABLED'] = '1'
+DEFINES['VERSION'] = '"1.0.0"'
+
+LOCAL_INCLUDES += [
+    '/include',
+    'local/include',
+]
+
+PROGRAM = 'comprehensive_test'

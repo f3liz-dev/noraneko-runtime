@@ -22,13 +22,36 @@ ac_add_options --enable-backend=Meson
 
 ## Supported Features
 
-The Meson backend currently supports the following moz.build constructs:
+The Meson backend supports a comprehensive set of moz.build constructs:
 
-- **Programs**: `PROGRAM` variable generates executable() targets
-- **Host Programs**: `HOST_PROGRAM` variable generates native executable() targets  
-- **Libraries**: `STATIC_LIBRARY_NAME` generates static_library() targets
-- **Shared Libraries**: Generates shared_library() targets
-- **Source Files**: `SOURCES` and `HOST_SOURCES` variables
+### Build Targets
+- **Programs**: `PROGRAM` variable generates `executable()` targets
+- **Simple Programs**: `SIMPLE_PROGRAMS` generates multiple `executable()` targets
+- **Host Programs**: `HOST_PROGRAM` and `HOST_SIMPLE_PROGRAMS` generate native `executable()` targets  
+- **Rust Programs**: `RUST_PROGRAMS` and `HOST_RUST_PROGRAMS` (with notes about Rust support)
+- **Static Libraries**: `STATIC_LIBRARY_NAME` generates `static_library()` targets
+- **Shared Libraries**: `SHARED_LIBRARY_NAME` generates `shared_library()` targets
+- **Rust Libraries**: `RustLibrary` and `HostRustLibrary` support
+
+### Source Files
+- **C/C++ Sources**: `SOURCES` variable
+- **Host Sources**: `HOST_SOURCES` variable
+- **Unified Sources**: Handled through `SOURCES`
+
+### Compilation Settings
+- **Defines**: `DEFINES` and `HOST_DEFINES` generate `-D` flags
+- **Local Includes**: `LOCAL_INCLUDES` generates `include_directories()`
+- **Computed Flags**: Compiler flags from `CFLAGS`, `CXXFLAGS`, etc.
+- **Per-Source Flags**: Source-specific compilation flags
+
+### Build Structure
+- **Directory Traversal**: `DIRS` generates `subdir()` calls
+- **Generated Files**: `GENERATED_FILES` (documented as comments)
+- **Exports**: `EXPORTS` (tracked for reference)
+
+### Other Features
+- **Variable Passthrough**: `VARIABLES` for passing build variables
+- **Host/Target Distinction**: Proper handling of cross-compilation scenarios
 
 ## Generated Files
 

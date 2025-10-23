@@ -47,6 +47,22 @@ class TestMesonBackend(BackendTester):
         top_meson_build = mozpath.join(env.topobjdir, "meson.build")
         self.assertTrue(os.path.exists(top_meson_build))
 
+    def test_comprehensive_features(self):
+        """Test that defines, includes, and other features are handled."""
+        env = self._consume("meson-comprehensive", MesonBackend)
+
+        # Check that the top-level meson.build was created
+        top_meson_build = mozpath.join(env.topobjdir, "meson.build")
+        self.assertTrue(os.path.exists(top_meson_build))
+        
+        # Read and check content includes defines and includes
+        with open(top_meson_build) as fh:
+            content = fh.read()
+            # Should have defines
+            self.assertIn("FEATURE_ENABLED", content)
+            # Should have includes
+            self.assertIn("include_directories", content)
+
 
 if __name__ == "__main__":
     main()
