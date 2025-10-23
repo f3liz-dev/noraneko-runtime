@@ -19,6 +19,8 @@ subsuite = "mozbuild"
 
 ["backend/test_fastermake.py"]
 
+["backend/test_meson.py"]
+
 ["backend/test_partialconfigenvironment.py"]
 
 ["backend/test_recursivemake.py"]

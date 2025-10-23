@@ -9,6 +9,7 @@ backends = {
     "CppEclipse": "mozbuild.backend.cpp_eclipse",
     "FasterMake": "mozbuild.backend.fastermake",
     "FasterMake+RecursiveMake": None,
+    "Meson": "mozbuild.backend.meson",
     "RecursiveMake": "mozbuild.backend.recursivemake",
     "StaticAnalysis": "mozbuild.backend.static_analysis",
     "TestManifest": "mozbuild.backend.test_manifest",

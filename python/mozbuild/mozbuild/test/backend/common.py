@@ -172,6 +172,21 @@ CONFIGS = defaultdict(
                 "BIN_SUFFIX": "",
             },
         },
+        "meson-simple": {
+            "defines": {},
+            "substs": {
+                "COMPILE_ENVIRONMENT": "1",
+                "BIN_SUFFIX": "",
+            },
+        },
+        "meson-library": {
+            "defines": {},
+            "substs": {
+                "COMPILE_ENVIRONMENT": "1",
+                "LIB_PREFIX": "lib",
+                "LIB_SUFFIX": "a",
+            },
+        },
         "program-paths": {
             "defines": {},
             "substs": {
