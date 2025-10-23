@@ -1,0 +1,17 @@
+# Compiled executables
+test_*
+demo
+comparison
+final_comparison
+simple_comparison
+practical_comparison
+poc_metalang99
+
+# Object files
+*.o
+*.obj
+
+# Editor files
+*~
+*.swp
+.DS_Store
