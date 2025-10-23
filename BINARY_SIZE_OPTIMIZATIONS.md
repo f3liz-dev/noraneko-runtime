@@ -1,14 +1,17 @@
 # Binary Size Optimization Implementation
 
-This document describes the binary size reduction optimizations implemented for the Noraneko Runtime, particularly focused on Windows builds.
+This document describes the binary size reduction optimizations implemented for the Noraneko Runtime across all platforms (Windows, Linux x86_64, and Linux aarch64).
 
 ## Summary of Changes
 
-To reduce the Windows binary size by at least 1MB while maintaining full functionality, the following optimizations have been implemented:
+To reduce the binary size by at least 1MB while maintaining full functionality, the following optimizations have been implemented across all build configurations:
 
 ### 1. Link-Time Optimization (LTO)
 
-**File**: `.github/workflows/mozconfigs/windows-x86_64.mozconfig`
+**Files Modified**:
+- `.github/workflows/mozconfigs/windows-x86_64.mozconfig`
+- `.github/workflows/mozconfigs/linux-x86_64.mozconfig`
+- `.github/workflows/mozconfigs/linux-aarch64.mozconfig`
 
 Added: `ac_add_options --enable-lto=cross`
 
@@ -18,7 +21,10 @@ LTO enables the compiler to optimize across compilation units at link time, elim
 
 ### 2. Disable Debug Symbols
 
-**File**: `.github/workflows/mozconfigs/windows-x86_64.mozconfig`
+**Files Modified**:
+- `.github/workflows/mozconfigs/windows-x86_64.mozconfig`
+- `.github/workflows/mozconfigs/linux-x86_64.mozconfig`
+- `.github/workflows/mozconfigs/linux-aarch64.mozconfig`
 
 Added: `ac_add_options --disable-debug-symbols`
 
@@ -28,7 +34,10 @@ Debug symbols are useful for debugging but are not needed in release builds for 
 
 ### 3. Size-Optimized Compilation Flags
 
-**File**: `.github/workflows/mozconfigs/windows-x86_64.mozconfig`
+**Files Modified**:
+- `.github/workflows/mozconfigs/windows-x86_64.mozconfig`
+- `.github/workflows/mozconfigs/linux-x86_64.mozconfig`
+- `.github/workflows/mozconfigs/linux-aarch64.mozconfig`
 
 Added: `export MOZ_OPTIMIZE_FLAGS="-Os"`
 
@@ -40,10 +49,12 @@ The `-Os` flag tells the compiler to optimize for size rather than speed. This e
 
 **Files Modified**:
 - `.github/workflows/mozconfigs/windows-x86_64.mozconfig`
+- `.github/workflows/mozconfigs/linux-x86_64.mozconfig`
+- `.github/workflows/mozconfigs/linux-aarch64.mozconfig`
 - `.github/assets/config/moz.configure`
 
 Changes:
-- Removed `export MOZ_PACKAGE_JSSHELL=1` from mozconfig
+- Removed `export MOZ_PACKAGE_JSSHELL=1` from all mozconfigs
 - Changed `imply_option("MOZ_PACKAGE_JSSHELL", True, ...)` to `False` in moz.configure
 
 **Impact**: ~10-20 MB reduction
