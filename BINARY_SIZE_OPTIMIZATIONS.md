@@ -103,6 +103,16 @@ All user-facing functionality is preserved:
 - **Pro**: Reduced distribution size
 - **Con**: Not available for developers who want to test JS code
 
+## Compatibility with PGO (Profile-Guided Optimization)
+
+These optimizations are fully compatible with PGO builds:
+
+- **During PGO generation phase**: LTO is automatically disabled by the build system (see `build/moz.configure/lto-pgo.configure`). The `-Os` optimization flag is still applied.
+- **During PGO use phase**: The setup script explicitly sets `MOZ_LTO=cross` which works together with the mozconfig's LTO setting.
+- **Normal builds**: All optimizations are applied as configured.
+
+This means these optimizations work seamlessly with the existing PGO workflow in `.github/workflows/wrapper-build-windows.yml` and similar workflows.
+
 ## Testing Recommendations
 
 1. **Build Verification**: Ensure the build completes successfully with all optimizations

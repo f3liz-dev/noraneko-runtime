@@ -28,6 +28,7 @@ ac_add_options MOZ_TELEMETRY_REPORTING=
 ac_add_options --with-branding=browser/branding/noraneko-unofficial
 # Binary size optimizations
 # Enable Link-Time Optimization for smaller binaries (10-30% size reduction)
+# Note: LTO is automatically disabled during PGO profile generation phase
 ac_add_options --enable-lto=cross
 # Disable debug symbols in release builds to reduce size
 ac_add_options --disable-debug-symbols
