@@ -1,0 +1,18 @@
+# Compiled binaries
+simple_demo
+practical_example
+*.o
+*.so
+*.dylib
+*.dll
+*.exe
+
+# Build artifacts
+*.a
+*.lib
+
+# Editor files
+*.swp
+*.swo
+*~
+.DS_Store
