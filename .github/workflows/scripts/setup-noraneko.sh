@@ -64,6 +64,17 @@ echo "Using sccache at: $SCCACHE_PATH"
 # Debug
 if [[ "$DEBUG" == "true" ]]; then
   echo "ac_add_options --enable-debug" >> mozconfig
+  # Disable size optimizations for debug builds
+  # Remove LTO and size optimization flags from mozconfig for debug builds
+  sed -i '/MOZ_LTO=cross/d' mozconfig
+  sed -i '/--enable-lto=cross/d' mozconfig
+  sed -i '/--enable-optimize=-Oz/d' mozconfig
+  sed -i '/--enable-debug-symbols=-g1/d' mozconfig
+  if [[ "$PLATFORM" == "linux" ]]; then
+    # Also remove strip options for Linux debug builds
+    sed -i '/--enable-strip/d' mozconfig
+    sed -i '/--disable-install-strip/d' mozconfig
+  fi
 fi
 
 # PGO

@@ -32,3 +32,17 @@ ac_add_options --with-branding=browser/branding/noraneko-unofficial
 export MOZ_PACKAGE_JSSHELL=1
 ac_add_options --enable-unverified-updates
 ac_add_options --enable-update-channel=release
+
+# Binary size optimizations for Windows
+# Enable LTO (Link-Time Optimization) for better code optimization and size reduction
+# This will be overridden by PGO settings when PGO is enabled
+export MOZ_LTO=cross
+ac_add_options --enable-lto=cross
+
+# Optimize for size in release builds (not debug)
+# Use -Oz for aggressive size optimization with clang-cl
+ac_add_options --enable-optimize=-Oz
+
+# Reduce debug info size - use minimal debug info for release builds
+# This keeps some debug info for crash reporting while reducing binary size
+ac_add_options --enable-debug-symbols=-g1

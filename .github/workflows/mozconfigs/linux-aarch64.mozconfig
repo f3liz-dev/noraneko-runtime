@@ -28,3 +28,18 @@ ac_add_options MOZ_TELEMETRY_REPORTING=
 ac_add_options --with-branding=browser/branding/noraneko-unofficial
 # Package js shell.
 export MOZ_PACKAGE_JSSHELL=1
+
+# Binary size optimizations for Linux ARM64
+# Enable LTO (Link-Time Optimization) for better code optimization and size reduction
+export MOZ_LTO=cross
+ac_add_options --enable-lto=cross
+
+# Optimize for size in release builds (not debug)
+ac_add_options --enable-optimize=-Oz
+
+# Strip symbols for release builds to reduce binary size
+ac_add_options --enable-strip
+ac_add_options --disable-install-strip
+
+# Reduce debug info size - use minimal debug info for release builds
+ac_add_options --enable-debug-symbols=-g1
