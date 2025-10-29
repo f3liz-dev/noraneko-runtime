@@ -39,7 +39,7 @@ cp -r ./.github/assets/branding/* ./browser/branding/
 
 # Set Branding/Flat Chrome
 echo "ac_add_options --with-branding=browser/branding/noraneko-unofficial" >> mozconfig
-#echo "ac_add_options --enable-chrome-format=flat" >> mozconfig
+echo "ac_add_options --enable-chrome-format=flat" >> mozconfig
 
 sudo apt install msitools -y
 
