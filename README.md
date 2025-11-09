@@ -16,7 +16,7 @@ If you want to add some files, please use .github directory and also you could m
 
 Thank you for reading. Have a nice day!
 
-## Useful Links
+## Useful Links!
 
 [![Link to Noraneko Main Repository](.github/assets/readme/Link2MainRepo.svg)](https://github.com/nyanrus/noraneko/)
 
