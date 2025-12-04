@@ -136,7 +136,7 @@ func build(ctx context.Context, cfg Config) error {
 	}
 	defer client.Close()
 
-	// Base container with dependencies using Debian slim (smaller official Debian image)
+	// Base container with dependencies using Debian 12 slim (smaller official Debian image)
 	c := client.Container().From("debian:12-slim").
 		WithEnvVariable("DEBIAN_FRONTEND", "noninteractive").
 		WithExec([]string{"apt-get", "update"}).
