@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"os/exec"
 	"strings"
 
 	"dagger.io/dagger"
@@ -30,9 +31,13 @@ type Config struct {
 
 func main() {
 	if len(os.Args) < 2 || os.Args[1] == "help" || os.Args[1] == "-h" {
-		fmt.Print(`Usage: go run . build [options]
+		fmt.Print(`Usage: go run . <command> [options]
 
-Options:
+Commands:
+  build          Build the browser
+  prepare-host   Prepare GitHub Actions host (swap, disk cleanup)
+
+Build Options:
   -platform      linux|windows (default: linux)
   -arch          x86_64|aarch64 (default: x86_64)
   -debug         Enable debug (default: true)
@@ -44,22 +49,84 @@ Options:
 		return
 	}
 
-	fs := flag.NewFlagSet("build", flag.ExitOnError)
-	cfg := Config{Platform: "linux", OmnijarCompress: "deflate", OutputDir: "./output", Arch: X86_64, Debug: true}
-	fs.StringVar(&cfg.Platform, "platform", "linux", "")
-	arch := fs.String("arch", "x86_64", "")
-	fs.BoolVar(&cfg.Debug, "debug", true, "")
-	fs.BoolVar(&cfg.PGO, "pgo", false, "")
-	fs.StringVar(&cfg.PGOMode, "pgo-mode", "", "")
-	fs.StringVar(&cfg.OmnijarCompress, "omnijar-compress", "deflate", "")
-	fs.StringVar(&cfg.OutputDir, "output", "./output", "")
-	fs.Parse(os.Args[2:])
-	cfg.Arch = Arch(*arch)
+	cmd := os.Args[1]
+	var err error
 
-	if err := build(context.Background(), cfg); err != nil {
+	switch cmd {
+	case "prepare-host":
+		err = prepareHost()
+	case "build":
+		fs := flag.NewFlagSet("build", flag.ExitOnError)
+		cfg := Config{Platform: "linux", OmnijarCompress: "deflate", OutputDir: "./output", Arch: X86_64, Debug: true}
+		fs.StringVar(&cfg.Platform, "platform", "linux", "")
+		arch := fs.String("arch", "x86_64", "")
+		fs.BoolVar(&cfg.Debug, "debug", true, "")
+		fs.BoolVar(&cfg.PGO, "pgo", false, "")
+		fs.StringVar(&cfg.PGOMode, "pgo-mode", "", "")
+		fs.StringVar(&cfg.OmnijarCompress, "omnijar-compress", "deflate", "")
+		fs.StringVar(&cfg.OutputDir, "output", "./output", "")
+		fs.Parse(os.Args[2:])
+		cfg.Arch = Arch(*arch)
+		err = build(context.Background(), cfg)
+	default:
+		fmt.Fprintf(os.Stderr, "Unknown command: %s\n", cmd)
+		os.Exit(1)
+	}
+
+	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+// prepareHost prepares a GitHub Actions host by allocating swap and freeing disk space.
+func prepareHost() error {
+	fmt.Println("Preparing GitHub Actions host...")
+
+	// Run the allocate-swap.sh script
+	script := `
+		echo "Before:"
+		free -h
+		df -h
+
+		# Allocate 30GB swap
+		sudo swapoff /mnt/swapfile 2>/dev/null || true
+		sudo rm -f /mnt/swapfile
+		sudo fallocate -l 30G /mnt/swapfile
+		sudo chmod 600 /mnt/swapfile
+		sudo mkswap /mnt/swapfile
+		sudo swapon /mnt/swapfile
+
+		# APT cleanup
+		sudo apt autoremove -y -qq
+		sudo apt clean
+
+		# Free disk space
+		mkdir -p /tmp/empty
+		for dir in ./git /home/linuxbrew /usr/share/dotnet /usr/local/lib/android \
+			/usr/local/graalvm /usr/local/share/powershell /usr/local/share/chromium \
+			/opt/ghc /usr/local/share/boost /etc/apache2 /etc/nginx \
+			/usr/local/share/chrome_driver /usr/local/share/edge_driver \
+			/usr/local/share/gecko_driver /usr/share/java /usr/share/miniconda \
+			/usr/local/share/vcpkg; do
+			if [ -d "$dir" ]; then
+				echo "Removing: $dir"
+				sudo rsync -a --delete /tmp/empty/ "$dir/" 2>/dev/null || true
+				sudo rmdir "$dir" 2>/dev/null || true
+			fi
+		done
+		rmdir /tmp/empty 2>/dev/null || true
+
+		echo
+		echo "After:"
+		free -h
+		df -h
+	`
+
+	cmd := exec.Command("bash", "-c", script)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
 }
 
 func build(ctx context.Context, cfg Config) error {

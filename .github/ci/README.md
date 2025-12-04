@@ -6,10 +6,22 @@ Dagger-based CI/CD module for building noraneko-runtime.
 
 ```bash
 cd .github/ci
+
+# Prepare GitHub Actions host (allocate swap, free disk space)
+go run . prepare-host
+
+# Build the browser
 go run . build [options]
 ```
 
-## Options
+## Commands
+
+| Command | Description |
+|---------|-------------|
+| `prepare-host` | Prepare GitHub Actions host (swap, disk cleanup) |
+| `build` | Build the browser |
+
+## Build Options
 
 | Flag | Default | Description |
 |------|---------|-------------|
@@ -24,6 +36,9 @@ go run . build [options]
 ## Examples
 
 ```bash
+# Prepare host before building (important for GitHub Actions)
+go run . prepare-host
+
 # Linux x86_64 debug build
 go run . build -platform=linux -arch=x86_64 -debug
 

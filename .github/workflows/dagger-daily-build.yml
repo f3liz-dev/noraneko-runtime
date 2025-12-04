@@ -42,14 +42,10 @@ jobs:
           go-version: '1.22'
           cache-dependency-path: .github/ci/go.sum
 
-      - name: Allocate swap
+      - name: Prepare host
         run: |
-          sudo swapoff /mnt/swapfile || true
-          sudo rm -f /mnt/swapfile
-          sudo fallocate -l 30G /mnt/swapfile
-          sudo chmod 600 /mnt/swapfile
-          sudo mkswap /mnt/swapfile
-          sudo swapon /mnt/swapfile
+          cd .github/ci
+          go run . prepare-host
 
       - name: Build
         run: |
@@ -81,14 +77,10 @@ jobs:
           go-version: '1.22'
           cache-dependency-path: .github/ci/go.sum
 
-      - name: Allocate swap
+      - name: Prepare host
         run: |
-          sudo swapoff /mnt/swapfile || true
-          sudo rm -f /mnt/swapfile
-          sudo fallocate -l 30G /mnt/swapfile
-          sudo chmod 600 /mnt/swapfile
-          sudo mkswap /mnt/swapfile
-          sudo swapon /mnt/swapfile
+          cd .github/ci
+          go run . prepare-host
 
       - name: Build
         run: |
@@ -181,14 +173,10 @@ jobs:
           name: noraneko-linux-x86_64-profile-output
           path: ~/artifacts
 
-      - name: Allocate swap
+      - name: Prepare host
         run: |
-          sudo swapoff /mnt/swapfile || true
-          sudo rm -f /mnt/swapfile
-          sudo fallocate -l 30G /mnt/swapfile
-          sudo chmod 600 /mnt/swapfile
-          sudo mkswap /mnt/swapfile
-          sudo swapon /mnt/swapfile
+          cd .github/ci
+          go run . prepare-host
 
       - name: Build with PGO
         run: |
