@@ -141,7 +141,7 @@ func build(ctx context.Context, cfg Config) error {
 		WithEnvVariable("DEBIAN_FRONTEND", "noninteractive").
 		WithExec([]string{"apt-get", "update"}).
 		WithExec([]string{"apt-get", "install", "-y", "wget", "gnupg", "software-properties-common"}).
-		WithExec([]string{"sh", "-c", "wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add -"}).
+		WithExec([]string{"sh", "-c", "wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | gpg --dearmor -o /etc/apt/trusted.gpg.d/llvm.gpg"}).
 		WithExec([]string{"sh", "-c", "echo 'deb http://apt.llvm.org/jammy/ llvm-toolchain-jammy-19 main' >> /etc/apt/sources.list"}).
 		WithExec([]string{"apt-get", "update"}).
 		WithExec([]string{"apt-get", "install", "-y",
