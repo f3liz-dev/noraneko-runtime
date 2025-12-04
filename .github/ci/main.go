@@ -159,7 +159,7 @@ func build(ctx context.Context, cfg Config) error {
 		rustTarget = "x86_64-pc-windows-msvc"
 	}
 	c = c.WithExec([]string{"sh", "-c", "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.86.0"}).
-		WithEnvVariable("PATH", "/root/.cargo/bin:$PATH").
+		WithEnvVariable("PATH", "/root/.cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin").
 		WithEnvVariable("CARGO_INCREMENTAL", "0").
 		WithExec([]string{"/root/.cargo/bin/rustup", "target", "add", rustTarget})
 
