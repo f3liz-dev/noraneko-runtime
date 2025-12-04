@@ -48,7 +48,7 @@ func getSccacheConfig() *SccacheConfig {
 		AccessKey: os.Getenv("AWS_ACCESS_KEY_ID"),
 		SecretKey: os.Getenv("AWS_SECRET_ACCESS_KEY"),
 	}
-	// Return nil if required fields are missing
+	// Return nil if required fields (Bucket, AccessKey, SecretKey) are missing
 	if cfg.Bucket == "" || cfg.AccessKey == "" || cfg.SecretKey == "" {
 		return nil
 	}
@@ -215,10 +215,9 @@ func build(ctx context.Context, cfg Config) error {
 				c = c.WithEnvVariable("SCCACHE_REGION", sccacheCfg.Region)
 			}
 			c = c.WithEnvVariable("AWS_ACCESS_KEY_ID", sccacheCfg.AccessKey)
-			c = c.WithSecretVariable("AWS_SECRET_ACCESS_KEY", client.SetSecret("aws_secret_key", sccacheCfg.SecretKey))
-			// Set RUSTC_WRAPPER for Rust compilation caching
-			c = c.WithEnvVariable("RUSTC_WRAPPER", "/root/.cargo/bin/sccache")
-			// Set CCACHE to sccache for C/C++ compilation caching
+			c = c.WithSecretVariable("AWS_SECRET_ACCESS_KEY", client.SetSecret("AWS_SECRET_ACCESS_KEY", sccacheCfg.SecretKey))
+			// Set CCACHE to sccache for C/C++ compilation caching via container env
+			// RUSTC_WRAPPER and CCACHE_CPP2 are set via mozconfig for proper integration
 			c = c.WithEnvVariable("CCACHE", "/root/.cargo/bin/sccache")
 		} else {
 			fmt.Println("Warning: sccache enabled but S3 configuration incomplete, skipping sccache setup")
