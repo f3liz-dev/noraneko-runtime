@@ -1,6 +1,8 @@
-module github.com/f3liz-dev/noraneko-runtime/ci
+module github.com/f3liz-dev/noraneko-runtime/.github/ci
 
-go 1.24.10
+go 1.24.0
+
+toolchain go1.24.10
 
 require dagger.io/dagger v0.19.7
 

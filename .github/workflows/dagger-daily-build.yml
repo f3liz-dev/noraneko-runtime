@@ -1,7 +1,7 @@
 ---
 # SPDX-License-Identifier: MPL-2.0
 
-name: Dagger Daily Build
+name: Daily Build
 
 permissions:
   contents: write
@@ -13,56 +13,36 @@ permissions:
     inputs:
       debug:
         description: 'Enable debug build'
-        required: false
         type: boolean
         default: true
       pgo:
         description: 'Enable Profile-Guided Optimization'
-        required: false
         type: boolean
         default: true
       omnijar_compress:
         description: 'Omni.ja compression algorithm'
-        required: false
         type: choice
-        options:
-          - deflate
-          - zstd
-          - lz4
-          - none
+        options: [deflate, zstd, lz4, none]
         default: deflate
 
-run-name: >-
-  [Dagger] Daily Build
-  ${{ (inputs.debug || github.event_name == 'schedule') && '(Debug)' || '' }}
+run-name: Daily Build${{ (inputs.debug || github.event_name == 'schedule') && ' (Debug)' || '' }}
 
 jobs:
-  # Stage 1: Build for all platforms (non-PGO or PGO generate mode)
   build-linux-x86_64:
     name: Linux x86_64${{ inputs.pgo && ' (PGO Stage 1)' || '' }}
     runs-on: ubuntu-latest
-    outputs:
-      artifact-name: ${{ steps.build.outputs.artifact-name }}
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           submodules: recursive
 
-      - name: Setup Go
-        uses: actions/setup-go@v5
+      - uses: actions/setup-go@v5
         with:
           go-version: '1.22'
-          cache-dependency-path: ci/go.sum
+          cache-dependency-path: .github/ci/go.sum
 
-      - name: Install Dagger CLI
-        run: |
-          curl -fsSL https://dl.dagger.io/dagger/install.sh | sh
-          sudo mv bin/dagger /usr/local/bin/
-          dagger version
-
-      - name: Allocate swap space
+      - name: Allocate swap
         run: |
           sudo swapoff /mnt/swapfile || true
           sudo rm -f /mnt/swapfile
@@ -71,30 +51,18 @@ jobs:
           sudo mkswap /mnt/swapfile
           sudo swapon /mnt/swapfile
 
-      - name: Run Dagger Build
-        id: build
+      - name: Build
         run: |
-          cd ci
-          PGO_MODE=""
-          if [ "${{ inputs.pgo }}" = "true" ]; then
-            PGO_MODE="generate"
-          fi
-          
+          cd .github/ci
           go run . build \
-            -platform=linux \
-            -arch=x86_64 \
+            -platform=linux -arch=x86_64 \
             -debug=${{ inputs.debug || github.event_name == 'schedule' }} \
             -pgo=${{ inputs.pgo && github.event_name != 'schedule' }} \
-            -pgo-mode="${PGO_MODE}" \
+            -pgo-mode=${{ inputs.pgo && 'generate' || '' }} \
             -omnijar-compress=${{ inputs.omnijar_compress || 'deflate' }} \
-            -output=../output
-          
-          echo "artifact-name=noraneko-linux-x86_64-moz-artifact" >> $GITHUB_OUTPUT
-        env:
-          DAGGER_LOG_FORMAT: plain
+            -output=../../output
 
-      - name: Upload build artifact
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
           name: noraneko-linux-x86_64-moz-artifact
           path: output/*
@@ -104,24 +72,16 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           submodules: recursive
 
-      - name: Setup Go
-        uses: actions/setup-go@v5
+      - uses: actions/setup-go@v5
         with:
           go-version: '1.22'
-          cache-dependency-path: ci/go.sum
+          cache-dependency-path: .github/ci/go.sum
 
-      - name: Install Dagger CLI
-        run: |
-          curl -fsSL https://dl.dagger.io/dagger/install.sh | sh
-          sudo mv bin/dagger /usr/local/bin/
-          dagger version
-
-      - name: Allocate swap space
+      - name: Allocate swap
         run: |
           sudo swapoff /mnt/swapfile || true
           sudo rm -f /mnt/swapfile
@@ -130,150 +90,98 @@ jobs:
           sudo mkswap /mnt/swapfile
           sudo swapon /mnt/swapfile
 
-      - name: Run Dagger Build
+      - name: Build
         run: |
-          cd ci
-          PGO_MODE=""
-          if [ "${{ inputs.pgo }}" = "true" ]; then
-            PGO_MODE="generate"
-          fi
-          
+          cd .github/ci
           go run . build \
-            -platform=linux \
-            -arch=aarch64 \
+            -platform=linux -arch=aarch64 \
             -debug=${{ inputs.debug || github.event_name == 'schedule' }} \
             -pgo=${{ inputs.pgo && github.event_name != 'schedule' }} \
-            -pgo-mode="${PGO_MODE}" \
+            -pgo-mode=${{ inputs.pgo && 'generate' || '' }} \
             -omnijar-compress=${{ inputs.omnijar_compress || 'deflate' }} \
-            -output=../output
-        env:
-          DAGGER_LOG_FORMAT: plain
+            -output=../../output
 
-      - name: Upload build artifact
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
           name: noraneko-linux-aarch64-moz-artifact
           path: output/*
 
-  # Stage 2: Generate PGO profiles (only when PGO is enabled)
-  generate-pgo-profile-linux-x86_64:
+  generate-pgo-profile:
     name: Linux x86_64 PGO Stage 2
     if: ${{ inputs.pgo && github.event_name != 'schedule' }}
     needs: build-linux-x86_64
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Download browser artifact
-        uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v4
         with:
           name: noraneko-linux-x86_64-moz-artifact
           path: /tmp/artifact
 
-      - name: Install dependencies
+      - name: Setup and generate profile
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends \
-            curl ca-certificates bash file \
             libgtk-3-0 libdbus-glib-1-2 libxt6 libx11-xcb1 \
-            libasound2 libpulse0 libgl1 libglib2.0-0 \
-            fonts-liberation xdg-utils \
-            libdrm2 libgbm1 libxcomposite1 libxdamage1 \
-            libxrandr2 libxshmfence1 libxtst6 \
-            xvfb python3 python3-pip llvm-19
-
-      - name: Setup LLVM profdata
-        run: |
-          mkdir -p /tmp/clang/bin
-          sudo cp /usr/bin/llvm-profdata-19 /tmp/clang/llvm-profdata-x86_64
-          chmod +x /tmp/clang/llvm-profdata-x86_64
-          cat > /tmp/clang/bin/llvm-profdata << 'EOF'
-          #!/bin/sh
-          SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
-          exec "$SCRIPT_DIR/../llvm-profdata-x86_64" "$@"
-          EOF
-          chmod +x /tmp/clang/bin/llvm-profdata
-
-      - name: Extract and setup browser
-        run: |
-          mkdir -p obj-firefox/dist/firefox
+            libasound2 libpulse0 libgl1 libglib2.0-0 fonts-liberation \
+            libdrm2 libgbm1 libxcomposite1 libxdamage1 libxrandr2 \
+            libxshmfence1 libxtst6 xvfb python3 python3-pip llvm-19
+          
+          mkdir -p /tmp/clang/bin obj-firefox/dist/firefox
+          cp /usr/bin/llvm-profdata-19 /tmp/clang/llvm-profdata
+          chmod +x /tmp/clang/llvm-profdata
+          
           cd /tmp/artifact
-          if ls *.tar.* >/dev/null 2>&1; then
-            tar -xf *.tar.*
-          elif ls *.zip >/dev/null 2>&1; then
-            unzip -q *.zip
-          fi
+          tar -xf *.tar.* 2>/dev/null || unzip -q *.zip 2>/dev/null || true
           cp -r noraneko*/* $GITHUB_WORKSPACE/obj-firefox/dist/firefox/ || \
           cp -r firefox*/* $GITHUB_WORKSPACE/obj-firefox/dist/firefox/ || true
-
-      - name: Start Xvfb
-        run: |
+          
+          cd $GITHUB_WORKSPACE
           Xvfb :99 -screen 0 1024x768x24 &
-          echo "XVFB_PID=$!" >> $GITHUB_ENV
           sleep 3
-
-      - name: Generate PGO profile
-        env:
-          MOZ_FETCHES_DIR: /tmp
-          JARLOG_FILE: en-US.log
-          LLVM_PROFDATA: /tmp/clang/bin/llvm-profdata
-          DISPLAY: :99
-          MOZ_PGO_TIMEOUT_MULTIPLIER: 5
-          MOZ_DISABLE_CONTENT_SANDBOX: 1
-          MOZ_DISABLE_GMP_SANDBOX: 1
-        run: |
           pip3 install requests
-          BROWSER_PATH=$(find obj-firefox/dist/firefox -name "noraneko" -o -name "firefox" | head -1)
-          chmod +x "$BROWSER_PATH"
-          timeout 1200 python3 build/pgo/profileserver.py --binary "$BROWSER_PATH" || true
+          
+          BROWSER=$(find obj-firefox/dist/firefox -name "noraneko" -o -name "firefox" | head -1)
+          chmod +x "$BROWSER"
+          
+          DISPLAY=:99 LLVM_PROFDATA=/tmp/clang/llvm-profdata JARLOG_FILE=en-US.log \
+            MOZ_DISABLE_CONTENT_SANDBOX=1 MOZ_DISABLE_GMP_SANDBOX=1 \
+            timeout 1200 python3 build/pgo/profileserver.py --binary "$BROWSER" || true
+          
+          pkill Xvfb || true
 
-      - name: Stop Xvfb
-        if: always()
-        run: kill $XVFB_PID 2>/dev/null || true
-
-      - name: Upload profile artifacts
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
-          name: noraneko-linux-x86_64-profile-generate-output
+          name: noraneko-linux-x86_64-profile-output
           path: |
             merged.profdata
             en-US.log
           retention-days: 7
 
-  # Stage 3: Final PGO-optimized build (only when PGO is enabled)
-  build-pgo-final-linux-x86_64:
+  build-pgo-final:
     name: Linux x86_64 PGO Stage 3
     if: ${{ inputs.pgo && github.event_name != 'schedule' }}
-    needs: generate-pgo-profile-linux-x86_64
+    needs: generate-pgo-profile
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           submodules: recursive
 
-      - name: Setup Go
-        uses: actions/setup-go@v5
+      - uses: actions/setup-go@v5
         with:
           go-version: '1.22'
-          cache-dependency-path: ci/go.sum
+          cache-dependency-path: .github/ci/go.sum
 
-      - name: Install Dagger CLI
-        run: |
-          curl -fsSL https://dl.dagger.io/dagger/install.sh | sh
-          sudo mv bin/dagger /usr/local/bin/
-          dagger version
-
-      - name: Download PGO artifacts
-        uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v4
         with:
-          name: noraneko-linux-x86_64-profile-generate-output
+          name: noraneko-linux-x86_64-profile-output
           path: ~/artifacts
 
-      - name: Allocate swap space
+      - name: Allocate swap
         run: |
           sudo swapoff /mnt/swapfile || true
           sudo rm -f /mnt/swapfile
@@ -282,27 +190,21 @@ jobs:
           sudo mkswap /mnt/swapfile
           sudo swapon /mnt/swapfile
 
-      - name: Run Dagger PGO Build
+      - name: Build with PGO
         run: |
-          cd ci
+          cd .github/ci
           go run . build \
-            -platform=linux \
-            -arch=x86_64 \
+            -platform=linux -arch=x86_64 \
             -debug=${{ inputs.debug }} \
-            -pgo=true \
-            -pgo-mode=use \
+            -pgo=true -pgo-mode=use \
             -omnijar-compress=${{ inputs.omnijar_compress || 'deflate' }} \
-            -output=../output
-        env:
-          DAGGER_LOG_FORMAT: plain
+            -output=../../output
 
-      - name: Clean old artifacts and upload
-        uses: geekyeggo/delete-artifact@v5
+      - uses: geekyeggo/delete-artifact@v5
         with:
           name: noraneko-linux-x86_64-moz-artifact
 
-      - name: Upload PGO-optimized build artifact
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
           name: noraneko-linux-x86_64-moz-artifact
           path: output/*

@@ -66,23 +66,18 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: '1.22'
-          cache-dependency-path: ci/go.sum
-
-      - name: Install Dagger CLI
-        run: |
-          curl -fsSL https://dl.dagger.io/dagger/install.sh | sh
-          sudo mv bin/dagger /usr/local/bin/
-          dagger version
+          cache-dependency-path: .github/ci/go.sum
 
       - name: Run Dagger Build
         run: |
-          cd ci
+          cd .github/ci
           go run . build \
             -platform=${{ inputs.platform }} \
             -arch=${{ inputs.arch }} \
             -debug=${{ inputs.debug }} \
             -pgo=${{ inputs.pgo }} \
-            -omnijar-compress=${{ inputs.omnijar_compress }}
+            -omnijar-compress=${{ inputs.omnijar_compress }} \
+            -output=../../output
         env:
           DAGGER_LOG_FORMAT: plain
 
