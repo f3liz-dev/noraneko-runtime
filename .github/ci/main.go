@@ -164,7 +164,7 @@ func build(ctx context.Context, cfg Config) error {
 		WithExec([]string{"/root/.cargo/bin/rustup", "target", "add", rustTarget})
 
 	// Setup source and mozconfig
-	source := client.Host().Directory("..", dagger.HostDirectoryOpts{
+	source := client.Host().Directory("../..", dagger.HostDirectoryOpts{
 		Exclude: []string{".git", ".github/ci/", "obj-*", "*.log"},
 	})
 
