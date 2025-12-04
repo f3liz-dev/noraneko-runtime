@@ -78,11 +78,11 @@ jobs:
         run: |
           cd ci
           go run . build \
-            --platform=${{ inputs.platform }} \
-            --arch=${{ inputs.arch }} \
-            --debug=${{ inputs.debug }} \
-            --pgo=${{ inputs.pgo }} \
-            --omnijar-compress=${{ inputs.omnijar_compress }}
+            -platform=${{ inputs.platform }} \
+            -arch=${{ inputs.arch }} \
+            -debug=${{ inputs.debug }} \
+            -pgo=${{ inputs.pgo }} \
+            -omnijar-compress=${{ inputs.omnijar_compress }}
         env:
           DAGGER_LOG_FORMAT: plain
 
