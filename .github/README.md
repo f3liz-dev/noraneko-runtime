@@ -56,6 +56,32 @@ GitHub Actions workflows, build scripts, branding, and patches for Noraneko brow
 - **Build time**: 2-4 hours (standard), 6-8 hours (PGO)
 - **Tools**: Rust 1.86.0, LLVM 19, sccache, Python 3.11+, Node.js
 
+## sccache S3 Configuration
+
+The build system supports sccache with S3-compatible storage for build caching. Configure the following secrets in your repository settings (Settings → Secrets and variables → Actions):
+
+| Secret Name | Required | Description |
+|-------------|----------|-------------|
+| `SCCACHE_BUCKET` | Yes | S3 bucket name for sccache storage |
+| `SCCACHE_ENDPOINT` | No | Custom S3 endpoint URL (for S3-compatible storage like MinIO, Cloudflare R2) |
+| `SCCACHE_REGION` | No | S3 region (e.g., `us-east-1`) |
+| `SCCACHE_AWS_ACCESS_KEY_ID` | Yes | S3 access key ID |
+| `SCCACHE_AWS_SECRET_ACCESS_KEY` | Yes | S3 secret access key |
+
+### Example Configuration
+
+For AWS S3:
+- `SCCACHE_BUCKET`: `my-sccache-bucket`
+- `SCCACHE_REGION`: `us-west-2`
+- `SCCACHE_AWS_ACCESS_KEY_ID`: `AKIA...`
+- `SCCACHE_AWS_SECRET_ACCESS_KEY`: `secret...`
+
+For S3-compatible storage (e.g., MinIO, Cloudflare R2):
+- `SCCACHE_BUCKET`: `noraneko-cache`
+- `SCCACHE_ENDPOINT`: `https://s3.example.com`
+- `SCCACHE_AWS_ACCESS_KEY_ID`: `accesskey`
+- `SCCACHE_AWS_SECRET_ACCESS_KEY`: `secretkey`
+
 ## Execution Order
 
 1. Swap allocation → 2. Rust setup → 3. Apply patches → 4. Build

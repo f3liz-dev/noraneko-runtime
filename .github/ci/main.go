@@ -26,7 +26,33 @@ const (
 type Config struct {
 	Platform, PGOMode, OmnijarCompress, OutputDir string
 	Arch                                          Arch
-	Debug, PGO                                    bool
+	Debug, PGO, Sccache                           bool
+}
+
+// SccacheConfig holds S3 configuration for sccache.
+// These are read from environment variables passed via GitHub secrets.
+type SccacheConfig struct {
+	Endpoint  string // SCCACHE_ENDPOINT - S3 endpoint URL
+	Bucket    string // SCCACHE_BUCKET - S3 bucket name
+	Region    string // SCCACHE_REGION - S3 region (optional)
+	AccessKey string // AWS_ACCESS_KEY_ID - S3 access key
+	SecretKey string // AWS_SECRET_ACCESS_KEY - S3 secret key
+}
+
+// getSccacheConfig reads sccache S3 configuration from environment variables.
+func getSccacheConfig() *SccacheConfig {
+	cfg := &SccacheConfig{
+		Endpoint:  os.Getenv("SCCACHE_ENDPOINT"),
+		Bucket:    os.Getenv("SCCACHE_BUCKET"),
+		Region:    os.Getenv("SCCACHE_REGION"),
+		AccessKey: os.Getenv("AWS_ACCESS_KEY_ID"),
+		SecretKey: os.Getenv("AWS_SECRET_ACCESS_KEY"),
+	}
+	// Return nil if required fields are missing
+	if cfg.Bucket == "" || cfg.AccessKey == "" || cfg.SecretKey == "" {
+		return nil
+	}
+	return cfg
 }
 
 func main() {
@@ -45,6 +71,14 @@ Build Options:
   -pgo-mode      generate|use
   -omnijar-compress  deflate|zstd|lz4|none (default: deflate)
   -output        Output directory (default: ./output)
+  -sccache       Enable sccache build cache (default: false)
+
+Environment Variables for sccache S3:
+  SCCACHE_BUCKET           S3 bucket name (required)
+  SCCACHE_ENDPOINT         S3 endpoint URL (optional, for S3-compatible storage)
+  SCCACHE_REGION           S3 region (optional)
+  AWS_ACCESS_KEY_ID        S3 access key (required)
+  AWS_SECRET_ACCESS_KEY    S3 secret key (required)
 `)
 		return
 	}
@@ -65,6 +99,7 @@ Build Options:
 		fs.StringVar(&cfg.PGOMode, "pgo-mode", "", "")
 		fs.StringVar(&cfg.OmnijarCompress, "omnijar-compress", "deflate", "")
 		fs.StringVar(&cfg.OutputDir, "output", "./output", "")
+		fs.BoolVar(&cfg.Sccache, "sccache", false, "")
 		fs.Parse(os.Args[2:])
 		cfg.Arch = Arch(*arch)
 		err = build(context.Background(), cfg)
@@ -163,6 +198,33 @@ func build(ctx context.Context, cfg Config) error {
 		WithEnvVariable("CARGO_INCREMENTAL", "0").
 		WithExec([]string{"/root/.cargo/bin/rustup", "target", "add", rustTarget})
 
+	// Setup sccache if enabled
+	var sccacheCfg *SccacheConfig
+	if cfg.Sccache {
+		sccacheCfg = getSccacheConfig()
+		if sccacheCfg != nil {
+			fmt.Println("sccache S3 configuration detected, installing sccache...")
+			// Install sccache via cargo
+			c = c.WithExec([]string{"/root/.cargo/bin/cargo", "install", "sccache", "--locked"})
+			// Configure sccache S3 environment variables
+			c = c.WithEnvVariable("SCCACHE_BUCKET", sccacheCfg.Bucket)
+			if sccacheCfg.Endpoint != "" {
+				c = c.WithEnvVariable("SCCACHE_ENDPOINT", sccacheCfg.Endpoint)
+			}
+			if sccacheCfg.Region != "" {
+				c = c.WithEnvVariable("SCCACHE_REGION", sccacheCfg.Region)
+			}
+			c = c.WithEnvVariable("AWS_ACCESS_KEY_ID", sccacheCfg.AccessKey)
+			c = c.WithSecretVariable("AWS_SECRET_ACCESS_KEY", client.SetSecret("aws_secret_key", sccacheCfg.SecretKey))
+			// Set RUSTC_WRAPPER for Rust compilation caching
+			c = c.WithEnvVariable("RUSTC_WRAPPER", "/root/.cargo/bin/sccache")
+			// Set CCACHE to sccache for C/C++ compilation caching
+			c = c.WithEnvVariable("CCACHE", "/root/.cargo/bin/sccache")
+		} else {
+			fmt.Println("Warning: sccache enabled but S3 configuration incomplete, skipping sccache setup")
+		}
+	}
+
 	// Setup source and mozconfig
 	source := client.Host().Directory("../..", dagger.HostDirectoryOpts{
 		Exclude: []string{".git", ".github/ci/", "obj-*", "*.log"},
@@ -186,6 +248,13 @@ func build(ctx context.Context, cfg Config) error {
 		additions.WriteString("export MOZ_LTO=cross\nac_add_options --enable-profile-use=cross\n")
 		additions.WriteString("ac_add_options --with-pgo-profile-path=/artifacts/merged.profdata\n")
 		additions.WriteString("ac_add_options --with-pgo-jarlog=/artifacts/en-US.log\n")
+	}
+	// Add sccache configuration to mozconfig if enabled
+	if sccacheCfg != nil {
+		additions.WriteString("# sccache configuration\n")
+		additions.WriteString("mk_add_options 'export RUSTC_WRAPPER=/root/.cargo/bin/sccache'\n")
+		additions.WriteString("mk_add_options 'export CCACHE_CPP2=yes'\n")
+		additions.WriteString("ac_add_options --with-ccache=/root/.cargo/bin/sccache\n")
 	}
 
 	c = c.WithDirectory("/workspace", source).WithWorkdir("/workspace").
@@ -211,6 +280,11 @@ func build(ctx context.Context, cfg Config) error {
 		c = c.WithExec([]string{"./mach", "configure"}).
 			WithExec([]string{"sh", "-c", fmt.Sprintf("nice -n 10 ./mach build --jobs=%s", jobs)}).
 			WithExec([]string{"./mach", "package", fmt.Sprintf("--compress=%s", cfg.OmnijarCompress)})
+	}
+
+	// Print sccache stats if enabled
+	if sccacheCfg != nil {
+		c = c.WithExec([]string{"/root/.cargo/bin/sccache", "--show-stats"})
 	}
 
 	// Package artifacts

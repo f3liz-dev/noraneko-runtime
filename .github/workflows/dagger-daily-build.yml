@@ -24,8 +24,12 @@ permissions:
         type: choice
         options: [deflate, zstd, lz4, none]
         default: deflate
+      sccache:
+        description: 'Enable sccache build cache with S3'
+        type: boolean
+        default: true
 
-run-name: Daily Build${{ (inputs.debug || github.event_name == 'schedule') && ' (Debug)' || '' }}
+run-name: Daily Build${{ (inputs.debug || github.event_name == 'schedule') && ' (Debug)' || '' }}${{ inputs.sccache && ' [sccache]' || '' }}
 
 jobs:
   build-linux-x86_64:
@@ -56,7 +60,15 @@ jobs:
             -pgo=${{ inputs.pgo && github.event_name != 'schedule' }} \
             -pgo-mode=${{ inputs.pgo && 'generate' || '' }} \
             -omnijar-compress=${{ inputs.omnijar_compress || 'deflate' }} \
+            -sccache=${{ inputs.sccache || github.event_name == 'schedule' }} \
             -output=../../output
+        env:
+          # sccache S3 configuration (secrets must be configured in repository settings)
+          SCCACHE_BUCKET: ${{ secrets.SCCACHE_BUCKET }}
+          SCCACHE_ENDPOINT: ${{ secrets.SCCACHE_ENDPOINT }}
+          SCCACHE_REGION: ${{ secrets.SCCACHE_REGION }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.SCCACHE_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.SCCACHE_AWS_SECRET_ACCESS_KEY }}
 
       - uses: actions/upload-artifact@v4
         with:
@@ -91,7 +103,15 @@ jobs:
             -pgo=${{ inputs.pgo && github.event_name != 'schedule' }} \
             -pgo-mode=${{ inputs.pgo && 'generate' || '' }} \
             -omnijar-compress=${{ inputs.omnijar_compress || 'deflate' }} \
+            -sccache=${{ inputs.sccache || github.event_name == 'schedule' }} \
             -output=../../output
+        env:
+          # sccache S3 configuration (secrets must be configured in repository settings)
+          SCCACHE_BUCKET: ${{ secrets.SCCACHE_BUCKET }}
+          SCCACHE_ENDPOINT: ${{ secrets.SCCACHE_ENDPOINT }}
+          SCCACHE_REGION: ${{ secrets.SCCACHE_REGION }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.SCCACHE_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.SCCACHE_AWS_SECRET_ACCESS_KEY }}
 
       - uses: actions/upload-artifact@v4
         with:
@@ -190,7 +210,15 @@ jobs:
             -debug=${{ inputs.debug }} \
             -pgo=true -pgo-mode=use \
             -omnijar-compress=${{ inputs.omnijar_compress || 'deflate' }} \
+            -sccache=${{ inputs.sccache || github.event_name == 'schedule' }} \
             -output=../../output
+        env:
+          # sccache S3 configuration (secrets must be configured in repository settings)
+          SCCACHE_BUCKET: ${{ secrets.SCCACHE_BUCKET }}
+          SCCACHE_ENDPOINT: ${{ secrets.SCCACHE_ENDPOINT }}
+          SCCACHE_REGION: ${{ secrets.SCCACHE_REGION }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.SCCACHE_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.SCCACHE_AWS_SECRET_ACCESS_KEY }}
 
       - uses: geekyeggo/delete-artifact@v5
         with:
