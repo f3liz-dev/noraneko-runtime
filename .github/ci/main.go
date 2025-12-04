@@ -140,10 +140,14 @@ func build(ctx context.Context, cfg Config) error {
 	c := client.Container().From("ubuntu:22.04").
 		WithEnvVariable("DEBIAN_FRONTEND", "noninteractive").
 		WithExec([]string{"apt-get", "update"}).
+		WithExec([]string{"apt-get", "install", "-y", "wget", "gnupg", "software-properties-common"}).
+		WithExec([]string{"sh", "-c", "wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add -"}).
+		WithExec([]string{"sh", "-c", "echo 'deb http://apt.llvm.org/jammy/ llvm-toolchain-jammy-19 main' >> /etc/apt/sources.list"}).
+		WithExec([]string{"apt-get", "update"}).
 		WithExec([]string{"apt-get", "install", "-y",
-			"curl", "wget", "git", "python3", "python3-pip", "python3-venv",
+			"curl", "git", "python3", "python3-pip", "python3-venv",
 			"build-essential", "autoconf2.13", "yasm", "libgtk-3-dev",
-			"libgconf-2-dev", "libxtst6", "libxrandr2", "libasound2-dev",
+			"libxtst6", "libxrandr2", "libasound2-dev",
 			"libpango1.0-dev", "libatk1.0-dev", "libcairo-gobject2",
 			"libgdk-pixbuf2.0-dev", "libdbus-glib-1-dev", "xvfb", "mesa-utils",
 			"msitools", "llvm-19", "clang-19", "gcc-aarch64-linux-gnu", "g++-aarch64-linux-gnu",
