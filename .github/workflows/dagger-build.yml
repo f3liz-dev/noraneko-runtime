@@ -1,0 +1,93 @@
+---
+# SPDX-License-Identifier: MPL-2.0
+
+name: Dagger CI Build
+
+permissions:
+  contents: write
+
+'on':
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: 'Target platform (linux, windows)'
+        type: choice
+        options:
+          - linux
+          - windows
+        default: linux
+        required: true
+      arch:
+        description: 'Target architecture'
+        type: choice
+        options:
+          - x86_64
+          - aarch64
+        default: x86_64
+        required: true
+      debug:
+        description: 'Enable debug build'
+        required: false
+        type: boolean
+        default: true
+      pgo:
+        description: 'Enable Profile-Guided Optimization'
+        required: false
+        type: boolean
+        default: false
+      omnijar_compress:
+        description: 'Omni.ja compression algorithm'
+        required: false
+        type: choice
+        options:
+          - deflate
+          - zstd
+          - lz4
+          - none
+        default: deflate
+
+run-name: >-
+  [Dagger] ${{ inputs.platform }}-${{ inputs.arch }}
+  ${{ inputs.pgo && '[PGO]' || '' }}
+  ${{ inputs.debug && 'Debug' || '' }}
+
+jobs:
+  build:
+    name: Build ${{ inputs.platform }}-${{ inputs.arch }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache-dependency-path: ci/go.sum
+
+      - name: Install Dagger CLI
+        run: |
+          curl -fsSL https://dl.dagger.io/dagger/install.sh | sh
+          sudo mv bin/dagger /usr/local/bin/
+          dagger version
+
+      - name: Run Dagger Build
+        run: |
+          cd ci
+          go run . build \
+            --platform=${{ inputs.platform }} \
+            --arch=${{ inputs.arch }} \
+            --debug=${{ inputs.debug }} \
+            --pgo=${{ inputs.pgo }} \
+            --omnijar-compress=${{ inputs.omnijar_compress }}
+        env:
+          DAGGER_LOG_FORMAT: plain
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: noraneko-${{ inputs.platform }}-${{ inputs.arch }}-moz-artifact
+          path: output/*
