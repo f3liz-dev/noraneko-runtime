@@ -136,13 +136,13 @@ func build(ctx context.Context, cfg Config) error {
 	}
 	defer client.Close()
 
-	// Base container with dependencies
-	c := client.Container().From("ubuntu:22.04").
+	// Base container with dependencies using Debian 12 slim (smaller official Debian image)
+	c := client.Container().From("debian:12-slim").
 		WithEnvVariable("DEBIAN_FRONTEND", "noninteractive").
 		WithExec([]string{"apt-get", "update"}).
-		WithExec([]string{"apt-get", "install", "-y", "wget", "gnupg", "software-properties-common"}).
+		WithExec([]string{"apt-get", "install", "-y", "wget", "gnupg", "ca-certificates"}).
 		WithExec([]string{"sh", "-c", "wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | gpg --dearmor -o /etc/apt/trusted.gpg.d/llvm.gpg"}).
-		WithExec([]string{"sh", "-c", "echo 'deb http://apt.llvm.org/jammy/ llvm-toolchain-jammy-19 main' >> /etc/apt/sources.list"}).
+		WithExec([]string{"sh", "-c", "echo 'deb http://apt.llvm.org/bookworm/ llvm-toolchain-bookworm-19 main' >> /etc/apt/sources.list"}).
 		WithExec([]string{"apt-get", "update"}).
 		WithExec([]string{"apt-get", "install", "-y",
 			"curl", "git", "python3", "python3-pip", "python3-venv",
