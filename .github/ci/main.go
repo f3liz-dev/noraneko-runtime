@@ -191,7 +191,7 @@ func build(ctx context.Context, cfg Config) error {
 	c = c.WithDirectory("/workspace", source).WithWorkdir("/workspace").
 		WithExec([]string{"cp", mozconfigPath, "mozconfig"}).
 		WithExec([]string{"sh", "-c", fmt.Sprintf("echo '%s' >> mozconfig", additions.String())}).
-		WithExec([]string{"cp", "-r", ".github/assets/branding/", "browser/branding/"})
+		WithExec([]string{"sh", "-c", "cp -r .github/assets/branding/* browser/branding/"})
 
 	// Apply patches
 	c = c.WithExec([]string{"sh", "-c", `
