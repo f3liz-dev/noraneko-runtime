@@ -98,6 +98,39 @@ jobs:
           name: noraneko-linux-aarch64-moz-artifact
           path: output/*
 
+  build-windows-x86_64:
+    name: Windows x86_64
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache-dependency-path: .github/ci/go.sum
+
+      - name: Prepare host
+        run: |
+          cd .github/ci
+          go run . prepare-host
+
+      - name: Build
+        run: |
+          cd .github/ci
+          go run . build \
+            -platform=windows -arch=x86_64 \
+            -debug=${{ inputs.debug || github.event_name == 'schedule' }} \
+            -omnijar-compress=${{ inputs.omnijar_compress || 'deflate' }} \
+            -output=../../output
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: noraneko-windows-x86_64-moz-artifact
+          path: output/*
+
   generate-pgo-profile:
     name: Linux x86_64 PGO Stage 2
     if: ${{ inputs.pgo && github.event_name != 'schedule' }}
