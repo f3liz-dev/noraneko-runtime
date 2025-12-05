@@ -120,15 +120,11 @@ func prepareHost() error {
 				sudo rmdir "$dir" 2>/dev/null || true
 			fi
 		done
-		# Clean up directories with version suffixes
-		for pattern in /usr/share/gradle-* /usr/share/julia-* /usr/share/az_*; do
-			for dir in $pattern; do
-				if [ -d "$dir" ]; then
-					echo "Removing: $dir"
-					sudo rsync -a --delete /tmp/empty/ "$dir/" 2>/dev/null || true
-					sudo rmdir "$dir" 2>/dev/null || true
-				fi
-			done
+		# Clean up directories with version suffixes using find
+		for dir in $(find /usr/share -maxdepth 1 -type d \( -name 'gradle-*' -o -name 'julia-*' -o -name 'az_*' \) 2>/dev/null); do
+			echo "Removing: $dir"
+			sudo rsync -a --delete /tmp/empty/ "$dir/" 2>/dev/null || true
+			sudo rmdir "$dir" 2>/dev/null || true
 		done
 		rmdir /tmp/empty 2>/dev/null || true
 
