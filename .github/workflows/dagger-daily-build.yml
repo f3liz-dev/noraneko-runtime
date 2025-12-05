@@ -39,13 +39,18 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.22'
+          go-version: '1.25'
           cache-dependency-path: .github/ci/go.sum
 
       - name: Prepare host
         run: |
           cd .github/ci
           go run . prepare-host
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          cache-dependency-path: .github/ci/go.sum
 
       - name: Build
         run: |
