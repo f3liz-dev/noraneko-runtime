@@ -111,7 +111,7 @@ func prepareHost() error {
 			/opt/ghc /usr/local/.ghcup /usr/local/share/boost /etc/apache2 /etc/nginx \
 			/usr/local/share/chrome_driver /usr/local/share/edge_driver \
 			/usr/local/share/gecko_driver /usr/share/java /usr/share/miniconda \
-			/usr/local/share/vcpkg /opt/hostedtoolcache /usr/share/swift \
+			/usr/local/share/vcpkg /usr/share/swift \
 			/usr/share/kotlinc /usr/share/sbt /opt/microsoft/powershell \
 			/imagegeneration; do
 			if [ -d "$dir" ]; then
@@ -120,6 +120,16 @@ func prepareHost() error {
 				sudo rmdir "$dir" 2>/dev/null || true
 			fi
 		done
+		# Clean up hostedtoolcache except for Go (needed for build)
+		if [ -d "/opt/hostedtoolcache" ]; then
+			for subdir in /opt/hostedtoolcache/*; do
+				if [ -d "$subdir" ] && [ "$(basename "$subdir")" != "go" ]; then
+					echo "Removing: $subdir"
+					sudo rsync -a --delete /tmp/empty/ "$subdir/" 2>/dev/null || true
+					sudo rmdir "$subdir" 2>/dev/null || true
+				fi
+			done
+		fi
 		# Clean up directories with version suffixes using find
 		for dir in $(find /usr/share -maxdepth 1 -type d \( -name 'gradle-*' -o -name 'julia-*' -o -name 'az_*' \) 2>/dev/null); do
 			echo "Removing: $dir"
