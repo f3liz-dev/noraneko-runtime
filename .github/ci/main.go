@@ -101,19 +101,30 @@ func prepareHost() error {
 		sudo apt autoremove -y -qq
 		sudo apt clean
 
-		# Free disk space
+		# Remove Docker images and containers to free space
+		docker system prune -af --volumes 2>/dev/null || true
+
+		# Free disk space - remove large pre-installed packages
 		mkdir -p /tmp/empty
-		for dir in ./git /home/linuxbrew /usr/share/dotnet /usr/local/lib/android \
+		for dir in ./.git /home/linuxbrew /usr/share/dotnet /usr/local/lib/android \
 			/usr/local/graalvm /usr/local/share/powershell /usr/local/share/chromium \
-			/opt/ghc /usr/local/share/boost /etc/apache2 /etc/nginx \
+			/opt/ghc /usr/local/.ghcup /usr/local/share/boost /etc/apache2 /etc/nginx \
 			/usr/local/share/chrome_driver /usr/local/share/edge_driver \
 			/usr/local/share/gecko_driver /usr/share/java /usr/share/miniconda \
-			/usr/local/share/vcpkg; do
+			/usr/local/share/vcpkg /opt/hostedtoolcache /usr/share/swift \
+			/usr/share/kotlinc /usr/share/sbt /opt/microsoft/powershell \
+			/imagegeneration; do
 			if [ -d "$dir" ]; then
 				echo "Removing: $dir"
 				sudo rsync -a --delete /tmp/empty/ "$dir/" 2>/dev/null || true
 				sudo rmdir "$dir" 2>/dev/null || true
 			fi
+		done
+		# Clean up directories with version suffixes using find
+		for dir in $(find /usr/share -maxdepth 1 -type d \( -name 'gradle-*' -o -name 'julia-*' -o -name 'az_*' \) 2>/dev/null); do
+			echo "Removing: $dir"
+			sudo rsync -a --delete /tmp/empty/ "$dir/" 2>/dev/null || true
+			sudo rmdir "$dir" 2>/dev/null || true
 		done
 		rmdir /tmp/empty 2>/dev/null || true
 
