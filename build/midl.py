@@ -4,6 +4,7 @@
 
 import functools
 import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -74,8 +75,13 @@ def preprocess(base, input, flags):
     parser.add_argument("-D", action="append")
     parser.add_argument("-acf")
     args, remainder = parser.parse_known_args(flags)
+    # CXXCPP can be either a list or a string depending on the build configuration.
+    # Ensure it's always a list before processing.
+    cxxcpp = buildconfig.substs["CXXCPP"]
+    if isinstance(cxxcpp, str):
+        cxxcpp = shlex.split(cxxcpp)
     preprocessor = (
-        list(filter_preprocessor(buildconfig.substs["CXXCPP"]))
+        list(filter_preprocessor(cxxcpp))
         # Ideally we'd use the real midl version, but querying it adds a
         # significant overhead to configure. In practice, the version number
         # doesn't make a difference at the moment.
