@@ -39,7 +39,7 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.25'
+          go-version: '1.22'
           cache-dependency-path: .github/ci/go.sum
 
       - name: Prepare host
@@ -52,9 +52,9 @@ jobs:
           cd .github/ci
           go run . build \
             -platform=linux -arch=x86_64 \
-            -debug=${{ inputs.debug || github.event_name == 'schedule' }} \
-            -pgo=${{ inputs.pgo && github.event_name != 'schedule' }} \
-            -pgo-mode=${{ inputs.pgo && 'generate' || '' }} \
+            -debug=${{ inputs.debug == true || github.event_name == 'schedule' }} \
+            -pgo=${{ inputs.pgo == true && github.event_name != 'schedule' }} \
+            -pgo-mode=${{ (inputs.pgo == true && github.event_name != 'schedule') && 'generate' || '' }} \
             -omnijar-compress=${{ inputs.omnijar_compress || 'deflate' }} \
             -output=../../output
 
@@ -87,9 +87,9 @@ jobs:
           cd .github/ci
           go run . build \
             -platform=linux -arch=aarch64 \
-            -debug=${{ inputs.debug || github.event_name == 'schedule' }} \
-            -pgo=${{ inputs.pgo && github.event_name != 'schedule' }} \
-            -pgo-mode=${{ inputs.pgo && 'generate' || '' }} \
+            -debug=${{ inputs.debug == true || github.event_name == 'schedule' }} \
+            -pgo=${{ inputs.pgo == true && github.event_name != 'schedule' }} \
+            -pgo-mode=${{ (inputs.pgo == true && github.event_name != 'schedule') && 'generate' || '' }} \
             -omnijar-compress=${{ inputs.omnijar_compress || 'deflate' }} \
             -output=../../output
 
@@ -122,7 +122,7 @@ jobs:
           cd .github/ci
           go run . build \
             -platform=windows -arch=x86_64 \
-            -debug=${{ inputs.debug || github.event_name == 'schedule' }} \
+            -debug=${{ inputs.debug == true || github.event_name == 'schedule' }} \
             -omnijar-compress=${{ inputs.omnijar_compress || 'deflate' }} \
             -output=../../output
 
@@ -133,7 +133,7 @@ jobs:
 
   generate-pgo-profile:
     name: Linux x86_64 PGO Stage 2
-    if: ${{ inputs.pgo && github.event_name != 'schedule' }}
+    if: ${{ inputs.pgo == true && github.event_name != 'schedule' }}
     needs: build-linux-x86_64
     runs-on: ubuntu-latest
 
@@ -191,7 +191,7 @@ jobs:
 
   build-pgo-final:
     name: Linux x86_64 PGO Stage 3
-    if: ${{ inputs.pgo && github.event_name != 'schedule' }}
+    if: ${{ inputs.pgo == true && github.event_name != 'schedule' }}
     needs: generate-pgo-profile
     runs-on: ubuntu-latest
 
@@ -220,7 +220,7 @@ jobs:
           cd .github/ci
           go run . build \
             -platform=linux -arch=x86_64 \
-            -debug=${{ inputs.debug }} \
+            -debug=${{ inputs.debug == true }} \
             -pgo=true -pgo-mode=use \
             -omnijar-compress=${{ inputs.omnijar_compress || 'deflate' }} \
             -output=../../output

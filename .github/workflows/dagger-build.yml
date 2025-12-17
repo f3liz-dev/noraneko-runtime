@@ -74,8 +74,8 @@ jobs:
           go run . build \
             -platform=${{ inputs.platform }} \
             -arch=${{ inputs.arch }} \
-            -debug=${{ inputs.debug }} \
-            -pgo=${{ inputs.pgo }} \
+            -debug=${{ inputs.debug == true }} \
+            -pgo=${{ inputs.pgo == true }} \
             -omnijar-compress=${{ inputs.omnijar_compress }} \
             -output=../../output
         env:
