@@ -1224,7 +1224,8 @@ uint8_t* nsZipCursor::ReadOrCopy(uint32_t* aBytesRead, bool aCopy) {
       *aBytesRead = dstSize;
       mZs.next_in += srcSize;
       mZs.avail_in -= srcSize;
-      verifyCRC = (result == 0);  // 0 means frame is complete
+      // LZ4F_decompress returns 0 when frame is complete, otherwise bytes remaining
+      verifyCRC = (result == 0);
       break;
     }
     case ZSTD: {
