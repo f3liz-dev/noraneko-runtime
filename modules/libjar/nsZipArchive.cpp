@@ -9,7 +9,7 @@
 
 #define READTYPE int32_t
 #include "zlib.h"
-#include "lz4.h"
+#include "lz4frame.h"
 #include "zstd/zstd.h"
 #include "nsISupportsUtils.h"
 #include "mozilla/MmapFaultHandler.h"
@@ -1139,6 +1139,7 @@ nsZipCursor::nsZipCursor(nsZipItem* item, nsZipArchive* aZip, uint8_t* aBuf,
       mBufSize(aBufSize),
       mZs(),
       mZstdDStream(nullptr),
+      mLZ4Dctx(nullptr),
       mCRC(0),
       mDoCRC(doCRC) {
   uint16_t compression = mItem->Compression();
@@ -1158,6 +1159,8 @@ nsZipCursor::nsZipCursor(nsZipItem* item, nsZipArchive* aZip, uint8_t* aBuf,
     NS_ASSERTION(!ZSTD_isError(initResult), "ZSTD initialization failed");
   } else if (compression == COMPRESSION_METHOD_LZ4) {
     NS_ASSERTION(aBuf, "Must pass in a buffer for LZ4 nsZipItem");
+    LZ4F_errorCode_t err = LZ4F_createDecompressionContext(&mLZ4Dctx, LZ4F_VERSION);
+    NS_ASSERTION(!LZ4F_isError(err), "Failed to create LZ4 decompression context");
   }
 
   mZs.avail_in = item->Size();
@@ -1173,6 +1176,8 @@ nsZipCursor::~nsZipCursor() {
     inflateEnd(&mZs);
   } else if (compression == ZSTD && mZstdDStream) {
     ZSTD_freeDStream(mZstdDStream);
+  } else if (compression == COMPRESSION_METHOD_LZ4 && mLZ4Dctx) {
+    LZ4F_freeDecompressionContext(mLZ4Dctx);
   }
 }
 
@@ -1210,13 +1215,17 @@ uint8_t* nsZipCursor::ReadOrCopy(uint32_t* aBytesRead, bool aCopy) {
       break;
     case COMPRESSION_METHOD_LZ4: {
       buf = mBuf;
-      // LZ4 decompression - decompress entire block at once
-      int decompSize = LZ4_decompress_safe(
-          (const char*)mZs.next_in, (char*)buf, mZs.avail_in, mBufSize);
-      if (decompSize < 0) return nullptr;
-      *aBytesRead = decompSize;
-      mZs.avail_in = 0;
-      verifyCRC = true;
+      // LZ4 frame decompression - decompress using frame format
+      size_t srcSize = mZs.avail_in;
+      size_t dstSize = mBufSize;
+      size_t result = LZ4F_decompress(mLZ4Dctx, buf, &dstSize,
+                                      mZs.next_in, &srcSize, nullptr);
+      if (LZ4F_isError(result)) return nullptr;
+      *aBytesRead = dstSize;
+      mZs.next_in += srcSize;
+      mZs.avail_in -= srcSize;
+      // LZ4F_decompress returns 0 when frame is complete, otherwise bytes remaining
+      verifyCRC = (result == 0);
       break;
     }
     case ZSTD: {

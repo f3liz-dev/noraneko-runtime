@@ -14,6 +14,7 @@
 
 #include "zlib.h"
 #include "zstd/zstd.h"
+#include "lz4frame.h"
 #include "zipstruct.h"
 #include "nsIFile.h"
 #include "nsISupportsImpl.h"  // For mozilla::ThreadSafeAutoRefCnt
@@ -287,6 +288,7 @@ class nsZipCursor final {
   uint32_t mBufSize;
   z_stream mZs;
   ZSTD_DStream* mZstdDStream;
+  LZ4F_dctx* mLZ4Dctx;
   uint32_t mCRC;
   bool mDoCRC;
 };
