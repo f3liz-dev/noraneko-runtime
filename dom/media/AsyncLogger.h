@@ -12,10 +12,8 @@
 #include <thread>
 
 #include "GeckoProfiler.h"
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/BaseProfilerMarkerTypes.h"
-#include "mozilla/MathAlgorithms.h"
 #include "mozilla/Sprintf.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/dom/UnboundedMPSCQueue.h"
@@ -218,7 +216,7 @@ class AsyncLogger {
               using MS = MarkerSchema;
               MS schema{MS::Location::MarkerChart, MS::Location::MarkerTable};
               schema.SetChartLabel("{marker.data.name}");
-              schema.SetTableLabel("{marker.name} - {marker.data.name}");
+              schema.SetTableLabel("{marker.data.name}");
               schema.AddKeyLabelFormat("name", "Comment", MS::Format::String,
                                        MS::PayloadFlags::Searchable);
               return schema;

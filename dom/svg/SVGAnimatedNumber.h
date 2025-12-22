@@ -7,8 +7,6 @@
 #ifndef DOM_SVG_SVGANIMATEDNUMBER_H_
 #define DOM_SVG_SVGANIMATEDNUMBER_H_
 
-#include "mozilla/Attributes.h"
-#include "mozilla/FloatingPoint.h"
 #include "mozilla/SMILAttr.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/dom/DOMSVGAnimatedNumber.h"

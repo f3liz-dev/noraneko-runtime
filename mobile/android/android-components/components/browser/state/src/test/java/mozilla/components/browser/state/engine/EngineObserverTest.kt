@@ -23,7 +23,7 @@ import mozilla.components.browser.state.state.AppIntentState
 import mozilla.components.browser.state.state.BrowserState
 import mozilla.components.browser.state.state.LoadRequestState
 import mozilla.components.browser.state.state.MediaSessionState
-import mozilla.components.browser.state.state.SecurityInfoState
+import mozilla.components.browser.state.state.SecurityInfo
 import mozilla.components.browser.state.state.content.FindResultState
 import mozilla.components.browser.state.state.createTab
 import mozilla.components.browser.state.store.BrowserStore
@@ -42,6 +42,9 @@ import mozilla.components.concept.engine.translate.TranslationError
 import mozilla.components.concept.engine.translate.TranslationOperation
 import mozilla.components.concept.engine.translate.TranslationOptions
 import mozilla.components.concept.engine.window.WindowRequest
+import mozilla.components.concept.fetch.Header
+import mozilla.components.concept.fetch.Headers.Names.E_TAG
+import mozilla.components.concept.fetch.MutableHeaders
 import mozilla.components.concept.fetch.Response
 import mozilla.components.support.test.libstate.ext.waitUntilIdle
 import mozilla.components.support.test.middleware.CaptureActionsMiddleware
@@ -238,11 +241,11 @@ class EngineObserverTest {
 
         engineSession.loadUrl("http://mozilla.org")
         store.waitUntilIdle()
-        assertEquals(SecurityInfoState(secure = false), store.state.tabs[0].content.securityInfo)
+        assertEquals(SecurityInfo.Insecure(), store.state.tabs[0].content.securityInfo)
 
         engineSession.loadUrl("https://mozilla.org")
         store.waitUntilIdle()
-        assertEquals(SecurityInfoState(secure = true, "host", "issuer"), store.state.tabs[0].content.securityInfo)
+        assertEquals(SecurityInfo.Secure("host", "issuer"), store.state.tabs[0].content.securityInfo)
     }
 
     @Test
@@ -1578,7 +1581,9 @@ class EngineObserverTest {
 
     @Test
     fun `onExternalResource will update the store`() {
-        val response = mock<Response>()
+        val response = mock<Response> {
+            `when`(headers).thenReturn(MutableHeaders(listOf(Header(E_TAG, "12345"))))
+        }
 
         val store = BrowserStore(
             initialState = BrowserState(
@@ -1614,6 +1619,7 @@ class EngineObserverTest {
         assertEquals("file.txt", tab.content.download?.fileName)
         assertEquals("userAgent", tab.content.download?.userAgent)
         assertEquals("text/plain", tab.content.download?.contentType)
+        assertEquals("12345", tab.content.download?.etag)
         assertEquals(100L, tab.content.download?.contentLength)
         assertEquals(true, tab.content.download?.private)
         assertEquals(response, tab.content.download?.response)

@@ -100,20 +100,9 @@ static constexpr FloatRegister ReturnFloat32Reg{FloatRegisters::f0,
 static constexpr FloatRegister ReturnDoubleReg = f0;
 static constexpr FloatRegister ReturnSimd128Reg = InvalidFloatReg;
 
-static constexpr Register ScratchRegister = t7;
-static constexpr Register SecondScratchReg = t8;
-
-// Helper classes for ScratchRegister usage. Asserts that only one piece
-// of code thinks it has exclusive ownership of each scratch register.
-struct ScratchRegisterScope : public AutoRegisterScope {
-  explicit ScratchRegisterScope(MacroAssembler& masm)
-      : AutoRegisterScope(masm, ScratchRegister) {}
-};
-
-struct SecondScratchRegisterScope : public AutoRegisterScope {
-  explicit SecondScratchRegisterScope(MacroAssembler& masm)
-      : AutoRegisterScope(masm, SecondScratchReg) {}
-};
+// Scratch register used for runtime call patching.
+// See MacroAssembler::patchNopToCall and MacroAssembler::PatchWrite_NearCall.
+static constexpr Register SavedScratchRegister = s8;
 
 static constexpr FloatRegister ScratchFloat32Reg{FloatRegisters::f23,
                                                  FloatRegisters::Single};
@@ -128,6 +117,29 @@ struct ScratchFloat32Scope : public AutoFloatRegisterScope {
 struct ScratchDoubleScope : public AutoFloatRegisterScope {
   explicit ScratchDoubleScope(MacroAssembler& masm)
       : AutoFloatRegisterScope(masm, ScratchDoubleReg) {}
+};
+
+class Assembler;
+
+class UseScratchRegisterScope {
+ public:
+  explicit UseScratchRegisterScope(Assembler& assembler);
+  explicit UseScratchRegisterScope(Assembler* assembler);
+  ~UseScratchRegisterScope();
+
+  Register Acquire();
+  void Release(const Register& reg);
+  bool hasAvailable() const;
+  void Include(const GeneralRegisterSet& list) {
+    *available_ = GeneralRegisterSet::Union(*available_, list);
+  }
+  void Exclude(const GeneralRegisterSet& list) {
+    *available_ = GeneralRegisterSet::Subtract(*available_, list);
+  }
+
+ private:
+  GeneralRegisterSet* available_;
+  GeneralRegisterSet old_available_;
 };
 
 // Use arg reg from EnterJIT function as OsrFrameReg.
@@ -669,7 +681,7 @@ class BOffImm16 {
   bool isInvalid() { return data == INVALID; }
   Instruction* getDest(Instruction* src) const;
 
-  BOffImm16(InstImm inst);
+  explicit BOffImm16(InstImm inst);
 };
 
 // A JOffImm26 is a 26 bit immediate that is used for unconditional jumps.
@@ -711,7 +723,7 @@ class Imm16 {
 
  public:
   Imm16();
-  Imm16(uint32_t imm) : value(imm) {}
+  explicit Imm16(uint32_t imm) : value(imm) {}
   uint32_t encode() { return value; }
   int32_t decodeSigned() { return value; }
   uint32_t decodeUnsigned() { return value; }
@@ -728,7 +740,7 @@ class Imm8 {
 
  public:
   Imm8();
-  Imm8(uint32_t imm) : value(imm) {}
+  explicit Imm8(uint32_t imm) : value(imm) {}
   uint32_t encode(uint32_t shift) { return value << shift; }
   int32_t decodeSigned() { return value; }
   uint32_t decodeUnsigned() { return value; }
@@ -752,9 +764,9 @@ class Operand {
   int32_t offset;
 
  public:
-  Operand(Register reg_) : tag(REG), reg(reg_.code()) {}
+  MOZ_IMPLICIT Operand(Register reg_) : tag(REG), reg(reg_.code()) {}
 
-  Operand(FloatRegister freg) : tag(FREG), reg(freg.code()) {}
+  explicit Operand(FloatRegister freg) : tag(FREG), reg(freg.code()) {}
 
   Operand(Register base, Imm32 off)
       : tag(MEM), reg(base.code()), offset(off.value) {}
@@ -762,7 +774,7 @@ class Operand {
   Operand(Register base, int32_t off)
       : tag(MEM), reg(base.code()), offset(off) {}
 
-  Operand(const Address& addr)
+  explicit Operand(const Address& addr)
       : tag(MEM), reg(addr.base.code()), offset(addr.offset) {}
 
   Tag getTag() const { return tag; }
@@ -965,14 +977,15 @@ class AssemblerLOONG64 : public AssemblerShared {
 #ifdef JS_JITSPEW
         printer(nullptr),
 #endif
-        isFinished(false) {
+        isFinished(false),
+        scratch_register_list_((1 << t7.code()) | (1 << t8.code())) {
   }
 
   static Condition InvertCondition(Condition cond);
   static DoubleCondition InvertCondition(DoubleCondition cond);
   // This is changing the condition codes for cmp a, b to the same codes for cmp
   // b, a.
-  static Condition InvertCmpCondition(Condition cond);
+  static Condition SwapCmpOperandsCondition(Condition cond);
 
   // As opposed to x86/x64 version, the data relocation has to be executed
   // before to recover the pointer, and not after.
@@ -1492,6 +1505,14 @@ class AssemblerLOONG64 : public AssemblerShared {
                                    const Disassembler::HeapAccess& heapAccess) {
     // Implement this if we implement a disassembler.
   }
+
+ private:
+  GeneralRegisterSet scratch_register_list_;
+
+ public:
+  GeneralRegisterSet* GetScratchRegisterList() {
+    return &scratch_register_list_;
+  }
 };  // AssemblerLOONG64
 
 // andi r0, r0, 0
@@ -1505,7 +1526,7 @@ class Instruction {
 
  protected:
   // Standard constructor
-  Instruction(uint32_t data_) : data(data_) {}
+  explicit Instruction(uint32_t data_) : data(data_) {}
   // You should never create an instruction directly.  You should create a
   // more specific instruction which will eventually call one of these
   // constructors for you.

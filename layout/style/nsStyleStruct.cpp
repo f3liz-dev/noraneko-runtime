@@ -285,39 +285,6 @@ static StyleRect<T> StyleRectWithAllSides(const T& aSide) {
   return {aSide, aSide, aSide, aSide};
 }
 
-AnchorPosReferencedAnchors::Result AnchorPosReferencedAnchors::InsertOrModify(
-    const nsAtom* aAnchorName, bool aNeedOffset) {
-  bool exists = true;
-  auto* result = &mMap.LookupOrInsertWith(aAnchorName, [&exists]() {
-    exists = false;
-    return Nothing{};
-  });
-
-  if (!exists) {
-    return {false, result};
-  }
-
-  // We tried to resolve before.
-  if (result->isNothing()) {
-    // We know this reference is invalid.
-    return {true, result};
-  }
-  // Previous resolution found a valid anchor.
-  if (!aNeedOffset) {
-    // Size is guaranteed to be populated on resolution.
-    return {true, result};
-  }
-
-  // Previous resolution may have been for size only, in which case another
-  // anchor resolution is still required.
-  return {result->ref().mOrigin.isSome(), result};
-}
-
-const AnchorPosReferencedAnchors::Value* AnchorPosReferencedAnchors::Lookup(
-    const nsAtom* aAnchorName) const {
-  return mMap.Lookup(aAnchorName).DataPtrOrNull();
-}
-
 AnchorResolvedMargin AnchorResolvedMarginHelper::ResolveAnchor(
     const StyleMargin& aValue, StylePhysicalAxis aAxis,
     const AnchorPosResolutionParams& aParams) {
@@ -585,7 +552,7 @@ nsChangeHint nsStyleBorder::CalcDifference(
 
 nsStyleOutline::nsStyleOutline()
     : mOutlineWidth(kMediumBorderWidth),
-      mOutlineOffset({0.0f}),
+      mOutlineOffset(0),
       mOutlineColor(StyleColor::CurrentColor()),
       mOutlineStyle(StyleOutlineStyle::BorderStyle(StyleBorderStyle::None)),
       mActualOutlineWidth(0) {
@@ -629,8 +596,7 @@ nsChangeHint nsStyleOutline::CalcDifference(
 }
 
 nsSize nsStyleOutline::EffectiveOffsetFor(const nsRect& aRect) const {
-  const nscoord offset = mOutlineOffset.ToAppUnits();
-
+  const nscoord offset = mOutlineOffset;
   if (offset >= 0) {
     // Fast path for non-negative offset values
     return nsSize(offset, offset);
@@ -1082,8 +1048,6 @@ nsStylePosition::nsStylePosition()
       mMinHeight(StyleSize::Auto()),
       mMaxHeight(StyleMaxSize::None()),
       mPositionAnchor(StylePositionAnchor::Auto()),
-      mPositionArea(StylePositionArea{StylePositionAreaKeyword::None,
-                                      StylePositionAreaKeyword::None}),
       mPositionVisibility(StylePositionVisibility::ALWAYS),
       mPositionTryFallbacks(StylePositionTryFallbacks()),
       mPositionTryOrder(StylePositionTryOrder::Normal),
@@ -1369,7 +1333,7 @@ const StyleContainIntrinsicSize& nsStylePosition::ContainIntrinsicISize(
   return aWM.IsVertical() ? mContainIntrinsicHeight : mContainIntrinsicWidth;
 }
 
-StyleAlignSelf nsStylePosition::UsedAlignSelf(
+StyleSelfAlignment nsStylePosition::UsedAlignSelf(
     const ComputedStyle* aParent) const {
   if (mAlignSelf._0 != StyleAlignFlags::AUTO) {
     return mAlignSelf;
@@ -1383,14 +1347,14 @@ StyleAlignSelf nsStylePosition::UsedAlignSelf(
   return {StyleAlignFlags::NORMAL};
 }
 
-StyleJustifySelf nsStylePosition::UsedJustifySelf(
+StyleSelfAlignment nsStylePosition::UsedJustifySelf(
     const ComputedStyle* aParent) const {
   if (mJustifySelf._0 != StyleAlignFlags::AUTO) {
     return mJustifySelf;
   }
   if (MOZ_LIKELY(aParent)) {
     const auto& inheritedJustifyItems =
-        aParent->StylePosition()->mJustifyItems.computed;
+        aParent->StylePosition()->mJustifyItems.computed._0;
     return {inheritedJustifyItems._0 & ~StyleAlignFlags::LEGACY};
   }
   return {StyleAlignFlags::NORMAL};
@@ -2242,8 +2206,6 @@ nsStyleDisplay::nsStyleDisplay()
       mBreakAfter(StyleBreakBetween::Auto),
       mOverflowX(StyleOverflow::Visible),
       mOverflowY(StyleOverflow::Visible),
-      mOverflowClipBoxBlock(StyleOverflowClipBox::PaddingBox),
-      mOverflowClipBoxInline(StyleOverflowClipBox::PaddingBox),
       mScrollbarGutter(StyleScrollbarGutter::AUTO),
       mResize(StyleResize::None),
       mOrient(StyleOrient::Inline),
@@ -2303,8 +2265,6 @@ nsStyleDisplay::nsStyleDisplay(const nsStyleDisplay& aSource)
       mBreakAfter(aSource.mBreakAfter),
       mOverflowX(aSource.mOverflowX),
       mOverflowY(aSource.mOverflowY),
-      mOverflowClipBoxBlock(aSource.mOverflowClipBoxBlock),
-      mOverflowClipBoxInline(aSource.mOverflowClipBoxInline),
       mScrollbarGutter(aSource.mScrollbarGutter),
       mResize(aSource.mResize),
       mOrient(aSource.mOrient),
@@ -2597,9 +2557,7 @@ nsChangeHint nsStyleDisplay::CalcDifference(
       mBreakAfter != aNewData.mBreakAfter ||
       mAppearance != aNewData.mAppearance ||
       mDefaultAppearance != aNewData.mDefaultAppearance ||
-      mOrient != aNewData.mOrient ||
-      mOverflowClipBoxBlock != aNewData.mOverflowClipBoxBlock ||
-      mOverflowClipBoxInline != aNewData.mOverflowClipBoxInline) {
+      mOrient != aNewData.mOrient) {
     hint |= nsChangeHint_AllReflowHints | nsChangeHint_RepaintFrame;
   }
 
@@ -2926,7 +2884,7 @@ nsStyleTextReset::nsStyleTextReset()
       mInitialLetter{0, 0},
       mTextDecorationColor(StyleColor::CurrentColor()),
       mTextDecorationThickness(StyleTextDecorationLength::Auto()),
-      mTextDecorationTrim(StyleTextDecorationTrim::Length(
+      mTextDecorationInset(StyleTextDecorationInset::Length(
           StyleLength::Zero(), StyleLength::Zero())) {
   MOZ_COUNT_CTOR(nsStyleTextReset);
 }
@@ -2939,7 +2897,7 @@ nsStyleTextReset::nsStyleTextReset(const nsStyleTextReset& aSource)
       mInitialLetter(aSource.mInitialLetter),
       mTextDecorationColor(aSource.mTextDecorationColor),
       mTextDecorationThickness(aSource.mTextDecorationThickness),
-      mTextDecorationTrim(aSource.mTextDecorationTrim) {
+      mTextDecorationInset(aSource.mTextDecorationInset) {
   MOZ_COUNT_CTOR(nsStyleTextReset);
 }
 
@@ -2953,7 +2911,7 @@ nsChangeHint nsStyleTextReset::CalcDifference(
   if (mTextDecorationLine != aNewData.mTextDecorationLine ||
       mTextDecorationStyle != aNewData.mTextDecorationStyle ||
       mTextDecorationThickness != aNewData.mTextDecorationThickness ||
-      mTextDecorationTrim != aNewData.mTextDecorationTrim) {
+      mTextDecorationInset != aNewData.mTextDecorationInset) {
     // Changes to our text-decoration line can impact our overflow area &
     // also our descendants' overflow areas (particularly for text-frame
     // descendants).  So, we update those areas & trigger a repaint.

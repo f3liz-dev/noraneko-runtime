@@ -7,6 +7,7 @@
 //!
 //! [position]: https://drafts.csswg.org/css-backgrounds-3/#position
 
+use crate::logical_geometry::{LogicalAxis, LogicalSide, PhysicalSide, WritingMode};
 use crate::parser::{Parse, ParserContext};
 use crate::selector_map::PrecomputedHashMap;
 use crate::str::HTML_SPACE_CHARACTERS;
@@ -20,10 +21,12 @@ use crate::values::generics::position::ZIndex as GenericZIndex;
 use crate::values::generics::position::{AspectRatio as GenericAspectRatio, GenericAnchorSide};
 use crate::values::generics::position::{GenericAnchorFunction, GenericInset};
 use crate::values::specified;
+use crate::values::specified::align::AlignFlags;
 use crate::values::specified::{AllowQuirks, Integer, LengthPercentage, NonNegativeNumber};
 use crate::values::DashedIdent;
 use crate::{Atom, Zero};
 use cssparser::Parser;
+use num_traits::FromPrimitive;
 use selectors::parser::SelectorParseErrorKind;
 use servo_arc::Arc;
 use smallvec::{smallvec, SmallVec};
@@ -32,6 +35,7 @@ use std::fmt::{self, Write};
 use style_traits::arc_slice::ArcSlice;
 use style_traits::values::specified::AllowedNumericType;
 use style_traits::{CssWriter, ParseError, StyleParseErrorKind, ToCss};
+use thin_vec::ThinVec;
 
 /// The specified value of a CSS `<position>`
 pub type Position = GenericPosition<HorizontalPosition, VerticalPosition>;
@@ -355,6 +359,7 @@ impl<S: Side> PositionComponent<S> {
     ToCss,
     ToResolvedValue,
     ToShmem,
+    ToTyped,
 )]
 #[css(comma)]
 pub struct AnchorName(
@@ -407,6 +412,7 @@ impl Parse for AnchorName {
     ToCss,
     ToResolvedValue,
     ToShmem,
+    ToTyped,
 )]
 #[repr(u8)]
 pub enum AnchorScope {
@@ -471,6 +477,7 @@ impl Parse for AnchorScope {
     ToCss,
     ToResolvedValue,
     ToShmem,
+    ToTyped,
 )]
 #[repr(u8)]
 pub enum PositionAnchor {
@@ -496,7 +503,6 @@ impl PositionAnchor {
     Clone,
     Copy,
     Debug,
-    Default,
     Eq,
     MallocSizeOf,
     Parse,
@@ -511,48 +517,38 @@ impl PositionAnchor {
 #[repr(u8)]
 /// How to swap values for the automatically-generated position tactic.
 pub enum PositionTryFallbacksTryTacticKeyword {
-    /// Magic value for no change.
-    #[css(skip)]
-    #[default]
-    None,
     /// Swap the values in the block axis.
     FlipBlock,
     /// Swap the values in the inline axis.
     FlipInline,
     /// Swap the values in the start properties.
     FlipStart,
-}
-
-impl PositionTryFallbacksTryTacticKeyword {
-    fn is_none(&self) -> bool {
-        *self == Self::None
-    }
+    /// Swap the values in the X axis.
+    FlipX,
+    /// Swap the values in the Y axis.
+    FlipY,
 }
 
 #[derive(
     Clone,
-    Copy,
     Debug,
     Default,
     Eq,
     MallocSizeOf,
     PartialEq,
-    Serialize,
     SpecifiedValueInfo,
     ToComputedValue,
     ToCss,
     ToResolvedValue,
     ToShmem,
 )]
-#[repr(C)]
+#[repr(transparent)]
 /// Changes for the automatically-generated position option.
 /// Note that this is order-dependent - e.g. `flip-start flip-inline` != `flip-inline flip-start`.
 ///
 /// https://drafts.csswg.org/css-anchor-position-1/#typedef-position-try-fallbacks-try-tactic
 pub struct PositionTryFallbacksTryTactic(
-    pub PositionTryFallbacksTryTacticKeyword,
-    pub PositionTryFallbacksTryTacticKeyword,
-    pub PositionTryFallbacksTryTacticKeyword,
+    #[css(iterable)] pub ThinVec<PositionTryFallbacksTryTacticKeyword>,
 );
 
 impl Parse for PositionTryFallbacksTryTactic {
@@ -560,23 +556,36 @@ impl Parse for PositionTryFallbacksTryTactic {
         _context: &ParserContext,
         input: &mut Parser<'i, 't>,
     ) -> Result<Self, ParseError<'i>> {
-        let first = input.try_parse(PositionTryFallbacksTryTacticKeyword::parse)?;
-        let second = input
-            .try_parse(PositionTryFallbacksTryTacticKeyword::parse)
-            .unwrap_or_default();
-        let third = input
-            .try_parse(PositionTryFallbacksTryTacticKeyword::parse)
-            .unwrap_or_default();
-        if first == second || first == third || (!second.is_none() && second == third) {
+        let mut result = ThinVec::with_capacity(5);
+        // Collect up to 5 keywords, disallowing duplicates.
+        for _ in 0..5 {
+            if let Ok(kw) = input.try_parse(PositionTryFallbacksTryTacticKeyword::parse) {
+                if result.contains(&kw) {
+                    return Err(input.new_custom_error(StyleParseErrorKind::UnspecifiedError));
+                }
+                result.push(kw);
+            } else {
+                break;
+            }
+        }
+        if result.is_empty() {
             return Err(input.new_custom_error(StyleParseErrorKind::UnspecifiedError));
         }
-        Ok(Self(first, second, third))
+        Ok(Self(result))
     }
 }
 
 impl PositionTryFallbacksTryTactic {
-    fn is_empty(&self) -> bool {
-        self.0.is_none()
+    /// Returns whether there's any tactic.
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    /// Iterates over the fallbacks in order.
+    #[inline]
+    pub fn iter(&self) -> impl Iterator<Item = &PositionTryFallbacksTryTacticKeyword> {
+        self.0.iter()
     }
 }
 
@@ -670,6 +679,7 @@ pub enum PositionTryFallbacksItem {
     ToCss,
     ToResolvedValue,
     ToShmem,
+    ToTyped,
 )]
 #[css(comma)]
 #[repr(C)]
@@ -727,6 +737,7 @@ impl Parse for PositionTryFallbacks {
     ToCss,
     ToResolvedValue,
     ToShmem,
+    ToTyped,
 )]
 #[repr(u8)]
 pub enum PositionTryOrder {
@@ -770,6 +781,7 @@ impl PositionTryOrder {
     ToCss,
     ToResolvedValue,
     ToShmem,
+    ToTyped,
 )]
 #[css(bitflags(single = "always", mixed = "anchors-valid,anchors-visible,no-overflow"))]
 #[repr(C)]
@@ -802,9 +814,10 @@ impl PositionVisibility {
     }
 }
 
-#[derive(PartialEq)]
 /// A value indicating which high level group in the formal grammar a
 /// PositionAreaKeyword or PositionArea belongs to.
+#[repr(u8)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PositionAreaType {
     /// X || Y
     Physical,
@@ -822,6 +835,121 @@ pub enum PositionAreaType {
     None,
 }
 
+/// A three-bit value that represents the axis in which position-area operates on.
+/// Represented as 4 bits: axis type (physical or logical), direction type (physical or logical),
+/// axis value.
+///
+/// There are two special values on top (Inferred and None) that represent ambiguous or axis-less
+/// keywords, respectively.
+#[repr(u8)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, FromPrimitive)]
+#[allow(missing_docs)]
+pub enum PositionAreaAxis {
+    Horizontal = 0b000,
+    Vertical = 0b001,
+
+    X = 0b010,
+    Y = 0b011,
+
+    Block = 0b110,
+    Inline = 0b111,
+
+    Inferred = 0b100,
+    None = 0b101,
+}
+
+impl PositionAreaAxis {
+    /// Whether this axis is physical or not.
+    pub fn is_physical(self) -> bool {
+        (self as u8 & 0b100) == 0
+    }
+
+    /// Whether the direction is logical or not.
+    fn is_flow_relative_direction(self) -> bool {
+        self == Self::Inferred || (self as u8 & 0b10) != 0
+    }
+
+    /// Whether this axis goes first in the canonical syntax.
+    fn is_canonically_first(self) -> bool {
+        self != Self::Inferred && (self as u8) & 1 == 0
+    }
+
+    #[allow(unused)]
+    fn flip(self) -> Self {
+        if matches!(self, Self::Inferred | Self::None) {
+            return self;
+        }
+        Self::from_u8(self as u8 ^ 1u8).unwrap()
+    }
+
+    fn to_logical(self, wm: WritingMode, inferred: LogicalAxis) -> Option<LogicalAxis> {
+        Some(match self {
+            PositionAreaAxis::Horizontal | PositionAreaAxis::X => {
+                if wm.is_vertical() {
+                    LogicalAxis::Block
+                } else {
+                    LogicalAxis::Inline
+                }
+            },
+            PositionAreaAxis::Vertical | PositionAreaAxis::Y => {
+                if wm.is_vertical() {
+                    LogicalAxis::Inline
+                } else {
+                    LogicalAxis::Block
+                }
+            },
+            PositionAreaAxis::Block => LogicalAxis::Block,
+            PositionAreaAxis::Inline => LogicalAxis::Inline,
+            PositionAreaAxis::Inferred => inferred,
+            PositionAreaAxis::None => return None,
+        })
+    }
+}
+
+/// Specifies which tracks(s) on the axis that the position-area span occupies.
+/// Represented as 3 bits: start, center, end track.
+#[repr(u8)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, FromPrimitive)]
+pub enum PositionAreaTrack {
+    /// First track
+    Start = 0b001,
+    /// First and center.
+    SpanStart = 0b011,
+    /// Last track.
+    End = 0b100,
+    /// Last and center.
+    SpanEnd = 0b110,
+    /// Center track.
+    Center = 0b010,
+    /// All tracks
+    SpanAll = 0b111,
+}
+
+impl PositionAreaTrack {
+    fn flip(self) -> Self {
+        match self {
+            Self::Start => Self::End,
+            Self::SpanStart => Self::SpanEnd,
+            Self::End => Self::Start,
+            Self::SpanEnd => Self::SpanStart,
+            Self::Center | Self::SpanAll => self,
+        }
+    }
+
+    fn start(self) -> bool {
+        self as u8 & 1 != 0
+    }
+}
+
+/// The shift to the left needed to set the axis.
+pub const AXIS_SHIFT: usize = 3;
+/// The mask used to extract the axis.
+pub const AXIS_MASK: u8 = 0b111u8 << AXIS_SHIFT;
+/// The mask used to extract the track.
+pub const TRACK_MASK: u8 = 0b111u8;
+/// The self-wm bit.
+pub const SELF_WM: u8 = 1u8 << 6;
+
 #[derive(
     Clone,
     Copy,
@@ -836,191 +964,249 @@ pub enum PositionAreaType {
     ToCss,
     ToResolvedValue,
     ToShmem,
+    FromPrimitive,
 )]
 #[allow(missing_docs)]
 #[repr(u8)]
-/// Possible values for the `position-area` preperty's keywords.
+/// Possible values for the `position-area` property's keywords.
+/// Represented by [0z xxx yyy], where z means "self wm resolution", xxxx is the axis (as in
+/// PositionAreaAxis) and yyy is the PositionAreaTrack
 /// https://drafts.csswg.org/css-anchor-position-1/#propdef-position-area
 pub enum PositionAreaKeyword {
     #[default]
-    None,
+    None = (PositionAreaAxis::None as u8) << AXIS_SHIFT,
 
     // Common (shared) keywords:
-    Center,
-    SpanAll,
+    Center = ((PositionAreaAxis::None as u8) << AXIS_SHIFT) | PositionAreaTrack::Center as u8,
+    SpanAll = ((PositionAreaAxis::None as u8) << AXIS_SHIFT) | PositionAreaTrack::SpanAll as u8,
 
-    // Horizontal keywords:
-    Left,
-    Right,
-    SpanLeft,
-    SpanRight,
-    XStart,
-    XEnd,
-    SpanXStart,
-    SpanXEnd,
-    XSelfStart,
-    XSelfEnd,
-    SpanXSelfStart,
-    SpanXSelfEnd,
-    // Vertical keywords:
-    Top,
-    Bottom,
-    SpanTop,
-    SpanBottom,
-    YStart,
-    YEnd,
-    SpanYStart,
-    SpanYEnd,
-    YSelfStart,
-    YSelfEnd,
-    SpanYSelfStart,
-    SpanYSelfEnd,
+    // Inferred-axis edges:
+    Start = ((PositionAreaAxis::Inferred as u8) << AXIS_SHIFT) | PositionAreaTrack::Start as u8,
+    End = ((PositionAreaAxis::Inferred as u8) << AXIS_SHIFT) | PositionAreaTrack::End as u8,
+    SpanStart =
+        ((PositionAreaAxis::Inferred as u8) << AXIS_SHIFT) | PositionAreaTrack::SpanStart as u8,
+    SpanEnd = ((PositionAreaAxis::Inferred as u8) << AXIS_SHIFT) | PositionAreaTrack::SpanEnd as u8,
 
-    // Block keywords:
-    BlockStart,
-    BlockEnd,
-    SpanBlockStart,
-    SpanBlockEnd,
-    // Inline keywords:
-    InlineStart,
-    InlineEnd,
-    SpanInlineStart,
-    SpanInlineEnd,
+    // Purely physical edges:
+    Left = ((PositionAreaAxis::Horizontal as u8) << AXIS_SHIFT) | PositionAreaTrack::Start as u8,
+    Right = ((PositionAreaAxis::Horizontal as u8) << AXIS_SHIFT) | PositionAreaTrack::End as u8,
+    Top = ((PositionAreaAxis::Vertical as u8) << AXIS_SHIFT) | PositionAreaTrack::Start as u8,
+    Bottom = ((PositionAreaAxis::Vertical as u8) << AXIS_SHIFT) | PositionAreaTrack::End as u8,
 
-    // "Self" block keywords:
-    SelfBlockStart,
-    SelfBlockEnd,
-    SpanSelfBlockStart,
-    SpanSelfBlockEnd,
-    // "Self" inline keywords:
-    SelfInlineStart,
-    SelfInlineEnd,
-    SpanSelfInlineStart,
-    SpanSelfInlineEnd,
+    // Flow-relative physical-axis edges:
+    XStart = ((PositionAreaAxis::X as u8) << AXIS_SHIFT) | PositionAreaTrack::Start as u8,
+    XEnd = ((PositionAreaAxis::X as u8) << AXIS_SHIFT) | PositionAreaTrack::End as u8,
+    YStart = ((PositionAreaAxis::Y as u8) << AXIS_SHIFT) | PositionAreaTrack::Start as u8,
+    YEnd = ((PositionAreaAxis::Y as u8) << AXIS_SHIFT) | PositionAreaTrack::End as u8,
 
-    // Inferred axis keywords:
-    Start,
-    End,
-    SpanStart,
-    SpanEnd,
+    // Logical edges:
+    BlockStart = ((PositionAreaAxis::Block as u8) << AXIS_SHIFT) | PositionAreaTrack::Start as u8,
+    BlockEnd = ((PositionAreaAxis::Block as u8) << AXIS_SHIFT) | PositionAreaTrack::End as u8,
+    InlineStart = ((PositionAreaAxis::Inline as u8) << AXIS_SHIFT) | PositionAreaTrack::Start as u8,
+    InlineEnd = ((PositionAreaAxis::Inline as u8) << AXIS_SHIFT) | PositionAreaTrack::End as u8,
 
-    // "Self" inferred axis keywords:
-    SelfStart,
-    SelfEnd,
-    SpanSelfStart,
-    SpanSelfEnd,
+    // Composite values with Span:
+    SpanLeft =
+        ((PositionAreaAxis::Horizontal as u8) << AXIS_SHIFT) | PositionAreaTrack::SpanStart as u8,
+    SpanRight =
+        ((PositionAreaAxis::Horizontal as u8) << AXIS_SHIFT) | PositionAreaTrack::SpanEnd as u8,
+    SpanTop =
+        ((PositionAreaAxis::Vertical as u8) << AXIS_SHIFT) | PositionAreaTrack::SpanStart as u8,
+    SpanBottom =
+        ((PositionAreaAxis::Vertical as u8) << AXIS_SHIFT) | PositionAreaTrack::SpanEnd as u8,
+
+    // Flow-relative physical-axis edges:
+    SpanXStart = ((PositionAreaAxis::X as u8) << AXIS_SHIFT) | PositionAreaTrack::SpanStart as u8,
+    SpanXEnd = ((PositionAreaAxis::X as u8) << AXIS_SHIFT) | PositionAreaTrack::SpanEnd as u8,
+    SpanYStart = ((PositionAreaAxis::Y as u8) << AXIS_SHIFT) | PositionAreaTrack::SpanStart as u8,
+    SpanYEnd = ((PositionAreaAxis::Y as u8) << AXIS_SHIFT) | PositionAreaTrack::SpanEnd as u8,
+
+    // Logical edges:
+    SpanBlockStart =
+        ((PositionAreaAxis::Block as u8) << AXIS_SHIFT) | PositionAreaTrack::SpanStart as u8,
+    SpanBlockEnd =
+        ((PositionAreaAxis::Block as u8) << AXIS_SHIFT) | PositionAreaTrack::SpanEnd as u8,
+    SpanInlineStart =
+        ((PositionAreaAxis::Inline as u8) << AXIS_SHIFT) | PositionAreaTrack::SpanStart as u8,
+    SpanInlineEnd =
+        ((PositionAreaAxis::Inline as u8) << AXIS_SHIFT) | PositionAreaTrack::SpanEnd as u8,
+
+    // Values using the Self element's writing-mode:
+    SelfStart = SELF_WM | (Self::Start as u8),
+    SelfEnd = SELF_WM | (Self::End as u8),
+    SpanSelfStart = SELF_WM | (Self::SpanStart as u8),
+    SpanSelfEnd = SELF_WM | (Self::SpanEnd as u8),
+
+    SelfXStart = SELF_WM | (Self::XStart as u8),
+    SelfXEnd = SELF_WM | (Self::XEnd as u8),
+    SelfYStart = SELF_WM | (Self::YStart as u8),
+    SelfYEnd = SELF_WM | (Self::YEnd as u8),
+    SelfBlockStart = SELF_WM | (Self::BlockStart as u8),
+    SelfBlockEnd = SELF_WM | (Self::BlockEnd as u8),
+    SelfInlineStart = SELF_WM | (Self::InlineStart as u8),
+    SelfInlineEnd = SELF_WM | (Self::InlineEnd as u8),
+
+    SpanSelfXStart = SELF_WM | (Self::SpanXStart as u8),
+    SpanSelfXEnd = SELF_WM | (Self::SpanXEnd as u8),
+    SpanSelfYStart = SELF_WM | (Self::SpanYStart as u8),
+    SpanSelfYEnd = SELF_WM | (Self::SpanYEnd as u8),
+    SpanSelfBlockStart = SELF_WM | (Self::SpanBlockStart as u8),
+    SpanSelfBlockEnd = SELF_WM | (Self::SpanBlockEnd as u8),
+    SpanSelfInlineStart = SELF_WM | (Self::SpanInlineStart as u8),
+    SpanSelfInlineEnd = SELF_WM | (Self::SpanInlineEnd as u8),
 }
 
-#[allow(missing_docs)]
 impl PositionAreaKeyword {
+    /// Returns the 'none' value.
     #[inline]
     pub fn none() -> Self {
         Self::None
     }
 
+    /// Returns true if this is the none keyword.
     pub fn is_none(&self) -> bool {
         *self == Self::None
     }
 
-    // TODO: Investigate better perf: https://bugzilla.mozilla.org/show_bug.cgi?id=1987803
-    fn get_type(&self) -> PositionAreaType {
-        use PositionAreaKeyword::*;
-        match self {
-            // X-axis
-            Left | Right | SpanLeft | SpanRight | XStart | XEnd | SpanXStart | SpanXEnd
-            | XSelfStart | XSelfEnd | SpanXSelfStart | SpanXSelfEnd => PositionAreaType::Physical,
+    /// Whether we're one of the self-wm keywords.
+    pub fn self_wm(self) -> bool {
+        (self as u8 & SELF_WM) != 0
+    }
 
-            // Y-axis
-            Top | Bottom | SpanTop | SpanBottom | YStart | YEnd | SpanYStart | SpanYEnd
-            | YSelfStart | YSelfEnd | SpanYSelfStart | SpanYSelfEnd => PositionAreaType::Physical,
+    /// Get this keyword's axis.
+    pub fn axis(self) -> PositionAreaAxis {
+        PositionAreaAxis::from_u8((self as u8 >> AXIS_SHIFT) & 0b111).unwrap()
+    }
 
-            // Block
-            BlockStart | BlockEnd | SpanBlockStart | SpanBlockEnd => PositionAreaType::Logical,
+    /// Returns this keyword but with the axis swapped by the argument.
+    pub fn with_axis(self, axis: PositionAreaAxis) -> Self {
+        Self::from_u8(((self as u8) & !AXIS_MASK) | ((axis as u8) << AXIS_SHIFT)).unwrap()
+    }
 
-            // Inline
-            InlineStart | InlineEnd | SpanInlineStart | SpanInlineEnd => PositionAreaType::Logical,
-
-            // Self block
-            SelfBlockStart | SelfBlockEnd | SpanSelfBlockStart | SpanSelfBlockEnd => {
-                PositionAreaType::SelfLogical
-            },
-
-            // Self inline
-            SelfInlineStart | SelfInlineEnd | SpanSelfInlineStart | SpanSelfInlineEnd => {
-                PositionAreaType::SelfLogical
-            },
-
-            // Inferred
-            Start | End | SpanStart | SpanEnd => PositionAreaType::Inferred,
-
-            // Self inferred
-            SelfStart | SelfEnd | SpanSelfStart | SpanSelfEnd => PositionAreaType::SelfInferred,
-
-            // Common
-            Center | SpanAll => PositionAreaType::Common,
-
-            None => PositionAreaType::None,
+    /// If this keyword uses an inferred axis, replaces it.
+    pub fn with_inferred_axis(self, axis: PositionAreaAxis) -> Self {
+        if self.axis() == PositionAreaAxis::Inferred {
+            self.with_axis(axis)
+        } else {
+            self
         }
     }
 
-    #[inline]
-    pub fn canonical_order_is_first(&self) -> bool {
-        use PositionAreaKeyword::*;
-        matches!(
-            self,
-            Left | Right
-                | SpanLeft
-                | SpanRight
-                | XStart
-                | XEnd
-                | SpanXStart
-                | SpanXEnd
-                | XSelfStart
-                | XSelfEnd
-                | SpanXSelfStart
-                | SpanXSelfEnd
-                | BlockStart
-                | BlockEnd
-                | SpanBlockStart
-                | SpanBlockEnd
-                | SelfBlockStart
-                | SelfBlockEnd
-                | SpanSelfBlockStart
-                | SpanSelfBlockEnd
-        )
+    /// Get this keyword's track, or None if we're the `None` keyword.
+    pub fn track(self) -> Option<PositionAreaTrack> {
+        let result = PositionAreaTrack::from_u8(self as u8 & TRACK_MASK);
+        debug_assert_eq!(
+            result.is_none(),
+            self.is_none(),
+            "Only the none keyword has no track"
+        );
+        result
     }
 
-    #[inline]
-    pub fn canonical_order_is_second(&self) -> bool {
-        use PositionAreaKeyword::*;
-        matches!(
-            self,
-            Top | Bottom
-                | SpanTop
-                | SpanBottom
-                | YStart
-                | YEnd
-                | SpanYStart
-                | SpanYEnd
-                | YSelfStart
-                | YSelfEnd
-                | SpanYSelfStart
-                | SpanYSelfEnd
-                | InlineStart
-                | InlineEnd
-                | SpanInlineStart
-                | SpanInlineEnd
-                | SelfInlineStart
-                | SelfInlineEnd
-                | SpanSelfInlineStart
-                | SpanSelfInlineEnd
-        )
+    fn group_type(self) -> PositionAreaType {
+        let axis = self.axis();
+        if axis == PositionAreaAxis::None {
+            if self.is_none() {
+                return PositionAreaType::None;
+            }
+            return PositionAreaType::Common;
+        }
+        if axis == PositionAreaAxis::Inferred {
+            return if self.self_wm() {
+                PositionAreaType::SelfInferred
+            } else {
+                PositionAreaType::Inferred
+            };
+        }
+        if axis.is_physical() {
+            return PositionAreaType::Physical;
+        }
+        if self.self_wm() {
+            PositionAreaType::SelfLogical
+        } else {
+            PositionAreaType::Logical
+        }
     }
 
-    #[inline]
-    pub fn has_same_canonical_order(&self, other: PositionAreaKeyword) -> bool {
-        self.canonical_order_is_first() == other.canonical_order_is_first()
-            || self.canonical_order_is_second() == other.canonical_order_is_second()
+    fn to_physical(
+        self,
+        cb_wm: WritingMode,
+        self_wm: WritingMode,
+        inferred_axis: LogicalAxis,
+    ) -> Self {
+        let wm = if self.self_wm() { self_wm } else { cb_wm };
+        let axis = self.axis();
+        if !axis.is_flow_relative_direction() {
+            return self;
+        }
+        let Some(logical_axis) = axis.to_logical(wm, inferred_axis) else {
+            return self;
+        };
+        let Some(track) = self.track() else {
+            debug_assert!(false, "How did we end up with no track here? {self:?}");
+            return self;
+        };
+        let start = track.start();
+        let logical_side = match logical_axis {
+            LogicalAxis::Block => {
+                if start {
+                    LogicalSide::BlockStart
+                } else {
+                    LogicalSide::BlockEnd
+                }
+            },
+            LogicalAxis::Inline => {
+                if start {
+                    LogicalSide::InlineStart
+                } else {
+                    LogicalSide::InlineEnd
+                }
+            },
+        };
+        let physical_side = logical_side.to_physical(wm);
+        let physical_start = matches!(physical_side, PhysicalSide::Top | PhysicalSide::Left);
+        let new_track = if physical_start != start {
+            track.flip()
+        } else {
+            track
+        };
+        let new_axis = if matches!(physical_side, PhysicalSide::Top | PhysicalSide::Bottom) {
+            PositionAreaAxis::Vertical
+        } else {
+            PositionAreaAxis::Horizontal
+        };
+        Self::from_u8(new_track as u8 | ((new_axis as u8) << AXIS_SHIFT)).unwrap()
+    }
+
+    fn flip_track(self) -> Self {
+        let Some(old_track) = self.track() else {
+            return self;
+        };
+        let new_track = old_track.flip();
+        Self::from_u8((self as u8 & !TRACK_MASK) | new_track as u8).unwrap()
+    }
+
+    /// Returns a value for the self-alignment properties in order to resolve
+    /// `normal`.
+    ///
+    /// <https://drafts.csswg.org/css-anchor-position/#position-area-alignment>
+    pub fn to_self_alignment(self) -> Option<AlignFlags> {
+        let track = self.track()?;
+        Some(match track {
+            // "If the only the center track in an axis is selected, the default alignment in that axis is center."
+            PositionAreaTrack::Center => AlignFlags::CENTER,
+            // "If all three tracks are selected, the default alignment in that axis is anchor-center."
+            PositionAreaTrack::SpanAll => AlignFlags::ANCHOR_CENTER,
+            // "Otherwise, the default alignment in that axis is toward the non-specified side track: if it’s
+            // specifying the “start” track of its axis, the default alignment in that axis is end; etc."
+            _ => {
+                if track.start() {
+                    AlignFlags::END
+                } else {
+                    AlignFlags::START
+                }
+            },
+        })
     }
 }
 
@@ -1035,6 +1221,7 @@ impl PositionAreaKeyword {
     ToCss,
     ToResolvedValue,
     ToShmem,
+    ToTyped,
 )]
 #[repr(C)]
 /// https://drafts.csswg.org/css-anchor-position-1/#propdef-position-area
@@ -1046,8 +1233,8 @@ pub struct PositionArea {
     pub second: PositionAreaKeyword,
 }
 
-#[allow(missing_docs)]
 impl PositionArea {
+    /// Returns the none value.
     #[inline]
     pub fn none() -> Self {
         Self {
@@ -1056,11 +1243,13 @@ impl PositionArea {
         }
     }
 
+    /// Returns whether we're the none value.
     #[inline]
     pub fn is_none(&self) -> bool {
         self.first.is_none()
     }
 
+    /// Parses a <position-area> without allowing `none`.
     pub fn parse_except_none<'i, 't>(
         context: &ParserContext,
         input: &mut Parser<'i, 't>,
@@ -1068,43 +1257,30 @@ impl PositionArea {
         Self::parse_internal(context, input, /*allow_none*/ false)
     }
 
-    #[inline]
+    /// Get the high-level grammar group of this.
     pub fn get_type(&self) -> PositionAreaType {
-        match (self.first.get_type(), self.second.get_type()) {
-            (PositionAreaType::Physical, PositionAreaType::Physical)
-                if !self.first.has_same_canonical_order(self.second) =>
-            {
-                PositionAreaType::Physical
-            },
-            (PositionAreaType::Logical, PositionAreaType::Logical)
-                if !self.first.has_same_canonical_order(self.second) =>
-            {
-                PositionAreaType::Logical
-            },
-            (PositionAreaType::SelfLogical, PositionAreaType::SelfLogical)
-                if !self.first.has_same_canonical_order(self.second) =>
-            {
-                PositionAreaType::SelfLogical
-            },
-            (PositionAreaType::Inferred, PositionAreaType::Inferred) => PositionAreaType::Inferred,
-            (PositionAreaType::SelfInferred, PositionAreaType::SelfInferred) => {
-                PositionAreaType::SelfInferred
-            },
-            (PositionAreaType::Common, PositionAreaType::Common) => PositionAreaType::Common,
-
-            // Allow mixing Common with any other types except `none`
-            (PositionAreaType::Common, other) | (other, PositionAreaType::Common)
-                if other != PositionAreaType::None =>
-            {
-                other
-            },
-
-            _ => PositionAreaType::None,
+        let first = self.first.group_type();
+        let second = self.second.group_type();
+        if matches!(second, PositionAreaType::None | PositionAreaType::Common) {
+            return first;
         }
+        if first == PositionAreaType::Common {
+            return second;
+        }
+        if first != second {
+            return PositionAreaType::None;
+        }
+        let first_axis = self.first.axis();
+        if first_axis != PositionAreaAxis::Inferred
+            && first_axis.is_canonically_first() == self.second.axis().is_canonically_first()
+        {
+            return PositionAreaType::None;
+        }
+        first
     }
 
     fn parse_internal<'i, 't>(
-        _context: &ParserContext,
+        _: &ParserContext,
         input: &mut Parser<'i, 't>,
         allow_none: bool,
     ) -> Result<Self, ParseError<'i>> {
@@ -1134,16 +1310,12 @@ impl PositionArea {
         }
 
         let pair_type = Self { first, second }.get_type();
-
         if pair_type == PositionAreaType::None {
-            // `none` is only allowed as a standalone value, and we've handled
-            // that already.
+            // Mismatched types or what not.
             return Err(location.new_custom_error(StyleParseErrorKind::UnspecifiedError));
         }
-
-        // For types that have a canonical order, put them in order and remove
-        // 'span-all' (the default behavior; unnecessary for keyword pairs with
-        // a known order).
+        // For types that have a canonical order, remove 'span-all' (the default behavior;
+        // unnecessary for keyword pairs with a known order).
         if matches!(
             pair_type,
             PositionAreaType::Physical | PositionAreaType::Logical | PositionAreaType::SelfLogical
@@ -1155,15 +1327,101 @@ impl PositionArea {
             } else if first == PositionAreaKeyword::SpanAll {
                 first = second;
                 second = PositionAreaKeyword::None;
-            } else if first.canonical_order_is_second() || second.canonical_order_is_first() {
-                std::mem::swap(&mut first, &mut second);
             }
         }
         if first == second {
             second = PositionAreaKeyword::None;
         }
+        let mut result = Self { first, second };
+        result.canonicalize_order();
+        Ok(result)
+    }
 
-        Ok(Self { first, second })
+    fn canonicalize_order(&mut self) {
+        let first_axis = self.first.axis();
+        if first_axis.is_canonically_first() || self.second.is_none() {
+            return;
+        }
+        let second_axis = self.second.axis();
+        if first_axis == second_axis {
+            // Inferred or axis-less keywords.
+            return;
+        }
+        if second_axis.is_canonically_first()
+            || (second_axis == PositionAreaAxis::None && first_axis != PositionAreaAxis::Inferred)
+        {
+            std::mem::swap(&mut self.first, &mut self.second);
+        }
+    }
+
+    fn make_missing_second_explicit(&mut self) {
+        if !self.second.is_none() {
+            return;
+        }
+        let axis = self.first.axis();
+        if matches!(axis, PositionAreaAxis::Inferred | PositionAreaAxis::None) {
+            self.second = self.first;
+            return;
+        }
+        self.second = PositionAreaKeyword::SpanAll;
+        if !axis.is_canonically_first() {
+            std::mem::swap(&mut self.first, &mut self.second);
+        }
+    }
+
+    /// Turns this <position-area> value into a physical <position-area>.
+    pub fn to_physical(mut self, cb_wm: WritingMode, self_wm: WritingMode) -> Self {
+        self.make_missing_second_explicit();
+        self.first = self.first.to_physical(cb_wm, self_wm, LogicalAxis::Block);
+        self.second = self.second.to_physical(cb_wm, self_wm, LogicalAxis::Inline);
+        self.canonicalize_order();
+        self
+    }
+
+    fn flip_logical_axis(&mut self, wm: WritingMode, axis: LogicalAxis) {
+        if self.first.axis().to_logical(wm, LogicalAxis::Block) == Some(axis) {
+            self.first = self.first.flip_track();
+        } else {
+            self.second = self.second.flip_track();
+        }
+    }
+
+    fn flip_start(&mut self) {
+        self.first = self.first.with_axis(self.first.axis().flip());
+        self.second = self.second.with_axis(self.second.axis().flip());
+    }
+
+    /// Applies a try tactic to this `<position-area>` value.
+    pub fn with_tactic(
+        mut self,
+        wm: WritingMode,
+        tactic: PositionTryFallbacksTryTacticKeyword,
+    ) -> Self {
+        self.make_missing_second_explicit();
+        let axis_to_flip = match tactic {
+            PositionTryFallbacksTryTacticKeyword::FlipStart => {
+                self.flip_start();
+                return self;
+            },
+            PositionTryFallbacksTryTacticKeyword::FlipBlock => LogicalAxis::Block,
+            PositionTryFallbacksTryTacticKeyword::FlipInline => LogicalAxis::Inline,
+            PositionTryFallbacksTryTacticKeyword::FlipX => {
+                if wm.is_horizontal() {
+                    LogicalAxis::Inline
+                } else {
+                    LogicalAxis::Block
+                }
+            },
+            PositionTryFallbacksTryTacticKeyword::FlipY => {
+                if wm.is_vertical() {
+                    LogicalAxis::Inline
+                } else {
+                    LogicalAxis::Block
+                }
+            },
+        };
+        self.flip_logical_axis(wm, axis_to_flip);
+        self
     }
 }
 
@@ -1172,7 +1430,7 @@ impl Parse for PositionArea {
         context: &ParserContext,
         input: &mut Parser<'i, 't>,
     ) -> Result<Self, ParseError<'i>> {
-        Self::parse_internal(context, input, /*allow_none*/ true)
+        Self::parse_internal(context, input, /* allow_none = */ true)
     }
 }
 
@@ -1224,6 +1482,7 @@ impl Side for VerticalPositionKeyword {
     ToComputedValue,
     ToResolvedValue,
     ToShmem,
+    ToTyped,
 )]
 #[css(bitflags(
     mixed = "row,column,dense",
@@ -1335,6 +1594,7 @@ pub enum MasonryItemOrder {
     ToCss,
     ToResolvedValue,
     ToShmem,
+    ToTyped,
 )]
 #[repr(C)]
 /// Controls how the Masonry layout algorithm works
@@ -1701,6 +1961,7 @@ fn is_name_code_point(c: char) -> bool {
     ToCss,
     ToResolvedValue,
     ToShmem,
+    ToTyped,
 )]
 pub enum GridTemplateAreas {
     /// The `none` value.

@@ -8,7 +8,6 @@ transformations is generic to any kind of task, but abstracts away some of the
 complexities of worker implementations, scopes, and treeherder annotations.
 """
 
-
 import datetime
 import hashlib
 import os
@@ -44,15 +43,26 @@ from gecko_taskgraph.util.partners import get_partners_to_be_published
 from gecko_taskgraph.util.scriptworker import BALROG_ACTIONS, get_release_config
 from gecko_taskgraph.util.workertypes import get_worker_type, worker_type_implementation
 
-RUN_TASK = os.path.join(GECKO, "taskcluster", "scripts", "run-task")
+RUN_TASK_HG = os.path.join(GECKO, "taskcluster", "scripts", "run-task")
+RUN_TASK_GIT = os.path.join(
+    GECKO,
+    "third_party",
+    "python",
+    "taskcluster_taskgraph",
+    "taskgraph",
+    "run-task",
+    "run-task",
+)
 
 SCCACHE_GCS_PROJECT = "sccache-3"
 
 
 @memoize
-def _run_task_suffix():
+def _run_task_suffix(repo_type):
     """String to append to cache names under control of run-task."""
-    return hash_path(RUN_TASK)[0:20]
+    if repo_type == "hg":
+        return hash_path(RUN_TASK_HG)[0:20]
+    return hash_path(RUN_TASK_GIT)[0:20]
 
 
 def _compute_geckoview_version(app_version, moz_build_date):
@@ -160,6 +170,10 @@ task_description_schema = Schema(
                 "build_date",
             ),
         },
+        # The `run_on_repo_type` attribute, defaulting to "hg".  This dictates
+        # the types of repositories on which this task should be included in
+        # the target task set. See the attributes documentation for details.
+        Optional("run-on-repo-type"): [Any("git", "hg")],
         # The `run_on_projects` attribute, defaulting to "all".  This dictates the
         # projects on which this task should be included in the target task set.
         # See the attributes documentation for details.
@@ -310,6 +324,13 @@ def verify_index(config, index):
     product = index["product"]
     if product not in config.graph_config["index"]["products"]:
         raise Exception(UNSUPPORTED_INDEX_PRODUCT_ERROR.format(product=product))
+
+
+RUN_TASK_RE = re.compile(r"run-task(-(git|hg))?$")
+
+
+def is_run_task(cmd: str) -> bool:
+    return bool(re.search(RUN_TASK_RE, cmd))
 
 
 @payload_builder(
@@ -499,7 +520,7 @@ def build_docker_worker_payload(config, task, task_def):
     if "max-run-time" in worker:
         payload["maxRunTime"] = worker["max-run-time"]
 
-    run_task = payload.get("command", [""])[0].endswith("run-task")
+    run_task = is_run_task(payload.get("command", [""])[0])
 
     # run-task exits EXIT_PURGE_CACHES if there is a problem with caches.
     # Automatically retry the tasks and purge caches if we see this exit
@@ -563,7 +584,9 @@ def build_docker_worker_payload(config, task, task_def):
         cache_version = "v3"
 
         if run_task:
-            suffix = f"{cache_version}-{_run_task_suffix()}"
+            suffix = (
+                f"{cache_version}-{_run_task_suffix(config.params['repository_type'])}"
+            )
 
             if out_of_tree_image:
                 name_hash = hashlib.sha256(
@@ -903,7 +926,7 @@ def build_iscript_payload(config, task, task_def):
     "beetmover",
     schema={
         # the maximum time to run, in seconds
-        Required("max-run-time"): int,
+        Optional("max-run-time"): int,
         # locale key, if this is a locale beetmover job
         Optional("locale"): str,
         Required("release-properties"): {
@@ -959,7 +982,7 @@ def build_beetmover_payload(config, task, task_def):
     "beetmover-push-to-release",
     schema={
         # the maximum time to run, in seconds
-        Required("max-run-time"): int,
+        Optional("max-run-time"): int,
         Required("product"): str,
     },
 )
@@ -979,7 +1002,7 @@ def build_beetmover_push_to_release_payload(config, task, task_def):
 @payload_builder(
     "beetmover-import-from-gcs-to-artifact-registry",
     schema={
-        Required("max-run-time"): int,
+        Optional("max-run-time"): int,
         Required("gcs-sources"): [str],
         Required("product"): str,
     },
@@ -994,7 +1017,7 @@ def build_import_from_gcs_to_artifact_registry_payload(config, task, task_def):
 @payload_builder(
     "beetmover-maven",
     schema={
-        Required("max-run-time"): int,
+        Optional("max-run-time"): int,
         Required("release-properties"): {
             "app-name": str,
             "app-version": str,
@@ -1769,14 +1792,7 @@ def set_defaults(config, tasks):
                     "Windows and Linux, not on {}".format(worker["os"])
                 )
             worker.setdefault("chain-of-trust", False)
-        elif worker["implementation"] in (
-            "beetmover",
-            "beetmover-push-to-release",
-            "beetmover-maven",
-            "beetmover-import-from-gcs-to-artifact-registry",
-            "iscript",
-            "scriptworker-signing",
-        ):
+        elif worker["implementation"] in ("iscript",):
             worker.setdefault("max-run-time", 600)
         elif worker["implementation"] == "push-apk":
             worker.setdefault("commit", False)
@@ -2131,17 +2147,12 @@ def set_task_and_artifact_expiry(config, jobs):
     now = datetime.datetime.utcnow()
     # We don't want any configuration leading to anything with an expiry longer
     # than 28 days on try.
-    cap = "28 days" if is_try(config.params) else None
+    cap = (
+        "28 days"
+        if is_try(config.params) and int(config.params["level"]) == 1
+        else None
+    )
     cap_from_now = fromNow(cap, now) if cap else None
-    if cap:
-        for policy, expires in config.graph_config["expiration-policy"]["by-project"][
-            "try"
-        ].items():
-            if fromNow(expires, now) > cap_from_now:
-                raise Exception(
-                    f'expiration-policy "{policy}" is larger than {cap} '
-                    f'for {config.params["project"]}'
-                )
     for job in jobs:
         expires = get_expiration(config, job.get("expiration-policy", "default"))
         job_expiry = job.setdefault("expires-after", expires)
@@ -2344,6 +2355,7 @@ def build_task(config, tasks):
             item_name=task["label"],
             **{"build-platform": build_platform},
         )
+        attributes["run_on_repo_type"] = task.get("run-on-repo-type", ["git", "hg"])
         attributes["run_on_projects"] = task.get("run-on-projects", ["all"])
         attributes["always_target"] = task["always-target"]
         # This logic is here since downstream tasks don't always match their
@@ -2545,24 +2557,29 @@ def check_run_task_caches(config, tasks):
         re.VERBOSE,
     )
 
+    re_checkout_cache = re.compile("^checkouts")
     re_sparse_checkout_cache = re.compile("^checkouts-sparse")
+    re_shallow_checkout_cache = re.compile("^checkouts-git-shallow")
 
     cache_prefix = "{trust_domain}-level-{level}-".format(
         trust_domain=config.graph_config["trust-domain"],
         level=config.params["level"],
     )
 
-    suffix = _run_task_suffix()
+    suffix = _run_task_suffix(config.params["repository_type"])
 
     for task in tasks:
         payload = task["task"].get("payload", {})
         command = payload.get("command") or [""]
 
         main_command = command[0] if isinstance(command[0], str) else ""
-        run_task = main_command.endswith("run-task")
+        run_task = is_run_task(main_command)
 
         require_sparse_cache = False
+        require_shallow_cache = False
+        have_checkout_cache = False
         have_sparse_cache = False
+        have_shallow_cache = False
 
         if run_task:
             for arg in command[1:]:
@@ -2589,6 +2606,10 @@ def check_run_task_caches(config, tasks):
                     require_sparse_cache = True
                     break
 
+                if arg == "--gecko-shallow-clone":
+                    require_shallow_cache = True
+                    break
+
         for cache in payload.get("cache", {}):
             if not cache.startswith(cache_prefix):
                 raise Exception(
@@ -2600,8 +2621,14 @@ def check_run_task_caches(config, tasks):
 
             cache = cache[len(cache_prefix) :]
 
+            if re_checkout_cache.match(cache):
+                have_checkout_cache = True
+
             if re_sparse_checkout_cache.match(cache):
                 have_sparse_cache = True
+
+            if re_shallow_checkout_cache.match(cache):
+                have_shallow_cache = True
 
             if not re_reserved_caches.match(cache):
                 continue
@@ -2621,11 +2648,18 @@ def check_run_task_caches(config, tasks):
                     "naming requirements" % (task["label"], cache)
                 )
 
-        if require_sparse_cache and not have_sparse_cache:
+        if have_checkout_cache and require_sparse_cache and not have_sparse_cache:
             raise Exception(
                 "%s is using a sparse checkout but not using "
                 "a sparse checkout cache; change the checkout "
                 "cache name so it is sparse aware" % task["label"]
+            )
+
+        if have_checkout_cache and require_shallow_cache and not have_shallow_cache:
+            raise Exception(
+                "%s is using a shallow clone but not using "
+                "a shallow checkout cache; change the checkout "
+                "cache name so it is shallow aware" % task["label"]
             )
 
         yield task

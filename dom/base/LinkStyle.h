@@ -9,7 +9,6 @@
 #include "mozilla/Attributes.h"
 #include "mozilla/Result.h"
 #include "mozilla/StyleSheet.h"
-#include "mozilla/Unused.h"
 #include "nsINode.h"
 #include "nsTArray.h"
 
@@ -117,14 +116,15 @@ class LinkStyle {
     ePRECONNECT = 0x00000020,
     // NOTE: 0x40 is unused
     ePRELOAD = 0x00000080,
-    eMODULE_PRELOAD = 0x00000100
+    eMODULE_PRELOAD = 0x00000100,
+    eCOMPRESSION_DICTIONARY = 0x00000200
   };
 
   // The return value is a bitwise or of 0 or more RelValues.
   static uint32_t ParseLinkTypes(const nsAString& aTypes);
 
   void UpdateStyleSheetInternal() {
-    Unused << UpdateStyleSheetInternal(nullptr, nullptr);
+    (void)UpdateStyleSheetInternal(nullptr, nullptr);
   }
 
   struct MOZ_STACK_CLASS SheetInfo {

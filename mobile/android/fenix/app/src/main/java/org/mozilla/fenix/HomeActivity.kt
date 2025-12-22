@@ -9,7 +9,6 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.Intent.ACTION_MAIN
-import android.content.Intent.FLAG_ACTIVITY_NEW_TASK
 import android.content.Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
 import android.content.pm.PackageManager
 import android.content.res.Configuration
@@ -43,13 +42,14 @@ import androidx.navigation.NavController
 import androidx.navigation.fragment.NavHostFragment
 import androidx.navigation.ui.AppBarConfiguration
 import androidx.navigation.ui.NavigationUI
-import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Dispatchers.IO
 import kotlinx.coroutines.Dispatchers.Main
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import mozilla.appservices.places.BookmarkRoot
 import mozilla.components.browser.state.action.MediaSessionAction
 import mozilla.components.browser.state.action.SearchAction
@@ -90,6 +90,7 @@ import org.mozilla.fenix.GleanMetrics.SplashScreen
 import org.mozilla.fenix.GleanMetrics.StartOnHome
 import org.mozilla.fenix.addons.ExtensionsProcessDisabledBackgroundController
 import org.mozilla.fenix.addons.ExtensionsProcessDisabledForegroundController
+import org.mozilla.fenix.bindings.ExternalAppLinkStatusBinding
 import org.mozilla.fenix.bookmarks.DesktopFolders
 import org.mozilla.fenix.browser.browsingmode.BrowsingMode
 import org.mozilla.fenix.browser.browsingmode.BrowsingModeManager
@@ -102,7 +103,6 @@ import org.mozilla.fenix.components.metrics.GrowthDataWorker
 import org.mozilla.fenix.components.metrics.MarketingAttributionService
 import org.mozilla.fenix.components.metrics.fonts.FontEnumerationWorker
 import org.mozilla.fenix.crashes.CrashReporterBinding
-import org.mozilla.fenix.crashes.StartupCrashCanary
 import org.mozilla.fenix.crashes.UnsubmittedCrashDialog
 import org.mozilla.fenix.customtabs.ExternalAppBrowserActivity
 import org.mozilla.fenix.databinding.ActivityHomeBinding
@@ -136,12 +136,14 @@ import org.mozilla.fenix.home.intent.OpenSpecificTabIntentProcessor
 import org.mozilla.fenix.home.intent.ReEngagementIntentProcessor
 import org.mozilla.fenix.home.intent.SpeechProcessingIntentProcessor
 import org.mozilla.fenix.home.intent.StartSearchIntentProcessor
+import org.mozilla.fenix.home.topsites.DefaultTopSitesBinding
 import org.mozilla.fenix.messaging.FenixMessageSurfaceId
 import org.mozilla.fenix.messaging.MessageNotificationWorker
 import org.mozilla.fenix.nimbus.FxNimbus
 import org.mozilla.fenix.onboarding.ReEngagementNotificationWorker
 import org.mozilla.fenix.pbmlock.DefaultPrivateBrowsingLockStorage
 import org.mozilla.fenix.pbmlock.PrivateBrowsingLockFeature
+import org.mozilla.fenix.perf.DefaultStartupPathProvider
 import org.mozilla.fenix.perf.MarkersActivityLifecycleCallbacks
 import org.mozilla.fenix.perf.MarkersFragmentLifecycleCallbacks
 import org.mozilla.fenix.perf.Performance
@@ -158,7 +160,6 @@ import org.mozilla.fenix.splashscreen.DefaultExperimentsOperationStorage
 import org.mozilla.fenix.splashscreen.DefaultSplashScreenStorage
 import org.mozilla.fenix.splashscreen.FetchExperimentsOperation
 import org.mozilla.fenix.splashscreen.SplashScreenManager
-import org.mozilla.fenix.startupCrash.StartupCrashActivity
 import org.mozilla.fenix.tabhistory.TabHistoryDialogFragment
 import org.mozilla.fenix.tabstray.TabsTrayFragment
 import org.mozilla.fenix.theme.DefaultThemeManager
@@ -220,6 +221,16 @@ open class HomeActivity : LocaleAwareAppCompatActivity(), NavHostActivity {
         )
     }
 
+    private val defaultTopSitesBinding by lazy {
+        DefaultTopSitesBinding(
+            browserStore = components.core.store,
+            topSitesStorage = components.core.topSitesStorage,
+            settings = settings(),
+            resources = resources,
+            crashReporter = components.analytics.crashReporter,
+        )
+    }
+
     private val aboutHomeBinding by lazy {
         AboutHomeBinding(
             browserStore = components.core.store,
@@ -239,6 +250,15 @@ open class HomeActivity : LocaleAwareAppCompatActivity(), NavHostActivity {
             context = this,
             store = components.appStore,
             onReporting = ::showCrashReporter,
+        )
+    }
+
+    private val externalAppLinkStatusBinding by lazy {
+        ExternalAppLinkStatusBinding(
+            settings = settings(),
+            appLinksUseCases = components.useCases.appLinksUseCases,
+            browserStore = components.core.store,
+            appStore = components.appStore,
         )
     }
 
@@ -296,7 +316,7 @@ open class HomeActivity : LocaleAwareAppCompatActivity(), NavHostActivity {
     // Tracker for contextual menu (Copy|Search|Select all|etc...)
     private var actionMode: ActionMode? = null
 
-    private val startupPathProvider = StartupPathProvider()
+    private val startupPathProvider: StartupPathProvider = DefaultStartupPathProvider()
     private lateinit var startupTypeTelemetry: StartupTypeTelemetry
 
     private val onBackPressedCallback = object : UserInteractionOnBackPressedCallback(
@@ -337,27 +357,8 @@ open class HomeActivity : LocaleAwareAppCompatActivity(), NavHostActivity {
         }
     }
 
-    final override fun onCreate(savedInstanceState: Bundle?) {
-        if (StartupCrashCanary.build(applicationContext).startupCrashDetected) {
-            super.onCreate(savedInstanceState)
-            val startupCrashIntent =
-                Intent(
-                    applicationContext,
-                    StartupCrashActivity::class.java,
-                )
-            startupCrashIntent.flags = FLAG_ACTIVITY_NEW_TASK
-            startActivity(startupCrashIntent)
-            finish()
-        } else {
-            initialize(savedInstanceState)
-        }
-    }
-
-    /**
-     * Initializes [HomeActivity] and all required subsystems.
-     */
     @Suppress("ComplexMethod")
-    fun initialize(savedInstanceState: Bundle?) {
+    final override fun onCreate(savedInstanceState: Bundle?) {
         // DO NOT MOVE ANYTHING ABOVE THIS getProfilerTime CALL.
         val startTimeProfiler = components.core.engine.profiler?.getProfilerTime()
 
@@ -367,7 +368,7 @@ open class HomeActivity : LocaleAwareAppCompatActivity(), NavHostActivity {
         MarkersFragmentLifecycleCallbacks.register(supportFragmentManager, components.core.engine)
 
         // There is disk read violations on some devices such as samsung and pixel for android 9/10
-        components.strictMode.resetAfter(StrictMode.allowThreadDiskReads()) {
+        components.strictMode.allowViolation(StrictMode::allowThreadDiskReads) {
             // Browsing mode & theme setup should always be called before super.onCreate.
             browsingModeManager = createBrowsingModeManager(intent)
             setupTheme()
@@ -536,12 +537,16 @@ open class HomeActivity : LocaleAwareAppCompatActivity(), NavHostActivity {
             serviceWorkerSupport,
             aboutHomeBinding,
             crashReporterBinding,
+            defaultTopSitesBinding,
             TopSitesRefresher(
                 settings = settings(),
                 topSitesProvider = components.core.marsTopSitesProvider,
+                startupPathProvider = startupPathProvider,
+                visualCompletenessQueue = components.performance.visualCompletenessQueue,
             ),
             downloadSnackbar,
             privateBrowsingLockFeature,
+            externalAppLinkStatusBinding,
         )
 
         if (!isCustomTabIntent(intent)) {
@@ -612,13 +617,13 @@ open class HomeActivity : LocaleAwareAppCompatActivity(), NavHostActivity {
 
     @VisibleForTesting
     internal fun maybeShowSetAsDefaultBrowserPrompt(
-        shouldShowSetAsDefaultPrompt: Boolean = settings().shouldShowSetAsDefaultPrompt,
+        shouldShowSetAsDefaultPrompt: Boolean = settings().shouldShowSetAsDefaultPrompt(),
         isDefaultBrowser: Boolean = BrowsersCache.all(applicationContext).isDefaultBrowser,
         isTheCorrectBuildVersion: Boolean = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q,
     ) {
         if (shouldShowSetAsDefaultPrompt && !isDefaultBrowser && isTheCorrectBuildVersion) {
             // This is to avoid disk read violations on some devices such as samsung and pixel for android 9/10
-            components.strictMode.resetAfter(StrictMode.allowThreadDiskReads()) {
+            components.strictMode.allowViolation(StrictMode::allowThreadDiskReads) {
                 components.appStore.dispatch(AppAction.UpdateWasNativeDefaultBrowserPromptShown(true))
                 showSetDefaultBrowserPrompt()
                 Metrics.setAsDefaultBrowserNativePromptShown.record()
@@ -1280,7 +1285,7 @@ open class HomeActivity : LocaleAwareAppCompatActivity(), NavHostActivity {
     }
 
     final override fun attachBaseContext(base: Context) {
-        base.components.strictMode.resetAfter(StrictMode.allowThreadDiskReads()) {
+        base.components.strictMode.allowViolation(StrictMode::allowThreadDiskReads) {
             super.attachBaseContext(base)
         }
     }
@@ -1316,7 +1321,7 @@ open class HomeActivity : LocaleAwareAppCompatActivity(), NavHostActivity {
     }
 
     private fun updateSecureWindowFlags(mode: BrowsingMode = browsingModeManager.mode) {
-        if (mode == BrowsingMode.Private && !settings().allowScreenshotsInPrivateMode) {
+        if (mode == BrowsingMode.Private && !settings().shouldSecureModeBeOverridden) {
             window.addFlags(FLAG_SECURE)
         } else {
             window.clearFlags(FLAG_SECURE)
@@ -1343,20 +1348,23 @@ open class HomeActivity : LocaleAwareAppCompatActivity(), NavHostActivity {
         isVisuallyComplete = true
     }
 
-    private fun captureSnapshotTelemetryMetrics() = CoroutineScope(IO).launch {
-        // PWA
-        val recentlyUsedPwaCount = components.core.webAppShortcutManager.recentlyUsedWebAppsCount(
-            activeThresholdMs = PWA_RECENTLY_USED_THRESHOLD,
-        )
-        if (recentlyUsedPwaCount == 0) {
-            Metrics.hasRecentPwas.set(false)
-        } else {
-            Metrics.hasRecentPwas.set(true)
-            // This metric's lifecycle is set to 'application', meaning that it gets reset upon
-            // application restart. Combined with the behaviour of the metric type itself (a growing counter),
-            // it's important that this metric is only set once per application's lifetime.
-            // Otherwise, we're going to over-count.
-            Metrics.recentlyUsedPwaCount.add(recentlyUsedPwaCount)
+    private fun captureSnapshotTelemetryMetrics() {
+        lifecycleScope.launch {
+            val recentlyUsedPwaCount = withContext(Dispatchers.IO) {
+                components.core.webAppShortcutManager.recentlyUsedWebAppsCount(
+                    activeThresholdMs = PWA_RECENTLY_USED_THRESHOLD,
+                )
+            }
+            if (recentlyUsedPwaCount == 0) {
+                Metrics.hasRecentPwas.set(false)
+            } else {
+                Metrics.hasRecentPwas.set(true)
+                // This metric's lifecycle is set to 'application', meaning that it gets reset upon
+                // application restart. Combined with the behaviour of the metric type itself (a growing counter),
+                // it's important that this metric is only set once per application's lifetime.
+                // Otherwise, we're going to over-count.
+                Metrics.recentlyUsedPwaCount.add(recentlyUsedPwaCount)
+            }
         }
     }
 
@@ -1376,7 +1384,7 @@ open class HomeActivity : LocaleAwareAppCompatActivity(), NavHostActivity {
      */
     @VisibleForTesting
     internal fun shouldStartOnHome(intent: Intent? = this.intent): Boolean {
-        return components.strictMode.resetAfter(StrictMode.allowThreadDiskReads()) {
+        return components.strictMode.allowViolation(StrictMode::allowThreadDiskReads) {
             // We only want to open on home when users tap the app,
             // we want to ignore other cases when the app gets open by users clicking on links.
             getSettings().shouldStartOnHome() && intent?.action == ACTION_MAIN

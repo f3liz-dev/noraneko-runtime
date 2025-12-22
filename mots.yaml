@@ -8,7 +8,7 @@
 # documentation and how to modify this file.
 repo: mozilla-central
 created_at: '2021-10-14T12:50:40.073465'
-updated_at: '2025-09-11T08:39:34.268334+00:00'
+updated_at: '2025-11-06T19:13:23.782316+00:00'
 export:
   path: ./docs/mots/index.rst
   format: rst
@@ -781,6 +781,10 @@ people:
     bmo_id: 547538
     name: Miko Mynttinen
     nick: mikokm
+  - &mixedpuppy
+    bmo_id: 443354
+    name: Shane Caraveo
+    nick: mixedpuppy
   - &mkaply
     bmo_id: 7313
     name: Mike Kaply
@@ -957,10 +961,6 @@ people:
     bmo_id: 704132
     name: Alexandra Borovova
     nick: Sasha
-  - &scaraveo
-    bmo_id: 443354
-    name: ''
-    nick: scaraveo
   - &sclements
     bmo_id: 603840
     name: Sarah Clements
@@ -969,10 +969,6 @@ people:
     bmo_id: 703413
     name: Stephanie Cunnane
     nick: scunnane
-  - &sefeng
-    bmo_id: 625922
-    name: Sean Feng
-    nick: sefeng
   - &serg
     bmo_id: 691597
     name: Sergey Galich
@@ -1064,6 +1060,10 @@ people:
     bmo_id: 466874
     name: Scott
     nick: thecount
+  - &thinker
+    bmo_id: 427371
+    name: Thinker Li
+    nick: thinker
   - &timhuang
     bmo_id: 547199
     name: Tim Huang
@@ -1646,6 +1646,7 @@ modules:
         - Ehsan Akhgari
         - Axel Hecht
         - Eric Rahm
+        - Sean Feng
       url: http://developer.mozilla.org/en/docs/DOM
       components:
         - Core::DOM
@@ -1665,7 +1666,7 @@ modules:
       - *asuth
       - *edgar
       - *saschanaz
-      - *sefeng
+      - *tschuster
     machine_name: core_document_object_model
 
   - name: 'Core: DOM File'
@@ -3015,6 +3016,8 @@ modules:
       - dom/webidl/WebGPU.webidl
       - dom/webgpu/**/*
       - gfx/wgpu_bindings/**/*
+      - taskcluster/kinds/toolchain-dxc-upload/kind.yml
+      - taskcluster/kinds/toolchain/dxc.yml
       - third_party/rust/naga/**/*
       - third_party/rust/wgpu-*/**/*
       - testing/web-platform/tests/webgpu/**/*
@@ -3039,6 +3042,7 @@ modules:
       - *nical
       - *teoxoy
       - *aleiserson
+      - *jnicol
     machine_name: core_webgpu_graphics_submodule
 
   - name: 'Core: WebRTC'
@@ -3173,6 +3177,7 @@ modules:
     peers:
       - *stransky
       - *emilio
+      - *thinker
     machine_name: core_widget_gtk
 
   - name: 'Core: Widget - Headless'
@@ -3426,13 +3431,12 @@ modules:
             - Kris Maglione
           review_group: extension-reviewers
         owners:
-          - *scaraveo
           - *rpl
         peers:
-          - *rpl
           - *zombie
           - *robwu
           - *willdurand
+          - *mixedpuppy
         machine_name: addons_manager
 
       - name: Add-ons Manager UI
@@ -3443,15 +3447,15 @@ modules:
           owners_emeritus:
             - Robert Strong
             - Andrew Swan
+            - *mstriemer
           review_group: extension-reviewers
         owners:
-          - *scaraveo
-          - *mstriemer
-        peers:
           - *rpl
+        peers:
           - *zombie
           - *robwu
           - *willdurand
+          - *mixedpuppy
         machine_name: addons_manager_ui
 
       - machine_name: address_bar
@@ -3529,15 +3533,16 @@ modules:
           review_group: desktop-theme-reviewers
         owners:
           - *dao
+          - *hjones
         peers:
           - *emilio
-          - *hjones
           - *itielyn8
           - *Julian
           - *jules
           - *kcochrane
           - *sfoster
           - *tgiles
+          - *mstriemer
         machine_name: desktop_theme
 
       - name: Desktop UI
@@ -3626,6 +3631,7 @@ modules:
         description: Form detection and autocomplete.
         includes:
           - browser/extensions/formautofill/**/*
+          - toolkit/components/autocomplete/**/*
           - toolkit/components/satchel/**/*
         meta:
           owners_emeritus:
@@ -3633,6 +3639,10 @@ modules:
             - *serg
           peers_emeritus:
             - *tgiles
+          components:
+            - Toolkit::Autocomplete
+            - Toolkit::Form Autofill
+            - Toolkit::Form Manager
         owners:
           - *dimi
         peers:
@@ -3872,14 +3882,20 @@ modules:
         includes:
           - browser/components/preferences/**/*
           - browser/themes/*/preferences
-          - toolkit/mozapps/preferences
+          - toolkit/components/aboutconfig/*
+          - toolkit/content/preferencesBindings.js
+          - toolkit/content/preferences/*
+          - toolkit/mozapps/preferences/*
         meta:
           owners_emeritus:
             - Jared Wein
             - *mossop
           peers_emeritus:
             - Tim Nguyen
-          review_group: preferences-reviewers
+          components:
+            - Firefox::Settings UI
+            - Toolkit::Preferences
+          review_group: settings-reviewers
         owners:
           - *mstriemer
         peers:
@@ -3901,14 +3917,16 @@ modules:
             - *mconley
         owners:
           - *dao
+          - *sthompson
         peers:
           - *mak
           - *dwalker
           - *nikkis
           - *niklas
           - *jswinarton
-          - *sthompson
           - *sclements
+          - *kcochrane
+          - *jsudiaman
         machine_name: tabbed_browser
 
       - name: Windows Installer
@@ -3941,7 +3959,6 @@ modules:
       - *jdescottes
       - *nchevobbe
       - *bomsy
-      - *whimboo
     meta:
       owners_emeritus:
         - Patrick Brosset
@@ -4019,6 +4036,7 @@ modules:
           components:
             - 'Firefox for Android :: WebExtensions'
             - 'WebExtensions :: Android'
+          review_group: android-addons-reviewers
         owners:
           - *willdurand
         peers:
@@ -4537,12 +4555,12 @@ modules:
             - Kris Maglione
           review_group: extension-reviewers
         owners:
-          - *scaraveo
           - *zombie
+          - *robwu
         peers:
           - *rpl
-          - *robwu
           - *willdurand
+          - *mixedpuppy
         machine_name: webextensions
     machine_name: toolkit
   - machine_name: translation
@@ -4615,5 +4633,5 @@ modules:
         - Ryan Tilder
       group: dev-platform
 hashes:
-  config: f795fa874f67eaa09d668f2b0498edcc46704e76
-  export: d8f845ae53106b196977988edaddd0882bd76e84
+  config: e27b32239a127b334a155bb8abffb2b429236d5b
+  export: 1d6764c9e1e0c2e0500f5b50903f9c68a098a0ad

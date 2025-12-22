@@ -6,6 +6,12 @@ use parking_lot::Mutex;
 use windows::{
     core::Interface as _,
     Win32::{
+        Devices::DeviceAndDriverInstallation::{
+            SetupDiDestroyDeviceInfoList, SetupDiEnumDeviceInfo, SetupDiGetClassDevsW,
+            SetupDiGetDeviceRegistryPropertyW, DIGCF_PRESENT, GUID_DEVCLASS_DISPLAY, HDEVINFO,
+            SPDRP_ADDRESS, SPDRP_BUSNUMBER, SPDRP_HARDWAREID, SP_DEVINFO_DATA,
+        },
+        Foundation::{GetLastError, ERROR_NO_MORE_ITEMS},
         Graphics::{Direct3D, Direct3D12, Dxgi},
         UI::WindowsAndMessaging,
     },
@@ -17,7 +23,7 @@ use crate::{
         self,
         dxgi::{factory::DxgiAdapter, result::HResult},
     },
-    dx12::{shader_compilation, SurfaceTarget},
+    dx12::{dcomp::DCompLib, shader_compilation, SurfaceTarget},
 };
 
 impl Drop for super::Adapter {
@@ -55,6 +61,7 @@ impl super::Adapter {
     pub(super) fn expose(
         adapter: DxgiAdapter,
         library: &Arc<D3D12Lib>,
+        dcomp_lib: &Arc<DCompLib>,
         instance_flags: wgt::InstanceFlags,
         memory_budget_thresholds: wgt::MemoryBudgetThresholds,
         compiler_container: Arc<shader_compilation::CompilerContainer>,
@@ -126,6 +133,7 @@ impl super::Adapter {
             } else {
                 wgt::DeviceType::DiscreteGpu
             },
+            device_pci_bus_id: get_adapter_pci_info(desc.VendorId, desc.DeviceId),
             driver: {
                 if let Ok(i) = unsafe { adapter.CheckInterfaceSupport(&Dxgi::IDXGIDevice::IID) } {
                     const MASK: i64 = 0xFFFF;
@@ -141,6 +149,7 @@ impl super::Adapter {
                 }
             },
             driver_info: String::new(),
+            transient_saves_memory: false,
         };
 
         let mut options = Direct3D12::D3D12_FEATURE_DATA_D3D12_OPTIONS::default();
@@ -197,6 +206,21 @@ impl super::Adapter {
                 )
             }
             .is_ok()
+        };
+
+        let unrestricted_buffer_texture_copy_pitch_supported = {
+            let mut features13 = Direct3D12::D3D12_FEATURE_DATA_D3D12_OPTIONS13::default();
+            unsafe {
+                device.CheckFeatureSupport(
+                    Direct3D12::D3D12_FEATURE_D3D12_OPTIONS13,
+                    <*mut _>::cast(&mut features13),
+                    size_of_val(&features13) as u32,
+                )
+            }
+            .is_ok()
+                && features13
+                    .UnrestrictedBufferTextureCopyPitchSupported
+                    .as_bool()
         };
 
         let mut max_sampler_descriptor_heap_size =
@@ -303,6 +327,7 @@ impl super::Adapter {
             suballocation_supported: !info.name.contains("Iris(R) Xe"),
             shader_model,
             max_sampler_descriptor_heap_size,
+            unrestricted_buffer_texture_copy_pitch_supported,
         };
 
         // Theoretically vram limited, but in practice 2^20 is the limit
@@ -527,6 +552,22 @@ impl super::Adapter {
             wgt::Features::SHADER_INT64_ATOMIC_ALL_OPS | wgt::Features::SHADER_INT64_ATOMIC_MIN_MAX,
             atomic_int64_on_typed_resource_supported,
         );
+        let mesh_shader_supported = {
+            let mut features7 = Direct3D12::D3D12_FEATURE_DATA_D3D12_OPTIONS7::default();
+            unsafe {
+                device.CheckFeatureSupport(
+                    Direct3D12::D3D12_FEATURE_D3D12_OPTIONS7,
+                    <*mut _>::cast(&mut features7),
+                    size_of_val(&features7) as u32,
+                )
+            }
+            .is_ok()
+                && features7.MeshShaderTier != Direct3D12::D3D12_MESH_SHADER_TIER_NOT_SUPPORTED
+        };
+        features.set(
+            wgt::Features::EXPERIMENTAL_MESH_SHADER,
+            mesh_shader_supported,
+        );
 
         // TODO: Determine if IPresentationManager is supported
         let presentation_timer = auxil::dxgi::time::PresentationTimer::new_dxgi();
@@ -559,6 +600,7 @@ impl super::Adapter {
                 raw: adapter,
                 device,
                 library: Arc::clone(library),
+                dcomp_lib: Arc::clone(dcomp_lib),
                 private_caps,
                 presentation_timer,
                 workarounds,
@@ -646,10 +688,15 @@ impl super::Adapter {
                     max_buffer_size: i32::MAX as u64,
                     max_non_sampler_bindings: 1_000_000,
 
-                    max_task_workgroup_total_count: 0,
-                    max_task_workgroups_per_dimension: 0,
+                    // Source: https://microsoft.github.io/DirectX-Specs/d3d/MeshShader.html#dispatchmesh-api
+                    max_task_workgroup_total_count: 2u32.pow(22),
+                    // Technically it says "64k" but I highly doubt they want 65536 for compute and exactly 64,000 for task workgroups
+                    max_task_workgroups_per_dimension:
+                        Direct3D12::D3D12_CS_DISPATCH_MAX_THREAD_GROUPS_PER_DIMENSION,
+                    // Multiview not supported by WGPU yet
                     max_mesh_multiview_count: 0,
-                    max_mesh_output_layers: 0,
+                    // This seems to be right, and I can't find anything to suggest it would be less than the 2048 provided here
+                    max_mesh_output_layers: Direct3D12::D3D12_REQ_TEXTURE2D_ARRAY_AXIS_DIMENSION,
 
                     max_blas_primitive_count: if supports_ray_tracing {
                         1 << 29 // 2^29
@@ -726,6 +773,7 @@ impl crate::Adapter for super::Adapter {
             memory_hints,
             self.private_caps,
             &self.library,
+            &self.dcomp_lib,
             self.memory_budget_thresholds,
             self.compiler_container.clone(),
             self.options.clone(),
@@ -919,7 +967,10 @@ impl crate::Adapter for super::Adapter {
     ) -> Option<crate::SurfaceCapabilities> {
         let current_extent = {
             match surface.target {
-                SurfaceTarget::WndHandle(wnd_handle) => {
+                SurfaceTarget::WndHandle(wnd_handle)
+                | SurfaceTarget::VisualFromWndHandle {
+                    handle: wnd_handle, ..
+                } => {
                     let mut rect = Default::default();
                     if unsafe { WindowsAndMessaging::GetClientRect(wnd_handle, &mut rect) }.is_ok()
                     {
@@ -963,6 +1014,7 @@ impl crate::Adapter for super::Adapter {
             composite_alpha_modes: match surface.target {
                 SurfaceTarget::WndHandle(_) => vec![wgt::CompositeAlphaMode::Opaque],
                 SurfaceTarget::Visual(_)
+                | SurfaceTarget::VisualFromWndHandle { .. }
                 | SurfaceTarget::SurfaceHandle(_)
                 | SurfaceTarget::SwapChainPanel(_) => vec![
                     wgt::CompositeAlphaMode::Auto,
@@ -978,4 +1030,148 @@ impl crate::Adapter for super::Adapter {
     unsafe fn get_presentation_timestamp(&self) -> wgt::PresentationTimestamp {
         wgt::PresentationTimestamp(self.presentation_timer.get_timestamp_ns())
     }
+}
+
+fn get_adapter_pci_info(vendor_id: u32, device_id: u32) -> String {
+    // SAFETY: SetupDiGetClassDevsW is called with valid parameters
+    let device_info_set = unsafe {
+        match SetupDiGetClassDevsW(Some(&GUID_DEVCLASS_DISPLAY), None, None, DIGCF_PRESENT) {
+            Ok(set) => set,
+            Err(_) => return String::new(),
+        }
+    };
+
+    struct DeviceInfoSetGuard(HDEVINFO);
+    impl Drop for DeviceInfoSetGuard {
+        fn drop(&mut self) {
+            // SAFETY: device_info_set is a valid HDEVINFO and is only dropped once via this guard
+            unsafe {
+                let _ = SetupDiDestroyDeviceInfoList(self.0);
+            }
+        }
+    }
+    let _guard = DeviceInfoSetGuard(device_info_set);
+
+    let mut device_index = 0u32;
+    loop {
+        let mut device_info_data = SP_DEVINFO_DATA {
+            cbSize: size_of::<SP_DEVINFO_DATA>() as u32,
+            ..Default::default()
+        };
+
+        // SAFETY: device_info_set is a valid HDEVINFO, device_index starts at 0 and
+        // device_info_data is properly initialized above
+        unsafe {
+            if SetupDiEnumDeviceInfo(device_info_set, device_index, &mut device_info_data).is_err()
+            {
+                if GetLastError() == ERROR_NO_MORE_ITEMS {
+                    break;
+                }
+                device_index += 1;
+                continue;
+            }
+        }
+
+        let mut hardware_id_size = 0u32;
+        // SAFETY: device_info_set and device_info_data are valid
+        unsafe {
+            let _ = SetupDiGetDeviceRegistryPropertyW(
+                device_info_set,
+                &device_info_data,
+                SPDRP_HARDWAREID,
+                None,
+                None,
+                Some(&mut hardware_id_size),
+            );
+        }
+
+        if hardware_id_size == 0 {
+            device_index += 1;
+            continue;
+        }
+
+        let mut hardware_id_buffer = vec![0u8; hardware_id_size as usize];
+        // SAFETY: device_info_set and device_info_data are valid
+        unsafe {
+            if SetupDiGetDeviceRegistryPropertyW(
+                device_info_set,
+                &device_info_data,
+                SPDRP_HARDWAREID,
+                None,
+                Some(&mut hardware_id_buffer),
+                Some(&mut hardware_id_size),
+            )
+            .is_err()
+            {
+                device_index += 1;
+                continue;
+            }
+        }
+
+        let hardware_id_u16: Vec<u16> = hardware_id_buffer
+            .chunks_exact(2)
+            .map(|chunk| u16::from_le_bytes([chunk[0], chunk[1]]))
+            .collect();
+        let hardware_ids: Vec<String> = hardware_id_u16
+            .split(|&c| c == 0)
+            .filter(|s| !s.is_empty())
+            .map(|s| String::from_utf16_lossy(s).to_uppercase())
+            .collect();
+
+        // https://learn.microsoft.com/en-us/windows-hardware/drivers/install/identifiers-for-pci-devices
+        let expected_id = format!("PCI\\VEN_{vendor_id:04X}&DEV_{device_id:04X}");
+        if !hardware_ids.iter().any(|id| id.contains(&expected_id)) {
+            device_index += 1;
+            continue;
+        }
+
+        let mut bus_buffer = [0u8; 4];
+        let mut data_size = bus_buffer.len() as u32;
+        // SAFETY: device_info_set and device_info_data are valid
+        let bus_number = unsafe {
+            if SetupDiGetDeviceRegistryPropertyW(
+                device_info_set,
+                &device_info_data,
+                SPDRP_BUSNUMBER,
+                None,
+                Some(&mut bus_buffer),
+                Some(&mut data_size),
+            )
+            .is_err()
+            {
+                device_index += 1;
+                continue;
+            }
+            u32::from_le_bytes(bus_buffer)
+        };
+
+        let mut addr_buffer = [0u8; 4];
+        let mut addr_size = addr_buffer.len() as u32;
+        // SAFETY: device_info_set and device_info_data are valid
+        unsafe {
+            if SetupDiGetDeviceRegistryPropertyW(
+                device_info_set,
+                &device_info_data,
+                SPDRP_ADDRESS,
+                None,
+                Some(&mut addr_buffer),
+                Some(&mut addr_size),
+            )
+            .is_err()
+            {
+                device_index += 1;
+                continue;
+            }
+        }
+        let address = u32::from_le_bytes(addr_buffer);
+
+        // https://learn.microsoft.com/en-us/windows-hardware/drivers/kernel/obtaining-device-configuration-information-at-irql---dispatch-level
+        let device = (address >> 16) & 0x0000FFFF;
+        let function = address & 0x0000FFFF;
+
+        // domain:bus:device.function
+        return format!("{:04x}:{:02x}:{:02x}.{:x}", 0, bus_number, device, function);
+    }
+
+    String::new()
 }

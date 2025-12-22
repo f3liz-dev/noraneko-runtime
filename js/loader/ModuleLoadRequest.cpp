@@ -45,20 +45,25 @@ NS_IMPL_CYCLE_COLLECTION_TRACE_BEGIN_INHERITED(ModuleLoadRequest,
 NS_IMPL_CYCLE_COLLECTION_TRACE_END
 
 ModuleLoadRequest::ModuleLoadRequest(
-    nsIURI* aURI, ModuleType aModuleType,
-    mozilla::dom::ReferrerPolicy aReferrerPolicy,
-    ScriptFetchOptions* aFetchOptions,
-    const mozilla::dom::SRIMetadata& aIntegrity, nsIURI* aReferrer,
-    LoadContextBase* aContext, Kind aKind, ModuleLoaderBase* aLoader,
-    ModuleLoadRequest* aRootModule)
-    : ScriptLoadRequest(ScriptKind::eModule, aURI, aReferrerPolicy,
-                        aFetchOptions, aIntegrity, aReferrer, aContext),
-      mIsTopLevel(aKind == Kind::TopLevel || aKind == Kind::DynamicImport),
+    ModuleType aModuleType, const mozilla::dom::SRIMetadata& aIntegrity,
+    nsIURI* aReferrer, LoadContextBase* aContext, Kind aKind,
+    ModuleLoaderBase* aLoader, ModuleLoadRequest* aRootModule)
+    : ScriptLoadRequest(ScriptKind::eModule, aIntegrity, aReferrer, aContext),
+      mKind(aKind),
       mModuleType(aModuleType),
       mIsDynamicImport(aKind == Kind::DynamicImport),
+      mErroredLoadingImports(false),
       mLoader(aLoader),
       mRootModule(aRootModule) {
   MOZ_ASSERT(mLoader);
+}
+
+ModuleLoadRequest::~ModuleLoadRequest() {
+  MOZ_ASSERT(!mReferrerScript);
+  MOZ_ASSERT(!mModuleRequestObj);
+  MOZ_ASSERT(mPayload.isUndefined());
+
+  DropJSObjects(this);
 }
 
 nsIGlobalObject* ModuleLoadRequest::GetGlobalObject() {
@@ -67,22 +72,6 @@ nsIGlobalObject* ModuleLoadRequest::GetGlobalObject() {
 
 bool ModuleLoadRequest::IsErrored() const {
   return !mModuleScript || mModuleScript->HasParseError();
-}
-
-void ModuleLoadRequest::Cancel() {
-  if (IsCanceled()) {
-    return;
-  }
-
-  if (IsFinished()) {
-    return;
-  }
-
-  ScriptLoadRequest::Cancel();
-
-  mModuleScript = nullptr;
-  mReferrerScript = nullptr;
-  mModuleRequestObj = nullptr;
 }
 
 void ModuleLoadRequest::SetReady() {
@@ -105,13 +94,9 @@ void ModuleLoadRequest::ModuleLoaded() {
     return;
   }
 
-  MOZ_ASSERT(IsFetching() || IsPendingFetchingError());
+  MOZ_ASSERT(IsFetching());
 
-  mModuleScript = mLoader->GetFetchedModule(ModuleMapKey(mURI, mModuleType));
-  if (IsErrored()) {
-    ModuleErrored();
-    return;
-  }
+  mModuleScript = mLoader->GetFetchedModule(ModuleMapKey(URI(), mModuleType));
 }
 
 void ModuleLoadRequest::LoadFailed() {
@@ -124,7 +109,7 @@ void ModuleLoadRequest::LoadFailed() {
     return;
   }
 
-  MOZ_ASSERT(IsFetching() || IsPendingFetchingError());
+  MOZ_ASSERT(IsFetching());
   MOZ_ASSERT(!mModuleScript);
 
   Cancel();
@@ -144,10 +129,11 @@ void ModuleLoadRequest::ModuleErrored() {
 
   mozilla::DebugOnly<bool> hasRethrow =
       mModuleScript && mModuleScript->HasErrorToRethrow();
+  MOZ_ASSERT_IF(hasRethrow, !IsDynamicImport());
 
   // When LoadRequestedModules fails, we will set error to rethrow to the module
-  // script and call ModuleErrored().
-  MOZ_ASSERT(IsErrored() || hasRethrow);
+  // script or call SetErroredLoadingImports() and then call ModuleErrored().
+  MOZ_ASSERT(IsErrored() || hasRethrow || mErroredLoadingImports);
 
   if (IsFinished()) {
     // Cancelling an outstanding import will error this request.
@@ -160,7 +146,7 @@ void ModuleLoadRequest::ModuleErrored() {
 
 void ModuleLoadRequest::LoadFinished() {
   RefPtr<ModuleLoadRequest> request(this);
-  if (IsTopLevel() && IsDynamicImport()) {
+  if (IsDynamicImport()) {
     mLoader->RemoveDynamicImport(request);
   }
 

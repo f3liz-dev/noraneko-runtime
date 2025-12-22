@@ -24,20 +24,18 @@
                                1 data member change:
                                 type of 'SECOidData* NSSCMSAttributeStr::typeTag' changed:
                                   in pointed to type 'typedef SECOidData' at secoidt.h:16:1:
-                                    underlying type 'struct SECOidDataStr' at secoidt.h:555:1 changed:
+                                    underlying type 'struct SECOidDataStr' at secoidt.h:567:1 changed:
                                       type size hasn't changed
                                       1 data member change:
                                        type of 'SECOidTag SECOidDataStr::offset' changed:
                                          underlying type 'enum __anonymous_enum__' at secoidt.h:34:1 changed:
                                            type size hasn't changed
-                                           3 enumerator insertions:
-                                             '__anonymous_enum__::SEC_OID_ML_DSA_44' value '391'
-                                             '__anonymous_enum__::SEC_OID_ML_DSA_65' value '392'
-                                             '__anonymous_enum__::SEC_OID_ML_DSA_87' value '393'
+                                           2 enumerator insertions:
+                                             '__anonymous_enum__::SEC_OID_SECP256R1MLKEM768' value '394'
+                                             '__anonymous_enum__::SEC_OID_SECP384R1MLKEM1024' value '395'
 
                                            1 enumerator change:
-                                             '__anonymous_enum__::SEC_OID_TOTAL' from value '391' to '394' at secoidt.h:34:1
-
+                                             '__anonymous_enum__::SEC_OID_TOTAL' from value '394' to '396' at secoidt.h:34:1
 
 
 

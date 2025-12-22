@@ -248,7 +248,10 @@ bool ScriptElement::MaybeProcessScript(const nsAString& aSourceText) {
     }
   }
 
-  RefPtr<ScriptLoader> loader = ownerDoc->ScriptLoader();
+  RefPtr<ScriptLoader> loader = ownerDoc->GetScriptLoader();
+  if (!loader) {
+    return false;
+  }
   return loader->ProcessScriptElement(this, aSourceText);
 }
 
@@ -299,10 +302,16 @@ nsresult ScriptElement::GetTrustedTypesCompliantInlineScriptText(
   constexpr nsLiteralString htmlSinkName = u"HTMLScriptElement text"_ns;
   constexpr nsLiteralString svgSinkName = u"SVGScriptElement text"_ns;
   ErrorResult error;
+
+  nsCOMPtr<nsIPrincipal> subjectPrincipal;
+  if (JSContext* cx = nsContentUtils::GetCurrentJSContext()) {
+    subjectPrincipal = nsContentUtils::SubjectPrincipal(cx);
+  }
   const nsAString* compliantString =
       TrustedTypeUtils::GetTrustedTypesCompliantStringForTrustedScript(
           sourceText, element->IsHTMLElement() ? htmlSinkName : svgSinkName,
-          kTrustedTypesOnlySinkGroup, *element, compliantStringHolder, error);
+          kTrustedTypesOnlySinkGroup, *element, subjectPrincipal,
+          compliantStringHolder, error);
   if (!error.Failed()) {
     aSourceText.Assign(*compliantString);
   }

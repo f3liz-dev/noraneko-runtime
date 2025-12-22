@@ -821,7 +821,12 @@ describe("DiscoveryStreamFeed", () => {
       await feed.loadSpocs(feed.store.dispatch);
 
       assert.notCalled(global.fetch);
-      assert.calledWith(feed.cache.set, "spocs", { lastUpdated: 0, spocs: {} });
+      assert.calledWith(feed.cache.set, "spocs", {
+        lastUpdated: 0,
+        spocs: {},
+        spocsOnDemand: undefined,
+        spocsCacheUpdateTime: 30 * 60 * 1000,
+      });
     });
     it("should fetch fresh spocs data if cache is empty", async () => {
       sandbox.stub(feed.cache, "get").returns(Promise.resolve());
@@ -833,6 +838,8 @@ describe("DiscoveryStreamFeed", () => {
       assert.calledWith(feed.cache.set, "spocs", {
         spocs: { placement: "data" },
         lastUpdated: 0,
+        spocsOnDemand: undefined,
+        spocsCacheUpdateTime: 30 * 60 * 1000,
       });
       assert.equal(
         feed.store.getState().DiscoveryStream.spocs.data.placement,
@@ -898,6 +905,8 @@ describe("DiscoveryStreamFeed", () => {
           },
         },
         lastUpdated: loadTimestamp,
+        spocsOnDemand: undefined,
+        spocsCacheUpdateTime: 30 * 60 * 1000,
       });
 
       assert.deepEqual(
@@ -2231,6 +2240,11 @@ describe("DiscoveryStreamFeed", () => {
             data,
           },
         },
+        Prefs: {
+          values: {
+            trainhopConfig: {},
+          },
+        },
       });
     });
 
@@ -2364,6 +2378,10 @@ describe("DiscoveryStreamFeed", () => {
     });
     it("should call dispatch if found a blocked spoc", async () => {
       Object.defineProperty(feed, "showSpocs", { get: () => true });
+      Object.defineProperty(feed, "spocsOnDemand", { get: () => false });
+      Object.defineProperty(feed, "spocsCacheUpdateTime", {
+        get: () => 30 * 60 * 1000,
+      });
 
       sandbox.spy(feed.store, "dispatch");
 
@@ -2394,6 +2412,10 @@ describe("DiscoveryStreamFeed", () => {
     });
     it("should dispatch a DISCOVERY_STREAM_SPOC_BLOCKED for a blocked spoc", async () => {
       Object.defineProperty(feed, "showSpocs", { get: () => true });
+      Object.defineProperty(feed, "spocsOnDemand", { get: () => false });
+      Object.defineProperty(feed, "spocsCacheUpdateTime", {
+        get: () => 30 * 60 * 1000,
+      });
       sandbox.spy(feed.store, "dispatch");
 
       await feed.onAction({
@@ -2651,7 +2673,7 @@ describe("DiscoveryStreamFeed", () => {
 
       await feed.onAction({ type: at.INIT });
 
-      sandbox.stub(feed, "checkIfAnyCacheExpired").resolves(false);
+      sandbox.stub(feed, "onSystemTick").resolves();
       sandbox.stub(feed, "refreshAll").resolves();
 
       await feed.onAction({ type: at.SYSTEM_TICK });
@@ -2664,7 +2686,6 @@ describe("DiscoveryStreamFeed", () => {
 
       await feed.onAction({ type: at.INIT });
 
-      sandbox.stub(feed, "checkIfAnyCacheExpired").resolves(true);
       sandbox.stub(feed, "refreshAll").resolves();
 
       await feed.onAction({ type: at.SYSTEM_TICK });
@@ -2677,11 +2698,13 @@ describe("DiscoveryStreamFeed", () => {
 
       await feed.onAction({ type: at.INIT });
 
-      sandbox.stub(feed, "checkIfAnyCacheExpired").resolves(true);
       sandbox.stub(feed, "refreshAll").resolves();
 
       await feed.onAction({ type: at.SYSTEM_TICK });
-      assert.calledWith(feed.refreshAll, { updateOpenTabs: false });
+      assert.calledWith(feed.refreshAll, {
+        updateOpenTabs: false,
+        isSystemTick: true,
+      });
     });
   });
 
@@ -2755,7 +2778,6 @@ describe("DiscoveryStreamFeed", () => {
 
       await feed.onAction({ type: at.INIT });
 
-      sandbox.stub(feed, "checkIfAnyCacheExpired").resolves(true);
       sandbox.stub(feed, "refreshAll").resolves();
 
       await feed.onAction({ type: at.DISCOVERY_STREAM_DEV_SYSTEM_TICK });
@@ -2774,31 +2796,18 @@ describe("DiscoveryStreamFeed", () => {
   });
 
   describe("#spocsCacheUpdateTime", () => {
-    it("should call setupSpocsCacheUpdateTime", () => {
+    it("should return default cache time", () => {
       const defaultCacheTime = 30 * 60 * 1000;
-      sandbox.spy(feed, "setupSpocsCacheUpdateTime");
       const cacheTime = feed.spocsCacheUpdateTime;
       assert.equal(feed._spocsCacheUpdateTime, defaultCacheTime);
       assert.equal(cacheTime, defaultCacheTime);
-      assert.calledOnce(feed.setupSpocsCacheUpdateTime);
     });
     it("should return _spocsCacheUpdateTime", () => {
-      sandbox.spy(feed, "setupSpocsCacheUpdateTime");
       const testCacheTime = 123;
       feed._spocsCacheUpdateTime = testCacheTime;
       const cacheTime = feed.spocsCacheUpdateTime;
-      // Ensure _spocsCacheUpdateTime was not changed.
       assert.equal(feed._spocsCacheUpdateTime, testCacheTime);
       assert.equal(cacheTime, testCacheTime);
-      assert.notCalled(feed.setupSpocsCacheUpdateTime);
-    });
-  });
-
-  describe("#setupSpocsCacheUpdateTime", () => {
-    it("should set _spocsCacheUpdateTime with default value", () => {
-      const defaultCacheTime = 30 * 60 * 1000;
-      feed.setupSpocsCacheUpdateTime();
-      assert.equal(feed._spocsCacheUpdateTime, defaultCacheTime);
     });
     it("should set _spocsCacheUpdateTime with min", () => {
       const defaultCacheTime = 30 * 60 * 1000;
@@ -2806,11 +2815,14 @@ describe("DiscoveryStreamFeed", () => {
         Prefs: {
           values: {
             "discoverystream.spocs.cacheTimeout": 1,
+            showSponsored: true,
+            "system.showSponsored": true,
           },
         },
       });
-      feed.setupSpocsCacheUpdateTime();
+      const cacheTime = feed.spocsCacheUpdateTime;
       assert.equal(feed._spocsCacheUpdateTime, defaultCacheTime);
+      assert.equal(cacheTime, defaultCacheTime);
     });
     it("should set _spocsCacheUpdateTime with max", () => {
       const defaultCacheTime = 30 * 60 * 1000;
@@ -2818,22 +2830,77 @@ describe("DiscoveryStreamFeed", () => {
         Prefs: {
           values: {
             "discoverystream.spocs.cacheTimeout": 31,
+            showSponsored: true,
+            "system.showSponsored": true,
           },
         },
       });
-      feed.setupSpocsCacheUpdateTime();
+      const cacheTime = feed.spocsCacheUpdateTime;
       assert.equal(feed._spocsCacheUpdateTime, defaultCacheTime);
+      assert.equal(cacheTime, defaultCacheTime);
     });
     it("should set _spocsCacheUpdateTime with spocsCacheTimeout", () => {
+      const defaultCacheTime = 20 * 60 * 1000;
       feed.store.getState = () => ({
         Prefs: {
           values: {
             "discoverystream.spocs.cacheTimeout": 20,
+            showSponsored: true,
+            "system.showSponsored": true,
           },
         },
       });
-      feed.setupSpocsCacheUpdateTime();
-      assert.equal(feed._spocsCacheUpdateTime, 20 * 60 * 1000);
+      const cacheTime = feed.spocsCacheUpdateTime;
+      assert.equal(feed._spocsCacheUpdateTime, defaultCacheTime);
+      assert.equal(cacheTime, defaultCacheTime);
+    });
+    it("should set _spocsCacheUpdateTime with spocsCacheTimeout and onDemand", () => {
+      const defaultCacheTime = 4 * 60 * 1000;
+      feed.store.getState = () => ({
+        Prefs: {
+          values: {
+            "discoverystream.spocs.onDemand": true,
+            "discoverystream.spocs.cacheTimeout": 4,
+            showSponsored: true,
+            "system.showSponsored": true,
+          },
+        },
+      });
+      const cacheTime = feed.spocsCacheUpdateTime;
+      assert.equal(feed._spocsCacheUpdateTime, defaultCacheTime);
+      assert.equal(cacheTime, defaultCacheTime);
+    });
+    it("should set _spocsCacheUpdateTime with spocsCacheTimeout without max", () => {
+      const defaultCacheTime = 31 * 60 * 1000;
+      feed.store.getState = () => ({
+        Prefs: {
+          values: {
+            "discoverystream.spocs.onDemand": true,
+            "discoverystream.spocs.cacheTimeout": 31,
+            showSponsored: true,
+            "system.showSponsored": true,
+          },
+        },
+      });
+      const cacheTime = feed.spocsCacheUpdateTime;
+      assert.equal(feed._spocsCacheUpdateTime, defaultCacheTime);
+      assert.equal(cacheTime, defaultCacheTime);
+    });
+    it("should set _spocsCacheUpdateTime with spocsCacheTimeout without min", () => {
+      const defaultCacheTime = 1 * 60 * 1000;
+      feed.store.getState = () => ({
+        Prefs: {
+          values: {
+            "discoverystream.spocs.onDemand": true,
+            "discoverystream.spocs.cacheTimeout": 1,
+            showSponsored: true,
+            "system.showSponsored": true,
+          },
+        },
+      });
+      const cacheTime = feed.spocsCacheUpdateTime;
+      assert.equal(feed._spocsCacheUpdateTime, defaultCacheTime);
+      assert.equal(cacheTime, defaultCacheTime);
     });
   });
 
@@ -2873,7 +2940,7 @@ describe("DiscoveryStreamFeed", () => {
     });
   });
 
-  describe("#checkIfAnyCacheExpired", () => {
+  describe("#_checkExpirationPerComponent", () => {
     let cache;
     beforeEach(() => {
       cache = {
@@ -2885,35 +2952,48 @@ describe("DiscoveryStreamFeed", () => {
     });
 
     it("should return false if nothing in the cache is expired", async () => {
-      const result = await feed.checkIfAnyCacheExpired();
-      assert.isFalse(result);
+      const results = await feed._checkExpirationPerComponent();
+      assert.isFalse(results.spocs);
+      assert.isFalse(results.feeds);
     });
     it("should return true if .spocs is missing", async () => {
       delete cache.spocs;
-      assert.isTrue(await feed.checkIfAnyCacheExpired());
-    });
-    it("should return true if .spocs is expired", async () => {
-      clock.tick(THIRTY_MINUTES + 1);
-      // Update other caches we aren't testing
-      cache.spocs.lastUpdated = Date.now();
-      cache.feeds["foo.com"].lastUpdate = Date.now();
 
-      assert.isTrue(await feed.checkIfAnyCacheExpired());
+      const results = await feed._checkExpirationPerComponent();
+      assert.isTrue(results.spocs);
+      assert.isFalse(results.feeds);
     });
-
     it("should return true if .feeds is missing", async () => {
       delete cache.feeds;
-      assert.isTrue(await feed.checkIfAnyCacheExpired());
+
+      const results = await feed._checkExpirationPerComponent();
+      assert.isFalse(results.spocs);
+      assert.isTrue(results.feeds);
+    });
+    it("should return true if spocs are expired", async () => {
+      clock.tick(THIRTY_MINUTES + 1);
+      // Update other caches we aren't testing
+      cache.feeds["foo.com"].lastUpdated = Date.now();
+
+      const results = await feed._checkExpirationPerComponent();
+      assert.isTrue(results.spocs);
+      assert.isFalse(results.feeds);
     });
     it("should return true if data for .feeds[url] is missing", async () => {
       cache.feeds["foo.com"] = null;
-      assert.isTrue(await feed.checkIfAnyCacheExpired());
+
+      const results = await feed._checkExpirationPerComponent();
+      assert.isFalse(results.spocs);
+      assert.isTrue(results.feeds);
     });
     it("should return true if data for .feeds[url] is expired", async () => {
       clock.tick(THIRTY_MINUTES + 1);
       // Update other caches we aren't testing
-      cache.spocs.lastUpdate = Date.now();
-      assert.isTrue(await feed.checkIfAnyCacheExpired());
+      cache.spocs.lastUpdated = Date.now();
+
+      const results = await feed._checkExpirationPerComponent();
+      assert.isFalse(results.spocs);
+      assert.isTrue(results.feeds);
     });
   });
 
@@ -3273,6 +3353,8 @@ describe("DiscoveryStreamFeed", () => {
 
       const spocsTestResult = {
         lastUpdated: 1234,
+        spocsCacheUpdateTime: 1800000,
+        spocsOnDemand: undefined,
         spocs: {
           placement1: {
             personalized: true,
@@ -3514,6 +3596,7 @@ describe("DiscoveryStreamFeed", () => {
       const expectedData = {
         lastUpdated: 0,
         personalized: false,
+        sectionsEnabled: undefined,
         data: {
           settings: {},
           sections: [],
@@ -3534,6 +3617,123 @@ describe("DiscoveryStreamFeed", () => {
               topic: "topic",
               url: "url",
               features: {},
+            },
+          ],
+          surfaceId: "NEW_TAB_EN_US",
+          status: "success",
+        },
+      };
+
+      assert.deepEqual(feedData, expectedData);
+    });
+    it("should fetch proper data from getComponentFeed with sections enabled", async () => {
+      setPref("discoverystream.sections.enabled", true);
+      const fakeCache = {};
+      sandbox.stub(feed.cache, "get").returns(Promise.resolve(fakeCache));
+      sandbox.stub(feed, "rotate").callsFake(val => val);
+      sandbox
+        .stub(feed, "scoreItems")
+        .callsFake(val => ({ data: val, filtered: [], personalized: false }));
+      sandbox.stub(feed, "fetchFromEndpoint").resolves({
+        recommendedAt: 1755834072383,
+        surfaceId: "NEW_TAB_EN_US",
+        data: [
+          {
+            corpusItemId: "decaf-c0ff33",
+            scheduledCorpusItemId: "matcha-latte-ff33c1",
+            excerpt: "excerpt",
+            iconUrl: "iconUrl",
+            imageUrl: "imageUrl",
+            isTimeSensitive: true,
+            publisher: "publisher",
+            receivedRank: 0,
+            tileId: 12345,
+            title: "title",
+            topic: "topic",
+            url: "url",
+            features: {},
+          },
+        ],
+        feeds: {
+          "section-1": {
+            title: "Section 1",
+            subtitle: "Subtitle 1",
+            receivedFeedRank: 1,
+            layout: "cards",
+            iab: "iab-category",
+            isInitiallyVisible: true,
+            recommendations: [
+              {
+                corpusItemId: "decaf-c0ff34",
+                scheduledCorpusItemId: "matcha-latte-ff33c2",
+                excerpt: "section excerpt",
+                iconUrl: "sectionIconUrl",
+                imageUrl: "sectionImageUrl",
+                isTimeSensitive: false,
+                publisher: "section publisher",
+                receivedRank: 1,
+                title: "section title",
+                topic: "section topic",
+                url: "section url",
+                features: {},
+              },
+            ],
+          },
+        },
+      });
+
+      const feedData = await feed.getComponentFeed("url");
+      const expectedData = {
+        lastUpdated: 0,
+        personalized: false,
+        sectionsEnabled: true,
+        data: {
+          settings: {},
+          sections: [
+            {
+              sectionKey: "section-1",
+              title: "Section 1",
+              subtitle: "Subtitle 1",
+              receivedRank: 1,
+              layout: "cards",
+              iab: "iab-category",
+              visible: true,
+            },
+          ],
+          interestPicker: {},
+          recommendations: [
+            {
+              id: "decaf-c0ff33",
+              corpus_item_id: "decaf-c0ff33",
+              scheduled_corpus_item_id: "matcha-latte-ff33c1",
+              excerpt: "excerpt",
+              icon_src: "iconUrl",
+              isTimeSensitive: true,
+              publisher: "publisher",
+              raw_image_src: "imageUrl",
+              received_rank: 0,
+              recommended_at: 1755834072383,
+              title: "title",
+              topic: "topic",
+              url: "url",
+              features: {},
+            },
+            {
+              id: "decaf-c0ff34",
+              corpus_item_id: "decaf-c0ff34",
+              scheduled_corpus_item_id: "matcha-latte-ff33c2",
+              excerpt: "section excerpt",
+              icon_src: "sectionIconUrl",
+              isTimeSensitive: false,
+              publisher: "section publisher",
+              raw_image_src: "sectionImageUrl",
+              received_rank: 1,
+              recommended_at: 1755834072383,
+              title: "section title",
+              topic: "section topic",
+              url: "section url",
+              features: {},
+              section: "section-1",
             },
           ],
           surfaceId: "NEW_TAB_EN_US",

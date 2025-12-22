@@ -12,7 +12,9 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <optional>
 #include <set>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -105,13 +107,13 @@ CryptoOptions::EphemeralKeyExchangeCipherGroups::GetSupported() {
   return SSLStreamAdapter::GetSupportedEphemeralKeyExchangeCipherGroups();
 }
 
+std::optional<std::string>
+CryptoOptions::EphemeralKeyExchangeCipherGroups::GetName(uint16_t group_id) {
+  return SSLStreamAdapter::GetEphemeralKeyExchangeCipherGroupName(group_id);
+}
+
 void CryptoOptions::EphemeralKeyExchangeCipherGroups::AddFirst(uint16_t group) {
-#if defined(WEBRTC_MOZILLA_BUILD)
-  // until we support c++20
-  enabled_.erase(std::remove(enabled_.begin(), enabled_.end(), group));
-#else
   std::erase(enabled_, group);
-#endif
   enabled_.insert(enabled_.begin(), group);
 }
 

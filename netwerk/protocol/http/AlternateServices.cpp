@@ -57,7 +57,10 @@ static nsresult SchemeIsHTTPS(const nsACString& originScheme,
 }
 
 bool AltSvcMapping::AcceptableProxy(nsProxyInfo* proxyInfo) {
-  return !proxyInfo || proxyInfo->IsDirect() || proxyInfo->IsSOCKS();
+  // TODO: We also need to make sure the inner connection will connect to the
+  // routed host.
+  return !proxyInfo || proxyInfo->IsDirect() || proxyInfo->IsSOCKS() ||
+         proxyInfo->IsHttp3Proxy();
 }
 
 void AltSvcMapping::ProcessHeader(
@@ -513,7 +516,7 @@ AltSvcMapping::AltSvcMapping(nsIDataStorage* storage, int32_t epoch,
     _NS_NEXT_TOKEN;
     mMixedScheme = Substring(str, start, idx - start).EqualsLiteral("y");
     _NS_NEXT_TOKEN;
-    Unused << mOriginAttributes.PopulateFromSuffix(
+    (void)mOriginAttributes.PopulateFromSuffix(
         Substring(str, start, idx - start));
     // The separator after the top window origin is a pipe character since the
     // origin string can contain colons.
@@ -764,7 +767,7 @@ class WellKnownChecker {
         nsresult rv = uu->Verify(mTransactionAlternate->mWKResponse, mOrigin);
         if (NS_SUCCEEDED(rv)) {
           bool validWK = false;
-          Unused << uu->GetValid(&validWK);
+          (void)uu->GetValid(&validWK);
           if (!validWK) {
             LOG(("WellKnownChecker::Done %p json parser declares invalid\n%s\n",
                  this, mTransactionAlternate->mWKResponse.get()));
@@ -1127,8 +1130,8 @@ void AltSvcCache::UpdateAltServiceMapping(
   }
 
   if (map->IsHttp3()) {
-    bool isDirectOrNoProxy = pi ? pi->IsDirect() : true;
-    if (!isDirectOrNoProxy) {
+    bool isProxyAllowed = pi ? (pi->IsDirect() || pi->IsHttp3Proxy()) : true;
+    if (!isProxyAllowed) {
       LOG(
           ("AltSvcCache::UpdateAltServiceMapping %p map %p ignored h3 because "
            "proxy is in use %p\n",

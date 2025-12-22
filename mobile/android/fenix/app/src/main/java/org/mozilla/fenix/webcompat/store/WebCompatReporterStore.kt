@@ -22,12 +22,16 @@ import org.mozilla.fenix.R
  * @property enteredUrl The URL that is being reported as broken.
  * @property reason Specifies the reason that [enteredUrl] is broken.
  * @property problemDescription Description of the encountered problem.
+ * @property includeEtpBlockedUrls Checks if the user wants to include ETP-blocked URLs in the report.
+ * @property previewJSON The JSON data of the WebCompatReporter to be displayed in the preview.
  */
 data class WebCompatReporterState(
     val tabUrl: String = "",
     val enteredUrl: String = "",
     val reason: BrokenSiteReason? = null,
     val problemDescription: String = "",
+    val includeEtpBlockedUrls: Boolean = false,
+    val previewJSON: String = "",
 ) : State {
 
     /**
@@ -114,6 +118,13 @@ sealed class WebCompatReporterAction : Action {
     data class ReasonChanged(val newReason: WebCompatReporterState.BrokenSiteReason) : WebCompatReporterAction()
 
     /**
+     * Dispatched when the ETP checkbox is toggled.
+     *
+     * @property include The value of the checkbox being toggled or not.
+     */
+    data class IncludeEtpBlockedUrlsChanged(val include: Boolean) : WebCompatReporterAction()
+
+    /**
      * Dispatched when the problem description is updated.
      *
      * @property newProblemDescription The updated problem description.
@@ -139,6 +150,18 @@ sealed class WebCompatReporterAction : Action {
      * Dispatched when the WebCompat report has been submitted.
      */
     data object ReportSubmitted : WebCompatReporterAction(), NavigationAction
+
+    /**
+     * Dispatched when the WebCompat report "Preview Report" button is clicked.
+     */
+    data object OpenPreviewClicked : WebCompatReporterAction()
+
+    /**
+     * Dispatched when the preview of the report is opened up.
+     *
+     * @property previewJSON The data of the WebCompat Report as a JSON string.
+     */
+    data class PreviewJSONUpdated(val previewJSON: String) : WebCompatReporterAction()
 
     /**
      * Dispatched when the WebCompat "Send More Info" report has been submitted.
@@ -177,10 +200,15 @@ private fun reduce(
     is WebCompatReporterAction.ReasonChanged -> state.copy(reason = action.newReason)
     WebCompatReporterAction.Initialized -> state
     is WebCompatReporterAction.StateRestored -> action.restoredState
+    is WebCompatReporterAction.OpenPreviewClicked -> state
+    is WebCompatReporterAction.PreviewJSONUpdated -> state.copy(
+        previewJSON = action.previewJSON,
+    )
     is WebCompatReporterAction.NavigationAction -> state
-    is WebCompatReporterAction.SendReportClicked -> state
+    WebCompatReporterAction.SendReportClicked -> state
     WebCompatReporterAction.SendMoreInfoClicked -> state
     WebCompatReporterAction.LearnMoreClicked -> state
+    is WebCompatReporterAction.IncludeEtpBlockedUrlsChanged -> state.copy(includeEtpBlockedUrls = action.include)
 }
 
 /**

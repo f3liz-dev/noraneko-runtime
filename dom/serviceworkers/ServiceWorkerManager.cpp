@@ -29,18 +29,15 @@
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/ContentBlockingAllowList.h"
-#include "mozilla/EnumSet.h"
 #include "mozilla/ErrorNames.h"
 #include "mozilla/LoadContext.h"
 #include "mozilla/MozPromise.h"
 #include "mozilla/PermissionManager.h"
 #include "mozilla/Result.h"
-#include "mozilla/ResultExtensions.h"
 #include "mozilla/ScopeExit.h"
 #include "mozilla/StaticPrefs_extensions.h"
 #include "mozilla/StaticPrefs_privacy.h"
 #include "mozilla/StoragePrincipalHelper.h"
-#include "mozilla/Unused.h"
 #include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/ClientHandle.h"
 #include "mozilla/dom/ClientManager.h"
@@ -207,6 +204,13 @@ nsresult PopulateRegistrationData(
   aData.lastUpdateTime() = aRegistration->GetLastUpdateTime();
 
   aData.navigationPreloadState() = aRegistration->GetNavigationPreloadState();
+
+  aData.numberOfAttemptedActivations() =
+      aRegistration->GetNumberOfAttemptedActivations();
+
+  aData.isBroken() = aRegistration->IsBroken();
+
+  aData.cacheAPIId() = aRegistration->GetCacheAPIId();
 
   MOZ_ASSERT(ServiceWorkerRegistrationDataIsValid(aData));
 
@@ -705,7 +709,7 @@ void ServiceWorkerManager::MaybeFinishShutdown() {
 
   RefPtr<TeardownRunnable> runnable = new TeardownRunnable(mActor);
   nsresult rv = NS_DispatchToMainThread(runnable);
-  Unused << NS_WARN_IF(NS_FAILED(rv));
+  (void)NS_WARN_IF(NS_FAILED(rv));
   mActor = nullptr;
   mETPPermissionObserver = nullptr;
 
@@ -1095,8 +1099,8 @@ ServiceWorkerManager::SendPushEvent(const nsACString& aOriginAttributes,
 nsresult ServiceWorkerManager::SendCookieChangeEvent(
     const OriginAttributes& aOriginAttributes, const nsACString& aScope,
     const net::CookieStruct& aCookie, bool aCookieDeleted) {
-  nsCOMPtr<nsIPrincipal> principal;
-  MOZ_TRY_VAR(principal, ScopeToPrincipal(aScope, aOriginAttributes));
+  nsCOMPtr<nsIPrincipal> principal =
+      MOZ_TRY(ScopeToPrincipal(aScope, aOriginAttributes));
 
   RefPtr<ServiceWorkerRegistrationInfo> registration =
       GetRegistration(principal, aScope);
@@ -1123,8 +1127,7 @@ nsresult ServiceWorkerManager::SendPushEvent(
     return NS_ERROR_INVALID_ARG;
   }
 
-  nsCOMPtr<nsIPrincipal> principal;
-  MOZ_TRY_VAR(principal, ScopeToPrincipal(aScope, attrs));
+  nsCOMPtr<nsIPrincipal> principal = MOZ_TRY(ScopeToPrincipal(aScope, attrs));
 
   // The registration handling a push notification must have an exact scope
   // match. This will try to find an exact match, unlike how fetch may find the
@@ -3027,8 +3030,7 @@ ServiceWorkerManager::WakeForExtensionAPIEvent(
     return NS_OK;
   }
 
-  nsCOMPtr<nsIPrincipal> principal;
-  MOZ_TRY_VAR(principal, ScopeToPrincipal(scopeURI, {}));
+  nsCOMPtr<nsIPrincipal> principal = MOZ_TRY(ScopeToPrincipal(scopeURI, {}));
 
   auto* addonPolicy = BasePrincipal::Cast(principal)->AddonPolicy();
   if (NS_WARN_IF(!addonPolicy)) {
@@ -3481,8 +3483,7 @@ void ServiceWorkerManager::MaybeSendUnregister(nsIPrincipal* aPrincipal,
     return;
   }
 
-  Unused << mActor->SendUnregister(principalInfo,
-                                   NS_ConvertUTF8toUTF16(aScope));
+  (void)mActor->SendUnregister(principalInfo, NS_ConvertUTF8toUTF16(aScope));
 }
 
 void ServiceWorkerManager::AddOrphanedRegistration(

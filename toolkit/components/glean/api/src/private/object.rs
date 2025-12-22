@@ -30,7 +30,7 @@ impl gecko_profiler::ProfilerMarker for ObjectMetricMarker {
         use gecko_profiler::schema::*;
         let mut schema = MarkerSchema::new(&[Location::MarkerChart, Location::MarkerTable]);
         schema.set_tooltip_label("{marker.data.id}");
-        schema.set_table_label("{marker.name} - {marker.data.id}: {marker.data.value}");
+        schema.set_table_label("{marker.data.id}: {marker.data.value}");
         schema.add_key_label_format_with_flags(
             "id",
             "Metric",
@@ -167,7 +167,9 @@ impl<K: ObjectSerialize + Clone> ObjectMetric<K> {
 }
 
 #[inherent]
-impl<K> glean::TestGetValue<serde_json::Value> for ObjectMetric<K> {
+impl<K> glean::TestGetValue for ObjectMetric<K> {
+    type Output = serde_json::Value;
+
     pub fn test_get_value(&self, ping_name: Option<String>) -> Option<serde_json::Value> {
         match self {
             ObjectMetric::Parent { inner, .. } => inner.test_get_value(ping_name),

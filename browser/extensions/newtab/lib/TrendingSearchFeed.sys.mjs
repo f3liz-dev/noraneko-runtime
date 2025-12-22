@@ -2,6 +2,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+import { AppConstants } from "resource://gre/modules/AppConstants.sys.mjs";
+import {
+  actionTypes as at,
+  actionCreators as ac,
+} from "resource://newtab/common/Actions.mjs";
+import { ImportHelper } from "resource://newtab/lib/ImportHelper.sys.mjs";
+
 const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   BrowserSearchTelemetry:
@@ -9,14 +16,19 @@ ChromeUtils.defineESModuleGetters(lazy, {
   PersistentCache: "resource://newtab/lib/PersistentCache.sys.mjs",
   SearchSuggestionController:
     "moz-src:///toolkit/components/search/SearchSuggestionController.sys.mjs",
-  UrlbarUtils: "resource:///modules/UrlbarUtils.sys.mjs",
 });
 
-import { AppConstants } from "resource://gre/modules/AppConstants.sys.mjs";
-import {
-  actionTypes as at,
-  actionCreators as ac,
-} from "resource://newtab/common/Actions.mjs";
+/**
+ * @backward-compat { version 145 }
+ *
+ * UrlbarUtils.sys.mjs was moved to moz-src in 145.
+ */
+ChromeUtils.defineLazyGetter(lazy, "UrlbarUtils", () => {
+  return ImportHelper.import(
+    "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs",
+    "resource:///modules/"
+  ).UrlbarUtils;
+});
 
 const PREF_SHOW_TRENDING_SEARCH = "trendingSearch.enabled";
 const PREF_SHOW_TRENDING_SEARCH_SYSTEM = "system.trendingSearch.enabled";

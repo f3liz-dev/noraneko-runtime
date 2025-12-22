@@ -134,7 +134,7 @@ export class SpecialPowersParent extends JSWindowActorParent {
       observe(aSubject, aTopic, aData) {
         var msg = { aData };
         switch (aTopic) {
-          case "csp-on-violate-policy":
+          case "csp-on-violate-policy": {
             // the subject is either an nsIURI or an nsISupportsCString
             let subject = null;
             if (aSubject instanceof Ci.nsIURI) {
@@ -150,7 +150,8 @@ export class SpecialPowersParent extends JSWindowActorParent {
             };
             this._self.sendAsyncMessage("specialpowers-" + aTopic, msg);
             return;
-          case "xfo-on-violate-policy":
+          }
+          case "xfo-on-violate-policy": {
             let uriSpec = null;
             if (aSubject instanceof Ci.nsIURI) {
               uriSpec = aSubject.asciiSpec;
@@ -163,6 +164,7 @@ export class SpecialPowersParent extends JSWindowActorParent {
             };
             this._self.sendAsyncMessage("specialpowers-" + aTopic, msg);
             return;
+          }
           default:
             this._self.sendAsyncMessage("specialpowers-" + aTopic, msg);
         }
@@ -845,12 +847,10 @@ export class SpecialPowersParent extends JSWindowActorParent {
   /**
    * messageManager callback function
    * This will get requests from our API in the window and process them in chrome for it
-   **/
+   */
   // eslint-disable-next-line complexity
   async receiveMessage(aMessage) {
-    // This newtab train-hop compatibility shim can be removed once Firefox 144
-    // makes it to the release channel.
-    let startTime = ChromeUtils.now?.() || Cu.now();
+    let startTime = ChromeUtils.now();
     // Try block so we can use a finally statement to add a profiler marker
     // despite all the return statements.
     try {
@@ -885,7 +885,7 @@ export class SpecialPowersParent extends JSWindowActorParent {
           }
           return undefined;
 
-        case "EnsureFocus":
+        case "EnsureFocus": {
           let bc = aMessage.data.browsingContext;
           // Send a message to the child telling it to focus the window.
           // If the message responds with a browsing context, then
@@ -901,6 +901,7 @@ export class SpecialPowersParent extends JSWindowActorParent {
             }
           } while (bc && !aMessage.data.blurSubframe);
           return undefined;
+        }
 
         case "SpecialPowers.Focus":
           if (this.manager.rootFrameLoader) {
@@ -1078,18 +1079,20 @@ export class SpecialPowersParent extends JSWindowActorParent {
             case "remove":
               this._permOp(msg);
               break;
-            case "has":
+            case "has": {
               let hasPerm = Services.perms.testPermissionFromPrincipal(
                 msg.principal,
                 msg.type
               );
               return hasPerm == Ci.nsIPermissionManager.ALLOW_ACTION;
-            case "test":
+            }
+            case "test": {
               let testPerm = Services.perms.testPermissionFromPrincipal(
                 msg.principal,
                 msg.type
               );
               return testPerm == msg.value;
+            }
             default:
               throw new SpecialPowersError(
                 "Invalid operation for SPPermissionManager"
@@ -1101,10 +1104,11 @@ export class SpecialPowersParent extends JSWindowActorParent {
         case "SPObserverService": {
           let topic = aMessage.json.observerTopic;
           switch (aMessage.json.op) {
-            case "notify":
+            case "notify": {
               let data = aMessage.json.observerData;
               Services.obs.notifyObservers(null, topic, data);
               break;
+            }
             case "add":
               this._registerObservers._add(topic);
               break;

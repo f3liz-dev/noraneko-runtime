@@ -278,6 +278,12 @@ add_task(async function () {
 });
 
 add_task(async function checkClearSearch() {
+  const fillerDeclarations = Array.from({ length: 50 }, (_, i) => ({
+    name: `line-height`,
+    value: i.toString(),
+    overridden: i !== 49,
+  }));
+
   await addTab(
     "data:text/html;charset=utf-8," +
       encodeURIComponent(`
@@ -286,11 +292,21 @@ add_task(async function checkClearSearch() {
             --my-color-1: tomato;
           }
 
+          h1#title {
+            ${
+              // Add a lot of declaration so the --my-color-1
+              // declaration would be out of view
+              fillerDeclarations
+                .map(({ name, value }) => `${name}: ${value};`)
+                .join("")
+            }
+          }
+
           h1 {
             --my-unique-var: var(--my-color-1);
           }
         </style>
-        <h1>Filter</h1>
+        <h1 id="title">Filter</h1>
   `)
   );
 
@@ -305,7 +321,13 @@ add_task(async function checkClearSearch() {
     { selector: "element", declarations: [] },
     {
       selector: "h1",
-      declarations: [{ name: "--my-unique-var", value: "var(--my-color-1)" }],
+      declarations: [
+        {
+          name: "--my-unique-var",
+          value: "var(--my-color-1)",
+          highlighted: true,
+        },
+      ],
     },
   ]);
   const rule = getRuleViewRuleEditor(view, 1).rule;
@@ -324,6 +346,7 @@ add_task(async function checkClearSearch() {
   // check that the rule view is no longer filtered
   await checkRuleViewContent(view, [
     { selector: "element", declarations: [] },
+    { selector: "h1#title", declarations: fillerDeclarations },
     {
       selector: "h1",
       declarations: [{ name: "--my-unique-var", value: "var(--my-color-1)" }],
@@ -333,9 +356,91 @@ add_task(async function checkClearSearch() {
     },
     {
       selector: ":root",
+      inherited: true,
       declarations: [{ name: "--my-color-1", value: "tomato" }],
     },
   ]);
+});
+
+add_task(async function checkJumpToUnusedVariable() {
+  await addTab(
+    "data:text/html;charset=utf-8," +
+      encodeURIComponent(`
+        <style>
+          :where(h3) {
+            ${Array.from({ length: 15 }, (_, i) => `--unused-${i}: ${i};`).join("\n")}
+          }
+
+          h3 {
+            --another-unused: var(--unused-5);
+          }
+        </style>
+        <h3>for unused variables</h3>
+  `)
+  );
+
+  const { inspector, view } = await openRuleView();
+  await selectNode("h1", inspector);
+
+  info("Check that jump to definition of unused variables do work");
+  // If you have 2 rules, one with hidden custom properties, and the other one with
+  // custom properties not being hidden because we're not entering the threshold
+  // Make sure the clicking the Jump to definition button will reveal the hidden property
+  await selectNode("h3", inspector);
+
+  await checkRuleViewContent(view, [
+    {
+      selector: "element",
+      declarations: [],
+    },
+    {
+      selector: "h3",
+      declarations: [{ name: "--another-unused", value: "var(--unused-5)" }],
+    },
+    {
+      // Contains the hidden variables
+      selector: ":where(h3)",
+      // All the variables are hidden
+      declarations: [],
+    },
+  ]);
+
+  is(
+    getUnusedVariableButton(view, 2)?.textContent,
+    "Show 15 unused custom CSS properties",
+    "Show unused variables button has expected text"
+  );
+
+  const rule = getRuleViewRuleEditor(view, 1).rule;
+  is(rule.selectorText, "h3", "Got expected rule");
+
+  const variableButtonEls = getJumpToDefinitionButtonForDeclaration(rule, {
+    "--another-unused": "var(--unused-5)",
+  });
+  is(variableButtonEls.length, 1, "There's one jump to variable button");
+  await highlightProperty(view, variableButtonEls[0], "--unused-5", "5");
+
+  await checkRuleViewContent(view, [
+    {
+      selector: "element",
+      declarations: [],
+    },
+    {
+      selector: "h3",
+      declarations: [{ name: "--another-unused", value: "var(--unused-5)" }],
+    },
+    {
+      // Contains the hidden variables
+      selector: ":where(h3)",
+      declarations: [{ name: "--unused-5", value: "5" }],
+    },
+  ]);
+
+  is(
+    getUnusedVariableButton(view, 2)?.textContent,
+    "Show 14 unused custom CSS properties",
+    "Show unused variables button has expected text"
+  );
 });
 
 function getJumpToDefinitionButtonForDeclaration(rule, declaration) {
@@ -366,6 +471,7 @@ async function highlightProperty(
   expectedPropertyName,
   expectedPropertyValue
 ) {
+  info(`Highlight "${expectedPropertyName}: ${expectedPropertyValue}"`);
   const onHighlightProperty = view.once("element-highlighted");
   jumpToDefinitionButton.click();
   const highlightedElement = await onHighlightProperty;
@@ -378,5 +484,21 @@ async function highlightProperty(
     highlightedElement.querySelector(".ruleview-propertyvalue").innerText,
     expectedPropertyValue,
     "The expected element was highlighted"
+  );
+
+  // check that the declaration we jumped to is into view
+  ok(
+    isInViewport(highlightedElement, view.styleWindow),
+    `Highlighted element is in view`
+  );
+}
+
+function isInViewport(element, win) {
+  const { top, left, bottom, right } = element.getBoundingClientRect();
+  return (
+    top >= 0 &&
+    bottom <= win.innerHeight &&
+    left >= 0 &&
+    right <= win.innerWidth
   );
 }

@@ -6,8 +6,6 @@
 
 #include "vm/Shape-inl.h"
 
-#include "mozilla/MathAlgorithms.h"
-
 #include "gc/HashUtil.h"
 #include "js/friend/WindowProxy.h"  // js::IsWindow
 #include "js/HashTable.h"
@@ -1150,7 +1148,8 @@ BaseShape::BaseShape(JSContext* cx, const JSClass* clasp, JS::Realm* realm,
   MOZ_ASSERT_IF(proto.isObject(), !IsWindow(proto.toObject()));
 
   if (MOZ_UNLIKELY(clasp->emulatesUndefined())) {
-    cx->runtime()->hasSeenObjectEmulateUndefinedFuse.ref().popFuse(cx);
+    cx->runtime()->runtimeFuses.ref().hasSeenObjectEmulateUndefinedFuse.popFuse(
+        cx);
   }
 
 #ifdef DEBUG

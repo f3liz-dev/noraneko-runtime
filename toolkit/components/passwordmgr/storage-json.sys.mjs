@@ -95,6 +95,8 @@ export class LoginManagerStorage_json {
       if (loginsBackupEnabled) {
         backupPath = PathUtils.join(profileDir, "logins-backup.json");
       }
+      // Note that LoginStore is based on JSONFile which brings its own
+      // shutdown blocker to finalize properly, so we do not need one here.
       this._store = new lazy.LoginStore(jsonPath, backupPath);
 
       // The ProfileDataUpgrader can possibly set this pref. As we don't know
@@ -118,10 +120,11 @@ export class LoginManagerStorage_json {
   }
 
   /**
-   * Internal method used by regression tests only.  It is called before
-   * replacing this storage module with a new instance.
+   * Internal method used by tests only. It is called before replacing
+   * this storage module with a new instance. It avoids to finalize the
+   * underlying DeferredTask as it is still needed for the next tests.
    */
-  terminate() {
+  testSaveForReplace() {
     this._store._saver.disarm();
     return this._store._save();
   }
@@ -676,7 +679,33 @@ export class LoginManagerStorage_json {
       ) {
         remainingLogins.push(login);
       } else {
-        removedLogins.push(login);
+        // Create the nsLoginInfo object which to emit
+        const loginInfo = Cc[
+          "@mozilla.org/login-manager/loginInfo;1"
+        ].createInstance(Ci.nsILoginInfo);
+        loginInfo.init(
+          login.hostname,
+          login.formSubmitURL,
+          login.httpRealm,
+          login.encryptedUsername,
+          login.encryptedPassword,
+          login.usernameField,
+          login.passwordField
+        );
+        // set nsILoginMetaInfo values
+        loginInfo.QueryInterface(Ci.nsILoginMetaInfo);
+        loginInfo.guid = login.guid;
+        loginInfo.timeCreated = login.timeCreated;
+        loginInfo.timeLastUsed = login.timeLastUsed;
+        loginInfo.timePasswordChanged = login.timePasswordChanged;
+        loginInfo.timesUsed = login.timesUsed;
+        loginInfo.syncCounter = login.syncCounter;
+        loginInfo.everSynced = login.everSynced;
+
+        // Any unknown fields along for the ride
+        loginInfo.unknownFields = login.encryptedUnknownFields;
+
+        removedLogins.push(loginInfo);
         if (!fullyRemove && login?.everSynced) {
           // The login has been synced, so mark it as deleted.
           this.#incrementSyncCounter(login);

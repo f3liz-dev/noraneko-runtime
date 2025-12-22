@@ -9,7 +9,7 @@ Services.scriptloader.loadSubScript(
 );
 
 ChromeUtils.defineESModuleGetters(this, {
-  QuickSuggest: "resource:///modules/QuickSuggest.sys.mjs",
+  QuickSuggest: "moz-src:///browser/components/urlbar/QuickSuggest.sys.mjs",
   sinon: "resource://testing-common/Sinon.sys.mjs",
 });
 
@@ -26,6 +26,14 @@ ChromeUtils.defineLazyGetter(lazy, "QuickSuggestTestUtils", () => {
 ChromeUtils.defineLazyGetter(this, "MerinoTestUtils", () => {
   const { MerinoTestUtils: module } = ChromeUtils.importESModule(
     "resource://testing-common/MerinoTestUtils.sys.mjs"
+  );
+  module.init(this);
+  return module;
+});
+
+ChromeUtils.defineLazyGetter(this, "GeolocationTestUtils", () => {
+  const { GeolocationTestUtils: module } = ChromeUtils.importESModule(
+    "resource://testing-common/GeolocationTestUtils.sys.mjs"
   );
   module.init(this);
   return module;
@@ -513,6 +521,9 @@ async function expectNoConsoleErrors(task) {
  * @param {number} [embeddingSize] size of embeddings
  */
 async function doTestWithSemantic(results, task, embeddingSize = 16) {
+  /**
+   * A mock object that pretends to be an MLEngine.
+   */
   class MockMLEngine {
     async run(request) {
       const texts = request.args[0];

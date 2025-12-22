@@ -15,6 +15,7 @@
 #include "gc/GCContext.h"
 #include "gc/Memory.h"
 #include "jit/AtomicOperations.h"
+#include "jit/InlinableNatives.h"
 #include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
 #include "js/Prefs.h"
 #include "js/PropertySpec.h"
@@ -330,6 +331,19 @@ bool SharedArrayBufferObject::maxByteLengthGetterImpl(JSContext* cx,
                                                       const CallArgs& args) {
   MOZ_ASSERT(IsSharedArrayBuffer(args.thisv()));
   auto* buffer = &args.thisv().toObject().as<SharedArrayBufferObject>();
+
+  // Special case for wasm with potentially 64-bits memory.
+  // Manually compute the maxByteLength to avoid an overflow on 32-bit machines.
+  if (buffer->isWasm() && buffer->isResizable()) {
+    Pages sourceMaxPages = buffer->rawWasmBufferObject()->wasmSourceMaxPages();
+    uint64_t sourceMaxBytes = sourceMaxPages.byteLength64();
+
+    MOZ_ASSERT(sourceMaxBytes <=
+               wasm::PageSize * wasm::MaxMemory64PagesValidation);
+    args.rval().setNumber(double(sourceMaxBytes));
+
+    return true;
+  }
 
   // Steps 4-6.
   args.rval().setNumber(buffer->byteLengthOrMaxByteLength());
@@ -944,7 +958,8 @@ static const JSFunctionSpec sharedarray_proto_functions[] = {
 };
 
 static const JSPropertySpec sharedarray_proto_properties[] = {
-    JS_PSG("byteLength", SharedArrayBufferObject::byteLengthGetter, 0),
+    JS_INLINABLE_PSG("byteLength", SharedArrayBufferObject::byteLengthGetter, 0,
+                     SharedArrayBufferByteLength),
     JS_PSG("maxByteLength", SharedArrayBufferObject::maxByteLengthGetter, 0),
     JS_PSG("growable", SharedArrayBufferObject::growableGetter, 0),
     JS_STRING_SYM_PS(toStringTag, "SharedArrayBuffer", JSPROP_READONLY),

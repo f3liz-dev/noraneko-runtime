@@ -17,11 +17,11 @@
 #include "prinrval.h"
 #include "nsIFile.h"
 #include "nsITimer.h"
+#include "nsNetUtil.h"
 #include "mozilla/AutoRestore.h"
 #include <algorithm>
 #include "mozilla/StaticPrefs_network.h"
 #include "mozilla/glean/NetwerkCache2Metrics.h"
-#include "mozilla/Unused.h"
 
 #define kMinUnwrittenChanges 300
 #define kMinDumpInterval 20000  // in milliseconds
@@ -840,11 +840,29 @@ nsresult CacheIndex::InitEntry(const SHA1Sum::Hash* aHash,
 }
 
 // static
-nsresult CacheIndex::RemoveEntry(const SHA1Sum::Hash* aHash) {
-  LOG(("CacheIndex::RemoveEntry() [hash=%08x%08x%08x%08x%08x]",
-       LOGSHA1(aHash)));
+nsresult CacheIndex::RemoveEntry(const SHA1Sum::Hash* aHash,
+                                 const nsACString& aKey,
+                                 bool aClearDictionary) {
+  LOG(
+      ("CacheIndex::RemoveEntry() [hash=%08x%08x%08x%08x%08x] key=%s "
+       "clear_dictionary=%d",
+       LOGSHA1(aHash), PromiseFlatCString(aKey).get(), aClearDictionary));
 
   MOZ_ASSERT(CacheFileIOManager::IsOnIOThread());
+
+  // Remove any dictionary associated with this entry even if we later
+  // error out - async since removal happens on MainThread.
+
+  // TODO XXX There may be a hole here where a dictionary entry can get
+  // referenced for a request before RemoveDictionaryFor can run, but after
+  // the entry is removed here.
+
+  // Note: we don't want to (re)clear dictionaries when the
+  // CacheFileContextEvictor purges entries; they've already been cleared
+  // via CacheIndex::EvictByContext synchronously
+  if (aClearDictionary) {
+    DictionaryCache::RemoveDictionaryFor(aKey);
+  }
 
   StaticMutexAutoLock lock(sLock);
 
@@ -1079,6 +1097,32 @@ nsresult CacheIndex::UpdateEntry(const SHA1Sum::Hash* aHash,
   return NS_OK;
 }
 
+// Clear the entries from the Index immediately, to comply with
+// https://www.w3.org/TR/clear-site-data/#fetch-integration
+// Note that we will effectively hide the entries until the actual evict
+// happens.
+
+// aOrigin == "" means clear all unless aBaseDomain is set to something
+// static
+void CacheIndex::EvictByContext(const nsAString& aOrigin,
+                                const nsAString& aBaseDomain) {
+  StaticMutexAutoLock lock(sLock);
+
+  RefPtr<CacheIndex> index = gInstance;
+
+  // Store in hashset that this origin has been evicted; we'll remove it
+  // when CacheFileIOManager::EvictByContextInternal() finishes.
+  // Not valid to set both aOrigin and aBaseDomain
+  if (!aOrigin.IsEmpty() && aBaseDomain.IsEmpty()) {
+    // likely CacheStorageService::ClearByPrincipal
+    nsCOMPtr<nsIURI> uri;
+    if (NS_SUCCEEDED(NS_NewURI(getter_AddRefs(uri), aOrigin))) {
+      // Remove the dictionary entries for this origin immediately
+      DictionaryCache::RemoveDictionariesForOrigin(uri);
+    }
+  }
+}
+
 // static
 nsresult CacheIndex::RemoveAll() {
   LOG(("CacheIndex::RemoveAll()"));
@@ -1305,8 +1349,14 @@ nsresult CacheIndex::GetEntryForEviction(EvictionSortedSnapshot& aSnapshot,
 
     ++skipped;
 
-    if (evictMedia && CacheIndexEntry::GetContentType(rec) !=
-                          nsICacheEntry::CONTENT_TYPE_MEDIA) {
+    uint32_t type = CacheIndexEntry::GetContentType(rec);
+
+    if (evictMedia && type != nsICacheEntry::CONTENT_TYPE_MEDIA) {
+      continue;
+    }
+
+    if (type == nsICacheEntry::CONTENT_TYPE_DICTIONARY) {
+      // Let them be removed by becoming empty and removing themselves
       continue;
     }
 
@@ -3191,8 +3241,8 @@ void CacheIndex::FinishUpdate(bool aSucceeded,
       NS_WARNING(("CacheIndex::FinishUpdate() - Leaking mDirEnumerator!"));
       // This can happen only in case dispatching event to IO thread failed in
       // CacheIndex::PreShutdown().
-      Unused << mDirEnumerator.forget();  // Leak it since dir enumerator is not
-                                          // threadsafe
+      mDirEnumerator.forget()
+          .leak();  // Leak it since dir enumerator is not threadsafe
     } else {
       mDirEnumerator->Close();
       mDirEnumerator = nullptr;
@@ -3827,7 +3877,7 @@ void CacheIndex::DoTelemetryReport() {
   static const nsLiteralCString
       contentTypeNames[nsICacheEntry::CONTENT_TYPE_LAST] = {
           "UNKNOWN"_ns, "OTHER"_ns,      "JAVASCRIPT"_ns, "IMAGE"_ns,
-          "MEDIA"_ns,   "STYLESHEET"_ns, "WASM"_ns};
+          "MEDIA"_ns,   "STYLESHEET"_ns, "WASM"_ns,       "DICTIONARY"_ns};
 
   for (uint32_t i = 0; i < nsICacheEntry::CONTENT_TYPE_LAST; ++i) {
     if (mIndexStats.Size() > 0) {

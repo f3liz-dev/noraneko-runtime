@@ -16,15 +16,15 @@ export class NewTabMessaging {
 
   init() {
     if (!this.initialized) {
+      this.initialized = true;
       Services.obs.addObserver(this, "newtab-message");
       Services.obs.addObserver(this, "newtab-message-query");
-      this.initialized = true;
     }
   }
 
   uninit() {
+    Services.obs.removeObserver(this, "newtab-message-query");
     Services.obs.removeObserver(this, "newtab-message");
-    Services.obs.addObserver(this, "newtab-message-query");
   }
 
   observe(subject, topic, _data) {
@@ -145,7 +145,7 @@ export class NewTabMessaging {
     }
   }
 
-  async onAction(action) {
+  onAction(action) {
     switch (action.type) {
       case at.INIT:
         this.init();

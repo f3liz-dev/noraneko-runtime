@@ -15,7 +15,6 @@
 #include "base/waitable_event.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/CycleCollectedJSContext.h"
-#include "mozilla/DebugOnly.h"
 #include "mozilla/Fuzzing.h"
 #include "mozilla/FlowMarkers.h"
 #include "mozilla/IntentionalCrash.h"
@@ -23,12 +22,10 @@
 #include "mozilla/Monitor.h"
 #include "mozilla/Mutex.h"
 #include "mozilla/ProfilerMarkers.h"
-#include "mozilla/ScopeExit.h"
 #include "mozilla/Sprintf.h"
 #include "mozilla/StaticMutex.h"
 #include "mozilla/glean/IpcMetrics.h"
 #include "mozilla/TimeStamp.h"
-#include "mozilla/UniquePtrExtensions.h"
 #include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/ipc/NodeController.h"
 #include "mozilla/ipc/ProcessChild.h"
@@ -962,7 +959,7 @@ class IPCFlowMarker : public BaseMarkerType<IPCFlowMarker> {
   static constexpr MS::Location Locations[] = {MS::Location::MarkerChart,
                                                MS::Location::MarkerTable};
   static constexpr const char* TableLabel =
-      "{marker.name} - {marker.data.name}(flow={marker.data.flow})";
+      "{marker.data.name}(flow={marker.data.flow})";
   static constexpr const char* ChartLabel = "{marker.name}";
 
   static constexpr MS::ETWMarkerGroup Group = MS::ETWMarkerGroup::Generic;

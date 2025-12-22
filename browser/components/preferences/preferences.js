@@ -51,18 +51,18 @@ var fxAccounts = getFxAccountsSingleton();
 XPCOMUtils.defineLazyServiceGetters(this, {
   gApplicationUpdateService: [
     "@mozilla.org/updates/update-service;1",
-    "nsIApplicationUpdateService",
+    Ci.nsIApplicationUpdateService,
   ],
 
   listManager: [
     "@mozilla.org/url-classifier/listmanager;1",
-    "nsIUrlListManager",
+    Ci.nsIUrlListManager,
   ],
   gHandlerService: [
     "@mozilla.org/uriloader/handler-service;1",
-    "nsIHandlerService",
+    Ci.nsIHandlerService,
   ],
-  gMIMEService: ["@mozilla.org/mime;1", "nsIMIMEService"],
+  gMIMEService: ["@mozilla.org/mime;1", Ci.nsIMIMEService],
 });
 
 if (Cc["@mozilla.org/gio-service;1"]) {
@@ -70,7 +70,7 @@ if (Cc["@mozilla.org/gio-service;1"]) {
     this,
     "gGIOService",
     "@mozilla.org/gio-service;1",
-    "nsIGIOService"
+    Ci.nsIGIOService
   );
 } else {
   this.gGIOService = null;
@@ -81,6 +81,7 @@ ChromeUtils.defineESModuleGetters(this, {
   ContextualIdentityService:
     "resource://gre/modules/ContextualIdentityService.sys.mjs",
   DownloadUtils: "resource://gre/modules/DownloadUtils.sys.mjs",
+  ExperimentAPI: "resource://nimbus/ExperimentAPI.sys.mjs",
   ExtensionPreferencesManager:
     "resource://gre/modules/ExtensionPreferencesManager.sys.mjs",
   ExtensionSettingsStore:
@@ -93,7 +94,7 @@ ChromeUtils.defineESModuleGetters(this, {
   NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
   OSKeyStore: "resource://gre/modules/OSKeyStore.sys.mjs",
   PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
-  QuickSuggest: "resource:///modules/QuickSuggest.sys.mjs",
+  QuickSuggest: "moz-src:///browser/components/urlbar/QuickSuggest.sys.mjs",
   Region: "resource://gre/modules/Region.sys.mjs",
   SelectionChangedMenulist:
     "resource:///modules/SelectionChangedMenulist.sys.mjs",
@@ -102,8 +103,8 @@ ChromeUtils.defineESModuleGetters(this, {
   TransientPrefs: "resource:///modules/TransientPrefs.sys.mjs",
   UIState: "resource://services-sync/UIState.sys.mjs",
   UpdateUtils: "resource://gre/modules/UpdateUtils.sys.mjs",
-  UrlbarPrefs: "resource:///modules/UrlbarPrefs.sys.mjs",
-  UrlbarUtils: "resource:///modules/UrlbarUtils.sys.mjs",
+  UrlbarPrefs: "moz-src:///browser/components/urlbar/UrlbarPrefs.sys.mjs",
+  UrlbarUtils: "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs",
 });
 
 ChromeUtils.defineLazyGetter(this, "gSubDialog", function () {
@@ -144,6 +145,34 @@ ChromeUtils.defineLazyGetter(this, "gSubDialog", function () {
     },
   });
 });
+
+const srdSectionPrefs = {};
+XPCOMUtils.defineLazyPreferenceGetter(
+  srdSectionPrefs,
+  "all",
+  "browser.settings-redesign.enabled",
+  false
+);
+
+function srdSectionEnabled(section) {
+  if (!(section in srdSectionPrefs)) {
+    XPCOMUtils.defineLazyPreferenceGetter(
+      srdSectionPrefs,
+      section,
+      `browser.settings-redesign.${section}.enabled`,
+      false
+    );
+  }
+  return srdSectionPrefs.all || srdSectionPrefs[section];
+}
+
+const CONFIG_PANES = {
+  containers2: {
+    parent: "general",
+    l10nId: "containers-section-header",
+    groupIds: ["containers"],
+  },
+};
 
 var gLastCategory = { category: undefined, subcategory: undefined };
 const gXULDOMParser = new DOMParser();
@@ -197,19 +226,34 @@ function init_all() {
   register_module("panePrivacy", gPrivacyPane);
   register_module("paneContainers", gContainersPane);
 
+  for (let [subPane, config] of Object.entries(CONFIG_PANES)) {
+    subPane = friendlyPrefCategoryNameToInternalName(subPane);
+    let settingPane = document.createElement("setting-pane");
+    settingPane.name = subPane;
+    settingPane.config = config;
+    settingPane.isSubPane = config.parent;
+    document.getElementById("mainPrefPane").append(settingPane);
+    register_module(subPane, {
+      init() {
+        settingPane.init();
+      },
+    });
+  }
+
   if (Services.prefs.getBoolPref("browser.translations.newSettingsUI.enable")) {
     register_module("paneTranslations", gTranslationsPane);
   }
-  if (Services.prefs.getBoolPref("browser.preferences.experimental")) {
+  if (ExperimentAPI.labsEnabled) {
     // Set hidden based on previous load's hidden value or if Nimbus is
     // disabled.
     document.getElementById("category-experimental").hidden =
-      !ExperimentAPI.studiesEnabled ||
       Services.prefs.getBoolPref(
         "browser.preferences.experimental.hidden",
         false
       );
     register_module("paneExperimental", gExperimentalPane);
+  } else {
+    document.getElementById("category-experimental").hidden = true;
   }
 
   NimbusFeatures.moreFromMozilla.recordExposureEvent({ once: true });
@@ -338,6 +382,10 @@ async function gotoPref(
     // Overwrite the hash, unless there is no hash and we're switching to the
     // default category, e.g. by using the 'back' button after navigating to
     // a different category.
+
+    // Note: Bug 1983388 - If there is an element in the DOM that has the same
+    // ID as the `friendlyName`, then focus will be lost when navigating the
+    // category navigation via keyboard when that `friendlyName` category is selected.
     if (
       !(!document.location.hash && category == kDefaultCategoryInternalName)
     ) {
@@ -393,6 +441,14 @@ async function gotoPref(
   if (!categoryModule.handleSubcategory?.(subcategory)) {
     spotlight(subcategory, category);
   }
+
+  // Handle any visibility changes that are controlled by pref logic.
+  //
+  // Take caution when trying to flip the hidden state to true since the
+  // element might show up unexpectedly on different pages in about:preferences.
+  //
+  // See Bug 1999032 to remove this in favor of config-based prefs.
+  categoryModule.handlePrefControlledSection?.();
 
   // Record which category is shown
   Glean.aboutpreferences["show" + aShowReason].record({ value: category });

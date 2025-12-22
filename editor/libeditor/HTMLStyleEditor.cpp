@@ -1944,8 +1944,7 @@ HTMLEditor::AutoInlineStyleSetter::ExtendOrShrinkRangeToApplyTheStyle(
   if (range.EndRef().IsInContentNode()) {
     const WSScanResult nextContentData =
         WSRunScanner::ScanInclusiveNextVisibleNodeOrBlockBoundary(
-            WSRunScanner::Scan::EditableNodes, range.EndRef(),
-            BlockInlineCheck::UseComputedDisplayOutsideStyle);
+            {WSRunScanner::Option::OnlyEditableNodes}, range.EndRef());
     if (nextContentData.ReachedInvisibleBRElement() &&
         nextContentData.BRElementPtr()->GetParentElement() &&
         HTMLEditUtils::IsInlineContent(
@@ -2176,7 +2175,7 @@ HTMLEditor::SplitAncestorStyledInlineElementsAt(
   SplitNodeResult result = SplitNodeResult::NotHandled(aPointToSplit);
   MOZ_ASSERT(!result.Handled());
   EditorDOMPoint pointToPutCaret;
-  for (OwningNonNull<Element>& element : arrayOfParents) {
+  for (const OwningNonNull<Element>& element : arrayOfParents) {
     auto isSetByCSSOrError = [&]() -> Result<bool, nsresult> {
       if (!handleCSS) {
         return false;
@@ -2227,7 +2226,7 @@ HTMLEditor::SplitAncestorStyledInlineElementsAt(
         // If we're removing a link style and the element is an <a href>, we
         // need to split it.
         if (aStyle.mHTMLProperty == nsGkAtoms::href &&
-            HTMLEditUtils::IsLink(element)) {
+            HTMLEditUtils::IsHyperlinkElement(element)) {
         }
         // If we're removing HTML style, we should split only the element
         // which represents the style.
@@ -2910,14 +2909,14 @@ EditorRawDOMRange HTMLEditor::GetExtendedRangeWrappingNamedAnchor(
   EditorRawDOMRange newRange(aRange);
   for (Element* element :
        aRange.StartRef().GetContainer()->InclusiveAncestorsOfType<Element>()) {
-    if (!HTMLEditUtils::IsNamedAnchor(element)) {
+    if (!HTMLEditUtils::IsNamedAnchorElement(*element)) {
       continue;
     }
     newRange.SetStart(EditorRawDOMPoint(element));
   }
   for (Element* element :
        aRange.EndRef().GetContainer()->InclusiveAncestorsOfType<Element>()) {
-    if (!HTMLEditUtils::IsNamedAnchor(element)) {
+    if (!HTMLEditUtils::IsNamedAnchorElement(*element)) {
       continue;
     }
     newRange.SetEnd(EditorRawDOMPoint::After(*element));

@@ -311,7 +311,7 @@
                 data-l10n-id="text-action-select-all"
                 command="cmd_selectAll"/>
       <menuitem id="context-pdfjs-comment-selection"
-                data-l10n-id="text-action-comment-selection"/>
+                data-l10n-id="text-action-comment-selection-1"/>
       <menuitem id="context-pdfjs-highlight-selection"
                 data-l10n-id="text-action-highlight-selection"/>
       <menuitem id="context-reveal-password"
@@ -351,8 +351,6 @@
       <menuitem id="context-take-screenshot"
                 data-l10n-id="main-context-menu-take-screenshot"/>
       <menuseparator id="context-sep-screenshots"/>
-      <menuitem id="context-keywordfield"
-                data-l10n-id="main-context-menu-keyword"/>
       <menuitem id="context-add-engine"
                 data-l10n-id="main-context-menu-add-engine"/>
       <menuitem id="context-searchselect"/>

@@ -48,6 +48,7 @@ pub enum NumberOrAuto<N> {
     ToComputedValue,
     ToResolvedValue,
     ToShmem,
+    ToTyped,
 )]
 #[repr(C)]
 pub struct GenericHyphenateLimitChars<Integer> {
@@ -92,6 +93,7 @@ impl<Integer: ToCss + PartialEq> ToCss for GenericHyphenateLimitChars<Integer> {
     ToComputedValue,
     ToResolvedValue,
     ToShmem,
+    ToTyped,
 )]
 #[repr(C)]
 pub struct GenericInitialLetter<Number, Integer> {
@@ -153,6 +155,7 @@ impl<N: ToCss + Zero, I: ToCss + Zero> ToCss for InitialLetter<N, I> {
     ToCss,
     ToResolvedValue,
     ToShmem,
+    ToTyped,
 )]
 #[allow(missing_docs)]
 pub enum GenericTextDecorationLength<L> {
@@ -161,9 +164,9 @@ pub enum GenericTextDecorationLength<L> {
     FromFont,
 }
 
-/// Text decoration trim values.
+/// Text decoration inset values.
 ///
-/// https://drafts.csswg.org/css-text-decor-4/#propdef-text-decoration-trim
+/// https://drafts.csswg.org/css-text-decor-4/#text-decoration-skip-inset-property
 #[repr(C, u8)]
 #[derive(
     Animate,
@@ -179,8 +182,9 @@ pub enum GenericTextDecorationLength<L> {
     ToComputedValue,
     ToResolvedValue,
     ToShmem,
+    ToTyped,
 )]
-pub enum GenericTextDecorationTrim<L> {
+pub enum GenericTextDecorationInset<L> {
     /// `auto` value
     Auto,
     /// Start and end length values.
@@ -188,25 +192,25 @@ pub enum GenericTextDecorationTrim<L> {
     Length { start: L, end: L },
 }
 
-impl<L: Zero> GenericTextDecorationTrim<L> {
+impl<L: Zero> GenericTextDecorationInset<L> {
     /// Gets the initial value (zero)
     #[inline]
     pub fn get_initial_value() -> Self {
-        GenericTextDecorationTrim::Length {
+        GenericTextDecorationInset::Length {
             start: L::zero(),
             end: L::zero(),
         }
     }
 }
 
-impl<L: ToCss + PartialEq> ToCss for GenericTextDecorationTrim<L> {
+impl<L: ToCss + PartialEq> ToCss for GenericTextDecorationInset<L> {
     fn to_css<W>(&self, dst: &mut CssWriter<W>) -> fmt::Result
     where
         W: Write,
     {
         match self {
-            GenericTextDecorationTrim::Auto => dst.write_str("auto"),
-            GenericTextDecorationTrim::Length { start, end } => {
+            GenericTextDecorationInset::Auto => dst.write_str("auto"),
+            GenericTextDecorationInset::Length { start, end } => {
                 start.to_css(dst)?;
                 if start != end {
                     dst.write_char(' ')?;
@@ -238,6 +242,7 @@ impl<L: ToCss + PartialEq> ToCss for GenericTextDecorationTrim<L> {
     ToCss,
     ToResolvedValue,
     ToShmem,
+    ToTyped,
 )]
 pub struct GenericTextIndent<LengthPercentage> {
     /// The amount of indent to be applied to the inline-start of the first line.

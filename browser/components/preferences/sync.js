@@ -19,6 +19,13 @@ const FXA_LOGIN_FAILED = 2;
 const SYNC_DISCONNECTED = 0;
 const SYNC_CONNECTED = 1;
 
+const BACKUP_ARCHIVE_ENABLED_PREF_NAME = "browser.backup.archive.enabled";
+const BACKUP_RESTORE_ENABLED_PREF_NAME = "browser.backup.restore.enabled";
+
+ChromeUtils.defineESModuleGetters(lazy, {
+  BackupService: "resource:///modules/backup/BackupService.sys.mjs",
+});
+
 var gSyncPane = {
   get page() {
     return document.getElementById("weavePrefsDeck").selectedIndex;
@@ -68,6 +75,26 @@ var gSyncPane = {
     window.addEventListener("unload", onUnload);
 
     xps.ensureLoaded();
+  },
+
+  /**
+   * This method allows us to override any hidden states that were set
+   * during preferences.js init(). Currently, this is used to hide the
+   * backup section if backup is disabled.
+   *
+   * Take caution when trying to flip the hidden state to true since the
+   * element might show up unexpectedly on different pages in about:preferences
+   * since this function will run at the end of preferences.js init().
+   *
+   * See Bug 1999032 to remove this in favor of config-based prefs.
+   */
+  handlePrefControlledSection() {
+    let bs = lazy.BackupService.init();
+
+    if (!bs.archiveEnabledStatus.enabled && !bs.restoreEnabledStatus.enabled) {
+      document.getElementById("backupCategory").hidden = true;
+      document.getElementById("dataBackupGroup").hidden = true;
+    }
   },
 
   _showLoadPage() {
@@ -496,7 +523,7 @@ var gSyncPane = {
    * with the given entrypoint as a query parameter
    * @param entrypoint: An string appended to the query parameters, used in telemtry to differentiate
    * different entrypoints to accounts
-   * */
+   */
   async reSignIn(entrypoint) {
     const url = await FxAccounts.config.promiseConnectAccountURI(entrypoint);
     this.replaceTabWithUrl(url);

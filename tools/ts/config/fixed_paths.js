@@ -64,6 +64,9 @@ exports.fixed = {
   "resource://test/es6module.js": ["js/xpconnect/tests/unit/es6module.js"],
   "resource://test/module.sys.mjs": undefined,
   "resource://test/not_found.mjs": undefined,
+  "resource://test/es6module_dynamic_import_syntax_error.js": undefined,
+  "resource://test/es6module_parse_error.js": undefined,
+  "resource://test/es6module_parse_error_in_import.js": undefined,
   "resource://testing-common/AppInfo.sys.mjs": [
     "testing/modules/AppInfo.sys.mjs",
   ],
@@ -83,6 +86,15 @@ exports.fixed = {
   "resource://testing-common/services/sync/utils.sys.mjs": [
     "services/sync/modules-testing/utils.sys.mjs",
   ],
+  // Map types from node_modules into lit.all.mjs
+  "chrome://global/content/vendor/lit.all.mjs": [
+    "toolkit/content/widgets/vendor/lit.all.d.ts",
+  ],
+  "@lit/reactive-element": [
+    "node_modules/@lit/reactive-element/reactive-element",
+  ],
+  "lit/*": ["node_modules/lit/*"],
+  "lit-html": ["node_modules/lit-html/lit-html"],
   // Needs to be last, to prefer fixed paths above for autocomplete.
   "moz-src:///*": ["./*"],
 };

@@ -897,6 +897,13 @@ export class TranslationsDocument {
   #scheduler;
 
   /**
+   * The script direction of the source language.
+   *
+   * @type {("ltr"|"rtl")}
+   */
+  #sourceScriptDirection;
+
+  /**
    * The script direction of the target language.
    *
    * @type {("ltr"|"rtl")}
@@ -1093,6 +1100,8 @@ export class TranslationsDocument {
     this.#documentLanguage = documentLanguage;
     this.#translationsCache = translationsCache;
     this.#actorReportFirstVisibleChange = reportVisibleChange;
+    this.#sourceScriptDirection =
+      Services.intl.getScriptDirection(documentLanguage);
     this.#targetScriptDirection =
       Services.intl.getScriptDirection(targetLanguage);
     this.#translationsMode = isFindBarOpen ? "content-eager" : "lazy";
@@ -3204,6 +3213,48 @@ export class TranslationsDocument {
   }
 
   /**
+   * Ensure the element and certain structured ancestors use the target
+   * script direction when it differs from the source script direction.
+   *
+   * No-op if the source and target directions match.
+   *
+   * @param {Element | null} element
+   */
+  #maybeUpdateScriptDirection(element) {
+    const targetScriptDirection = this.#targetScriptDirection;
+
+    if (!element || this.#sourceScriptDirection === targetScriptDirection) {
+      return;
+    }
+
+    /** @param {Element?} [el] */
+    const ensureDirection = el => {
+      el?.setAttribute("dir", targetScriptDirection);
+    };
+
+    ensureDirection(element);
+
+    const listItemAncestor = element.closest("li");
+    if (listItemAncestor) {
+      ensureDirection(listItemAncestor);
+      ensureDirection(listItemAncestor.closest("ul, ol"));
+    }
+
+    const tableCell = element.closest("th, td, caption");
+    if (tableCell) {
+      ensureDirection(tableCell);
+
+      const row = tableCell.closest("tr");
+      ensureDirection(row);
+
+      const body = row?.closest("tbody");
+      ensureDirection(body);
+
+      ensureDirection(body?.closest("table"));
+    }
+  }
+
+  /**
    * Updates all nodes that have completed attribute translation requests.
    *
    * This function is called asynchronously, so nodes may already be dead. Before
@@ -3244,16 +3295,21 @@ export class TranslationsDocument {
         } else if (element === targetNode) {
           elementCount++;
 
-          const translationsDocument = this.#domParser.parseFromString(
+          const translationsDocument = this.#domParser.parseFromSafeString(
             `<!DOCTYPE html><div>${translatedContent}</div>`,
             "text/html"
           );
 
           updateElement(translationsDocument, element);
+          this.#maybeUpdateScriptDirection(element);
+
           this.#processedContentNodes.add(targetNode);
         } else {
           textNodeCount++;
+
           targetNode.textContent = translatedContent;
+          this.#maybeUpdateScriptDirection(asElement(targetNode.parentNode));
+
           this.#processedContentNodes.add(targetNode);
         }
 
@@ -5771,13 +5827,19 @@ class TranslationScheduler {
 }
 
 /**
- * Returns true if an HTML element is hidden based on factors such as collapsed state and
+ * Returns true if a node is hidden based on factors such as collapsed state and
  * computed style, otherwise false.
  *
- * @param {HTMLElement} element
+ * @param {Node} node
  * @returns {boolean}
  */
-function isHTMLElementHidden(element) {
+function isNodeHidden(node) {
+  const element = getHTMLElementForStyle(node);
+
+  if (!element) {
+    return true;
+  }
+
   // This is a cheap and easy check that will not compute style or force reflow.
   if (element.hidden) {
     // The element is explicitly hidden.
@@ -5804,6 +5866,15 @@ function isHTMLElementHidden(element) {
       element.offsetHeight ||
       element.getClientRects().length
     )
+  ) {
+    return true;
+  }
+
+  // The element may still have a zero-sized bounding client rectangle.
+  const boundingClientRect = element.getBoundingClientRect();
+  if (
+    boundingClientRect &&
+    (boundingClientRect.width === 0 || boundingClientRect.height === 0)
   ) {
     return true;
   }
@@ -5891,7 +5962,7 @@ function getNodeSpatialContext(node) {
     return {};
   }
 
-  if (isHTMLElementHidden(element)) {
+  if (isNodeHidden(element)) {
     // If the element is hidden, then the spatial context is not important.
     return {};
   }

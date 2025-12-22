@@ -87,8 +87,16 @@ static constexpr RelationData kRelationTypeAtoms[] = {
      RelationType::FLOWS_FROM},
     {nsGkAtoms::aria_details, nullptr, RelationType::DETAILS,
      RelationType::DETAILS_FOR},
+    {nsGkAtoms::commandfor, nullptr, RelationType::DETAILS,
+     RelationType::DETAILS_FOR},
+    {nsGkAtoms::popovertarget, nullptr, RelationType::DETAILS,
+     RelationType::DETAILS_FOR},
+    {nsGkAtoms::target, nullptr, RelationType::DETAILS,
+     RelationType::DETAILS_FOR},
     {nsGkAtoms::aria_errormessage, nullptr, RelationType::ERRORMSG,
      RelationType::ERRORMSG_FOR},
+    {nsGkAtoms::aria_actions, nullptr, RelationType::ACTION,
+     RelationType::ACTION_FOR},
 };
 
 // The count of numbers needed to serialize an nsRect. This is used when
@@ -170,6 +178,9 @@ class CacheKey {
   // nsTArray<int32_t>, no domain
   // As returned by HyperTextAccessibleBase::CachedHyperTextOffsets.
   static constexpr nsStaticAtom* HyperTextOffsets = nsGkAtoms::offset;
+  // bool, CacheDomain::ARIA
+  // Accessible has aria-actions
+  static constexpr nsStaticAtom* HasActions = nsGkAtoms::hasActions;
   // bool, CacheDomain::Actions
   // Whether this image has a longdesc.
   static constexpr nsStaticAtom* HasLongdesc = nsGkAtoms::longdesc;

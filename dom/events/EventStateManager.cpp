@@ -12,6 +12,7 @@
 #include "Units.h"
 #include "WheelHandlingHelper.h"
 #include "imgIContainer.h"
+#include "mozilla/AppShutdown.h"
 #include "mozilla/AsyncEventDispatcher.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/ConnectedAncestorTracker.h"
@@ -151,7 +152,7 @@ static nsITimer* gUserInteractionTimer = nullptr;
 static nsITimerCallback* gUserInteractionTimerCallback = nullptr;
 
 static const double kCursorLoadingTimeout = 1000;  // ms
-MOZ_RUNINIT static AutoWeakFrame gLastCursorSourceFrame;
+MOZ_CONSTINIT static AutoWeakFrame gLastCursorSourceFrame;
 static TimeStamp gLastCursorUpdateTime;
 static TimeStamp gTypingStartTime;
 static TimeStamp gTypingEndTime;
@@ -310,7 +311,10 @@ NS_IMPL_ISUPPORTS(UITimerCallback, nsITimerCallback, nsINamed)
 NS_IMETHODIMP
 UITimerCallback::Notify(nsITimer* aTimer) {
   nsCOMPtr<nsIObserverService> obs = mozilla::services::GetObserverService();
-  if (!obs) return NS_ERROR_FAILURE;
+  // ObserverService shutdown happens after XPCOMShutdownThreads.
+  if (!obs || AppShutdown::IsInOrBeyond(ShutdownPhase::XPCOMShutdownThreads)) {
+    return NS_ERROR_FAILURE;
+  }
   if ((gMouseOrKeyboardEventCounter == mPreviousCount) || !aTimer) {
     gMouseOrKeyboardEventCounter = 0;
     obs->NotifyObservers(nullptr, "user-interaction-inactive", nullptr);
@@ -612,7 +616,7 @@ bool EventStateManager::sNormalLMouseEventInProcess = false;
 int16_t EventStateManager::sCurrentMouseBtn = MouseButton::eNotPressed;
 EventStateManager* EventStateManager::sActiveESM = nullptr;
 EventStateManager* EventStateManager::sCursorSettingManager = nullptr;
-MOZ_RUNINIT AutoWeakFrame EventStateManager::sLastDragOverFrame = nullptr;
+MOZ_CONSTINIT AutoWeakFrame EventStateManager::sLastDragOverFrame{};
 LayoutDeviceIntPoint EventStateManager::sPreLockScreenPoint =
     LayoutDeviceIntPoint(0, 0);
 LayoutDeviceIntPoint EventStateManager::sLastRefPoint = kInvalidRefPoint;
@@ -2127,8 +2131,8 @@ void EventStateManager::DispatchCrossProcessEvent(WidgetEvent* aEvent,
         MOZ_ASSERT(remote->GetBrowserHost());
 
         if (oldRemote && oldRemote != remote) {
-          Unused << NS_WARN_IF(nsContentUtils::GetCommonBrowserParentAncestor(
-                                   remote, oldRemote) != remote);
+          (void)NS_WARN_IF(nsContentUtils::GetCommonBrowserParentAncestor(
+                               remote, oldRemote) != remote);
           remote = oldRemote;
         }
 
@@ -7148,7 +7152,7 @@ nsresult EventStateManager::DoContentCommandReplaceTextEvent(
     // Handle it in focused content process if there is.
     if (BrowserParent* remote = BrowserParent::GetFocused()) {
       if (!aEvent->mOnlyEnabledCheck) {
-        Unused << remote->SendReplaceText(*aEvent);
+        (void)remote->SendReplaceText(*aEvent);
       }
       // XXX The remote process may be not editable right now.  Therefore, this
       // may be different from actual state in the remote process.

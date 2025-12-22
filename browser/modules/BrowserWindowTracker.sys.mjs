@@ -15,13 +15,19 @@ const lazy = {};
 // Lazy getters
 
 XPCOMUtils.defineLazyServiceGetters(lazy, {
-  BrowserHandler: ["@mozilla.org/browser/clh;1", "nsIBrowserHandler"],
+  BrowserHandler: ["@mozilla.org/browser/clh;1", Ci.nsIBrowserHandler],
 });
 
 ChromeUtils.defineESModuleGetters(lazy, {
   HomePage: "resource:///modules/HomePage.sys.mjs",
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
 });
+
+XPCOMUtils.defineLazyPreferenceGetter(
+  lazy,
+  "gPreferWindowsOnCurrentVirtualDesktop",
+  "widget.prefer_windows_on_current_virtual_desktop"
+);
 
 // Constants
 const TAB_EVENTS = ["TabBrowserInserted", "TabSelect"];
@@ -209,7 +215,7 @@ export const BrowserWindowTracker = {
       ) {
         // On Windows, windows on a different virtual desktop (what Windows calls
         // workspaces) are cloaked.
-        if (win.isCloaked) {
+        if (win.isCloaked && lazy.gPreferWindowsOnCurrentVirtualDesktop) {
           // Even if we allow from an inactive workspace, prefer windows that
           // are not cloaked, so that we don't switch workspaces unnecessarily.
           if (!cloakedWin && options.allowFromInactiveWorkspace) {

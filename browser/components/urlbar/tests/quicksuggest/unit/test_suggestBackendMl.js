@@ -7,7 +7,7 @@
 "use strict";
 
 ChromeUtils.defineESModuleGetters(this, {
-  MLSuggest: "resource:///modules/urlbar/private/MLSuggest.sys.mjs",
+  MLSuggest: "moz-src:///browser/components/urlbar/private/MLSuggest.sys.mjs",
   setTimeout: "resource://gre/modules/Timer.sys.mjs",
 });
 
@@ -26,7 +26,7 @@ add_setup(async function init() {
   // Enable Suggest but not the ML backend yet.
   await QuickSuggestTestUtils.ensureQuickSuggestInit({
     prefs: [
-      ["suggest.quicksuggest.nonsponsored", true],
+      ["suggest.quicksuggest.all", true],
       ["suggest.quicksuggest.sponsored", true],
     ],
   });

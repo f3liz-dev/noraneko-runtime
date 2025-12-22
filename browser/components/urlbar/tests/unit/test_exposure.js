@@ -7,7 +7,7 @@
 
 ChromeUtils.defineESModuleGetters(this, {
   UrlbarProviderQuickSuggest:
-    "resource:///modules/UrlbarProviderQuickSuggest.sys.mjs",
+    "moz-src:///browser/components/urlbar/UrlbarProviderQuickSuggest.sys.mjs",
 });
 
 add_setup(async function setup() {
@@ -33,7 +33,7 @@ add_setup(async function setup() {
       },
     ],
     prefs: [
-      ["suggest.quicksuggest.nonsponsored", true],
+      ["suggest.quicksuggest.all", true],
       ["suggest.quicksuggest.sponsored", true],
       ["quicksuggest.ampTopPickCharThreshold", 0],
     ],

@@ -8,16 +8,11 @@
 // a block to prevent accidentally leaking globals onto `window`.
 {
   class MozTabSplitViewWrapper extends MozXULElement {
-    static markup = `
-      <vbox class="tab-split-view-container" pack="center">
-      </vbox>
-      `;
-
-    /** @type {MozXULElement} */
-    #containerElement;
-
     /** @type {MutationObserver} */
     #tabChangeObserver;
+
+    /** @type {MozTabbrowserTab[]} */
+    #tabs = [];
 
     /**
      * @returns {boolean}
@@ -38,11 +33,11 @@
     }
 
     connectedCallback() {
-      this.#observeTabChanges();
-
       // Set up TabSelect listener, as this gets
       // removed in disconnectedCallback
       this.ownerGlobal.addEventListener("TabSelect", this);
+
+      this.#observeTabChanges();
 
       if (this._initialized) {
         return;
@@ -51,30 +46,40 @@
       this._initialized = true;
 
       this.textContent = "";
-      this.appendChild(this.constructor.fragment);
-
-      this.#containerElement = this.querySelector(".tab-split-view-container");
 
       // Mirroring MozTabbrowserTab
-      this.#containerElement.container = gBrowser.tabContainer;
-      this.wrapper = this.#containerElement;
+      this.container = gBrowser.tabContainer;
     }
 
     disconnectedCallback() {
       this.#tabChangeObserver?.disconnect();
       this.ownerGlobal.removeEventListener("TabSelect", this);
+      this.#deactivate();
     }
 
     #observeTabChanges() {
       if (!this.#tabChangeObserver) {
         this.#tabChangeObserver = new window.MutationObserver(() => {
           if (this.tabs.length) {
-            let hasActiveTab = this.tabs.some(tab => tab.selected);
-            this.hasActiveTab = hasActiveTab;
+            this.hasActiveTab = this.tabs.some(tab => tab.selected);
+            this.tabs.forEach((tab, index) => {
+              // Renumber tabs so that a11y tools can tell users that a given
+              // tab is "1 of 2" in the split view, for example.
+              tab.setAttribute("aria-posinset", index + 1);
+              tab.setAttribute("aria-setsize", this.tabs.length);
+            });
+          } else {
+            this.remove();
+          }
+
+          if (this.tabs.length < 2) {
+            this.unsplitTabs();
           }
         });
       }
-      this.#tabChangeObserver.observe(this, { childList: true });
+      this.#tabChangeObserver.observe(this, {
+        childList: true,
+      });
     }
 
     get splitViewId() {
@@ -89,8 +94,32 @@
      * @returns {MozTabbrowserTab[]}
      */
     get tabs() {
-      return Array.from(this.#containerElement.children).filter(node =>
-        node.matches("tab")
+      return Array.from(this.children).filter(node => node.matches("tab"));
+    }
+
+    /**
+     * Show all Split View tabs in the content area.
+     */
+    #activate() {
+      gBrowser.showSplitViewPanels(this.#tabs);
+      this.dispatchEvent(
+        new CustomEvent("TabSplitViewActivate", {
+          detail: { tabs: this.#tabs },
+          bubbles: true,
+        })
+      );
+    }
+
+    /**
+     * Remove Split View tabs from the content area.
+     */
+    #deactivate() {
+      gBrowser.hideSplitViewPanels(this.#tabs);
+      this.dispatchEvent(
+        new CustomEvent("TabSplitViewDeactivate", {
+          detail: { tabs: this.#tabs },
+          bubbles: true,
+        })
       );
     }
 
@@ -111,7 +140,14 @@
                 tabIndex: gBrowser.tabs.at(-1)._tPos + 1,
                 selectTab: tab.selected,
               });
+        this.#tabs.push(tabToMove);
         gBrowser.moveTabToSplitView(tabToMove, this);
+        if (tab === gBrowser.selectedTab) {
+          this.hasActiveTab = true;
+        }
+      }
+      if (this.hasActiveTab) {
+        this.#activate();
       }
     }
 
@@ -126,7 +162,7 @@
      * Close all tabs in the split view wrapper and delete the split view.
      */
     close() {
-      gBrowser.removeSplitView(this);
+      gBrowser.removeTabs(this.#tabs);
     }
 
     /**
@@ -134,6 +170,11 @@
      */
     on_TabSelect(event) {
       this.hasActiveTab = event.target.splitview === this;
+      if (this.hasActiveTab) {
+        this.#activate();
+      } else {
+        this.#deactivate();
+      }
     }
   }
 

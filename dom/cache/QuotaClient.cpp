@@ -7,9 +7,8 @@
 #include "DBAction.h"
 #include "FileUtilsImpl.h"
 #include "QuotaClientImpl.h"
-#include "mozilla/DebugOnly.h"
+#include "mozilla/GeckoTrace.h"
 #include "mozilla/ResultExtensions.h"
-#include "mozilla/Unused.h"
 #include "mozilla/dom/cache/DBSchema.h"
 #include "mozilla/dom/cache/Manager.h"
 #include "mozilla/dom/quota/PersistenceType.h"
@@ -141,6 +140,8 @@ CacheQuotaClient::Type CacheQuotaClient::GetType() { return DOMCACHE; }
 Result<UsageInfo, nsresult> CacheQuotaClient::InitOrigin(
     PersistenceType aPersistenceType, const OriginMetadata& aOriginMetadata,
     const AtomicBool& aCanceled) {
+  GECKO_TRACE_SCOPE("dom::cache", "CacheQuotaClient::InitOrigin");
+
   AssertIsOnIOThread();
   MOZ_ASSERT(aOriginMetadata.mPersistenceType == aPersistenceType);
 
@@ -427,7 +428,7 @@ nsresult CacheQuotaClient::RestorePaddingFileInternal(
   QM_TRY_INSPECT(const int64_t& dummyPaddingSize,
                  DirectoryPaddingRestore(*aBaseDir, *aConn,
                                          /* aMustRestore */ true));
-  Unused << dummyPaddingSize;
+  (void)dummyPaddingSize;
 
   return NS_OK;
 }

@@ -12,7 +12,6 @@ import androidx.annotation.OpenForTesting
 import androidx.annotation.VisibleForTesting
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.lifecycle.ProcessLifecycleOwner
-import androidx.preference.PreferenceManager
 import androidx.work.Configuration.Builder
 import androidx.work.Configuration.Provider
 import kotlinx.coroutines.CoroutineScope
@@ -40,8 +39,8 @@ import org.mozilla.focus.telemetry.FactsProcessor
 import org.mozilla.focus.telemetry.ProfilerMarkerFactProcessor
 import org.mozilla.focus.utils.AppConstants
 import kotlin.coroutines.CoroutineContext
+import mozilla.components.support.AppServicesInitializer.Config as AppServiceConfig
 
-@Suppress("TooManyFunctions")
 open class FocusApplication : LocaleAwareApplication(), Provider, CoroutineScope {
     private var job = Job()
     override val coroutineContext: CoroutineContext
@@ -64,8 +63,6 @@ open class FocusApplication : LocaleAwareApplication(), Provider, CoroutineScope
 
         if (isMainProcess()) {
             initializeNimbus()
-
-            PreferenceManager.setDefaultValues(this, R.xml.settings, false)
 
             setTheme(this)
             components.engine.warmUp()
@@ -146,7 +143,9 @@ open class FocusApplication : LocaleAwareApplication(), Provider, CoroutineScope
      * thread, early in the app startup sequence.
      */
     private fun beginSetupMegazord() {
-        AppServicesInitializer.init(components.crashReporter)
+        AppServicesInitializer.init(
+            AppServiceConfig(components.crashReporter),
+        )
     }
 
     /**

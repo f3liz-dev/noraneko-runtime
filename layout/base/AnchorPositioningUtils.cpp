@@ -6,6 +6,7 @@
 
 #include "AnchorPositioningUtils.h"
 
+#include "ScrollContainerFrame.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/dom/Document.h"
@@ -24,6 +25,15 @@
 namespace mozilla {
 
 namespace {
+
+bool DoTreeScopedPropertiesOfElementApplyToContent(
+    const nsINode* aStylePropertyElement, const nsINode* aStyledContent) {
+  // XXX: The proper implementation is deferred to bug 1988038
+  // concerning tree-scoped name resolution. For now, we just
+  // keep the shadow and light trees separate.
+  return aStylePropertyElement->GetContainingDocumentOrShadowRoot() ==
+         aStyledContent->GetContainingDocumentOrShadowRoot();
+}
 
 /**
  * Checks for the implementation of `anchor-scope`:
@@ -342,12 +352,65 @@ bool IsAcceptableAnchorElement(
 
 }  // namespace
 
+AnchorPosReferenceData::Result AnchorPosReferenceData::InsertOrModify(
+    const nsAtom* aAnchorName, bool aNeedOffset) {
+  bool exists = true;
+  auto* result = &mMap.LookupOrInsertWith(aAnchorName, [&exists]() {
+    exists = false;
+    return Nothing{};
+  });
+
+  if (!exists) {
+    return {false, result};
+  }
+
+  // We tried to resolve before.
+  if (result->isNothing()) {
+    // We know this reference is invalid.
+    return {true, result};
+  }
+  // Previous resolution found a valid anchor.
+  if (!aNeedOffset) {
+    // Size is guaranteed to be populated on resolution.
+    return {true, result};
+  }
+
+  // Previous resolution may have been for size only, in which case another
+  // anchor resolution is still required.
+  return {result->ref().mOffsetData.isSome(), result};
+}
+
+const AnchorPosReferenceData::Value* AnchorPosReferenceData::Lookup(
+    const nsAtom* aAnchorName) const {
+  return mMap.Lookup(aAnchorName).DataPtrOrNull();
+}
+
+AnchorPosDefaultAnchorCache::AnchorPosDefaultAnchorCache(
+    const nsIFrame* aAnchor, const nsIFrame* aScrollContainer)
+    : mAnchor{aAnchor}, mScrollContainer{aScrollContainer} {
+  MOZ_ASSERT_IF(
+      aAnchor,
+      nsLayoutUtils::GetNearestScrollContainerFrame(
+          const_cast<nsContainerFrame*>(aAnchor->GetParent()),
+          nsLayoutUtils::SCROLLABLE_SAME_DOC |
+              nsLayoutUtils::SCROLLABLE_INCLUDE_HIDDEN) == mScrollContainer);
+}
+
 nsIFrame* AnchorPositioningUtils::FindFirstAcceptableAnchor(
     const nsAtom* aName, const nsIFrame* aPositionedFrame,
     const nsTArray<nsIFrame*>& aPossibleAnchorFrames) {
   LazyAncestorHolder positionedFrameAncestorHolder(aPositionedFrame);
+  const auto* positionedContent = aPositionedFrame->GetContent();
+
   for (auto it = aPossibleAnchorFrames.rbegin();
        it != aPossibleAnchorFrames.rend(); ++it) {
+    const nsIFrame* possibleAnchorFrame = *it;
+    if (!DoTreeScopedPropertiesOfElementApplyToContent(
+            possibleAnchorFrame->GetContent(), positionedContent)) {
+      // Skip anchors in different shadow trees.
+      continue;
+    }
+
     // Check if the possible anchor is an acceptable anchor element.
     if (IsAcceptableAnchorElement(*it, aName, aPositionedFrame,
                                   positionedFrameAncestorHolder)) {
@@ -375,14 +438,22 @@ static const nsIFrame* TraverseUpToContainerChild(const nsIFrame* aContainer,
   }
 }
 
-Maybe<AnchorPosInfo> AnchorPositioningUtils::GetAnchorPosRect(
+static const nsIFrame* GetAnchorOf(const nsIFrame* aPositioned,
+                                   const nsAtom* aAnchorName) {
+  const auto* presShell = aPositioned->PresShell();
+  MOZ_ASSERT(presShell, "No PresShell for frame?");
+  return presShell->GetAnchorPosAnchor(aAnchorName, aPositioned);
+}
+
+Maybe<nsRect> AnchorPositioningUtils::GetAnchorPosRect(
     const nsIFrame* aAbsoluteContainingBlock, const nsIFrame* aAnchor,
-    bool aCBRectIsvalid,
-    Maybe<AnchorPosResolutionData>* aReferencedAnchorsEntry) {
+    bool aCBRectIsvalid) {
   auto rect = [&]() -> Maybe<nsRect> {
     if (aCBRectIsvalid) {
-      const nsRect result = aAnchor->GetRectRelativeToSelf();
-      const auto offset = aAnchor->GetOffsetTo(aAbsoluteContainingBlock);
+      const nsRect result =
+          nsLayoutUtils::GetCombinedFragmentRects(aAnchor, true);
+      const auto offset =
+          aAnchor->GetOffsetToIgnoringScrolling(aAbsoluteContainingBlock);
       // Easy, just use the existing function.
       return Some(result + offset);
     }
@@ -399,13 +470,14 @@ Maybe<AnchorPosInfo> AnchorPositioningUtils::GetAnchorPosRect(
 
     if (aAnchor == containerChild) {
       // Anchor is the direct child of anchor's CBWM.
-      return Some(aAnchor->GetRect());
+      return Some(nsLayoutUtils::GetCombinedFragmentRects(aAnchor, false));
     }
 
     // TODO(dshin): Already traversed up to find `containerChild`, and we're
     // going to do it again here, which feels a little wasteful.
-    const nsRect rectToContainerChild = aAnchor->GetRectRelativeToSelf();
-    const auto offset = aAnchor->GetOffsetTo(containerChild);
+    const nsRect rectToContainerChild =
+        nsLayoutUtils::GetCombinedFragmentRects(aAnchor, true);
+    const auto offset = aAnchor->GetOffsetToIgnoringScrolling(containerChild);
     return Some(rectToContainerChild + offset + containerChild->GetPosition());
   }();
   return rect.map([&](const nsRect& aRect) {
@@ -416,21 +488,383 @@ Maybe<AnchorPosInfo> AnchorPositioningUtils::GetAnchorPosRect(
     const auto border = aAbsoluteContainingBlock->GetUsedBorder();
     const nsPoint borderTopLeft{border.left, border.top};
     const auto rect = aRect - borderTopLeft;
-    if (aReferencedAnchorsEntry) {
-      // If a partially resolved entry exists, make sure that it matches what we
-      // have now.
-      MOZ_ASSERT_IF(*aReferencedAnchorsEntry,
-                    aReferencedAnchorsEntry->ref().mSize == rect.Size());
-      *aReferencedAnchorsEntry = Some(AnchorPosResolutionData{
-          rect.Size(),
-          Some(rect.TopLeft()),
+    return rect;
+  });
+}
+
+Maybe<AnchorPosInfo> AnchorPositioningUtils::ResolveAnchorPosRect(
+    const nsIFrame* aPositioned, const nsIFrame* aAbsoluteContainingBlock,
+    const nsAtom* aAnchorName, bool aCBRectIsvalid,
+    AnchorPosResolutionCache* aResolutionCache) {
+  MOZ_ASSERT(aPositioned->HasAnyStateBits(NS_FRAME_OUT_OF_FLOW));
+  MOZ_ASSERT(aPositioned->GetParent() == aAbsoluteContainingBlock);
+
+  if (!aPositioned) {
+    return Nothing{};
+  }
+
+  const auto* anchorName = GetUsedAnchorName(aPositioned, aAnchorName);
+  if (!anchorName) {
+    return Nothing{};
+  }
+
+  Maybe<AnchorPosResolutionData>* entry = nullptr;
+  if (aResolutionCache) {
+    const auto result =
+        aResolutionCache->mReferenceData->InsertOrModify(anchorName, true);
+    if (result.mAlreadyResolved) {
+      MOZ_ASSERT(result.mEntry, "Entry exists but null?");
+      return result.mEntry->map([&](const AnchorPosResolutionData& aData) {
+        MOZ_ASSERT(aData.mOffsetData, "Missing anchor offset resolution.");
+        const auto& offsetData = aData.mOffsetData.ref();
+        return AnchorPosInfo{nsRect{offsetData.mOrigin, aData.mSize},
+                             offsetData.mCompensatesForScroll};
       });
     }
-    return AnchorPosInfo{
-        .mRect = rect,
-        .mContainingBlock = aAbsoluteContainingBlock,
-    };
+    entry = result.mEntry;
+  }
+
+  const auto* anchor = GetAnchorOf(aPositioned, anchorName);
+  if (!anchor) {
+    // If we have a cached entry, just check that it resolved to nothing last
+    // time as well.
+    MOZ_ASSERT_IF(entry, entry->isNothing());
+    return Nothing{};
+  }
+
+  const auto result =
+      GetAnchorPosRect(aAbsoluteContainingBlock, anchor, aCBRectIsvalid);
+  return result.map([&](const nsRect& aRect) {
+    bool compensatesForScroll = false;
+    DistanceToNearestScrollContainer distanceToNearestScrollContainer;
+    if (aResolutionCache) {
+      MOZ_ASSERT(entry);
+      // Update the cache.
+      compensatesForScroll = [&]() {
+        auto& defaultAnchorCache = aResolutionCache->mDefaultAnchorCache;
+        if (!aAnchorName) {
+          // Explicitly resolved default anchor for the first time - populate
+          // the cache.
+          defaultAnchorCache.mAnchor = anchor;
+          const auto [scrollContainer, distance] =
+              AnchorPositioningUtils::GetNearestScrollFrame(anchor);
+          distanceToNearestScrollContainer = distance;
+          defaultAnchorCache.mScrollContainer = scrollContainer;
+          aResolutionCache->mReferenceData->mDistanceToDefaultScrollContainer =
+              distance;
+          aResolutionCache->mReferenceData->mDefaultAnchorName = anchorName;
+          // This is the default anchor, so scroll compensated by definition.
+          return true;
+        }
+        if (defaultAnchorCache.mAnchor == anchor) {
+          // This is referring to the default anchor, so scroll compensated by
+          // definition.
+          return true;
+        }
+        const auto [scrollContainer, distance] =
+            AnchorPositioningUtils::GetNearestScrollFrame(anchor);
+        distanceToNearestScrollContainer = distance;
+        return scrollContainer ==
+               aResolutionCache->mDefaultAnchorCache.mScrollContainer;
+      }();
+      // If a partially resolved entry exists, make sure that it matches what we
+      // have now.
+      MOZ_ASSERT_IF(*entry, entry->ref().mSize == aRect.Size());
+      *entry = Some(AnchorPosResolutionData{
+          aRect.Size(),
+          Some(AnchorPosOffsetData{aRect.TopLeft(), compensatesForScroll,
+                                   distanceToNearestScrollContainer}),
+      });
+    }
+    return AnchorPosInfo{aRect, compensatesForScroll};
   });
+}
+
+Maybe<nsSize> AnchorPositioningUtils::ResolveAnchorPosSize(
+    const nsIFrame* aPositioned, const nsAtom* aAnchorName,
+    AnchorPosResolutionCache* aResolutionCache) {
+  const auto* anchorName = GetUsedAnchorName(aPositioned, aAnchorName);
+  if (!anchorName) {
+    return Nothing{};
+  }
+  Maybe<AnchorPosResolutionData>* entry = nullptr;
+  auto* referencedAnchors =
+      aResolutionCache ? aResolutionCache->mReferenceData : nullptr;
+  if (referencedAnchors) {
+    const auto result = referencedAnchors->InsertOrModify(anchorName, false);
+    if (result.mAlreadyResolved) {
+      MOZ_ASSERT(result.mEntry, "Entry exists but null?");
+      return result.mEntry->map(
+          [](const AnchorPosResolutionData& aData) { return aData.mSize; });
+    }
+    entry = result.mEntry;
+  }
+  const auto* anchor = GetAnchorOf(aPositioned, anchorName);
+  if (!anchor) {
+    return Nothing{};
+  }
+  const auto size = nsLayoutUtils::GetCombinedFragmentRects(anchor).Size();
+  if (entry) {
+    *entry = Some(AnchorPosResolutionData{size, Nothing{}});
+  }
+  return Some(size);
+}
+
+/**
+ * Returns an equivalent StylePositionArea that contains:
+ * [
+ *   [ left | center | right | span-left | span-right | span-all]
+ *   [ top | center | bottom | span-top | span-bottom | span-all]
+ * ]
+ */
+static StylePositionArea ToPhysicalPositionArea(StylePositionArea aPosArea,
+                                                WritingMode aCbWM,
+                                                WritingMode aPosWM) {
+  StyleWritingMode cbwm{aCbWM.GetBits()};
+  StyleWritingMode wm{aPosWM.GetBits()};
+  Servo_PhysicalizePositionArea(&aPosArea, &cbwm, &wm);
+  return aPosArea;
+}
+
+nsRect AnchorPositioningUtils::AdjustAbsoluteContainingBlockRectForPositionArea(
+    const nsRect& aAnchorRect, const nsRect& aCBRect, WritingMode aPositionedWM,
+    WritingMode aCBWM, const StylePositionArea& aPosArea,
+    StylePositionArea* aOutResolvedArea) {
+  // Get the boundaries of 3x3 grid in CB's frame space. The edges of the
+  // default anchor box are clamped to the bounds of the CB, even if that
+  // results in zero width/height cells.
+  //
+  //          ltrEdges[0]  ltrEdges[1]  ltrEdges[2]  ltrEdges[3]
+  //              |            |            |            |
+  // ttbEdges[0]  +------------+------------+------------+
+  //              |            |            |            |
+  // ttbEdges[1]  +------------+------------+------------+
+  //              |            |            |            |
+  // ttbEdges[2]  +------------+------------+------------+
+  //              |            |            |            |
+  // ttbEdges[3]  +------------+------------+------------+
+
+  const nsRect gridRect = aCBRect.Union(aAnchorRect);
+  nscoord ltrEdges[4] = {gridRect.x, aAnchorRect.x,
+                         aAnchorRect.x + aAnchorRect.width,
+                         gridRect.x + gridRect.width};
+  nscoord ttbEdges[4] = {gridRect.y, aAnchorRect.y,
+                         aAnchorRect.y + aAnchorRect.height,
+                         gridRect.y + gridRect.height};
+  ltrEdges[1] = std::clamp(ltrEdges[1], ltrEdges[0], ltrEdges[3]);
+  ltrEdges[2] = std::clamp(ltrEdges[2], ltrEdges[0], ltrEdges[3]);
+  ttbEdges[1] = std::clamp(ttbEdges[1], ttbEdges[0], ttbEdges[3]);
+  ttbEdges[2] = std::clamp(ttbEdges[2], ttbEdges[0], ttbEdges[3]);
+
+  nsRect res = gridRect;
+
+  // PositionArea, resolved to only contain Left/Right/Top/Bottom values.
+  StylePositionArea posArea =
+      ToPhysicalPositionArea(aPosArea, aCBWM, aPositionedWM);
+  *aOutResolvedArea = posArea;
+
+  nscoord right = ltrEdges[3];
+  if (posArea.first == StylePositionAreaKeyword::Left) {
+    right = ltrEdges[1];
+  } else if (posArea.first == StylePositionAreaKeyword::SpanLeft) {
+    right = ltrEdges[2];
+  } else if (posArea.first == StylePositionAreaKeyword::Center) {
+    res.x = ltrEdges[1];
+    right = ltrEdges[2];
+  } else if (posArea.first == StylePositionAreaKeyword::SpanRight) {
+    res.x = ltrEdges[1];
+  } else if (posArea.first == StylePositionAreaKeyword::Right) {
+    res.x = ltrEdges[2];
+  } else if (posArea.first == StylePositionAreaKeyword::SpanAll) {
+    // no adjustment
+  } else {
+    MOZ_ASSERT_UNREACHABLE("Bad value from ToPhysicalPositionArea");
+  }
+  res.width = right - res.x;
+
+  nscoord bottom = ttbEdges[3];
+  if (posArea.second == StylePositionAreaKeyword::Top) {
+    bottom = ttbEdges[1];
+  } else if (posArea.second == StylePositionAreaKeyword::SpanTop) {
+    bottom = ttbEdges[2];
+  } else if (posArea.second == StylePositionAreaKeyword::Center) {
+    res.y = ttbEdges[1];
+    bottom = ttbEdges[2];
+  } else if (posArea.second == StylePositionAreaKeyword::SpanBottom) {
+    res.y = ttbEdges[1];
+  } else if (posArea.second == StylePositionAreaKeyword::Bottom) {
+    res.y = ttbEdges[2];
+  } else if (posArea.second == StylePositionAreaKeyword::SpanAll) {
+    // no adjustment
+  } else {
+    MOZ_ASSERT_UNREACHABLE("Bad value from ToPhysicalPositionArea");
+  }
+  res.height = bottom - res.y;
+
+  return res;
+}
+
+AnchorPositioningUtils::NearestScrollFrameInfo
+AnchorPositioningUtils::GetNearestScrollFrame(const nsIFrame* aFrame) {
+  if (!aFrame) {
+    return {nullptr, {}};
+  }
+  uint32_t distance = 1;
+  // `GetNearestScrollContainerFrame` will return the incoming frame if it's a
+  // scroll frame, so nudge to parent.
+  for (const nsIFrame* f = aFrame->GetParent(); f; f = f->GetParent()) {
+    if (f->IsScrollContainerOrSubclass()) {
+      return {f, DistanceToNearestScrollContainer{distance}};
+    }
+    distance++;
+  }
+  return {nullptr, {}};
+}
+
+nsPoint AnchorPositioningUtils::GetScrollOffsetFor(
+    PhysicalAxes aAxes, const nsIFrame* aPositioned,
+    const AnchorPosDefaultAnchorCache& aDefaultAnchorCache) {
+  MOZ_ASSERT(aPositioned);
+  if (!aDefaultAnchorCache.mAnchor || aAxes.isEmpty()) {
+    return nsPoint{};
+  }
+  nsPoint offset;
+  const bool trackHorizontal = aAxes.contains(PhysicalAxis::Horizontal);
+  const bool trackVertical = aAxes.contains(PhysicalAxis::Vertical);
+  // TODO(dshin, bug 1991489): Traverse properly, in case anchor and positioned
+  // elements are in different continuation frames of the absolute containing
+  // block.
+  const auto* absoluteContainingBlock = aPositioned->GetParent();
+  if (GetNearestScrollFrame(aPositioned).mScrollContainer ==
+      aDefaultAnchorCache.mScrollContainer) {
+    // Would scroll together anyway, skip.
+    return nsPoint{};
+  }
+  // Grab the accumulated offset up to, but not including, the abspos
+  // container.
+  for (const auto* f = aDefaultAnchorCache.mScrollContainer;
+       f && f != absoluteContainingBlock; f = f->GetParent()) {
+    if (const ScrollContainerFrame* scrollFrame = do_QueryFrame(f)) {
+      const auto o = scrollFrame->GetScrollPosition();
+      if (trackHorizontal) {
+        offset.x += o.x;
+      }
+      if (trackVertical) {
+        offset.y += o.y;
+      }
+    }
+  }
+  return offset;
+}
+
+// Out of line to avoid having to include AnchorPosReferenceData from nsIFrame.h
+void DeleteAnchorPosReferenceData(AnchorPosReferenceData* aData) {
+  delete aData;
+}
+
+const nsAtom* AnchorPositioningUtils::GetUsedAnchorName(
+    const nsIFrame* aPositioned, const nsAtom* aAnchorName) {
+  if (aAnchorName && !aAnchorName->IsEmpty()) {
+    return aAnchorName;
+  }
+
+  const auto defaultAnchor = aPositioned->StylePosition()->mPositionAnchor;
+  if (defaultAnchor.IsIdent()) {
+    return defaultAnchor.AsIdent().AsAtom();
+  }
+
+  if (aPositioned->Style()->IsPseudoElement()) {
+    return nsGkAtoms::AnchorPosImplicitAnchor;
+  }
+
+  if (const nsIContent* content = aPositioned->GetContent()) {
+    if (const auto* element = content->AsElement()) {
+      if (element->GetPopoverData()) {
+        return nsGkAtoms::AnchorPosImplicitAnchor;
+      }
+    }
+  }
+
+  return nullptr;
+}
+
+const nsIFrame* AnchorPositioningUtils::GetAnchorPosImplicitAnchor(
+    const nsIFrame* aFrame) {
+  const auto* frameContent = aFrame->GetContent();
+  const bool hasElement = frameContent && frameContent->IsElement();
+  if (!aFrame->Style()->IsPseudoElement() && !hasElement) {
+    return nullptr;
+  }
+
+  if (MOZ_LIKELY(hasElement)) {
+    const auto* element = frameContent->AsElement();
+    MOZ_ASSERT(element);
+    const dom::PopoverData* popoverData = element->GetPopoverData();
+    if (MOZ_UNLIKELY(popoverData)) {
+      if (const RefPtr<dom::Element>& invoker = popoverData->GetInvoker()) {
+        return invoker->GetPrimaryFrame();
+      }
+    }
+  }
+
+  const auto* pseudoRoot = aFrame->GetClosestNativeAnonymousSubtreeRoot();
+  if (!pseudoRoot) {
+    return nullptr;
+  }
+
+  const auto* pseudoRootFrame = pseudoRoot->GetPrimaryFrame();
+  if (!pseudoRootFrame) {
+    return nullptr;
+  }
+
+  return pseudoRootFrame->HasAnyStateBits(NS_FRAME_OUT_OF_FLOW)
+             ? pseudoRootFrame->GetPlaceholderFrame()->GetParent()
+             : pseudoRootFrame->GetParent();
+}
+
+AnchorPositioningUtils::ContainingBlockInfo
+AnchorPositioningUtils::ContainingBlockInfo::ExplicitCBFrameSize(
+    const nsRect& aContainingBlockRect) {
+  // TODO(dshin, bug 1989292): Ideally, this takes both local containing rect +
+  // scrollable containing rect, and one is picked here.
+  return ContainingBlockInfo{aContainingBlockRect};
+}
+
+AnchorPositioningUtils::ContainingBlockInfo
+AnchorPositioningUtils::ContainingBlockInfo::UseCBFrameSize(
+    const nsIFrame* aPositioned) {
+  // TODO(dshin, bug 1989292): This just gets local containing block.
+  const auto* cb = aPositioned->GetParent();
+  MOZ_ASSERT(cb);
+  if (cb->Style()->GetPseudoType() == PseudoStyleType::scrolledContent) {
+    cb = aPositioned->GetParent();
+  }
+  return ContainingBlockInfo{cb->GetPaddingRectRelativeToSelf()};
+}
+
+bool AnchorPositioningUtils::FitsInContainingBlock(
+    const ContainingBlockInfo& aContainingBlockInfo,
+    const nsIFrame* aPositioned, const AnchorPosReferenceData* aReferenceData) {
+  MOZ_ASSERT(aPositioned->GetProperty(nsIFrame::AnchorPosReferences()) ==
+             aReferenceData);
+  const auto originalContainingBlockRect =
+      aContainingBlockInfo.GetContainingBlockRect();
+  const auto overflowCheckRect = aReferenceData->mContainingBlockRect -
+                                 aReferenceData->mDefaultScrollShift;
+  const auto rect = [&]() {
+    auto rect = aPositioned->GetMarginRect();
+    const auto* cb = aPositioned->GetParent();
+    if (cb->Style()->GetPseudoType() != PseudoStyleType::scrolledContent) {
+      return rect;
+    }
+    const ScrollContainerFrame* scrollContainer =
+        do_QueryFrame(cb->GetParent());
+    return rect - scrollContainer->GetScrollPosition();
+  }();
+
+  return overflowCheckRect.Intersect(originalContainingBlockRect)
+      .Union(originalContainingBlockRect)
+      .Contains(rect);
 }
 
 }  // namespace mozilla

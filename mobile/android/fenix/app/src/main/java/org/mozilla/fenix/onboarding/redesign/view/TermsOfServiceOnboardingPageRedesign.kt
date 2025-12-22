@@ -5,17 +5,16 @@
 package org.mozilla.fenix.onboarding.redesign.view
 
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -27,9 +26,10 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTag
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
-import mozilla.components.compose.base.button.PrimaryButton
+import mozilla.components.compose.base.button.FilledButton
 import org.mozilla.fenix.R
 import org.mozilla.fenix.compose.LinkText
 import org.mozilla.fenix.compose.LinkTextState
@@ -50,25 +50,33 @@ fun TermsOfServiceOnboardingPageRedesign(
     pageState: OnboardingPageState,
     eventHandler: OnboardingTermsOfServiceEventHandler,
 ) {
-    Card {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
+    ) {
         Column(
-            modifier = Modifier
-                .background(FirefoxTheme.colors.layer1)
-                .fillMaxSize()
-                .padding(horizontal = 16.dp, vertical = 24.dp)
-                .verticalScroll(rememberScrollState()),
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.SpaceBetween,
         ) {
-            Header(pageState)
+            Spacer(modifier = Modifier.weight(TITLE_TOP_SPACER_WEIGHT))
 
-            Spacer(Modifier.weight(1f))
+            Column(
+                modifier = Modifier
+                    .weight(CONTENT_WEIGHT)
+                    .verticalScroll(rememberScrollState()),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Header(pageState)
 
-            pageState.termsOfService?.let { BodyText(it, eventHandler) }
+                Spacer(Modifier.weight(1f))
 
-            Spacer(Modifier.height(26.dp))
+                pageState.termsOfService?.let { BodyText(it, eventHandler) }
 
-            PrimaryButton(
+                Spacer(Modifier.height(26.dp))
+            }
+
+            FilledButton(
                 text = pageState.primaryButton.text,
                 modifier = Modifier
                     .width(width = FirefoxTheme.layout.size.maxWidth.small)
@@ -78,10 +86,10 @@ fun TermsOfServiceOnboardingPageRedesign(
                 onClick = pageState.primaryButton.onClick,
             )
         }
+    }
 
-        LaunchedEffect(pageState) {
-            pageState.onRecordImpressionEvent()
-        }
+    LaunchedEffect(pageState) {
+        pageState.onRecordImpressionEvent()
     }
 }
 
@@ -97,19 +105,15 @@ private fun Header(pageState: OnboardingPageState) {
 
     Spacer(Modifier.height(20.dp))
 
-    Column(
-        modifier = Modifier.padding(horizontal = 4.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Text(
-            text = pageState.title,
-            color = FirefoxTheme.colors.textPrimary,
-            textAlign = TextAlign.Center,
-            style = MaterialTheme.typography.headlineMedium,
-        )
+    Text(
+        text = pageState.title,
+        textAlign = TextAlign.Center,
+        style = MaterialTheme.typography.headlineMedium,
+    )
 
-        pageState.termsOfService?.let { Subheaders(it) }
-    }
+    Spacer(Modifier.height(10.dp))
+
+    pageState.termsOfService?.let { Subheaders(it) }
 }
 
 @Composable
@@ -133,7 +137,7 @@ private fun SubHeaderText(text: String) {
     Text(
         text = text,
         style = FirefoxTheme.typography.body2.copy(
-            color = FirefoxTheme.colors.textSecondary,
+            color = MaterialTheme.colorScheme.secondary,
             textAlign = TextAlign.Center,
         ),
     )
@@ -186,13 +190,14 @@ private fun BodyLinkText(
 ) {
     val style = FirefoxTheme.typography.caption.copy(
         textAlign = TextAlign.Start,
-        color = FirefoxTheme.colors.textSecondary,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
 
     LinkText(
         text = text,
         linkTextStates = listOf(linkState),
         style = style,
+        linkTextDecoration = TextDecoration.Underline,
         shouldApplyAccessibleSize = true,
     )
 }

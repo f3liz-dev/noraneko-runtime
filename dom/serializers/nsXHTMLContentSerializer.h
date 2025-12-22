@@ -13,7 +13,6 @@
 #ifndef nsXHTMLContentSerializer_h__
 #define nsXHTMLContentSerializer_h__
 
-#include "mozilla/Attributes.h"
 #include "nsString.h"
 #include "nsTArray.h"
 #include "nsXMLContentSerializer.h"
@@ -35,7 +34,7 @@ class nsXHTMLContentSerializer : public nsXMLContentSerializer {
                   bool aRewriteEncodingDeclaration,
                   bool* aNeedsPreformatScanning, nsAString& aOutput) override;
 
-  NS_IMETHOD AppendText(nsIContent* aText, int32_t aStartOffset,
+  NS_IMETHOD AppendText(mozilla::dom::Text* aText, int32_t aStartOffset,
                         int32_t aEndOffset) override;
 
   NS_IMETHOD AppendDocumentStart(mozilla::dom::Document* aDocument) override;

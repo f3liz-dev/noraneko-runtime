@@ -21,8 +21,10 @@ skip-if = ["os == 'android'"] # Disabled due to crashes (see bug 1331366)
 tags = "addons"
 
 ["test_CoveragePing.js"]
+skip-if = ["os == 'android'"] # Legacy telemetry is always disabled on Android
 
 ["test_EventPing.js"]
+skip-if = ["os == 'android'"] # Legacy telemetry is always disabled on Android
 tags = "coverage"
 
 ["test_HealthPing.js"]
@@ -33,8 +35,10 @@ skip-if = [
 tags = "addons"
 
 ["test_MigratePendingPings.js"]
+skip-if = ["os == 'android'"] # Legacy telemetry is always disabled on Android
 
 ["test_PingAPI.js"]
+skip-if = ["os == 'android'"] # Legacy telemetry is always disabled on Android
 
 ["test_PingSender.js"]
 skip-if = ["os == 'android'"]
@@ -54,8 +58,11 @@ tags = "addons"
 skip-if = ["os == 'android'"]
 
 ["test_TOUNotificationFlow.js"]
-skip-if = ["os == 'android'"]
-# The TOU notification flow is desktop only
+skip-if = [
+  "appname == 'thunderbird'",
+  "os == 'android'",
+]
+# The TOU notification flow is desktop-only and not used by Thunderbird.
 
 ["test_TelemetryClientID_reset.js"]
 skip-if = ["os == 'android'"] # Disabled as Android/GeckoView doesn't run TelemetryController
@@ -69,14 +76,15 @@ skip-if = ["os == 'android' && processor == 'x86_64'"]  # Disabled as Android/Ge
 tags = "addons"
 
 ["test_TelemetryController_idle.js"]
+skip-if = ["os == 'android'"] # Legacy telemetry is always disabled on Android
 
 ["test_TelemetryEnvironment.js"]
+requesttimeoutfactor = 2  # Slow on Windows
 skip-if = [
   "os == 'android'",
   "os == 'win' && msix", # https://bugzilla.mozilla.org/show_bug.cgi?id=1807929
 ]
 tags = "addons"
-run-sequentially = "very high failure rate in parallel"
 
 ["test_TelemetryEnvironment_search.js"]
 skip-if = [
@@ -99,6 +107,7 @@ skip-if = ["os == 'win' && msix"] # https://bugzilla.mozilla.org/show_bug.cgi?id
 ["test_TelemetryScalars_impressionId.js"]
 
 ["test_TelemetrySend.js"]
+requesttimeoutfactor = 3  # Slow on Windows
 skip-if = ["os == 'linux' && ccov"] # Bug 1701874
 
 ["test_TelemetrySendOldPings.js"]
@@ -113,6 +122,7 @@ skip-if = ["os == 'linux' && verify && debug"]
 skip-if = ["os == 'android'"]
 
 ["test_TelemetrySession_activeTicks.js"]
+skip-if = ["os == 'android'"] # Legacy telemetry is always disabled on Android
 
 ["test_TelemetryTimestamps.js"]
 
@@ -134,7 +144,6 @@ skip-if = ["artifact"] # See bug 1945662.
 
 ["test_UserInteraction_annotations.js"]
 # BHR is disabled on tsan, asan and outside of Nightly.
-run-sequentially = "very high failure rate in parallel"
 skip-if = [
   "debug",
   "asan",
@@ -151,6 +160,14 @@ skip-if = [
 
 ["test_UtilityScalars.js"]
 run-if = ["os == 'win'"]
+
+["test_canUpload_truth_table.js"]
+skip-if = [
+  "appname == 'thunderbird'",
+  "os == 'android'",
+]
+# The policy notification/acceptance flows are desktop only and not used by
+# Thunderbird or Android.
 
 ["test_client_id.js"]
 

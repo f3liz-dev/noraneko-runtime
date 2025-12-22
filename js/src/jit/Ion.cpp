@@ -10,7 +10,6 @@
 #include "mozilla/DebugOnly.h"
 #include "mozilla/IntegerPrintfMacros.h"
 #include "mozilla/MemoryReporting.h"
-#include "mozilla/ThreadLocal.h"
 
 #include "gc/GCContext.h"
 #include "gc/PublicIterators.h"
@@ -176,24 +175,6 @@ bool JitRuntime::generateTrampolines(JSContext* cx) {
   JitSpew(JitSpew_Codegen, "# Emitting invalidator");
   generateInvalidator(masm, &bailoutTail);
   rangeRecorder.recordOffset("Trampoline: Invalidator");
-
-  // The arguments rectifier has to use the same frame layout as the function
-  // frames it rectifies.
-  static_assert(std::is_base_of_v<JitFrameLayout, RectifierFrameLayout>,
-                "a rectifier frame can be used with jit frame");
-  static_assert(std::is_base_of_v<JitFrameLayout, WasmToJSJitFrameLayout>,
-                "wasm frames simply are jit frames");
-  static_assert(sizeof(JitFrameLayout) == sizeof(WasmToJSJitFrameLayout),
-                "thus a rectifier frame can be used with a wasm frame");
-
-  JitSpew(JitSpew_Codegen, "# Emitting arguments rectifier");
-  generateArgumentsRectifier(masm, ArgumentsRectifierKind::Normal);
-  rangeRecorder.recordOffset("Trampoline: Arguments Rectifier");
-
-  JitSpew(JitSpew_Codegen, "# Emitting trial inlining arguments rectifier");
-  generateArgumentsRectifier(masm, ArgumentsRectifierKind::TrialInlining);
-  rangeRecorder.recordOffset(
-      "Trampoline: Arguments Rectifier (Trial Inlining)");
 
   JitSpew(JitSpew_Codegen, "# Emitting EnterJIT sequence");
   generateEnterJIT(cx, masm);
@@ -1878,54 +1859,23 @@ static AbortReason IonCompile(JSContext* cx, HandleScript script,
   return AbortReason::Disable;
 }
 
-static bool CheckFrame(JSContext* cx, BaselineFrame* frame) {
-  MOZ_ASSERT(!frame->isDebuggerEvalFrame());
+static void AssertBaselineFrameCanEnterIon(JSContext* cx,
+                                           BaselineFrame* frame) {
+  MOZ_ASSERT(jit::IsIonEnabled(cx));
   MOZ_ASSERT(!frame->isEvalFrame());
+  MOZ_ASSERT(frame->script()->canIonCompile());
+  MOZ_ASSERT(!frame->script()->isIonCompilingOffThread());
 
-  // This check is to not overrun the stack.
-  if (frame->isFunctionFrame()) {
-    if (TooManyActualArguments(frame->numActualArgs())) {
-      JitSpew(JitSpew_IonAbort, "too many actual arguments");
-      return false;
-    }
+  // Baseline has the same limit for the number of actual arguments, so if we
+  // entered Baseline we can also enter Ion.
+  MOZ_ASSERT_IF(frame->isFunctionFrame(),
+                !TooManyActualArguments(frame->numActualArgs()));
 
-    if (TooManyFormalArguments(frame->numFormalArgs())) {
-      JitSpew(JitSpew_IonAbort, "too many arguments");
-      return false;
-    }
-  }
-
-  return true;
+  // The number of formal arguments is checked in CanIonCompileScript. The
+  // Baseline JIT shouldn't attempt to tier up if that returns false.
+  MOZ_ASSERT_IF(frame->isFunctionFrame(),
+                !TooManyFormalArguments(frame->numFormalArgs()));
 }
-
-static bool CanIonCompileOrInlineScript(JSScript* script, const char** reason) {
-  if (script->isForEval()) {
-    // Eval frames are not yet supported. Supporting this will require new
-    // logic in pushBailoutFrame to deal with linking prev.
-    // Additionally, JSOp::GlobalOrEvalDeclInstantiation support will require
-    // baking in isEvalFrame().
-    *reason = "eval script";
-    return false;
-  }
-
-  if (script->isAsync()) {
-    if (script->isModule()) {
-      *reason = "async module";
-      return false;
-    }
-  }
-
-  if (script->hasNonSyntacticScope() && !script->function()) {
-    // Support functions with a non-syntactic global scope but not other
-    // scripts. For global scripts, WarpBuilder currently uses the global
-    // object as scope chain, this is not valid when the script has a
-    // non-syntactic global scope.
-    *reason = "has non-syntactic global scope";
-    return false;
-  }
-
-  return true;
-}  // namespace jit
 
 static bool ScriptIsTooLarge(JSContext* cx, JSScript* script) {
   if (!JitOptions.limitScriptSize) {
@@ -1958,13 +1908,42 @@ bool CanIonCompileScript(JSContext* cx, JSScript* script) {
     return false;
   }
 
-  const char* reason = nullptr;
-  if (!CanIonCompileOrInlineScript(script, &reason)) {
-    JitSpew(JitSpew_IonAbort, "%s", reason);
+  if (script->isForEval()) {
+    // Eval frames are not yet supported. Fixing this will require adding
+    // support for the eval frame's environment chain, also for bailouts.
+    // Additionally, JSOp::GlobalOrEvalDeclInstantiation in WarpBuilder
+    // currently doesn't support eval scripts. See bug 1996190.
+    JitSpew(JitSpew_IonAbort, "eval script");
+    script->disableIon();
+    return false;
+  }
+
+  if (script->isAsync() && script->isModule()) {
+    // Async modules are not supported (bug 1996189).
+    JitSpew(JitSpew_IonAbort, "async module");
+    script->disableIon();
+    return false;
+  }
+
+  if (script->hasNonSyntacticScope() && !script->function()) {
+    // Support functions with a non-syntactic global scope but not other
+    // scripts. For global scripts, WarpBuilder currently uses the global
+    // object as scope chain, and this is not valid when the script has a
+    // non-syntactic global scope.
+    JitSpew(JitSpew_IonAbort, "has non-syntactic global scope");
+    script->disableIon();
+    return false;
+  }
+
+  if (script->function() &&
+      TooManyFormalArguments(script->function()->nargs())) {
+    JitSpew(JitSpew_IonAbort, "too many formal arguments");
+    script->disableIon();
     return false;
   }
 
   if (ScriptIsTooLarge(cx, script)) {
+    script->disableIon();
     return false;
   }
 
@@ -2071,13 +2050,6 @@ MethodStatus jit::CanEnterIon(JSContext* cx, RunState& state) {
       ForbidCompilation(cx, script);
       return Method_CantCompile;
     }
-
-    if (TooManyFormalArguments(
-            invoke.args().callee().as<JSFunction>().nargs())) {
-      JitSpew(JitSpew_IonAbort, "too many args");
-      ForbidCompilation(cx, script);
-      return Method_CantCompile;
-    }
   }
 
   // If --ion-eager is used, compile with Baseline first, so that we
@@ -2123,17 +2095,9 @@ MethodStatus jit::CanEnterIon(JSContext* cx, RunState& state) {
 
 static MethodStatus BaselineCanEnterAtEntry(JSContext* cx, HandleScript script,
                                             BaselineFrame* frame) {
-  MOZ_ASSERT(jit::IsIonEnabled(cx));
-  MOZ_ASSERT(script->canIonCompile());
-  MOZ_ASSERT(!script->isIonCompilingOffThread());
+  AssertBaselineFrameCanEnterIon(cx, frame);
   MOZ_ASSERT(!script->hasIonScript());
   MOZ_ASSERT(frame->isFunctionFrame());
-
-  // Mark as forbidden if frame can't be handled.
-  if (!CheckFrame(cx, frame)) {
-    ForbidCompilation(cx, script);
-    return Method_CantCompile;
-  }
 
   if (script->baselineScript()->hasPendingIonCompileTask()) {
     LinkIonScript(cx, script);
@@ -2159,28 +2123,12 @@ static MethodStatus BaselineCanEnterAtEntry(JSContext* cx, HandleScript script,
 static MethodStatus BaselineCanEnterAtBranch(JSContext* cx, HandleScript script,
                                              BaselineFrame* osrFrame,
                                              jsbytecode* pc) {
-  MOZ_ASSERT(jit::IsIonEnabled(cx));
+  AssertBaselineFrameCanEnterIon(cx, osrFrame);
   MOZ_ASSERT((JSOp)*pc == JSOp::LoopHead);
-
-  // Skip if the script has been disabled.
-  if (!script->canIonCompile()) {
-    return Method_Skipped;
-  }
-
-  // Skip if the script is being compiled off thread.
-  if (script->isIonCompilingOffThread()) {
-    return Method_Skipped;
-  }
 
   // Optionally ignore on user request.
   if (!JitOptions.osr) {
     return Method_Skipped;
-  }
-
-  // Mark as forbidden if frame can't be handled.
-  if (!CheckFrame(cx, osrFrame)) {
-    ForbidCompilation(cx, script);
-    return Method_CantCompile;
   }
 
   // Check if the jitcode still needs to get linked and do this
@@ -2459,10 +2407,6 @@ static void InvalidateActivation(JS::GCContext* gcx,
       case FrameType::BaselineInterpreterEntry:
         JitSpew(JitSpew_IonInvalidate,
                 "#%zu baseline interpreter entry frame @ %p", frameno,
-                frame.fp());
-        break;
-      case FrameType::Rectifier:
-        JitSpew(JitSpew_IonInvalidate, "#%zu rectifier frame @ %p", frameno,
                 frame.fp());
         break;
       case FrameType::TrampolineNative:

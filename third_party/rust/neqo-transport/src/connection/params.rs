@@ -32,6 +32,8 @@ use crate::{
 const LOCAL_MAX_DATA: u64 = MAX_VARINT;
 const LOCAL_STREAM_LIMIT_BIDI: u64 = 16;
 const LOCAL_STREAM_LIMIT_UNI: u64 = 16;
+// Maximum size of a QUIC DATAGRAM frame, as specified in https://datatracker.ietf.org/doc/html/rfc9221#section-3-4.
+const MAX_DATAGRAM_FRAME_SIZE: u64 = 65535;
 const MAX_QUEUED_DATAGRAMS_DEFAULT: usize = 10;
 
 /// What to do with preferred addresses.
@@ -94,6 +96,8 @@ pub struct ConnectionParameters {
     sni_slicing: bool,
     /// Whether to enable mlkem768nistp256-sha256.
     mlkem: bool,
+    /// Whether to randomize the packet number of the first Initial packet.
+    randomize_first_pn: bool,
 }
 
 impl Default for ConnectionParameters {
@@ -113,7 +117,7 @@ impl Default for ConnectionParameters {
             ack_ratio: Self::DEFAULT_ACK_RATIO,
             idle_timeout: Self::DEFAULT_IDLE_TIMEOUT,
             preferred_address: PreferredAddressConfig::Default,
-            datagram_size: 0,
+            datagram_size: MAX_DATAGRAM_FRAME_SIZE,
             outgoing_datagram_queue: MAX_QUEUED_DATAGRAMS_DEFAULT,
             incoming_datagram_queue: MAX_QUEUED_DATAGRAMS_DEFAULT,
             initial_rtt: DEFAULT_INITIAL_RTT,
@@ -125,6 +129,7 @@ impl Default for ConnectionParameters {
             pmtud_iface_mtu: true,
             sni_slicing: true,
             mlkem: true,
+            randomize_first_pn: true,
         }
     }
 }
@@ -418,6 +423,17 @@ impl ConnectionParameters {
     #[must_use]
     pub const fn mlkem(mut self, mlkem: bool) -> Self {
         self.mlkem = mlkem;
+        self
+    }
+
+    #[must_use]
+    pub const fn randomize_first_pn_enabled(&self) -> bool {
+        self.randomize_first_pn
+    }
+
+    #[must_use]
+    pub const fn randomize_first_pn(mut self, randomize_first_pn: bool) -> Self {
+        self.randomize_first_pn = randomize_first_pn;
         self
     }
 

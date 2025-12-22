@@ -6,7 +6,6 @@ package org.mozilla.fenix.home.toolbar
 
 import android.content.Context
 import android.view.Gravity
-import android.view.ViewGroup
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Easing
 import androidx.compose.animation.core.tween
@@ -35,6 +34,7 @@ import mozilla.components.compose.browser.toolbar.store.BrowserToolbarStore
 import mozilla.components.compose.browser.toolbar.store.ToolbarGravity
 import mozilla.components.compose.browser.toolbar.store.ToolbarGravity.Bottom
 import mozilla.components.compose.browser.toolbar.store.ToolbarGravity.Top
+import mozilla.components.compose.browser.toolbar.ui.BrowserToolbarQuery
 import mozilla.components.lib.state.ext.observeAsComposableState
 import mozilla.components.support.ktx.android.view.ImeInsetsSynchronizer
 import org.mozilla.fenix.R
@@ -45,7 +45,6 @@ import org.mozilla.fenix.components.metrics.MetricsUtils
 import org.mozilla.fenix.components.toolbar.ToolbarPosition.BOTTOM
 import org.mozilla.fenix.components.toolbar.ToolbarPosition.TOP
 import org.mozilla.fenix.databinding.FragmentHomeBinding
-import org.mozilla.fenix.ext.pixelSizeFor
 import org.mozilla.fenix.theme.FirefoxTheme
 import org.mozilla.fenix.utils.Settings
 
@@ -165,7 +164,6 @@ internal class HomeToolbarComposable(
             ImeInsetsSynchronizer.setup(homeBinding.root)
         }
 
-        updateHomeAppBarIntegration()
         configureStartingInSearchMode()
         updateAddressBarVisibility(!middleSearchEnabled)
     }
@@ -194,18 +192,6 @@ internal class HomeToolbarComposable(
         false -> Top
     }
 
-    private fun updateHomeAppBarIntegration() {
-        if (!settings.shouldUseBottomToolbar) {
-            homeBinding.homeAppBar.updateLayoutParams<ViewGroup.MarginLayoutParams> {
-                topMargin = context.pixelSizeFor(R.dimen.home_fragment_top_toolbar_header_margin) +
-                    when (settings.isTabStripEnabled) {
-                        true -> context.resources.getDimensionPixelSize(R.dimen.tab_strip_height)
-                        false -> 0
-                    }
-            }
-        }
-    }
-
     private fun configureStartingInSearchMode() {
         if (!directToSearchConfig.startSearch) return
         appStore.dispatch(
@@ -219,7 +205,7 @@ internal class HomeToolbarComposable(
             browserStore.state.findTab(directToSearchConfig.sessionId)?.let {
                 toolbarStore.dispatch(
                     SearchQueryUpdated(
-                        query = it.getUrl() ?: "",
+                        query = BrowserToolbarQuery(it.getUrl() ?: ""),
                         isQueryPrefilled = true,
                     ),
                 )

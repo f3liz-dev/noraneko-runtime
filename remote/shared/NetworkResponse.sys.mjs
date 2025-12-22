@@ -6,29 +6,9 @@ const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   NetworkUtils:
     "resource://devtools/shared/network-observer/NetworkUtils.sys.mjs",
-});
 
-/**
- * Forward the encodedResponseBody built by the NetworkResponse to devtools'
- * decodeResponseChunks helper.
- *
- * @param {object} encodedResponseBody
- *     A custom "encoded response body" object containing all the properties
- *     required to decode the body.
- * @returns {string}
- *     The decoded response body as a string (either text or base64).
- */
-async function decodeReponseBody(encodedResponseBody) {
-  return lazy.NetworkUtils.decodeResponseChunks(
-    encodedResponseBody.encodedData,
-    {
-      charset: encodedResponseBody.charset,
-      encoding: encodedResponseBody.encoding,
-      compressionEncodings: encodedResponseBody.compressionEncodings,
-      encodedBodySize: encodedResponseBody.encodedBodySize,
-    }
-  );
-}
+  NetworkDataBytes: "chrome://remote/content/shared/NetworkDataBytes.sys.mjs",
+});
 
 /**
  * The NetworkResponse class is a wrapper around the internal channel which
@@ -122,6 +102,10 @@ export class NetworkResponse {
     return this.#fromServiceWorker;
   }
 
+  get isDataURL() {
+    return this.#isDataURL;
+  }
+
   get mimeType() {
     return this.#getComputedMimeType();
   }
@@ -175,23 +159,37 @@ export class NetworkResponse {
     );
   }
 
-  async readResponseBody() {
-    return this.#responseBodyReady.promise;
-  }
+  /**
+   * Returns the NetworkDataBytes instance representing the response body for
+   * this response.
+   *
+   * @returns {NetworkDataBytes}
+   */
+  readAndProcessResponseBody = async () => {
+    const responseContent = await this.#responseBodyReady.promise;
+
+    return new lazy.NetworkDataBytes({
+      getBytesValue: async () => {
+        if (responseContent.isContentEncoded) {
+          return lazy.NetworkUtils.decodeResponseChunks(
+            responseContent.encodedData,
+            {
+              // Should always attempt to decode as UTF-8.
+              charset: "UTF-8",
+              compressionEncodings: responseContent.compressionEncodings,
+              encodedBodySize: responseContent.encodedBodySize,
+              encoding: responseContent.encoding,
+            }
+          );
+        }
+        return responseContent.text;
+      },
+      isBase64: responseContent.encoding === "base64",
+    });
+  };
 
   setResponseContent(responseContent) {
-    // Extract the properties necessary to decode the response body later on.
-    const encodedResponseBody = {
-      charset: responseContent.contentCharset,
-      compressionEncodings: responseContent.compressionEncodings,
-      encodedData: responseContent.encodedData,
-      encodedBodySize: responseContent.encodedBodySize,
-      encoding: responseContent.encoding,
-      getDecodedResponseBody: async () =>
-        decodeReponseBody(encodedResponseBody),
-    };
-
-    this.#responseBodyReady.resolve(encodedResponseBody);
+    this.#responseBodyReady.resolve(responseContent);
   }
 
   /**
@@ -258,10 +256,11 @@ export class NetworkResponse {
   toJSON() {
     return {
       decodedBodySize: this.decodedBodySize,
-      headers: this.headers,
-      headersTransmittedSize: this.headersTransmittedSize,
       encodedBodySize: this.encodedBodySize,
       fromCache: this.fromCache,
+      headers: this.headers,
+      headersTransmittedSize: this.headersTransmittedSize,
+      isDataURL: this.isDataURL,
       mimeType: this.mimeType,
       protocol: this.protocol,
       serializedURL: this.serializedURL,

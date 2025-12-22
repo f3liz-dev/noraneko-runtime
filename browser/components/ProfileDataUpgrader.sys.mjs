@@ -13,7 +13,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
     "resource:///modules/FirefoxBridgeExtensionUtils.sys.mjs",
   LoginHelper: "resource://gre/modules/LoginHelper.sys.mjs",
   PlacesUIUtils: "moz-src:///browser/components/places/PlacesUIUtils.sys.mjs",
-  UrlbarPrefs: "resource:///modules/UrlbarPrefs.sys.mjs",
+  UrlbarPrefs: "moz-src:///browser/components/urlbar/UrlbarPrefs.sys.mjs",
   UsageReporting: "resource://gre/modules/UsageReporting.sys.mjs",
 });
 
@@ -927,6 +927,12 @@ export let ProfileDataUpgrader = {
       // Force all logins to be re-encrypted to make use of more modern crypto.
       // This pref is checked in the initialization of the LoginManagerStorage.
       Services.prefs.setBoolPref("signon.reencryptionNeeded", true);
+    }
+
+    // Updating from 161 to 162 to trigger the re-migration of the Rusts store.
+    if (existingDataVersion < 162) {
+      // Force all logins to be re-migrated to the rust store.
+      Services.prefs.setBoolPref("signon.rustMirror.migrationNeeded", true);
     }
 
     // Update the migration version.

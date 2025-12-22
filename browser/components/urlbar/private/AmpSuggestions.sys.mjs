@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-import { SuggestProvider } from "resource:///modules/urlbar/private/SuggestFeature.sys.mjs";
+import { SuggestProvider } from "moz-src:///browser/components/urlbar/private/SuggestFeature.sys.mjs";
 
 const lazy = {};
 
@@ -12,13 +12,13 @@ ChromeUtils.defineESModuleGetters(lazy, {
   CONTEXTUAL_SERVICES_PING_TYPES:
     "resource:///modules/PartnerLinkAttribution.sys.mjs",
   ContextId: "moz-src:///browser/modules/ContextId.sys.mjs",
-  QuickSuggest: "resource:///modules/QuickSuggest.sys.mjs",
+  QuickSuggest: "moz-src:///browser/components/urlbar/QuickSuggest.sys.mjs",
   rawSuggestionUrlMatches:
     "moz-src:///toolkit/components/uniffi-bindgen-gecko-js/components/generated/RustSuggest.sys.mjs",
   Region: "resource://gre/modules/Region.sys.mjs",
-  UrlbarPrefs: "resource:///modules/UrlbarPrefs.sys.mjs",
-  UrlbarResult: "resource:///modules/UrlbarResult.sys.mjs",
-  UrlbarUtils: "resource:///modules/UrlbarUtils.sys.mjs",
+  UrlbarPrefs: "moz-src:///browser/components/urlbar/UrlbarPrefs.sys.mjs",
+  UrlbarResult: "moz-src:///browser/components/urlbar/UrlbarResult.sys.mjs",
+  UrlbarUtils: "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs",
 });
 
 const TIMESTAMP_TEMPLATE = "%YYYYMMDDHH%";
@@ -30,7 +30,12 @@ const TIMESTAMP_REGEXP = /^\d{10}$/;
  */
 export class AmpSuggestions extends SuggestProvider {
   get enablingPreferences() {
-    return ["ampFeatureGate", "suggest.amp", "suggest.quicksuggest.sponsored"];
+    return [
+      "ampFeatureGate",
+      "suggest.amp",
+      "suggest.quicksuggest.all",
+      "suggest.quicksuggest.sponsored",
+    ];
   }
 
   get primaryUserControlledPreferences() {
@@ -139,32 +144,32 @@ export class AmpSuggestions extends SuggestProvider {
         : lazy.UrlbarUtils.HIGHLIGHT.SUGGESTED,
     ];
 
-    let result = new lazy.UrlbarResult(
-      lazy.UrlbarUtils.RESULT_TYPE.URL,
-      lazy.UrlbarUtils.RESULT_SOURCE.SEARCH,
-      ...lazy.UrlbarResult.payloadAndSimpleHighlights(
-        queryContext.tokens,
-        payload
-      )
-    );
-
-    result.isRichSuggestion = true;
+    let resultParams = {};
     if (isTopPick) {
-      result.isBestMatch = true;
-      result.suggestedIndex = 1;
+      resultParams.isBestMatch = true;
+      resultParams.suggestedIndex = 1;
     } else {
       if (lazy.UrlbarPrefs.get("quickSuggestSponsoredPriority")) {
-        result.isBestMatch = true;
-        result.suggestedIndex = 1;
+        resultParams.isBestMatch = true;
+        resultParams.suggestedIndex = 1;
       } else {
-        result.richSuggestionIconSize = 16;
+        resultParams.richSuggestionIconSize = 16;
       }
-      result.payload.descriptionL10n = {
+      payload.descriptionL10n = {
         id: "urlbar-result-action-sponsored",
       };
     }
 
-    return result;
+    return new lazy.UrlbarResult({
+      type: lazy.UrlbarUtils.RESULT_TYPE.URL,
+      source: lazy.UrlbarUtils.RESULT_SOURCE.SEARCH,
+      isRichSuggestion: true,
+      ...resultParams,
+      ...lazy.UrlbarResult.payloadAndSimpleHighlights(
+        queryContext.tokens,
+        payload
+      ),
+    });
   }
 
   onImpression(state, queryContext, controller, featureResults, details) {
@@ -284,9 +289,9 @@ export class AmpSuggestions extends SuggestProvider {
       // Always use lowercase to make the reporting consistent.
       advertiser: result.payload.sponsoredAdvertiser.toLocaleLowerCase(),
       blockId: result.payload.sponsoredBlockId,
-      improveSuggestExperience: lazy.UrlbarPrefs.get(
-        "quicksuggest.dataCollection.enabled"
-      ),
+      improveSuggestExperience:
+        lazy.UrlbarPrefs.get("quickSuggestOnlineAvailable") &&
+        lazy.UrlbarPrefs.get("quicksuggest.online.enabled"),
       // `position` is 1-based, unlike `rowIndex`, which is zero-based.
       position: result.rowIndex + 1,
       suggestedIndex: result.suggestedIndex.toString(),

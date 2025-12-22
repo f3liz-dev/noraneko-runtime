@@ -33,7 +33,7 @@ impl gecko_profiler::ProfilerMarker for EventMetricMarker {
         use gecko_profiler::schema::*;
         let mut schema = MarkerSchema::new(&[Location::MarkerChart, Location::MarkerTable]);
         schema.set_tooltip_label("{marker.data.id}");
-        schema.set_table_label("{marker.name} - {marker.data.id}: {marker.data.extra}");
+        schema.set_table_label("{marker.data.id}: {marker.data.extra}");
         schema.add_key_label_format_with_flags(
             "id",
             "Metric",
@@ -165,6 +165,18 @@ impl<K: 'static + ExtraKeys + Send + Sync + Clone> EventMetric<K> {
     }
 }
 
+impl<K> crate::private::TestGetNumErrors for EventMetric<K> {
+    fn test_get_num_recorded_errors(&self, error_type: glean::ErrorType) -> i32 {
+        match self {
+            EventMetric::Parent { inner, .. } => inner.test_get_num_recorded_errors(error_type),
+            EventMetric::Child(c) => panic!(
+                "Cannot get the number of recorded errors for {:?} in non-main process!",
+                c.id
+            ),
+        }
+    }
+}
+
 #[inherent]
 impl<K: 'static + ExtraKeys + Send + Sync + Clone> Event for EventMetric<K> {
     type Extra = K;
@@ -199,20 +211,12 @@ impl<K: 'static + ExtraKeys + Send + Sync + Clone> Event for EventMetric<K> {
             }
         }
     }
-
-    pub fn test_get_num_recorded_errors(&self, error: glean::ErrorType) -> i32 {
-        match self {
-            EventMetric::Parent { inner, .. } => inner.test_get_num_recorded_errors(error),
-            EventMetric::Child(meta) => panic!(
-                "Cannot get the number of recorded errors for {:?} in non-main process!",
-                meta.id
-            ),
-        }
-    }
 }
 
 #[inherent]
-impl<K> glean::TestGetValue<Vec<RecordedEvent>> for EventMetric<K> {
+impl<K> glean::TestGetValue for EventMetric<K> {
+    type Output = Vec<RecordedEvent>;
+
     pub fn test_get_value(&self, ping_name: Option<String>) -> Option<Vec<RecordedEvent>> {
         match self {
             EventMetric::Parent { inner, .. } => inner.test_get_value(ping_name),
@@ -246,7 +250,9 @@ mod test {
         // No extra keys
         metric.record(None);
 
-        let recorded = metric.test_get_value(Some("test-ping".to_string())).unwrap();
+        let recorded = metric
+            .test_get_value(Some("test-ping".to_string()))
+            .unwrap();
 
         assert!(recorded.iter().any(|e| e.name == "event_metric"));
     }
@@ -286,7 +292,9 @@ mod test {
 
         assert!(ipc::replay_from_buf(&ipc::take_buf().unwrap()).is_ok());
 
-        let events = parent_metric.test_get_value(Some("test-ping".to_string())).unwrap();
+        let events = parent_metric
+            .test_get_value(Some("test-ping".to_string()))
+            .unwrap();
         assert_eq!(events.len(), 4);
 
         // Events from the child process are last, they might get sorted later by Glean.

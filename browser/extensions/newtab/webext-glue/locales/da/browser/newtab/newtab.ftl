@@ -408,7 +408,7 @@ newtab-wallpaper-abstract-purple-green = Gradient med lilla og grønt lys
 newtab-wallpaper-abstract-blue-purple-waves = Blå og lilla bølgeformer
 newtab-wallpaper-abstract-black-waves = Sorte bølgeformer
 
-## Celestial
+## Firefox
 
 newtab-wallpaper-category-title-photographs = Fotografier
 newtab-wallpaper-beach-at-sunrise = Strand ved solopgang
@@ -437,6 +437,10 @@ feature-highlight-dismiss-button =
 feature-highlight-wallpaper =
     .title = { -newtab-wallpaper-feature-highlight-header }
     .aria-label = { -newtab-wallpaper-feature-highlight-content }
+
+## Firefox
+
+newtab-wallpaper-category-title-firefox = { -brand-product-name }
 
 ## Celestial
 
@@ -479,8 +483,16 @@ newtab-weather-menu-change-temperature-units-fahrenheit = Skift til Fahrenheit
 newtab-weather-menu-change-temperature-units-celsius = Skift til Celsius
 newtab-weather-menu-hide-weather = Skjul vejr på Nyt faneblad
 newtab-weather-menu-learn-more = Læs mere
+newtab-weather-menu-detect-my-location = Registrer min placering
 # This message is shown if user is working offline
 newtab-weather-error-not-available = Vejrdata er ikke tilgængelige lige nu.
+newtab-weather-opt-in-see-weather = Vil du se vejrudsigter for din placering?
+newtab-weather-opt-in-not-now =
+    .label = Ikke nu
+newtab-weather-opt-in-yes =
+    .label = Ja
+# We'll be showing static (fake) weather data if the user has not opted in to using their location
+newtab-weather-static-city = New York City
 
 ## Topic Labels
 
@@ -647,6 +659,9 @@ newtab-widget-lists-input-menu-move-up = Flyt op
 newtab-widget-lists-input-menu-move-down = Flyt ned
 newtab-widget-lists-input-menu-delete = Slet
 newtab-widget-lists-input-menu-edit = Rediger
+# the + symbol emphasises the functionality of adding a new list
+newtab-widget-lists-dropdown-create =
+    .label = + Opret en ny liste
 newtab-widget-lists-name-label-default =
     .label = Opgaveliste
 newtab-widget-lists-name-placeholder-default =
@@ -666,10 +681,6 @@ newtab-widget-timer-mode-focus =
     .label = Fokus
 newtab-widget-timer-mode-break =
     .label = Pause
-newtab-widget-timer-play =
-    .title = Afspil
-newtab-widget-timer-pause =
-    .title = Pause
 newtab-widget-timer-label-play =
     .label = Afspil
 newtab-widget-timer-label-pause =

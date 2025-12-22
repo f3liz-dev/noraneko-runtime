@@ -6,6 +6,7 @@ package org.mozilla.fenix.ui
 
 import androidx.compose.ui.test.junit4.AndroidComposeTestRule
 import androidx.test.espresso.Espresso.pressBack
+import org.junit.Ignore
 import org.junit.Rule
 import org.junit.Test
 import org.mozilla.fenix.customannotations.SkipLeaks
@@ -13,7 +14,9 @@ import org.mozilla.fenix.customannotations.SmokeTest
 import org.mozilla.fenix.helpers.HomeActivityIntentTestRule
 import org.mozilla.fenix.helpers.MockBrowserDataHelper.createBookmarkItem
 import org.mozilla.fenix.helpers.MockBrowserDataHelper.generateBookmarkFolder
-import org.mozilla.fenix.helpers.TestAssetHelper
+import org.mozilla.fenix.helpers.TestAssetHelper.genericAssets
+import org.mozilla.fenix.helpers.TestAssetHelper.getGenericAsset
+import org.mozilla.fenix.helpers.TestAssetHelper.htmlControlsFormAsset
 import org.mozilla.fenix.helpers.TestHelper.clickSnackbarButton
 import org.mozilla.fenix.helpers.TestHelper.exitMenu
 import org.mozilla.fenix.helpers.TestHelper.verifySnackBarText
@@ -49,7 +52,7 @@ class BookmarksTest : TestSetup() {
     @SmokeTest
     @Test
     fun deleteBookmarkFoldersTest() {
-        val website = TestAssetHelper.getGenericAsset(mockWebServer, 1)
+        val website = mockWebServer.getGenericAsset(1)
 
         createBookmarkItem(website.url.toString(), website.title, null)
 
@@ -90,12 +93,16 @@ class BookmarksTest : TestSetup() {
     @SmokeTest
     @Test
     fun editBookmarksNameAndUrlTest() {
-        val defaultWebPage = TestAssetHelper.getGenericAsset(mockWebServer, 1)
+        val defaultWebPage = mockWebServer.getGenericAsset(1)
 
-        browserScreen {
-            createBookmark(composeTestRule, defaultWebPage.url)
+        navigationToolbar {
+        }.enterURLAndEnterToBrowser(defaultWebPage.url) {
         }.openThreeDotMenu {
-        }.editBookmarkPage(composeTestRule) {
+        }.bookmarkPage {
+            verifySnackBarText("Saved in “Bookmarks”")
+            clickSnackbarButton(composeTestRule, "EDIT")
+        }
+        composeBookmarksMenu(composeTestRule) {
             verifyEditBookmarksView()
             changeBookmarkTitle(testBookmark.title)
             changeBookmarkUrl(testBookmark.url)
@@ -115,7 +122,7 @@ class BookmarksTest : TestSetup() {
     @SmokeTest
     @Test
     fun shareBookmarkTest() {
-        val defaultWebPage = TestAssetHelper.getGenericAsset(mockWebServer, 1)
+        val defaultWebPage = mockWebServer.getGenericAsset(1)
 
         createBookmarkItem(defaultWebPage.url.toString(), defaultWebPage.title, null)
 
@@ -135,11 +142,12 @@ class BookmarksTest : TestSetup() {
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2833702
     @SmokeTest
+    @Ignore("disabled - https://bugzilla.mozilla.org/show_bug.cgi?id=1989405")
     @Test
     fun openMultipleSelectedBookmarksInANewTabTest() {
         val webPages = listOf(
-            TestAssetHelper.getGenericAsset(mockWebServer, 1),
-            TestAssetHelper.getGenericAsset(mockWebServer, 2),
+            mockWebServer.getGenericAsset(1),
+            mockWebServer.getGenericAsset(2),
         )
 
         createBookmarkItem(webPages[0].url.toString(), webPages[0].title, null)
@@ -168,8 +176,8 @@ class BookmarksTest : TestSetup() {
     @Test
     fun deleteMultipleSelectedBookmarksTest() {
         val webPages = listOf(
-            TestAssetHelper.getGenericAsset(mockWebServer, 1),
-            TestAssetHelper.getGenericAsset(mockWebServer, 2),
+            mockWebServer.getGenericAsset(1),
+            mockWebServer.getGenericAsset(2),
         )
 
         createBookmarkItem(webPages[0].url.toString(), webPages[0].title, null)
@@ -213,8 +221,8 @@ class BookmarksTest : TestSetup() {
     @SmokeTest
     @Test
     fun verifySearchForBookmarkedItemsTest() {
-        val firstWebPage = TestAssetHelper.getGenericAsset(mockWebServer, 1)
-        val secondWebPage = TestAssetHelper.getHTMLControlsFormAsset(mockWebServer)
+        val firstWebPage = mockWebServer.getGenericAsset(1)
+        val secondWebPage = mockWebServer.htmlControlsFormAsset
 
         val newFolder = generateBookmarkFolder(title = bookmarkFolderName, position = null)
         createBookmarkItem(firstWebPage.url.toString(), firstWebPage.title, null, newFolder)
@@ -238,7 +246,7 @@ class BookmarksTest : TestSetup() {
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2833710
     @Test
     fun verifySearchBookmarksViewTest() {
-        val defaultWebPage = TestAssetHelper.getGenericAsset(mockWebServer, 1)
+        val defaultWebPage = mockWebServer.getGenericAsset(1)
 
         createBookmarkItem(defaultWebPage.url.toString(), defaultWebPage.title, null)
 
@@ -280,7 +288,7 @@ class BookmarksTest : TestSetup() {
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2833685
     @Test
     fun verifyAddBookmarkButtonTest() {
-        val defaultWebPage = TestAssetHelper.getGenericAsset(mockWebServer, 1)
+        val defaultWebPage = mockWebServer.getGenericAsset(1)
 
         navigationToolbar {
         }.enterURLAndEnterToBrowser(defaultWebPage.url) {
@@ -300,7 +308,7 @@ class BookmarksTest : TestSetup() {
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2833686
     @Test
     fun createBookmarkFolderTest() {
-        val defaultWebPage = TestAssetHelper.getGenericAsset(mockWebServer, 1)
+        val defaultWebPage = mockWebServer.getGenericAsset(1)
 
         navigationToolbar {
         }.enterURLAndEnterToBrowser(defaultWebPage.url) {
@@ -321,6 +329,7 @@ class BookmarksTest : TestSetup() {
         }.openThreeDotMenu {
         }.openBookmarksMenu(composeTestRule) {
             verifyFolderTitle(bookmarkFolderName)
+            verifyBookmarkFolderDescription(numberOfBookmarksInFolder = "1")
             selectFolder(bookmarkFolderName)
             verifyBookmarkedURL(defaultWebPage.url.toString())
         }
@@ -329,7 +338,7 @@ class BookmarksTest : TestSetup() {
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2833694
     @Test
     fun copyBookmarkURLTest() {
-        val defaultWebPage = TestAssetHelper.getGenericAsset(mockWebServer, 1)
+        val defaultWebPage = mockWebServer.getGenericAsset(1)
 
         createBookmarkItem(defaultWebPage.url.toString(), defaultWebPage.title, null)
 
@@ -349,7 +358,7 @@ class BookmarksTest : TestSetup() {
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2833695
     @Test
     fun openBookmarkInNewTabTest() {
-        val defaultWebPage = TestAssetHelper.getGenericAsset(mockWebServer, 1)
+        val defaultWebPage = mockWebServer.getGenericAsset(1)
 
         createBookmarkItem(defaultWebPage.url.toString(), defaultWebPage.title, null)
 
@@ -372,7 +381,7 @@ class BookmarksTest : TestSetup() {
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2833696
     @Test
     fun openBookmarkInPrivateTabTest() {
-        val defaultWebPage = TestAssetHelper.getGenericAsset(mockWebServer, 1)
+        val defaultWebPage = mockWebServer.getGenericAsset(1)
 
         createBookmarkItem(defaultWebPage.url.toString(), defaultWebPage.title, null)
 
@@ -389,7 +398,7 @@ class BookmarksTest : TestSetup() {
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2833697
     @Test
     fun deleteBookmarkTest() {
-        val defaultWebPage = TestAssetHelper.getGenericAsset(mockWebServer, 1)
+        val defaultWebPage = mockWebServer.getGenericAsset(1)
 
         createBookmarkItem(defaultWebPage.url.toString(), defaultWebPage.title, null)
 
@@ -410,12 +419,7 @@ class BookmarksTest : TestSetup() {
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2833706
     @Test
     fun verifyOpenAllInNewTabsOptionTest() {
-        val webPages = listOf(
-            TestAssetHelper.getGenericAsset(mockWebServer, 1),
-            TestAssetHelper.getGenericAsset(mockWebServer, 2),
-            TestAssetHelper.getGenericAsset(mockWebServer, 3),
-            TestAssetHelper.getGenericAsset(mockWebServer, 4),
-        )
+        val webPages = mockWebServer.genericAssets
 
         val rootFolderGuid = generateBookmarkFolder(title = "root", position = null)
         val subFolderGuid = generateBookmarkFolder(rootFolderGuid, "sub", null)
@@ -446,8 +450,8 @@ class BookmarksTest : TestSetup() {
     @SkipLeaks
     fun verifyOpenAllInPrivateTabsTest() {
         val webPages = listOf(
-            TestAssetHelper.getGenericAsset(mockWebServer, 1),
-            TestAssetHelper.getGenericAsset(mockWebServer, 2),
+            mockWebServer.getGenericAsset(1),
+            mockWebServer.getGenericAsset(2),
         )
 
         val rootFolderGuid = generateBookmarkFolder(title = "root", position = null)

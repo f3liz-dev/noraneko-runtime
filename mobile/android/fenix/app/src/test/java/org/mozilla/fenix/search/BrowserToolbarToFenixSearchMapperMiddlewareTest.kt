@@ -8,8 +8,9 @@ import androidx.lifecycle.Lifecycle
 import io.mockk.every
 import io.mockk.mockk
 import mozilla.components.compose.browser.toolbar.store.BrowserEditToolbarAction.SearchQueryUpdated
-import mozilla.components.compose.browser.toolbar.store.BrowserToolbarAction.ToggleEditMode
+import mozilla.components.compose.browser.toolbar.store.BrowserToolbarAction.EnterEditMode
 import mozilla.components.compose.browser.toolbar.store.BrowserToolbarStore
+import mozilla.components.compose.browser.toolbar.ui.BrowserToolbarQuery
 import mozilla.components.lib.state.Middleware
 import mozilla.components.support.test.middleware.CaptureActionsMiddleware
 import mozilla.components.support.test.robolectric.testContext
@@ -41,7 +42,7 @@ class BrowserToolbarToFenixSearchMapperMiddlewareTest {
         val captorMiddleware = CaptureActionsMiddleware<SearchFragmentState, SearchFragmentAction>()
         val searchStore = buildSearchStore(listOf(searchStatusMapperMiddleware, captorMiddleware))
 
-        toolbarStore.dispatch(ToggleEditMode(true))
+        toolbarStore.dispatch(EnterEditMode)
 
         captorMiddleware.assertLastAction(SearchStarted::class) {
             assertNull(it.selectedSearchEngine)
@@ -64,36 +65,38 @@ class BrowserToolbarToFenixSearchMapperMiddlewareTest {
     @Test
     fun `GIVEN search was started WHEN there's a new query in the toolbar THEN update the search state`() {
         val searchStore = buildSearchStore(listOf(buildMiddleware()))
-        toolbarStore.dispatch(ToggleEditMode(true))
+        toolbarStore.dispatch(EnterEditMode)
 
         searchStore.dispatch(SearchStarted(mockk(), false, false, searchStartedForCurrentUrl = false))
 
-        toolbarStore.dispatch(SearchQueryUpdated("t"))
+        toolbarStore.dispatch(SearchQueryUpdated(BrowserToolbarQuery("t")))
         assertEquals("t", searchStore.state.query)
 
-        toolbarStore.dispatch(SearchQueryUpdated("te"))
+        toolbarStore.dispatch(SearchQueryUpdated(BrowserToolbarQuery("te")))
         assertEquals("te", searchStore.state.query)
 
-        toolbarStore.dispatch(SearchQueryUpdated("tes"))
+        toolbarStore.dispatch(SearchQueryUpdated(BrowserToolbarQuery("tes")))
         assertEquals("tes", searchStore.state.query)
 
-        toolbarStore.dispatch(SearchQueryUpdated("test"))
+        toolbarStore.dispatch(SearchQueryUpdated(BrowserToolbarQuery("test")))
         assertEquals("test", searchStore.state.query)
     }
 
     @Test
     fun `GIVEN search was started for the current URL WHEN there's a new query in the toolbar THEN don't update the search state`() {
         val searchStore = buildSearchStore(listOf(buildMiddleware()))
-        toolbarStore.dispatch(ToggleEditMode(true))
+        toolbarStore.dispatch(EnterEditMode)
 
         searchStore.dispatch(SearchStarted(mockk(), false, false, searchStartedForCurrentUrl = true))
-        toolbarStore.dispatch(SearchQueryUpdated("https://mozilla.org", isQueryPrefilled = true))
+        toolbarStore.dispatch(
+            SearchQueryUpdated(BrowserToolbarQuery("https://mozilla.org"), isQueryPrefilled = true),
+        )
         assertEquals("", searchStore.state.query)
 
-        toolbarStore.dispatch(SearchQueryUpdated("t"))
+        toolbarStore.dispatch(SearchQueryUpdated(BrowserToolbarQuery("t")))
         assertEquals("t", searchStore.state.query)
 
-        toolbarStore.dispatch(SearchQueryUpdated("https://mozilla.org"))
+        toolbarStore.dispatch(SearchQueryUpdated(BrowserToolbarQuery("https://mozilla.org")))
         assertEquals("https://mozilla.org", searchStore.state.query)
     }
 

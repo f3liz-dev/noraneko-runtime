@@ -44,6 +44,8 @@ class GeckoInstance:
         # and causing false-positive test failures. See bug 1176798, bug 1177018,
         # bug 1210465.
         "apz.content_response_timeout": 60000,
+        # Disable extension discovery
+        "browser.discovery.enabled": False,
         # Make sure error page is not shown for blank pages with 4xx or 5xx response code
         "browser.http.blank_page_with_error_response.enabled": True,
         # Disable CFR features for automated tests.
@@ -60,6 +62,8 @@ class GeckoInstance:
         "browser.region.network.url": "",
         # Don't pull Top Sites content from the network
         "browser.topsites.contile.enabled": False,
+        # Disable translations
+        "browser.translations.enable": False,
         # Disable UI tour
         "browser.uitour.enabled": False,
         # Disable captive portal
@@ -100,6 +104,9 @@ class GeckoInstance:
         # AddonManager.SCOPE_PROFILE + AddonManager.SCOPE_APPLICATION
         "extensions.autoDisableScopes": 0,
         "extensions.enabledScopes": 5,
+        # Disable form autofill for extensions and credit cards
+        "extensions.formautofill.addresses.enabled": False,
+        "extensions.formautofill.creditCards.enabled": False,
         # Disable metadata caching for installed add-ons by default
         "extensions.getAddons.cache.enabled": False,
         # Disable intalling any distribution add-ons
@@ -159,6 +166,7 @@ class GeckoInstance:
         "network.dns.native_https_query": False,
         # Privacy and Tracking Protection
         "privacy.trackingprotection.enabled": False,
+        "privacy.trackingprotection.pbmode.enabled": False,
         # Disable recommended automation prefs in CI
         "remote.prefs.recommended": False,
         # Don't do network connections for mitm priming
@@ -174,6 +182,9 @@ class GeckoInstance:
         # Disable password capture, so that tests that include forms aren"t
         # influenced by the presence of the persistent doorhanger notification
         "signon.rememberSignons": False,
+        # Disable alerts for credential issues
+        "signon.management.page.breach-alerts.enabled": False,
+        "signon.management.page.vulnerable-passwords.enabled": False,
         # Prevent starting into safe mode after application crashes
         # Do not show TOU new user modal which can interfere with tests
         "termsofuse.bypassNotification": True,
@@ -192,6 +203,7 @@ class GeckoInstance:
         profile=None,
         addons=None,
         app_args=None,
+        debugger_info=None,
         symbols_path=None,
         gecko_log=None,
         prefs=None,
@@ -201,6 +213,7 @@ class GeckoInstance:
     ):
         self.runner_class = Runner
         self.app_args = app_args or []
+        self.debugger_info = debugger_info
         self.runner = None
         self.symbols_path = symbols_path
         self.binary = bin
@@ -369,7 +382,16 @@ class GeckoInstance:
     def start(self):
         self._update_profile(self.profile)
         self.runner = self.runner_class(**self._get_runner_args())
-        self.runner.start()
+
+        # debugger information
+        debug_args = None
+        interactive = False
+
+        if self.debugger_info:
+            debug_args = [self.debugger_info.path] + self.debugger_info.args
+            interactive = self.debugger_info.interactive
+
+        self.runner.start(debug_args, interactive)
 
     def _get_runner_args(self):
         process_args = {
@@ -608,6 +630,8 @@ class DesktopInstance(GeckoInstance):
         # !!! For backward compatibility up to Firefox 64. Only remove
         # when this Firefox version is no longer supported by the client !!!
         "app.update.auto": False,
+        # Disable the profile backup service.
+        "browser.backup.enabled": False,
         # Don't show the content blocking introduction panel
         # We use a larger number than the default 22 to have some buffer
         # This can be removed once Firefox 69 and 68 ESR and are no longer supported.
@@ -620,6 +644,8 @@ class DesktopInstance(GeckoInstance):
         "browser.download.panel.shown": True,
         # Do not show the EULA notification which can interfer with tests
         "browser.EULA.override": True,
+        # Disable all machine learning features by default
+        "browser.ml.enable": False,
         # Disable Activity Stream telemetry pings
         "browser.newtabpage.activity-stream.telemetry": False,
         # Always display a blank page
@@ -671,6 +697,9 @@ class DesktopInstance(GeckoInstance):
         # TODO: Should be considered to get removed once bug 1960741 is fixed.
         "threads.lower_mainthread_priority_in_background.enabled": False,
         "dom.ipc.processPriorityManager.enabled": False,
+        # Turn off semantic history search as it triggers network connections to
+        # download ML models.
+        "places.semanticHistory.featureGate": False,
         # Disable first-run welcome page
         "startup.homepage_welcome_url": "about:blank",
         "startup.homepage_welcome_url.additional": "",

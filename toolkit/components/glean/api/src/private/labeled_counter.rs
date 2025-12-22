@@ -124,7 +124,9 @@ impl Counter for LabeledCounterMetric {
 }
 
 #[inherent]
-impl glean::TestGetValue<i32> for LabeledCounterMetric {
+impl glean::TestGetValue for LabeledCounterMetric {
+    type Output = i32;
+
     /// **Test-only API.**
     ///
     /// Get the currently stored value as an integer.
@@ -174,7 +176,10 @@ mod test {
 
         assert_eq!(
             1,
-            metric.get("a_label").test_get_value(Some("test-ping".to_string())).unwrap()
+            metric
+                .get("a_label")
+                .test_get_value(Some("test-ping".to_string()))
+                .unwrap()
         );
     }
 

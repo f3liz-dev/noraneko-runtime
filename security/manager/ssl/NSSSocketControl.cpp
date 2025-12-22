@@ -170,7 +170,7 @@ void NSSSocketControl::SetHandshakeCompleted() {
 
   if (mTlsHandshakeCallback) {
     auto callback = std::move(mTlsHandshakeCallback);
-    Unused << callback->HandshakeDone();
+    (void)callback->HandshakeDone();
   }
 }
 
@@ -407,7 +407,6 @@ void NSSSocketControl::SetCertVerificationWaiting() {
 // callbacks.
 void NSSSocketControl::SetCertVerificationResult(PRErrorCode errorCode) {
   COMMON_SOCKET_CONTROL_ASSERT_ON_OWNING_THREAD();
-  SetUsedPrivateDNS(GetProviderFlags() & nsISocketProvider::USED_PRIVATE_DNS);
   MOZ_ASSERT(mCertVerificationState == WaitingForCertVerification,
              "Invalid state transition to AfterCertVerification");
 
@@ -444,7 +443,7 @@ void NSSSocketControl::SetCertVerificationResult(PRErrorCode errorCode) {
 
   mCertVerificationState = AfterCertVerification;
   if (mTlsHandshakeCallback) {
-    Unused << mTlsHandshakeCallback->CertVerificationDone();
+    (void)mTlsHandshakeCallback->CertVerificationDone();
   }
 }
 
@@ -482,7 +481,7 @@ void NSSSocketControl::ClientAuthCertificateSelected(
         if (cert) {
           if (CERT_AddCertToListTail(mClientCertChain.get(), cert.get()) ==
               SECSuccess) {
-            Unused << cert.release();
+            (void)cert.release();
           }
         }
       }
@@ -495,7 +494,7 @@ void NSSSocketControl::ClientAuthCertificateSelected(
     glean::security::client_auth_cert_usage.Get("sent"_ns).Add(1);
   }
 
-  Unused << SSL_ClientCertCallbackComplete(
+  (void)SSL_ClientCertCallbackComplete(
       mFd, sendingClientAuthCert ? SECSuccess : SECFailure,
       sendingClientAuthCert ? key.release() : nullptr,
       sendingClientAuthCert ? cert.release() : nullptr);
@@ -504,7 +503,7 @@ void NSSSocketControl::ClientAuthCertificateSelected(
           ("[%p] ClientAuthCertificateSelected mTlsHandshakeCallback=%p",
            (void*)mFd, mTlsHandshakeCallback.get()));
   if (mTlsHandshakeCallback) {
-    Unused << mTlsHandshakeCallback->ClientAuthCertificateSelected();
+    (void)mTlsHandshakeCallback->ClientAuthCertificateSelected();
   }
 }
 

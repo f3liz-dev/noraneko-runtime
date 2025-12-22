@@ -406,7 +406,7 @@ newtab-wallpaper-abstract-purple-green = Chuyển sắc ánh sáng tím và xanh
 newtab-wallpaper-abstract-blue-purple-waves = Hình dạng gợn sóng màu xanh dương và tím
 newtab-wallpaper-abstract-black-waves = Hình dạng gợn sóng màu đen
 
-## Celestial
+## Firefox
 
 newtab-wallpaper-category-title-photographs = Hình ảnh
 newtab-wallpaper-beach-at-sunrise = Bãi biển lúc bình minh
@@ -435,6 +435,10 @@ feature-highlight-dismiss-button =
 feature-highlight-wallpaper =
     .title = { -newtab-wallpaper-feature-highlight-header }
     .aria-label = { -newtab-wallpaper-feature-highlight-content }
+
+## Firefox
+
+newtab-wallpaper-category-title-firefox = { -brand-product-name }
 
 ## Celestial
 
@@ -477,8 +481,16 @@ newtab-weather-menu-change-temperature-units-fahrenheit = Chuyển sang độ F
 newtab-weather-menu-change-temperature-units-celsius = Chuyển sang độ C
 newtab-weather-menu-hide-weather = Ẩn thời tiết trên thẻ mới
 newtab-weather-menu-learn-more = Tìm hiểu thêm
+newtab-weather-menu-detect-my-location = Phát hiện vị trí của tôi
 # This message is shown if user is working offline
 newtab-weather-error-not-available = Dữ liệu thời tiết hiện không có sẵn.
+newtab-weather-opt-in-see-weather = Bạn có muốn xem thời tiết ở nơi bạn ở không?
+newtab-weather-opt-in-not-now =
+    .label = Không phải bây giờ
+newtab-weather-opt-in-yes =
+    .label = Đồng ý
+# We'll be showing static (fake) weather data if the user has not opted in to using their location
+newtab-weather-static-city = Thành phố New York
 
 ## Topic Labels
 
@@ -645,6 +657,9 @@ newtab-widget-lists-input-menu-move-up = Di chuyển lên
 newtab-widget-lists-input-menu-move-down = Di chuyển xuống
 newtab-widget-lists-input-menu-delete = Xóa
 newtab-widget-lists-input-menu-edit = Chỉnh sửa
+# the + symbol emphasises the functionality of adding a new list
+newtab-widget-lists-dropdown-create =
+    .label = + Tạo một danh sách mới
 newtab-widget-lists-name-label-default =
     .label = Danh sách nhiệm vụ
 newtab-widget-lists-name-placeholder-default =
@@ -664,10 +679,6 @@ newtab-widget-timer-mode-focus =
     .label = Tập trung
 newtab-widget-timer-mode-break =
     .label = Giải lao
-newtab-widget-timer-play =
-    .title = Bắt đầu
-newtab-widget-timer-pause =
-    .title = Tạm dừng
 newtab-widget-timer-label-play =
     .label = Bắt đầu
 newtab-widget-timer-label-pause =

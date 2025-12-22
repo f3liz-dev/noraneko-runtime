@@ -480,7 +480,7 @@ async function getComputedStyleProperty(selector, pseudo, propName) {
     [selector, pseudo, propName],
     (selectorChild, pseudoChild, propNameChild) => {
       const element = content.document.querySelector(selectorChild);
-      return content.document.defaultView
+      return content
         .getComputedStyle(element, pseudoChild)
         .getPropertyValue(propNameChild);
     }
@@ -512,7 +512,7 @@ async function waitForComputedStyleProperty(
     (selectorChild, pseudoChild, propNameChild, expectedChild) => {
       const element = content.document.querySelector(selectorChild);
       return ContentTaskUtils.waitForCondition(() => {
-        const value = content.document.defaultView
+        const value = content
           .getComputedStyle(element, pseudoChild)
           .getPropertyValue(propNameChild);
         return value === expectedChild;
@@ -786,11 +786,11 @@ var setSearchFilter = async function (view, searchValue) {
   const searchField = view.searchField;
   searchField.focus();
 
+  const onRuleviewFiltered = view.inspector.once("ruleview-filtered");
   for (const key of searchValue.split("")) {
     EventUtils.synthesizeKey(key, {}, view.styleWindow);
   }
-
-  await view.inspector.once("ruleview-filtered");
+  await onRuleviewFiltered;
 };
 
 /**

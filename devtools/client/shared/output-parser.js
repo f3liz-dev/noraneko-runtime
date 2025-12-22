@@ -67,6 +67,7 @@ const COLOR_TAKING_FUNCTIONS = new Set([
   "repeating-conic-gradient",
   "drop-shadow",
   "color-mix",
+  "contrast-color",
   "light-dark",
 ]);
 // Functions that accept a shape argument.
@@ -719,7 +720,7 @@ class OutputParser {
           }
           break;
         }
-        case "Dimension":
+        case "Dimension": {
           const value = text.substring(token.startOffset, token.endOffset);
           if (angleOK(value)) {
             this.#appendAngle(value, options);
@@ -727,6 +728,7 @@ class OutputParser {
             this.#appendTextNode(value);
           }
           break;
+        }
         case "UnquotedUrl":
         case "BadUrl":
           this.#appendURL(

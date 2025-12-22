@@ -6,6 +6,7 @@
 
 #include "PerfStats.h"
 #include "nsAppRunner.h"
+#include <string_view>
 #include "mozilla/dom/BrowserParent.h"
 #include "mozilla/dom/CanonicalBrowsingContext.h"
 #include "mozilla/dom/ContentParent.h"
@@ -53,11 +54,21 @@ void PerfStats::SetCollectionMask(MetricMask aMask) {
   ContentParent::GetAll(contentParents);
 
   for (ContentParent* parent : contentParents) {
-    Unused << parent->SendUpdatePerfStatsCollectionMask(aMask);
+    (void)parent->SendUpdatePerfStatsCollectionMask(aMask);
   }
 }
 
 PerfStats::MetricMask PerfStats::GetCollectionMask() { return sCollectionMask; }
+
+PerfStats::MetricMask PerfStats::GetFeatureMask(const char* aMetricName) {
+  for (int i = 0; i < static_cast<int>(Metric::Max); i++) {
+    if (std::string_view(aMetricName) == std::string_view(sMetricNames[i])) {
+      return 1ULL << i;
+    }
+  }
+
+  return 0;
+}
 
 PerfStats* PerfStats::GetSingleton() {
   if (!sSingleton) {

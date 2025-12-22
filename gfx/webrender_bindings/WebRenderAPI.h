@@ -348,10 +348,10 @@ class WebRenderAPI final {
                wr::WebRenderAPI* aRootDocumentApi = nullptr);
 
   ~WebRenderAPI();
-  // Should be used only for shutdown handling
-  void WaitFlushed();
 
-  void UpdateDebugFlags(uint32_t aFlags);
+  void WaitUntilPresentationFlushed();
+
+  void UpdateDebugFlags(uint64_t aFlags);
   bool CheckIsRemoteTextureReady(layers::RemoteTextureInfoList* aList,
                                  const TimeStamp& aTimeStamp);
   void WaitRemoteTextureReady(layers::RemoteTextureInfoList* aList);

@@ -8,7 +8,6 @@
 
 #include "ContentEventHandler.h"
 #include "ErrorList.h"
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/BasicEvents.h"
 #include "mozilla/ControllerCommand.h"
@@ -520,7 +519,9 @@ nsresult nsSelectionCommand::DoCommand(const nsACString& aCommandName,
 already_AddRefed<nsIDocumentViewerEdit>
 nsSelectionCommand::GetDocumentViewerEditFromContext(nsISupports* aContext) {
   nsCOMPtr<nsPIDOMWindowOuter> window = do_QueryInterface(aContext);
-  NS_ENSURE_TRUE(window, nullptr);
+  if (!window) {
+    return nullptr;
+  }
 
   nsIDocShell* docShell = window->GetDocShell();
   NS_ENSURE_TRUE(docShell, nullptr);

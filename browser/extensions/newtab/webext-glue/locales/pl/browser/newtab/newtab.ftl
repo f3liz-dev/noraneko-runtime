@@ -407,7 +407,7 @@ newtab-wallpaper-abstract-purple-green = Gradient fioletowego i zielonego świa
 newtab-wallpaper-abstract-blue-purple-waves = Niebieskie i fioletowe faliste kształty
 newtab-wallpaper-abstract-black-waves = Czarne faliste kształty
 
-## Celestial
+## Firefox
 
 newtab-wallpaper-category-title-photographs = Zdjęcia
 newtab-wallpaper-beach-at-sunrise = Plaża o wschodzie słońca
@@ -436,6 +436,10 @@ feature-highlight-dismiss-button =
 feature-highlight-wallpaper =
     .title = { -newtab-wallpaper-feature-highlight-header }
     .aria-label = { -newtab-wallpaper-feature-highlight-content }
+
+## Firefox
+
+newtab-wallpaper-category-title-firefox = { -brand-product-name }
 
 ## Celestial
 
@@ -478,8 +482,16 @@ newtab-weather-menu-change-temperature-units-fahrenheit = Przełącz na stopnie 
 newtab-weather-menu-change-temperature-units-celsius = Przełącz na stopnie Celsjusza
 newtab-weather-menu-hide-weather = Ukryj pogodę na stronie nowej karty
 newtab-weather-menu-learn-more = Więcej informacji
+newtab-weather-menu-detect-my-location = Wykryj moje położenie
 # This message is shown if user is working offline
 newtab-weather-error-not-available = Informacje o pogodzie nie są w tej chwili dostępne.
+newtab-weather-opt-in-see-weather = Czy wyświetlać pogodę dla tego położenia?
+newtab-weather-opt-in-not-now =
+    .label = Nie teraz
+newtab-weather-opt-in-yes =
+    .label = Tak
+# We'll be showing static (fake) weather data if the user has not opted in to using their location
+newtab-weather-static-city = Nowy Jork
 
 ## Topic Labels
 
@@ -646,6 +658,9 @@ newtab-widget-lists-input-menu-move-up = Przesuń w górę
 newtab-widget-lists-input-menu-move-down = Przesuń w dół
 newtab-widget-lists-input-menu-delete = Usuń
 newtab-widget-lists-input-menu-edit = Edytuj
+# the + symbol emphasises the functionality of adding a new list
+newtab-widget-lists-dropdown-create =
+    .label = + Utwórz nową listę
 newtab-widget-lists-name-label-default =
     .label = Lista zadań
 newtab-widget-lists-name-placeholder-default =
@@ -665,10 +680,6 @@ newtab-widget-timer-mode-focus =
     .label = Skupienie
 newtab-widget-timer-mode-break =
     .label = Przerwa
-newtab-widget-timer-play =
-    .title = Rozpocznij
-newtab-widget-timer-pause =
-    .title = Wstrzymaj
 newtab-widget-timer-label-play =
     .label = Rozpocznij
 newtab-widget-timer-label-pause =
@@ -685,7 +696,7 @@ newtab-widget-message-title = Nie trać koncentracji dzięki listom i wbudowane
 # to-dos stands for "things to do".
 newtab-widget-message-copy = Od szybkich przypomnień po codzienne listy zadań, od sesji skupienia po przerwy na rozciągnięcie — nie trać koncentracji ani czasu.
 newtab-promo-card-title = Wspieraj { -brand-product-name(case: "acc") }
-newtab-promo-card-body = Nasi sponsorzy wspierają naszą misję budowania lepszej sieci
+newtab-promo-card-body = Nasi sponsorzy wspierają naszą misję budowania lepszej sieci.
 newtab-promo-card-cta = Więcej informacji
 newtab-promo-card-dismiss-button =
     .title = Zamknij

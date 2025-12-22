@@ -9,7 +9,6 @@
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/SchedulerGroup.h"
-#include "mozilla/ScopeExit.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/dom/ClientInfo.h"
 #include "mozilla/dom/InternalRequest.h"
@@ -17,7 +16,6 @@
 #include "mozilla/dom/PerformanceStorage.h"
 #include "mozilla/dom/PerformanceTiming.h"
 #include "mozilla/dom/ServiceWorkerDescriptor.h"
-#include "mozilla/glean/NetwerkMetrics.h"
 #include "mozilla/ipc/BackgroundUtils.h"
 #include "mozilla/net/CookieJarSettings.h"
 #include "nsContentUtils.h"
@@ -790,21 +788,11 @@ bool FetchService::DoesExceedsKeepaliveResourceLimits(
     const nsACString& origin) {
   if (mTotalKeepAliveRequests >=
       StaticPrefs::dom_fetchKeepalive_total_request_limit()) {
-    // Count keep-alive request discards due to
-    // exceeding the total keep-alive request limit.
-    mozilla::glean::networking::fetch_keepalive_discard_count
-        .Get("total_keepalive_limit"_ns)
-        .Add(1);
     return true;
   }
 
   if (mPendingKeepAliveRequestsPerOrigin.Get(origin) >=
       StaticPrefs::dom_fetchKeepalive_request_limit_per_origin()) {
-    // Count keep-alive request discards due to
-    // exceeding the per-origin request limit.
-    mozilla::glean::networking::fetch_keepalive_discard_count
-        .Get("per_origin_limit"_ns)
-        .Add(1);
     return true;
   }
 

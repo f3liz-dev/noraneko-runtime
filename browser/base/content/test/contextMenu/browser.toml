@@ -21,7 +21,11 @@ tags = "os_integration"
 ["browser_contextmenu.js"]
 support-files = [ "../general/video.webm"  ]
 tags = "fullscreen"
-skip-if = ["os == 'linux'"]
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && processor == 'x86_64'",
+  "os == 'mac' && os_version == '10.15' && processor == 'x86_64' && opt", # Bug 1853186
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64' && opt", # Bug 1853186
+]
 
 ["browser_contextmenu_add_search_engine.js"]
 support-files = ["subtst_contextmenu_add_search_engine.html"]
@@ -54,6 +58,9 @@ skip-if = ["os == 'linux' && socketprocess_networking"]
 ["browser_contextmenu_loadblobinnewtab.js"]
 support-files = ["browser_contextmenu_loadblobinnewtab.html"]
 skip-if = ["os == 'linux' && socketprocess_networking"]
+
+["browser_contextmenu_plaintextlinks.js"]
+skip-if = ["a11y_checks"] # Bugs 1858041 and 1835079 for causing intermittent crashes
 
 ["browser_contextmenu_save_blocked.js"]
 skip-if = ["os == 'linux' && socketprocess_networking"]
@@ -88,8 +95,6 @@ support-files = [
   "firebird.png^headers^",
 ]
 skip-if = ["os == 'linux' && socketprocess_networking"]
-
-["browser_copy_link_to_existing_highlight.js"]
 
 ["browser_copy_link_to_highlight.js"]
 

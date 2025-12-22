@@ -15,8 +15,8 @@
 #import "MOXSearchInfo.h"
 #import "MOXTextMarkerDelegate.h"
 #import "MOXWebAreaAccessible.h"
-#import "mozTextAccessible.h"
 #import "mozRootAccessible.h"
+#import "mozTextAccessible.h"
 
 #include "LocalAccessible-inl.h"
 #include "nsAccUtils.h"
@@ -163,6 +163,10 @@ using namespace mozilla::a11y;
     return [self stateWithMask:states::EXPANDABLE] == 0;
   }
 
+  if ([self blockTextFieldMethod:selector]) {
+    return YES;
+  }
+
   return [super moxBlockSelector:selector];
 }
 
@@ -200,11 +204,15 @@ using namespace mozilla::a11y;
   // Convert the given screen-global point in the cocoa coordinate system (with
   // origin in the bottom-left corner of the screen) into point in the Gecko
   // coordinate system (with origin in a top-left screen point).
+  NSScreen* scalingView = utils::GetNSScreenForAcc(self);
+  // Regardless of screen selected above, VO is only happy if we use the
+  // main screen height for Y coordinate conversion. This is consistent with
+  // moxFrame and GeckoTextMarkerRange::Bounds().
   NSScreen* mainView = [[NSScreen screens] objectAtIndex:0];
   NSPoint tmpPoint =
       NSMakePoint(point.x, [mainView frame].size.height - point.y);
   LayoutDeviceIntPoint geckoPoint = nsCocoaUtils::CocoaPointsToDevPixels(
-      tmpPoint, nsCocoaUtils::GetBackingScaleFactor(mainView));
+      tmpPoint, nsCocoaUtils::GetBackingScaleFactor(scalingView));
 
   Accessible* child = mGeckoAccessible->ChildAtPoint(
       geckoPoint.x, geckoPoint.y, Accessible::EWhichChildAtPoint::DeepestChild);
@@ -288,6 +296,17 @@ using namespace mozilla::a11y;
 }
 
 - (NSString*)moxRole {
+  if (mRole == roles::ENTRY ||
+      (mGeckoAccessible->IsGeneric() && mGeckoAccessible->IsEditableRoot())) {
+    if ([self stateWithMask:states::MULTI_LINE]) {
+      // This is a special case where we have a separate role when an entry is a
+      // multiline text area.
+      return NSAccessibilityTextAreaRole;
+    }
+
+    return NSAccessibilityTextFieldRole;
+  }
+
 #define ROLE(geckoRole, stringRole, ariaRole, atkRole, macRole, macSubrole, \
              msaaRole, ia2Role, androidClass, iosIsElement, uiaControlType, \
              nameRule)                                                      \
@@ -399,10 +418,10 @@ using namespace mozilla::a11y;
 
 struct RoleDescrMap {
   NSString* role;
-  const nsString description;
+  const nsLiteralString description;
 };
 
-MOZ_RUNINIT static const RoleDescrMap sRoleDescrMap[] = {
+static constexpr RoleDescrMap sRoleDescrMap[] = {
     {@"AXApplicationAlert", u"alert"_ns},
     {@"AXApplicationAlertDialog", u"alertDialog"_ns},
     {@"AXApplicationDialog", u"dialog"_ns},
@@ -576,6 +595,35 @@ static bool ProvidesTitle(const Accessible* aAccessible, nsString& aName) {
   NS_OBJC_END_TRY_BLOCK_RETURN(nil);
 }
 
+- (NSArray*)moxCustomActions {
+  if (@available(macOS 13.0, *)) {
+    NSMutableArray<NSAccessibilityCustomAction*>* customActions =
+        [[[NSMutableArray alloc] init] autorelease];
+    Relation relatedActions(
+        mGeckoAccessible->RelationByType(RelationType::ACTION));
+    while (Accessible* target = relatedActions.Next()) {
+      if (target->HasPrimaryAction()) {
+        // Any ACTION related accesibles should be considered a custom action.
+        mozAccessible* nativeTarget = GetNativeFromGeckoAccessible(target);
+        if (nativeTarget) {
+          nsAutoString name;
+          // Use the name of the target as the action name.
+          target->Name(name);
+          NSAccessibilityCustomAction* action =
+              [[NSAccessibilityCustomAction alloc]
+                  initWithName:nsCocoaUtils::ToNSString(name)
+                        target:nativeTarget
+                      selector:@selector(moxPerformPress)];
+          [customActions addObject:action];
+        }
+      }
+    }
+    return customActions;
+  }
+
+  return nil;
+}
+
 - (NSWindow*)moxWindow {
   NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
 
@@ -650,13 +698,19 @@ static bool ProvidesTitle(const Accessible* aAccessible, nsString& aName) {
   MOZ_ASSERT(mGeckoAccessible);
 
   LayoutDeviceIntRect rect = mGeckoAccessible->Bounds();
-  NSScreen* mainView = [[NSScreen screens] objectAtIndex:0];
-  CGFloat scaleFactor = nsCocoaUtils::GetBackingScaleFactor(mainView);
+  NSScreen* screen = utils::GetNSScreenForAcc(self);
+  CGFloat scaleFactor = nsCocoaUtils::GetBackingScaleFactor(screen);
+
+  // Regardless of screen selected above, VO is only happy if we use the
+  // main screen height for Y coordinate conversion. This is consistent with
+  // moxHitTest and GeckoTextMarkerRange::Bounds().
+  NSScreen* mainScreen = [[NSScreen screens] objectAtIndex:0];
+  CGFloat mainScreenHeight = [mainScreen frame].size.height;
 
   return [NSValue
       valueWithRect:NSMakeRect(
                         static_cast<CGFloat>(rect.x) / scaleFactor,
-                        [mainView frame].size.height -
+                        mainScreenHeight -
                             static_cast<CGFloat>(rect.y + rect.height) /
                                 scaleFactor,
                         static_cast<CGFloat>(rect.width) / scaleFactor,
@@ -803,8 +857,8 @@ static bool ProvidesTitle(const Accessible* aAccessible, nsString& aName) {
 }
 
 - (id)moxEditableAncestor {
-  return [self moxFindAncestor:^BOOL(id moxAcc, BOOL* stop) {
-    return [moxAcc isKindOfClass:[mozTextAccessible class]];
+  return [self moxFindAncestor:^BOOL(id<MOXAccessible> moxAcc, BOOL* stop) {
+    return [moxAcc moxIsTextField];
   }];
 }
 
@@ -1023,13 +1077,6 @@ static bool ProvidesTitle(const Accessible* aAccessible, nsString& aName) {
   }
 
   return relations;
-}
-
-- (void)handleAccessibleTextChangeEvent:(NSString*)change
-                               inserted:(BOOL)isInserted
-                            inContainer:(Accessible*)container
-                                     at:(int32_t)start {
-  [self maybePostValidationErrorChanged];
 }
 
 - (void)handleAccessibleEvent:(uint32_t)eventType {

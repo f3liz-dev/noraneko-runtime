@@ -2,9 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-// This file is loaded into the browser window scope.
-/* eslint-env mozilla/browser-window */
-
 const {
   FX_MONITOR_OAUTH_CLIENT_ID,
   FX_RELAY_OAUTH_CLIENT_ID,
@@ -2421,7 +2418,8 @@ var gSync = {
     }
   },
 
-  /** Checks if the current list of attached clients to the Mozilla account
+  /**
+   * Checks if the current list of attached clients to the Mozilla account
    * has a service associated with the passed in Id
    *  @param {string} clientId
    *   A known static Id from FxA that identifies the service it's associated with

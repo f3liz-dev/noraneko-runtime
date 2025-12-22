@@ -10,6 +10,7 @@ import mozilla.telemetry.glean.private.NoExtras
 import org.mozilla.fenix.GleanMetrics.Webcompatreporting
 import org.mozilla.fenix.webcompat.store.WebCompatReporterAction
 import org.mozilla.fenix.webcompat.store.WebCompatReporterState
+import org.mozilla.fenix.webcompat.store.WebCompatReporterStore
 
 /**
  * A [Middleware] for recording telemetry based on [WebCompatReporterAction]s that are dispatch to the
@@ -35,12 +36,15 @@ class WebCompatReporterTelemetryMiddleware :
             }
 
             WebCompatReporterAction.SendReportClicked -> {
-                Webcompatreporting.send.record(NoExtras())
+                Webcompatreporting.send.record(
+                    Webcompatreporting.SendExtra(sentWithBlockedTrackers = context.state.includeEtpBlockedUrls),
+                )
             }
 
             WebCompatReporterAction.LearnMoreClicked -> {
                 Webcompatreporting.learnMore.record(NoExtras())
             }
+
             else -> {}
         }
     }

@@ -358,7 +358,6 @@ bool WarpCacheIRTranspiler::transpile(
 #undef DEFINE_OP
 
       default:
-        fprintf(stderr, "Unsupported op: %s\n", CacheIROpNames[size_t(op)]);
         MOZ_CRASH("Unsupported op");
     }
   } while (reader.more());
@@ -490,6 +489,13 @@ bool WarpCacheIRTranspiler::emitGuardFuse(RealmFuses::FuseIndex fuseIndex) {
       add(ins);
       return true;
   }
+}
+
+bool WarpCacheIRTranspiler::emitGuardRuntimeFuse(
+    RuntimeFuses::FuseIndex fuseIndex) {
+  // This is a no-op because WarpOracle has added a compilation dependency.
+  MOZ_ASSERT(RuntimeFuses::isInvalidatingFuse(fuseIndex));
+  return true;
 }
 
 bool WarpCacheIRTranspiler::emitGuardObjectFuseProperty(
@@ -2549,10 +2555,10 @@ bool WarpCacheIRTranspiler::emitTypedArraySubarrayResult(
 
   auto* ins = MTypedArraySubarray::New(alloc(), obj, actualStart, length,
                                        templateObj, heap);
-  add(ins);
+  addEffectful(ins);
 
   pushResult(ins);
-  return true;
+  return resumeAfter(ins);
 }
 
 bool WarpCacheIRTranspiler::emitLinearizeForCharAccess(
@@ -6612,7 +6618,10 @@ bool WarpCacheIRTranspiler::emitBindFunctionResult(
   MDefinition* target = getOperand(targetId);
   JSObject* templateObj = tenuredObjectStubField(templateObjectOffset);
 
-  MOZ_ASSERT(callInfo_->argc() == argc);
+  // callInfo_ can be null when `bind` is inlined through a getter access, but
+  // in that case `argc` is guaranteed to be zero.
+  MOZ_ASSERT_IF(callInfo_, callInfo_->argc() == argc);
+  MOZ_ASSERT_IF(!callInfo_, argc == 0);
 
   auto* bound = MBindFunction::New(alloc(), target, argc, templateObj);
   if (!bound) {
@@ -6633,7 +6642,10 @@ bool WarpCacheIRTranspiler::emitSpecializedBindFunctionResult(
   MDefinition* target = getOperand(targetId);
   JSObject* templateObj = tenuredObjectStubField(templateObjectOffset);
 
-  MOZ_ASSERT(callInfo_->argc() == argc);
+  // callInfo_ can be null when `bind` is inlined through a getter access, but
+  // in that case `argc` is guaranteed to be zero.
+  MOZ_ASSERT_IF(callInfo_, callInfo_->argc() == argc);
+  MOZ_ASSERT_IF(!callInfo_, argc == 0);
 
   auto* bound = MNewBoundFunction::New(alloc(), templateObj);
   add(bound);

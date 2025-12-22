@@ -188,7 +188,7 @@ nsresult nsHtml5Parser::Parse(const nsAString& aSourceBuffer, void* aKey,
   // Gripping the other objects just in case, since the other old grip
   // required grips to these, too.
   RefPtr<nsHtml5StreamParser> streamKungFuDeathGrip(GetStreamParser());
-  mozilla::Unused << streamKungFuDeathGrip;  // Not used within function
+  (void)streamKungFuDeathGrip;  // Not used within function
   RefPtr<nsHtml5TreeOpExecutor> executor(mExecutor);
 
   MOZ_RELEASE_ASSERT(executor->HasStarted());
@@ -207,7 +207,7 @@ nsresult nsHtml5Parser::Parse(const nsAString& aSourceBuffer, void* aKey,
       return NS_OK;
     }
     mDocumentClosed = true;
-    if (!mBlocked && !mInDocumentWrite) {
+    if (!mBlocked && !mInDocumentWrite && !executor->IsFlushing()) {
       return ParseUntilBlocked();
     }
     return NS_OK;

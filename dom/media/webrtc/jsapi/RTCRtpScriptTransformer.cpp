@@ -26,7 +26,6 @@
 #include "mozilla/Logging.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/RefPtr.h"
-#include "mozilla/Result.h"
 #include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/Promise-inl.h"
@@ -428,7 +427,10 @@ already_AddRefed<Promise> RTCRtpScriptTransformer::OnTransformedFrame(
   if (aFrame->GetCounter() > mLastReceivedFrameCounter &&
       aFrame->CheckOwner(this) && mProxy) {
     mLastReceivedFrameCounter = aFrame->GetCounter();
-    mProxy->OnTransformedFrame(aFrame->TakeFrame());
+    // also skip if frame has been detached (transferred away)
+    if (auto frame = aFrame->TakeFrame()) {
+      mProxy->OnTransformedFrame(std::move(frame));
+    }
   }
 
   return Promise::CreateResolvedWithUndefined(GetParentObject(), aError);

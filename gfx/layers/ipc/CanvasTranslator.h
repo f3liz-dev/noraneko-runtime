@@ -31,7 +31,6 @@
 namespace mozilla {
 
 using EventType = gfx::RecordedEvent::EventType;
-class TaskQueue;
 
 class WebGLContext;
 
@@ -50,7 +49,6 @@ namespace layers {
 class SharedSurfacesHolder;
 class TextureData;
 class TextureHost;
-class VideoProcessorD3D11;
 
 class CanvasTranslator final : public gfx::InlineTranslator,
                                public PCanvasParent {
@@ -153,11 +151,6 @@ class CanvasTranslator final : public gfx::InlineTranslator,
   void Flush();
 
   /**
-   * Marks that device change processing in the writing process has finished.
-   */
-  void DeviceChangeAcknowledged();
-
-  /**
    * Marks that device reset processing in the writing process has finished.
    */
   void DeviceResetAcknowledged();
@@ -243,10 +236,6 @@ class CanvasTranslator final : public gfx::InlineTranslator,
    */
   void AddSourceSurface(gfx::ReferencePtr aRefPtr,
                         gfx::SourceSurface* aSurface) final {
-    if (mMappedSurface == aRefPtr) {
-      mPreparedMap = nullptr;
-      mMappedSurface = nullptr;
-    }
     RemoveDataSurface(aRefPtr);
     InlineTranslator::AddSourceSurface(aRefPtr, aSurface);
   }
@@ -258,10 +247,6 @@ class CanvasTranslator final : public gfx::InlineTranslator,
    * @param aRefPtr the key to the objects to remove
    */
   void RemoveSourceSurface(gfx::ReferencePtr aRefPtr) final {
-    if (mMappedSurface == aRefPtr) {
-      mPreparedMap = nullptr;
-      mMappedSurface = nullptr;
-    }
     RemoveDataSurface(aRefPtr);
     InlineTranslator::RemoveSourceSurface(aRefPtr);
   }
@@ -300,24 +285,6 @@ class CanvasTranslator final : public gfx::InlineTranslator,
    * @returns the DataSourceSurface or nullptr if not found
    */
   void RemoveDataSurface(gfx::ReferencePtr aRefPtr);
-
-  /**
-   * Sets a ScopedMap, to be used in a later event.
-   *
-   * @param aSurface the associated surface in the other process
-   * @param aMap the ScopedMap to store
-   */
-  void SetPreparedMap(gfx::ReferencePtr aSurface,
-                      UniquePtr<gfx::DataSourceSurface::ScopedMap> aMap);
-
-  /**
-   * Gets the ScopedMap stored using SetPreparedMap.
-   *
-   * @param aSurface must match the surface from the SetPreparedMap call
-   * @returns the ScopedMap if aSurface matches otherwise nullptr
-   */
-  UniquePtr<gfx::DataSourceSurface::ScopedMap> GetPreparedMap(
-      gfx::ReferencePtr aSurface);
 
   void PrepareShmem(const RemoteTextureOwnerId aTextureOwnerId);
 
@@ -450,8 +417,6 @@ class CanvasTranslator final : public gfx::InlineTranslator,
 
   bool ReadPendingEvent(EventType& aEventType);
 
-  bool CheckDeactivated();
-
   void Deactivate();
 
   bool TryDrawTargetWebglFallback(const RemoteTextureOwnerId aTextureOwnerId,
@@ -479,8 +444,6 @@ class CanvasTranslator final : public gfx::InlineTranslator,
   bool HandleExtensionEvent(int32_t aType);
 
   bool CreateReferenceTexture();
-  bool CheckForFreshCanvasDevice(int aLineNumber);
-  void NotifyDeviceChanged();
 
   void NotifyDeviceReset(const RemoteTextureOwnerIdSet& aIds);
   bool EnsureSharedContextWebgl();
@@ -509,12 +472,7 @@ class CanvasTranslator final : public gfx::InlineTranslator,
 
   void NotifyTextureDestruction(const RemoteTextureOwnerId aTextureOwnerId);
 
-  const RefPtr<TaskQueue> mTranslationTaskQueue;
   const RefPtr<SharedSurfacesHolder> mSharedSurfacesHolder;
-#if defined(XP_WIN)
-  RefPtr<ID3D11Device> mDevice;
-  DataMutex<RefPtr<VideoProcessorD3D11>> mVideoProcessorD3D11;
-#endif
   static StaticRefPtr<gfx::SharedContextWebgl> sSharedContext;
   RefPtr<gfx::SharedContextWebgl> mSharedContext;
   RefPtr<RemoteTextureOwnerClient> mRemoteTextureOwner;
@@ -600,13 +558,10 @@ class CanvasTranslator final : public gfx::InlineTranslator,
   void RemoveTextureKeepAlive(const RemoteTextureOwnerId& aId);
 
   nsRefPtrHashtable<nsPtrHashKey<void>, gfx::DataSourceSurface> mDataSurfaces;
-  gfx::ReferencePtr mMappedSurface;
-  UniquePtr<gfx::DataSourceSurface::ScopedMap> mPreparedMap;
   Atomic<bool> mDeactivated{false};
   Atomic<bool> mBlocked{false};
   Atomic<bool> mIPDLClosed{false};
   bool mIsInTransaction = false;
-  bool mDeviceResetInProgress = false;
 
   RefPtr<gfx::DataSourceSurface> mUsedDataSurfaceForSurfaceDescriptor;
   RefPtr<gfx::DataSourceSurfaceWrapper> mUsedWrapperForSurfaceDescriptor;

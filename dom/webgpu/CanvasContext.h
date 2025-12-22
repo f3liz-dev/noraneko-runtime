@@ -60,7 +60,7 @@ class CanvasContext final : public nsICanvasRenderingContextInternal,
   NS_IMETHOD GetInputStream(
       const char* aMimeType, const nsAString& aEncoderOptions,
       mozilla::CanvasUtils::ImageExtraction aExtractionBehavior,
-      nsIInputStream** aStream) override;
+      const nsACString& aRandomizationKey, nsIInputStream** aStream) override;
   already_AddRefed<gfx::SourceSurface> GetSurfaceSnapshot(
       gfxAlphaType* aOutAlphaType) override;
 
@@ -113,7 +113,6 @@ class CanvasContext final : public nsICanvasRenderingContextInternal,
 
   Maybe<layers::RemoteTextureId> mLastRemoteTextureId;
   Maybe<layers::RemoteTextureOwnerId> mRemoteTextureOwnerId;
-  nsTArray<RawId> mBufferIds;
   RefPtr<layers::FwdTransactionTracker> mFwdTransactionTracker;
   bool mUseSharedTextureInSwapChain = false;
   bool mNewTextureRequested = false;

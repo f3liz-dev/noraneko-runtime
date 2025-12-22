@@ -1,5 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources xmlns:tools="http://schemas.android.com/tools" xmlns:moz="http://mozac.org/tools">
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
+<resources xmlns:tools="http://schemas.android.com/tools">
   <!-- App name for private browsing mode. %s is the name of the app (for example "Firefox"). -->
   <string name="app_name_private_5">نجی %s</string>
   <!-- App name for private browsing mode. %s is the name of the app (for example "Firefox"). -->
@@ -286,8 +293,6 @@
   <string name="customize_toggle_recently_visited">حال ہی میں ملاحظہ کی گئی</string>
   <!-- Title for the opening wallpaper settings screen -->
   <string name="customize_wallpapers">وال پیپرز</string>
-  <!-- Snackbar label for action to view selected wallpaper -->
-  <string name="wallpaper_updated_snackbar_action" tools:ignore="UnusedResources" moz:removedIn="144">نظارہ</string>
   <!-- Preference for triggering sync -->
   <string name="preferences_sync_now">ابھی sync کریں</string>
   <!-- Preference category for sync -->
@@ -584,14 +589,6 @@
   <string name="tab_crash_close">ٹیب بند کریں</string>
   <!-- Restore tab button text on the tab crash page -->
   <string name="tab_crash_restore">ٹیب بحال کریں</string>
-  <!--
-    Bookmarks
-
-    Confirmation message for a dialog confirming if the user wants to delete the selected folder
-  -->
-  <string name="bookmark_delete_folder_confirmation_dialog" tools:ignore="UnusedResources" moz:removedIn="143">کیا آپ واقعی اس فولڈر کو حذف کرنا چاہتے ہیں؟</string>
-  <!-- Confirmation message for a dialog confirming if the user wants to delete multiple items including folders. %s is the name of the app (for example "Firefox"). -->
-  <string name="bookmark_delete_multiple_folders_confirmation_dialog" tools:ignore="UnusedResources" moz:removedIn="143">%s منتخب کردہ اشیاء حذف کر دیے جاینگے۔</string>
   <!-- Screen title for adding a bookmarks folder -->
   <string name="bookmark_add_folder">فولڈر بناؤ</string>
   <!-- Snackbar edit button shown after a bookmark has been created. -->
@@ -608,8 +605,6 @@
   <string name="bookmark_menu_open_in_private_tab_button">نجی ٹیب میں کھولیں</string>
   <!-- Bookmark overflow menu delete button -->
   <string name="bookmark_menu_delete_button">مٹائیں</string>
-  <!-- Bookmark overflow menu save button -->
-  <string name="bookmark_menu_save_button" tools:ignore="UnusedResources" moz:removedIn="143">محفوظ کریں</string>
   <!--
     Bookmark multi select title in app bar
     %1$d is the number of bookmarks selected
@@ -619,33 +614,21 @@
   <string name="edit_bookmark_fragment_title">بکمارک میں ترمیم کریں</string>
   <!-- Bookmark folder editing screen title -->
   <string name="edit_bookmark_folder_fragment_title">فولڈر تدوین کریں</string>
-  <!-- Bookmark sign in button message -->
-  <string name="bookmark_sign_in_button" tools:ignore="UnusedResources" moz:removedIn="143">synced بکمارکس کو دیکھنے کے لئے سائن ان کریں</string>
   <!-- Bookmark URL editing field label -->
   <string name="bookmark_url_label">URL</string>
   <!-- Bookmark FOLDER editing field label -->
   <string name="bookmark_folder_label">فولڈر</string>
   <!-- Bookmark NAME editing field label -->
   <string name="bookmark_name_label">نام</string>
-  <!-- Bookmark add folder screen title -->
-  <string name="bookmark_add_folder_fragment_label" tools:ignore="UnusedResources" moz:removedIn="143">فولڈر بناؤ</string>
   <!-- Bookmark select folder screen title -->
   <string name="bookmark_select_folder_fragment_label">فولڈر منتخب کریں</string>
-  <!-- Bookmark editing error missing title -->
-  <string name="bookmark_empty_title_error" tools:ignore="UnusedResources" moz:removedIn="143">ایک عنوان ہونا ضروری ہے</string>
   <!-- Bookmark editing error missing or improper URL -->
   <string name="bookmark_invalid_url_error">غلط URL ہے</string>
-  <!-- Bookmark screen message for empty bookmarks folder -->
-  <string name="bookmarks_empty_message" tools:ignore="UnusedResources" moz:removedIn="143">یہاں کوئی بُکمارک نہیں ہے</string>
   <!--
     Bookmark snackbar message on deletion
     %1$s is the host part of the URL of the bookmark deleted, if any
   -->
   <string name="bookmark_deletion_snackbar_message">حذف شدہ %s</string>
-  <!-- Bookmark snackbar message on deleting multiple bookmarks not including folders -->
-  <string name="bookmark_deletion_multiple_snackbar_message_2" tools:ignore="UnusedResources" moz:removedIn="143">بکمارک حذف کردی گئی</string>
-  <!-- Bookmark snackbar message on deleting multiple bookmarks including folders -->
-  <string name="bookmark_deletion_multiple_snackbar_message_3" tools:ignore="UnusedResources" moz:removedIn="143">منتخب کردہ فولڈروں کو حذف کیا جا رہا ہے</string>
   <!-- Bookmark undo button for deletion snackbar action -->
   <string name="bookmark_undo_deletion">کالعدم</string>
   <!--
@@ -750,10 +733,6 @@
     %d is a placeholder for the number of tabs selected.
   -->
   <string name="create_collection_save_to_collection_tab_selected">%d ٹیب منتخب کیا گیا</string>
-  <!-- Text shown in snackbar when one or multiple tabs have been saved in a new collection -->
-  <string name="create_collection_tabs_saved_new_collection" tools:ignore="UnusedResources" moz:removedIn="144">مجموعہ محفوظ کیا گیا!</string>
-  <!-- Text shown in snackbar when one tab has been saved in a collection -->
-  <string name="create_collection_tab_saved" tools:ignore="UnusedResources" moz:removedIn="144">ٹیب محفوظ ہوگئی!</string>
   <!-- Content description (not visible, for screen readers etc.): button to close the collection creator -->
   <string name="create_collection_close">بند کریں</string>
   <!-- Button to save currently selected tabs in the "select tabs" step of the collection creator -->
@@ -814,10 +793,8 @@
   <!--
     Snackbar
 
-    Text shown in snackbar when user deletes a collection
+    Text shown in snackbar when user closes a tab
   -->
-  <string name="snackbar_collection_deleted" tools:ignore="UnusedResources" moz:removedIn="143">مجموعہ حذف ہوگیا</string>
-  <!-- Text shown in snackbar when user closes a tab -->
   <string name="snackbar_tab_closed">ٹیب بند ہے</string>
   <!-- Text shown in snackbar when user closes all tabs -->
   <string name="snackbar_tabs_closed">ٹیبز بند ہوگئیں</string>
@@ -825,8 +802,6 @@
   <string name="snackbar_private_tab_closed">نجی ٹیب بند ہوگئیں</string>
   <!-- Text shown in snackbar to undo deleting a tab, top site or collection -->
   <string name="snackbar_deleted_undo">کالعدم</string>
-  <!-- Text shown in snackbar when user removes a top site -->
-  <string name="snackbar_top_site_removed" moz:removedIn="144" tools:ignore="UnusedResources">سائٹ ہٹا دی گئی</string>
   <!--
     QR code scanner prompt which appears after scanning a code, but before navigating to it
     %1$s is the name of the app (for example "Firefox"), %2$s is the URL or text scanned
@@ -842,8 +817,6 @@
   <string name="qr_scanner_dialog_invalid_ok">ٹھیک ہے</string>
   <!-- Tab collection deletion prompt dialog message. %1$s is the collection name. -->
   <string name="tab_collection_dialog_message">کیا آپ واقعی %1$s کو حذف کرنا چاہتے ہیں؟</string>
-  <!-- Tab collection deletion prompt dialog option to delete the collection -->
-  <string name="tab_collection_dialog_positive" tools:ignore="UnusedResources" moz:removedIn="143">مٹائیں</string>
   <!-- Summary for Accessibility Text Size Scaling Preference -->
   <string name="preference_accessibility_text_size_summary">ویبسائٹ پر موجود متن کو بڑا یا چھوٹا کریں</string>
   <!-- Title for Accessibility Text Size Scaling Preference -->
@@ -897,14 +870,6 @@
     text to display in the snackbar once account is signed-in
   -->
   <string name="onboarding_firefox_account_sync_is_on">Sync چالو ہے</string>
-  <!--
-    Onboarding theme
-
-    Text shown in snackbar when multiple tabs have been sent to device
-  -->
-  <string name="sync_sent_tabs_snackbar" tools:ignore="UnusedResources" moz:removedIn="144">ٹیب بھیج دیا گیا</string>
-  <!-- Text shown in snackbar when one tab has been sent to device -->
-  <string name="sync_sent_tab_snackbar" tools:ignore="UnusedResources" moz:removedIn="144">ٹیب بھیج دیا گیا</string>
   <!-- Text shown in snackbar when sharing tabs failed -->
   <string name="sync_sent_tab_error_snackbar">بھیجنے میں ناکام</string>
   <!-- Text shown in snackbar for the "retry" action that the user has after sharing tabs failed -->
@@ -1108,8 +1073,6 @@
   <string name="credit_cards_edit_card">کارڈ میں تدوین کریں</string>
   <!-- The header for the card number of a credit card -->
   <string name="credit_cards_card_number">کارڈ نمبر</string>
-  <!-- The header for the expiration date of a credit card -->
-  <string name="credit_cards_expiration_date">میعاد ختم ہونے کی تاریخ</string>
   <!-- The label for the expiration date month of a credit card to be used by a11y services -->
   <string name="credit_cards_expiration_date_month">میعاد ختم ہونے کی تاریخ کا مہینہ</string>
   <!-- The label for the expiration date year of a credit card to be used by a11y services -->
@@ -1176,8 +1139,6 @@
   <string name="confirm_clear_permission_site">کیا آپ واقعی اس سائٹ کے لئے اس اجازت کو ختم کرنا چاہتے ہیں؟</string>
   <!-- label shown when there are not site exceptions to show in the site exception settings -->
   <string name="no_site_exceptions">کوئی سائٹ استثنات نہیں ہے</string>
-  <!-- Bookmark deletion confirmation -->
-  <string name="bookmark_deletion_confirmation" tools:ignore="UnusedResources" moz:removedIn="143">کیا آپ واقعی اس بُکمارک کو حذف کرنا چاہتے ہیں؟</string>
   <!--
     text shown before the issuer name to indicate who its verified by, %1$s is the name of
     the certificate authority that verified the ticket
@@ -1245,8 +1206,6 @@
   <string name="radio_preference_info_content_description">تفصیلات کے لیے کلک کریں</string>
   <!-- Content description for the action bar "up" button -->
   <string name="action_bar_up_description">اوپر جائیں</string>
-  <!-- Content description for privacy content close button -->
-  <string name="privacy_content_close_button_content_description" tools:ignore="UnusedResources" moz:removedIn="143">بند کریں</string>
   <!-- Translations feature -->
 
   <!-- TextField Design System Component -->

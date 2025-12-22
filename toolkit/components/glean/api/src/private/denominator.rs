@@ -117,7 +117,9 @@ impl Counter for DenominatorMetric {
 }
 
 #[inherent]
-impl glean::TestGetValue<i32> for DenominatorMetric {
+impl glean::TestGetValue for DenominatorMetric {
+    type Output = i32;
+
     pub fn test_get_value(&self, ping_name: Option<String>) -> Option<i32> {
         match self {
             DenominatorMetric::Parent { inner, .. } => inner.test_get_value(ping_name),
@@ -142,7 +144,12 @@ mod test {
         let metric = &metrics::test_only_ipc::an_external_denominator;
         metric.add(1);
 
-        assert_eq!(1, metric.test_get_value(Some("test-ping".to_string())).unwrap());
+        assert_eq!(
+            1,
+            metric
+                .test_get_value(Some("test-ping".to_string()))
+                .unwrap()
+        );
     }
 
     #[test]
@@ -178,7 +185,9 @@ mod test {
 
         assert_eq!(
             45,
-            parent_metric.test_get_value(Some("test-ping".to_string())).unwrap(),
+            parent_metric
+                .test_get_value(Some("test-ping".to_string()))
+                .unwrap(),
             "Values from the 'processes' should be summed"
         );
     }

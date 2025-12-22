@@ -1200,93 +1200,6 @@
   !verbose pop
 !macroend
 
-/**
- * Read the value of an installer pref that's been set by the product.
- *
- * @param   _KEY ($R1)
- *          Sub key containing all the installer prefs
- *          Usually "Software\Mozilla\${AppName}"
- * @param   _PREF ($R2)
- *          Name of the pref to look up
- * @return  _RESULT ($R3)
- *          'true' or 'false' (only boolean prefs are supported)
- *          If no value exists for the requested pref, the result is 'false'
- */
-!macro GetInstallerRegistryPref
-  !ifndef ${_MOZFUNC_UN}GetInstallerRegistryPref
-    !verbose push
-    !verbose ${_MOZFUNC_VERBOSE}
-    !define ${_MOZFUNC_UN}GetInstallerRegistryPref "!insertmacro GetInstallerRegistryPrefCall"
-
-    Function ${_MOZFUNC_UN}GetInstallerRegistryPref
-      ; stack: key, pref
-      Exch $R1 ; key, stack: old R1, pref
-      Exch 1   ; stack: pref, old R1
-      Exch $R2 ; pref, stack: old R2, old R1
-      Push $R3
-
-      StrCpy $R3 0
-
-      ; These prefs are always stored in the native registry.
-      SetRegView 64
-
-      ClearErrors
-      ReadRegDWORD $R3 HKCU "$R1\Installer\$AppUserModelID" "$R2"
-
-      SetRegView lastused
-
-      ${IfNot} ${Errors}
-      ${AndIf} $R3 != 0
-        StrCpy $R1 "true"
-      ${Else}
-        StrCpy $R1 "false"
-      ${EndIf}
-
-      ; stack: old R3, old R2, old R1
-      Pop $R3 ; stack: old R2, old R1
-      Pop $R2 ; stack: old R1
-      Exch $R1 ; stack: result
-    FunctionEnd
-
-    !verbose pop
-  !endif
-!macroend
-
-!macro GetInstallerRegistryPrefCall _KEY _PREF _RESULT
-  !verbose push
-  !verbose ${_MOZFUNC_VERBOSE}
-  Push "${_PREF}"
-  Push "${_KEY}"
-  Call GetInstallerRegistryPref
-  Pop ${_RESULT}
-  !verbose pop
-!macroend
-
-!macro un.GetInstallerRegistryPrefCall _KEY _PREF _RESULT
-  !verbose push
-  !verbose ${_MOZFUNC_VERBOSE}
-  Push "${_PREF}"
-  Push "${_KEY}"
-  Call un.GetInstallerRegistryPref
-  Pop ${_RESULT}
-  !verbose pop
-!macroend
-
-!macro un.GetInstallerRegistryPref
-  !ifndef un.GetInstallerRegistryPref
-    !verbose push
-    !verbose ${_MOZFUNC_VERBOSE}
-    !undef _MOZFUNC_UN
-    !define _MOZFUNC_UN "un."
-
-    !insertmacro GetInstallerRegistryPref
-
-    !undef _MOZFUNC_UN
-    !define _MOZFUNC_UN
-    !verbose pop
-  !endif
-!macroend
-
 ################################################################################
 # Macros for adding file and protocol handlers
 
@@ -5298,6 +5211,31 @@
   !endif
 !macroend
 
+
+/**
+ * Converts a string whose value is expected to be "true" or "false" into a value of "0" or "1",
+ * copying the result into the variable OUTPUT. If the string is neither "true" nor "false", the
+ * DEFAULT value will be copied to OUTPUT.
+ *
+ * @param   STRING
+ *          A string that is expected to have the value of "true" or "false"
+ * @param   DEFAULT
+ *          The default value that will result if STRING is neither "true" nor "false"
+ * @param   OUTPUT
+ *          The variable where the result of "0", "1", or ${DEFAULT} will be copied
+ */
+!macro StringToBoolean STRING DEFAULT OUTPUT
+  ${If} ${STRING} == "true"
+    StrCpy ${OUTPUT} "1"
+  ${ElseIf} ${STRING} == "false"
+    StrCpy ${OUTPUT} "0"
+  ${Else}
+    StrCpy ${OUTPUT} "${DEFAULT}"
+  ${EndIf}
+!macroend
+!define StringToBoolean "!insertmacro StringToBoolean"
+
+
 /**
  * Reads a flag option from the command line and sets a variable with its state,
  * if the option is present on the command line.
@@ -5439,66 +5377,41 @@
             ${EndIf}
 
             ReadINIStr $R8 $R7 "Install" "DesktopShortcut"
-            ${If} $R8 == "false"
-              StrCpy $AddDesktopSC "0"
-            ${Else}
-              StrCpy $AddDesktopSC "1"
-            ${EndIf}
+            ${StringToBoolean} $R8 "1" $AddDesktopSC
+
+            !ifdef DESKTOP_LAUNCHER_ENABLED
+            ; If this build does not support desktop launcher installation, ignore the flag that requests it
+            ReadINIStr $R8 $R7 "Install" "DesktopLauncher"
+            ${StringToBoolean} $R8 "0" $AddDesktopLauncher
+            !endif
 
             ReadINIStr $R8 $R7 "Install" "StartMenuShortcuts"
-            ${If} $R8 == "false"
-              StrCpy $AddStartMenuSC "0"
-            ${Else}
-              StrCpy $AddStartMenuSC "1"
-            ${EndIf}
+            ${StringToBoolean} $R8 "1" $AddStartMenuSC
 
             ; We still accept the plural version for backwards compatibility,
             ; but the singular version takes priority.
             ClearErrors
             ReadINIStr $R8 $R7 "Install" "StartMenuShortcut"
-            ${If} $R8 == "false"
-              StrCpy $AddStartMenuSC "0"
-            ${ElseIfNot} ${Errors}
-              StrCpy $AddStartMenuSC "1"
-            ${EndIf}
+            ${StringToBoolean} $R8 "1" $AddStartMenuSC
 
             !ifdef MOZ_PRIVATE_BROWSING
               ReadINIStr $R8 $R7 "Install" "PrivateBrowsingShortcut"
-              ${If} $R8 == "false"
-                StrCpy $AddPrivateBrowsingSC "0"
-              ${ElseIfNot} ${Errors}
-                StrCpy $AddPrivateBrowsingSC "1"
-              ${EndIf}
+              ${StringToBoolean} $R8 "1" $AddPrivateBrowsingSC
             !endif
 
             ReadINIStr $R8 $R7 "Install" "TaskbarShortcut"
-            ${If} $R8 == "false"
-              StrCpy $AddTaskbarSC "0"
-            ${Else}
-              StrCpy $AddTaskbarSC "1"
-            ${EndIf}
+            ${StringToBoolean} $R8 "1" $AddTaskbarSC
 
             ReadINIStr $R8 $R7 "Install" "MaintenanceService"
-            ${If} $R8 == "false"
-              StrCpy $InstallMaintenanceService "0"
-            ${Else}
-              StrCpy $InstallMaintenanceService "1"
-            ${EndIf}
+            ${StringToBoolean} $R8 "1" $InstallMaintenanceService
 
             ReadINIStr $R8 $R7 "Install" "RegisterDefaultAgent"
-            ${If} $R8 == "false"
-              StrCpy $RegisterDefaultAgent "0"
-            ${Else}
-              StrCpy $RegisterDefaultAgent "1"
-            ${EndIf}
+            ${StringToBoolean} $R8 "1" $RegisterDefaultAgent
+
 
             !ifdef MOZ_OPTIONAL_EXTENSIONS
               ReadINIStr $R8 $R7 "Install" "OptionalExtensions"
-              ${If} $R8 == "false"
-                StrCpy $InstallOptionalExtensions "0"
-              ${Else}
-                StrCpy $InstallOptionalExtensions "1"
-              ${EndIf}
+              ${StringToBoolean} $R8 "1" $InstallOptionalExtensions
             !endif
 
             !ifndef NO_STARTMENU_DIR
@@ -5530,6 +5443,12 @@
         ${EndIf}
 
         ${InstallGetOption} $R8 "DesktopShortcut" $AddDesktopSC
+
+        !ifdef DESKTOP_LAUNCHER_ENABLED
+        ; If this build does not support desktop launcher installation, ignore the flag that requests it
+        ${InstallGetOption} $R8 "DesktopLauncher" $AddDesktopLauncher
+        !endif
+
         ${InstallGetOption} $R8 "StartMenuShortcuts" $AddStartMenuSC
         ; We still accept the plural version for backwards compatibility,
         ; but the singular version takes priority.
@@ -7468,7 +7387,7 @@
           ${EndIf}
 
           ${If} ${FileExists} "$SMPROGRAMS\$R5"
-            ShellLink::GetShortCutTarget "$SMPROGRAMS\$$R5"
+            ShellLink::GetShortCutTarget "$SMPROGRAMS\$R5"
             Pop $R4
             ${GetLongPath} "$R4" $R4
             ${If} "$R4" == "$R9" ; link path == install path
@@ -8772,71 +8691,3 @@
   Pop $1
   Pop $0
 !macroend
-
-Function WriteRegQWORD
-          ; Stack contents:
-          ; VALUE, VALUE_NAME, SUBKEY, ROOTKEY
-  Exch $3 ; $3, VALUE_NAME, SUBKEY, ROOTKEY
-  Exch 1  ; VALUE_NAME, $3, SUBKEY, ROOTKEY
-  Exch $2 ; $2, $3, SUBKEY, ROOTKEY
-  Exch 2  ; SUBKEY, $3, $2, ROOTKEY
-  Exch $1 ; $1, $3, $2, ROOTKEY
-  Exch 3  ; ROOTKEY, $3, $2, $1
-  Exch $0 ; $0, $3, $2, $1
-  System::Call "advapi32::RegSetKeyValueW(p r0, w r1, w r2, i 11, *l r3, i 8) i.r0"
-  ${IfNot} $0 = 0
-    SetErrors
-  ${EndIf}
-  Pop $0
-  Pop $3
-  Pop $2
-  Pop $1
-FunctionEnd
-!macro WriteRegQWORD ROOTKEY SUBKEY VALUE_NAME VALUE
-  ${If} "${ROOTKEY}" == "HKCR"
-    Push 0x80000000
-  ${ElseIf} "${ROOTKEY}" == "HKCU"
-    Push 0x80000001
-  ${ElseIf} "${ROOTKEY}" == "HKLM"
-    Push 0x80000002
-  ${Endif}
-  Push "${SUBKEY}"
-  Push "${VALUE_NAME}"
-  System::Int64Op ${VALUE} + 0 ; The result is pushed on the stack
-  Call WriteRegQWORD
-!macroend
-!define WriteRegQWORD "!insertmacro WriteRegQWORD"
-
-Function ReadRegQWORD
-          ; Stack contents:
-          ; VALUE_NAME, SUBKEY, ROOTKEY
-  Exch $2 ; $2, SUBKEY, ROOTKEY
-  Exch 1  ; SUBKEY, $2, ROOTKEY
-  Exch $1 ; $1, $2, ROOTKEY
-  Exch 2  ; ROOTKEY, $2, $1
-  Exch $0 ; $0, $2, $1
-  System::Call "advapi32::RegGetValueW(p r0, w r1, w r2, i 0x48, p 0, *l s, *i 8) i.r0"
-  ${IfNot} $0 = 0
-    SetErrors
-  ${EndIf}
-          ; VALUE, $0, $2, $1
-  Exch 3  ; $1, $0, $2, VALUE
-  Pop $1  ; $0, $2, VALUE
-  Pop $0  ; $2, VALUE
-  Pop $2  ; VALUE
-FunctionEnd
-!macro ReadRegQWORD DEST ROOTKEY SUBKEY VALUE_NAME
-  ${If} "${ROOTKEY}" == "HKCR"
-    Push 0x80000000
-  ${ElseIf} "${ROOTKEY}" == "HKCU"
-    Push 0x80000001
-  ${ElseIf} "${ROOTKEY}" == "HKLM"
-    Push 0x80000002
-  ${Endif}
-  Push "${SUBKEY}"
-  Push "${VALUE_NAME}"
-  Call ReadRegQWORD
-  Pop ${DEST}
-!macroend
-!define ReadRegQWORD "!insertmacro ReadRegQWORD"
-

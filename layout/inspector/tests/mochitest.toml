@@ -1,9 +1,7 @@
 [DEFAULT]
 prefs = [
   "layout.css.at-scope.enabled=true",
-  "layout.css.basic-shape-rect.enabled=true",
   "layout.css.basic-shape-shape.enabled=true",
-  "layout.css.basic-shape-xywh.enabled=true",
   "layout.css.properties-and-values.enabled=true",
   "layout.css.starting-style-at-rules.enabled=true",
   "dom.customHighlightAPI.enabled=true",
@@ -46,6 +44,8 @@ support-files = [
 
 ["test_getCSSPseudoElementNames.html"]
 
+["test_getGridContainerType.html"]
+
 ["test_getMatchingCSSRules.html"]
 support-files = [
   "file_getMatchingCSSRules-default.html",
@@ -55,6 +55,8 @@ support-files = [
 ]
 
 ["test_getMatchingCSSRules_pseudo.html"]
+
+["test_getMatchingCSSRules_shadow_dom.html"]
 
 ["test_getMatchingCSSRules_slotted.html"]
 
@@ -92,6 +94,8 @@ skip-if = ["os == 'android'"]
 ["test_rgba_to_color_name.html"]
 
 ["test_selectormatcheselement.html"]
+
+["test_selectormatcheselement_host.html"]
 
 ["test_selectormatcheselement_scope.html"]
 

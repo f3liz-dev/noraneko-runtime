@@ -13,7 +13,6 @@
 #include "mozilla/Attributes.h"
 #include "mozilla/DOMEventTargetHelper.h"
 #include "mozilla/Maybe.h"
-#include "mozilla/NotNull.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/UniquePtr.h"
@@ -344,7 +343,7 @@ class WorkerGlobalScope : public WorkerGlobalScopeBase {
   MOZ_CAN_RUN_SCRIPT void ImportScripts(
       JSContext* aCx,
       const Sequence<OwningTrustedScriptURLOrString>& aScriptURLs,
-      ErrorResult& aRv);
+      nsIPrincipal* aSubjectPrincipal, ErrorResult& aRv);
 
   OnErrorEventHandlerNonNull* GetOnerror();
 

@@ -20,8 +20,6 @@
 #include "TexUnpackBlob.h"
 #include "js/ScalarType.h"  // js::Scalar::Type
 #include "mozilla/Atomics.h"
-#include "mozilla/Attributes.h"
-#include "mozilla/CheckedInt.h"
 #include "mozilla/EnumeratedArray.h"
 #include "mozilla/Mutex.h"
 #include "mozilla/StaticMutex.h"

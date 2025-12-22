@@ -18,6 +18,7 @@ https_first_disabled = true
 https_first_disabled = true
 skip-if = [
   "os == 'linux' && os_version == '18.04' && processor == 'x86_64' && opt", # Bug 1775851
+  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && debug && socketprocess_networking && verify-standalone",
   "os == 'mac' && os_version == '15.30' && arch == 'aarch64'", # Bug 1775851
 ]
 
@@ -53,6 +54,8 @@ tags = "remote-settings"
 skip-if = ["a11y_checks"] # Bug 1854515 and 1858041 to investigate intermittent a11y_checks results (fails on Autoland, passes on Try)
 
 ["browser_asrouter_universal_infobar.js"]
+
+["browser_backup_restore_spotlight.js"]
 
 ["browser_bookmarks_bar_button.js"]
 

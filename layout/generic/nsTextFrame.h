@@ -57,8 +57,7 @@ class MOZ_STACK_CLASS TextAutospace final {
 
   // Returns true if inter-script spacing may be added at boundaries.
   static bool Enabled(const StyleTextAutospace& aStyleTextAutospace,
-                      const nsIFrame* aFrame,
-                      const dom::CharacterDataBuffer& aBuffer);
+                      const nsTextFrame* aFrame);
 
   TextAutospace(const StyleTextAutospace& aStyleTextAutospace,
                 nscoord aSpacing);
@@ -69,13 +68,17 @@ class MOZ_STACK_CLASS TextAutospace final {
   // and aCurrClass.
   bool ShouldApplySpacing(CharClass aPrevClass, CharClass aCurrClass) const;
 
+  // Returns true when non-ideographic letters/numerals should not participate
+  // in autospace boundaries for aFrame.
+  static bool ShouldSuppressLetterNumeralSpacing(const nsIFrame* aFrame);
+
   // Return true if aChar is an ideograph.
   // https://drafts.csswg.org/css-text-4/#ideographs
-  bool IsIdeograph(char32_t aChar) const;
+  static bool IsIdeograph(char32_t aChar);
 
   // Get character class for aChar.
   // https://drafts.csswg.org/css-text-4/#text-spacing-classes
-  CharClass GetCharClass(char32_t aChar) const;
+  static CharClass GetCharClass(char32_t aChar);
 
  private:
   BoundarySet InitBoundarySet(
@@ -109,9 +112,12 @@ class nsTextFrame : public nsIFrame {
   /**
    * An implementation of gfxTextRun::PropertyProvider that computes spacing and
    * hyphenation based on CSS properties for a text frame.
+   *
+   * nsTextFrame normally creates a PropertyProvider as a temporary object on
+   * on the stack, but this is not marked MOZ_STACK_CLASS because SVGTextFrame
+   * wants to cache an instance across multiple calls using the same textframe.
    */
-  class MOZ_STACK_CLASS PropertyProvider final
-      : public gfxTextRun::PropertyProvider {
+  class PropertyProvider final : public gfxTextRun::PropertyProvider {
     using HyphenType = gfxTextRun::HyphenType;
 
    public:
@@ -154,7 +160,7 @@ class nsTextFrame : public nsIFrame {
 
     void InitializeForMeasure();
 
-    void GetSpacing(Range aRange, Spacing* aSpacing) const final;
+    bool GetSpacing(Range aRange, Spacing* aSpacing) const final;
     gfxFloat GetHyphenWidth() const final;
     void GetHyphenationBreaks(Range aRange,
                               HyphenType* aBreakBefore) const final;
@@ -169,7 +175,7 @@ class nsTextFrame : public nsIFrame {
       return mTextRun->GetAppUnitsPerDevUnit();
     }
 
-    void GetSpacingInternal(Range aRange, Spacing* aSpacing,
+    bool GetSpacingInternal(Range aRange, Spacing* aSpacing,
                             bool aIgnoreTabs) const;
 
     /**
@@ -253,10 +259,10 @@ class nsTextFrame : public nsIFrame {
     int32_t mLength;
 
     // space for each whitespace char
-    const gfxFloat mWordSpacing;
+    const nscoord mWordSpacing;
 
     // space for each letter
-    const gfxFloat mLetterSpacing;
+    const nscoord mLetterSpacing;
 
     // If TextAutospace exists, inter-script spacing applies.
     Maybe<mozilla::TextAutospace> mTextAutospace;
@@ -1044,11 +1050,13 @@ class nsTextFrame : public nsIFrame {
    */
   void DrawSelectionDecorations(
       gfxContext* aContext, const LayoutDeviceRect& aDirtyRect,
-      mozilla::SelectionType aSelectionType, nsTextPaintStyle& aTextPaintStyle,
-      const TextRangeStyle& aRangeStyle, const Point& aPt,
-      gfxFloat aICoordInFrame, gfxFloat aWidth, gfxFloat aAscent,
-      const gfxFont::Metrics& aFontMetrics, DrawPathCallbacks* aCallbacks,
-      bool aVertical, mozilla::StyleTextDecorationLine aDecoration);
+      mozilla::SelectionType aSelectionType, nsAtom* aHighlightName,
+      nsTextPaintStyle& aTextPaintStyle, const TextRangeStyle& aRangeStyle,
+      const Point& aPt, gfxFloat aICoordInFrame, gfxFloat aWidth,
+      gfxFloat aAscent, const gfxFont::Metrics& aFontMetrics,
+      DrawPathCallbacks* aCallbacks, bool aVertical,
+      mozilla::StyleTextDecorationLine aDecoration, const Range& aGlyphRange,
+      PropertyProvider* aProvider);
 
   void PaintDecorationLine(const PaintDecorationLineParams& aParams);
   /**

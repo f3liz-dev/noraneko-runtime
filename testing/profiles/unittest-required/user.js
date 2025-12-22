@@ -45,6 +45,7 @@ user_pref("browser.safebrowsing.provider.google5.gethashURL", "http://{server}/s
 user_pref("browser.safebrowsing.provider.google5.updateURL", "http://{server}/safebrowsing5-dummy/update");
 user_pref("browser.safebrowsing.provider.mozilla.gethashURL", "http://{server}/safebrowsing-dummy/gethash");
 user_pref("browser.safebrowsing.provider.mozilla.updateURL", "http://{server}/safebrowsing-dummy/update");
+user_pref("browser.ipProtection.guardian.endpoint", "http://{server}/vpn-dummy");
 user_pref("browser.search.suggest.timeout", 10000); // use a 10s suggestion timeout in tests
 user_pref("browser.shell.checkDefaultBrowser", false);
 user_pref("browser.startup.page", 0); // use about:blank, not browser.startup.homepage
@@ -172,6 +173,9 @@ user_pref("network.sntp.pools", "{server}");
 // relatively long time which may cause unnecessary intermittents and slow down
 // tests. This, like many things, will stop working correctly in 2038.
 user_pref("places.database.lastMaintenance", 2147483647);
+// Turn off semantic history search as it triggers network connections to
+// download ML models.
+user_pref("places.semanticHistory.featureGate", false);
 user_pref("privacy.trackingprotection.introURL", "http://{server}/trackingprotection/tour");
 // Disable all recommended Remote Protocol preferences for Gecko tests.
 // The prefs recommended by Remote Protocol are typically geared towards

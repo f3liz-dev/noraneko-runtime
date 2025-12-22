@@ -2253,13 +2253,6 @@ JS_PUBLIC_API bool js::ShouldIgnorePropertyDefinition(JSContext* cx,
     return true;
   }
 
-  if (key == JSProto_JSON &&
-      !JS::Prefs::experimental_json_parse_with_source() &&
-      (id == NameToId(cx->names().isRawJSON) ||
-       id == NameToId(cx->names().rawJSON))) {
-    return true;
-  }
-
   if (key == JSProto_Math && !JS::Prefs::experimental_math_sumprecise() &&
       id == NameToId(cx->names().sumPrecise)) {
     return true;
@@ -3258,11 +3251,11 @@ void JSObject::addSizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf,
     info->objectsMallocHeapMisc +=
         as<WeakCollectionObject>().sizeOfExcludingThis(mallocSizeOf);
   } else if (is<WasmStructObject>()) {
-    WasmStructObject::addSizeOfExcludingThis(this, mallocSizeOf, info,
-                                             runtimeSizes);
+    const WasmStructObject& s = as<WasmStructObject>();
+    info->objectsMallocHeapSlots += s.sizeOfExcludingThis();
   } else if (is<WasmArrayObject>()) {
-    WasmArrayObject::addSizeOfExcludingThis(this, mallocSizeOf, info,
-                                            runtimeSizes);
+    const WasmArrayObject& a = as<WasmArrayObject>();
+    info->objectsMallocHeapElementsNormal += a.sizeOfExcludingThis();
   }
 #ifdef JS_HAS_CTYPES
   else {
@@ -3296,14 +3289,10 @@ size_t JSObject::sizeOfIncludingThisInNursery(
     }
   } else if (is<WasmStructObject>()) {
     const WasmStructObject& s = as<WasmStructObject>();
-    if (s.outlineData_) {
-      size += mallocSizeOf(s.outlineData_);
-    }
+    size += s.sizeOfExcludingThis();
   } else if (is<WasmArrayObject>()) {
     const WasmArrayObject& a = as<WasmArrayObject>();
-    if (!a.isDataInline()) {
-      size += mallocSizeOf(a.dataHeader());
-    }
+    size += a.sizeOfExcludingThis();
   }
 
   return size;

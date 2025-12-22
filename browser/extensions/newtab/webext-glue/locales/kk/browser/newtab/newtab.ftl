@@ -327,6 +327,9 @@ newtab-custom-recent-subtitle = Жуырдағы сайттар мен құра�
 newtab-custom-weather-toggle =
     .label = Ауа райы
     .description = Бүгінге қысқа болжам
+newtab-custom-trending-search-toggle =
+    .label = Трендтік іздеулер
+    .description = Әйгілі және жиі ізделген тақырыптар
 newtab-custom-widget-weather-toggle =
     .label = Ауа райы
 newtab-custom-widget-trending-search-toggle =
@@ -402,7 +405,7 @@ newtab-wallpaper-abstract-purple-green = Күлгін және жасыл жар
 newtab-wallpaper-abstract-blue-purple-waves = Көк және күлгін толқынды пішіндер
 newtab-wallpaper-abstract-black-waves = Қара толқынды пішіндер
 
-## Celestial
+## Firefox
 
 newtab-wallpaper-category-title-photographs = Фотосуреттер
 newtab-wallpaper-beach-at-sunrise = Күн шыққанда жағажай
@@ -431,6 +434,10 @@ feature-highlight-dismiss-button =
 feature-highlight-wallpaper =
     .title = { -newtab-wallpaper-feature-highlight-header }
     .aria-label = { -newtab-wallpaper-feature-highlight-content }
+
+## Firefox
+
+newtab-wallpaper-category-title-firefox = { -brand-product-name }
 
 ## Celestial
 
@@ -473,8 +480,16 @@ newtab-weather-menu-change-temperature-units-fahrenheit = Фаренгейтке
 newtab-weather-menu-change-temperature-units-celsius = Цельсийге ауысу
 newtab-weather-menu-hide-weather = Жаңа бетте ауа райын жасыру
 newtab-weather-menu-learn-more = Көбірек білу
+newtab-weather-menu-detect-my-location = Менің орналасуымды анықтау
 # This message is shown if user is working offline
 newtab-weather-error-not-available = Ауа-райы деректері қазір қолжетімді емес.
+newtab-weather-opt-in-see-weather = Орналасқан жеріңіздің ауа райын көргіңіз келе ме?
+newtab-weather-opt-in-not-now =
+    .label = Қазір емес
+newtab-weather-opt-in-yes =
+    .label = Иә
+# We'll be showing static (fake) weather data if the user has not opted in to using their location
+newtab-weather-static-city = Нью-Йорк
 
 ## Topic Labels
 
@@ -523,6 +538,8 @@ newtab-topic-selection-button-pick-interests = Қызығушылықтарың�
 newtab-section-follow-button = Жазылу
 newtab-section-following-button = Жазылғандар
 newtab-section-unfollow-button = Жазылудан бас тарту
+# A modal may appear next to the Follow button, directing users to try out the feature
+newtab-section-follow-highlight-title = Таспаңызды дәл баптаңыз
 
 ## Button to block/unblock listed topics
 ## "Block", "unblocked", and "blocked" are social media terms that refer to hiding a section of stories.
@@ -544,7 +561,10 @@ newtab-section-block-topic-button = { $topic } блоктау
 newtab-section-mangage-topics-title = Тақырыптар
 newtab-section-manage-topics-button-v2 =
     .label = Темаларды басқару
+newtab-section-mangage-topics-followed-topics-empty-state = Сіз әлі ешқандай тақырыпқа жазылмадыңыз.
 newtab-section-mangage-topics-blocked-topics = Бұғатталған
+newtab-section-mangage-topics-blocked-topics-empty-state = Сіз әлі ешбір тақырыпты бұғаттаған жоқсыз.
+newtab-custom-wallpaper-title = Жеке тұсқағаздар осында
 newtab-custom-wallpaper-cta = Қолданып көру
 
 ## Strings for new user activation custom wallpaper highlight
@@ -619,6 +639,9 @@ newtab-widget-lists-input-menu-move-up = Жоғары жылжыту
 newtab-widget-lists-input-menu-move-down = Төмен жылжыту
 newtab-widget-lists-input-menu-delete = Өшіру
 newtab-widget-lists-input-menu-edit = Түзету
+# the + symbol emphasises the functionality of adding a new list
+newtab-widget-lists-dropdown-create =
+    .label = + Жаңа тізімді жасау
 newtab-widget-lists-name-label-default =
     .label = Тапсырмалар тізімі
 newtab-widget-lists-name-placeholder-default =
@@ -638,10 +661,6 @@ newtab-widget-timer-mode-focus =
     .label = Фокустау
 newtab-widget-timer-mode-break =
     .label = Үзіліс
-newtab-widget-timer-play =
-    .title = Ойнату
-newtab-widget-timer-pause =
-    .title = Аялдату
 newtab-widget-timer-label-play =
     .label = Ойнату
 newtab-widget-timer-label-pause =

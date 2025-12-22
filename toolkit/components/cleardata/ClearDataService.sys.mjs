@@ -18,25 +18,25 @@ XPCOMUtils.defineLazyServiceGetter(
   lazy,
   "sas",
   "@mozilla.org/storage/activity-service;1",
-  "nsIStorageActivityService"
+  Ci.nsIStorageActivityService
 );
 XPCOMUtils.defineLazyServiceGetter(
   lazy,
   "TrackingDBService",
   "@mozilla.org/tracking-db-service;1",
-  "nsITrackingDBService"
+  Ci.nsITrackingDBService
 );
 XPCOMUtils.defineLazyServiceGetter(
   lazy,
   "IdentityCredentialStorageService",
   "@mozilla.org/browser/identity-credential-storage-service;1",
-  "nsIIdentityCredentialStorageService"
+  Ci.nsIIdentityCredentialStorageService
 );
 XPCOMUtils.defineLazyServiceGetter(
   lazy,
   "bounceTrackingProtection",
   "@mozilla.org/bounce-tracking-protection;1",
-  "nsIBounceTrackingProtection"
+  Ci.nsIBounceTrackingProtection
 );
 
 XPCOMUtils.defineLazyPreferenceGetter(
@@ -192,6 +192,9 @@ function hasSite(
 //                                      Sanitizer.sanitizeOnShutdown() and
 //                                      Sanitizer.onStartup()
 
+// IETF spec for compression dictionaries requires clearing them when cookies
+// are cleared for the site - Section 10 of
+// https://datatracker.ietf.org/doc/draft-ietf-httpbis-compression-dictionary/
 const CookieCleaner = {
   deleteByLocalFiles(aOriginAttributes) {
     return new Promise(aResolve => {
@@ -209,6 +212,16 @@ const CookieCleaner = {
         aHost,
         JSON.stringify(aOriginAttributes)
       );
+      // Compression dictionaries are https only
+      // Note that IPV6 urls require [...], but aPrincipal.host (passed
+      // to this) doesn't include the [].
+      if (aHost.includes(":") && aHost[0] != "[") {
+        aHost = "https://[" + aHost + "]";
+      } else {
+        aHost = "https://" + aHost;
+      }
+      let httpsURI = Services.io.newURI(aHost);
+      Services.cache2.clearOriginDictionary(httpsURI);
       aResolve();
     });
   },
@@ -217,6 +230,9 @@ const CookieCleaner = {
     // Fall back to clearing by host and OA pattern. This will over-clear, since
     // any properties that are not explicitly set in aPrincipal.originAttributes
     // will be wildcard matched.
+    // Note that we clear cookies for all ports, because apparently
+    // cookies historically have ignored ports based on sameSite rules:
+    // https://html.spec.whatwg.org/#same-site
     return this.deleteByHost(aPrincipal.host, aPrincipal.originAttributes);
   },
 
@@ -235,6 +251,9 @@ const CookieCleaner = {
           JSON.stringify(cookie.originAttributes)
         );
       });
+    // Compression dictionaries are https only
+    let httpsURI = Services.io.newURI("https://" + aSchemelessSite);
+    Services.cache2.clearOriginDictionary(httpsURI);
   },
 
   deleteByRange(aFrom) {
@@ -248,6 +267,8 @@ const CookieCleaner = {
           aOriginAttributesString
         );
       } catch (ex) {}
+      // XXX Bug 1984198 we need to clear dictionaries here (probably has
+      // to be in CookieService::RemoveCookiesWithOriginAttributes()
       aResolve();
     });
   },
@@ -255,6 +276,7 @@ const CookieCleaner = {
   deleteAll() {
     return new Promise(aResolve => {
       Services.cookies.removeAll();
+      Services.cache2.clearAllOriginDictionaries();
       aResolve();
     });
   },
@@ -416,11 +438,7 @@ const CookieBannerExecutedRecordCleaner = {
 
 // A cleaner for cleaning fingerprinting protection states.
 const FingerprintingProtectionStateCleaner = {
-  async _maybeClearSiteSpecificZoom(
-    deleteAll,
-    aSchemelessSite,
-    aOriginAttributes = {}
-  ) {
+  async _maybeClearSiteSpecificZoom(aSchemelessSite, aOriginAttributes = {}) {
     if (
       !ChromeUtils.shouldResistFingerprinting("SiteSpecificZoom", null, true)
     ) {
@@ -433,8 +451,24 @@ const FingerprintingProtectionStateCleaner = {
     const ZOOM_PREF_NAME = "browser.content.full-zoom";
 
     await new Promise((aResolve, aReject) => {
-      if (deleteAll) {
-        cps2.removeByName(ZOOM_PREF_NAME, null, {
+      aOriginAttributes =
+        ChromeUtils.fillNonDefaultOriginAttributes(aOriginAttributes);
+
+      let loadContext;
+      if (
+        aOriginAttributes.privateBrowsingId ==
+        Services.scriptSecurityManager.DEFAULT_PRIVATE_BROWSING_ID
+      ) {
+        loadContext = Cu.createLoadContext();
+      } else {
+        loadContext = Cu.createPrivateLoadContext();
+      }
+
+      cps2.removeBySubdomainAndName(
+        aSchemelessSite,
+        ZOOM_PREF_NAME,
+        loadContext,
+        {
           handleCompletion: aReason => {
             if (aReason === cps2.COMPLETE_ERROR) {
               aReject();
@@ -442,50 +476,19 @@ const FingerprintingProtectionStateCleaner = {
               aResolve();
             }
           },
-        });
-      } else {
-        aOriginAttributes =
-          ChromeUtils.fillNonDefaultOriginAttributes(aOriginAttributes);
-
-        let loadContext;
-        if (
-          aOriginAttributes.privateBrowsingId ==
-          Services.scriptSecurityManager.DEFAULT_PRIVATE_BROWSING_ID
-        ) {
-          loadContext = Cu.createLoadContext();
-        } else {
-          loadContext = Cu.createPrivateLoadContext();
         }
-
-        cps2.removeBySubdomainAndName(
-          aSchemelessSite,
-          ZOOM_PREF_NAME,
-          loadContext,
-          {
-            handleCompletion: aReason => {
-              if (aReason === cps2.COMPLETE_ERROR) {
-                aReject();
-              } else {
-                aResolve();
-              }
-            },
-          }
-        );
-      }
+      );
     });
   },
 
   async deleteAll() {
     Services.rfp.cleanAllRandomKeys();
-
-    await this._maybeClearSiteSpecificZoom(true);
   },
 
   async deleteByPrincipal(aPrincipal) {
     Services.rfp.cleanRandomKeyByPrincipal(aPrincipal);
 
     await this._maybeClearSiteSpecificZoom(
-      false,
       aPrincipal.host,
       aPrincipal.originAttributes
     );
@@ -498,7 +501,6 @@ const FingerprintingProtectionStateCleaner = {
     );
 
     await this._maybeClearSiteSpecificZoom(
-      false,
       aSchemelessSite,
       aOriginAttributesPattern
     );
@@ -510,11 +512,7 @@ const FingerprintingProtectionStateCleaner = {
       JSON.stringify(aOriginAttributesPattern)
     );
 
-    await this._maybeClearSiteSpecificZoom(
-      false,
-      aHost,
-      aOriginAttributesPattern
-    );
+    await this._maybeClearSiteSpecificZoom(aHost, aOriginAttributesPattern);
   },
 
   async deleteByOriginAttributes(aOriginAttributesString) {

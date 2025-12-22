@@ -14,13 +14,14 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import mozilla.components.compose.base.annotation.FlexibleWindowLightDarkPreview
-import mozilla.components.compose.base.button.SecondaryButton
+import mozilla.components.compose.base.button.OutlinedButton
 import mozilla.components.lib.state.ext.observeAsState
 import org.mozilla.fenix.R
 import org.mozilla.fenix.compose.SwitchWithLabel
@@ -85,7 +86,7 @@ private fun ResetCfrTool(
 
             Spacer(modifier = Modifier.height(height = FirefoxTheme.layout.space.dynamic150))
 
-            SecondaryButton(
+            OutlinedButton(
                 text = stringResource(R.string.debug_drawer_cfr_tools_reset_cfr_timestamp),
                 modifier = Modifier.fillMaxWidth(),
             ) {
@@ -210,7 +211,7 @@ private fun CfrSectionTitle(
     Text(
         text = text,
         modifier = Modifier.padding(horizontal = FirefoxTheme.layout.space.dynamic400),
-        color = FirefoxTheme.colors.textAccent,
+        color = MaterialTheme.colorScheme.tertiary,
         style = FirefoxTheme.typography.headline6,
     )
 }

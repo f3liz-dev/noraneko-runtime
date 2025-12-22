@@ -452,13 +452,21 @@ impl crate::Device for super::Device {
                 }
             };
 
+            let mtl_storage_mode = if desc.usage.contains(wgt::TextureUses::TRANSIENT)
+                && self.shared.private_caps.supports_memoryless_storage
+            {
+                MTLStorageMode::Memoryless
+            } else {
+                MTLStorageMode::Private
+            };
+
             descriptor.set_texture_type(mtl_type);
             descriptor.set_width(desc.size.width as u64);
             descriptor.set_height(desc.size.height as u64);
             descriptor.set_mipmap_level_count(desc.mip_level_count as u64);
             descriptor.set_pixel_format(mtl_format);
             descriptor.set_usage(conv::map_texture_usage(desc.format, desc.usage));
-            descriptor.set_storage_mode(MTLStorageMode::Private);
+            descriptor.set_storage_mode(mtl_storage_mode);
 
             let raw = self.shared.device.lock().new_texture(&descriptor);
             if raw.as_ptr().is_null() {
@@ -566,11 +574,11 @@ impl crate::Device for super::Device {
             descriptor.set_min_filter(conv::map_filter_mode(desc.min_filter));
             descriptor.set_mag_filter(conv::map_filter_mode(desc.mag_filter));
             descriptor.set_mip_filter(match desc.mipmap_filter {
-                wgt::FilterMode::Nearest if desc.lod_clamp == (0.0..0.0) => {
+                wgt::MipmapFilterMode::Nearest if desc.lod_clamp == (0.0..0.0) => {
                     MTLSamplerMipFilter::NotMipmapped
                 }
-                wgt::FilterMode::Nearest => MTLSamplerMipFilter::Nearest,
-                wgt::FilterMode::Linear => MTLSamplerMipFilter::Linear,
+                wgt::MipmapFilterMode::Nearest => MTLSamplerMipFilter::Nearest,
+                wgt::MipmapFilterMode::Linear => MTLSamplerMipFilter::Linear,
             });
 
             let [s, t, r] = desc.address_modes;
@@ -1154,7 +1162,15 @@ impl crate::Device for super::Device {
                                 .try_into()
                                 .unwrap()
                         },
-                        indexed_by_vertex: (vbl.step_mode == wgt::VertexStepMode::Vertex {}),
+                        step_mode: match (vbl.array_stride == 0, vbl.step_mode) {
+                            (true, _) => naga::back::msl::VertexBufferStepMode::Constant,
+                            (false, wgt::VertexStepMode::Vertex) => {
+                                naga::back::msl::VertexBufferStepMode::ByVertex
+                            }
+                            (false, wgt::VertexStepMode::Instance) => {
+                                naga::back::msl::VertexBufferStepMode::ByInstance
+                            }
+                        },
                         attributes,
                     });
                 }
@@ -1572,7 +1588,7 @@ impl crate::Device for super::Device {
         &self,
         fence: &super::Fence,
         wait_value: crate::FenceValue,
-        timeout_ms: u32,
+        timeout: Option<core::time::Duration>,
     ) -> DeviceResult<bool> {
         if wait_value <= fence.completed_value.load(atomic::Ordering::Acquire) {
             return Ok(true);
@@ -1595,8 +1611,10 @@ impl crate::Device for super::Device {
             if let MTLCommandBufferStatus::Completed = cmd_buf.status() {
                 return Ok(true);
             }
-            if start.elapsed().as_millis() >= timeout_ms as u128 {
-                return Ok(false);
+            if let Some(timeout) = timeout {
+                if start.elapsed() >= timeout {
+                    return Ok(false);
+                }
             }
             thread::sleep(core::time::Duration::from_millis(1));
         }

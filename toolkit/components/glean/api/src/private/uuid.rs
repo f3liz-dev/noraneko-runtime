@@ -143,7 +143,9 @@ impl glean::traits::Uuid for UuidMetric {
 }
 
 #[inherent]
-impl glean::TestGetValue<Uuid> for UuidMetric {
+impl glean::TestGetValue for UuidMetric {
+    type Output = Uuid;
+
     /// **Test-only API.**
     ///
     /// Get the stored UUID value.
@@ -179,7 +181,12 @@ mod test {
         let expected = Uuid::new_v4();
         metric.set(expected.clone());
 
-        assert_eq!(expected, metric.test_get_value(Some("test-ping".to_string())).unwrap());
+        assert_eq!(
+            expected,
+            metric
+                .test_get_value(Some("test-ping".to_string()))
+                .unwrap()
+        );
     }
 
     #[test]
@@ -205,7 +212,9 @@ mod test {
 
         assert_eq!(
             expected,
-            parent_metric.test_get_value(Some("test-ping".to_string())).unwrap(),
+            parent_metric
+                .test_get_value(Some("test-ping".to_string()))
+                .unwrap(),
             "UUID metrics should only work in the parent process"
         );
     }

@@ -10,6 +10,7 @@ provides a base class for fx desktop builds
 import copy
 import json
 import os
+import pathlib
 import re
 import sys
 import time
@@ -253,6 +254,7 @@ class BuildOptionParser:
         "fuzzing-tsan-tc": path_base + "%s_fuzzing_tsan_tc.py",
         "cross-debug": path_base + "%s_cross_debug.py",
         "cross-debug-searchfox": path_base + "%s_cross_debug_searchfox.py",
+        "cross-opt-searchfox": path_base + "%s_cross_opt_searchfox.py",
         "cross-noopt-debug": path_base + "%s_cross_noopt_debug.py",
         "cross-fuzzing-asan": path_base + "%s_cross_fuzzing_asan.py",
         "cross-fuzzing-debug": path_base + "%s_cross_fuzzing_debug.py",
@@ -1326,6 +1328,12 @@ items from that key's value."
 
         if perfherder_data["suites"]:
             self.info("PERFHERDER_DATA: %s" % json.dumps(perfherder_data))
+            if "MOZ_AUTOMATION" in os.environ:
+                upload_dir = pathlib.Path(os.environ.get("UPLOAD_DIR"))
+                upload_dir.mkdir(parents=True, exist_ok=True)
+                upload_path = upload_dir / "perfherder-data-building.json"
+                with upload_path.open("w", encoding="utf-8") as f:
+                    json.dump(perfherder_data, f)
 
     def valgrind_test(self):
         """Execute mach's valgrind-test for memory leaks"""

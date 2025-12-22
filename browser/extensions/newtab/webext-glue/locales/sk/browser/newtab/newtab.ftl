@@ -404,7 +404,7 @@ newtab-wallpaper-abstract-purple-green = Gradient fialového a zeleného svetla
 newtab-wallpaper-abstract-blue-purple-waves = Modré a fialové vlnité tvary
 newtab-wallpaper-abstract-black-waves = Čierne vlnité tvary
 
-## Celestial
+## Firefox
 
 newtab-wallpaper-category-title-photographs = Fotografie
 newtab-wallpaper-beach-at-sunrise = Pláž pri východe slnka
@@ -433,6 +433,10 @@ feature-highlight-dismiss-button =
 feature-highlight-wallpaper =
     .title = { -newtab-wallpaper-feature-highlight-header }
     .aria-label = { -newtab-wallpaper-feature-highlight-content }
+
+## Firefox
+
+newtab-wallpaper-category-title-firefox = { -brand-product-name }
 
 ## Celestial
 
@@ -475,8 +479,16 @@ newtab-weather-menu-change-temperature-units-fahrenheit = Prepnúť na stupne Fa
 newtab-weather-menu-change-temperature-units-celsius = Prepnite na stupne Celzia
 newtab-weather-menu-hide-weather = Skryť počasie na novej karte
 newtab-weather-menu-learn-more = Ďalšie informácie
+newtab-weather-menu-detect-my-location = Zistiť moju polohu
 # This message is shown if user is working offline
 newtab-weather-error-not-available = Údaje o počasí nie sú momentálne k dispozícii.
+newtab-weather-opt-in-see-weather = Chcete vidieť počasie pre vašu lokalitu?
+newtab-weather-opt-in-not-now =
+    .label = Teraz nie
+newtab-weather-opt-in-yes =
+    .label = Áno
+# We'll be showing static (fake) weather data if the user has not opted in to using their location
+newtab-weather-static-city = New York City
 
 ## Topic Labels
 
@@ -643,6 +655,9 @@ newtab-widget-lists-input-menu-move-up = Posunúť nahor
 newtab-widget-lists-input-menu-move-down = Posunúť nadol
 newtab-widget-lists-input-menu-delete = Odstrániť
 newtab-widget-lists-input-menu-edit = Upraviť
+# the + symbol emphasises the functionality of adding a new list
+newtab-widget-lists-dropdown-create =
+    .label = + Vytvoriť nový zoznam
 newtab-widget-lists-name-label-default =
     .label = Zoznam úloh
 newtab-widget-lists-name-placeholder-default =
@@ -662,10 +677,6 @@ newtab-widget-timer-mode-focus =
     .label = Sústredenie
 newtab-widget-timer-mode-break =
     .label = Prestávka
-newtab-widget-timer-play =
-    .title = Spustiť
-newtab-widget-timer-pause =
-    .title = Pozastaviť
 newtab-widget-timer-label-play =
     .label = Spustiť
 newtab-widget-timer-label-pause =

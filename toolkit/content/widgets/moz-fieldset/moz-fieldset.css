@@ -14,7 +14,7 @@ fieldset {
 
 legend {
   padding: 0;
-  font-weight: var(--font-weight-bold);
+  font-weight: var(--font-weight-semibold);
   display: inline-flex;
   gap: var(--space-small);
   align-items: baseline;
@@ -51,23 +51,27 @@ h6 {
 #description {
   margin: 0;
   margin-block-start: var(--space-xxsmall);
-  & + a,
-  & + ::slotted([slot="support-link"]) {
-    font-size: var(--font-size-small);
-  }
+  color: var(--text-color-deemphasized);
 }
 
 #inputs {
   display: flex;
   flex-direction: column;
   gap: var(--space-large);
-  margin-top: var(--space-small);
 
   fieldset[aria-orientation="horizontal"] & {
     flex-direction: row;
     flex-wrap: wrap;
     row-gap: var(--space-small);
     column-gap: var(--space-medium);
+  }
+
+  :is(legend, #description) ~ & {
+    margin-top: var(--space-small);
+  }
+
+  :host([headinglevel]) :is(legend, #description) ~ & {
+    margin-top: var(--space-large);
   }
 }
 

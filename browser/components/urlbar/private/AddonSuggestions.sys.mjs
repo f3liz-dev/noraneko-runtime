@@ -2,16 +2,16 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-import { SuggestProvider } from "resource:///modules/urlbar/private/SuggestFeature.sys.mjs";
+import { SuggestProvider } from "moz-src:///browser/components/urlbar/private/SuggestFeature.sys.mjs";
 
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   AddonManager: "resource://gre/modules/AddonManager.sys.mjs",
-  QuickSuggest: "resource:///modules/QuickSuggest.sys.mjs",
-  UrlbarPrefs: "resource:///modules/UrlbarPrefs.sys.mjs",
-  UrlbarResult: "resource:///modules/UrlbarResult.sys.mjs",
-  UrlbarUtils: "resource:///modules/UrlbarUtils.sys.mjs",
+  QuickSuggest: "moz-src:///browser/components/urlbar/QuickSuggest.sys.mjs",
+  UrlbarPrefs: "moz-src:///browser/components/urlbar/UrlbarPrefs.sys.mjs",
+  UrlbarResult: "moz-src:///browser/components/urlbar/UrlbarResult.sys.mjs",
+  UrlbarUtils: "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs",
 });
 
 const UTM_PARAMS = {
@@ -31,11 +31,7 @@ const RESULT_MENU_COMMAND = {
  */
 export class AddonSuggestions extends SuggestProvider {
   get enablingPreferences() {
-    return [
-      "addonsFeatureGate",
-      "suggest.addons",
-      "suggest.quicksuggest.nonsponsored",
-    ];
+    return ["addonsFeatureGate", "suggest.addons", "suggest.quicksuggest.all"];
   }
 
   get primaryUserControlledPreferences() {
@@ -82,11 +78,6 @@ export class AddonSuggestions extends SuggestProvider {
       return null;
     }
 
-    if (suggestion.source == "rust") {
-      suggestion.icon = suggestion.iconUrl;
-      delete suggestion.iconUrl;
-    }
-
     // Set UTM params unless they're already defined. This allows remote
     // settings or Merino to override them if need be.
     let url = new URL(suggestion.url);
@@ -100,29 +91,30 @@ export class AddonSuggestions extends SuggestProvider {
       url: url.href,
       originalUrl: suggestion.url,
       shouldShowUrl: true,
+      // Rust uses `iconUrl` but Merino uses `icon`.
+      icon: suggestion.iconUrl ?? suggestion.icon,
       title: suggestion.title,
       description: suggestion.description,
-      bottomTextL10n: { id: "firefox-suggest-addons-recommended" },
+      bottomTextL10n: {
+        id: "firefox-suggest-addons-recommended",
+        cacheable: true,
+      },
       helpUrl: lazy.QuickSuggest.HELP_URL,
     };
 
-    return Object.assign(
-      new lazy.UrlbarResult(
-        lazy.UrlbarUtils.RESULT_TYPE.URL,
-        lazy.UrlbarUtils.RESULT_SOURCE.SEARCH,
-        ...lazy.UrlbarResult.payloadAndSimpleHighlights(
-          queryContext.tokens,
-          payload
-        )
+    return new lazy.UrlbarResult({
+      type: lazy.UrlbarUtils.RESULT_TYPE.URL,
+      source: lazy.UrlbarUtils.RESULT_SOURCE.SEARCH,
+      isBestMatch: true,
+      suggestedIndex: 1,
+      isRichSuggestion: true,
+      richSuggestionIconSize: 24,
+      showFeedbackMenu: true,
+      ...lazy.UrlbarResult.payloadAndSimpleHighlights(
+        queryContext.tokens,
+        payload
       ),
-      {
-        isBestMatch: true,
-        suggestedIndex: 1,
-        isRichSuggestion: true,
-        richSuggestionIconSize: 24,
-        showFeedbackMenu: true,
-      }
-    );
+    });
   }
 
   /**

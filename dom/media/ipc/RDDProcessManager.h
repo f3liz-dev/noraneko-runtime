@@ -74,9 +74,8 @@ class RDDProcessManager final : public RDDProcessHost::Listener {
   RefPtr<PRDDChild::TestTriggerMetricsPromise> TestTriggerMetrics();
 
  private:
-  bool IsRDDProcessLaunching();
-  bool IsRDDProcessDestroyed() const;
-  bool CreateVideoBridge();
+  bool IsRDDProcessLaunching() const;
+  bool IsRDDProcessAlive() const;
 
   // Called from our xpcom-shutdown observer.
   void OnXPCOMShutdown();

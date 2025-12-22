@@ -406,7 +406,7 @@ newtab-wallpaper-abstract-purple-green = Fargeovergang med lilla og grønt lys
 newtab-wallpaper-abstract-blue-purple-waves = Blå og lilla bølgjeformer
 newtab-wallpaper-abstract-black-waves = Svarte bølgjeformer
 
-## Celestial
+## Firefox
 
 newtab-wallpaper-category-title-photographs = Fotografi
 newtab-wallpaper-beach-at-sunrise = Strand ved soloppgang
@@ -435,6 +435,10 @@ feature-highlight-dismiss-button =
 feature-highlight-wallpaper =
     .title = { -newtab-wallpaper-feature-highlight-header }
     .aria-label = { -newtab-wallpaper-feature-highlight-content }
+
+## Firefox
+
+newtab-wallpaper-category-title-firefox = { -brand-product-name }
 
 ## Celestial
 
@@ -477,8 +481,16 @@ newtab-weather-menu-change-temperature-units-fahrenheit = Byt til Fahrenheit
 newtab-weather-menu-change-temperature-units-celsius = Byt til Celsius
 newtab-weather-menu-hide-weather = Skjul vêret på ny fane
 newtab-weather-menu-learn-more = Les meir
+newtab-weather-menu-detect-my-location = Oppdag posisjonen min
 # This message is shown if user is working offline
 newtab-weather-error-not-available = Vêrdata er ikkje tilgjengeleg akkurat no.
+newtab-weather-opt-in-see-weather = Vil du sjå vêret for plasseringa di?
+newtab-weather-opt-in-not-now =
+    .label = Ikkje no
+newtab-weather-opt-in-yes =
+    .label = Ja
+# We'll be showing static (fake) weather data if the user has not opted in to using their location
+newtab-weather-static-city = New York City
 
 ## Topic Labels
 
@@ -600,7 +612,7 @@ newtab-report-content-outdated =
 newtab-report-content-inappropriate-offensive =
     .label = Upassande eller krenkande
 newtab-report-content-spam-misleading =
-    .label = Spam eller villeiande
+    .label = Søppelpost eller villeiande
 newtab-report-cancel = Avbryt
 newtab-report-submit = Send inn
 newtab-toast-thanks-for-reporting =
@@ -645,6 +657,9 @@ newtab-widget-lists-input-menu-move-up = Flytt opp
 newtab-widget-lists-input-menu-move-down = Flytt ned
 newtab-widget-lists-input-menu-delete = Slett
 newtab-widget-lists-input-menu-edit = Rediger
+# the + symbol emphasises the functionality of adding a new list
+newtab-widget-lists-dropdown-create =
+    .label = + Lag ei ny liste
 newtab-widget-lists-name-label-default =
     .label = Oppgåveliste
 newtab-widget-lists-name-placeholder-default =
@@ -664,10 +679,6 @@ newtab-widget-timer-mode-focus =
     .label = Fokus
 newtab-widget-timer-mode-break =
     .label = Pause
-newtab-widget-timer-play =
-    .title = Spel av
-newtab-widget-timer-pause =
-    .title = Pause
 newtab-widget-timer-label-play =
     .label = Spel av
 newtab-widget-timer-label-pause =

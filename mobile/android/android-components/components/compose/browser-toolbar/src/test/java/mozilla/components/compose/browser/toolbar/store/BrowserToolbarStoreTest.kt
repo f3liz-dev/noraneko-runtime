@@ -17,10 +17,9 @@ import mozilla.components.compose.browser.toolbar.store.BrowserToolbarAction.Too
 import mozilla.components.compose.browser.toolbar.store.BrowserToolbarInteraction.BrowserToolbarEvent
 import mozilla.components.compose.browser.toolbar.store.ToolbarGravity.Bottom
 import mozilla.components.compose.browser.toolbar.store.ToolbarGravity.Top
-import mozilla.components.support.test.rule.MainCoroutineRule
+import mozilla.components.compose.browser.toolbar.ui.BrowserToolbarQuery
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import kotlin.random.Random
@@ -28,20 +27,35 @@ import kotlin.random.Random
 @RunWith(AndroidJUnit4::class)
 class BrowserToolbarStoreTest {
 
-    @get:Rule
-    val coroutineTestRule = MainCoroutineRule()
-
     @Test
-    fun `WHEN toggle edit mode action is dispatched THEN update the mode and edit text states`() {
+    fun `WHEN enter edit mode action is dispatched THEN mode is updated and query remains unchanged`() {
         val store = BrowserToolbarStore()
-        val editMode = true
 
         assertEquals(Mode.DISPLAY, store.state.mode)
 
-        store.dispatch(BrowserToolbarAction.ToggleEditMode(editMode = editMode))
+        store.dispatch(BrowserToolbarAction.EnterEditMode)
 
         assertEquals(Mode.EDIT, store.state.mode)
-        assertEquals("", store.state.editState.query)
+        assertEquals("", store.state.editState.query.current)
+    }
+
+    @Test
+    fun `WHEN exit edit mode action is dispatched THEN mode is updated and query is cleared`() {
+        val store = BrowserToolbarStore(
+            initialState = BrowserToolbarState(
+                mode = Mode.EDIT,
+                editState = EditState(
+                query = BrowserToolbarQuery("Mozilla"),
+                ),
+            ),
+        )
+
+        assertEquals(Mode.EDIT, store.state.mode)
+
+        store.dispatch(BrowserToolbarAction.ExitEditMode)
+
+        assertEquals(Mode.DISPLAY, store.state.mode)
+        assertEquals("", store.state.editState.query.current)
     }
 
     @Test
@@ -49,11 +63,11 @@ class BrowserToolbarStoreTest {
         val store = BrowserToolbarStore()
         val text = "Mozilla"
 
-        assertEquals("", store.state.editState.query)
+        assertEquals("", store.state.editState.query.current)
 
-        store.dispatch(BrowserEditToolbarAction.SearchQueryUpdated(query = text))
+        store.dispatch(BrowserEditToolbarAction.SearchQueryUpdated(query = BrowserToolbarQuery(text)))
 
-        assertEquals(text, store.state.editState.query)
+        assertEquals(text, store.state.editState.query.current)
     }
 
     @Test

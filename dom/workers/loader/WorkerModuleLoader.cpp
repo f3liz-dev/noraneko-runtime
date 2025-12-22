@@ -97,11 +97,10 @@ already_AddRefed<ModuleLoadRequest> WorkerModuleLoader::CreateRequest(
 
   JS::ModuleType moduleType = JS::GetModuleRequestType(aCx, aModuleRequest);
   RefPtr<ModuleLoadRequest> request = new ModuleLoadRequest(
-      aURI, moduleType, aReferrerPolicy, aOptions, SRIMetadata(), aBaseURL,
-      loadContext, kind, this, root);
+      moduleType, SRIMetadata(), aBaseURL, loadContext, kind, this, root);
 
-  request->mURL = request->mURI->GetSpecOrDefault();
-  request->NoCacheEntryFound();
+  request->mURL = aURI->GetSpecOrDefault();
+  request->NoCacheEntryFound(aReferrerPolicy, aOptions, aURI);
   return request.forget();
 }
 
@@ -146,11 +145,14 @@ nsresult WorkerModuleLoader::CompileFetchedModule(
     ModuleLoadRequest* aRequest, JS::MutableHandle<JSObject*> aModuleScript) {
   switch (aRequest->mModuleType) {
     case JS::ModuleType::Unknown:
+    case JS::ModuleType::Bytes:
       MOZ_CRASH("Unexpected module type");
     case JS::ModuleType::JavaScript:
       return CompileJavaScriptModule(aCx, aOptions, aRequest, aModuleScript);
     case JS::ModuleType::JSON:
       return CompileJsonModule(aCx, aOptions, aRequest, aModuleScript);
+    case JS::ModuleType::CSS:
+      MOZ_CRASH("CSS modules are not supported in workers");
   }
 
   MOZ_CRASH("Unhandled module type");
@@ -218,20 +220,21 @@ WorkerScriptLoader* WorkerModuleLoader::GetScriptLoaderFor(
 }
 
 void WorkerModuleLoader::OnModuleLoadComplete(ModuleLoadRequest* aRequest) {
-  if (aRequest->IsTopLevel()) {
-    AutoJSAPI jsapi;
-    if (NS_WARN_IF(!jsapi.Init(GetGlobalObject()))) {
-      return;
-    }
-    RefPtr<WorkerScriptLoader> requestScriptLoader =
-        GetScriptLoaderFor(aRequest);
-    if (aRequest->IsDynamicImport()) {
-      aRequest->ProcessDynamicImport();
-      requestScriptLoader->TryShutdown();
-    } else {
-      requestScriptLoader->MaybeMoveToLoadedList(aRequest);
-      requestScriptLoader->ProcessPendingRequests(jsapi.cx());
-    }
+  if (aRequest->IsStaticImport()) {
+    return;
+  }
+
+  AutoJSAPI jsapi;
+  if (NS_WARN_IF(!jsapi.Init(GetGlobalObject()))) {
+    return;
+  }
+  RefPtr<WorkerScriptLoader> requestScriptLoader = GetScriptLoaderFor(aRequest);
+  if (aRequest->IsDynamicImport()) {
+    aRequest->ProcessDynamicImport();
+    requestScriptLoader->TryShutdown();
+  } else {
+    requestScriptLoader->MaybeMoveToLoadedList(aRequest);
+    requestScriptLoader->ProcessPendingRequests(jsapi.cx());
   }
 }
 

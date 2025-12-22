@@ -38,8 +38,11 @@ const gConfig = (function () {
       "signon.firefoxRelay.privacy_policy_url"
     ),
     allowListForFirstOfferPref: "signon.firefoxRelay.allowListForFirstOffer",
+    denyListForFutureOffersPref: "signon.firefoxRelay.denyListForFutureOffers",
     allowListRemoteSettingsCollectionPref:
       "signon.firefoxRelay.allowListRemoteSettingsCollection",
+    denyListRemoteSettingsCollectionPref:
+      "signon.firefoxRelay.denyListRemoteSettingsCollection",
   };
 })();
 
@@ -108,6 +111,7 @@ const AUTH_TOKEN_ERROR_CODE = 418;
 
 let gFlowId;
 let gAllowListCollection;
+let gDenyListCollection;
 
 async function getRelayTokenAsync() {
   try {
@@ -276,6 +280,7 @@ function getDisableIntegration(disableStrings, feature) {
     },
   };
 }
+
 async function showReusableMasksAsync(browser, origin, error) {
   const [reusableMasks, status] = await getReusableMasksAsync(browser, origin);
   if (!reusableMasks) {
@@ -466,7 +471,124 @@ function isSignup(scenarioName) {
   return scenarioName == "SignUpFormScenario";
 }
 
-async function onAllowList(origin) {
+// Helper to load/cache RemoteSettings collections
+async function getListCollection({
+  cache,
+  setCache,
+  collectionPref,
+  defaultCollection,
+}) {
+  if (!cache()) {
+    const collectionName = Services.prefs.getStringPref(
+      gConfig[collectionPref],
+      defaultCollection
+    );
+    try {
+      const list = await lazy.RemoteSettings(collectionName).get();
+      setCache(list);
+      lazy.RemoteSettings(collectionName).on("sync", () => {
+        setCache(null);
+      });
+    } catch (ex) {
+      if (ex instanceof lazy.RemoteSettingsClient.UnknownCollectionError) {
+        lazy.log.warn(
+          "Could not get Remote Settings collection.",
+          collectionPref,
+          ex
+        );
+      }
+      throw ex;
+    }
+  }
+  return cache();
+}
+
+/**
+ * Checks if the origin matches a record in the list according to Relay rules:
+ * using flexible normalization and PSL via Services.uriFixup.
+  +---------------------------+-----------------------------------+--------+
+  |        list               |           origin                  | Result |
+  +---------------------------+-----------------------------------+--------+
+  | google.com                | https://google.com                | True   |
+  | google.com                | https://www.google.com            | True   |
+  | www.google.com            | https://www.google.com            | True   |
+  | google.com.ar             | https://accounts.google.com.ar    | True   |
+  | google.com.ar             | https://google.com                | False  |
+  | google.com                | https://google.com.ar             | False  |
+  | mozilla.org               | https://vpn.mozilla.org           | True   |
+  | vpn.mozilla.org           | https://vpn.mozilla.org           | True   |
+  | substack.com              | https://hunterharris.substack.com | True   |
+  | hunterharris.substack.com | https://hunterharris.substack.com | True   |
+  | hunterharris.substack.com | https://other.substack.com        | False  |
+  | example.co.uk             | https://foo.example.co.uk         | True   |
+  | localhost                 | http://localhost                  | True   |
+  | google.com.ar             | https://mail.google.com.br        | False  |
+  +---------------------------+-----------------------------------+--------+
+ *
+ * Note: Cross-TLD matching (e.g., google.com matching google.com.ar) requires
+ * explicit list entries or Related Realms integration. See bug 1996332.
+ *
+ * @param {Array} list   Array of {domain: ...} records. Each domain is a string.
+ * @param {string} origin Origin URL (e.g., https://www.google.com.ar).
+ * @returns {boolean}
+ */
+function isOriginInList(list, origin) {
+  let host;
+  try {
+    // PSL-aware, normalized results via uriFixup
+    const { fixedURI } = Services.uriFixup.getFixupURIInfo(origin);
+    if (!fixedURI) {
+      return false;
+    }
+    host = fixedURI.host;
+  } catch {
+    return false;
+  }
+
+  // 1. Exact host match (e.g. 'www.foo.com' in list)
+  if (list.some(record => record.domain === host)) {
+    return true;
+  }
+
+  // 2. PSL-aware subdomain/root match
+  if (
+    list.some(record => {
+      try {
+        return Services.eTLD.hasRootDomain(host, record.domain);
+      } catch {
+        return false;
+      }
+    })
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+async function shouldNotShowRelay(origin) {
+  const denyListForFutureOffers = Services.prefs.getBoolPref(
+    gConfig.denyListForFutureOffersPref,
+    true
+  );
+  if (!denyListForFutureOffers) {
+    return false;
+  }
+  if (!origin) {
+    return true;
+  }
+  const list = await getListCollection({
+    cache: () => gDenyListCollection,
+    setCache: v => {
+      gDenyListCollection = v;
+    },
+    collectionPref: "denyListRemoteSettingsCollectionPref",
+    defaultCollection: "fxrelay-denylist",
+  });
+  return isOriginInList(list, origin);
+}
+
+async function shouldShowRelay(origin) {
   const allowListForFirstOffer = Services.prefs.getBoolPref(
     gConfig.allowListForFirstOfferPref,
     true
@@ -477,46 +599,39 @@ async function onAllowList(origin) {
   if (!origin) {
     return false;
   }
-  if (!gAllowListCollection) {
-    const allowListRemoteSettingsCollection = Services.prefs.getStringPref(
-      gConfig.allowListRemoteSettingsCollectionPref,
-      "fxrelay-allowlist"
-    );
-    try {
-      gAllowListCollection = await lazy
-        .RemoteSettings(allowListRemoteSettingsCollection)
-        .get();
-      lazy.RemoteSettings(allowListRemoteSettingsCollection).on("sync", () => {
-        gAllowListCollection = null;
-      });
-    } catch (ex) {
-      if (ex instanceof lazy.RemoteSettingsClient.UnknownCollectionError) {
-        lazy.log.warn(
-          "Could not get Remote Settings collection.",
-          gConfig.allowListRemoteSettingsCollection,
-          ex
-        );
-      }
-      throw ex;
-    }
-  }
-  const originHost = new URL(origin).host;
-  return gAllowListCollection.some(
-    allowListRecord => allowListRecord.domain == originHost
-  );
+  const list = await getListCollection({
+    cache: () => gAllowListCollection,
+    setCache: v => {
+      gAllowListCollection = v;
+    },
+    collectionPref: "allowListRemoteSettingsCollectionPref",
+    defaultCollection: "fxrelay-allowlist",
+  });
+  return isOriginInList(list, origin);
 }
 
 class RelayOffered {
   async *autocompleteItemsAsync(origin, scenarioName, hasInput) {
+    const originOnDenyList = await shouldNotShowRelay(origin);
+    if (originOnDenyList) {
+      return;
+    }
     const hasFxA = await hasFirefoxAccountAsync();
+    const showToAllBrowsersPrefEnabled = Services.prefs.getBoolPref(
+      gConfig.showToAllBrowsersPref,
+      false
+    );
+    const relayShouldShow = await shouldShowRelay(origin);
     const showRelayOnAllowlistSiteToAllUsers =
-      Services.prefs.getBoolPref(gConfig.showToAllBrowsersPref, false) &&
-      (await onAllowList(origin));
+      showToAllBrowsersPrefEnabled && relayShouldShow;
+    const relayFeaturePrefUnlocked = !Services.prefs.prefIsLocked(
+      gConfig.relayFeaturePref
+    );
     if (
       !hasInput &&
       isSignup(scenarioName) &&
-      !Services.prefs.prefIsLocked(gConfig.relayFeaturePref) &&
-      (hasFxA || showRelayOnAllowlistSiteToAllUsers)
+      relayFeaturePrefUnlocked &&
+      (showRelayOnAllowlistSiteToAllUsers || relayShouldShow)
     ) {
       const nimbusRelayAutocompleteFeature =
         lazy.NimbusFeatures["email-autocomplete-relay"];
@@ -684,6 +799,7 @@ class RelayOffered {
           if (await this.notifyServerTermsAcceptedAsync(browser)) {
             feature.markAsEnabled();
             fillUsername(await generateUsernameAsync(browser, origin));
+            Glean.relayIntegration.placedEmailMask.record({ value: gFlowId });
           }
         };
         for (const notificationToObserve of notificationsToObserve) {
@@ -793,6 +909,7 @@ class RelayOffered {
         if (await this.notifyServerTermsAcceptedAsync(browser)) {
           feature.markAsEnabled();
           fillUsername(await generateUsernameAsync(browser, origin));
+          Glean.relayIntegration.placedEmailMask.record({ value: gFlowId });
         }
       },
     };
@@ -816,6 +933,12 @@ class RelayOffered {
             case "shown": {
               const document = notification.owner.panel.ownerDocument;
               customizeNotificationHeader(notification, "with-domain");
+              const learnMore = document.querySelector(
+                '[data-l10n-name="firefox-relay-learn-more-url"]'
+              );
+              if (learnMore) {
+                learnMore.href = gConfig.learnMoreURL;
+              }
               const baseDomain = Services.eTLD.getBaseDomain(
                 Services.io.newURI(origin)
               );
@@ -861,7 +984,8 @@ class RelayOffered {
 
 class RelayEnabled {
   async *autocompleteItemsAsync(origin, scenarioName, hasInput) {
-    if (!hasInput && isSignup(scenarioName)) {
+    const originOnDenyList = await shouldNotShowRelay(origin);
+    if (!hasInput && isSignup(scenarioName) && !originOnDenyList) {
       const hasFxA = await hasFirefoxAccountAsync();
       const [title] = await formatMessages("firefox-relay-use-mask-title-1");
 
@@ -882,6 +1006,7 @@ class RelayEnabled {
   }
 
   async generateUsername(browser, origin) {
+    Glean.relayIntegration.placedEmailMask.record({ value: gFlowId });
     return generateUsernameAsync(browser, origin);
   }
 }
@@ -944,4 +1069,5 @@ class RelayFeature extends OptInFeature {
   }
 }
 
+export { isOriginInList };
 export const FirefoxRelay = new RelayFeature();

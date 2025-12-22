@@ -345,7 +345,7 @@ abstract class Settings {
     /**
      * Setting to control how Certificate Transparency information is processed.
      */
-    open var certificateTransparencyMode: Int by UnsupportedSetting()
+    open var certificateTransparencyMode: Int? by UnsupportedSetting()
 
     /**
      * Setting to control whether post-quantum key exchange mechanisms are used
@@ -367,6 +367,16 @@ abstract class Settings {
      * Setting to control blocking of local network & local device (localhost) access
      */
     open var lnaBlockingEnabled: Boolean by UnsupportedSetting()
+
+    /**
+     * Setting to control the CRLite certificate blocklist channel
+     */
+    open var crliteChannel: String? by UnsupportedSetting()
+
+    /**
+     * Setting to control whether Safe Browsing V5 is enabled.
+     */
+    open var safeBrowsingV5Enabled: Boolean? by UnsupportedSetting()
 }
 
 /**
@@ -435,11 +445,13 @@ data class DefaultSettings(
     val getDesktopMode: () -> Boolean = { false },
     override var cookieBehaviorOptInPartitioning: Boolean = false,
     override var cookieBehaviorOptInPartitioningPBM: Boolean = false,
-    override var certificateTransparencyMode: Int = 0,
+    override var certificateTransparencyMode: Int? = null,
     override var postQuantumKeyExchangeEnabled: Boolean? = null,
     override var dohAutoselectEnabled: Boolean = false,
     override var bannedPorts: String = "",
     override var lnaBlockingEnabled: Boolean = false,
+    override var crliteChannel: String? = null,
+    override var safeBrowsingV5Enabled: Boolean? = null,
 ) : Settings() {
     override val desktopModeEnabled: Boolean
         get() = getDesktopMode()

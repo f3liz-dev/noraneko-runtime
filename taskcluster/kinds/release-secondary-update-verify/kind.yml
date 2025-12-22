@@ -18,6 +18,7 @@ transforms:
     - gecko_taskgraph.transforms.task:transforms
 
 task-defaults:
+    run-on-repo-type: [hg]
     name: secondary-update-verify
     run-on-projects: []  # to make sure this never runs as part of CI
     shipping-phase: promote
@@ -50,12 +51,6 @@ tasks:
         shipping-product: firefox
         attributes:
             build_platform: linux64-aarch64-shippable
-
-    firefox-secondary-linux:
-        description: linux secondary channel update verify
-        shipping-product: firefox
-        attributes:
-            build_platform: linux-shippable
 
     firefox-secondary-win64:
         description: win64 secondary channel update verify

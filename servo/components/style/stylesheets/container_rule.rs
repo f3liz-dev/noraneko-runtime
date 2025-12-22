@@ -17,8 +17,7 @@ use crate::queries::{FeatureType, QueryCondition};
 use crate::shared_lock::{
     DeepCloneWithLock, Locked, SharedRwLock, SharedRwLockReadGuard, ToCssWithGuard,
 };
-use crate::str::CssStringWriter;
-use crate::stylesheets::CssRules;
+use crate::stylesheets::{CssRules, CustomMediaEvaluator};
 use crate::stylist::Stylist;
 use crate::values::computed::{CSSPixelLength, ContainerType, Context, Ratio};
 use crate::values::specified::ContainerName;
@@ -30,7 +29,7 @@ use malloc_size_of::{MallocSizeOfOps, MallocUnconditionalShallowSizeOf};
 use selectors::kleene_value::KleeneValue;
 use servo_arc::Arc;
 use std::fmt::{self, Write};
-use style_traits::{CssWriter, ParseError, ToCss};
+use style_traits::{CssStringWriter, CssWriter, ParseError, ToCss};
 
 /// A container rule.
 #[derive(Debug, ToShmem)]
@@ -271,7 +270,9 @@ impl ContainerCondition {
             info,
             size_query_container_lookup,
             |context| {
-                let matches = self.condition.matches(context);
+                let matches = self
+                    .condition
+                    .matches(context, &mut CustomMediaEvaluator::none());
                 if context
                     .style()
                     .flags()

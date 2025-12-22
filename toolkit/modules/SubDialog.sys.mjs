@@ -10,7 +10,7 @@ XPCOMUtils.defineLazyServiceGetter(
   lazy,
   "dragService",
   "@mozilla.org/widget/dragservice;1",
-  "nsIDragService"
+  Ci.nsIDragService
 );
 
 const HTML_NS = "http://www.w3.org/1999/xhtml";
@@ -489,8 +489,10 @@ SubDialog.prototype = {
   },
 
   async resizeDialog() {
-    this.resizeHorizontally();
-    this.resizeVertically();
+    if (this._box.getAttribute("fixedsize") != "false") {
+      this.resizeHorizontally();
+      this.resizeVertically();
+    }
 
     this._overlay.dispatchEvent(
       new CustomEvent("dialogopen", {

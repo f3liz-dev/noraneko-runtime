@@ -13,7 +13,6 @@
 #include "base/pickle.h"
 #include "mojo/core/ports/user_message.h"
 #include "mojo/core/ports/port_ref.h"
-#include "mozilla/RefPtr.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/UniquePtrExtensions.h"
 #include "mozilla/ipc/ScopedPort.h"
@@ -235,6 +234,8 @@ class Message : public mojo::core::ports::UserMessage, public Pickle {
   void set_seqno(seqno_t aSeqno) { header()->seqno = aSeqno; }
 
   const char* name() const { return StringFromIPCMessageType(type()); }
+
+  bool has_any_attachments() const;
 
   uint32_t num_handles() const;
 

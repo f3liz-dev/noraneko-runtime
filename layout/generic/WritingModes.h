@@ -218,7 +218,7 @@ class WritingMode {
 
   /**
    * True if vertical writing mode, i.e. when
-   * writing-mode: vertical-lr | vertical-rl.
+   * writing-mode: vertical-lr | vertical-rl | sideways-lr | sideways-rl.
    */
   bool IsVertical() const {
     return !!(mWritingMode & StyleWritingMode::VERTICAL);
@@ -2187,6 +2187,17 @@ inline AnchorResolvedInset nsStylePosition::GetAnchorResolvedInset(
     mozilla::LogicalSide aSide, WritingMode aWM,
     const AnchorPosOffsetResolutionParams& aParams) const {
   return GetAnchorResolvedInset(aWM.PhysicalSide(aSide), aParams);
+}
+
+inline mozilla::Maybe<mozilla::Side> nsStylePosition::GetSingleAutoInsetInAxis(
+    LogicalAxis aAxis, WritingMode aWM,
+    const AnchorPosOffsetResolutionParams& aParams) const {
+  const bool isInlineAxis = (aAxis == LogicalAxis::Inline);
+  const mozilla::StylePhysicalAxis physicalAxis =
+      (isInlineAxis == aWM.IsVertical())
+          ? mozilla::StylePhysicalAxis::Vertical
+          : mozilla::StylePhysicalAxis::Horizontal;
+  return GetSingleAutoInsetInAxis(physicalAxis, aParams);
 }
 
 inline AnchorResolvedSize nsStylePosition::ISize(

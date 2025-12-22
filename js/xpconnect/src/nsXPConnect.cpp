@@ -10,7 +10,6 @@
 #include "mozilla/Assertions.h"
 #include "mozilla/Base64.h"
 #include "mozilla/Likely.h"
-#include "mozilla/Unused.h"
 
 #include "XPCWrapper.h"
 #include "jsfriendapi.h"
@@ -100,7 +99,7 @@ void nsXPConnect::InitJSContext() {
   mozJSModuleLoader::InitStatics();
 
   // Initialize the script preloader cache.
-  Unused << mozilla::ScriptPreloader::GetSingleton();
+  (void)mozilla::ScriptPreloader::GetSingleton();
 
   nsJSContext::EnsureStatics();
 }
@@ -254,7 +253,7 @@ void xpc::ErrorReport::Init(JSContext* aCx, mozilla::dom::Exception* aException,
   }
   mSourceId = aException->SourceId(aCx);
   mLineNumber = aException->LineNumber(aCx);
-  mColumn = aException->ColumnNumber();
+  mColumn = aException->ColumnNumber(aCx);
 }
 
 static LazyLogModule gJSDiagnostics("JSDiagnostics");
@@ -393,7 +392,7 @@ void xpc_TryUnmarkWrappedGrayObject(nsISupports* aWrappedJS) {
   // QIing to nsIXPConnectWrappedJSUnmarkGray may have side effects!
   nsCOMPtr<nsIXPConnectWrappedJSUnmarkGray> wjsug =
       do_QueryInterface(aWrappedJS);
-  Unused << wjsug;
+  (void)wjsug;
   MOZ_ASSERT(!wjsug,
              "One should never be able to QI to "
              "nsIXPConnectWrappedJSUnmarkGray successfully!");
@@ -499,22 +498,18 @@ void InitGlobalObjectOptions(JS::RealmOptions& aOptions,
 
   if (aForceUTC) {
     nsCString timeZone = nsRFPService::GetSpoofedJSTimeZone();
-    aOptions.behaviors().setTimeZoneCopyZ(timeZone.get());
+    aOptions.behaviors().setTimeZoneOverride(timeZone.get());
+  } else if (!aTimezoneOverride.IsEmpty()) {
+    aOptions.behaviors().setTimeZoneOverride(
+        NS_ConvertUTF16toUTF8(aTimezoneOverride).get());
   }
   aOptions.creationOptions().setAlwaysUseFdlibm(aAlwaysUseFdlibm);
   if (aLocaleEnUS) {
     nsCString locale = nsRFPService::GetSpoofedJSLocale();
-    aOptions.creationOptions().setLocaleCopyZ(locale.get());
-  }
-
-  if (!aLanguageOverride.IsEmpty()) {
+    aOptions.behaviors().setLocaleOverride(locale.get());
+  } else if (!aLanguageOverride.IsEmpty()) {
     aOptions.behaviors().setLocaleOverride(
         PromiseFlatCString(aLanguageOverride).get());
-  }
-
-  if (!aTimezoneOverride.IsEmpty()) {
-    aOptions.behaviors().setTimeZoneCopyZ(
-        NS_ConvertUTF16toUTF8(aTimezoneOverride).get());
   }
 }
 

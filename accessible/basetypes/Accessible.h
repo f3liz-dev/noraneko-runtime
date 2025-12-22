@@ -181,7 +181,7 @@ class Accessible {
 
   virtual Accessible* Parent() const = 0;
 
-  virtual role Role() const = 0;
+  virtual role NativeRole() const = 0;
 
   /**
    * Return child accessible at the given index.
@@ -194,6 +194,11 @@ class Accessible {
   virtual uint32_t ChildCount() const = 0;
 
   virtual int32_t IndexInParent() const = 0;
+
+  /**
+   * Returns the accessible's calculated, final, role.
+   */
+  role Role() const;
 
   bool HasChildren() const { return !!FirstChild(); }
 
@@ -435,6 +440,10 @@ class Accessible {
   virtual bool GetStringARIAAttr(nsAtom* aAttrName,
                                  nsAString& aAttrValue) const = 0;
 
+  virtual bool ARIAAttrValueIs(nsAtom* aAttrName, nsAtom* aAttrValue) const = 0;
+
+  virtual bool HasARIAAttr(nsAtom* aAttrName) const = 0;
+
   /**
    * Get the relation of the given type.
    */
@@ -467,6 +476,11 @@ class Accessible {
    */
   virtual void ScrollToPoint(uint32_t aCoordinateType, int32_t aX,
                              int32_t aY) = 0;
+
+  /**
+   * Return true if the accessible is scrollable.
+   */
+  virtual bool IsScrollable() const = 0;
 
   /**
    * Return tag name of associated DOM node.
@@ -589,8 +603,6 @@ class Accessible {
 
   bool IsSelect() const { return HasGenericType(eSelect); }
 
-  bool IsActionable() const { return HasGenericType(eActionable); }
-
   bool IsText() const { return mGenericTypes & eText; }
 
   bool IsImage() const { return mType == eImageType; }
@@ -610,6 +622,10 @@ class Accessible {
    * to expose text interfaces.
    */
   bool IsTextRole();
+
+  virtual bool IsEditable() const = 0;
+
+  bool IsEditableRoot() const;
 
   bool IsGenericHyperText() const { return mType == eHyperTextType; }
 
@@ -645,6 +661,8 @@ class Accessible {
   bool IsOuterDoc() const { return mType == eOuterDocType; }
 
   bool IsProgress() const { return mType == eProgressType; }
+
+  virtual bool IsPopover() const = 0;
 
   bool IsRoot() const { return mType == eRootType; }
 
@@ -764,6 +782,15 @@ class Accessible {
    */
   virtual int32_t GetLevel(bool aFast) const;
 
+  /**
+   * Return true if accessible has a primary action directly related to it, like
+   * "click", "activate", "press", "jump", "open", "close", etc. A non-primary
+   * action would be a complementary one like "showlongdesc".
+   * If an accessible has an action that is associated with an ancestor, it is
+   * not a primary action either.
+   */
+  virtual bool HasPrimaryAction() const = 0;
+
  protected:
   // Some abstracted group utility methods.
 
@@ -798,25 +825,39 @@ class Accessible {
   const Accessible* ActionAncestor() const;
 
   /**
-   * Return true if accessible has a primary action directly related to it, like
-   * "click", "activate", "press", "jump", "open", "close", etc. A non-primary
-   * action would be a complementary one like "showlongdesc".
-   * If an accessible has an action that is associated with an ancestor, it is
-   * not a primary action either.
-   */
-  virtual bool HasPrimaryAction() const = 0;
-
-  /**
    * Apply states which are implied by other information common to both
    * LocalAccessible and RemoteAccessible.
    */
   void ApplyImplicitState(uint64_t& aState) const;
+
+  /**
+   * Return the minimum role that should be used as a last resort if the element
+   * does not have a more specific role.
+   */
+  mozilla::a11y::role GetMinimumRole(mozilla::a11y::role aRole) const;
+
+  /**
+   * Given a role and an accessible's state, parentage, and other attributes
+   * transform the role to reflect its correct aria role.
+   */
+  mozilla::a11y::role ARIATransformRole(mozilla::a11y::role aRole) const;
 
  private:
   static const uint8_t kTypeBits = 6;
   static const uint8_t kGenericTypesBits = 18;
 
   void StaticAsserts() const;
+
+  /*
+   * This function assumes that the current role is not valid. It searches for a
+   * fallback role in the role attribute string, and returns it. If there is no
+   * valid fallback role in the role attribute string, the function returns the
+   * native role. The aRolesToSkip parameter will cause the function to skip any
+   * roles found in the role attribute string when searching for the next valid
+   * role.
+   */
+  role FindNextValidARIARole(
+      std::initializer_list<nsStaticAtom*> aRolesToSkip) const;
 
  protected:
   uint32_t mType : kTypeBits;

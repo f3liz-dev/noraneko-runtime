@@ -11,6 +11,7 @@ const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   LoginHelper: "resource://gre/modules/LoginHelper.sys.mjs",
+  AsyncShutdown: "resource://gre/modules/AsyncShutdown.sys.mjs",
 });
 
 ChromeUtils.defineLazyGetter(lazy, "log", () => {
@@ -64,11 +65,34 @@ LoginManager.prototype = {
     // Cache references to current |this| in utility objects
     this._observer._pwmgr = this;
 
-    Services.obs.addObserver(this._observer, "xpcom-shutdown");
-    Services.obs.addObserver(this._observer, "passwordmgr-storage-replace");
+    this._shutdownBlocker = async () => {
+      return this.uninit();
+    };
+    lazy.AsyncShutdown.profileChangeTeardown.addBlocker(
+      "LoginManager",
+      this._shutdownBlocker
+    );
+    this._observer._init();
 
     // Initialize storage so that asynchronous data loading can start.
     this._initStorage();
+    this._initialized = true;
+  },
+
+  async uninit() {
+    if (this._shutdownBlocker) {
+      lazy.AsyncShutdown.profileChangeTeardown.removeBlocker(
+        this._shutdownBlocker
+      );
+      delete this._shutdownBlocker;
+    }
+
+    // Note that this._storage has its own shutdown observer, so we do not
+    // need to finalize it here but can unlink it.
+    this._storage = null;
+    this._observer._uninit();
+    this._observer._pwmgr = null;
+    this._initialized = false;
   },
 
   _initStorage() {
@@ -95,6 +119,23 @@ LoginManager.prototype = {
    */
   _observer: {
     _pwmgr: null,
+    _initialized: false,
+
+    _init() {
+      if (this._initialized) {
+        return;
+      }
+      Services.obs.addObserver(this, "passwordmgr-storage-replace");
+      this._initialized = true;
+    },
+
+    _uninit() {
+      if (!this._initialized) {
+        return;
+      }
+      Services.obs.removeObserver(this, "passwordmgr-storage-replace");
+      this._initialized = false;
+    },
 
     QueryInterface: ChromeUtils.generateQI([
       "nsIObserver",
@@ -103,12 +144,10 @@ LoginManager.prototype = {
 
     // nsIObserver
     observe(subject, topic, _data) {
-      if (topic == "xpcom-shutdown") {
-        delete this._pwmgr._storage;
-        this._pwmgr = null;
-      } else if (topic == "passwordmgr-storage-replace") {
+      if (topic == "passwordmgr-storage-replace") {
+        // This notification is only issued via LoginTestUtils.reloadData().
         (async () => {
-          await this._pwmgr._storage.terminate();
+          await this._pwmgr._storage.testSaveForReplace();
           this._pwmgr._initStorage();
           await this._pwmgr.initializationPromise;
           Services.obs.notifyObservers(

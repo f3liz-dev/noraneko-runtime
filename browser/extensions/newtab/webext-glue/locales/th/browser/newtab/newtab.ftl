@@ -320,6 +320,7 @@ newtab-custom-stories-toggle =
     .description = เนื้อหาคัดสรรพิเศษโดยผลิตภัณฑ์ตระกูล { -brand-product-name }
 newtab-custom-stories-personalized-toggle =
     .label = เรื่องราว
+newtab-custom-stories-personalized-checkbox-label = เรื่องราวที่ปรับแต่งตามกิจกรรมของคุณ
 newtab-custom-pocket-sponsored = เรื่องราวที่ได้รับการสนับสนุน
 newtab-custom-pocket-show-recent-saves = แสดงบันทึกล่าสุด
 newtab-custom-recent-title = กิจกรรมล่าสุด
@@ -355,6 +356,7 @@ newtab-wallpaper-custom-color = เลือกสี
 # Variables
 #   $file_size (number) - The number of the maximum image file size (in MB) that may be uploaded
 newtab-wallpaper-error-max-file-size = ภาพมีขนาดเกินขีดจำกัดขนาดไฟล์ที่ { $file_size } MB โปรดลองอัปโหลดไฟล์ที่มีขนาดเล็กกว่านี้
+newtab-wallpaper-error-upload-file-type = เราไม่สามารถอัปโหลดไฟล์ของคุณได้ โปรดลองอีกครั้งด้วยไฟล์ภาพ
 newtab-wallpaper-error-file-type = เราไม่สามารถอัปโหลดไฟล์ของคุณได้ โปรดลองอีกครั้งด้วยชนิดไฟล์ที่ต่างจากนี้
 newtab-wallpaper-light-red-panda = แพนด้าแดง
 newtab-wallpaper-light-mountain = ภูเขาสีขาว
@@ -404,7 +406,7 @@ newtab-wallpaper-abstract-purple-green = เกรเดียนท์สีอ
 newtab-wallpaper-abstract-blue-purple-waves = รูปทรงคลื่นสีน้ำเงินและสีม่วง
 newtab-wallpaper-abstract-black-waves = รูปทรงคลื่นสีดำ
 
-## Celestial
+## Firefox
 
 newtab-wallpaper-category-title-photographs = ภาพถ่าย
 newtab-wallpaper-beach-at-sunrise = ชายหาดตอนพระอาทิตย์ขึ้น
@@ -433,6 +435,10 @@ feature-highlight-dismiss-button =
 feature-highlight-wallpaper =
     .title = { -newtab-wallpaper-feature-highlight-header }
     .aria-label = { -newtab-wallpaper-feature-highlight-content }
+
+## Firefox
+
+newtab-wallpaper-category-title-firefox = { -brand-product-name }
 
 ## Celestial
 
@@ -475,8 +481,16 @@ newtab-weather-menu-change-temperature-units-fahrenheit = เปลี่ยน�
 newtab-weather-menu-change-temperature-units-celsius = เปลี่ยนเป็นเซลเซียส
 newtab-weather-menu-hide-weather = ซ่อนพยากรณ์อากาศในแท็บใหม่
 newtab-weather-menu-learn-more = เรียนรู้เพิ่มเติม
+newtab-weather-menu-detect-my-location = ตรวจจับตำแหน่งที่ตั้งของฉัน
 # This message is shown if user is working offline
 newtab-weather-error-not-available = ไม่มีข้อมูลพยากรณ์อากาศในขณะนี้
+newtab-weather-opt-in-see-weather = คุณต้องการดูสภาพอากาศสำหรับตำแหน่งที่ตั้งของคุณหรือไม่?
+newtab-weather-opt-in-not-now =
+    .label = ยังไม่ทำตอนนี้
+newtab-weather-opt-in-yes =
+    .label = ใช่
+# We'll be showing static (fake) weather data if the user has not opted in to using their location
+newtab-weather-static-city = นครนิวยอร์ก
 
 ## Topic Labels
 
@@ -643,6 +657,9 @@ newtab-widget-lists-input-menu-move-up = เลื่อนขึ้น
 newtab-widget-lists-input-menu-move-down = เลื่อนลง
 newtab-widget-lists-input-menu-delete = ลบ
 newtab-widget-lists-input-menu-edit = แก้ไข
+# the + symbol emphasises the functionality of adding a new list
+newtab-widget-lists-dropdown-create =
+    .label = + สร้างรายการใหม่
 newtab-widget-lists-name-label-default =
     .label = รายการงาน
 newtab-widget-lists-name-placeholder-default =
@@ -662,10 +679,6 @@ newtab-widget-timer-mode-focus =
     .label = โฟกัส
 newtab-widget-timer-mode-break =
     .label = พัก
-newtab-widget-timer-play =
-    .title = เล่น
-newtab-widget-timer-pause =
-    .title = หยุดชั่วคราว
 newtab-widget-timer-label-play =
     .label = เล่น
 newtab-widget-timer-label-pause =

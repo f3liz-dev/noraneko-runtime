@@ -8,7 +8,6 @@
 #ifndef mozilla_dom_InspectorUtils_h
 #define mozilla_dom_InspectorUtils_h
 
-#include "mozilla/UniquePtr.h"
 #include "mozilla/dom/InspectorUtilsBinding.h"
 #include "nsLayoutUtils.h"
 
@@ -310,10 +309,11 @@ class InspectorUtils {
       nsACString& aNewStyleSheetText);
 
   static void SetVerticalClipping(GlobalObject&, BrowsingContext* aContext,
-                                  mozilla::ScreenIntCoord aOffset);
+                                  mozilla::CSSCoord aOffset);
   static void SetDynamicToolbarMaxHeight(GlobalObject&,
                                          BrowsingContext* aContext,
-                                         mozilla::ScreenIntCoord aHeight);
+                                         mozilla::CSSCoord aHeight);
+  static uint16_t GetGridContainerType(GlobalObject&, Element&);
 };
 
 }  // namespace mozilla::dom

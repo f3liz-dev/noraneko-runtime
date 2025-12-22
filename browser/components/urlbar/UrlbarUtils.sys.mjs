@@ -9,6 +9,7 @@
 
 /**
  * @import {Query} from "UrlbarProvidersManager.sys.mjs"
+ * @import {UrlbarSearchStringTokenData} from "UrlbarTokenizer.sys.mjs"
  */
 
 import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
@@ -25,22 +26,26 @@ ChromeUtils.defineESModuleGetters(lazy, {
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
   SearchSuggestionController:
     "moz-src:///toolkit/components/search/SearchSuggestionController.sys.mjs",
-  UrlbarPrefs: "resource:///modules/UrlbarPrefs.sys.mjs",
+  UrlbarPrefs: "moz-src:///browser/components/urlbar/UrlbarPrefs.sys.mjs",
   UrlbarProviderInterventions:
-    "resource:///modules/UrlbarProviderInterventions.sys.mjs",
-  UrlbarProviderOpenTabs: "resource:///modules/UrlbarProviderOpenTabs.sys.mjs",
+    "moz-src:///browser/components/urlbar/UrlbarProviderInterventions.sys.mjs",
+  UrlbarProviderOpenTabs:
+    "moz-src:///browser/components/urlbar/UrlbarProviderOpenTabs.sys.mjs",
   UrlbarProviderSearchTips:
-    "resource:///modules/UrlbarProviderSearchTips.sys.mjs",
-  UrlbarSearchUtils: "resource:///modules/UrlbarSearchUtils.sys.mjs",
-  UrlbarTokenizer: "resource:///modules/UrlbarTokenizer.sys.mjs",
+    "moz-src:///browser/components/urlbar/UrlbarProviderSearchTips.sys.mjs",
+  UrlbarSearchUtils:
+    "moz-src:///browser/components/urlbar/UrlbarSearchUtils.sys.mjs",
+  UrlbarTokenizer:
+    "moz-src:///browser/components/urlbar/UrlbarTokenizer.sys.mjs",
   BrowserUIUtils: "resource:///modules/BrowserUIUtils.sys.mjs",
+  UrlUtils: "resource://gre/modules/UrlUtils.sys.mjs",
 });
 
 XPCOMUtils.defineLazyServiceGetter(
   lazy,
   "parserUtils",
   "@mozilla.org/parserutils;1",
-  "nsIParserUtils"
+  Ci.nsIParserUtils
 );
 
 export var UrlbarUtils = {
@@ -93,7 +98,7 @@ export var UrlbarUtils = {
   }),
 
   // Defines UrlbarResult types.
-  RESULT_TYPE: {
+  RESULT_TYPE: Object.freeze({
     // An open tab.
     TAB_SWITCH: 1,
     // A search suggestion or engine.
@@ -116,7 +121,7 @@ export var UrlbarUtils = {
     // When you add a new type, also add its schema to
     // UrlbarUtils.RESULT_PAYLOAD_SCHEMA below.  Also consider checking if
     // consumers of "urlbar-user-start-navigation" need updating.
-  },
+  }),
 
   // This defines the source of results returned by a provider. Each provider
   // can return results from more than one source. This is used by the
@@ -698,14 +703,6 @@ export var UrlbarUtils = {
     }
 
     switch (result.type) {
-      case this.RESULT_TYPE.URL:
-      case this.RESULT_TYPE.BOOKMARKS:
-      case this.RESULT_TYPE.REMOTE_TAB:
-      case this.RESULT_TYPE.TAB_SWITCH:
-      case this.RESULT_TYPE.KEYWORD:
-      case this.RESULT_TYPE.SEARCH:
-      case this.RESULT_TYPE.OMNIBOX:
-        return 1;
       case this.RESULT_TYPE.TIP:
         return 3;
     }
@@ -732,33 +729,6 @@ export var UrlbarUtils = {
       return "page-icon:" + url.href;
     }
     return this.ICON.DEFAULT;
-  },
-
-  /**
-   * Returns a search mode object if a token should enter search mode when
-   * typed. This does not handle engine aliases.
-   *
-   * @param {Values<typeof lazy.UrlbarTokenizer.RESTRICT>} token
-   *   A restriction token to convert to search mode.
-   * @returns {object}
-   *   A search mode object. Null if search mode should not be entered. See
-   *   setSearchMode documentation for details.
-   */
-  searchModeForToken(token) {
-    if (token == lazy.UrlbarTokenizer.RESTRICT.SEARCH) {
-      return {
-        engineName: lazy.UrlbarSearchUtils.getDefaultEngine(this.isPrivate)
-          ?.name,
-      };
-    }
-
-    let mode = this.LOCAL_SEARCH_MODES.find(m => m.restrict == token);
-    if (!mode) {
-      return null;
-    }
-
-    // Return a copy so callers don't modify the object in LOCAL_SEARCH_MODES.
-    return { ...mode };
   },
 
   /**
@@ -1053,7 +1023,7 @@ export var UrlbarUtils = {
    *          then [prefix, remainder].  Otherwise, ["", str].
    */
   stripURLPrefix(str) {
-    let match = lazy.UrlbarTokenizer.REGEXP_PREFIX.exec(str);
+    let match = lazy.UrlUtils.REGEXP_PREFIX.exec(str);
     if (!match) {
       return ["", str];
     }
@@ -1090,6 +1060,7 @@ export var UrlbarUtils = {
     let options = {
       allowAutofill: false,
       isPrivate: urlbarInput.isPrivate,
+      sapName: urlbarInput.sapName,
       maxResults: 1,
       searchString,
       userContextId: parseInt(
@@ -1146,9 +1117,10 @@ export var UrlbarUtils = {
    * Returns the name of a result source.  The name is the lowercase name of the
    * corresponding property in the RESULT_SOURCE object.
    *
-   * @param {keyof typeof this.RESULT_SOURCE} source A UrlbarUtils.RESULT_SOURCE value.
-   * @returns {string} The token's name, a lowercased name in the RESULT_SOURCE
-   *   object.
+   * @param {Values<typeof this.RESULT_SOURCE>} source
+   *   A UrlbarUtils.RESULT_SOURCE value.
+   * @returns {string}
+   *   The token's name, a lowercased name in the RESULT_SOURCE object.
    */
   getResultSourceName(source) {
     if (!this._resultSourceNamesBySource) {
@@ -1221,10 +1193,10 @@ export var UrlbarUtils = {
 
     // Create `URL` objects to make the logic below easier. The strings must
     // include schemes for this to work.
-    if (!lazy.UrlbarTokenizer.REGEXP_PREFIX.test(urlString)) {
+    if (!lazy.UrlUtils.REGEXP_PREFIX.test(urlString)) {
       urlString = "http://" + urlString;
     }
-    if (!lazy.UrlbarTokenizer.REGEXP_PREFIX.test(candidateString)) {
+    if (!lazy.UrlUtils.REGEXP_PREFIX.test(candidateString)) {
       candidateString = "http://" + candidateString;
     }
 
@@ -2340,16 +2312,6 @@ UrlbarUtils.RESULT_PAYLOAD_SCHEMA = {
  */
 
 /**
- * @typedef UrlbarSearchStringTokenData
- * @property {Values<typeof lazy.UrlbarTokenizer.TYPE>} type
- *   The type of the token.
- * @property {string} value
- *   The value of the token.
- * @property {string} lowerCaseValue
- *   The lower case version of the value.
- */
-
-/**
  * UrlbarQueryContext defines a user's autocomplete input from within the urlbar.
  * It supplements it with details of how the search results should be obtained
  * and what they consist of.
@@ -2360,6 +2322,9 @@ export class UrlbarQueryContext {
    *
    * @param {object} options
    *   The initial options for UrlbarQueryContext.
+   * @param {string} options.sapName
+   *   The search access point name of the UrlbarInput for use with telemetry or
+   *   logging, e.g. `urlbar`, `searchbar`.
    * @param {string} options.searchString
    *   The string the user entered in autocomplete. Could be the empty string
    *   in the case of the user opening the popup via the mouse.
@@ -2391,6 +2356,7 @@ export class UrlbarQueryContext {
       "allowAutofill",
       "isPrivate",
       "maxResults",
+      "sapName",
       "searchString",
     ]);
 
@@ -2499,6 +2465,12 @@ export class UrlbarQueryContext {
   maxResults;
 
   /**
+   * @type {string}
+   *   The name of the muxer to use for this query.
+   */
+  muxer;
+
+  /**
    * @type {boolean}
    *   Whether or not to prohibit remote results.
    */
@@ -2528,6 +2500,13 @@ export class UrlbarQueryContext {
    *   The results associated with this context.
    */
   results;
+
+  /**
+   * @type {string}
+   *   The search access point name of the UrlbarInput for use with telemetry or
+   *   logging, e.g. `urlbar`, `searchbar`.
+   */
+  sapName;
 
   /**
    * @type {UrlbarSearchModeData}
@@ -2804,9 +2783,11 @@ export class UrlbarProvider {
    * Note: Extended classes should return a Promise resolved when the provider
    *       is done searching AND returning results.
    *
-   * @param {UrlbarQueryContext} _queryContext The query context object
-   * @param {Function} _addCallback Callback invoked by the provider to add a new
-   *        result. A UrlbarResult should be passed to it.
+   * @param {UrlbarQueryContext} _queryContext
+   *   The query context object
+   * @param {(provider: UrlbarProvider, result: UrlbarResult) => void} _addCallback
+   *   Callback invoked by the provider to add a new result.
+   * @returns {void|Promise<void>}
    * @abstract
    */
   startQuery(_queryContext, _addCallback) {
@@ -2968,6 +2949,7 @@ export class UrlbarProvider {
    *       },
    *       style: {
    *         someStyleProperty: someValue,
+   *         "another-style-property": someValue,
    *       },
    *       l10n: {
    *         id: someL10nId,

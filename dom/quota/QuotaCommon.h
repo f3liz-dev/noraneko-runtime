@@ -17,6 +17,7 @@
 #include "mozilla/Assertions.h"
 #include "mozilla/Atomics.h"
 #include "mozilla/Attributes.h"
+#include "mozilla/GeckoTrace.h"
 #include "mozilla/Likely.h"
 #include "mozilla/MacroArgs.h"
 #include "mozilla/Maybe.h"
@@ -180,7 +181,7 @@ class NotNull;
  *   return NS_OK;
  * }
  *
- * 2. Using MOZ_TRY/MOZ_TRY_VAR macros
+ * 2. Using MOZ_TRY macro
  *
  * Typical use cases:
  *
@@ -382,7 +383,7 @@ class NotNull;
  *   return NS_OK;
  * }
  *
- * QM_TRY/QM_TRY_UNWRAP/QM_TRY_INSPECT is like MOZ_TRY/MOZ_TRY_VAR but if an
+ * QM_TRY/QM_TRY_UNWRAP/QM_TRY_INSPECT is like MOZ_TRY but if an
  * error occurs it additionally calls a generic function HandleError to handle
  * the error and it can be used to return custom return values as well and even
  * call an additional cleanup function.
@@ -1181,8 +1182,7 @@ auto CollectEach(Step aStep, const Body& aBody)
           typename std::invoke_result_t<Body, StepResultType&&>::ok_type>);
 
   while (true) {
-    StepResultType element;
-    MOZ_TRY_VAR(element, aStep());
+    StepResultType element = MOZ_TRY(aStep());
 
     if (!static_cast<bool>(element)) {
       break;
@@ -1210,7 +1210,7 @@ auto ReduceEach(InputGenerator aInputGenerator, T aInit,
       [&res, &aBinaryOp](const auto& element)
           -> Result<Ok,
                     typename std::invoke_result_t<InputGenerator>::err_type> {
-        MOZ_TRY_VAR(res, aBinaryOp(std::move(res), element));
+        res = MOZ_TRY(aBinaryOp(std::move(res), element));
 
         return Ok{};
       }));
@@ -1592,6 +1592,8 @@ template <typename Cancel, typename Body>
 Result<mozilla::Ok, nsresult> CollectEachFile(nsIFile& aDirectory,
                                               const Cancel& aCancel,
                                               const Body& aBody) {
+  GECKO_TRACE_SCOPE("dom::quota", "CollectEachFile");
+
   QM_TRY_INSPECT(const auto& entries, MOZ_TO_RESULT_INVOKE_MEMBER_TYPED(
                                           nsCOMPtr<nsIDirectoryEnumerator>,
                                           aDirectory, GetDirectoryEntries));
@@ -1650,10 +1652,12 @@ template <typename Func>
 auto CallWithDelayedRetriesIfAccessDenied(Func&& aFunc, uint32_t aMaxRetries,
                                           uint32_t aDelayMs)
     -> Result<typename std::invoke_result_t<Func>::ok_type, nsresult> {
+  std::decay_t<Func> func = std::forward<Func>(aFunc);
+
   uint32_t retries = 0;
 
   while (true) {
-    auto result = std::forward<Func>(aFunc)();
+    auto result = std::invoke(func);
 
     if (result.isOk()) {
       return result;
@@ -1744,6 +1748,7 @@ auto ExecuteInitialization(
                 : Some(ScopedLogExtraInfo{
                       ScopedLogExtraInfo::kTagContextTainted, aContext});
 #endif
+        GECKO_TRACE_SCOPE("dom::quota", aContext);
 
         return std::forward<Func>(aFunc)(firstInitializationAttempt);
       });

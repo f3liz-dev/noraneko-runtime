@@ -236,13 +236,22 @@ let JSWINDOWACTORS = {
         "BackupUI:EnableEncryption": { wantUntrusted: true },
         "BackupUI:DisableEncryption": { wantUntrusted: true },
         "BackupUI:RerunEncryption": { wantUntrusted: true },
-        "BackupUI:FindIfABackupFileExists": { wantUntrusted: true },
         "BackupUI:ShowBackupLocation": { wantUntrusted: true },
         "BackupUI:EditBackupLocation": { wantUntrusted: true },
+        "BackupUI:SetEmbeddedComponentPersistentData": { wantUntrusted: true },
+        "BackupUI:FlushEmbeddedComponentPersistentData": {
+          wantUntrusted: true,
+        },
       },
     },
-    matches: ["about:preferences*", "about:settings*"],
-    enablePreference: "browser.backup.preferences.ui.enabled",
+    includeChrome: true,
+    allFrames: true,
+    matches: [
+      "about:preferences*",
+      "about:settings*",
+      "about:welcome*",
+      "chrome://browser/content/spotlight.html",
+    ],
   },
 
   BlockedSite: {
@@ -518,6 +527,12 @@ let JSWINDOWACTORS = {
     },
 
     allFrames: true,
+  },
+
+  PageInfoPreview: {
+    child: {
+      esModuleURI: "resource:///actors/PageInfoPreviewChild.sys.mjs",
+    },
   },
 
   PageStyle: {

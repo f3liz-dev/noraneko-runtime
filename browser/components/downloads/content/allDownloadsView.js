@@ -1,7 +1,6 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
-/* eslint-env mozilla/browser-window */
 
 var { XPCOMUtils } = ChromeUtils.importESModule(
   "resource://gre/modules/XPCOMUtils.sys.mjs"
@@ -18,6 +17,8 @@ ChromeUtils.defineESModuleGetters(this, {
   NetUtil: "resource://gre/modules/NetUtil.sys.mjs",
   PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
 });
+
+const CLIPBOARD_URL_FLAVORS = ["text/x-moz-url", "text/plain"];
 
 /**
  * A download element shell is responsible for handling the commands and the
@@ -608,7 +609,11 @@ DownloadsPlacesView.prototype = {
       case "cmd_selectAll":
         return true;
       case "cmd_paste":
-        return this._canDownloadClipboardURL();
+        // We check later whether content is valid for pasting, or ignore it.
+        return Services.clipboard.hasDataMatchingFlavors(
+          CLIPBOARD_URL_FLAVORS,
+          Ci.nsIClipboard.kGlobalClipboard
+        );
       case "downloadsCmd_clearDownloads":
         return this.canClearDownloads(this._richlistbox);
       default:
@@ -636,8 +641,7 @@ DownloadsPlacesView.prototype = {
     );
     trans.init(null);
 
-    let flavors = ["text/x-moz-url", "text/plain"];
-    flavors.forEach(trans.addDataFlavor);
+    CLIPBOARD_URL_FLAVORS.forEach(trans.addDataFlavor);
 
     Services.clipboard.getData(trans, Services.clipboard.kGlobalClipboard);
 
@@ -654,18 +658,6 @@ DownloadsPlacesView.prototype = {
     } catch (ex) {}
 
     return ["", ""];
-  },
-
-  _canDownloadClipboardURL() {
-    let [url /* ,name */] = this._getURLFromClipboardData();
-    return url != "";
-  },
-
-  _downloadURLFromClipboard() {
-    let [url, name] = this._getURLFromClipboardData();
-    let browserWin = BrowserWindowTracker.getTopWindow();
-    let initiatingDoc = browserWin ? browserWin.document : document;
-    DownloadURL(url, name, initiatingDoc);
   },
 
   // nsIController
@@ -719,7 +711,12 @@ DownloadsPlacesView.prototype = {
   },
 
   cmd_paste() {
-    this._downloadURLFromClipboard();
+    let [url, name] = this._getURLFromClipboardData();
+    if (url) {
+      let browserWin = BrowserWindowTracker.getTopWindow();
+      let initiatingDoc = browserWin ? browserWin.document : document;
+      DownloadURL(url, name, initiatingDoc);
+    }
   },
 
   downloadsCmd_clearDownloads() {

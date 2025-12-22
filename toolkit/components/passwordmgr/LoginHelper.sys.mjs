@@ -17,6 +17,7 @@ const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   OSKeyStore: "resource://gre/modules/OSKeyStore.sys.mjs",
   BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.sys.mjs",
+  NewPasswordModel: "resource://gre/modules/shared/NewPasswordModel.sys.mjs",
 });
 
 export class ParentAutocompleteOption {
@@ -1298,11 +1299,26 @@ export const LoginHelper = {
    * @returns {boolean} True if any of the rules matches
    */
   isInferredLoginForm(formElement) {
-    // This is copied from 'loginFormAttrRegex' in NewPasswordModel.sys.mjs
-    const loginExpr =
-      /login|log in|log on|log-on|sign in|sigin|sign\/in|sign-in|sign on|sign-on/i;
+    if (
+      Logic.elementAttrsMatchRegex(
+        formElement,
+        lazy.NewPasswordModel.LoginRegex
+      )
+    ) {
+      return true;
+    }
 
-    if (Logic.elementAttrsMatchRegex(formElement, loginExpr)) {
+    const buttons = Array.from(
+      formElement.querySelectorAll("button[type=submit]")
+    );
+    // Limit to form with only one submit button to avoid false positives.
+    if (
+      buttons.length == 1 &&
+      Logic.hasTextContentMatchingRegex(
+        buttons[0],
+        lazy.NewPasswordModel.LoginFormAttrRegex
+      )
+    ) {
       return true;
     }
 
@@ -1397,9 +1413,11 @@ export const LoginHelper = {
    * @returns {Object[]} An entry for each processed row containing how the row was processed and the login data.
    */
   async maybeImportLogins(loginDatas) {
+    // by setting this flag we ensure no events are submitted
     this.importing = true;
+    const processor = new ImportRowProcessor();
+
     try {
-      const processor = new ImportRowProcessor();
       for (let rawLoginData of loginDatas) {
         // Do some sanitization on a clone of the loginData.
         let loginData = ChromeUtils.shallowClone(rawLoginData);
@@ -1694,6 +1712,7 @@ export const LoginHelper = {
    * Send a notification when stored data is changed.
    */
   notifyStorageChanged(changeType, data) {
+    // do not emit individual events during csv import
     if (this.importing) {
       return;
     }

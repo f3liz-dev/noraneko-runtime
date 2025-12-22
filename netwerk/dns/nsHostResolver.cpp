@@ -40,7 +40,6 @@
 
 #include "mozilla/Atomics.h"
 #include "mozilla/glean/NetwerkMetrics.h"
-#include "mozilla/HashFunctions.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/glean/NetwerkDnsMetrics.h"
 #include "mozilla/DebugOnly.h"
@@ -111,7 +110,7 @@ struct HostResolverMarker {
   static MarkerSchema MarkerTypeDisplay() {
     using MS = MarkerSchema;
     MS schema(MS::Location::MarkerChart, MS::Location::MarkerTable);
-    schema.SetTableLabel("{marker.name} - {marker.data.host}");
+    schema.SetTableLabel("{marker.data.host}");
     schema.AddKeyFormat("host", MS::Format::SanitizedString,
                         MS::PayloadFlags::Searchable);
     schema.AddKeyFormat("originSuffix", MS::Format::SanitizedString,
@@ -338,7 +337,7 @@ void nsHostResolver::Shutdown() {
     mNCS = nullptr;
   }
 
-  // Shutdown the resolver threads, but with a timeout of 2 seconds (prefable).
+  // Shutdown the resolver threads, but with a timeout of 5 seconds (prefable).
   // If the timeout is exceeded, any stuck threads will be leaked.
   mResolverThreads->ShutdownWithTimeout(
       StaticPrefs::network_dns_resolver_shutdown_timeout_ms());

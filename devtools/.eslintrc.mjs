@@ -172,12 +172,6 @@ export default [
     },
   },
   {
-    files: ["client/framework/**", "shared/webconsole/test/chrome/*.html"],
-    rules: {
-      "mozilla/no-aArgs": "off",
-    },
-  },
-  {
     files: ["client/framework/test/**"],
     rules: {
       "mozilla/var-only-at-top-level": "off",
@@ -299,16 +293,5 @@ export default [
   {
     files: ["**/node/**"],
     languageOptions: { globals: globals.jest },
-  },
-  {
-    // Bug 1967461 - Fix the files and re-enable these rules.
-    files: [
-      "client/shared/components/object-inspector/components/ObjectInspector.js",
-      "client/shared/components/object-inspector/components/ObjectInspectorItem.js",
-    ],
-    rules: {
-      "react/prop-types": "off",
-      "react/sort-comp": "off",
-    },
   },
 ];

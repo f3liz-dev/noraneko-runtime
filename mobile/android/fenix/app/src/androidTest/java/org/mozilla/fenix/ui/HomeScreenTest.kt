@@ -5,12 +5,13 @@
 package org.mozilla.fenix.ui
 
 import androidx.compose.ui.test.junit4.AndroidComposeTestRule
+import org.junit.Ignore
 import org.junit.Rule
 import org.junit.Test
 import org.mozilla.fenix.customannotations.SmokeTest
 import org.mozilla.fenix.helpers.HomeActivityIntentTestRule
 import org.mozilla.fenix.helpers.RetryTestRule
-import org.mozilla.fenix.helpers.TestAssetHelper
+import org.mozilla.fenix.helpers.TestAssetHelper.getGenericAsset
 import org.mozilla.fenix.helpers.TestHelper.waitUntilSnackbarGone
 import org.mozilla.fenix.helpers.TestSetup
 import org.mozilla.fenix.helpers.perf.DetectMemoryLeaksRule
@@ -74,6 +75,7 @@ class HomeScreenTest : TestSetup() {
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/1364362
     @SmokeTest
+    @Ignore("disabled - https://bugzilla.mozilla.org/show_bug.cgi?id=1989405")
     @Test
     fun verifyJumpBackInSectionTest() {
         activityTestRule.activityRule.applySettingsExceptions {
@@ -81,8 +83,8 @@ class HomeScreenTest : TestSetup() {
             it.isPocketEnabled = false
         }
 
-        val firstWebPage = TestAssetHelper.getGenericAsset(mockWebServer, 4)
-        val secondWebPage = TestAssetHelper.getGenericAsset(mockWebServer, 1)
+        val firstWebPage = mockWebServer.getGenericAsset(4)
+        val secondWebPage = mockWebServer.getGenericAsset(1)
 
         navigationToolbar {
         }.enterURLAndEnterToBrowser(firstWebPage.url) {

@@ -16,6 +16,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
@@ -30,7 +32,6 @@ import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
-import mozilla.components.compose.base.Divider
 import mozilla.components.compose.base.annotation.FlexibleWindowLightDarkPreview
 import mozilla.components.lib.crash.store.CrashReportOption
 import mozilla.components.lib.state.ext.observeAsComposableState
@@ -111,7 +112,7 @@ internal fun DataChoicesUi(
             onLearnMoreClicked = learnMoreTechnicalData,
         )
 
-        Divider()
+        HorizontalDivider()
 
         StudiesSection(
             studiesEnabled = state.studiesEnabled,
@@ -119,7 +120,7 @@ internal fun DataChoicesUi(
             onClick = onStudiesClick,
         )
 
-        Divider()
+        HorizontalDivider()
 
         // Usage Data Section
         TogglePreferenceSection(
@@ -132,7 +133,7 @@ internal fun DataChoicesUi(
             onLearnMoreClicked = learnMoreDailyUsage,
         )
 
-        Divider()
+        HorizontalDivider()
 
         // Crash reports section
         CrashReportsSection(
@@ -142,7 +143,7 @@ internal fun DataChoicesUi(
             onLearnMoreClicked = learnMoreCrashReport,
         )
 
-        Divider()
+        HorizontalDivider()
 
         // Campaign measurement Section
         TogglePreferenceSection(
@@ -198,7 +199,7 @@ private fun CrashReportsSection(
                     selected = selectedOption == crashReportOption,
                     modifier = Modifier
                         .semantics {
-                            testTag = "data.collection.$crashReportOption.radio.button"
+                            testTag = "data.collection.$crashReportOption.option"
                             testTagsAsResourceId = true
                         },
                     maxLabelLines = 1,
@@ -217,7 +218,7 @@ private fun TitleText(text: String, modifier: Modifier) {
     Text(
         text = text,
         style = FirefoxTheme.typography.body2,
-        color = FirefoxTheme.colors.textAccent,
+        color = MaterialTheme.colorScheme.tertiary,
         modifier = modifier,
     )
 }

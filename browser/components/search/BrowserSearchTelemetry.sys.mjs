@@ -10,7 +10,8 @@ ChromeUtils.defineESModuleGetters(lazy, {
   SearchSERPTelemetry:
     "moz-src:///browser/components/search/SearchSERPTelemetry.sys.mjs",
   SearchUtils: "moz-src:///toolkit/components/search/SearchUtils.sys.mjs",
-  UrlbarSearchUtils: "resource:///modules/UrlbarSearchUtils.sys.mjs",
+  UrlbarSearchUtils:
+    "moz-src:///browser/components/urlbar/UrlbarSearchUtils.sys.mjs",
 });
 
 /**
@@ -53,7 +54,7 @@ class BrowserSearchTelemetryHandler {
    * Determines if we should record a search for this browser instance.
    * Private Browsing mode is normally skipped.
    *
-   * @param {XULBrowserElement} browser
+   * @param {MozBrowser} browser
    *   The browser where the search was loaded.
    * @returns {boolean}
    *   True if the search should be recorded, false otherwise.
@@ -125,7 +126,7 @@ class BrowserSearchTelemetryHandler {
    * Telemetry records only search counts per engine and action origin, but
    * nothing pertaining to the search contents themselves.
    *
-   * @param {XULBrowserElement} browser
+   * @param {MozBrowser} browser
    *        The browser where the search originated.
    * @param {nsISearchEngine} engine
    *        The engine handling the search.
@@ -160,6 +161,13 @@ class BrowserSearchTelemetryHandler {
       if (!this.KNOWN_SEARCH_SOURCES.has(source)) {
         console.error("Unknown source for search: ", source);
         return;
+      }
+
+      if (source.startsWith("urlbar")) {
+        Services.prefs.setIntPref(
+          "browser.urlbar.lastUrlbarSearchSeconds",
+          Math.round(Date.now() / 1000)
+        );
       }
 
       if (source != "contextmenu_visual") {
@@ -267,7 +275,7 @@ class BrowserSearchTelemetryHandler {
   /**
    * Records an impression of a search access point.
    *
-   * @param {XULBrowserElement} browser
+   * @param {MozBrowser} browser
    *   The browser associated with the SAP.
    * @param {nsISearchEngine|null} engine
    *   The engine handling the search, or null if this doesn't apply to the SAP
@@ -296,7 +304,7 @@ class BrowserSearchTelemetryHandler {
    * This function handles the "urlbar", "urlbar-oneoff", "searchbar" and
    * "searchbar-oneoff" sources.
    *
-   * @param {XULBrowserElement} browser
+   * @param {MozBrowser} browser
    *   The browser where the search originated.
    * @param {nsISearchEngine} engine
    *   The engine handling the search.

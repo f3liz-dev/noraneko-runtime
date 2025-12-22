@@ -404,11 +404,11 @@ newtab-wallpaper-abstract-orange = Оранжевые формы
 newtab-wallpaper-gradient-orange = Градиент оранжевого и розового
 newtab-wallpaper-abstract-blue-purple = Синие и фиолетовые формы
 newtab-wallpaper-abstract-white-curves = Белый с заштрихованными кривыми
-newtab-wallpaper-abstract-purple-green = Фиолетово-зеленый световой градиент
+newtab-wallpaper-abstract-purple-green = Фиолетово-зелёный световой градиент
 newtab-wallpaper-abstract-blue-purple-waves = Синие и фиолетовые волнистые формы
 newtab-wallpaper-abstract-black-waves = Чёрные волнообразные формы
 
-## Celestial
+## Firefox
 
 newtab-wallpaper-category-title-photographs = Фотографии
 newtab-wallpaper-beach-at-sunrise = Пляж на восходе
@@ -437,6 +437,10 @@ feature-highlight-dismiss-button =
 feature-highlight-wallpaper =
     .title = { -newtab-wallpaper-feature-highlight-header }
     .aria-label = { -newtab-wallpaper-feature-highlight-content }
+
+## Firefox
+
+newtab-wallpaper-category-title-firefox = { -brand-product-name }
 
 ## Celestial
 
@@ -479,8 +483,16 @@ newtab-weather-menu-change-temperature-units-fahrenheit = Переключить
 newtab-weather-menu-change-temperature-units-celsius = Переключиться на градусы Цельсия
 newtab-weather-menu-hide-weather = Скрыть погоду на новой вкладке
 newtab-weather-menu-learn-more = Подробнее
+newtab-weather-menu-detect-my-location = Определить моё местоположение
 # This message is shown if user is working offline
 newtab-weather-error-not-available = Данные о погоде сейчас недоступны.
+newtab-weather-opt-in-see-weather = Хотите видеть погоду для вашего местоположения?
+newtab-weather-opt-in-not-now =
+    .label = Не сейчас
+newtab-weather-opt-in-yes =
+    .label = Да
+# We'll be showing static (fake) weather data if the user has not opted in to using their location
+newtab-weather-static-city = Нью-Йорк
 
 ## Topic Labels
 
@@ -647,6 +659,9 @@ newtab-widget-lists-input-menu-move-up = Вверх
 newtab-widget-lists-input-menu-move-down = Вниз
 newtab-widget-lists-input-menu-delete = Удалить
 newtab-widget-lists-input-menu-edit = Изменить
+# the + symbol emphasises the functionality of adding a new list
+newtab-widget-lists-dropdown-create =
+    .label = + Создать новый список
 newtab-widget-lists-name-label-default =
     .label = Список задач
 newtab-widget-lists-name-placeholder-default =
@@ -666,10 +681,6 @@ newtab-widget-timer-mode-focus =
     .label = Фокусировка
 newtab-widget-timer-mode-break =
     .label = Перерыв
-newtab-widget-timer-play =
-    .title = Воспроизвести
-newtab-widget-timer-pause =
-    .title = Приостановить
 newtab-widget-timer-label-play =
     .label = Воспроизвести
 newtab-widget-timer-label-pause =

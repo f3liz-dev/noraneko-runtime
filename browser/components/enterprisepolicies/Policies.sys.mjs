@@ -9,16 +9,16 @@ import { AppConstants } from "resource://gre/modules/AppConstants.sys.mjs";
 const lazy = {};
 
 XPCOMUtils.defineLazyServiceGetters(lazy, {
-  gCertDB: ["@mozilla.org/security/x509certdb;1", "nsIX509CertDB"],
+  gCertDB: ["@mozilla.org/security/x509certdb;1", Ci.nsIX509CertDB],
   gExternalProtocolService: [
     "@mozilla.org/uriloader/external-protocol-service;1",
-    "nsIExternalProtocolService",
+    Ci.nsIExternalProtocolService,
   ],
   gHandlerService: [
     "@mozilla.org/uriloader/handler-service;1",
-    "nsIHandlerService",
+    Ci.nsIHandlerService,
   ],
-  gMIMEService: ["@mozilla.org/mime;1", "nsIMIMEService"],
+  gMIMEService: ["@mozilla.org/mime;1", Ci.nsIMIMEService],
 });
 
 ChromeUtils.defineESModuleGetters(lazy, {
@@ -28,7 +28,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
     "moz-src:///browser/components/customizableui/CustomizableUI.sys.mjs",
   FileUtils: "resource://gre/modules/FileUtils.sys.mjs",
   ProxyPolicies: "resource:///modules/policies/ProxyPolicies.sys.mjs",
-  QuickSuggest: "resource:///modules/QuickSuggest.sys.mjs",
+  QuickSuggest: "moz-src:///browser/components/urlbar/QuickSuggest.sys.mjs",
   WebsiteFilter: "resource:///modules/policies/WebsiteFilter.sys.mjs",
 });
 
@@ -392,6 +392,55 @@ export var Policies = {
   Bookmarks: {
     onAllWindowsRestored(manager, param) {
       lazy.BookmarksPolicies.processBookmarks(param);
+    },
+  },
+
+  BrowserDataBackup: {
+    onBeforeUIStartup(manager, param) {
+      if (typeof param === "boolean") {
+        setAndLockPref("browser.backup.enabled", param);
+        setAndLockPref("browser.backup.archive.enabled", param);
+        setAndLockPref("browser.backup.restore.enabled", param);
+      } else {
+        const hasBackup = "AllowBackup" in param;
+        const hasRestore = "AllowRestore" in param;
+        let serviceValue;
+
+        if (hasBackup && hasRestore) {
+          // both present but could be set to false
+          serviceValue = param.AllowBackup || param.AllowRestore;
+        } else if (hasBackup && param.AllowBackup) {
+          // only AllowBackup is true
+          serviceValue = true;
+        } else if (hasRestore && param.AllowRestore) {
+          // only AllowRestore is true
+          serviceValue = true;
+        }
+
+        if (serviceValue !== undefined) {
+          PoliciesUtils.setDefaultPref(
+            "browser.backup.enabled",
+            serviceValue,
+            true
+          );
+        }
+
+        if (hasBackup) {
+          PoliciesUtils.setDefaultPref(
+            "browser.backup.archive.enabled",
+            param.AllowBackup,
+            true
+          );
+        }
+
+        if (hasRestore) {
+          PoliciesUtils.setDefaultPref(
+            "browser.backup.restore.enabled",
+            param.AllowRestore,
+            true
+          );
+        }
+      }
     },
   },
 
@@ -1209,7 +1258,7 @@ export var Policies = {
         ContentBlockingPrefs.matchCBCategory();
         // We don't want to lock the new exceptions UI unless
         // that policy was explicitly set.
-        if (param.Category == "strict") {
+        if (param.Category == "strict" && !param.Locked) {
           Services.prefs.unlockPref(
             "privacy.trackingprotection.allow_list.baseline.enabled"
           );
@@ -1223,8 +1272,23 @@ export var Policies = {
       if ("Exceptions" in param) {
         addAllowDenyPermissions("trackingprotection", param.Exceptions);
       }
+      if ("BaselineExceptions" in param) {
+        PoliciesUtils.setDefaultPref(
+          "privacy.trackingprotection.allow_list.baseline.enabled",
+          param.BaselineExceptions,
+          param.Locked
+        );
+      }
+      if ("ConvenienceExceptions" in param) {
+        PoliciesUtils.setDefaultPref(
+          "privacy.trackingprotection.allow_list.convenience.enabled",
+          param.ConvenienceExceptions,
+          param.Locked
+        );
+      }
       if (param.Category) {
-        // If a category is set, we ignore everything except exceptions.
+        // If a category is set, we ignore everything except exceptions
+        // and the allow lists.
         return;
       }
       if (param.Value) {
@@ -1277,21 +1341,6 @@ export var Policies = {
         PoliciesUtils.setDefaultPref(
           "privacy.fingerprintingProtection.pbmode",
           param.SuspectedFingerprinting,
-          param.Locked
-        );
-      }
-      if ("BaselineExceptions" in param) {
-        PoliciesUtils.setDefaultPref(
-          "privacy.trackingprotection.allow_list.baseline.enabled",
-          param.BaselineExceptions,
-          param.Locked
-        );
-      }
-
-      if ("ConvenienceExceptions" in param) {
-        PoliciesUtils.setDefaultPref(
-          "privacy.trackingprotection.allow_list.convenience.enabled",
-          param.ConvenienceExceptions,
           param.Locked
         );
       }
@@ -1580,7 +1629,7 @@ export var Policies = {
         await lazy.QuickSuggest.initPromise;
         if ("WebSuggestions" in param) {
           PoliciesUtils.setDefaultPref(
-            "browser.urlbar.suggest.quicksuggest.nonsponsored",
+            "browser.urlbar.suggest.quicksuggest.all",
             param.WebSuggestions,
             param.Locked
           );
@@ -1592,10 +1641,11 @@ export var Policies = {
             param.Locked
           );
         }
-        if ("ImproveSuggest" in param) {
+        // `ImproveSuggest` is deprecated and replaced with `OnlineEnabled`.
+        if ("OnlineEnabled" in param || "ImproveSuggest" in param) {
           PoliciesUtils.setDefaultPref(
-            "browser.urlbar.quicksuggest.dataCollection.enabled",
-            param.ImproveSuggest,
+            "browser.urlbar.quicksuggest.online.enabled",
+            param.OnlineEnabled ?? param.ImproveSuggest,
             param.Locked
           );
         }
@@ -1608,15 +1658,17 @@ export var Policies = {
       const defaultValue = "Enabled" in param ? param.Enabled : undefined;
 
       const features = [
-        ["Chatbot", "browser.ml.chat.enabled"],
-        ["LinkPreviews", "browser.ml.linkPreview.optin"],
-        ["TabGroups", "browser.tabs.groups.smart.userEnabled"],
+        ["Chatbot", ["browser.ml.chat.enabled", "browser.ml.chat.page"]],
+        ["LinkPreviews", ["browser.ml.linkPreview.optin"]],
+        ["TabGroups", ["browser.tabs.groups.smart.userEnabled"]],
       ];
 
-      for (const [key, pref] of features) {
+      for (const [key, prefs] of features) {
         const value = key in param ? param[key] : defaultValue;
         if (value !== undefined) {
-          PoliciesUtils.setDefaultPref(pref, value, param.Locked);
+          for (const pref of prefs) {
+            PoliciesUtils.setDefaultPref(pref, value, param.Locked);
+          }
         }
       }
     },
@@ -1822,6 +1874,61 @@ export var Policies = {
         "capability.policy.localfilelinks_policy.sites",
         param.join(" ")
       );
+    },
+  },
+
+  LocalNetworkAccess: {
+    onBeforeAddons(manager, param) {
+      // Only process if "Enabled" is explicitly specified
+      if ("Enabled" in param) {
+        PoliciesUtils.setDefaultPref(
+          "network.lna.enabled",
+          param.Enabled,
+          param.Locked
+        );
+
+        if (param.Enabled === false) {
+          // If LNA is explicitly disabled, disable other features too
+          PoliciesUtils.setDefaultPref(
+            "network.lna.block_trackers",
+            false,
+            param.Locked
+          );
+          PoliciesUtils.setDefaultPref(
+            "network.lna.blocking",
+            false,
+            param.Locked
+          );
+        } else {
+          // LNA is enabled - handle fine-grained controls
+          // For backward compatibility, default to true if not specified
+          let blockTrackers =
+            "BlockTrackers" in param ? param.BlockTrackers : true;
+          let enablePrompting =
+            "EnablePrompting" in param ? param.EnablePrompting : true;
+
+          PoliciesUtils.setDefaultPref(
+            "network.lna.block_trackers",
+            blockTrackers,
+            param.Locked
+          );
+          PoliciesUtils.setDefaultPref(
+            "network.lna.blocking",
+            enablePrompting,
+            param.Locked
+          );
+        }
+      }
+
+      // Handle SkipDomains separately (can be set independently of Enabled)
+      if ("SkipDomains" in param && Array.isArray(param.SkipDomains)) {
+        let skipDomainsValue = param.SkipDomains.join(",");
+        PoliciesUtils.setDefaultPref(
+          "network.lna.skip-domains",
+          skipDomainsValue,
+          param.Locked
+        );
+      }
     },
   },
 
@@ -2052,7 +2159,7 @@ export var Policies = {
     onBeforeAddons(manager, param) {
       setAndLockPref("network.http.http3.enable_kyber", param);
       setAndLockPref("security.tls.enable_kyber", param);
-      setAndLockPref("media.webrtc.enable_pq_dtls", param);
+      setAndLockPref("media.webrtc.enable_pq_hybrid_kex", param);
     },
   },
 
@@ -2785,9 +2892,9 @@ export var Policies = {
         // translations panel intro. Setting a language value simulates a
         // first translation, which skips the intro panel for users with
         // FeatureRecommendations disabled.
-        const topWebPreferredLanguage = Services.prefs
-          .getComplexValue("intl.accept_languages", Ci.nsIPrefLocalizedString)
-          .data.split(/\s*,\s*/g)[0];
+        const topWebPreferredLanguage = Services.locale.acceptLanguages
+          .split(",")[0]
+          .trim();
 
         const preferredLanguage = topWebPreferredLanguage.length
           ? topWebPreferredLanguage
@@ -2816,12 +2923,8 @@ export var Policies = {
           param.Locked
         );
       }
-      if ("FirefoxLabs" in param) {
-        PoliciesUtils.setDefaultPref(
-          "browser.preferences.experimental",
-          param.FirefoxLabs,
-          param.Locked
-        );
+      if ("FirefoxLabs" in param && !param.FirefoxLabs) {
+        manager.disallowFeature("FirefoxLabs");
       }
     },
   },
@@ -3074,6 +3177,8 @@ export function runOnce(actionName, callback) {
  *        A promise that will resolve once the callback finishes running.
  */
 async function runOncePerModification(actionName, policyValue, callback) {
+  // Stringify the value so that it matches what we'd get from getStringPref.
+  policyValue = policyValue + "";
   let prefName = `browser.policies.runOncePerModification.${actionName}`;
   let oldPolicyValue = Services.prefs.getStringPref(prefName, undefined);
   if (policyValue === oldPolicyValue) {
@@ -3174,7 +3279,7 @@ function installAddonFromURL(url, extensionID, addon) {
         lazy.log.error(
           `Installation failed - ${lazy.AddonManager.errorToString(
             install.error
-          )} - {url}`
+          )} - ${url}`
         );
       },
       /* eslint-disable-next-line no-shadow */

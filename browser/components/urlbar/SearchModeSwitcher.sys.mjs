@@ -9,9 +9,10 @@ ChromeUtils.defineESModuleGetters(lazy, {
     "moz-src:///browser/components/search/OpenSearchManager.sys.mjs",
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
   SearchUIUtils: "moz-src:///browser/components/search/SearchUIUtils.sys.mjs",
-  UrlbarPrefs: "resource:///modules/UrlbarPrefs.sys.mjs",
-  UrlbarSearchUtils: "resource:///modules/UrlbarSearchUtils.sys.mjs",
-  UrlbarUtils: "resource:///modules/UrlbarUtils.sys.mjs",
+  UrlbarPrefs: "moz-src:///browser/components/urlbar/UrlbarPrefs.sys.mjs",
+  UrlbarSearchUtils:
+    "moz-src:///browser/components/urlbar/UrlbarSearchUtils.sys.mjs",
+  UrlbarUtils: "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs",
 });
 
 ChromeUtils.defineLazyGetter(lazy, "SearchModeSwitcherL10n", () => {
@@ -64,13 +65,7 @@ export class SearchModeSwitcher {
 
   async #onPopupShowing() {
     await this.#buildSearchModeList();
-
     this.#input.view.close({ showFocusBorder: false });
-
-    // This moves the focus to the urlbar when the popup is closed.
-    this.#input.document.commandDispatcher.focusedElement =
-      this.#input.inputField;
-
     Glean.urlbarUnifiedsearchbutton.opened.add(1);
   }
 
@@ -144,6 +139,9 @@ export class SearchModeSwitcher {
       return;
     }
     if (event.type == "popuphiding") {
+      // This moves the focus to the urlbar when the popup is closed.
+      this.#input.document.commandDispatcher.focusedElement =
+        this.#input.inputField;
       this.#toolbarbutton.setAttribute("aria-expanded", "false");
       return;
     }
@@ -244,6 +242,30 @@ export class SearchModeSwitcher {
     }
   }
 
+  /**
+   * If the user presses Option+Up or Option+Down while navigating the urlbar results
+   * we open the engine list.
+   *
+   * @param {KeyboardEvent} event
+   *   The key down event.
+   */
+  handleKeyDown(event) {
+    if (
+      (event.keyCode == KeyEvent.DOM_VK_UP ||
+        event.keyCode == KeyEvent.DOM_VK_DOWN) &&
+      event.altKey
+    ) {
+      this.#input.controller.focusOnUnifiedSearchButton();
+      this.#popup.openPopup(null, {
+        triggerEvent: event,
+      });
+      event.stopPropagation();
+      event.preventDefault();
+      return true;
+    }
+    return false;
+  }
+
   async updateSearchIcon() {
     let searchMode = this.#input.searchMode;
 
@@ -278,7 +300,6 @@ export class SearchModeSwitcher {
     let element = /** @type {HTMLImageElement} */ (
       this.#input.querySelector(".searchmode-switcher-icon")
     );
-    // @ts-expect-error Bug 1982726 - CSS2Properties aren't available as TypeScript types
     element.style.listStyleImage = iconUrl;
 
     if (label) {
@@ -402,9 +423,11 @@ export class SearchModeSwitcher {
 
   /**
    * Adds local options to the popup.
+   *
+   * @param {Element} separator
    */
   async #buildLocalSearchModeList(separator) {
-    if (!this.#input.isAddressbar) {
+    if (this.#input.sapName != "urlbar") {
       return;
     }
 

@@ -22,6 +22,7 @@
 #include "mozilla/Assertions.h"
 #include "mozilla/Atomics.h"
 #include "mozilla/Attributes.h"
+#include "mozilla/BinarySearch.h"
 #include "mozilla/DebugOnly.h"
 #include "mozilla/EnumeratedArray.h"
 #include "mozilla/Maybe.h"
@@ -29,7 +30,6 @@
 #include "mozilla/PodOperations.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/ScopeExit.h"
-#include "mozilla/Span.h"
 #include "mozilla/UniquePtr.h"
 
 #include <stddef.h>

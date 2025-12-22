@@ -2,8 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/* eslint-env mozilla/browser-window */
-
 ChromeUtils.defineESModuleGetters(this, {
   ContentBlockingAllowList:
     "resource://gre/modules/ContentBlockingAllowList.sys.mjs",
@@ -17,7 +15,7 @@ XPCOMUtils.defineLazyServiceGetter(
   this,
   "TrackingDBService",
   "@mozilla.org/tracking-db-service;1",
-  "nsITrackingDBService"
+  Ci.nsITrackingDBService
 );
 
 /**
@@ -217,7 +215,7 @@ class ProtectionCategory {
     };
   }
 
-  /*
+  /**
    * Return the number items blocked by this blocker.
    * @returns {Integer} count - The number of items blocked.
    */
@@ -1362,7 +1360,7 @@ let cookieBannerHandling = new (class {
     );
   }
 
-  /*
+  /**
    * @returns {string} - Base domain (eTLD + 1) used for clearing site data.
    */
   get #currentBaseDomain() {

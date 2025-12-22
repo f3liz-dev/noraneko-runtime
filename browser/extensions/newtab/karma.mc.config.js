@@ -227,7 +227,7 @@ module.exports = function (config) {
                 statements: 94.94,
                 lines: 94.84,
                 functions: 9.91,
-                branches: 71.69,
+                branches: 70.72,
               },
             "content-src/components/DiscoveryStreamComponents/CardSections/CardSections.jsx":
               {
@@ -304,10 +304,13 @@ module.exports = function (config) {
               functions: 0,
               branches: 0,
             },
-            /**
-             * Weather.jsx is tested via an xpcshell test
-             */
-            "content-src/components/Weather/*.jsx": {
+            "content-src/components/Weather/Weather.jsx": {
+              statements: 50,
+              lines: 50.94,
+              functions: 31.2,
+              branches: 31.2,
+            },
+            "content-src/components/Weather/LocationSearch.jsx": {
               statements: 0,
               lines: 0,
               functions: 0,

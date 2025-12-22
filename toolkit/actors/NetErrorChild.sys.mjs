@@ -37,13 +37,15 @@ export class NetErrorChild extends RemotePageChild {
     this.exportFunctions(exportableFunctions);
   }
 
-  getFailedCertChain(docShell) {
+  getHandshakeCertificates(docShell) {
     let securityInfo =
       docShell.failedChannel && docShell.failedChannel.securityInfo;
     if (!securityInfo) {
       return [];
     }
-    return securityInfo.failedCertChain.map(cert => cert.getBase64DERString());
+    return securityInfo.handshakeCertificates.map(cert =>
+      cert.getBase64DERString()
+    );
   }
 
   handleEvent(aEvent) {
@@ -51,17 +53,20 @@ export class NetErrorChild extends RemotePageChild {
     let doc = aEvent.originalTarget.ownerDocument || aEvent.originalTarget;
 
     switch (aEvent.type) {
-      case "click":
+      case "click": {
         let elem = aEvent.originalTarget;
         if (elem.id == "viewCertificate") {
           // Call through the superclass to avoid the security check.
           this.sendAsyncMessage("Browser:CertExceptionError", {
             location: doc.location.href,
             elementId: elem.id,
-            failedCertChain: this.getFailedCertChain(doc.defaultView.docShell),
+            handshakeCertificates: this.getHandshakeCertificates(
+              doc.defaultView.docShell
+            ),
           });
         }
         break;
+      }
     }
   }
 

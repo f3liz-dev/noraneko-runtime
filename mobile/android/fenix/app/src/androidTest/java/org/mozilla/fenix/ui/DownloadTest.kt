@@ -23,7 +23,7 @@ import org.mozilla.fenix.helpers.Constants.PackageName.GOOGLE_DOCS
 import org.mozilla.fenix.helpers.HomeActivityTestRule
 import org.mozilla.fenix.helpers.MatcherHelper.itemWithResIdAndText
 import org.mozilla.fenix.helpers.MatcherHelper.itemWithText
-import org.mozilla.fenix.helpers.TestAssetHelper
+import org.mozilla.fenix.helpers.TestAssetHelper.getGenericAsset
 import org.mozilla.fenix.helpers.TestHelper.clickSnackbarButton
 import org.mozilla.fenix.helpers.TestHelper.mDevice
 import org.mozilla.fenix.helpers.TestHelper.verifySnackBarText
@@ -351,15 +351,14 @@ class DownloadTest : TestSetup() {
     @SmokeTest
     @Test
     fun saveAsPdfFunctionalityTest() {
-        val genericURL =
-            TestAssetHelper.getGenericAsset(mockWebServer, 3)
+        val genericURL = mockWebServer.getGenericAsset(3)
         downloadFile = "pdfForm.pdf"
 
         navigationToolbar {
         }.enterURLAndEnterToBrowser(genericURL.url) {
             clickPageObject(itemWithText("PDF form file"))
             waitForPageToLoad()
-            clickPageObject(itemWithResIdAndText("android:id/button2", "CANCEL"))
+            clickPageObject(itemWithResIdAndText("android:id/button2", "Cancel"))
             fillPdfForm("Firefox")
         }.openThreeDotMenu {
         }.clickShareButton {
@@ -434,7 +433,7 @@ class DownloadTest : TestSetup() {
             verifyDownloadedFileExistsInDownloadsList(activityTestRule, "web_icon.png")
             clickDownloadItemMenuIcon(activityTestRule, "web_icon.png")
         }.shareDownloadedItem(activityTestRule, "web_icon.png") {
-            verifyAndroidShareLayout()
+            expandAndroidShareLayout("Gmail")
             clickSharingApp("Gmail", GMAIL_APP)
             assertNativeAppOpens(GMAIL_APP)
         }

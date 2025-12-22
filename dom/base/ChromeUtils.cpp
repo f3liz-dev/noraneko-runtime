@@ -36,7 +36,6 @@
 #include "mozilla/ProfilerLabels.h"
 #include "mozilla/ProfilerMarkers.h"
 #include "mozilla/RemoteMediaManagerChild.h"
-#include "mozilla/ResultExtensions.h"
 #include "mozilla/ScopeExit.h"
 #include "mozilla/ScrollingMetrics.h"
 #include "mozilla/SharedStyleSheetCache.h"
@@ -2055,13 +2054,49 @@ already_AddRefed<Promise> ChromeUtils::RequestProcInfo(GlobalObject& aGlobal,
 }
 
 /* static */
+uint64_t ChromeUtils::GetCurrentProcessMemoryUsage(GlobalObject& aGlobal,
+                                                   ErrorResult& aRv) {
+  uint64_t retVal = 0;
+  nsresult rv = mozilla::GetCurrentProcessMemoryUsage(&retVal);
+  if (NS_FAILED(rv)) {
+    aRv.Throw(rv);
+  }
+  return retVal;
+}
+
+/* static */
+uint64_t ChromeUtils::GetCpuTimeSinceProcessStart(GlobalObject& aGlobal,
+                                                  ErrorResult& aRv) {
+  uint64_t retVal = 0;
+  nsresult rv = mozilla::GetCpuTimeSinceProcessStartInMs(&retVal);
+  if (NS_FAILED(rv)) {
+    aRv.Throw(rv);
+  }
+  return retVal;
+}
+
+/* static */
 bool ChromeUtils::VsyncEnabled(GlobalObject& aGlobal) {
   return mozilla::gfx::VsyncSource::GetFastestVsyncRate().isSome();
 }
 
-void ChromeUtils::SetPerfStatsCollectionMask(GlobalObject& aGlobal,
-                                             uint64_t aMask) {
-  PerfStats::SetCollectionMask(static_cast<PerfStats::MetricMask>(aMask));
+void ChromeUtils::EnableAllPerfStatsFeatures(GlobalObject& aGlobal) {
+  PerfStats::MetricMask mask =
+      std::numeric_limits<PerfStats::MetricMask>::max();
+  PerfStats::SetCollectionMask(mask);
+}
+
+void ChromeUtils::SetPerfStatsFeatures(GlobalObject& aGlobal,
+                                       const Sequence<nsString>& aMetrics) {
+  // Convert string array to bitmask
+  PerfStats::MetricMask mask = 0;
+  for (const auto& metricName : aMetrics) {
+    // Convert string to corresponding enum value and set bit
+    NS_ConvertUTF16toUTF8 utf8MetricName(metricName);
+    mask |= PerfStats::GetFeatureMask(utf8MetricName.get());
+  }
+
+  PerfStats::SetCollectionMask(mask);
 }
 
 already_AddRefed<Promise> ChromeUtils::CollectPerfStats(GlobalObject& aGlobal,

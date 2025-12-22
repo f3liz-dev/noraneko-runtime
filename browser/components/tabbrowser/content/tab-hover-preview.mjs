@@ -42,16 +42,10 @@ export default class TabHoverPanelSet {
       "ui.popup.disable_autohide",
       false
     );
-    XPCOMUtils.defineLazyPreferenceGetter(
-      this,
-      "_prefPreviewDelay",
-      "ui.tooltip.delay_ms"
-    );
 
     this.#win = win;
 
     this.panelOpener = new TabPreviewPanelTimedFunction(
-      this._prefPreviewDelay,
       ZERO_DELAY_ACTIVATION_TIME,
       this.#win
     );
@@ -192,8 +186,8 @@ class TabPanel extends Panel {
   /** @type {DOMElement|null} */
   #thumbnailElement;
 
-  /** @type {MutationObserver} */
-  #tabObserver;
+  /** @type {TabHoverPanelSet} */
+  #panelSet;
 
   constructor(panel, panelSet) {
     super();
@@ -211,30 +205,21 @@ class TabPanel extends Panel {
     );
 
     this.panelElement = panel;
-    this.panelSet = panelSet;
+    this.#panelSet = panelSet;
 
     this.win = this.panelElement.ownerGlobal;
 
     this.#tab = null;
     this.#thumbnailElement = null;
-
-    // Observe changes to this tab's DOM, and
-    // update the preview if the tab title changes
-    this.#tabObserver = new this.win.MutationObserver(
-      (mutationList, _observer) => {
-        for (const mutation of mutationList) {
-          if (mutation.attributeName === "label") {
-            this.#updatePreview();
-          }
-        }
-      }
-    );
   }
 
   handleEvent(e) {
     switch (e.type) {
       case "popupshowing":
         this.#updatePreview();
+        break;
+      case "TabAttrModified":
+        this.#updatePreview(e.target);
         break;
       case "TabSelect":
         this.deactivate();
@@ -244,9 +229,6 @@ class TabPanel extends Panel {
 
   activate(tab) {
     this.#tab = tab;
-    this.#tabObserver.observe(this.#tab, {
-      attributes: true,
-    });
 
     // Calling `moveToAnchor` in advance of the call to `openPopup` ensures
     // that race conditions can be avoided in cases where the user hovers
@@ -265,14 +247,15 @@ class TabPanel extends Panel {
     ) {
       this.#updatePreview();
     }
-    this.panelSet.panelOpener.execute(() => {
-      if (!this.panelSet.shouldActivate()) {
+    this.#panelSet.panelOpener.execute(() => {
+      if (!this.#panelSet.shouldActivate()) {
         return;
       }
       this.panelElement.openPopup(this.#tab, this.popupOptions);
-    });
+    }, this);
     this.win.addEventListener("TabSelect", this);
     this.panelElement.addEventListener("popupshowing", this);
+    this.#tab.addEventListener("TabAttrModified", this);
   }
 
   deactivate(leavingTab = null) {
@@ -287,13 +270,14 @@ class TabPanel extends Panel {
       });
       return;
     }
+    this.#tab?.removeEventListener("TabAttrModified", this);
     this.#tab = null;
-    this.#tabObserver.disconnect();
     this.#thumbnailElement = null;
     this.panelElement.removeEventListener("popupshowing", this);
     this.win.removeEventListener("TabSelect", this);
     this.panelElement.hidePopup();
-    this.panelSet.panelOpener.setZeroDelay();
+    this.#panelSet.panelOpener.clear(this);
+    this.#panelSet.panelOpener.setZeroDelay();
   }
 
   getPrettyURI(uri) {
@@ -399,7 +383,11 @@ class TabPanel extends Panel {
       : "";
   }
 
-  #updatePreview() {
+  #updatePreview(tab = null) {
+    if (tab) {
+      this.#tab = tab;
+    }
+
     this.panelElement.querySelector(".tab-preview-title").textContent =
       this.#displayTitle;
     this.panelElement.querySelector(".tab-preview-uri").textContent =
@@ -484,10 +472,21 @@ class TabGroupPanel extends Panel {
   /** @type {number | null} */
   #deactivateTimer;
 
+  static PANEL_UPDATE_EVENTS = [
+    "TabAttrModified",
+    "TabClose",
+    "TabGrouped",
+    "TabMove",
+    "TabOpen",
+    "TabSelect",
+    "TabUngrouped",
+  ];
+
   constructor(panel, panelSet) {
     super();
 
     this.panelElement = panel;
+    this.panelContent = panel.querySelector("#tabgroup-panel-content");
     this.win = this.panelElement.ownerGlobal;
 
     this.#panelSet = panelSet;
@@ -501,14 +500,24 @@ class TabGroupPanel extends Panel {
 
     this.#group = group;
     this.#movePanel();
-    this.#updatePanelContents();
+    this.#updatePanelContent();
 
     this.#panelSet.panelOpener.execute(() => {
       if (!this.#panelSet.shouldActivate() || !this.#group.collapsed) {
         return;
       }
       this.#doOpenPanel();
-    });
+    }, this);
+  }
+
+  /**
+   * Move keyboard focus into the group preview panel.
+   *
+   * @param {-1|1} [dir] Whether to focus the beginning or end of the list.
+   */
+  focusPanel(dir = 1) {
+    let childIndex = dir > 0 ? 0 : this.panelContent.children.length - 1;
+    this.panelContent.children[childIndex].focus();
   }
 
   deactivate({ force = false } = {}) {
@@ -538,9 +547,14 @@ class TabGroupPanel extends Panel {
 
     if (this.#group) {
       this.#group.hoverPreviewPanelActive = false;
+
+      for (let event of TabGroupPanel.PANEL_UPDATE_EVENTS) {
+        this.#group.removeEventListener(event, this);
+      }
     }
 
     this.panelElement.hidePopup();
+    this.#panelSet.panelOpener.clear(this);
     this.#panelSet.panelOpener.setZeroDelay();
   }
 
@@ -557,36 +571,77 @@ class TabGroupPanel extends Panel {
 
     this.#group.hoverPreviewPanelActive = true;
 
+    for (let event of TabGroupPanel.PANEL_UPDATE_EVENTS) {
+      this.#group.addEventListener(event, this);
+    }
+
     this.panelElement.openPopup(this.#popupTarget, this.popupOptions);
+
+    Glean.tabgroup.groupInteractions.hover_preview.add();
   }
 
-  #updatePanelContents() {
+  #updatePanelContent() {
     const fragment = this.win.document.createDocumentFragment();
     for (let tab of this.#group.tabs) {
-      let menuitem = this.win.document.createXULElement("menuitem");
-      menuitem.setAttribute("label", tab.label);
-      menuitem.setAttribute(
+      let tabbutton = this.win.document.createXULElement("toolbarbutton");
+      tabbutton.setAttribute("role", "button");
+      tabbutton.setAttribute("keyNav", false);
+      tabbutton.setAttribute("tabindex", 0);
+      tabbutton.setAttribute("label", tab.label);
+      tabbutton.setAttribute(
         "image",
         "page-icon:" + tab.linkedBrowser.currentURI.spec
       );
-      menuitem.setAttribute("tooltiptext", tab.label);
-      menuitem.classList.add("menuitem-iconic", "menuitem-with-favicon");
+      tabbutton.setAttribute("tooltiptext", tab.label);
+      tabbutton.classList.add(
+        "subviewbutton",
+        "subviewbutton-iconic",
+        "group-preview-button"
+      );
       if (tab == this.win.gBrowser.selectedTab) {
-        menuitem.classList.add("active-tab");
+        tabbutton.classList.add("active-tab");
       }
-      menuitem.tab = tab;
-      fragment.appendChild(menuitem);
+      tabbutton.tab = tab;
+      fragment.appendChild(tabbutton);
     }
-    this.panelElement.replaceChildren(fragment);
+    this.panelContent.replaceChildren(fragment);
   }
 
   handleEvent(event) {
     if (event.type == "command") {
-      this.win.gBrowser.selectedTab = event.target.tab;
-    }
+      if (this.win.gBrowser.selectedTab == event.target.tab) {
+        this.deactivate({ force: true });
+        return;
+      }
 
-    if (event.type == "mouseout" && event.target == this.panelElement) {
+      // bug1984732: temporarily disable CSS transitions while tabs are
+      // switching to prevent an unsightly "slide" animation when switching
+      // tabs within a collapsed group
+      let switchingTabs = [this.win.gBrowser.selectedTab, event.target.tab];
+      if (switchingTabs.every(tab => tab.group == this.#group)) {
+        for (let tab of switchingTabs) {
+          tab.animationsEnabled = false;
+        }
+
+        this.win.addEventListener(
+          "TabSwitchDone",
+          () => {
+            this.win.requestAnimationFrame(() => {
+              for (let tab of switchingTabs) {
+                tab.animationsEnabled = true;
+              }
+            });
+          },
+          { once: true }
+        );
+      }
+
+      this.win.gBrowser.selectedTab = event.target.tab;
+      this.deactivate({ force: true });
+    } else if (event.type == "mouseout" && event.target == this.panelElement) {
       this.deactivate();
+    } else if (TabGroupPanel.PANEL_UPDATE_EVENTS.includes(event.type)) {
+      this.#updatePanelContent();
     }
   }
 
@@ -635,9 +690,6 @@ class TabGroupPanel extends Panel {
  */
 class TabPreviewPanelTimedFunction {
   /** @type {number} */
-  #delay;
-
-  /** @type {number} */
   #zeroDelayTime;
 
   /** @type {Window} */
@@ -649,16 +701,56 @@ class TabPreviewPanelTimedFunction {
   /** @type {boolean} */
   #useZeroDelay;
 
-  constructor(delay, zeroDelayTime, win) {
-    this.#delay = delay;
+  /** @type {function(): void | null} */
+  #target;
+
+  /** @type {TabPanel} */
+  #from;
+
+  constructor(zeroDelayTime, win) {
+    XPCOMUtils.defineLazyPreferenceGetter(
+      this,
+      "_prefPreviewDelay",
+      "ui.tooltip.delay_ms"
+    );
+
     this.#zeroDelayTime = zeroDelayTime;
     this.#win = win;
 
     this.#timer = null;
     this.#useZeroDelay = false;
+
+    this.#target = null;
+    this.#from = null;
   }
 
-  execute(target) {
+  /**
+   * Execute a function after a delay, according to the following rules:
+   * - By default, execute the function after the time specified by `ui.tooltip.delay_ms`.
+   * - If a timer is already active, the timer will not be restarted, but the
+   *   function to be executed will be set to the one from the most recent
+   *   call (see notes below)
+   * - If the zero delay has been set with `setZeroDelay`, the function will
+   *   invoke immediately
+   *
+   * Multiple calls to `execute` within the delay will not invoke the function
+   * each time. The original delay will be preserved (i.e. the function will
+   * execute after `ui.tooltip.delay_ms` from the first call) but the function
+   * that is executed may be updated by subsequent calls to execute. This
+   * ensures that if the panel we want to open changes (e.g. if a user hovers
+   * over a tab, then quickly switches to a tab group before the delay
+   * expires), the delay is not restarted, which would cause a longer than
+   * usual time to open.
+   *
+   * @param {function(): void | null} target
+   *   The function to execute
+   * @param {TabPanel} from
+   *   The calling panel
+   */
+  execute(target, from) {
+    this.#target = target;
+    this.#from = from;
+
     if (this.delayActive) {
       return;
     }
@@ -669,22 +761,39 @@ class TabPreviewPanelTimedFunction {
     this.#timer = this.#win.setTimeout(
       () => {
         this.#timer = null;
-        target();
+        this.#target();
       },
-      this.#useZeroDelay ? 0 : this.#delay
+      this.#useZeroDelay ? 0 : this._prefPreviewDelay
     );
   }
 
-  clear() {
-    if (this.#timer) {
+  /**
+   * Clear the timer, if it is active, for example when a user moves off a panel.
+   * This has the effect of suppressing the delayed function execution.
+   *
+   * @param {TabPanel} from
+   *   The calling panel. This must be the same as the panel that most recently
+   *   called `execute`. If it is not, the call will be ignored. This is
+   *   necessary to prevent, e.g., the tab hover panel from inadvertently
+   *   cancelling the opening of the tab group hover panel in cases where the
+   *   user quickly hovers between tabs and tab groups before the panel fully
+   *   opens.
+   */
+  clear(from) {
+    if (from == this.#from && this.#timer) {
       this.#win.clearTimeout(this.#timer);
       this.#timer = null;
+      this.#from = null;
     }
   }
 
+  /**
+   * Temporarily suppress the delay mechanism.
+   *
+   * The delay will automatically reactivate after a set interval, which is
+   * configured by the constructor.
+   */
   setZeroDelay() {
-    this.clear();
-
     if (this.#useZeroDelay) {
       return;
     }

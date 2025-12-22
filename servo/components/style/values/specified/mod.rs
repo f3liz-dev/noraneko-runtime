@@ -25,8 +25,7 @@ use std::ops::Add;
 use style_traits::values::specified::AllowedNumericType;
 use style_traits::{CssWriter, ParseError, SpecifiedValueInfo, StyleParseErrorKind, ToCss};
 
-pub use self::align::{AlignContent, AlignItems, AlignSelf, ContentDistribution};
-pub use self::align::{JustifyContent, JustifyItems, JustifySelf, SelfAlignment};
+pub use self::align::{ContentDistribution, ItemPlacement, SelfAlignment, JustifyItems};
 pub use self::angle::{AllowUnitlessZeroAngle, Angle};
 pub use self::animation::{
     AnimationComposition, AnimationDirection, AnimationDuration, AnimationFillMode,
@@ -38,7 +37,8 @@ pub use self::background::{BackgroundRepeat, BackgroundSize};
 pub use self::basic_shape::FillRule;
 pub use self::border::{
     BorderCornerRadius, BorderImageRepeat, BorderImageSideWidth, BorderImageSlice,
-    BorderImageWidth, BorderRadius, BorderSideWidth, BorderSpacing, BorderStyle, LineWidth,
+    BorderImageWidth, BorderRadius, BorderSideOffset, BorderSideWidth, BorderSpacing, BorderStyle,
+    LineWidth,
 };
 pub use self::box_::{
     Appearance, BaselineSource, BreakBetween, BreakWithin, Clear, Contain, ContainIntrinsicSize,
@@ -108,7 +108,7 @@ pub use self::text::{OverflowWrap, TextEmphasisPosition, TextEmphasisStyle, Word
 pub use self::text::{TextAlignKeyword, TextDecorationLine, TextOverflow, WordSpacing};
 pub use self::text::{TextAlignLast, TextAutospace, TextUnderlinePosition};
 pub use self::text::{
-    TextDecorationLength, TextDecorationSkipInk, TextDecorationTrim, TextJustify, TextTransform,
+    TextDecorationInset, TextDecorationLength, TextDecorationSkipInk, TextJustify, TextTransform,
 };
 pub use self::time::Time;
 pub use self::transform::{Rotate, Scale, Transform};
@@ -553,7 +553,16 @@ impl Parse for NonNegativeNumberOrPercentage {
 /// However, we serialize the specified value as number, so it's ok to store
 /// the Opacity as Number.
 #[derive(
-    Clone, Copy, Debug, MallocSizeOf, PartialEq, PartialOrd, SpecifiedValueInfo, ToCss, ToShmem,
+    Clone,
+    Copy,
+    Debug,
+    MallocSizeOf,
+    PartialEq,
+    PartialOrd,
+    SpecifiedValueInfo,
+    ToCss,
+    ToShmem,
+    ToTyped,
 )]
 pub struct Opacity(Number);
 
@@ -596,7 +605,7 @@ impl ToComputedValue for Opacity {
 /// at computed-value time.
 ///
 /// <https://drafts.csswg.org/css-values/#integers>
-#[derive(Clone, Copy, Debug, MallocSizeOf, PartialEq, PartialOrd, ToShmem)]
+#[derive(Clone, Copy, Debug, MallocSizeOf, PartialEq, PartialOrd, ToShmem, ToTyped)]
 pub enum Integer {
     /// A literal integer value.
     Literal(CSSInteger),

@@ -292,7 +292,7 @@ static inline bool IsString(const TrustedTypeOrStringArg& aInput) {
     return aInput.IsUSVString();
   }
   if constexpr (std::is_same_v<TrustedTypeOrStringArg, const nsAString*>) {
-    Unused << aInput;
+    (void)aInput;
     return true;
   }
   MOZ_ASSERT_UNREACHABLE();
@@ -352,7 +352,7 @@ static inline bool IsTrustedType(const TrustedTypeOrStringArg& aInput) {
     return aInput.IsTrustedScriptURL();
   }
   if constexpr (std::is_same_v<TrustedTypeOrStringArg, const nsAString*>) {
-    Unused << aInput;
+    (void)aInput;
     return false;
   }
   MOZ_ASSERT_UNREACHABLE();
@@ -396,7 +396,7 @@ static inline const nsAString* GetAsTrustedType(
     MOZ_ASSERT(aInput.IsTrustedScriptURL());
     return &aInput.GetAsTrustedScriptURL().mData;
   }
-  Unused << aInput;
+  (void)aInput;
   MOZ_ASSERT_UNREACHABLE();
   return &EmptyString();
 };
@@ -443,6 +443,9 @@ MOZ_CAN_RUN_SCRIPT inline const nsAString* GetTrustedTypesCompliantString(
   nsIGlobalObject* globalObject = nullptr;
   nsPIDOMWindowInner* piDOMWindowInner = nullptr;
   if constexpr (std::is_same_v<NodeOrGlobalObjectArg, nsINode>) {
+    if (aNodeOrGlobalObject.HasBeenInUAWidget()) {
+      return GetAsString(aInput);
+    }
     Document* ownerDoc = aNodeOrGlobalObject.OwnerDoc();
     const bool ownerDocLoadedAsData = ownerDoc->IsLoadedAsData();
     if (!ownerDoc->HasPolicyWithRequireTrustedTypesForDirective() &&
@@ -599,29 +602,34 @@ GetTrustedTypesCompliantStringForTrustedHTML(const nsAString& aInput,
                                              const nsAString& aSink,
                                              const nsAString& aSinkGroup,
                                              const nsINode& aNode,
+                                             nsIPrincipal* aPrincipalOrNull,
                                              Maybe<nsAutoString>& aResultHolder,
                                              ErrorResult& aError) {
-  return GetTrustedTypesCompliantString<TrustedHTML>(
-      &aInput, aSink, aSinkGroup, aNode, nullptr, aResultHolder, aError);
+  return GetTrustedTypesCompliantString<TrustedHTML>(&aInput, aSink, aSinkGroup,
+                                                     aNode, aPrincipalOrNull,
+                                                     aResultHolder, aError);
 }
 
 MOZ_CAN_RUN_SCRIPT const nsAString*
 GetTrustedTypesCompliantStringForTrustedScript(
     const nsAString& aInput, const nsAString& aSink,
     const nsAString& aSinkGroup, nsIGlobalObject& aGlobalObject,
-    Maybe<nsAutoString>& aResultHolder, ErrorResult& aError) {
+    nsIPrincipal* aPrincipalOrNull, Maybe<nsAutoString>& aResultHolder,
+    ErrorResult& aError) {
   return GetTrustedTypesCompliantString<TrustedScript>(
-      &aInput, aSink, aSinkGroup, aGlobalObject, nullptr, aResultHolder,
-      aError);
+      &aInput, aSink, aSinkGroup, aGlobalObject, aPrincipalOrNull,
+      aResultHolder, aError);
 }
 
 MOZ_CAN_RUN_SCRIPT const nsAString*
 GetTrustedTypesCompliantStringForTrustedScript(
     const nsAString& aInput, const nsAString& aSink,
     const nsAString& aSinkGroup, const nsINode& aNode,
-    Maybe<nsAutoString>& aResultHolder, ErrorResult& aError) {
+    nsIPrincipal* aPrincipalOrNull, Maybe<nsAutoString>& aResultHolder,
+    ErrorResult& aError) {
   return GetTrustedTypesCompliantString<TrustedScript>(
-      &aInput, aSink, aSinkGroup, aNode, nullptr, aResultHolder, aError);
+      &aInput, aSink, aSinkGroup, aNode, aPrincipalOrNull, aResultHolder,
+      aError);
 }
 
 bool GetTrustedTypeDataForAttribute(const nsAtom* aElementName,
@@ -789,7 +797,8 @@ bool AreArgumentsTrustedForEnsureCSPDoesNotBlockStringCompilation(
     JS::Handle<JS::StackGCVector<JSString*>> aParameterStrings,
     JS::Handle<JSString*> aBodyString,
     JS::Handle<JS::StackGCVector<JS::Value>> aParameterArgs,
-    JS::Handle<JS::Value> aBodyArg, ErrorResult& aError) {
+    JS::Handle<JS::Value> aBodyArg, nsIPrincipal* aPrincipalOrNull,
+    ErrorResult& aError) {
   // EnsureCSPDoesNotBlockStringCompilation is essentially HTML's implementation
   // of HostEnsureCanCompileStrings, so we only consider the cases described in
   // the Dynamic Code Brand Checks spec. The algorithm is also supposed to be
@@ -920,8 +929,8 @@ bool AreArgumentsTrustedForEnsureCSPDoesNotBlockStringCompilation(
           codeString,
           aCompilationType == JS::CompilationType::Function ? functionSink
                                                             : evalSink,
-          kTrustedTypesOnlySinkGroup, *pinnedGlobal, compliantStringHolder,
-          aError);
+          kTrustedTypesOnlySinkGroup, *pinnedGlobal, aPrincipalOrNull,
+          compliantStringHolder, aError);
 
   // Step 2.7-2.8.
   // Callers will take care of throwing an EvalError when we return false.

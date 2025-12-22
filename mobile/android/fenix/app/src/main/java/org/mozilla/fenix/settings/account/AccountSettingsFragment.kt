@@ -13,15 +13,16 @@ import android.provider.Settings
 import android.text.InputFilter
 import android.text.format.DateUtils
 import android.view.View
-import androidx.appcompat.app.AlertDialog
 import androidx.core.content.edit
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
+import androidx.navigation.fragment.navArgs
 import androidx.preference.CheckBoxPreference
 import androidx.preference.EditTextPreference
 import androidx.preference.Preference
 import androidx.preference.PreferenceCategory
 import androidx.preference.PreferenceFragmentCompat
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import kotlinx.coroutines.Dispatchers.Main
 import kotlinx.coroutines.launch
 import mozilla.appservices.syncmanager.SyncTelemetry
@@ -54,12 +55,14 @@ import org.mozilla.fenix.ext.settings
 import org.mozilla.fenix.ext.showToolbar
 import org.mozilla.fenix.settings.SupportUtils
 import org.mozilla.fenix.settings.requirePreference
+import org.mozilla.fenix.settings.showCustomEditTextPreferenceDialog
 
 @SuppressWarnings("TooManyFunctions", "LargeClass")
 class AccountSettingsFragment : PreferenceFragmentCompat() {
     private lateinit var accountManager: FxaAccountManager
     private lateinit var accountSettingsStore: AccountSettingsFragmentStore
     private lateinit var accountSettingsInteractor: AccountSettingsInteractor
+    private val args by navArgs<AccountSettingsFragmentArgs>()
 
     // Navigate away from this fragment when we encounter auth problems or logout events.
     private val accountStateObserver = object : AccountObserver {
@@ -85,6 +88,9 @@ class AccountSettingsFragment : PreferenceFragmentCompat() {
     override fun onResume() {
         super.onResume()
         showToolbar(getString(R.string.preferences_account_settings))
+        args.preferenceToScrollTo?.let {
+            scrollToPreference(it)
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -254,6 +260,14 @@ class AccountSettingsFragment : PreferenceFragmentCompat() {
         )
     }
 
+    override fun onDisplayPreferenceDialog(preference: Preference) {
+        val handled = showCustomEditTextPreferenceDialog(preference)
+
+        if (!handled) {
+            super.onDisplayPreferenceDialog(preference)
+        }
+    }
+
     /**
      * Prompts the user if they do not have a password/pin set up to secure their device, and
      * updates the state of the sync engine with the new checkbox value.
@@ -306,7 +320,7 @@ class AccountSettingsFragment : PreferenceFragmentCompat() {
      */
     private fun showPinDialogWarning(syncEngine: SyncEngine, newValue: Boolean) {
         context?.let {
-            AlertDialog.Builder(it).apply {
+            MaterialAlertDialogBuilder(it).apply {
                 setTitle(getString(R.string.logins_warning_dialog_title_2))
                 setMessage(
                     getString(R.string.logins_warning_dialog_message_2),

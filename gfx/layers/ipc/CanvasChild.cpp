@@ -24,7 +24,6 @@
 #include "mozilla/layers/ImageDataSerializer.h"
 #include "mozilla/layers/SourceSurfaceSharedData.h"
 #include "mozilla/AppShutdown.h"
-#include "mozilla/Maybe.h"
 #include "mozilla/Mutex.h"
 #include "mozilla/StaticPrefs_gfx.h"
 #include "nsIObserverService.h"
@@ -343,14 +342,6 @@ static void NotifyCanvasDeviceChanged() {
   }
 }
 
-ipc::IPCResult CanvasChild::RecvNotifyDeviceChanged() {
-  NS_ASSERT_OWNINGTHREAD(CanvasChild);
-
-  NotifyCanvasDeviceChanged();
-  mRecorder->RecordEvent(RecordedDeviceChangeAcknowledged());
-  return IPC_OK();
-}
-
 ipc::IPCResult CanvasChild::RecvNotifyDeviceReset(
     const nsTArray<RemoteTextureOwnerId>& aOwnerIds) {
   NS_ASSERT_OWNINGTHREAD(CanvasChild);
@@ -634,7 +625,7 @@ already_AddRefed<gfx::DataSourceSurface> CanvasChild::GetDataSurface(
     }
   }
 
-  RecordEvent(RecordedPrepareDataForSurface(aSurface));
+  RecordEvent(RecordedCacheDataSurface(aSurface, true));
 
   if (!EnsureDataSurfaceShmem(ssSize, ssFormat)) {
     return nullptr;

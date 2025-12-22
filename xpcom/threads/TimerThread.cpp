@@ -15,7 +15,6 @@
 #include "mozilla/Services.h"
 #include "mozilla/ChaosMode.h"
 #include "mozilla/ArenaAllocator.h"
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/OperatorNewExtensions.h"
 #include "mozilla/StaticPrefs_timer.h"
 
@@ -466,8 +465,7 @@ struct TimerMarker {
     schema.AddKeyLabelFormat("ttype", "Timer Type", MS::Format::String);
     schema.AddKeyLabelFormat("canceled", "Canceled", MS::Format::String);
     schema.SetChartLabel("{marker.data.prefix} {marker.data.delay}");
-    schema.SetTableLabel(
-        "{marker.name} - {marker.data.prefix} {marker.data.delay}");
+    schema.SetTableLabel("{marker.data.prefix} {marker.data.delay}");
     return schema;
   }
 };
@@ -497,8 +495,7 @@ struct AddRemoveTimerMarker {
     schema.AddKeyLabelFormat("name", "Name", MS::Format::String,
                              MS::PayloadFlags::Searchable);
     schema.AddKeyLabelFormat("delay", "Delay", MS::Format::Milliseconds);
-    schema.SetTableLabel(
-        "{marker.name} - {marker.data.name} - {marker.data.delay}");
+    schema.SetTableLabel("{marker.data.name} - {marker.data.delay}");
     return schema;
   }
 };
@@ -836,7 +833,7 @@ void TimerThread::Wait(TimeDuration aWaitFor) MOZ_REQUIRES(mMonitor) {
   mWaiting = true;
   mNotified = false;
   {
-    AUTO_PROFILER_TRACING_MARKER("TimerThread", "Wait", OTHER);
+    AUTO_PROFILER_MARKER("TimerThread::Wait", OTHER);
     mMonitor.Wait(aWaitFor);
   }
   mWaiting = false;

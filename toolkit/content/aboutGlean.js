@@ -14,6 +14,7 @@ const { AppConstants } = ChromeUtils.importESModule(
   "resource://gre/modules/AppConstants.sys.mjs"
 );
 
+let REDESIGN_ENABLED = false;
 const METRIC_DATA = {};
 let MAPPED_METRIC_DATA = [];
 let FILTERED_METRIC_DATA = [];
@@ -103,19 +104,34 @@ function camelToKebab(str) {
 // a use-case for sending it via about:glean.
 const GLEAN_BUILTIN_PINGS = ["metrics", "events", "baseline"];
 const NO_PING = "(don't submit any ping)";
-function refillPingNames() {
-  let select = document.getElementById("ping-names");
-  let pings = GLEAN_BUILTIN_PINGS.slice().concat(Object.keys(GleanPings));
 
-  pings.forEach(ping => {
-    let option = document.createElement("option");
-    option.textContent = camelToKebab(ping);
-    select.appendChild(option);
+function refillPingNames() {
+  const builtInGroup = document.getElementById("builtin-pings");
+  const customGroup = document.getElementById("custom-pings");
+
+  // Add built-in ping options to the dropdown.
+  GLEAN_BUILTIN_PINGS.forEach(id => {
+    const option = document.createElement("option");
+    option.value = id;
+    option.textContent = camelToKebab(id);
+    builtInGroup.appendChild(option);
   });
-  let option = document.createElement("option");
-  document.l10n.setAttributes(option, "about-glean-no-ping-label");
-  option.value = NO_PING;
-  select.appendChild(option);
+
+  // Add "(don't submit any ping)" as last built-in option in the dropdown.
+  const noPingOption = document.createElement("option");
+  noPingOption.value = NO_PING;
+  document.l10n.setAttributes(noPingOption, "about-glean-no-ping-label");
+  builtInGroup.appendChild(noPingOption);
+
+  // Add alpha sorted custom ping options to the dropdown.
+  Object.keys(GleanPings)
+    .map(id => ({ id, label: camelToKebab(id) }))
+    .sort((a, b) => a.label.localeCompare(b.label))
+    .forEach(({ label }) => {
+      const option = document.createElement("option");
+      option.textContent = label;
+      customGroup.appendChild(option);
+    });
 }
 
 // If there's been a previous tag, use it.
@@ -191,8 +207,59 @@ function showTab(button) {
           ...metric,
         }))
     );
-    updateFilteredMetricData();
+    updateFilteredMetricData(
+      document.getElementById("filter-metrics").value.toLowerCase()
+    );
     updateTable();
+  }
+}
+
+function handleRedesign() {
+  REDESIGN_ENABLED = Services.prefs.getBoolPref("about.glean.redesign.enabled");
+  // If about:glean redesign is enabled, add the navigation category for it.
+  if (REDESIGN_ENABLED) {
+    const categories = document.getElementById("categories");
+    const div = document.createElement("div");
+    div.id = "category-metrics-table";
+    div.className = "category";
+    div.setAttribute("role", "menuitem");
+    div.setAttribute("tabindex", 0);
+    const span = document.createElement("span");
+    span.className = "category-name";
+    span.setAttribute("data-l10n-id", "about-glean-category-metrics-table");
+    div.appendChild(span);
+    categories.appendChild(div);
+
+    document
+      .getElementById("enable-new-features")
+      .setAttribute("data-l10n-id", "about-glean-disable-new-features-button");
+
+    /**
+     * Handle metric filter input.
+     *
+     * This uses a timeout to debounce the events down to 200ms.
+     * Instead of updating the DOM every time the input changes, it'll only update when the input hasn't changed in the last 200ms since it last changed.
+     */
+    let inputTimeout = undefined;
+    document.getElementById("filter-metrics").addEventListener("input", e => {
+      clearTimeout(inputTimeout);
+      inputTimeout = setTimeout(() => {
+        updateFilteredMetricData(e.target.value.toLowerCase() ?? "");
+      }, 200);
+    });
+
+    // Handle loading all metric data
+    document.getElementById("load-all").addEventListener("click", () => {
+      MAPPED_METRIC_DATA.forEach(datum => {
+        updateDatum(datum);
+      });
+      updateTable();
+    });
+  } else {
+    document
+      .getElementById("enable-new-features")
+      .setAttribute("data-l10n-id", "about-glean-enable-new-features-button");
+    document.getElementById("category-metrics-table")?.remove();
   }
 }
 
@@ -245,47 +312,33 @@ function onLoad() {
     }, 3000);
   });
 
-  // If about:glean redesign is enabled, add the navigation category for it.
-  let redesignEnabled = Services.prefs.getBoolPref(
-    "about.glean.redesign.enabled"
-  );
-  if (redesignEnabled) {
-    const categories = document.getElementById("categories");
-    const div = document.createElement("div");
-    div.id = "category-metrics-table";
-    div.className = "category";
-    div.setAttribute("role", "menuitem");
-    div.setAttribute("tabindex", 0);
-    const span = document.createElement("span");
-    span.className = "category-name";
-    span.setAttribute("data-l10n-id", "about-glean-category-metrics-table");
-    div.appendChild(span);
-    categories.appendChild(div);
-  }
+  handleRedesign();
 
   DOCUMENT_BODY_SEL = d3.select(document.body);
 
-  /**
-   * Handle metric filter input.
-   *
-   * This uses a timeout to debounce the events down to 200ms.
-   * Instead of updating the DOM every time the input changes, it'll only update when the input hasn't changed in the last 200ms since it last changed.
-   */
-  let inputTimeout = undefined;
-  document.getElementById("filter-metrics").addEventListener("input", e => {
-    clearTimeout(inputTimeout);
-    inputTimeout = setTimeout(() => {
-      updateFilteredMetricData(e.target.value ?? "");
-    }, 200);
-  });
-
-  // Handle loading all metric data
-  document.getElementById("load-all").addEventListener("click", () => {
-    MAPPED_METRIC_DATA.forEach(datum => {
-      updateDatum(datum, false);
+  document
+    .getElementById("enable-new-features")
+    .addEventListener("click", () => {
+      if (!REDESIGN_ENABLED) {
+        Services.prefs.setBoolPref("about.glean.redesign.enabled", true);
+      } else {
+        Services.prefs.setBoolPref("about.glean.redesign.enabled", false);
+      }
+      handleRedesign();
     });
-    updateTable();
-  });
+
+  document
+    .getElementById("metrics-table-settings-button")
+    .addEventListener("click", () => {
+      const settingsDiv = document.getElementById("metrics-table-settings");
+      if (settingsDiv.getAttribute("hidden")) {
+        settingsDiv.removeAttribute("hidden");
+      } else {
+        settingsDiv.setAttribute("hidden", true);
+      }
+      settingsChanged();
+    });
+  initMetricsSettings();
 }
 
 /**
@@ -327,11 +380,419 @@ function updateButtonsSelection(selection) {
   );
 }
 
+function createOrUpdateHistogram(selection, datum) {
+  const values = Object.entries(datum.value?.values || {}).map((d, i) => [
+    ...d,
+    i,
+  ]);
+
+  if (!values || values.length === 0) {
+    selection.select("p")?.remove();
+    selection
+      .append("p")
+      .attr("data-l10n-id", "about-glean-no-data-to-display");
+    selection.select("svg")?.remove();
+    return;
+  }
+  selection.select("p")?.remove();
+
+  const chartSettings = {
+    boxPadding: 5,
+    chartMax: 150,
+    leftPadding: 20,
+    chartPadding: 50,
+    scaledMax: 110,
+    ...metricsTableSettings.histograms,
+  };
+  const max = values.map(d => d[1]).sort((a, b) => b - a)[0],
+    keyMax = values.map(d => d[0]).sort((a, b) => b - a)[0],
+    boxWidth = Math.max(`${Math.max(max, keyMax)}`.length * 10, 30),
+    denom = max / chartSettings.scaledMax;
+
+  let hist = selection.select(`svg[data-d3-datum='${datum.fullName}']`);
+  if (hist.empty()) {
+    hist = selection
+      .append("svg")
+      .classed({ histogram: true })
+      .attr("data-d3-datum", datum.fullName)
+      .attr(
+        "width",
+        values.length * (boxWidth + chartSettings.boxPadding) +
+          chartSettings.chartPadding +
+          chartSettings.leftPadding
+      )
+      .attr("height", chartSettings.chartMax + chartSettings.chartPadding);
+  }
+
+  let boxesContainer = hist.select("g.boxes");
+  if (boxesContainer.empty()) {
+    boxesContainer = hist.append("g").classed({ boxes: true });
+  }
+
+  const boxes = boxesContainer.selectAll("g").data(values, d => d);
+
+  const newBoxes = boxes.enter().append("g").attr("tabindex", 0);
+  newBoxes.append("rect").attr("width", boxWidth);
+  newBoxes.append("text").attr("data-d3-role", "y");
+  newBoxes.append("text").attr("data-d3-role", "x");
+
+  const xFn = index =>
+    boxWidth * index +
+    chartSettings.boxPadding * index +
+    chartSettings.leftPadding;
+  const yFn = yv =>
+    Math.abs(Math.max(yv / denom, 1) - chartSettings.scaledMax) +
+    (chartSettings.chartMax - chartSettings.scaledMax);
+
+  boxes
+    .selectAll("rect")
+    .attr("height", d => Math.max(d[1] / denom, 1))
+    .attr("x", (_, __, i) => xFn(i))
+    .attr("y", d => yFn(d[1]));
+  boxes
+    .selectAll("text[data-d3-role=y]")
+    .attr("x", (_, __, i) => xFn(i))
+    .attr("y", d => yFn(d[1]) - 5)
+    .text(d => d[1]);
+  boxes
+    .selectAll("text[data-d3-role=x]")
+    .attr("x", d => xFn(d[2]))
+    .attr("y", chartSettings.chartMax + 20)
+    .text(d => d[0]);
+
+  function focusStart(_) {
+    this.classList.add("hovered");
+  }
+
+  function focusEnd(_) {
+    this.classList.remove("hovered");
+  }
+
+  boxes
+    .attr("data-d3-box", d => d[0])
+    .on("focusin", focusStart)
+    .on("mouseover", focusStart)
+    .on("focusout", focusEnd)
+    .on("mouseout", focusEnd);
+
+  boxes.exit().remove();
+}
+
+function createOrUpdateEventChart(selection, datum) {
+  const values = (datum.value || []).map((d, i) => ({
+    ...d,
+    index: i,
+    fullName: datum.fullName,
+  }));
+
+  if (!values || values.length === 0) {
+    selection.select("p")?.remove();
+    selection
+      .append("p")
+      .attr("data-l10n-id", "about-glean-no-data-to-display");
+    selection.select("svg")?.remove();
+    return;
+  }
+  selection.select("p")?.remove();
+
+  const chartSettings = {
+    height: 75,
+    width: 500,
+    chartPadding: 50,
+    circleRadius: 6,
+    verticalLineXOffset: 10,
+    verticalLineYOffset: 10,
+    ...metricsTableSettings.timelines,
+  };
+  const max = values.map(d => d.timestamp).sort((a, b) => b - a)[0],
+    min = values.map(d => d.timestamp).sort((a, b) => a - b)[0];
+
+  let diagram = selection.select(`svg[data-d3-datum='${datum.fullName}']`);
+  if (diagram.empty()) {
+    diagram = selection
+      .append("svg")
+      .attr("data-d3-datum", datum.fullName)
+      .classed({ timeline: true });
+  }
+  diagram
+    .attr("width", chartSettings.width)
+    .attr("height", chartSettings.height);
+
+  let lineAcross = diagram.select("line[data-d3-role='across']");
+  if (lineAcross.empty()) {
+    lineAcross = diagram.append("line").attr("data-d3-role", "across");
+  }
+  lineAcross
+    .attr("x1", chartSettings.chartPadding)
+    .attr("y1", chartSettings.height / 2)
+    .attr("x2", chartSettings.width - chartSettings.chartPadding)
+    .attr("y2", chartSettings.height / 2);
+
+  let leftLineThrough = diagram.select("line[data-d3-role='left-through']");
+  if (leftLineThrough.empty()) {
+    leftLineThrough = diagram
+      .append("line")
+      .attr("data-d3-role", "left-through");
+  }
+  leftLineThrough
+    .attr("x1", chartSettings.chartPadding + chartSettings.verticalLineXOffset)
+    .attr("y1", chartSettings.height / 2 - chartSettings.verticalLineYOffset)
+    .attr("x2", chartSettings.chartPadding + chartSettings.verticalLineXOffset)
+    .attr("y2", chartSettings.height / 2 + chartSettings.verticalLineYOffset);
+
+  let rightLineThrough = diagram.select("line[data-d3-role='right-through']");
+  if (rightLineThrough.empty()) {
+    rightLineThrough = diagram
+      .append("line")
+      .attr("data-d3-role", "right-through");
+  }
+  rightLineThrough
+    .attr(
+      "x1",
+      chartSettings.width -
+        chartSettings.chartPadding -
+        chartSettings.verticalLineXOffset
+    )
+    .attr("y1", chartSettings.height / 2 - chartSettings.verticalLineYOffset)
+    .attr(
+      "x2",
+      chartSettings.width -
+        chartSettings.chartPadding -
+        chartSettings.verticalLineXOffset
+    )
+    .attr("y2", chartSettings.height / 2 + chartSettings.verticalLineYOffset);
+
+  let code = selection.select("pre");
+  if (code.empty()) {
+    code = selection.append("pre").classed({ withChart: true }).append("code");
+  } else {
+    code = code.select("code");
+  }
+
+  const xFn = d3.scale
+    .linear()
+    .domain([min, max])
+    .range([
+      chartSettings.verticalLineXOffset + chartSettings.chartPadding,
+      chartSettings.width -
+        chartSettings.chartPadding -
+        chartSettings.verticalLineXOffset,
+    ]);
+
+  let eventsContainer = diagram.select("g.events");
+  if (eventsContainer.empty()) {
+    eventsContainer = diagram.append("g").classed({ events: true });
+  }
+
+  const events = eventsContainer
+    .selectAll("g.event")
+    .data(values, d => `${d.fullName}-${d.index}-${d.timestamp}`);
+
+  const newEvents = events
+    .enter()
+    .append("g")
+    .classed({ event: true })
+    .attr("tabindex", 0);
+
+  newEvents.append("circle");
+
+  function focusStart(_) {
+    this.classList.add("hovered");
+  }
+
+  function focusEnd(_) {
+    this.classList.remove("hovered");
+  }
+
+  function select(_) {
+    const dataPoint = this.__data__;
+    code.text(prettyPrint(dataPoint.extra));
+
+    document.querySelectorAll("g.event.selected").forEach(el => {
+      el.classList.remove("selected");
+      el.querySelector("text")?.remove();
+    });
+    this.classList.add("selected");
+
+    const text = this.appendChild(
+      document.createElementNS("http://www.w3.org/2000/svg", "text")
+    );
+    text.setAttribute("y", chartSettings.height / 2 + 25);
+    text.setAttribute(
+      "x",
+      xFn(dataPoint.timestamp) - `${dataPoint.timestamp}`.length * 4.5
+    );
+    text.textContent = dataPoint.timestamp;
+  }
+
+  events.attr("data-d3-datum", d => `${d.fullName}-${d.index}-${d.timestamp}`);
+
+  events
+    .selectAll("circle")
+    .attr("cy", chartSettings.height / 2)
+    .attr("cx", d => xFn(d.timestamp))
+    .attr("r", chartSettings.circleRadius);
+
+  events
+    .on("focusin", select)
+    .on("mouseover", focusStart)
+    .on("focusout", focusEnd)
+    .on("mouseout", focusEnd);
+
+  events.exit().remove();
+}
+
+const METRICS_TABLE_SETTINGS_KEY = "about-glean-metrics-table-settings";
+/**
+ * When adding new fields to the metrics table settings,
+ * a corresponding element matching the query selector
+ * `[data-form-control=<key>]` must be present in the DOM.
+ */
+const metricsTableSettings = {
+  hideEmptyValueRows: false,
+  histograms: {
+    boxPadding: 5,
+    chartMax: 150,
+    leftPadding: 20,
+    chartPadding: 50,
+    scaledMax: 110,
+  },
+  timelines: {
+    height: 75,
+    width: 500,
+    chartPadding: 50,
+    circleRadius: 6,
+    verticalLineXOffset: 10,
+    verticalLineYOffset: 10,
+  },
+};
+
+function initMetricsSettings() {
+  const handleSetting = (obj, key, parent) => {
+    let element = parent.querySelector(`[data-form-control='${key}']`);
+    let valueFn = e => e.target.value;
+    if (!element && typeof obj[key] !== "object") {
+      console.error(
+        new Error(
+          `Unable to find form control with key '${key}' in the parent element`
+        ),
+        parent
+      );
+      return;
+    }
+    switch (typeof obj[key]) {
+      case "boolean":
+        valueFn = e => e.target.checked;
+        obj[key] = valueFn({ target: element });
+        break;
+      case "object":
+        element = parent.querySelector(`[data-form-group='${key}']`);
+        if (!element) {
+          console.error(
+            new Error(
+              `Unable to find form control with key '${key}' in the parent element`
+            ),
+            parent
+          );
+          return;
+        }
+        for (const subKey of Object.keys(obj[key])) {
+          handleSetting(obj[key], subKey, element);
+        }
+        break;
+      case "number":
+        valueFn = e => parseInt(e.target.value);
+      // eslint-disable-next-line no-fallthrough
+      default:
+        if (element.type !== typeof obj[key]) {
+          console.warn(
+            new Error(
+              `Form control input type does not match JavaScript value type ${typeof obj[key]}`
+            )
+          );
+        }
+        if (valueFn({ target: element })) {
+          obj[key] = valueFn({ target: element });
+        } else {
+          element.value = obj[key];
+        }
+    }
+    element.addEventListener("input", handleSettingChange(obj, valueFn));
+  };
+
+  for (const key of Object.keys(metricsTableSettings)) {
+    handleSetting(
+      metricsTableSettings,
+      key,
+      document.getElementById("metrics-table-settings")
+    );
+  }
+}
+
+function handleSettingChange(obj, valueFn) {
+  return e => {
+    obj[e.target.getAttribute("data-form-control")] = valueFn(e);
+    settingsChanged();
+  };
+}
+
+function settingsChanged() {
+  createOrUpdateHistogram(
+    d3.select("#metrics-table-settings-histogram-example"),
+    {
+      fullName: "histogram-example",
+      value: {
+        values: {
+          0: 1,
+          1: 5,
+          2: 4,
+          3: 0,
+        },
+      },
+    }
+  );
+
+  createOrUpdateEventChart(
+    d3.select("#metrics-table-settings-timeline-example"),
+    {
+      fullName: "timeline-example",
+      value: [
+        {
+          timestamp: 0,
+          extra: {
+            value: 1,
+          },
+        },
+        {
+          timestamp: 1,
+          extra: {
+            value: 2,
+          },
+        },
+        {
+          timestamp: 4,
+          extra: {
+            value: 3,
+          },
+        },
+        {
+          timestamp: 8,
+          extra: {
+            value: 4,
+          },
+        },
+      ],
+    }
+  );
+
+  updateTable();
+}
+
 function updateValueSelection(selection) {
   // Set the `data-l10n-id` attribute to the appropriate warning if the value is invalid, otherwise
   // unset it by returning `null`.
   selection
-    .attr("data-l10n-id", d => {
+    ?.attr("data-l10n-id", d => {
       switch (d.invalidValue) {
         case INVALID_VALUE_REASONS.LABELED_METRIC:
           return "about-glean-labeled-metric-warning";
@@ -341,14 +802,22 @@ function updateValueSelection(selection) {
           return null;
       }
     })
-    .each(function (datum) {
+    ?.each(function (datum) {
       if (datum.loaded) {
         let codeSelection = d3.select(this).select("pre>code");
-        if (codeSelection.empty()) {
-          codeSelection = d3.select(this).append("pre").append("code");
-        }
         switch (datum.type) {
+          case "Event":
+            createOrUpdateEventChart(d3.select(this), datum);
+            break;
+          case "CustomDistribution":
+          case "MemoryDistribution":
+          case "TimingDistribution":
+            createOrUpdateHistogram(d3.select(this), datum);
+            break;
           default:
+            if (codeSelection.empty()) {
+              codeSelection = d3.select(this).append("pre").append("code");
+            }
             codeSelection.text(prettyPrint(datum.value));
         }
       }
@@ -361,7 +830,7 @@ function updateValueSelection(selection) {
  * @param {*} datum the datum object to update
  * @param {*} update update the table after updating the datum (defaults to `true`)
  */
-function updateDatum(datum, update = true) {
+function updateDatum(datum) {
   if (typeof datum.metric.testGetValue == "function") {
     try {
       datum.value = datum.metric.testGetValue();
@@ -376,13 +845,12 @@ function updateDatum(datum, update = true) {
   } else {
     datum.invalidValue = INVALID_VALUE_REASONS.UNKNOWN_METRIC;
   }
-  if (update) {
-    updateValueSelection(
-      DOCUMENT_BODY_SEL.select(
-        `tr[data-d3-row="${datum.fullName}"]>td[data-d3-cell=value]`
-      )
-    );
-  }
+
+  updateValueSelection(
+    DOCUMENT_BODY_SEL.select(
+      `tr[data-d3-row="${datum.fullName}"]>td[data-d3-cell=value]`
+    )
+  );
 }
 
 /**
@@ -392,6 +860,14 @@ function updateDatum(datum, update = true) {
  * @returns a string containing the prettified JSON value in a pre+code
  */
 function prettyPrint(jsonValue) {
+  if (typeof jsonValue == "object") {
+    jsonValue = Object.keys(jsonValue ?? {})
+      .sort()
+      .reduce((obj, key) => {
+        obj[key] = jsonValue[key];
+        return obj;
+      }, {});
+  }
   // from devtools/client/jsonview/json-viewer.mjs
   const pretty = JSON.stringify(
     jsonValue,
@@ -418,7 +894,15 @@ function prettyPrint(jsonValue) {
 function updateTable() {
   LIMITED_METRIC_DATA = FILTERED_METRIC_DATA.toSorted((a, b) =>
     d3.ascending(a.fullName, b.fullName)
-  ).filter((_, i) => i >= LIMIT_OFFSET && i < LIMIT_COUNT + LIMIT_OFFSET);
+  )
+    // Filter out rows whose datum elements have either a) been loaded and have a value, or b) have not yet been loaded.
+    .filter(d =>
+      metricsTableSettings.hideEmptyValueRows
+        ? (d.value !== undefined && d.value !== null) || !d.loaded
+        : true
+    )
+    // Filter down to only the datum elements whose indexes fall in the limit offset+count.
+    .filter((_, i) => i >= LIMIT_OFFSET && i < LIMIT_COUNT + LIMIT_OFFSET);
 
   // Let's talk about d3.js
   // `d3.select` is a rough equivalent to `document.querySelector`, but the resulting object(s) are things d3 knows how to manipulate.
@@ -545,9 +1029,9 @@ function updateFilteredMetricData(searchString) {
     };
     FILTERED_METRIC_DATA = MAPPED_METRIC_DATA.filter(
       datum =>
-        datum.category.includes(searchString) ||
-        datum.name.includes(searchString) ||
-        datum.type.includes(searchString) ||
+        datum.category.toLowerCase().includes(searchString) ||
+        datum.name.toLowerCase().includes(searchString) ||
+        datum.type.toLowerCase().includes(searchString) ||
         simpleTypeValueSearch(datum)
     );
   }

@@ -63,17 +63,21 @@ add_task(async function test_init_with_opt_in() {
 
   await initExperimentAPI();
 
-  equal(
+  Assert.equal(
     loader.setTimer.callCount,
-    0,
-    `should not initialize if ${STUDIES_OPT_OUT_PREF} pref is false`
+    1,
+    `should initialize even if ${STUDIES_OPT_OUT_PREF} pref is false`
   );
 
-  Services.prefs.setBoolPref(STUDIES_OPT_OUT_PREF, true);
-  Assert.ok(loader.setTimer.calledOnce, "should call .setTimer");
-  Assert.ok(loader.updateRecipes.calledOnce, "should call .updateRecipes");
+  Assert.equal(
+    loader.updateRecipes.callCount,
+    1,
+    "should call updateRecipes()"
+  );
 
   await cleanup();
+
+  Services.prefs.setBoolPref(STUDIES_OPT_OUT_PREF, true);
 });
 
 add_task(async function test_updateRecipes() {
@@ -119,94 +123,6 @@ add_task(async function test_updateRecipes() {
       status: MatchStatus.NO_MATCH,
     }),
     "should call .onRecipe for fail recipe with NO_MATCH"
-  );
-
-  await cleanup();
-});
-
-add_task(async function test_loadingErrorOnEmptyRecipesWithNullLastModified() {
-  Services.fog.testResetFOG();
-  const { sandbox, loader, cleanup } = await NimbusTestUtils.setupTest({
-    clearTelemetry: true,
-  });
-
-  Assert.deepEqual(
-    Glean.nimbusEvents.remoteSettingsSync
-      .testGetValue("events")
-      ?.map(ev => ev.extra) ?? [],
-    [
-      {
-        force_sync: "false",
-        experiments_success: "true",
-        secure_experiments_success: "true",
-        experiments_empty: "true",
-        secure_experiments_empty: "true",
-        trigger: "migration",
-      },
-      {
-        force_sync: "false",
-        experiments_success: "true",
-        secure_experiments_success: "true",
-        experiments_empty: "true",
-        secure_experiments_empty: "true",
-        trigger: "enabled",
-      },
-    ],
-    "Submitted initial remoteSettingsSync telemetry"
-  );
-  Services.fog.testResetFOG();
-
-  sandbox
-    .stub(loader.remoteSettingsClients.experiments.db, "getLastModified")
-    .resolves(null);
-
-  let { loadingError } = await loader.getRecipesFromAllCollections({
-    trigger: "test",
-  });
-
-  Assert.ok(
-    loadingError,
-    "should error when loading empty recipes collection with null last modified"
-  );
-
-  Assert.deepEqual(
-    Glean.nimbusEvents.remoteSettingsSync
-      .testGetValue("events")
-      ?.map(ev => ev.extra) ?? [],
-    [
-      {
-        force_sync: "false",
-        experiments_success: "false",
-        secure_experiments_success: "true",
-        secure_experiments_empty: "true",
-        trigger: "test",
-      },
-    ],
-    "Submitted failure telemetry"
-  );
-
-  Services.fog.testResetFOG();
-
-  loader.remoteSettingsClients.experiments.get.resolves([
-    NimbusTestUtils.factories.recipe("test"),
-  ]);
-
-  ({ loadingError } = await loader.getRecipesFromAllCollections({
-    trigger: "test",
-  }));
-
-  Assert.strictEqual(
-    loadingError,
-    false,
-    "should not error when loading nonempty recipes collection"
-  );
-
-  Assert.deepEqual(
-    Glean.nimbusEvents.remoteSettingsSync
-      .testGetValue("events")
-      ?.map(ev => ev.extra) ?? [],
-    [],
-    "Didn't submit success telemetry"
   );
 
   await cleanup();

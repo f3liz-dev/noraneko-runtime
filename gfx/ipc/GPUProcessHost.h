@@ -7,7 +7,6 @@
 #ifndef _include_mozilla_gfx_ipc_GPUProcessHost_h_
 #define _include_mozilla_gfx_ipc_GPUProcessHost_h_
 
-#include "mozilla/Maybe.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/gfx/Types.h"
 #include "mozilla/ipc/GeckoChildProcessHost.h"
@@ -118,6 +117,10 @@ class GPUProcessHost final : public mozilla::ipc::GeckoChildProcessHost {
   java::CompositorSurfaceManager::Param GetCompositorSurfaceManager();
 #endif
 
+#if defined(XP_MACOSX) && defined(MOZ_SANDBOX)
+  static MacSandboxType GetMacSandboxType() { return MacSandboxType_GPU; };
+#endif
+
  private:
   ~GPUProcessHost();
 
@@ -135,6 +138,14 @@ class GPUProcessHost final : public mozilla::ipc::GeckoChildProcessHost {
   void KillHard(bool aGenerateMinidump);
 
   void DestroyProcess();
+
+#if defined(XP_MACOSX) && defined(MOZ_SANDBOX)
+  static bool sLaunchWithMacSandbox;
+  bool IsMacSandboxLaunchEnabled() override { return sLaunchWithMacSandbox; }
+
+  // Override so we can turn on GPU process-specific sandbox logging
+  bool FillMacSandboxInfo(MacSandboxInfo& aInfo) override;
+#endif
 
   DISALLOW_COPY_AND_ASSIGN(GPUProcessHost);
 

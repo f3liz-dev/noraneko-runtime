@@ -2,6 +2,10 @@
 prefs = [
   "extensions.formautofill.addresses.available='on'",
   "signon.management.page.os-auth.enabled=true",
+  "browser.backup.archive.enabled=false",
+  "browser.backup.restore.enabled=false",
+  "browser.backup.archive.overridePlatformCheck=true",
+  "browser.backup.restore.overridePlatformCheck=true",
 ]
 support-files = [
   "head.js",
@@ -25,6 +29,8 @@ run-if = ["updater"]
 ["browser_application_xml_handle_internally.js"]
 
 ["browser_applications_selection.js"]
+
+["browser_backup_visibility.js"]
 
 ["browser_basic_rebuild_fonts_test.js"]
 
@@ -54,6 +60,8 @@ support-files = ["browser_bug1184989_prevent_scrolling_when_preferences_flipped.
 run-if = ["os == 'win'"] # Windows-specific handler application selection dialog
 
 ["browser_checkspelling.js"]
+
+["browser_colors_dialog.js"]
 
 ["browser_connection.js"]
 
@@ -86,6 +94,8 @@ run-if = ["os == 'win'"]
 
 ["browser_dns_over_https_exceptions_subdialog.js"]
 
+["browser_downloads.js"]
+
 ["browser_ensure_prefs_bindings_initted.js"]
 
 ["browser_etp_exceptions_dialog.js"]
@@ -93,6 +103,12 @@ run-if = ["os == 'win'"]
 ["browser_experimental_features.js"]
 
 ["browser_experimental_features_filter.js"]
+skip-if = [
+  "os == 'linux' && os_version == '24.04' && processor == 'x86_64'", # Bug 1969933
+  "os == 'mac' && os_version == '10.15' && processor == 'x86_64' && opt", # Bug 1969933
+  "os == 'win' && os_version == '11.26100' && processor == 'x86_64'", # Bug 1969933
+  "os == 'win' && os_version == '11.26100' && processor == 'x86'", # Bug 1969933
+]
 
 ["browser_experimental_features_hidden_when_not_public.js"]
 
@@ -142,6 +158,8 @@ fail-if = ["a11y_checks"] # Bug 1854636 clicked treechildren#engineChildren may 
 
 ["browser_newtab_menu.js"]
 
+["browser_no_id_collision_between_categories_and_mainPane.js"]
+
 ["browser_notifications_do_not_disturb.js"]
 
 ["browser_open_download_preferences.js"]
@@ -154,8 +172,6 @@ support-files = ["empty_pdf_file.pdf"]
 ["browser_pdf_disabled.js"]
 
 ["browser_performance.js"]
-
-["browser_performance_content_process_limit.js"]
 
 ["browser_performance_e10srollout.js"]
 
@@ -177,9 +193,9 @@ skip-if = ["true"]
 ["browser_privacy_allowListPreference.js"]
 skip-if = ["os == 'linux' && os_version == '24.04' && processor == 'x86_64' && tsan"] # Bug 1984525
 
-["browser_privacy_allowListPreference_reload.js"]
-
 ["browser_privacy_allowListPreference_dialog.js"]
+
+["browser_privacy_allowListPreference_reload.js"]
 
 ["browser_privacy_allowListPreference_telemetry.js"]
 
@@ -187,15 +203,17 @@ skip-if = ["os == 'linux' && os_version == '24.04' && processor == 'x86_64' && t
 
 ["browser_privacy_dnsoverhttps.js"]
 
-["browser_privacy_firefoxSuggest.js"]
-
 ["browser_privacy_gpc.js"]
+
+["browser_privacy_ipprotection.js"]
 
 ["browser_privacy_passwordGenerationAndAutofill.js"]
 
 ["browser_privacy_relayIntegration.js"]
 
 ["browser_privacy_segmentation_pref.js"]
+
+["browser_privacy_status_card.js"]
 
 ["browser_privacy_syncDataClearing.js"]
 
@@ -274,11 +292,15 @@ skip-if = ["tsan"] # Bug 1678829
 
 ["browser_security-3.js"]
 
+["browser_setting_group_in_progress.js"]
+
 ["browser_site_login_exceptions.js"]
 
 ["browser_site_login_exceptions_policy.js"]
 
 ["browser_spotlight.js"]
+
+["browser_startup_browser_restore_session.js"]
 
 ["browser_statePartitioning_PBM_strings.js"]
 
@@ -295,6 +317,8 @@ support-files = [
 ["browser_sync_disabled.js"]
 
 ["browser_sync_pairing.js"]
+
+["browser_tabs_open_external_next_to_active_tab.js"]
 
 ["browser_trendingsuggestions.js"]
 

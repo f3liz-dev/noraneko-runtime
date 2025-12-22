@@ -4,13 +4,14 @@
 ---
 task-defaults:
     platform: linux2404-64/opt
-    worker-type: t-linux-docker
+    worker-type: t-linux-docker-amd
     worker:
         docker-image: {in-tree: "ubuntu2404-test"}
         max-run-time: 1800
     treeherder:
         kind: test
         tier: 1
+    run-on-repo-type: [hg]
     run:
         using: run-task
         cwd: '{checkout}'

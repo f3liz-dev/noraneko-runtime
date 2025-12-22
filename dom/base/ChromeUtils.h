@@ -205,13 +205,21 @@ class ChromeUtils {
                                       nsIPrincipal* aPrincipal,
                                       ErrorResult& aRv);
 
-  static void SetPerfStatsCollectionMask(GlobalObject& aGlobal, uint64_t aMask);
+  static void EnableAllPerfStatsFeatures(GlobalObject& aGlobal);
+
+  static void SetPerfStatsFeatures(GlobalObject& aGlobal,
+                                   const Sequence<nsString>& aMetrics);
 
   static already_AddRefed<Promise> CollectPerfStats(GlobalObject& aGlobal,
                                                     ErrorResult& aRv);
 
   static already_AddRefed<Promise> RequestProcInfo(GlobalObject& aGlobal,
                                                    ErrorResult& aRv);
+
+  static uint64_t GetCurrentProcessMemoryUsage(GlobalObject& aGlobal,
+                                               ErrorResult& aRv);
+  static uint64_t GetCpuTimeSinceProcessStart(GlobalObject& aGlobal,
+                                              ErrorResult& aRv);
 
   static bool VsyncEnabled(GlobalObject& aGlobal);
 

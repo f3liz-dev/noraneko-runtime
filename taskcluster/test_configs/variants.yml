@@ -78,14 +78,6 @@ aab:
         fetches:
             toolchain:
                 by-test-platform:
-                    android-em-7.*:
-                        - android-system-image-x86_64-linux
-                        - android-avd-x86_64-linux
-                        - android-emulator-linux
-                        - linux64-minidump-stackwalk
-                        - linux64-fix-stacks
-                        - linux64-jdk
-                        - linux64-hostutils
                     android-em-14.*:
                         - android34-system-image-x86_64-linux
                         - android34-avd-x86_64-linux
@@ -147,6 +139,18 @@ no-fission:
         mozharness:
             extra-options:
                 - "--disable-fission"
+
+geckoview-zygote:
+    description: "{description} with app Zygote preloading enabled"
+    component: "GeckoView::General"
+    expiration: "2026-03-01"
+    suffix: "zygote"
+    when:
+        <<: *gv_e10s_filter
+    merge:
+        mozharness:
+            extra-options:
+                - "--enable-isolated-zygote-process"
 
 geckoview-no-fission-no-ship:
     description: "{description} with fission disabled and ship disabled"
@@ -411,6 +415,7 @@ no-gpu-process:
                     "windows" in task["test-platform"]
                     || "android" in task["test-platform"]
                     || "linux" in task["test-platform"]
+                    || "macosx" in task["test-platform"]
                 '
     replace:
         virtualization: virtual
@@ -523,7 +528,7 @@ async-event-dispatching:
 vertical-tabs:
     description: "{description} limited to tests identified as being applicable to also run with vertical tabs enabled"
     component: "Firefox::Tabbed Browser"
-    expiration: "2025-11-01"
+    expiration: "2026-11-01"
     suffix: "vt"
     mozinfo: "vertical_tab"
     merge:
@@ -581,3 +586,14 @@ privatebrowsing-inc-origin-init:
         mozharness:
             extra-options:
                 - "--setpref=browser.privatebrowsing.autostart=true"
+
+navigation-api:
+    description: "{description} with Navigation API enabled"
+    component: "Core::DOM: Navigation"
+    expiration: "2026-05-01"
+    suffix: "nav"
+    mozinfo: "navigationApi"
+    merge:
+        mozharness:
+            extra-options:
+                - "--setpref=dom.navigation.webidl.enabled=true"

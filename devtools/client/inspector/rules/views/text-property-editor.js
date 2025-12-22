@@ -567,7 +567,7 @@ class TextPropertyEditor {
       val += " !" + this.prop.priority;
     }
 
-    const propDirty = store.userProperties.contains(this.rule.domRule, name);
+    const propDirty = this.prop.isPropertyChanged;
 
     if (propDirty) {
       this.element.setAttribute("dirty", "");
@@ -639,7 +639,6 @@ class TextPropertyEditor {
     this.valueSpan.appendChild(frag);
     if (
       this.valueSpan.textProperty?.name === "grid-template-areas" &&
-      this.isValid() &&
       (this.valueSpan.innerText.includes(`"`) ||
         this.valueSpan.innerText.includes(`'`))
     ) {
@@ -1443,29 +1442,14 @@ class TextPropertyEditor {
    *        The move focus direction number.
    */
   remove(direction) {
-    if (this.#colorSwatchSpans && this.#colorSwatchSpans.length) {
-      for (const span of this.#colorSwatchSpans) {
-        this.ruleView.tooltips.getTooltip("colorPicker").removeSwatch(span);
-      }
-    }
-
-    if (this.angleSwatchSpans && this.angleSwatchSpans.length) {
-      for (const span of this.angleSwatchSpans) {
-        span.removeEventListener("unit-change", this.#onSwatchCommit);
-      }
-    }
-
-    if (this.abortController) {
-      this.abortController.abort();
-      this.abortController = null;
-    }
-
-    this.element.remove();
     this.ruleEditor.rule.editClosestTextProperty(this.prop, direction);
+
+    this.prop.remove();
     this.nameSpan.textProperty = null;
     this.valueSpan.textProperty = null;
-    this.#elementsWithPendingClicks.delete(this.valueSpan);
-    this.prop.remove();
+    this.element.remove();
+
+    this.destroy();
   }
 
   /**
@@ -1913,7 +1897,7 @@ class TextPropertyEditor {
       .map(line => line.split(" "))
       .map((line, i, lines) =>
         line.map((col, j) =>
-          col.padEnd(Math.max(...lines.map(l => l[j].length)), " ")
+          col.padEnd(Math.max(...lines.map(l => l[j]?.length || 0)), " ")
         )
       )
       .map(
@@ -1921,6 +1905,42 @@ class TextPropertyEditor {
           `\n${quoteSymbolsUsed[i]}` + line.join(" ") + quoteSymbolsUsed[i]
       )
       .join(" ");
+  }
+
+  destroy() {
+    if (this.#colorSwatchSpans && this.#colorSwatchSpans.length) {
+      for (const span of this.#colorSwatchSpans) {
+        this.ruleView.tooltips.getTooltip("colorPicker").removeSwatch(span);
+      }
+    }
+
+    if (this.angleSwatchSpans && this.angleSwatchSpans.length) {
+      for (const span of this.angleSwatchSpans) {
+        span.removeEventListener("unit-change", this.#onSwatchCommit);
+        this.ruleView.tooltips.getTooltip("filterEditor").removeSwatch(span);
+      }
+    }
+
+    if (this.#bezierSwatchSpans && this.#bezierSwatchSpans.length) {
+      for (const span of this.#bezierSwatchSpans) {
+        this.ruleView.tooltips.getTooltip("cubicBezier").removeSwatch(span);
+      }
+    }
+
+    if (this.#linearEasingSwatchSpans && this.#linearEasingSwatchSpans.length) {
+      for (const span of this.#linearEasingSwatchSpans) {
+        this.ruleView.tooltips
+          .getTooltip("linearEaseFunction")
+          .removeSwatch(span);
+      }
+    }
+
+    if (this.abortController) {
+      this.abortController.abort();
+      this.abortController = null;
+    }
+
+    this.#elementsWithPendingClicks.delete(this.valueSpan);
   }
 }
 

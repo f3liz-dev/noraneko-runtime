@@ -28,6 +28,7 @@
 #include "js/MemoryMetrics.h"
 #include "js/SourceText.h"
 #include "js/friend/ErrorMessages.h"  // JSMSG_OUT_OF_MEMORY
+#include "js/friend/MicroTask.h"
 #include "mozilla/AntiTrackingUtils.h"
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/CycleCollectedJSContext.h"
@@ -39,6 +40,7 @@
 #include "mozilla/ScopeExit.h"
 #include "mozilla/StaticPrefs_browser.h"
 #include "mozilla/StaticPrefs_dom.h"
+#include "mozilla/StaticPrefs_javascript.h"
 #include "mozilla/StorageAccess.h"
 #include "mozilla/StoragePrincipalHelper.h"
 #include "mozilla/ThreadEventQueue.h"
@@ -1728,7 +1730,7 @@ void WorkerPrivate::CreateRemoteDebuggerEndpoints() {
                               !mDebuggerParentEp.IsValid() &&
                               !mDebuggerChildEp.IsValid());
 
-  Unused << NS_WARN_IF(NS_FAILED(PRemoteWorkerDebugger::CreateEndpoints(
+  (void)NS_WARN_IF(NS_FAILED(PRemoteWorkerDebugger::CreateEndpoints(
       &mDebuggerParentEp, &mDebuggerChildEp)));
 }
 
@@ -1756,7 +1758,7 @@ void WorkerPrivate::SetIsRemoteDebuggerRegistered(const bool& aRegistered) {
       auto pending = std::move(mDelayedDebuggeeRunnables);
       for (uint32_t i = 0; i < pending.Length(); i++) {
         RefPtr<WorkerRunnable> runnable = std::move(pending[i]);
-        Unused << NS_WARN_IF(
+        (void)NS_WARN_IF(
             NS_FAILED(DispatchLockHeld(runnable.forget(), nullptr, lock)));
       }
       MOZ_RELEASE_ASSERT(mDelayedDebuggeeRunnables.IsEmpty());
@@ -1818,7 +1820,7 @@ void WorkerPrivate::SetIsRemoteDebuggerReady(const bool& aReady) {
     auto pending = std::move(mDelayedDebuggeeRunnables);
     for (uint32_t i = 0; i < pending.Length(); i++) {
       RefPtr<WorkerRunnable> runnable = std::move(pending[i]);
-      Unused << NS_WARN_IF(
+      (void)NS_WARN_IF(
           NS_FAILED(DispatchLockHeld(runnable.forget(), nullptr, lock)));
     }
     MOZ_RELEASE_ASSERT(mDelayedDebuggeeRunnables.IsEmpty());
@@ -1879,7 +1881,7 @@ void WorkerPrivate::EnableRemoteDebugger() {
     }
     // Warning the case if the Worker shutdown before remote debugger
     // registration down.
-    Unused << NS_WARN_IF(!mRemoteDebuggerRegistered);
+    (void)NS_WARN_IF(!mRemoteDebuggerRegistered);
   }
 }
 
@@ -1933,6 +1935,7 @@ nsresult WorkerPrivate::DispatchControlRunnable(
   LOG(WorkerLog(), ("WorkerPrivate::DispatchControlRunnable [%p] runnable %p",
                     this, runnable.get()));
 
+  JSContext* cx = nullptr;
   {
     MutexAutoLock lock(mMutex);
 
@@ -1940,15 +1943,27 @@ nsresult WorkerPrivate::DispatchControlRunnable(
       return NS_ERROR_UNEXPECTED;
     }
 
+    // Unfortunately we can not distinguish if we are on WorkerThread or not.
+    // mThread is set in WorkerPrivate::SetWorkerPrivateInWorkerThread(), but
+    // ControlRunnable can be dispatching before setting mThread.
+    MOZ_ASSERT(mDispatchingControlRunnables < UINT32_MAX);
+    mDispatchingControlRunnables++;
+
     // Transfer ownership to the control queue.
     mControlQueue.Push(runnable.forget().take());
+    cx = mJSContext;
+    MOZ_ASSERT_IF(cx, mThread);
+  }
 
-    if (JSContext* cx = mJSContext) {
-      MOZ_ASSERT(mThread);
-      JS_RequestInterruptCallback(cx);
+  if (cx) {
+    JS_RequestInterruptCallback(cx);
+  }
+
+  {
+    MutexAutoLock lock(mMutex);
+    if (!--mDispatchingControlRunnables) {
+      mCondVar.Notify();
     }
-
-    mCondVar.Notify();
   }
 
   return NS_OK;
@@ -2184,7 +2199,7 @@ bool WorkerPrivate::Thaw(const nsPIDOMWindowInner* aWindow) {
       // This can only fail if the ThrottledEventQueue cannot dispatch its
       // executor to the main thread, in which case the main thread was never
       // going to draw runnables from it anyway, so the failure doesn't matter.
-      Unused << mMainThreadDebuggeeEventTarget->SetIsPaused(
+      (void)mMainThreadDebuggeeEventTarget->SetIsPaused(
           IsParentWindowPaused() && !isCanceling);
     }
 
@@ -2246,8 +2261,7 @@ void WorkerPrivate::ParentWindowResumed() {
   // This can only fail if the ThrottledEventQueue cannot dispatch its executor
   // to the main thread, in which case the main thread was never going to draw
   // runnables from it anyway, so the failure doesn't matter.
-  Unused << mMainThreadDebuggeeEventTarget->SetIsPaused(IsFrozen() &&
-                                                        !isCanceling);
+  (void)mMainThreadDebuggeeEventTarget->SetIsPaused(IsFrozen() && !isCanceling);
 }
 
 void WorkerPrivate::PropagateStorageAccessPermissionGranted() {
@@ -2263,7 +2277,7 @@ void WorkerPrivate::PropagateStorageAccessPermissionGranted() {
 
   RefPtr<PropagateStorageAccessPermissionGrantedRunnable> runnable =
       new PropagateStorageAccessPermissionGrantedRunnable(this);
-  Unused << NS_WARN_IF(!runnable->Dispatch(this));
+  (void)NS_WARN_IF(!runnable->Dispatch(this));
 }
 
 void WorkerPrivate::NotifyStorageKeyUsed() {
@@ -2468,7 +2482,7 @@ void WorkerPrivate::MemoryPressure() {
   AssertIsOnParentThread();
 
   RefPtr<MemoryPressureRunnable> runnable = new MemoryPressureRunnable(this);
-  Unused << NS_WARN_IF(!runnable->Dispatch(this));
+  (void)NS_WARN_IF(!runnable->Dispatch(this));
 }
 
 RefPtr<WorkerPrivate::JSMemoryUsagePromise> WorkerPrivate::GetJSMemoryUsage() {
@@ -2774,6 +2788,7 @@ WorkerPrivate::WorkerPrivate(
       mTerminationCallback(std::move(aTerminationCallback)),
       mLoadInfo(std::move(aLoadInfo)),
       mDebugger(nullptr),
+      mDispatchingControlRunnables(0),
       mJSContext(nullptr),
       mPRThread(nullptr),
       mWorkerControlEventTarget(new WorkerEventTarget(
@@ -3343,7 +3358,7 @@ nsresult WorkerPrivate::GetLoadInfo(
     // Make sure that the IndexedDatabaseManager is set up
     IndexedDatabaseManager* idm = IndexedDatabaseManager::GetOrCreate();
     if (idm) {
-      Unused << NS_WARN_IF(NS_FAILED(idm->EnsureLocale()));
+      (void)NS_WARN_IF(NS_FAILED(idm->EnsureLocale()));
     } else {
       NS_WARNING("Failed to get IndexedDatabaseManager!");
     }
@@ -3899,8 +3914,11 @@ void WorkerPrivate::DoRunLoop(JSContext* aCx) {
         nsCOMPtr<nsITimer> timer;
         {
           MutexAutoLock lock(mMutex);
-
           mStatus = Dead;
+          // Wait for the dispatching ControlRunnables complete.
+          while (mDispatchingControlRunnables) {
+            mCondVar.Wait();
+          }
           mJSContext = nullptr;
           mDebuggerInterruptTimer.swap(timer);
         }
@@ -4033,7 +4051,7 @@ void WorkerPrivate::OnProcessNextEvent() {
   // loop, and in that case we must ensure that we continue to process control
   // runnables here.
   if (recursionDepth > 1 && mSyncLoopStack.Length() < recursionDepth - 1) {
-    Unused << ProcessAllControlRunnables();
+    (void)ProcessAllControlRunnables();
     // There's no running JS, and no state to revalidate, so we can ignore the
     // return value.
   }
@@ -4493,7 +4511,7 @@ void WorkerPrivate::ScheduleDeletion(WorkerRanOrNot aRanOrNot) {
     MOZ_ASSERT(currentThread);
     // On the worker thread WorkerRunnable will refuse to run if not nested
     // on top of a WorkerThreadPrimaryRunnable.
-    Unused << NS_WARN_IF(NS_HasPendingEvents(currentThread));
+    (void)NS_WARN_IF(NS_HasPendingEvents(currentThread));
   }
 #endif
 
@@ -4993,43 +5011,31 @@ nsresult WorkerPrivate::RegisterShutdownTask(nsITargetShutdownTask* aTask) {
   NS_ENSURE_ARG(aTask);
 
   MutexAutoLock lock(mMutex);
-
   // If we've already started running shutdown tasks, don't allow registering
   // new ones.
   if (mShutdownTasksRun) {
     return NS_ERROR_UNEXPECTED;
   }
-
-  MOZ_ASSERT(!mShutdownTasks.Contains(aTask));
-  mShutdownTasks.AppendElement(aTask);
-  return NS_OK;
+  return mShutdownTasks.AddTask(aTask);
 }
 
 nsresult WorkerPrivate::UnregisterShutdownTask(nsITargetShutdownTask* aTask) {
   NS_ENSURE_ARG(aTask);
 
   MutexAutoLock lock(mMutex);
-
-  // We've already started running shutdown tasks, so can't unregister them
-  // anymore.
-  if (mShutdownTasksRun) {
-    return NS_ERROR_UNEXPECTED;
-  }
-
-  return mShutdownTasks.RemoveElement(aTask) ? NS_OK : NS_ERROR_UNEXPECTED;
+  return mShutdownTasks.RemoveTask(aTask);
 }
 
 void WorkerPrivate::RunShutdownTasks() {
-  nsTArray<nsCOMPtr<nsITargetShutdownTask>> shutdownTasks;
+  TargetShutdownTaskSet::TasksArray shutdownTasks;
 
   {
     MutexAutoLock lock(mMutex);
-    shutdownTasks = std::move(mShutdownTasks);
-    mShutdownTasks.Clear();
     mShutdownTasksRun = true;
+    shutdownTasks = mShutdownTasks.Extract();
   }
 
-  for (auto& task : shutdownTasks) {
+  for (const auto& task : shutdownTasks) {
     task->TargetShutdown();
   }
   mWorkerHybridEventTarget->ForgetWorkerPrivate(this);
@@ -5600,12 +5606,24 @@ void WorkerPrivate::EnterDebuggerEventLoop() {
     {
       MutexAutoLock lock(mMutex);
 
-      std::deque<RefPtr<MicroTaskRunnable>>& debuggerMtQueue =
-          ccjscx->GetDebuggerMicroTaskQueue();
-      while (mControlQueue.IsEmpty() &&
-             !(debuggerRunnablesPending = !mDebuggerQueue.IsEmpty()) &&
-             debuggerMtQueue.empty()) {
-        WaitForWorkerEvents();
+      if (StaticPrefs::javascript_options_use_js_microtask_queue()) {
+        // When JS microtask queue is enabled, check for debugger microtasks
+        // directly from the JS engine
+        while (mControlQueue.IsEmpty() &&
+               !(debuggerRunnablesPending = !mDebuggerQueue.IsEmpty()) &&
+               !JS::HasDebuggerMicroTasks(cx)) {
+          WaitForWorkerEvents();
+        }
+      } else {
+        // Legacy path: check the debugger microtask queue in
+        // CycleCollectedJSContext
+        std::deque<RefPtr<MicroTaskRunnable>>& debuggerMtQueue =
+            ccjscx->GetDebuggerMicroTaskQueue();
+        while (mControlQueue.IsEmpty() &&
+               !(debuggerRunnablesPending = !mDebuggerQueue.IsEmpty()) &&
+               debuggerMtQueue.empty()) {
+          WaitForWorkerEvents();
+        }
       }
 
       ProcessAllControlRunnablesLocked();
@@ -5655,7 +5673,7 @@ void WorkerPrivate::PostMessageToDebugger(const nsAString& aMessage) {
     remoteDebugger = mRemoteDebugger;
   }
   MOZ_ASSERT_DEBUG_OR_FUZZING(remoteDebugger);
-  Unused << remoteDebugger->SendPostMessageToDebugger(nsAutoString(aMessage));
+  (void)remoteDebugger->SendPostMessageToDebugger(nsAutoString(aMessage));
 }
 
 void WorkerPrivate::SetDebuggerImmediate(dom::Function& aHandler,
@@ -5683,9 +5701,8 @@ void WorkerPrivate::ReportErrorToDebugger(const nsACString& aFilename,
     remoteDebugger = mRemoteDebugger;
   }
   MOZ_ASSERT_DEBUG_OR_FUZZING(remoteDebugger);
-  Unused << remoteDebugger->SendReportErrorToDebugger(
-      RemoteWorkerDebuggerErrorInfo(nsAutoCString(aFilename), aLineno,
-                                    nsAutoString(aMessage)));
+  (void)remoteDebugger->SendReportErrorToDebugger(RemoteWorkerDebuggerErrorInfo(
+      nsAutoCString(aFilename), aLineno, nsAutoString(aMessage)));
 }
 
 void WorkerPrivate::UpdateWindowIDToDebugger(const uint64_t& aWindowID,
@@ -5704,9 +5721,9 @@ void WorkerPrivate::UpdateWindowIDToDebugger(const uint64_t& aWindowID,
   }
   MOZ_ASSERT_DEBUG_OR_FUZZING(remoteDebugger);
   if (aIsAdd) {
-    Unused << remoteDebugger->SendAddWindowID(aWindowID);
+    (void)remoteDebugger->SendAddWindowID(aWindowID);
   } else {
-    Unused << remoteDebugger->SendRemoveWindowID(aWindowID);
+    (void)remoteDebugger->SendRemoveWindowID(aWindowID);
   }
 }
 

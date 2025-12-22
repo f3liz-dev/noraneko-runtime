@@ -131,7 +131,7 @@ static const std::string FormatEGLError(EGLint err) {
   }
 }
 
-MOZ_RUNINIT static RefPtr<GLContext> sSnapshotContext;
+MOZ_CONSTINIT static RefPtr<GLContext> sSnapshotContext;
 static StaticMutex sSnapshotContextMutex MOZ_UNANNOTATED;
 MOZ_RUNINIT static Atomic<int> gNewSurfaceUID(getpid());
 /* Memory reporter stuff */
@@ -554,7 +554,7 @@ void DMABufSurface::FenceWait() {
   }
 
   // syncFd is owned by GLFence so clear local reference to avoid double.
-  Unused << syncFd.release();
+  (void)syncFd.release();
 
   egl->fClientWaitSync(sync, 0, LOCAL_EGL_FOREVER);
   egl->fDestroySync(sync);
@@ -1095,7 +1095,7 @@ bool DMABufSurfaceRGBA::Serialize(
       mSurfaceType, mFOURCCFormat, modifiers, mGbmBufferFlags, fds, width,
       height, width, height, tmp, strides, offsets, GetYUVColorSpace(),
       mColorRange, mozilla::gfx::ColorSpace2::UNKNOWN,
-      mozilla::gfx::TransferFunction::Default, fenceFDs, mUID,
+      mozilla::gfx::TransferFunction::Default, 0, fenceFDs, mUID,
       mCanRecycle ? getpid() : 0, refCountFDs,
       /* semaphoreFd */ nullptr);
   return true;
@@ -1934,6 +1934,7 @@ bool DMABufSurfaceYUV::ImportSurfaceDescriptor(
   mColorRange = aDesc.colorRange();
   mColorPrimaries = aDesc.colorPrimaries();
   mTransferFunction = aDesc.transferFunction();
+  mWPChromaLocation = aDesc.chromaLocation();
   mGbmBufferFlags = aDesc.flags();
   mUID = aDesc.uid();
   mPID = aDesc.pid();
@@ -2009,7 +2010,8 @@ bool DMABufSurfaceYUV::Serialize(
       mSurfaceType, mFOURCCFormat, modifiers, mGbmBufferFlags, fds, width,
       height, widthBytes, heightBytes, format, strides, offsets,
       GetYUVColorSpace(), mColorRange, mColorPrimaries, mTransferFunction,
-      fenceFDs, mUID, mCanRecycle ? getpid() : 0, refCountFDs,
+      mWPChromaLocation, fenceFDs, mUID, mCanRecycle ? getpid() : 0,
+      refCountFDs,
       /* semaphoreFd */ nullptr);
   return true;
 }

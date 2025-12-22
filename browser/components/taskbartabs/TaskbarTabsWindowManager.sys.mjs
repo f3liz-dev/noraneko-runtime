@@ -16,8 +16,8 @@ ChromeUtils.defineESModuleGetters(lazy, {
 });
 
 XPCOMUtils.defineLazyServiceGetters(lazy, {
-  WindowsUIUtils: ["@mozilla.org/windows-ui-utils;1", "nsIWindowsUIUtils"],
-  WinTaskbar: ["@mozilla.org/windows-taskbar;1", "nsIWinTaskbar"],
+  WindowsUIUtils: ["@mozilla.org/windows-ui-utils;1", Ci.nsIWindowsUIUtils],
+  WinTaskbar: ["@mozilla.org/windows-taskbar;1", Ci.nsIWinTaskbar],
 });
 
 ChromeUtils.defineLazyGetter(lazy, "logConsole", () => {
@@ -46,6 +46,8 @@ export class TaskbarTabsWindowManager {
    */
   async replaceTabWithWindow(aTaskbarTab, aTab) {
     let originWindow = aTab.ownerGlobal;
+
+    Glean.webApp.moveToTaskbar.record({});
 
     // Save the parent window of this tab, so we can revert back if needed.
     let tabId = getTabId(aTab);

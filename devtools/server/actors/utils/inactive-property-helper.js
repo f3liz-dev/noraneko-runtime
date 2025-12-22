@@ -11,11 +11,6 @@ loader.lazyRequireGetter(
   true
 );
 
-const INACTIVE_CSS_ENABLED = Services.prefs.getBoolPref(
-  "devtools.inspector.inactive.css.enabled",
-  false
-);
-
 const TEXT_WRAP_BALANCE_LIMIT = Services.prefs.getIntPref(
   "layout.css.text-wrap-balance.limit",
   10
@@ -393,6 +388,22 @@ class InactivePropertyHelper {
         when: () => !this.isBlockContainer(),
         fixId: "inactive-css-not-block-container-fix",
         msgId: "inactive-css-not-block-container",
+      },
+      // Block, flex, and grid container properties used on non-block, non-flex or non-grid container elements.
+      {
+        invalidProperties: [
+          "overflow",
+          "overflow-block",
+          "overflow-inline",
+          "overflow-x",
+          "overflow-y",
+        ],
+        when: () =>
+          !this.isBlockContainer() &&
+          !this.flexContainer &&
+          !this.gridContainer,
+        fixId: "inactive-css-not-block-flex-grid-container-fix",
+        msgId: "inactive-css-not-block-flex-grid-container",
       },
       // shape-image-threshold, shape-margin, shape-outside properties used on non-floated elements.
       {
@@ -816,11 +827,6 @@ class InactivePropertyHelper {
    *         the default MDN property one.
    */
   getInactiveCssDataForProperty(el, elStyle, cssRule, property) {
-    // Assume the property is used when the Inactive CSS pref is not enabled
-    if (!INACTIVE_CSS_ENABLED) {
-      return null;
-    }
-
     let fixId = "";
     let msgId = "";
     let learnMoreURL = null;

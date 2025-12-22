@@ -51,7 +51,10 @@ export default class SidebarMain extends MozLitElement {
 
   get fluentStrings() {
     if (!this._fluentStrings) {
-      this._fluentStrings = new Localization(["browser/sidebar.ftl"], true);
+      this._fluentStrings = new Localization(
+        ["browser/sidebar.ftl", "preview/genai.ftl"],
+        true
+      );
     }
     return this._fluentStrings;
   }
@@ -396,7 +399,7 @@ export default class SidebarMain extends MozLitElement {
     this._manageExtensionMenuItem.hidden = true;
     this._removeExtensionMenuItem.hidden = true;
     this._reportExtensionMenuItem.hidden = true;
-    this._unpinExtensionMenuItem.hidden = false;
+    this._unpinExtensionMenuItem.hidden = true;
     this._customizeSidebarMenuItem.hidden = false;
     this._enableVerticalTabsMenuItem.hidden = false;
     this._hideSidebarMenuItem.hidden = false;
@@ -536,7 +539,10 @@ export default class SidebarMain extends MozLitElement {
             e.target.id
           )
         ) {
-          this.onSidebarPopupShowing(e);
+          this.onSidebarPopupShowing(e).then(() => {
+            // populating the context menu can be async, so dispatch an event when ready
+            this.dispatchEvent(new CustomEvent("sidebar-contextmenu-ready"));
+          });
         }
         break;
       case "popuphidden":

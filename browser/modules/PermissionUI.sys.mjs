@@ -78,13 +78,13 @@ XPCOMUtils.defineLazyServiceGetter(
   lazy,
   "IDNService",
   "@mozilla.org/network/idn-service;1",
-  "nsIIDNService"
+  Ci.nsIIDNService
 );
 XPCOMUtils.defineLazyServiceGetter(
   lazy,
   "ContentPrefService2",
   "@mozilla.org/content-pref/service;1",
-  "nsIContentPrefService2"
+  Ci.nsIContentPrefService2
 );
 
 ChromeUtils.defineLazyGetter(lazy, "gBrandBundle", function () {
@@ -97,6 +97,10 @@ ChromeUtils.defineLazyGetter(lazy, "gBrowserBundle", function () {
   return Services.strings.createBundle(
     "chrome://browser/locale/browser.properties"
   );
+});
+
+ChromeUtils.defineLazyGetter(lazy, "gFluentStrings", function () {
+  return new Localization(["browser/permissions.ftl"], true /* aSync */);
 });
 
 import { SITEPERMS_ADDON_PROVIDER_PREF } from "resource://gre/modules/addons/siteperms-addon-utils.sys.mjs";
@@ -1065,9 +1069,10 @@ class LocalHostPermissionPrompt extends PermissionPromptForRequest {
   }
 
   get message() {
-    return lazy.gBrowserBundle.formatStringFromName("localhost.allowWithSite", [
-      "<>",
-    ]);
+    return lazy.gBrowserBundle.formatStringFromName(
+      "localhost.allowWithSite2",
+      ["<>"]
+    );
   }
 
   get promptActions() {
@@ -1290,7 +1295,7 @@ class LocalNetworkPermissionPrompt extends PermissionPromptForRequest {
 
   get message() {
     return lazy.gBrowserBundle.formatStringFromName(
-      "localNetwork.allowWithSite",
+      "localNetwork.allowWithSite2",
       ["<>"]
     );
   }
@@ -1339,11 +1344,25 @@ class PersistentStoragePermissionPrompt extends PermissionPromptForRequest {
     let learnMoreURL =
       Services.urlFormatter.formatURLPref("app.support.baseURL") +
       "storage-permissions";
-    return {
+    let options = {
       learnMoreURL,
       displayURI: false,
       name: this.getPrincipalName(),
     };
+
+    options.checkbox = {
+      show: !lazy.PrivateBrowsingUtils.isWindowPrivate(
+        this.browser.ownerGlobal
+      ),
+    };
+
+    if (options.checkbox.show) {
+      options.checkbox.label = lazy.gFluentStrings.formatValueSync(
+        "perm-persistent-storage-remember"
+      );
+    }
+
+    return options;
   }
 
   get notificationID() {

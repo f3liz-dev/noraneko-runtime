@@ -9,7 +9,7 @@
 import {
   UrlbarProvider,
   UrlbarUtils,
-} from "resource:///modules/UrlbarUtils.sys.mjs";
+} from "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs";
 
 /**
  * @typedef {import("UrlbarProvidersManager.sys.mjs").Query} Query
@@ -20,9 +20,11 @@ const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   AboutPagesUtils: "resource://gre/modules/AboutPagesUtils.sys.mjs",
   PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
-  UrlbarPrefs: "resource:///modules/UrlbarPrefs.sys.mjs",
-  UrlbarResult: "resource:///modules/UrlbarResult.sys.mjs",
-  UrlbarTokenizer: "resource:///modules/UrlbarTokenizer.sys.mjs",
+  UrlbarPrefs: "moz-src:///browser/components/urlbar/UrlbarPrefs.sys.mjs",
+  UrlbarResult: "moz-src:///browser/components/urlbar/UrlbarResult.sys.mjs",
+  UrlbarTokenizer:
+    "moz-src:///browser/components/urlbar/UrlbarTokenizer.sys.mjs",
+  UrlUtils: "resource://gre/modules/UrlUtils.sys.mjs",
 });
 
 ChromeUtils.defineLazyGetter(lazy, "pageFrecencyThreshold", () => {
@@ -295,7 +297,9 @@ const QUERY_URL_PREFIX_BOOKMARK = urlQuery(
  * @typedef AutofillData
  *
  * @property {UrlbarResult} result
+ *   The result entry.
  * @property {Query} instance
+ *   The query instance.
  */
 
 /**
@@ -381,7 +385,7 @@ export class UrlbarProviderAutofill extends UrlbarProvider {
     // This may confuse completeDefaultIndex cause the AUTOCOMPLETE_MATCH
     // tokenizer ends up trimming the search string and returning a value
     // that doesn't match it, or is even shorter.
-    if (lazy.UrlbarTokenizer.REGEXP_SPACES.test(queryContext.searchString)) {
+    if (lazy.UrlUtils.REGEXP_SPACES.test(queryContext.searchString)) {
       return false;
     }
 
@@ -409,10 +413,9 @@ export class UrlbarProviderAutofill extends UrlbarProvider {
   /**
    * Starts querying.
    *
-   * @param {object} queryContext The query context object
-   * @param {Function} addCallback Callback invoked by the provider to add a new
-   *        result.
-   * @returns {Promise} resolved when the query stops.
+   * @param {UrlbarQueryContext} queryContext
+   * @param {(provider: UrlbarProvider, result: UrlbarResult) => void} addCallback
+   *   Callback invoked by the provider to add a new result.
    */
   async startQuery(queryContext, addCallback) {
     // Check if the query was cancelled while the autofill result was being
@@ -426,7 +429,6 @@ export class UrlbarProviderAutofill extends UrlbarProvider {
       return;
     }
 
-    this._autofillData.result.heuristic = true;
     addCallback(this, this._autofillData.result);
     this._autofillData = null;
   }
@@ -880,23 +882,22 @@ export class UrlbarProviderAutofill extends UrlbarProvider {
       payload.fallbackTitle = [fallbackTitle, UrlbarUtils.HIGHLIGHT.TYPED];
     }
 
-    let result = new lazy.UrlbarResult(
-      UrlbarUtils.RESULT_TYPE.URL,
-      UrlbarUtils.RESULT_SOURCE.HISTORY,
+    return new lazy.UrlbarResult({
+      type: UrlbarUtils.RESULT_TYPE.URL,
+      source: UrlbarUtils.RESULT_SOURCE.HISTORY,
+      heuristic: true,
+      autofill: {
+        adaptiveHistoryInput,
+        value: autofilledValue,
+        selectionStart: queryContext.searchString.length,
+        selectionEnd: autofilledValue.length,
+        type: autofilledType,
+      },
       ...lazy.UrlbarResult.payloadAndSimpleHighlights(
         queryContext.tokens,
         payload
-      )
-    );
-
-    result.autofill = {
-      adaptiveHistoryInput,
-      value: autofilledValue,
-      selectionStart: queryContext.searchString.length,
-      selectionEnd: autofilledValue.length,
-      type: autofilledType,
-    };
-    return result;
+      ),
+    });
   }
 
   async _getAutofillResult(queryContext) {
@@ -929,25 +930,25 @@ export class UrlbarProviderAutofill extends UrlbarProvider {
           trimEmptyQuery: true,
           trimSlash: !this._searchString.includes("/"),
         });
-        let result = new lazy.UrlbarResult(
-          UrlbarUtils.RESULT_TYPE.URL,
-          UrlbarUtils.RESULT_SOURCE.HISTORY,
+        let autofilledValue =
+          queryContext.searchString +
+          aboutUrl.substring(queryContext.searchString.length);
+        return new lazy.UrlbarResult({
+          type: UrlbarUtils.RESULT_TYPE.URL,
+          source: UrlbarUtils.RESULT_SOURCE.HISTORY,
+          heuristic: true,
+          autofill: {
+            type: "about",
+            value: autofilledValue,
+            selectionStart: queryContext.searchString.length,
+            selectionEnd: autofilledValue.length,
+          },
           ...lazy.UrlbarResult.payloadAndSimpleHighlights(queryContext.tokens, {
             title: [trimmedUrl, UrlbarUtils.HIGHLIGHT.TYPED],
             url: [aboutUrl, UrlbarUtils.HIGHLIGHT.TYPED],
             icon: UrlbarUtils.getIconForUrl(aboutUrl),
-          })
-        );
-        let autofilledValue =
-          queryContext.searchString +
-          aboutUrl.substring(queryContext.searchString.length);
-        result.autofill = {
-          type: "about",
-          value: autofilledValue,
-          selectionStart: queryContext.searchString.length,
-          selectionEnd: autofilledValue.length,
-        };
-        return result;
+          }),
+        });
       }
     }
     return null;
@@ -988,8 +989,9 @@ export class UrlbarProviderAutofill extends UrlbarProvider {
     // at the end, we still treat it as an URL.
     let query, params;
     if (
-      lazy.UrlbarTokenizer.looksLikeOrigin(this._searchString, {
+      lazy.UrlUtils.looksLikeOrigin(this._searchString, {
         ignoreKnownDomains: true,
+        allowPartialNumericalTLDs: true,
       })
     ) {
       [query, params] = this._getOriginQuery(queryContext);

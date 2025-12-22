@@ -8,6 +8,9 @@ import { html } from "chrome://global/content/vendor/lit.all.mjs";
 // eslint-disable-next-line import/no-unassigned-import
 import "chrome://global/content/elements/moz-message-bar.mjs";
 
+/**
+ * A custom element that handles the message bar for IP Protection.
+ */
 export default class IPProtectionMessageBarElement extends MozLitElement {
   #MESSAGE_TYPE_MAP = new Map([
     ["generic-error", () => this.genericErrorTemplate()],
@@ -72,13 +75,7 @@ export default class IPProtectionMessageBarElement extends MozLitElement {
       return null;
     }
 
-    return html`
-      <link
-        rel="stylesheet"
-        href="chrome://browser/content/ipprotection/ipprotection-header.css"
-      />
-      ${messageBarTemplate}
-    `;
+    return html` ${messageBarTemplate} `;
   }
 }
 

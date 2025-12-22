@@ -7,13 +7,13 @@
 #ifndef _MOZILLA_GFX_DRAWTARGETWEBGL_H
 #define _MOZILLA_GFX_DRAWTARGETWEBGL_H
 
+#include <deque>
 #include <memory>
 #include <vector>
 
 #include "GLTypes.h"
 #include "mozilla/Array.h"
 #include "mozilla/LinkedList.h"
-#include "mozilla/ThreadLocal.h"
 #include "mozilla/WeakPtr.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/gfx/PathSkia.h"
@@ -63,7 +63,9 @@ class SharedTextureHandle;
 class StandaloneTexture;
 class GlyphCache;
 class PathCache;
+class PathCacheEntry;
 struct PathVertexRange;
+enum class AAStrokeMode;
 
 // SharedContextWebgl stores most of the actual WebGL state that may be used by
 // any number of DrawTargetWebgl's that use it. Foremost, it holds the actual
@@ -173,6 +175,16 @@ class SharedContextWebgl : public mozilla::RefCounted<SharedContextWebgl>,
   Maybe<uint32_t> mBlurProgramSampler;
   Maybe<uint32_t> mBlurProgramClipMask;
   Maybe<uint32_t> mBlurProgramClipBounds;
+  RefPtr<WebGLProgram> mFilterProgram;
+  Maybe<uint32_t> mFilterProgramViewport;
+  Maybe<uint32_t> mFilterProgramTransform;
+  Maybe<uint32_t> mFilterProgramTexMatrix;
+  Maybe<uint32_t> mFilterProgramTexBounds;
+  Maybe<uint32_t> mFilterProgramColorMatrix;
+  Maybe<uint32_t> mFilterProgramColorOffset;
+  Maybe<uint32_t> mFilterProgramSampler;
+  Maybe<uint32_t> mFilterProgramClipMask;
+  Maybe<uint32_t> mFilterProgramClipBounds;
 
   struct SolidProgramUniformState {
     Maybe<Array<float, 2>> mViewport;
@@ -204,6 +216,16 @@ class SharedContextWebgl : public mozilla::RefCounted<SharedContextWebgl>,
     Maybe<Array<float, 1>> mSwizzle;
     Maybe<Array<float, 4>> mClipBounds;
   } mBlurProgramUniformState;
+
+  struct FilterProgramUniformState {
+    Maybe<Array<float, 2>> mViewport;
+    Maybe<Array<float, 4>> mTransform;
+    Maybe<Array<float, 4>> mTexMatrix;
+    Maybe<Array<float, 4>> mTexBounds;
+    Maybe<Array<float, 16>> mColorMatrix;
+    Maybe<Array<float, 4>> mColorOffset;
+    Maybe<Array<float, 4>> mClipBounds;
+  } mFilterProgramUniformState;
 
   // Scratch framebuffer used to wrap textures for miscellaneous utility ops.
   RefPtr<WebGLFramebuffer> mScratchFramebuffer;
@@ -266,6 +288,11 @@ class SharedContextWebgl : public mozilla::RefCounted<SharedContextWebgl>,
   // Cached unit circle path
   RefPtr<Path> mUnitCirclePath;
 
+  // The total bytes used by pending snapshot PBOs.
+  size_t mUsedSnapshotPBOMemory = 0;
+  // The owning surfaces initiating snapshot PBO readbacks.
+  std::deque<ThreadSafeWeakPtr<SourceSurfaceWebgl>> mSnapshotPBOs;
+
   bool Initialize();
   bool CreateShaders();
   void ResetPathVertexBuffer();
@@ -319,7 +346,8 @@ class SharedContextWebgl : public mozilla::RefCounted<SharedContextWebgl>,
   void InitTexParameters(WebGLTexture* aTex, bool aFilter = true);
 
   bool ReadInto(uint8_t* aDstData, int32_t aDstStride, SurfaceFormat aFormat,
-                const IntRect& aBounds, TextureHandle* aHandle = nullptr);
+                const IntRect& aBounds, TextureHandle* aHandle = nullptr,
+                const RefPtr<WebGLBuffer>& aBuffer = nullptr);
   already_AddRefed<DataSourceSurface> ReadSnapshot(
       TextureHandle* aHandle = nullptr);
   already_AddRefed<TextureHandle> WrapSnapshot(const IntSize& aSize,
@@ -327,6 +355,15 @@ class SharedContextWebgl : public mozilla::RefCounted<SharedContextWebgl>,
                                                RefPtr<WebGLTexture> aTex);
   already_AddRefed<TextureHandle> CopySnapshot(
       const IntRect& aRect, TextureHandle* aHandle = nullptr);
+
+  already_AddRefed<WebGLBuffer> ReadSnapshotIntoPBO(
+      SourceSurfaceWebgl* aOwner, TextureHandle* aHandle = nullptr);
+  already_AddRefed<DataSourceSurface> ReadSnapshotFromPBO(
+      const RefPtr<WebGLBuffer>& aBuffer, SurfaceFormat aFormat,
+      const IntSize& aSize);
+  void RemoveSnapshotPBO(SourceSurfaceWebgl* aOwner,
+                         already_AddRefed<WebGLBuffer> aBuffer);
+  void ClearSnapshotPBOs(size_t aMaxMemory = 0);
 
   already_AddRefed<WebGLTexture> GetCompatibleSnapshot(
       SourceSurface* aSurface, RefPtr<TextureHandle>* aHandle = nullptr,
@@ -348,7 +385,7 @@ class SharedContextWebgl : public mozilla::RefCounted<SharedContextWebgl>,
                               const IntSize& aViewportSize = IntSize());
   already_AddRefed<TextureHandle> AllocateTextureHandle(
       SurfaceFormat aFormat, const IntSize& aSize, bool aAllowShared = true,
-      bool aRenderable = false, BackingTexture* aAvoid = nullptr);
+      bool aRenderable = false, const WebGLTexture* aAvoid = nullptr);
   void DrawQuad();
   void DrawTriangles(const PathVertexRange& aRange);
   bool DrawRectAccel(const Rect& aRect, const Pattern& aPattern,
@@ -361,6 +398,16 @@ class SharedContextWebgl : public mozilla::RefCounted<SharedContextWebgl>,
                      const PathVertexRange* aVertexRange = nullptr,
                      const Matrix* aRectXform = nullptr,
                      uint8_t aBlendStage = 0);
+
+  already_AddRefed<WebGLTexture> GetFilterInputTexture(
+      const RefPtr<SourceSurface>& aSurface, const IntRect& aSourceRect,
+      RefPtr<TextureHandle>* aHandle, IntPoint& aOffset, SurfaceFormat& aFormat,
+      IntRect& aBounds, IntSize& aBackingSize);
+  bool FilterRect(const Rect& aDestRect, const Matrix5x4& aColorMatrix,
+                  const RefPtr<SourceSurface>& aSurface,
+                  const IntRect& aSourceRect, const DrawOptions& aOptions,
+                  RefPtr<TextureHandle>* aHandle,
+                  RefPtr<TextureHandle>* aTargetHandle = nullptr);
   bool BlurRectPass(const Rect& aDestRect, const Point& aSigma,
                     bool aHorizontal, const RefPtr<SourceSurface>& aSurface,
                     const IntRect& aSourceRect,
@@ -384,6 +431,12 @@ class SharedContextWebgl : public mozilla::RefCounted<SharedContextWebgl>,
 
   already_AddRefed<TextureHandle> DrawStrokeMask(
       const PathVertexRange& aVertexRange, const IntSize& aSize);
+  bool DrawWGRPath(const Path* aPath, const IntRect& aIntBounds,
+                   const Rect& aQuantBounds, const Matrix& aPathXform,
+                   RefPtr<PathCacheEntry>& aEntry, const DrawOptions& aOptions,
+                   const StrokeOptions* aStrokeOptions,
+                   AAStrokeMode aAAStrokeMode, const Pattern& aPattern,
+                   const Maybe<DeviceColor>& aColor);
   bool DrawPathAccel(const Path* aPath, const Pattern& aPattern,
                      const DrawOptions& aOptions,
                      const StrokeOptions* aStrokeOptions = nullptr,
@@ -414,8 +467,9 @@ class SharedContextWebgl : public mozilla::RefCounted<SharedContextWebgl>,
   bool RemoveSharedTexture(const RefPtr<SharedTexture>& aTexture);
   bool RemoveStandaloneTexture(const RefPtr<StandaloneTexture>& aTexture);
 
-  void UnlinkSurfaceTextures();
-  void UnlinkSurfaceTexture(const RefPtr<TextureHandle>& aHandle);
+  void UnlinkSurfaceTextures(bool aForce = false);
+  void UnlinkSurfaceTexture(const RefPtr<TextureHandle>& aHandle,
+                            bool aForce = false);
   void UnlinkGlyphCaches();
 
   void AddHeapData(const void* aBuf);
@@ -450,7 +504,6 @@ class SharedContextWebgl : public mozilla::RefCounted<SharedContextWebgl>,
 class DrawTargetWebgl : public DrawTarget, public SupportsWeakPtr {
   friend class FilterNodeWebgl;
   friend class FilterNodeDeferInputWebgl;
-  friend class FilterNodeGaussianBlurWebgl;
   friend class SourceSurfaceWebgl;
   friend class SharedContextWebgl;
 
@@ -690,6 +743,14 @@ class DrawTargetWebgl : public DrawTarget, public SupportsWeakPtr {
       const StrokeOptions* aStrokeOptions = nullptr,
       SurfaceFormat aFormat = SurfaceFormat::B8G8R8A8);
 
+  bool FilterSurface(const Matrix5x4& aColorMatrix, SourceSurface* aSurface,
+                     const IntRect& aSourceRect, const Point& aDest,
+                     const DrawOptions& aOptions = DrawOptions());
+  bool BlurSurface(float aSigma, SourceSurface* aSurface,
+                   const IntRect& aSourceRect, const Point& aDest,
+                   const DrawOptions& aOptions = DrawOptions(),
+                   const DeviceColor& aColor = DeviceColor(1, 1, 1, 1));
+
   void SetTransform(const Matrix& aTransform) override;
   void* GetNativeSurface(NativeSurfaceType aType) override;
 
@@ -718,6 +779,9 @@ class DrawTargetWebgl : public DrawTarget, public SupportsWeakPtr {
   bool SupportsPattern(const Pattern& aPattern) {
     return mSharedContext->SupportsPattern(aPattern);
   }
+
+  bool SupportsDrawOptions(const DrawOptions& aOptions,
+                           const Rect& aRect = Rect());
 
   bool SetSimpleClipRect();
   bool GenerateComplexClipMask();
@@ -748,7 +812,8 @@ class DrawTargetWebgl : public DrawTarget, public SupportsWeakPtr {
   Maybe<Rect> RectClippedToViewport(const RectDouble& aRect) const;
 
   bool ShouldAccelPath(const DrawOptions& aOptions,
-                       const StrokeOptions* aStrokeOptions);
+                       const StrokeOptions* aStrokeOptions,
+                       const Rect& aRect = Rect());
   void DrawPath(const Path* aPath, const Pattern& aPattern,
                 const DrawOptions& aOptions,
                 const StrokeOptions* aStrokeOptions = nullptr,
@@ -756,11 +821,6 @@ class DrawTargetWebgl : public DrawTarget, public SupportsWeakPtr {
   void DrawCircle(const Point& aOrigin, float aRadius, const Pattern& aPattern,
                   const DrawOptions& aOptions,
                   const StrokeOptions* aStrokeOptions = nullptr);
-
-  bool BlurSurface(float aSigma, SourceSurface* aSurface,
-                   const IntRect& aSourceRect, const Point& aDest,
-                   const DrawOptions& aOptions = DrawOptions(),
-                   const DeviceColor& aColor = DeviceColor(1, 1, 1, 1));
 
   bool MarkChanged();
 
@@ -776,6 +836,7 @@ class DrawTargetWebgl : public DrawTarget, public SupportsWeakPtr {
 
   bool ReadInto(uint8_t* aDstData, int32_t aDstStride);
   already_AddRefed<DataSourceSurface> ReadSnapshot();
+  already_AddRefed<WebGLBuffer> ReadSnapshotIntoPBO(SourceSurfaceWebgl* aOwner);
   already_AddRefed<TextureHandle> CopySnapshot(const IntRect& aRect);
   already_AddRefed<TextureHandle> CopySnapshot() {
     return CopySnapshot(GetRect());

@@ -21,6 +21,7 @@ skip-if = ["os == 'android'"] # Non-extension add-ons are not supported on Andro
 ["test_AddonRepository_appIsShuttingDown.js"]
 
 ["test_AddonRepository_cache.js"]
+requesttimeoutfactor = 2  # Slow on Windows
 skip-if = ["os == 'android'"] # Non-extension add-ons are not supported on Android, but test installs static theme.
 
 ["test_AddonRepository_cache_locale.js"]
@@ -30,6 +31,10 @@ skip-if = ["os == 'android'"] # Non-extension add-ons are not supported on Andro
 skip-if = ["os == 'android'"] # Non-extension add-ons are not supported on Android, but test installs langpack.
 
 ["test_AddonRepository_paging.js"]
+
+["test_EnvironmentAddonBuilder_telemetry.js"]
+ # Ensure EnvironmentAddonBuilder is managed by AMTelemetry on all builds.
+prefs = ["extensions.telemetry.EnvironmentAddonBuilder=true"]
 
 ["test_ModelHubProvider.js"]
 skip-if = [
@@ -342,6 +347,10 @@ tags = "webextensions"
 run-if = ["os == 'win'"]
 
 ["test_types.js"]
+# prevents test failure due to EnvironmentAddonBuilder calls
+# to getActiveAddons used to collect the Glean activeAddons
+# metric.
+prefs = ["extensions.telemetry.EnvironmentAddonBuilder=false"]
 
 ["test_undouninstall.js"]
 skip-if = ["os == 'win'"] # Bug 1358846
@@ -388,7 +397,7 @@ tags = "webextensions"
 
 ["test_upgrade.js"]
 head = "head_addons.js head_compat.js"
-run-sequentially = "Uses global XCurProcD dir."
+run-sequentially = ["true"] # Uses global XCurProcD dir.
 
 ["test_upgrade_incompatible.js"]
 

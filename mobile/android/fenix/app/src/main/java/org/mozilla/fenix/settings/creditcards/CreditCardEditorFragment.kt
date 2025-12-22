@@ -10,6 +10,7 @@ import android.view.Menu
 import android.view.MenuInflater
 import android.view.MenuItem
 import android.view.View
+import android.view.autofill.AutofillManager
 import android.widget.AdapterView
 import androidx.appcompat.app.AlertDialog
 import androidx.core.view.MenuProvider
@@ -17,6 +18,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
 import androidx.navigation.fragment.navArgs
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -57,6 +59,26 @@ class CreditCardEditorFragment :
         get() = args.creditCard != null
 
     private lateinit var interactor: CreditCardEditorInteractor
+
+    private var isAutofillSessionActive = false
+
+    private val autofillCallback = object : AutofillManager.AutofillCallback() {
+        override fun onAutofillEvent(view: View, event: Int) {
+            super.onAutofillEvent(view, event)
+
+            when (event) {
+                EVENT_INPUT_SHOWN -> {
+                    isAutofillSessionActive = true
+                }
+                EVENT_INPUT_HIDDEN -> {
+                    isAutofillSessionActive = false
+                }
+                EVENT_INPUT_UNAVAILABLE -> {
+                    isAutofillSessionActive = false
+                }
+            }
+        }
+    }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
@@ -109,6 +131,7 @@ class CreditCardEditorFragment :
 
     override fun onResume() {
         super.onResume()
+        activity?.getSystemService(AutofillManager::class.java)?.registerCallback(autofillCallback)
         if (!isEditing) {
             showToolbar(getString(R.string.credit_cards_add_card))
         } else {
@@ -121,16 +144,19 @@ class CreditCardEditorFragment :
      * fragment is paused and the user is not navigating to [CreditCardsManagementFragment].
      */
     override fun onPause() {
+        activity?.getSystemService(AutofillManager::class.java)?.unregisterCallback(autofillCallback)
+
         view?.hideKeyboard()
         menu.close()
         deleteDialog?.dismiss()
 
-        redirectToReAuth(
-            listOf(R.id.creditCardsManagementFragment),
-            findNavController().currentDestination?.id,
-            R.id.creditCardEditorFragment,
-        )
-
+        if (!isAutofillSessionActive) {
+            redirectToReAuth(
+                listOf(R.id.creditCardsManagementFragment),
+                findNavController().currentDestination?.id,
+                R.id.creditCardEditorFragment,
+            )
+        }
         super.onPause()
     }
 
@@ -155,7 +181,7 @@ class CreditCardEditorFragment :
     }
 
     private fun showDeleteDialog(onPositiveClickListener: DialogInterface.OnClickListener) {
-        deleteDialog = AlertDialog.Builder(requireContext()).apply {
+        deleteDialog = MaterialAlertDialogBuilder(requireContext()).apply {
             setMessage(R.string.credit_cards_delete_dialog_confirmation_2)
             setNegativeButton(R.string.credit_cards_cancel_button) { dialog: DialogInterface, _ ->
                 dialog.cancel()

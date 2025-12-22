@@ -57,10 +57,6 @@ nsCaret::~nsCaret() { StopBlinking(); }
 nsresult nsCaret::Init(PresShell* aPresShell) {
   NS_ENSURE_ARG(aPresShell);
 
-  mPresShell =
-      do_GetWeakReference(aPresShell);  // the presshell owns us, so no addref
-  NS_ASSERTION(mPresShell, "Hey, pres shell should support weak refs");
-
   RefPtr<Selection> selection =
       aPresShell->GetSelection(nsISelectionController::SELECTION_NORMAL);
   if (!selection) {
@@ -127,7 +123,6 @@ void nsCaret::Terminate() {
     mDomSelectionWeak->RemoveSelectionListener(this);
   }
   mDomSelectionWeak = nullptr;
-  mPresShell = nullptr;
   mCaretPosition = {};
 }
 
@@ -191,10 +186,8 @@ static nsPoint AdjustRectForClipping(const nsRect& aRect, nsIFrame* aFrame,
                                      bool aVertical) {
   nsRect rectRelativeToClip = aRect;
   ScrollContainerFrame* sf = nullptr;
-  nsIFrame* scrollFrame = nullptr;
   for (nsIFrame* current = aFrame; current; current = current->GetParent()) {
     if ((sf = do_QueryFrame(current))) {
-      scrollFrame = current;
       break;
     }
     if (current->IsTransformed()) {
@@ -210,27 +203,6 @@ static nsPoint AdjustRectForClipping(const nsRect& aRect, nsIFrame* aFrame,
   }
 
   nsRect clipRect = sf->GetScrollPortRect();
-  {
-    const auto& disp = *scrollFrame->StyleDisplay();
-    if (disp.mOverflowClipBoxBlock == StyleOverflowClipBox::ContentBox ||
-        disp.mOverflowClipBoxInline == StyleOverflowClipBox::ContentBox) {
-      const WritingMode wm = scrollFrame->GetWritingMode();
-      const bool cbH = (wm.IsVertical() ? disp.mOverflowClipBoxBlock
-                                        : disp.mOverflowClipBoxInline) ==
-                       StyleOverflowClipBox::ContentBox;
-      const bool cbV = (wm.IsVertical() ? disp.mOverflowClipBoxInline
-                                        : disp.mOverflowClipBoxBlock) ==
-                       StyleOverflowClipBox::ContentBox;
-      nsMargin padding = scrollFrame->GetUsedPadding();
-      if (!cbH) {
-        padding.left = padding.right = 0;
-      }
-      if (!cbV) {
-        padding.top = padding.bottom = 0;
-      }
-      clipRect.Deflate(padding);
-    }
-  }
   nsPoint offset;
   // Now see if the caret extends beyond the view's bounds. If it does, then
   // snap it back, put it as close to the edge as it can.
@@ -655,11 +627,6 @@ void nsCaret::StopBlinking() {
 
 size_t nsCaret::SizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf) const {
   size_t total = aMallocSizeOf(this);
-  if (mPresShell) {
-    // We only want the size of the nsWeakReference object, not the PresShell
-    // (since we don't own the PresShell).
-    total += mPresShell->SizeOfOnlyThis(aMallocSizeOf);
-  }
   if (mBlinkTimer) {
     total += mBlinkTimer->SizeOfIncludingThis(aMallocSizeOf);
   }

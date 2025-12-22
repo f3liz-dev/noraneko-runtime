@@ -48,6 +48,9 @@ class FeatureSettingsHelperDelegate : FeatureSettingsHelper {
         isUseNewCrashReporterDialog = settings.useNewCrashReporterDialog,
         isTabSwipeCFREnabled = settings.hasShownTabSwipeCFR,
         isTermsOfServiceAccepted = settings.hasAcceptedTermsOfService,
+        isComposeLoginsEnabled = settings.enableComposeLogins,
+        openLinksInApp = getOpenLinksInApp(settings),
+        tabManagerOpeningAnimationEnabled = settings.tabManagerOpeningAnimationEnabled,
     )
 
     /**
@@ -74,6 +77,9 @@ class FeatureSettingsHelperDelegate : FeatureSettingsHelper {
     override var isUseNewCrashReporterDialog: Boolean by updatedFeatureFlags::isUseNewCrashReporterDialog
     override var isTabSwipeCFREnabled: Boolean by updatedFeatureFlags::isTabSwipeCFREnabled
     override var isTermsOfServiceAccepted: Boolean by updatedFeatureFlags::isTermsOfServiceAccepted
+    override var isComposeLoginsEnabled: Boolean by updatedFeatureFlags::isComposeLoginsEnabled
+    override var openLinksInExternalApp: OpenLinksInApp by updatedFeatureFlags::openLinksInApp
+    override var tabManagerOpeningAnimationEnabled: Boolean by updatedFeatureFlags::tabManagerOpeningAnimationEnabled
 
     override fun applyFlagUpdates() {
         Log.i(TAG, "applyFlagUpdates: Trying to apply the updated feature flags: $updatedFeatureFlags")
@@ -110,6 +116,9 @@ class FeatureSettingsHelperDelegate : FeatureSettingsHelper {
         settings.useNewCrashReporterDialog = featureFlags.isUseNewCrashReporterDialog
         settings.hasShownTabSwipeCFR = !featureFlags.isTabSwipeCFREnabled
         settings.hasAcceptedTermsOfService = featureFlags.isTermsOfServiceAccepted
+        settings.enableComposeLogins = featureFlags.isComposeLoginsEnabled
+        setOpenLinksInApp(featureFlags.openLinksInApp)
+        settings.tabManagerOpeningAnimationEnabled = featureFlags.tabManagerOpeningAnimationEnabled
     }
 }
 
@@ -134,6 +143,9 @@ private data class FeatureFlags(
     var isUseNewCrashReporterDialog: Boolean,
     var isTabSwipeCFREnabled: Boolean,
     var isTermsOfServiceAccepted: Boolean,
+    var isComposeLoginsEnabled: Boolean,
+    var openLinksInApp: OpenLinksInApp,
+    var tabManagerOpeningAnimationEnabled: Boolean,
 )
 
 internal fun getETPPolicy(settings: Settings): ETPPolicy {
@@ -189,6 +201,28 @@ private fun setETPPolicy(policy: ETPPolicy) {
             Log.i(TAG, "setETPPolicy: ETP policy was set to: \"Custom\"")
         }
     }
+}
+
+internal fun getOpenLinksInApp(settings: Settings): OpenLinksInApp {
+    return when (settings.openLinksInExternalApp) {
+        appContext.getString(R.string.pref_key_open_links_in_apps_always) -> OpenLinksInApp.ALWAYS
+        appContext.getString(R.string.pref_key_open_links_in_apps_ask) -> OpenLinksInApp.ASK
+        appContext.getString(R.string.pref_key_open_links_in_apps_never) -> OpenLinksInApp.NEVER
+        else -> {
+            Log.i(TAG, "getOpenLinksInApp: Unknown preference value found: \"${settings.openLinksInExternalApp}\", defaulting to \"Ask before opening\".")
+            OpenLinksInApp.ASK
+        }
+    }
+}
+
+private fun setOpenLinksInApp(value: OpenLinksInApp) {
+    val prefValue = when (value) {
+        OpenLinksInApp.ALWAYS -> appContext.getString(R.string.pref_key_open_links_in_apps_always)
+        OpenLinksInApp.ASK -> appContext.getString(R.string.pref_key_open_links_in_apps_ask)
+        OpenLinksInApp.NEVER -> appContext.getString(R.string.pref_key_open_links_in_apps_never)
+    }
+    settings.openLinksInExternalApp = prefValue
+    Log.i(TAG, "setOpenLinksInApp: Set the preference to \"$prefValue\".")
 }
 
 internal fun getFeaturePermission(feature: PhoneFeature, settings: Settings): SitePermissionsRules.Action {

@@ -7,6 +7,7 @@
 #include "nsTextPaintStyle.h"
 
 #include "mozilla/LookAndFeel.h"
+#include "mozilla/RelativeLuminanceUtils.h"
 #include "nsCSSColorUtils.h"
 #include "nsCSSRendering.h"
 #include "nsFrameSelection.h"
@@ -33,6 +34,7 @@ nsTextPaintStyle::nsTextPaintStyle(nsTextFrame* aFrame)
       mInitCommonColors(false),
       mInitSelectionColorsAndShadow(false),
       mResolveColors(true),
+      mInitTargetTextPseudoStyle(false),
       mSelectionTextColor(NS_RGBA(0, 0, 0, 0)),
       mSelectionBGColor(NS_RGBA(0, 0, 0, 0)),
       mSufficientContrast(0),
@@ -217,24 +219,38 @@ void nsTextPaintStyle::GetTargetTextColors(nscolor* aForeColor,
                                            nscolor* aBackColor) {
   NS_ASSERTION(aForeColor, "aForeColor is null");
   NS_ASSERTION(aBackColor, "aBackColor is null");
-  const RefPtr<const ComputedStyle> targetTextStyle =
-      mFrame->ComputeTargetTextStyle();
-  if (targetTextStyle) {
-    *aForeColor = targetTextStyle->GetVisitedDependentColor(
+  InitCommonColors();
+  InitTargetTextPseudoStyle();
+
+  if (mTargetTextPseudoStyle) {
+    *aForeColor = mTargetTextPseudoStyle->GetVisitedDependentColor(
         &nsStyleText::mWebkitTextFillColor);
-    *aBackColor = targetTextStyle->GetVisitedDependentColor(
+    *aBackColor = mTargetTextPseudoStyle->GetVisitedDependentColor(
         &nsStyleBackground::mBackgroundColor);
     return;
   }
-  if (PresContext()->ForcingColors()) {
-    *aBackColor = LookAndFeel::Color(LookAndFeel::ColorID::Mark, mFrame);
-    *aForeColor = LookAndFeel::Color(LookAndFeel::ColorID::Marktext, mFrame);
-  } else {
-    *aBackColor =
-        LookAndFeel::Color(LookAndFeel::ColorID::TargetTextBackground, mFrame);
-    *aForeColor =
-        LookAndFeel::Color(LookAndFeel::ColorID::TargetTextForeground, mFrame);
-  }
+
+  const auto darkSchemeBackground = LookAndFeel::Color(
+      LookAndFeel::ColorID::TargetTextBackground,
+      LookAndFeel::ColorScheme::Dark, LookAndFeel::UseStandins::No);
+  const auto lightSchemeBackground = LookAndFeel::Color(
+      LookAndFeel::ColorID::TargetTextBackground,
+      LookAndFeel::ColorScheme::Light, LookAndFeel::UseStandins::No);
+  const auto lightSchemeForeground = LookAndFeel::Color(
+      LookAndFeel::ColorID::TargetTextForeground,
+      LookAndFeel::ColorScheme::Light, LookAndFeel::UseStandins::No);
+  const auto darkSchemeForeground = LookAndFeel::Color(
+      LookAndFeel::ColorID::TargetTextForeground,
+      LookAndFeel::ColorScheme::Dark, LookAndFeel::UseStandins::No);
+  const float ratioLightScheme = RelativeLuminanceUtils::ContrastRatio(
+      lightSchemeBackground, mFrameBackgroundColor);
+  const float ratioDarkScheme = RelativeLuminanceUtils::ContrastRatio(
+      darkSchemeBackground, mFrameBackgroundColor);
+
+  *aBackColor = ratioLightScheme > ratioDarkScheme ? lightSchemeBackground
+                                                   : darkSchemeBackground;
+  *aForeColor = ratioLightScheme > ratioDarkScheme ? lightSchemeForeground
+                                                   : darkSchemeForeground;
 }
 
 bool nsTextPaintStyle::GetCustomHighlightTextColor(nsAtom* aHighlightName,
@@ -279,6 +295,27 @@ bool nsTextPaintStyle::GetCustomHighlightBackgroundColor(nsAtom* aHighlightName,
   *aBackColor = highlightStyle->GetVisitedDependentColor(
       &nsStyleBackground::mBackgroundColor);
   return NS_GET_A(*aBackColor) != 0;
+}
+
+RefPtr<ComputedStyle> nsTextPaintStyle::GetComputedStyleForSelectionPseudo(
+    SelectionType aSelectionType, nsAtom* aHighlightName) {
+  switch (aSelectionType) {
+    case SelectionType::eNormal:
+      InitSelectionColorsAndShadow();
+      return mSelectionPseudoStyle;
+    case SelectionType::eTargetText:
+      InitTargetTextPseudoStyle();
+      return mTargetTextPseudoStyle;
+    case SelectionType::eHighlight: {
+      return mCustomHighlightPseudoStyles.LookupOrInsertWith(
+          aHighlightName, [this, &aHighlightName] {
+            return mFrame->ComputeHighlightSelectionStyle(aHighlightName);
+          });
+    }
+    default:
+      MOZ_ASSERT_UNREACHABLE("Wrong selection type");
+      return nullptr;
+  }
 }
 
 void nsTextPaintStyle::GetURLSecondaryColor(nscolor* aForeColor) {
@@ -426,6 +463,14 @@ bool nsTextPaintStyle::InitSelectionColorsAndShadow() {
     EnsureSufficientContrast(&mSelectionTextColor, &mSelectionBGColor);
   }
   return true;
+}
+
+void nsTextPaintStyle::InitTargetTextPseudoStyle() {
+  if (mInitTargetTextPseudoStyle) {
+    return;
+  }
+  mInitTargetTextPseudoStyle = true;
+  mTargetTextPseudoStyle = mFrame->ComputeTargetTextStyle();
 }
 
 nsTextPaintStyle::nsSelectionStyle* nsTextPaintStyle::SelectionStyle(

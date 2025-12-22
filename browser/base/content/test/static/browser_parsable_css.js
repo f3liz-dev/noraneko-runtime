@@ -71,6 +71,19 @@ if (!Services.prefs.getBoolPref("layout.css.scroll-anchoring.enabled")) {
   });
 }
 
+if (!Services.prefs.getBoolPref("layout.css.text-decoration-inset.enabled")) {
+  ignoreList.push({
+    sourceName: /html\.css$/i,
+    errorMessage: /Unknown property .*text-decoration-inset/i,
+    isFromDevTools: false,
+  });
+  ignoreList.push({
+    sourceName: /ua\.css$/i,
+    errorMessage: /Unknown property .*text-decoration-inset/i,
+    isFromDevTools: false,
+  });
+}
+
 if (!Services.prefs.getBoolPref("dom.viewTransitions.enabled")) {
   // view-transition selectors
   ignoreList.push({
@@ -186,10 +199,6 @@ let propNameAllowlist = [
   // Ignore token properties that follow the pattern --color-[name]-[number]
   // This enables us to provide our full color palette for developers.
   { propName: /--color-[a-z]+-\d+/, isFromDevTools: false },
-
-  // Design system border radius tokens that are defined but not yet used
-  // these should be removed once they are used in the codebase.
-  { propName: "--border-radius-xsmall", isFromDevTools: false },
 ];
 
 // Add suffix to stylesheets' URI so that we always load them here and

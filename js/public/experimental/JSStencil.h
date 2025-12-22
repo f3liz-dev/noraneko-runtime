@@ -207,6 +207,9 @@ namespace JS {
 extern JS_PUBLIC_API TranscodeResult EncodeStencil(JSContext* cx,
                                                    Stencil* stencil,
                                                    TranscodeBuffer& buffer);
+extern JS_PUBLIC_API TranscodeResult EncodeStencil(JS::FrontendContext* fc,
+                                                   Stencil* stencil,
+                                                   TranscodeBuffer& buffer);
 
 // Deserialize data and create a new Stencil.
 extern JS_PUBLIC_API TranscodeResult
@@ -256,6 +259,14 @@ extern JS_PUBLIC_API void AbortCollectingDelazifications(
 // Returns true if the stencil is compatible with caching.
 // This returns false if the stencil contains asm.js.
 extern JS_PUBLIC_API bool IsStencilCacheable(JS::Stencil* stencil);
+
+// ************************************************************************
+//   Script Source
+// ************************************************************************
+
+// Returns the uncompressed source text length of given stencil.
+// Returns 0 if the source is discarded or somehow not accessible.
+extern JS_PUBLIC_API size_t GetScriptSourceLength(JS::Stencil* stencil);
 
 }  // namespace JS
 

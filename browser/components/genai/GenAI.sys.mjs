@@ -13,7 +13,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
   ContentAnalysisUtils: "resource://gre/modules/ContentAnalysisUtils.sys.mjs",
   EveryWindow: "resource:///modules/EveryWindow.sys.mjs",
   NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
-  PrefUtils: "resource://normandy/lib/PrefUtils.sys.mjs",
+  PrefUtils: "moz-src:///toolkit/modules/PrefUtils.sys.mjs",
   SidebarManager:
     "moz-src:///browser/components/sidebar/SidebarManager.sys.mjs",
 });
@@ -131,6 +131,7 @@ export const GenAI = {
         linksId: "genai-settings-chat-claude-links",
         maxLength: 14150,
         name: "Anthropic Claude",
+        supportAutoSubmit: true,
         tooltipId: "genai-onboarding-claude-tooltip",
       },
     ],
@@ -144,6 +145,7 @@ export const GenAI = {
         linksId: "genai-settings-chat-chatgpt-links",
         maxLength: 9350,
         name: "ChatGPT",
+        supportAutoSubmit: true,
         tooltipId: "genai-onboarding-chatgpt-tooltip",
       },
     ],
@@ -670,11 +672,10 @@ export const GenAI = {
       contextTabs = null,
     } = contextMenu;
 
-    showItem(menu, false);
-
     // DO NOT show menu when inside an extension panel
-    const uri = browser.browsingContext.currentURI.spec;
-    if (uri.startsWith("moz-extension:")) {
+    const uri = browser.browsingContext?.currentURI.spec;
+    if (uri?.startsWith("moz-extension:")) {
+      showItem(menu, false);
       return;
     }
 
@@ -698,6 +699,7 @@ export const GenAI = {
         break;
     }
     if (!canShow) {
+      showItem(menu, false);
       return;
     }
 
@@ -718,6 +720,9 @@ export const GenAI = {
       }
       menu.menupopup?.remove();
     }
+
+    // NOTE: Show the menu item synchronously, before any `await`.
+    showItem(menu, true);
 
     // Determine if we have selection or should use page content
     const context = {
@@ -806,8 +811,6 @@ export const GenAI = {
         Services.prefs.setBoolPref("browser.ml.chat.menu", false);
       }
     });
-
-    showItem(menu, true);
   },
 
   /**
@@ -1023,6 +1026,91 @@ export const GenAI = {
   },
 
   /**
+   * Set up automatic prompt submission for ChatGPT and Claude
+   *
+   * @param {Browser} browser - current browser
+   * @param {string} prompt - prompt text
+   * @param {object} context of how the prompt should be handled
+   */
+  setupAutoSubmit(browser, prompt, context) {
+    const sendAutoSubmit = (br, promptText) => {
+      const wgp = br.browsingContext?.currentWindowGlobal;
+      const actor = wgp?.getActor("GenAI");
+      if (!actor) {
+        return;
+      }
+
+      try {
+        actor.sendAsyncMessage("AutoSubmit", {
+          promptText,
+        });
+      } catch (e) {
+        console.error("error message: ", e);
+      }
+    };
+
+    if (lazy.chatSidebar) {
+      const injector = {
+        async onStateChange(_wp, _req, flags) {
+          const stopDoc =
+            flags & Ci.nsIWebProgressListener.STATE_STOP &&
+            flags & Ci.nsIWebProgressListener.STATE_IS_DOCUMENT;
+          if (!stopDoc) {
+            return;
+          }
+
+          const wgp = browser.browsingContext?.currentWindowGlobal;
+          if (!wgp || wgp.isInitialDocument) {
+            return;
+          }
+
+          try {
+            browser.webProgress?.removeProgressListener(injector);
+          } catch {}
+          await sendAutoSubmit(browser, prompt);
+        },
+        QueryInterface: ChromeUtils.generateQI([
+          "nsIWebProgressListener",
+          "nsISupportsWeakReference",
+        ]),
+      };
+
+      browser.webProgress?.addProgressListener(
+        injector,
+        Ci.nsIWebProgress.NOTIFY_STATE_DOCUMENT
+      );
+    } else {
+      // Tab mode:
+      const gBrowser = context.window.gBrowser;
+      const targetBrowser = browser;
+
+      const tabListener = {
+        async onLocationChange(br, _wp, _req, location) {
+          if (br !== targetBrowser) {
+            return;
+          }
+
+          const spec = location?.spec || "";
+          if (spec === "about:blank") {
+            return;
+          }
+
+          try {
+            gBrowser.removeTabsProgressListener(tabListener);
+          } catch {}
+          await sendAutoSubmit(browser, prompt);
+        },
+        QueryInterface: ChromeUtils.generateQI([
+          "nsIwebProgressListener",
+          "nsISupportsWeakReference",
+        ]),
+      };
+
+      gBrowser.addTabsProgressListener(tabListener);
+    }
+  },
+
+  /**
    * Handle selected prompt by opening tab or sidebar.
    *
    * @param {object} promptObj to convert to string
@@ -1076,8 +1164,11 @@ export const GenAI = {
     const prompt = this.buildChatPrompt(promptObj, context);
 
     // Pass the prompt via GET url ?q= param or request header
-    const { header, queryParam = "q" } =
-      this.chatProviders.get(lazy.chatProvider) ?? {};
+    const {
+      header,
+      queryParam = "q",
+      supportAutoSubmit,
+    } = this.chatProviders.get(lazy.chatProvider) ?? {};
     const url = new URL(lazy.chatProvider);
     const options = {
       inBackground: false,
@@ -1103,6 +1194,10 @@ export const GenAI = {
     if (lazy.chatSidebar) {
       await SidebarController.show("viewGenaiChatSidebar");
       browser = await SidebarController.browser.contentWindow.browserPromise;
+      if (!browser) {
+        console.error("Failed to get chat sidebar browser");
+        return;
+      }
       const showWarning =
         isPageSummarizeRequest && this.isContextTooLong(context.selection);
 
@@ -1115,8 +1210,15 @@ export const GenAI = {
     } else {
       browser = context.window.gBrowser.addTab("", options).linkedBrowser;
     }
-
     browser.fixupAndLoadURIString(url, options);
+
+    // Run autosubmit only for chatGPT, Claude, or mochitest
+    if (
+      supportAutoSubmit ||
+      lazy.chatProvider?.includes("file_chat-autosubmit.html")
+    ) {
+      this.setupAutoSubmit(browser, prompt, context);
+    }
   },
 };
 

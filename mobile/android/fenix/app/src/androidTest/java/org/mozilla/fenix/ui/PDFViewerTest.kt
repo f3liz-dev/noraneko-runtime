@@ -48,13 +48,12 @@ class PDFViewerTest : TestSetup() {
     @SmokeTest
     @Test
     fun verifyPDFFileIsOpenedInTheSameTabTest() {
-        val genericURL =
-            getGenericAsset(mockWebServer, 3)
+        val genericURL = mockWebServer.getGenericAsset(3)
 
         navigationToolbar {
         }.enterURLAndEnterToBrowser(genericURL.url) {
             clickPageObject(itemContainingText("PDF form file"))
-            clickPageObject(itemWithResIdAndText("android:id/button2", "CANCEL"))
+            clickPageObject(itemWithResIdAndText("android:id/button2", "Cancel"))
             verifyPageContent("Washington Crossing the Delaware")
             verifyTabCounter("1")
         }
@@ -64,13 +63,13 @@ class PDFViewerTest : TestSetup() {
     // Download PDF file using the download toolbar button
     @Test
     fun verifyPDFViewerDownloadButtonTest() {
-        val genericURL = getGenericAsset(mockWebServer, 3)
+        val genericURL = mockWebServer.getGenericAsset(3)
         val downloadFile = "pdfForm.pdf"
 
         navigationToolbar {
         }.enterURLAndEnterToBrowser(genericURL.url) {
             clickPageObject(itemWithText("PDF form file"))
-            clickPageObject(itemWithResIdAndText("android:id/button2", "CANCEL"))
+            clickPageObject(itemWithResIdAndText("android:id/button2", "Cancel"))
         }.clickDownloadPDFButton {
             verifyDownloadCompleteSnackbar(fileName = downloadFile)
             clickSnackbarButton(composeTestRule = composeTestRule, "OPEN")
@@ -81,12 +80,12 @@ class PDFViewerTest : TestSetup() {
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2283305
     @Test
     fun pdfFindInPageTest() {
-        val genericURL = getGenericAsset(mockWebServer, 3)
+        val genericURL = mockWebServer.getGenericAsset(3)
 
         navigationToolbar {
         }.enterURLAndEnterToBrowser(genericURL.url) {
             clickPageObject(MatcherHelper.itemWithText("PDF form file"))
-            clickPageObject(itemWithResIdAndText("android:id/button2", "CANCEL"))
+            clickPageObject(itemWithResIdAndText("android:id/button2", "Cancel"))
         }.openThreeDotMenu {
             verifyThreeDotMenuExists()
             verifyFindInPageButton()
@@ -134,13 +133,13 @@ class PDFViewerTest : TestSetup() {
     // Download PDF file using the download toolbar button
     @Test
     fun verifyDownloadedPDFIsOpenedInFirefoxTest() {
-        val genericURL = getGenericAsset(mockWebServer, 3)
+        val genericURL = mockWebServer.getGenericAsset(3)
         val downloadFile = "pdfForm.pdf"
 
         navigationToolbar {
         }.enterURLAndEnterToBrowser(genericURL.url) {
             clickPageObject(itemWithText("PDF form file"))
-            clickPageObject(itemWithResIdAndText("android:id/button2", "CANCEL"))
+            clickPageObject(itemWithResIdAndText("android:id/button2", "Cancel"))
             verifyTabCounter("1")
         }.openThreeDotMenu {
             expandMenu()
@@ -164,7 +163,7 @@ class PDFViewerTest : TestSetup() {
             navigationToolbar {
             }.enterURLAndEnterToBrowser(genericURL.url) {
                 clickPageObject(itemWithText("PDF form file"))
-                clickPageObject(itemWithResIdAndText("android:id/button2", "CANCEL"))
+                clickPageObject(itemWithResIdAndText("android:id/button2", "Cancel"))
             }.clickDownloadPDFButton {
             }
 

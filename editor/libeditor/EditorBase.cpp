@@ -41,7 +41,6 @@
 #include "mozilla/EditorDOMPoint.h"
 #include "mozilla/intl/BidiEmbeddingLevel.h"
 #include "mozilla/BasePrincipal.h"            // for BasePrincipal
-#include "mozilla/CheckedInt.h"               // for CheckedInt
 #include "mozilla/ComposerCommandsUpdater.h"  // for ComposerCommandsUpdater
 #include "mozilla/ContentEvents.h"            // for InternalClipboardEvent
 #include "mozilla/DebugOnly.h"                // for DebugOnly
@@ -2669,7 +2668,7 @@ Result<CreateElementResult, nsresult> EditorBase::InsertBRElement(
         insertBRElementResultOrError.unwrap();
     insertBRElementResult.IgnoreCaretPointSuggestion();
   } else {
-    Unused << aPointToInsert.Offset();
+    (void)aPointToInsert.Offset();
     RefPtr<InsertNodeTransaction> transaction =
         InsertNodeTransaction::Create(*this, *newBRElement, aPointToInsert);
     nsresult rv = transaction->DoTransaction();
@@ -6621,16 +6620,11 @@ EditorBase::AutoEditActionDataSetter::AutoEditActionDataSetter(
       mParentData(aEditorBase.mEditActionData),
       mData(VoidString()),
       mRawEditAction(aEditAction),
-      mTopLevelEditSubAction(EditSubAction::eNone),
-      mAborted(false),
-      mHasTriedToDispatchBeforeInputEvent(false),
-      mBeforeInputEventCanceled(false),
-      mMakeBeforeInputEventNonCancelable(false),
-      mHasTriedToDispatchClipboardEvent(false),
       mEditorWasDestroyedDuringHandlingEditAction(
           mParentData &&
           mParentData->mEditorWasDestroyedDuringHandlingEditAction),
-      mHandled(false) {
+      mEditorWasReinitialized(mParentData &&
+                              mParentData->mEditorWasReinitialized) {
   // If we're nested edit action, copies necessary data from the parent.
   if (mParentData) {
     mSelection = mParentData->mSelection;

@@ -10,7 +10,7 @@
 import {
   UrlbarProvider,
   UrlbarUtils,
-} from "resource:///modules/UrlbarUtils.sys.mjs";
+} from "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs";
 
 const lazy = {};
 
@@ -20,8 +20,8 @@ const DYNAMIC_TYPE_NAME = "actions";
 
 ChromeUtils.defineESModuleGetters(lazy, {
   ActionsProviderQuickActions:
-    "resource:///modules/ActionsProviderQuickActions.sys.mjs",
-  UrlbarResult: "resource:///modules/UrlbarResult.sys.mjs",
+    "moz-src:///browser/components/urlbar/ActionsProviderQuickActions.sys.mjs",
+  UrlbarResult: "moz-src:///browser/components/urlbar/UrlbarResult.sys.mjs",
 });
 
 /**
@@ -39,18 +39,28 @@ export class UrlbarProviderActionsSearchMode extends UrlbarProvider {
     return queryContext.searchMode?.source == UrlbarUtils.RESULT_SOURCE.ACTIONS;
   }
 
+  /**
+   * Starts querying.
+   *
+   * @param {UrlbarQueryContext} queryContext
+   * @param {(provider: UrlbarProvider, result: UrlbarResult) => void} addCallback
+   *   Callback invoked by the provider to add a new result.
+   */
   async startQuery(queryContext, addCallback) {
     let input = queryContext.trimmedLowerCaseSearchString;
-    let results = await lazy.ActionsProviderQuickActions.getActions(input);
+    let results = await lazy.ActionsProviderQuickActions.getActions({
+      input,
+      includesExactMatch: true,
+    });
     results.forEach(resultKey => {
-      let result = new lazy.UrlbarResult(
-        UrlbarUtils.RESULT_TYPE.DYNAMIC,
-        UrlbarUtils.RESULT_SOURCE.ACTIONS,
-        {
+      let result = new lazy.UrlbarResult({
+        type: UrlbarUtils.RESULT_TYPE.DYNAMIC,
+        source: UrlbarUtils.RESULT_SOURCE.ACTIONS,
+        payload: {
           key: resultKey,
           dynamicType: DYNAMIC_TYPE_NAME,
-        }
-      );
+        },
+      });
       addCallback(this, result);
     });
   }

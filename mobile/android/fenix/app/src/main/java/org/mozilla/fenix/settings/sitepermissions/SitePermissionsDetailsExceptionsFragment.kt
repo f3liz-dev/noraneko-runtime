@@ -8,12 +8,12 @@ import android.content.Context
 import android.content.DialogInterface
 import android.os.Bundle
 import androidx.annotation.VisibleForTesting
-import androidx.appcompat.app.AlertDialog
-import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.findNavController
 import androidx.preference.Preference
 import androidx.preference.PreferenceFragmentCompat
+import com.google.android.material.color.MaterialColors
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import kotlinx.coroutines.Dispatchers.IO
 import kotlinx.coroutines.Dispatchers.Main
 import kotlinx.coroutines.launch
@@ -40,6 +40,7 @@ import org.mozilla.fenix.settings.PhoneFeature.PERSISTENT_STORAGE
 import org.mozilla.fenix.settings.quicksettings.AutoplayValue
 import org.mozilla.fenix.settings.requirePreference
 import org.mozilla.fenix.utils.Settings
+import com.google.android.material.R as materialR
 
 @SuppressWarnings("TooManyFunctions")
 class SitePermissionsDetailsExceptionsFragment : PreferenceFragmentCompat() {
@@ -101,9 +102,10 @@ class SitePermissionsDetailsExceptionsFragment : PreferenceFragmentCompat() {
             true
         }
         preference.icon?.setTint(
-            ContextCompat.getColor(
+            MaterialColors.getColor(
                 provideContext(),
-                R.color.fx_mobile_icon_color_primary,
+                materialR.attr.colorOnSurface,
+                "Could not resolve themed color",
             ),
         )
     }
@@ -149,7 +151,7 @@ class SitePermissionsDetailsExceptionsFragment : PreferenceFragmentCompat() {
         val button: Preference = requirePreference(R.string.pref_key_exceptions_clear_site_permissions)
 
         button.onPreferenceClickListener = Preference.OnPreferenceClickListener {
-            AlertDialog.Builder(requireContext()).apply {
+            MaterialAlertDialogBuilder(requireContext()).apply {
                 setMessage(R.string.confirm_clear_permissions_site)
                 setTitle(R.string.clear_permissions)
                 setPositiveButton(R.string.clear_permissions_positive) { dialog: DialogInterface, _ ->

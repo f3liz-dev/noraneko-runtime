@@ -17,7 +17,6 @@
 
 #include "ErrorList.h"
 #include "gtest/gtest.h"
-#include "mozilla/AlreadyAddRefed.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/FixedBufferOutputStream.h"
@@ -31,7 +30,6 @@
 #include "mozilla/dom/quota/EncryptedBlock.h"
 #include "mozilla/dom/quota/EncryptingOutputStream_impl.h"
 #include "mozilla/dom/quota/NSSCipherStrategy.h"
-#include "mozilla/fallible.h"
 #include "nsCOMPtr.h"
 #include "nsError.h"
 #include "nsICloneableInputStream.h"
@@ -266,10 +264,12 @@ class DOM_Quota_EncryptedStream : public ::testing::Test {
   struct NSSInitContextDeleter {
     void operator()(NSSInitContext* p) { NSS_ShutdownContext(p); }
   };
-  MOZ_RUNINIT inline static std::unique_ptr<NSSInitContext,
-                                            NSSInitContextDeleter>
-      sNssContext;
+  static std::unique_ptr<NSSInitContext, NSSInitContextDeleter> sNssContext;
 };
+
+MOZ_CONSTINIT std::unique_ptr<NSSInitContext,
+                              DOM_Quota_EncryptedStream::NSSInitContextDeleter>
+    DOM_Quota_EncryptedStream::sNssContext;
 
 enum struct FlushMode { AfterEachChunk, Never };
 enum struct ChunkSize { SingleByte, Unaligned, DataSize };

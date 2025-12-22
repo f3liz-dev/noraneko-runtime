@@ -27,8 +27,9 @@ class nsISHEntry;
 
 namespace mozilla {
 namespace dom {
+class EntryList;
 class LoadSHEntryResult;
-}
+}  // namespace dom
 }  // namespace mozilla
 
 class nsSHistory : public mozilla::LinkedListElement<nsSHistory>,
@@ -161,12 +162,12 @@ class nsSHistory : public mozilla::LinkedListElement<nsSHistory>,
 
   MOZ_CAN_RUN_SCRIPT
   static void LoadURIs(
-      nsTArray<LoadEntryResult>& aLoadResults,
+      const nsTArray<LoadEntryResult>& aLoadResults, bool aCheckForCancelation,
       const std::function<void(nsresult)>& aResolver = [](auto) {},
       mozilla::dom::BrowsingContext* aTraversable = nullptr);
 
   MOZ_CAN_RUN_SCRIPT
-  static void LoadURIOrBFCache(LoadEntryResult& aLoadEntry);
+  static void LoadURIOrBFCache(const LoadEntryResult& aLoadEntry);
 
   // If this doesn't return an error then either aLoadResult is set to nothing,
   // in which case the caller should ignore the load, or it returns a valid
@@ -217,6 +218,16 @@ class nsSHistory : public mozilla::LinkedListElement<nsSHistory>,
 
   void LogHistory();
 
+  mozilla::dom::SessionHistoryEntry* FindAdjacentContiguousEntryFor(
+      mozilla::dom::SessionHistoryEntry* aEntry, int32_t aSearchDirection);
+  void ReconstructContiguousEntryListFrom(
+      mozilla::dom::SessionHistoryEntry* aEntry);
+  void ReconstructContiguousEntryList();
+  already_AddRefed<mozilla::dom::EntryList> EntryListFor(const nsID& aID);
+  void RemoveEntryList(const nsID& aID);
+
+  bool ContainsEntry(nsISHEntry* aEntry);
+
  protected:
   virtual ~nsSHistory();
 
@@ -225,12 +236,11 @@ class nsSHistory : public mozilla::LinkedListElement<nsSHistory>,
  private:
   friend class nsSHistoryObserver;
 
-  bool LoadDifferingEntries(nsISHEntry* aPrevEntry, nsISHEntry* aNextEntry,
-                            mozilla::dom::BrowsingContext* aParent,
-                            long aLoadType,
-                            nsTArray<LoadEntryResult>& aLoadResults,
-                            bool aLoadCurrentEntry, bool aUserActivation,
-                            int32_t aOffset);
+  bool ForEachDifferingEntry(
+      nsISHEntry* aPrevEntry, nsISHEntry* aNextEntry,
+      mozilla::dom::BrowsingContext* aParent,
+      const std::function<void(nsISHEntry*, mozilla::dom::BrowsingContext*)>&
+          aCallback);
   void InitiateLoad(nsISHEntry* aFrameEntry,
                     mozilla::dom::BrowsingContext* aFrameBC, long aLoadType,
                     nsTArray<LoadEntryResult>& aLoadResult,
@@ -312,6 +322,11 @@ class nsSHistory : public mozilla::LinkedListElement<nsSHistory>,
   // update the epoch via a runnable on each ::Go (including AsyncGo).
   uint64_t mEpoch = 0;
   mozilla::Maybe<mozilla::dom::ContentParentId> mEpochParentId;
+
+  // Session history entries grouped by DocshellID, which are deduplicated by
+  // SessionHistoryEntry ID.
+  nsTHashMap<nsIDHashKey, mozilla::WeakPtr<mozilla::dom::EntryList>>
+      mEntryLists;
 };
 
 // CallerWillNotifyHistoryIndexAndLengthChanges is used to prevent

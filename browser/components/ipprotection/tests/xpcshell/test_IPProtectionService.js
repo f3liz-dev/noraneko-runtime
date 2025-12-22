@@ -9,11 +9,14 @@ const { AddonTestUtils } = ChromeUtils.importESModule(
 const { ExtensionTestUtils } = ChromeUtils.importESModule(
   "resource://testing-common/ExtensionXPCShellUtils.sys.mjs"
 );
-const { IPProtectionService } = ChromeUtils.importESModule(
+const { IPProtectionService, IPProtectionStates } = ChromeUtils.importESModule(
   "resource:///modules/ipprotection/IPProtectionService.sys.mjs"
 );
-const { UIState } = ChromeUtils.importESModule(
-  "resource://services-sync/UIState.sys.mjs"
+const { IPPSignInWatcher } = ChromeUtils.importESModule(
+  "resource:///modules/ipprotection/IPPSignInWatcher.sys.mjs"
+);
+const { IPPEnrollAndEntitleManager } = ChromeUtils.importESModule(
+  "resource:///modules/ipprotection/IPPEnrollAndEntitleManager.sys.mjs"
 );
 
 do_get_profile();
@@ -28,51 +31,84 @@ AddonTestUtils.createAppInfo(
 
 ExtensionTestUtils.init(this);
 
+function setupStubs(
+  sandbox,
+  options = {
+    signedIn: true,
+    isLinkedToGuardian: true,
+    validProxyPass: true,
+    entitlement: {
+      subscribed: false,
+      uid: 42,
+      created_at: "2023-01-01T12:00:00.000Z",
+    },
+  }
+) {
+  sandbox.stub(IPPSignInWatcher, "isSignedIn").get(() => options.signedIn);
+  sandbox
+    .stub(IPProtectionService.guardian, "isLinkedToGuardian")
+    .resolves(options.isLinkedToGuardian);
+  sandbox.stub(IPProtectionService.guardian, "fetchUserInfo").resolves({
+    status: 200,
+    error: null,
+    entitlement: options.entitlement,
+  });
+  sandbox.stub(IPProtectionService.guardian, "enroll").resolves({
+    status: 200,
+    error: null,
+  });
+  sandbox.stub(IPProtectionService.guardian, "fetchProxyPass").resolves({
+    status: 200,
+    error: undefined,
+    pass: {
+      isValid: () => options.validProxyPass,
+      asBearerToken: () => "Bearer helloworld",
+    },
+  });
+}
+
 add_setup(async function () {
   await putServerInRemoteSettings();
   IPProtectionService.uninit();
 
   registerCleanupFunction(async () => {
-    IPProtectionService.init();
+    await IPProtectionService.init();
   });
 });
 
 /**
- * Tests that starting the service gets a started event.
+ * Tests that starting the service gets a state changed event.
  */
 add_task(async function test_IPProtectionService_start() {
   let sandbox = sinon.createSandbox();
-  sandbox.stub(IPProtectionService.guardian, "fetchProxyPass").returns({
-    status: 200,
-    error: undefined,
-    pass: {
-      isValid: () => true,
-      asBearerToken: () => "Bearer hello world",
-    },
-  });
+  setupStubs(sandbox);
 
-  await IPProtectionService.init();
+  IPProtectionService.init();
+
+  await waitForEvent(
+    IPProtectionService,
+    "IPProtectionService:StateChanged",
+    () => IPProtectionService.state === IPProtectionStates.READY
+  );
 
   Assert.ok(
-    !IPProtectionService.isActive,
+    !IPProtectionService.activatedAt,
     "IP Protection service should not be active initially"
   );
 
   let startedEventPromise = waitForEvent(
     IPProtectionService,
-    "IPProtectionService:Started"
+    "IPProtectionService:StateChanged",
+    () => IPProtectionService.state === IPProtectionStates.ACTIVE
   );
 
-  // Simulate signing in to the account
-  IPProtectionService.isSignedIn = true;
-  IPProtectionService.isEnrolled = true;
-  IPProtectionService.isEntitled = true;
   IPProtectionService.start();
 
-  let startedEvent = await startedEventPromise;
+  await startedEventPromise;
 
-  Assert.ok(
-    IPProtectionService.isActive,
+  Assert.equal(
+    IPProtectionService.state,
+    IPProtectionStates.ACTIVE,
     "IP Protection service should be active after starting"
   );
   Assert.ok(
@@ -80,14 +116,8 @@ add_task(async function test_IPProtectionService_start() {
     "IP Protection service should have an activation timestamp"
   );
   Assert.ok(
-    IPProtectionService.connection.active,
+    IPProtectionService.proxyManager.active,
     "IP Protection service should have an active connection"
-  );
-
-  Assert.equal(
-    startedEvent.detail?.activatedAt,
-    IPProtectionService.activatedAt,
-    "Event should contain the activation timestamp"
   );
 
   IPProtectionService.uninit();
@@ -98,21 +128,31 @@ add_task(async function test_IPProtectionService_start() {
  * Tests that stopping the service gets stop events.
  */
 add_task(async function test_IPProtectionService_stop() {
-  IPProtectionService.init();
+  let sandbox = sinon.createSandbox();
+  setupStubs(sandbox);
 
-  // Simulate signing in to the account
-  IPProtectionService.isActive = true;
-  IPProtectionService.activatedAt = ChromeUtils.now();
+  const waitForReady = waitForEvent(
+    IPProtectionService,
+    "IPProtectionService:StateChanged",
+    () => IPProtectionService.state === IPProtectionStates.READY
+  );
+
+  IPProtectionService.init();
+  await waitForReady;
+
+  await IPProtectionService.start();
 
   let stoppedEventPromise = waitForEvent(
     IPProtectionService,
-    "IPProtectionService:Stopped"
+    "IPProtectionService:StateChanged",
+    () => IPProtectionService.state !== IPProtectionStates.ACTIVE
   );
   IPProtectionService.stop();
 
   await stoppedEventPromise;
-  Assert.ok(
-    !IPProtectionService.isActive,
+  Assert.notEqual(
+    IPProtectionService.state,
+    IPProtectionStates.ACTIVE,
     "IP Protection service should not be active after stopping"
   );
   Assert.ok(
@@ -125,88 +165,86 @@ add_task(async function test_IPProtectionService_stop() {
   );
 
   IPProtectionService.uninit();
+  sandbox.restore();
 });
 
 /**
- * Tests that a signed in status sends a SignedIn event.
+ * Tests that a signed in status sends a status changed event.
  */
-add_task(async function test_IPProtectionService_updateSignInStatus_signedIn() {
-  IPProtectionService.init();
-
+add_task(async function test_IPProtectionService_updateState_signedIn() {
   let sandbox = sinon.createSandbox();
-  sandbox.stub(UIState, "get").returns({
-    status: UIState.STATUS_SIGNED_IN,
-  });
   sandbox
-    .stub(IPProtectionService.guardian, "isLinkedToGuardian")
-    .returns(false);
+    .stub(IPPEnrollAndEntitleManager, "isEnrolledAndEntitled")
+    .get(() => true);
+
+  await IPProtectionService.init();
+
+  setupStubs(sandbox);
 
   let signedInEventPromise = waitForEvent(
     IPProtectionService,
-    "IPProtectionService:SignedIn"
+    "IPProtectionService:StateChanged",
+    () => IPProtectionService.state === IPProtectionStates.READY
   );
 
-  IPProtectionService.updateSignInStatus();
+  IPProtectionService.updateState();
 
   await signedInEventPromise;
 
-  Assert.ok(IPProtectionService.isSignedIn, "Should be signed in after update");
+  Assert.ok(IPPSignInWatcher.isSignedIn, "Should be signed in after update");
 
   IPProtectionService.uninit();
   sandbox.restore();
 });
 
 /**
- * Tests that an other status sends a SignedOut event.
+ * Tests that any other status sends a changed event event.
  */
-add_task(
-  async function test_IPProtectionService_updateSignInStatus_signedOut() {
-    IPProtectionService.init();
+add_task(async function test_IPProtectionService_updateState_signedOut() {
+  let sandbox = sinon.createSandbox();
+  setupStubs(sandbox);
 
-    IPProtectionService.isSignedIn = true;
+  await IPProtectionService.init();
 
-    let sandbox = sinon.createSandbox();
-    sandbox.stub(UIState, "get").returns({
-      status: UIState.STATUS_NOT_CONFIGURED,
-    });
-    sandbox
-      .stub(IPProtectionService.guardian, "isLinkedToGuardian")
-      .returns(true);
+  sandbox.stub(IPPSignInWatcher, "isSignedIn").get(() => false);
 
-    let signedOutEventPromise = waitForEvent(
-      IPProtectionService,
-      "IPProtectionService:SignedOut"
-    );
+  let signedOutEventPromise = waitForEvent(
+    IPProtectionService,
+    "IPProtectionService:StateChanged",
+    () => IPProtectionService.state === IPProtectionStates.UNAVAILABLE
+  );
 
-    IPProtectionService.updateSignInStatus();
+  IPProtectionService.updateState();
 
-    await signedOutEventPromise;
+  await signedOutEventPromise;
 
-    Assert.ok(
-      !IPProtectionService.isSignedIn,
-      "Should not be signed in after update"
-    );
+  Assert.ok(
+    !IPPSignInWatcher.isSignedIn,
+    "Should not be signed in after update"
+  );
 
-    IPProtectionService.uninit();
-    sandbox.restore();
-  }
-);
+  IPProtectionService.uninit();
+  sandbox.restore();
+});
 
 /**
- * Tests that updateHasUpgradedStatus returns true if a linked VPN is found
- * and sends an event.
+ * Tests that refetchEntitlement works as expected if a linked VPN is found and sends an event.
  */
 add_task(
-  async function test_IPProtectionService_updateHasUpgradedStatus_has_vpn_linked() {
-    IPProtectionService.init();
-
-    IPProtectionService.isSignedIn = true;
-
+  async function test_IPProtectionService_refetchEntitlement_has_vpn_linked() {
     const sandbox = sinon.createSandbox();
-    sandbox
-      .stub(IPProtectionService.guardian, "isLinkedToGuardian")
-      .returns(true);
-    sandbox.stub(IPProtectionService.guardian, "fetchUserInfo").resolves({
+    setupStubs(sandbox);
+
+    const waitForReady = waitForEvent(
+      IPProtectionService,
+      "IPProtectionService:StateChanged",
+      () => IPProtectionService.state === IPProtectionStates.READY
+    );
+
+    IPProtectionService.init();
+    await waitForReady;
+
+    IPProtectionService.guardian.fetchUserInfo.resolves({
       status: 200,
       error: null,
       entitlement: {
@@ -217,15 +255,19 @@ add_task(
     });
 
     let hasUpgradedEventPromise = waitForEvent(
-      IPProtectionService,
-      "IPProtectionService:UpdateHasUpgraded"
+      IPPEnrollAndEntitleManager,
+      "IPPEnrollAndEntitleManager:StateChanged",
+      () => IPPEnrollAndEntitleManager.hasUpgraded
     );
 
-    await IPProtectionService.updateHasUpgradedStatus(true);
+    await IPPEnrollAndEntitleManager.refetchEntitlement();
 
     await hasUpgradedEventPromise;
 
-    Assert.ok(IPProtectionService.hasUpgraded, "hasUpgraded should be true");
+    Assert.ok(
+      IPPEnrollAndEntitleManager.hasUpgraded,
+      "hasUpgraded should be true"
+    );
 
     IPProtectionService.uninit();
     sandbox.restore();
@@ -233,35 +275,35 @@ add_task(
 );
 
 /**
- * Tests that updateHasUpgradedStatus returns false if no linked VPN is found and
+ * Tests that refetchEntitlement returns errors if no linked VPN is found and
  * sends an event.
  */
 add_task(
-  async function test_IPProtectionService_updateHasUpgradedStatus_no_vpn_linked() {
-    IPProtectionService.init();
-
-    IPProtectionService.isSignedIn = true;
-
+  async function test_IPProtectionService_refetchEntitlement_no_vpn_linked() {
     const sandbox = sinon.createSandbox();
-    sandbox
-      .stub(IPProtectionService.guardian, "isLinkedToGuardian")
-      .returns(true);
-    sandbox.stub(IPProtectionService.guardian, "fetchUserInfo").resolves({
+    setupStubs(sandbox);
+
+    await IPProtectionService.init();
+
+    IPProtectionService.guardian.fetchUserInfo.resolves({
       status: 404,
       error: "invalid_response",
       validEntitlement: false,
     });
 
     let hasUpgradedEventPromise = waitForEvent(
-      IPProtectionService,
-      "IPProtectionService:UpdateHasUpgraded"
+      IPPEnrollAndEntitleManager,
+      "IPPEnrollAndEntitleManager:StateChanged"
     );
 
-    await IPProtectionService.updateHasUpgradedStatus();
+    await IPPEnrollAndEntitleManager.refetchEntitlement();
 
     await hasUpgradedEventPromise;
 
-    Assert.ok(!IPProtectionService.hasUpgraded, "hasUpgraded should be false");
+    Assert.ok(
+      !IPPEnrollAndEntitleManager.hasUpgraded,
+      "hasUpgraded should be false"
+    );
 
     IPProtectionService.uninit();
     sandbox.restore();
@@ -269,52 +311,30 @@ add_task(
 );
 
 /**
- * Tests that updateHasUpgradedStatus returns false when signed out and sends
- * an event.
+ * Tests that signing off generates a reset of the entitlement and the sending
+ * of an event.
  */
-add_task(
-  async function test_IPProtectionService_updateHasUpgradedStatus_signed_out() {
-    IPProtectionService.init();
+add_task(async function test_IPProtectionService_hasUpgraded_signed_out() {
+  let sandbox = sinon.createSandbox();
+  setupStubs(sandbox);
 
-    IPProtectionService.isSignedIn = true;
+  await IPProtectionService.init();
 
-    let sandbox = sinon.createSandbox();
-    sandbox.stub(UIState, "get").returns({
-      status: UIState.STATUS_NOT_CONFIGURED,
-    });
-    sandbox
-      .stub(IPProtectionService.guardian, "isLinkedToGuardian")
-      .returns(true);
-    sandbox.stub(IPProtectionService.guardian, "fetchUserInfo").resolves({
-      status: 200,
-      error: null,
-      entitlement: {
-        subscribed: true,
-        uid: 42,
-        created_at: "2023-01-01T12:00:00.000Z",
-      },
-    });
+  sandbox.stub(IPPSignInWatcher, "isSignedIn").get(() => false);
 
-    let signedOutEventPromise = waitForEvent(
-      IPProtectionService,
-      "IPProtectionService:SignedOut"
-    );
-    let hasUpgradedEventPromise = waitForEvent(
-      IPProtectionService,
-      "IPProtectionService:UpdateHasUpgraded"
-    );
+  let signedOutEventPromise = waitForEvent(
+    IPProtectionService,
+    "IPProtectionService:StateChanged"
+  );
+  IPProtectionService.updateState();
 
-    IPProtectionService.updateSignInStatus();
+  await signedOutEventPromise;
 
-    await signedOutEventPromise;
-    await hasUpgradedEventPromise;
+  Assert.ok(
+    !IPPEnrollAndEntitleManager.hasUpgraded,
+    "hasUpgraded should be false in after signing out"
+  );
 
-    Assert.ok(
-      !IPProtectionService.hasUpgraded,
-      "hasUpgraded should be false in after signing out"
-    );
-
-    IPProtectionService.uninit();
-    sandbox.restore();
-  }
-);
+  IPProtectionService.uninit();
+  sandbox.restore();
+});

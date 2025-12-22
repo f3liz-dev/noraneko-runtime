@@ -45,7 +45,6 @@
 #include "nsPresContext.h"
 #include "nsIContent.h"
 #include "mozilla/dom/Document.h"
-#include "nsViewManager.h"
 #include "nsIFrame.h"
 #include "nsGtkUtils.h"
 #include "nsGtkKeyUtils.h"
@@ -730,11 +729,10 @@ static GtkWindow* GetGtkWindow(dom::Document* aDocument) {
     return nullptr;
   }
 
-  RefPtr<nsViewManager> vm = presShell->GetViewManager();
-  if (!vm) return nullptr;
-
-  nsCOMPtr<nsIWidget> widget = vm->GetRootWidget();
-  if (!widget) return nullptr;
+  nsCOMPtr<nsIWidget> widget = presShell->GetRootWidget();
+  if (!widget) {
+    return nullptr;
+  }
 
   GtkWidget* gtkWidget = static_cast<nsWindow*>(widget.get())->GetGtkWidget();
   if (!gtkWidget) return nullptr;
@@ -1168,9 +1166,19 @@ nsDragSession::GetData(nsITransferable* aTransferable, uint32_t aItemIndex) {
       dragData = GetDragData(sTextPlainUTF8TypeAtom);
     }
 
+    // Try portals first since text/uri-list URIs in sandboxed environments
+    // (Flatpak/Snap) may point to inaccessible file paths.
+    if (requestedFlavor == sURLMimeAtom || requestedFlavor == sFileMimeAtom) {
+      LOGDRAGSERVICE("  try portals first\n");
+      dragData = GetDragData(sPortalFileAtom);
+      if (!dragData) {
+        dragData = GetDragData(sPortalFileTransferAtom);
+      }
+    }
+
     // We are looking for text/x-moz-url. That format may be poorly supported,
     // try first with text/uri-list, and then _NETSCAPE_URL
-    if (requestedFlavor == sURLMimeAtom) {
+    if (!dragData && requestedFlavor == sURLMimeAtom) {
       LOGDRAGSERVICE("  conversion %s => %s", gTextUriListType, kURLMime);
       dragData = GetDragData(sTextUriListTypeAtom);
       if (dragData) {
@@ -1195,27 +1203,17 @@ nsDragSession::GetData(nsITransferable* aTransferable, uint32_t aItemIndex) {
     }
 
     // We're asked to get file mime type but we failed.
-    // Try portal variants and text/uri-list conversion.
+    // Try text/uri-list conversion.
     if (!dragData && requestedFlavor == sFileMimeAtom) {
-      // application/vnd.portal.files
-      dragData = GetDragData(sPortalFileAtom);
-
-      // application/vnd.portal.filetransfer
-      if (!dragData) {
-        dragData = GetDragData(sPortalFileTransferAtom);
-      }
-
-      if (!dragData) {
-        LOGDRAGSERVICE(
-            "  file not found, proceed with conversion %s => %s flavor\n",
-            gTextUriListType, kFileMime);
-        // Conversion text/uri-list => application/x-moz-file
-        dragData = GetDragData(sTextUriListTypeAtom);
+      LOGDRAGSERVICE(
+          "  file not found, proceed with conversion %s => %s flavor\n",
+          gTextUriListType, kFileMime);
+      // Conversion text/uri-list => application/x-moz-file
+      dragData = GetDragData(sTextUriListTypeAtom);
+      if (dragData) {
+        dragData = dragData->ConvertToFile();
         if (dragData) {
-          dragData = dragData->ConvertToFile();
-          if (dragData) {
-            mCachedDragData.InsertOrUpdate(dragData->GetFlavor(), dragData);
-          }
+          mCachedDragData.InsertOrUpdate(dragData->GetFlavor(), dragData);
         }
       }
     }

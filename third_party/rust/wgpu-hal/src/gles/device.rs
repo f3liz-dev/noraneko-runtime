@@ -734,7 +734,8 @@ impl crate::Device for super::Device {
 
         let render_usage = wgt::TextureUses::COLOR_TARGET
             | wgt::TextureUses::DEPTH_STENCIL_WRITE
-            | wgt::TextureUses::DEPTH_STENCIL_READ;
+            | wgt::TextureUses::DEPTH_STENCIL_READ
+            | wgt::TextureUses::TRANSIENT;
         let format_desc = self.shared.describe_texture_format(desc.format);
 
         let inner = if render_usage.contains(desc.usage)
@@ -1564,7 +1565,7 @@ impl crate::Device for super::Device {
         &self,
         fence: &super::Fence,
         wait_value: crate::FenceValue,
-        timeout_ms: u32,
+        timeout: Option<core::time::Duration>,
     ) -> Result<bool, crate::DeviceError> {
         if fence.satisfied(wait_value) {
             return Ok(true);
@@ -1578,7 +1579,9 @@ impl crate::Device for super::Device {
         let timeout_ns = if cfg!(any(webgl, Emscripten)) {
             0
         } else {
-            (timeout_ms as u64 * 1_000_000).min(!0u32 as u64)
+            timeout
+                .map(|t| t.as_nanos().min(u32::MAX as u128) as u32)
+                .unwrap_or(u32::MAX)
         };
         fence.wait(gl, wait_value, timeout_ns)
     }

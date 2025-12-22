@@ -188,7 +188,9 @@ impl Counter for CounterMetric {
 }
 
 #[inherent]
-impl glean::TestGetValue<i32> for CounterMetric {
+impl glean::TestGetValue for CounterMetric {
+    type Output = i32;
+
     /// **Test-only API.**
     ///
     /// Get the currently stored value as an integer.
@@ -225,7 +227,12 @@ mod test {
         let metric = &metrics::test_only_ipc::a_counter;
         metric.add(1);
 
-        assert_eq!(1, metric.test_get_value(Some("test-ping".to_string())).unwrap());
+        assert_eq!(
+            1,
+            metric
+                .test_get_value(Some("test-ping".to_string()))
+                .unwrap()
+        );
     }
 
     #[test]
@@ -262,7 +269,9 @@ mod test {
         assert!(ipc::replay_from_buf(&ipc::take_buf().unwrap()).is_ok());
 
         assert!(
-            45 == parent_metric.test_get_value(Some("test-ping".to_string())).unwrap(),
+            45 == parent_metric
+                .test_get_value(Some("test-ping".to_string()))
+                .unwrap(),
             "Values from the 'processes' should be summed"
         );
     }

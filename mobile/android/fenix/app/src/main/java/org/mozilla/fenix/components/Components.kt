@@ -64,12 +64,14 @@ import org.mozilla.fenix.home.setup.store.SetupChecklistTelemetryMiddleware
 import org.mozilla.fenix.messaging.state.MessagingMiddleware
 import org.mozilla.fenix.nimbus.FxNimbus
 import org.mozilla.fenix.onboarding.FenixOnboarding
+import org.mozilla.fenix.perf.AppLinkIntentLaunchTypeProvider
 import org.mozilla.fenix.perf.AppStartReasonProvider
 import org.mozilla.fenix.perf.StartupActivityLog
 import org.mozilla.fenix.perf.StartupStateProvider
 import org.mozilla.fenix.perf.StrictModeManager
 import org.mozilla.fenix.perf.lazyMonitored
 import org.mozilla.fenix.reviewprompt.ReviewPromptMiddleware
+import org.mozilla.fenix.settings.settingssearch.DefaultFenixSettingsIndexer
 import org.mozilla.fenix.termsofuse.TermsOfUseManager
 import org.mozilla.fenix.utils.Settings
 import org.mozilla.fenix.utils.isLargeScreenSize
@@ -239,6 +241,8 @@ class Components(private val context: Context) {
     val startupActivityLog by lazyMonitored { StartupActivityLog() }
     val startupStateProvider by lazyMonitored { StartupStateProvider(startupActivityLog, appStartReasonProvider) }
 
+    val appLinkIntentLaunchTypeProvider by lazyMonitored { AppLinkIntentLaunchTypeProvider(appStartReasonProvider) }
+
     val appStore by lazyMonitored {
         val blocklistHandler = BlocklistHandler(settings)
 
@@ -261,6 +265,8 @@ class Components(private val context: Context) {
                 setupChecklistState = setupChecklistState(),
             ).run { filterState(blocklistHandler) },
             middlewares = listOf(
+                ProfileMarkerMiddleware(markerName = "AppStore", profiler = core.engine.profiler),
+                LogMiddleware(tag = "AppStore", shouldIncludeDetailedData = { Config.channel.isDebug }),
                 BlocklistMiddleware(blocklistHandler),
                 PocketMiddleware(
                     lazyMonitored { core.pocketStoriesService },
@@ -288,8 +294,6 @@ class Components(private val context: Context) {
                 SetupChecklistTelemetryMiddleware(),
                 ReviewPromptMiddleware(
                     isReviewPromptFeatureEnabled = { settings.customReviewPromptFeatureEnabled },
-                    numberOfAppLaunches = { settings.numberOfAppLaunches },
-                    isDefaultBrowser = { settings.isDefaultBrowser },
                     isTelemetryEnabled = { settings.isTelemetryEnabled },
                     createJexlHelper = nimbus::createJexlHelper,
                     nimbusEventStore = nimbus.events,
@@ -345,6 +349,10 @@ class Components(private val context: Context) {
 
     val termsOfUseManager by lazyMonitored {
         TermsOfUseManager(settings)
+    }
+
+    val settingsIndexer by lazyMonitored {
+        DefaultFenixSettingsIndexer(context)
     }
 }
 

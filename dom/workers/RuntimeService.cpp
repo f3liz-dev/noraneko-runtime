@@ -20,16 +20,15 @@
 #include "js/experimental/CTypes.h"  // JS::CTypesActivityType, JS::SetCTypesActivityCallback
 #include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
 #include "jsfriendapi.h"
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/Atomics.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/CycleCollectedJSContext.h"
 #include "mozilla/CycleCollectedJSRuntime.h"
-#include "mozilla/DebugOnly.h"
 #include "mozilla/FlowMarkers.h"
 #include "mozilla/Monitor.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/ScopeExit.h"
+#include "mozilla/StaticPrefs_javascript.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/dom/AtomList.h"
 #include "mozilla/dom/BindingUtils.h"
@@ -524,10 +523,12 @@ MOZ_CAN_RUN_SCRIPT_FOR_DEFINITION bool ContentSecurityPolicyAllows(
   nsAutoJSString scriptSample;
   if (aKind == JS::RuntimeCode::JS) {
     ErrorResult error;
+    // FIXME(Bug 1990732): Need to pass a principal here to skip TT enforcement
+    // when this code is run from a WebExtension content script.
     bool areArgumentsTrusted = TrustedTypeUtils::
         AreArgumentsTrustedForEnsureCSPDoesNotBlockStringCompilation(
             aCx, aCodeString, aCompilationType, aParameterStrings, aBodyString,
-            aParameterArgs, aBodyArg, error);
+            aParameterArgs, aBodyArg, nullptr, error);
     if (error.MaybeSetPendingException(aCx)) {
       return false;
     }
@@ -980,6 +981,12 @@ class WorkerJSContext final : public mozilla::CycleCollectedJSContext {
     return NS_OK;
   }
 
+  virtual bool useDebugQueue(JS::Handle<JSObject*> global) const override {
+    MOZ_ASSERT(!NS_IsMainThread());
+
+    return !(IsWorkerGlobal(global) || IsShadowRealmGlobal(global));
+  }
+
   virtual void DispatchToMicroTask(
       already_AddRefed<MicroTaskRunnable> aRunnable) override {
     RefPtr<MicroTaskRunnable> runnable(aRunnable);
@@ -987,35 +994,61 @@ class WorkerJSContext final : public mozilla::CycleCollectedJSContext {
     MOZ_ASSERT(!NS_IsMainThread());
     MOZ_ASSERT(runnable);
 
-    std::deque<RefPtr<MicroTaskRunnable>>* microTaskQueue = nullptr;
-
     JSContext* cx = Context();
     NS_ASSERTION(cx, "This should never be null!");
 
     JS::Rooted<JSObject*> global(cx, JS::CurrentGlobalOrNull(cx));
     NS_ASSERTION(global, "This should never be null!");
 
-    // On worker threads, if the current global is the worker global or
-    // ShadowRealm global, we use the main micro task queue. Otherwise, the
-    // current global must be either the debugger global or a debugger sandbox,
-    // and we use the debugger micro task queue instead.
-    if (IsWorkerGlobal(global) || IsShadowRealmGlobal(global)) {
-      microTaskQueue = &GetMicroTaskQueue();
-    } else {
-      MOZ_ASSERT(IsWorkerDebuggerGlobal(global) ||
-                 IsWorkerDebuggerSandbox(global));
-
-      microTaskQueue = &GetDebuggerMicroTaskQueue();
-    }
-
     JS::JobQueueMayNotBeEmpty(cx);
-    if (!runnable->isInList()) {
-      // A recycled object may be in the list already.
-      mMicrotasksToTrace.insertBack(runnable);
+    if (StaticPrefs::javascript_options_use_js_microtask_queue()) {
+      PROFILER_MARKER_FLOW_ONLY("WorkerJSContext::DispatchToMicroTask", OTHER,
+                                {}, FlowMarker,
+                                Flow::FromPointer(runnable.get()));
+
+      // On worker threads, if the current global is the worker global or
+      // ShadowRealm global, we use the main micro task queue. Otherwise, the
+      // current global must be either the debugger global or a debugger
+      // sandbox, and we use the debugger micro task queue instead.
+      if (IsWorkerGlobal(global) || IsShadowRealmGlobal(global)) {
+        if (!EnqueueMicroTask(cx, runnable.forget())) {
+          // This should never fail, but if it does, we have no choice but to
+          // crash. This is always an OOM.
+          NS_ABORT_OOM(0);
+        }
+      } else {
+        MOZ_ASSERT(IsWorkerDebuggerGlobal(global) ||
+                   IsWorkerDebuggerSandbox(global));
+        if (!EnqueueDebugMicroTask(cx, runnable.forget())) {
+          // This should never fail, but if it does, we have no choice but to
+          // crash. This is always an OOM.
+          NS_ABORT_OOM(0);
+        }
+      }
+    } else {
+      std::deque<RefPtr<MicroTaskRunnable>>* microTaskQueue = nullptr;
+      // On worker threads, if the current global is the worker global or
+      // ShadowRealm global, we use the main micro task queue. Otherwise, the
+      // current global must be either the debugger global or a debugger
+      // sandbox, and we use the debugger micro task queue instead.
+      if (IsWorkerGlobal(global) || IsShadowRealmGlobal(global)) {
+        microTaskQueue = &GetMicroTaskQueue();
+      } else {
+        MOZ_ASSERT(IsWorkerDebuggerGlobal(global) ||
+                   IsWorkerDebuggerSandbox(global));
+
+        microTaskQueue = &GetDebuggerMicroTaskQueue();
+      }
+
+      if (!runnable->isInList()) {
+        // A recycled object may be in the list already.
+        mMicrotasksToTrace.insertBack(runnable);
+      }
+      PROFILER_MARKER_FLOW_ONLY("WorkerJSContext::DispatchToMicroTask", OTHER,
+                                {}, FlowMarker,
+                                Flow::FromPointer(runnable.get()));
+      microTaskQueue->push_back(std::move(runnable));
     }
-    PROFILER_MARKER_FLOW_ONLY("WorkerJSContext::DispatchToMicroTask", OTHER, {},
-                              FlowMarker, Flow::FromPointer(runnable.get()));
-    microTaskQueue->push_back(std::move(runnable));
   }
 
   bool IsSystemCaller() const override {
@@ -1084,7 +1117,7 @@ void PrefLanguagesChanged(const char* /* aPrefName */, void* /* aClosure */) {
   AssertIsOnMainThread();
 
   nsTArray<nsString> languages;
-  Navigator::GetAcceptLanguages(languages);
+  Navigator::GetAcceptLanguages(languages, nullptr);
 
   RuntimeService* runtime = RuntimeService::GetService();
   if (runtime) {
@@ -1216,8 +1249,8 @@ bool RuntimeService::RegisterWorker(WorkerPrivate& aWorkerPrivate) {
                 domain,
                 [&domain, parent] {
                   NS_ASSERTION(!parent, "Shouldn't have a parent here!");
-                  Unused << parent;  // silence clang -Wunused-lambda-capture in
-                                     // opt builds
+                  (void)parent;  // silence clang -Wunused-lambda-capture in
+                                 // opt builds
                   auto wdi = MakeUnique<WorkerDomainInfo>();
                   wdi->mDomain = domain;
                   return wdi;
@@ -1275,7 +1308,7 @@ bool RuntimeService::RegisterWorker(WorkerPrivate& aWorkerPrivate) {
 
       // The navigator overridden properties should have already been read.
 
-      Navigator::GetAcceptLanguages(mNavigatorProperties.mLanguages);
+      Navigator::GetAcceptLanguages(mNavigatorProperties.mLanguages, nullptr);
       mNavigatorPropertiesLoaded = true;
     }
 
@@ -1726,7 +1759,7 @@ void RuntimeService::Cleanup() {
           [self](nsITimer*) { self->DumpRunningWorkers(); },
           TimeDuration::FromSeconds(1), nsITimer::TYPE_ONE_SHOT,
           "RuntimeService::WorkerShutdownDump"_ns);
-      Unused << NS_WARN_IF(NS_FAILED(rv));
+      (void)NS_WARN_IF(NS_FAILED(rv));
 
       // And make sure all their final messages have run and all their threads
       // have joined.
@@ -2020,8 +2053,7 @@ uint32_t RuntimeService::ClampedHardwareConcurrency(bool aRFPHardcoded,
     if (numberOfProcessors <= 0) {
       numberOfProcessors = 1;  // Must be one there somewhere
     }
-    Unused << unclampedHardwareConcurrency.compareExchange(0,
-                                                           numberOfProcessors);
+    (void)unclampedHardwareConcurrency.compareExchange(0, numberOfProcessors);
   }
 
   if (MOZ_UNLIKELY(aRFPTiered)) {

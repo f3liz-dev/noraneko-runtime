@@ -3,9 +3,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-// This file is loaded into the browser window scope.
-/* eslint-env mozilla/browser-window */
-
 var PointerlockFsWarning = {
   _element: null,
   _origin: null,
@@ -103,10 +100,9 @@ var PointerlockFsWarning = {
     } else {
       textElem.removeAttribute("hidden");
       // Document's principal's URI has a host. Display a warning including it.
-      let { DownloadUtils } = ChromeUtils.importESModule(
-        "resource://gre/modules/DownloadUtils.sys.mjs"
-      );
-      let displayHost = DownloadUtils.getURIHost(uri.spec)[0];
+      let displayHost = BrowserUtils.formatURIForDisplay(uri, {
+        onlyBaseDomain: true,
+      });
       let l10nString = {
         "fullscreen-warning": "fullscreen-warning-domain",
         "pointerlock-warning": "pointerlock-warning-domain",
@@ -947,7 +943,11 @@ var FullScreen = {
     gNavToolbox.style.marginTop =
       -gNavToolbox.getBoundingClientRect().height + "px";
     this._isChromeCollapsed = true;
-    Services.obs.notifyObservers(null, "fullscreen-nav-toolbox", "hidden");
+    Services.obs.notifyObservers(
+      gNavToolbox,
+      "fullscreen-nav-toolbox",
+      "hidden"
+    );
 
     MousePosTracker.removeListener(this);
   },

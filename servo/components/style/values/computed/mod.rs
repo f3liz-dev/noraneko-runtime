@@ -37,8 +37,7 @@ use std::cmp;
 use std::f32;
 use std::ops::{Add, Sub};
 
-pub use self::align::{AlignContent, AlignItems, JustifyContent, JustifyItems, SelfAlignment};
-pub use self::align::{AlignSelf, JustifySelf};
+pub use self::align::{ContentDistribution, ItemPlacement, JustifyItems, SelfAlignment};
 pub use self::angle::Angle;
 pub use self::animation::{
     AnimationComposition, AnimationDirection, AnimationDuration, AnimationFillMode,
@@ -50,7 +49,7 @@ pub use self::background::{BackgroundRepeat, BackgroundSize};
 pub use self::basic_shape::FillRule;
 pub use self::border::{
     BorderCornerRadius, BorderImageRepeat, BorderImageSideWidth, BorderImageSlice,
-    BorderImageWidth, BorderRadius, BorderSideWidth, BorderSpacing, LineWidth,
+    BorderImageWidth, BorderRadius, BorderSideOffset, BorderSideWidth, BorderSpacing, LineWidth,
 };
 pub use self::box_::{
     Appearance, BaselineSource, BreakBetween, BreakWithin, Clear, Contain, ContainIntrinsicSize,
@@ -113,7 +112,7 @@ pub use self::text::{OverflowWrap, RubyPosition, TextOverflow, WordBreak, WordSp
 pub use self::text::{TextAlign, TextAlignLast, TextEmphasisPosition, TextEmphasisStyle};
 pub use self::text::{TextAutospace, TextUnderlinePosition};
 pub use self::text::{
-    TextDecorationLength, TextDecorationSkipInk, TextDecorationTrim, TextJustify,
+    TextDecorationInset, TextDecorationLength, TextDecorationSkipInk, TextJustify,
 };
 pub use self::time::Time;
 pub use self::transform::{Rotate, Scale, Transform, TransformBox, TransformOperation};
@@ -425,7 +424,7 @@ impl<'a> Context<'a> {
     }
 
     /// The current style.
-    pub fn style(&self) -> &StyleBuilder {
+    pub fn style(&self) -> &StyleBuilder<'a> {
         &self.builder
     }
 

@@ -5,7 +5,7 @@
 Support for running jobs that are invoked via the `run-task` script.
 """
 
-
+import dataclasses
 import os
 
 from mozbuild.util import memoize
@@ -36,6 +36,8 @@ run_task_schema = Schema(
         Required("sparse-profile"): Any(str, None),
         # The relative path to the sparse profile.
         Optional("sparse-profile-prefix"): str,
+        # Whether to use a shallow clone or not, default True (git only).
+        Optional("shallow-clone"): bool,
         # if true, perform a checkout of a comm-central based branch inside the
         # gecko checkout
         Required("comm-checkout"): bool,
@@ -63,8 +65,19 @@ def common_setup(config, job, taskdesc, command):
     run = job["run"]
     run_cwd = run.get("cwd")
     if run["checkout"]:
-        gecko_path = support_vcs_checkout(config, job, taskdesc)
+        repo_configs = config.repo_configs
+        if len(repo_configs) > 1 and run["checkout"] is True:
+            raise Exception("Must explicitly specify checkouts with multiple repos.")
+        elif run["checkout"] is not True:
+            repo_configs = {
+                repo: dataclasses.replace(repo_configs[repo], **config)
+                for (repo, config) in run["checkout"].items()
+            }
+
+        gecko_path = support_vcs_checkout(config, job, taskdesc, repo_configs)
         command.append(f"--gecko-checkout={gecko_path}")
+        if config.params["repository_type"] == "git" and run.get("shallow-clone", True):
+            command.append("--gecko-shallow-clone")
 
         if run_cwd:
             run_cwd = path.normpath(run_cwd.format(checkout=gecko_path))
@@ -77,7 +90,7 @@ def common_setup(config, job, taskdesc, command):
             )
         )
 
-    if run["sparse-profile"]:
+    if config.params["repository_type"] == "hg" and run["sparse-profile"]:
         sparse_profile_prefix = run.pop(
             "sparse-profile-prefix", "build/sparse-profiles"
         )
@@ -117,7 +130,10 @@ def script_url(config, script):
 def docker_worker_run_task(config, job, taskdesc):
     run = job["run"]
     worker = taskdesc["worker"] = job["worker"]
-    command = ["/builds/worker/bin/run-task"]
+    run_task_bin = (
+        "run-task-git" if config.params["repository_type"] == "git" else "run-task-hg"
+    )
+    command = [f"/builds/worker/bin/{run_task_bin}"]
     common_setup(config, job, taskdesc, command)
 
     if run["tooltool-downloads"]:
@@ -165,10 +181,13 @@ def generic_worker_run_task(config, job, taskdesc):
     common_setup(config, job, taskdesc, command)
 
     worker.setdefault("mounts", [])
+    run_task_bin = (
+        "run-task-git" if config.params["repository_type"] == "git" else "run-task-hg"
+    )
     worker["mounts"].append(
         {
             "content": {
-                "url": script_url(config, "run-task"),
+                "url": script_url(config, run_task_bin),
             },
             "file": "./run-task",
         }

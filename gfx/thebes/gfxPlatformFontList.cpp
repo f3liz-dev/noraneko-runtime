@@ -24,7 +24,6 @@
 #include "nsXULAppAPI.h"
 
 #include "mozilla/AppShutdown.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/BinarySearch.h"
 #include "mozilla/Likely.h"
 #include "mozilla/MemoryReporting.h"
@@ -32,6 +31,7 @@
 #include "mozilla/Preferences.h"
 #include "mozilla/StaticPrefs_gfx.h"
 #include "mozilla/StaticPrefs_layout.h"
+#include "mozilla/StaticPrefs_mathml.h"
 #include "mozilla/glean/GfxMetrics.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/dom/BlobImpl.h"
@@ -41,9 +41,7 @@
 #include "mozilla/dom/Document.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/ipc/FileDescriptorUtils.h"
-#include "mozilla/ResultExtensions.h"
 #include "mozilla/TextUtils.h"
-#include "mozilla/Unused.h"
 
 #include "base/eintr_wrapper.h"
 
@@ -664,10 +662,8 @@ bool gfxPlatformFontList::InitFontList() {
 
   InitializeCodepointsWithNoFonts();
 
-  // Try to initialize the cross-process shared font list if enabled by prefs,
-  // but not if we're running in Safe Mode.
-  if (StaticPrefs::gfx_e10s_font_list_shared_AtStartup() &&
-      !gfxPlatform::InSafeMode()) {
+  // Try to initialize the cross-process shared font list if enabled by prefs.
+  if (StaticPrefs::gfx_e10s_font_list_shared_AtStartup()) {
     for (const auto& entry : mFontEntries.Values()) {
       if (!entry) {
         continue;
@@ -1513,7 +1509,7 @@ class LoadCmapsRunnable final : public IdleRunnable,
         continue;
       }
       // Fully initialize this family.
-      Unused << pfl->InitializeFamily(&family, true);
+      (void)pfl->InitializeFamily(&family, true);
       // TODO(emilio): It'd make sense to use mDeadline here to determine
       // whether we can do more work, but that is surprisingly a performance
       // regression in practice, see bug 1936489. Investigate if we can be
@@ -2099,7 +2095,7 @@ void gfxPlatformFontList::MaybeRemoveCmap(gfxCharacterMap* aCharMap) {
   if (found && found->GetKey() == aCharMap && aCharMap->RefCount() == 1) {
     // Forget our reference to the object that's being deleted, without
     // calling Release() on it.
-    Unused << found->mCharMap.forget();
+    found->mCharMap.forget().leak();
 
     // Do the deletion.
     delete aCharMap;
@@ -2256,6 +2252,15 @@ void gfxPlatformFontList::AddGenericFonts(
     StyleGenericFontFamily aGenericType, nsAtom* aLanguage,
     nsTArray<FamilyAndGeneric>& aFamilyList) {
   AutoLock lock(mLock);
+
+  // TODO(eri): For now the math generic language uses the legacy
+  // "serif.x-math" configuration font list to avoid excesive
+  // repetition until a better font preference system can be found.
+  if (StaticPrefs::mathml_font_family_math_enabled() &&
+      aGenericType == StyleGenericFontFamily::Math) {
+    aGenericType = StyleGenericFontFamily::Serif;
+    aLanguage = nsGkAtoms::x_math;
+  }
 
   // map lang ==> langGroup
   nsAtom* langGroup = GetLangGroup(aLanguage);
@@ -2492,13 +2497,21 @@ void gfxPlatformFontList::AppendCJKPrefLangs(eFontPrefLang aPrefLangs[],
     // temp array
     eFontPrefLang tempPrefLangs[kMaxLenPrefLangList];
     uint32_t tempLen = 0;
+    auto* localeService = LocaleService::GetInstance();
 
     // Add the CJK pref fonts from accept languages, the order should be same
-    // order. We use gfxFontUtils::GetPrefsFontList to read the list even
-    // though it's not actually a list of fonts but of lang codes; the format
-    // is the same.
+    // order.
+    nsAutoCString acceptLang;
+    nsresult rv = localeService->GetAcceptLanguages(acceptLang);
+
+    // We use gfxFontUtils::ParseFontList to read the list even
+    // though it's not actually a list of fonts but of locale codes;
+    // the format is the same.
     AutoTArray<nsCString, 5> list;
-    gfxFontUtils::GetPrefsFontList("intl.accept_languages", list, true);
+    if (NS_SUCCEEDED(rv)) {
+      gfxFontUtils::ParseFontList(acceptLang, list);
+    }
+
     for (const auto& lang : list) {
       eFontPrefLang fpl = GetFontPrefLangFor(lang.get());
       switch (fpl) {
@@ -2516,7 +2529,7 @@ void gfxPlatformFontList::AppendCJKPrefLangs(eFontPrefLang aPrefLangs[],
 
     // Try using app's locale
     nsAutoCString localeStr;
-    LocaleService::GetInstance()->GetAppLocaleAsBCP47(localeStr);
+    localeService->GetAppLocaleAsBCP47(localeStr);
 
     {
       Locale locale;
@@ -2721,6 +2734,8 @@ nsAtom* gfxPlatformFontList::GetLangGroup(nsAtom* aLanguage) {
       return "cursive";
     case StyleGenericFontFamily::Fantasy:
       return "fantasy";
+    case StyleGenericFontFamily::Math:
+      return "math";
     case StyleGenericFontFamily::SystemUi:
       return "system-ui";
     case StyleGenericFontFamily::MozEmoji:
@@ -3224,7 +3239,7 @@ void gfxPlatformFontList::InitializeFamily(uint32_t aGeneration,
   }
   fontlist::Family* family = list->Families() + aFamilyIndex;
   if (!family->IsInitialized() || aLoadCmaps) {
-    Unused << InitializeFamily(family, aLoadCmaps);
+    (void)InitializeFamily(family, aLoadCmaps);
   }
 }
 

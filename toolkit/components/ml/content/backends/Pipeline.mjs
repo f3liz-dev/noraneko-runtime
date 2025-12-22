@@ -12,6 +12,9 @@ ChromeUtils.defineESModuleGetters(
     LlamaCppPipeline:
       "chrome://global/content/ml/backends/LlamaCppPipeline.mjs",
     PipelineOptions: "chrome://global/content/ml/EngineProcess.sys.mjs",
+    OpenAIPipeline: "chrome://global/content/ml/backends/OpenAIPipeline.mjs",
+    StaticEmbeddingsPipeline:
+      "chrome://global/content/ml/backends/StaticEmbeddingsPipeline.mjs",
   },
   { global: "current" }
 );
@@ -28,10 +31,15 @@ ChromeUtils.defineESModuleGetters(
 export async function getBackend(consumer, wasm, options) {
   const pipelineOptions = new lazy.PipelineOptions(options);
   var factory;
-  let backendName = pipelineOptions.backend || "onnx";
+
+  // The default backend is onnx-native
+  let backendName = pipelineOptions.backend || "onnx-native";
 
   switch (pipelineOptions.backend) {
     case "onnx":
+      factory = lazy.ONNXPipeline.initialize;
+      break;
+    case "onnx-native":
       factory = lazy.ONNXPipeline.initialize;
       break;
     case "wllama":
@@ -39,6 +47,12 @@ export async function getBackend(consumer, wasm, options) {
       break;
     case "llama.cpp":
       factory = lazy.LlamaCppPipeline.initialize;
+      break;
+    case "openai":
+      factory = lazy.OpenAIPipeline.initialize;
+      break;
+    case "static-embeddings":
+      factory = lazy.StaticEmbeddingsPipeline.initialize;
       break;
     default:
       factory = lazy.ONNXPipeline.initialize;

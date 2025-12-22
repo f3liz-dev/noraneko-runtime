@@ -1,8 +1,13 @@
 "use strict";
 
 /* import-globals-from trr_common.js */
+/* import-globals-from head_trr.js */
 
 const gDefaultPref = Services.prefs.getDefaultBranch("");
+
+const { NodeServer } = ChromeUtils.importESModule(
+  "resource://testing-common/NodeServer.sys.mjs"
+);
 
 SetParentalControlEnabled(false);
 
@@ -985,5 +990,33 @@ add_task(
       getValue(openToFirstReceived.values),
       "completeLoad >= openToFirstReceived"
     );
+  }
+);
+
+add_task(
+  { skip_if: () => mozinfo.socketprocess_networking },
+  async function test_trr_request_per_conn_telemetry() {
+    setModeAndURI(Ci.nsIDNSService.MODE_TRRONLY, `doh`);
+    Services.dns.clearCache(true);
+
+    // Close the previous TRR connection.
+    Services.obs.notifyObservers(null, "net:cancel-all-connections");
+    await new Promise(r => do_timeout(3000, r));
+
+    Services.fog.testResetFOG();
+    Services.prefs.setBoolPref("network.dns.disableIPv6", false);
+    await new TRRDNSListener("timing.com", { expectedAnswer: "5.5.5.5" });
+
+    // Close the TRR connection again, so trr_request_count_per_conn
+    // can be recorded.
+    Services.obs.notifyObservers(null, "net:cancel-all-connections");
+    await new Promise(r => do_timeout(3000, r));
+
+    let requestPerConn =
+      await Glean.networking.trrRequestCountPerConn.other.testGetValue();
+
+    info("requestPerConn=" + JSON.stringify(requestPerConn));
+
+    Assert.greaterOrEqual(requestPerConn, 2);
   }
 );

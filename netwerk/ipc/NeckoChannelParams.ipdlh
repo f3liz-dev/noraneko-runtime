@@ -435,6 +435,8 @@ struct ProxyInfoCloneArgs
   nsCString type;
   nsCString host;
   int32_t port;
+  nsCString masqueTemplate;
+  nsCString alpn;
   nsCString username;
   nsCString password;
   uint32_t flags;
@@ -494,9 +496,10 @@ struct CookieStruct
   nsCString value;
   nsCString host;
   nsCString path;
-  int64_t   expiry;
-  int64_t   lastAccessed;
-  int64_t   creationTime;
+  int64_t   expiryInMSec;
+  int64_t   lastAccessedInUSec;
+  int64_t   creationTimeInUSec;
+  int64_t   updateTimeInUSec;
   bool      isHttpOnly;
   bool      isSession;
   bool      isSecure;

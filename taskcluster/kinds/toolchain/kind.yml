@@ -15,6 +15,7 @@ transforms:
     - gecko_taskgraph.transforms.task:transforms
 
 task-defaults:
+    run-on-repo-type: [hg]
     treeherder:
         kind: build
         platform: toolchains/opt
@@ -32,6 +33,7 @@ tasks-from:
     - clang-tidy.yml
     - clang.yml
     - compiler-rt.yml
+    - dxc.yml
     - dump-syms.yml
     - fix-stacks.yml
     - gcc.yml

@@ -22,10 +22,14 @@ import { MozBaseInputElement, MozLitElement } from "../lit-utils.mjs";
  * @property {string} iconSrc - The src for an optional icon
  * @property {string} description - The text for the description element that helps describe the input control
  * @property {string} supportPage - Name of the SUMO support page to link to.
+ * @property {string} ariaLabel - The aria-label text when there is no visible label.
+ * @property {string} ariaDescription - The aria-description text when there is no visible description.
  * @property {array} options - The array of options, populated by <moz-option> children in the
  *     default slot. Do not set directly, these will be overridden by <moz-option> children.
  */
 export default class MozSelect extends MozBaseInputElement {
+  #optionIconSrcMap = new Map();
+
   static properties = {
     options: { type: Array, state: true },
   };
@@ -59,11 +63,11 @@ export default class MozSelect extends MozBaseInputElement {
   }
 
   get _selectedOptionIconSrc() {
-    if (!this.inputEl) {
+    if (!this.inputEl || !this.options.length) {
       return "";
     }
-    const selectedOption = this.options[this.inputEl.selectedIndex];
-    return selectedOption?.iconSrc ?? "";
+
+    return this.#optionIconSrcMap.get(this.value) ?? "";
   }
 
   /**
@@ -71,6 +75,7 @@ export default class MozSelect extends MozBaseInputElement {
    */
   populateOptions() {
     this.options = [];
+    this.#optionIconSrcMap.clear();
 
     for (const node of this.slotRef.value.assignedNodes()) {
       if (node.localName === "moz-option") {
@@ -82,6 +87,10 @@ export default class MozSelect extends MozBaseInputElement {
           label: optionLabel,
           iconSrc: optionIconSrc,
         });
+
+        if (optionIconSrc) {
+          this.#optionIconSrcMap.set(optionValue, optionIconSrc);
+        }
       }
     }
   }
@@ -129,12 +138,16 @@ export default class MozSelect extends MozBaseInputElement {
         <select
           id="input"
           name=${this.name}
+          .value=${this.value}
           accesskey=${this.accessKey}
           @input=${this.handleStateChange}
           @change=${this.redispatchEvent}
           ?disabled=${this.disabled || this.parentDisabled}
-          aria-describedby="description"
           aria-label=${ifDefined(this.ariaLabel ?? undefined)}
+          aria-describedby="description"
+          aria-description=${ifDefined(
+            this.hasDescription ? undefined : this.ariaDescription
+          )}
         >
           ${this.options.map(
             option => html`

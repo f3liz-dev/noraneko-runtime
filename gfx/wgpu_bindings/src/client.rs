@@ -21,6 +21,7 @@ use parking_lot::Mutex;
 
 use nsstring::{nsACString, nsCString, nsString};
 
+use std::array;
 use std::fmt::Write;
 use std::{borrow::Cow, ptr};
 
@@ -42,7 +43,7 @@ pub struct ProgrammableStageDescriptor<'a> {
 }
 
 impl ProgrammableStageDescriptor<'_> {
-    fn to_wgpu(&self) -> wgc::pipeline::ProgrammableStageDescriptor {
+    fn to_wgpu(&self) -> wgc::pipeline::ProgrammableStageDescriptor<'_> {
         let constants = unsafe { self.constants.as_slice() }
             .iter()
             .map(|ce| {
@@ -85,7 +86,7 @@ pub struct VertexState<'a> {
 }
 
 impl VertexState<'_> {
-    fn to_wgpu(&self) -> wgc::pipeline::VertexState {
+    fn to_wgpu(&self) -> wgc::pipeline::VertexState<'_> {
         let buffer_layouts = unsafe { self.buffers.as_slice() }
             .iter()
             .map(|vb| wgc::pipeline::VertexBufferLayout {
@@ -115,7 +116,7 @@ pub struct FragmentState<'a> {
 }
 
 impl FragmentState<'_> {
-    fn to_wgpu(&self) -> wgc::pipeline::FragmentState {
+    fn to_wgpu(&self) -> wgc::pipeline::FragmentState<'_> {
         let color_targets = unsafe { self.targets.as_slice() }
             .iter()
             .map(|ct| {
@@ -242,7 +243,7 @@ pub struct SamplerDescriptor<'a> {
     address_modes: [wgt::AddressMode; 3],
     mag_filter: wgt::FilterMode,
     min_filter: wgt::FilterMode,
-    mipmap_filter: wgt::FilterMode,
+    mipmap_filter: wgt::MipmapFilterMode,
     lod_min_clamp: f32,
     lod_max_clamp: f32,
     compare: Option<&'a wgt::CompareFunction>,
@@ -516,16 +517,6 @@ pub extern "C" fn wgpu_client_request_device(
 }
 
 #[no_mangle]
-pub extern "C" fn wgpu_client_make_buffer_id(client: &Client) -> id::BufferId {
-    client.identities.lock().buffers.process()
-}
-
-#[no_mangle]
-pub extern "C" fn wgpu_client_free_buffer_id(client: &Client, id: id::BufferId) {
-    client.identities.lock().buffers.free(id)
-}
-
-#[no_mangle]
 pub extern "C" fn wgpu_client_make_render_pass_encoder_id(
     client: &Client,
 ) -> id::RenderPassEncoderId {
@@ -653,6 +644,7 @@ pub extern "C" fn wgpu_client_receive_server_message(client: &Client, byte_buf: 
                 name,
                 vendor,
                 support_use_shared_texture_in_swap_chain,
+                transient_saves_memory,
             }) = adapter_information
             {
                 let nss = |s: &str| {
@@ -672,6 +664,7 @@ pub extern "C" fn wgpu_client_receive_server_message(client: &Client, byte_buf: 
                     name: nss(&name),
                     vendor,
                     support_use_shared_texture_in_swap_chain,
+                    transient_saves_memory,
                 };
                 unsafe {
                     wgpu_child_resolve_request_adapter_promise(
@@ -824,6 +817,13 @@ pub extern "C" fn wgpu_client_receive_server_message(client: &Client, byte_buf: 
         ServerMessage::QueueOnSubmittedWorkDoneResponse(queue_id) => unsafe {
             wgpu_child_resolve_on_submitted_work_done_promise(client.owner, queue_id);
         },
+
+        ServerMessage::FreeSwapChainBufferIds(buffer_ids) => {
+            let identities = client.identities.lock();
+            for id in buffer_ids {
+                identities.buffers.free(id);
+            }
+        }
     }
 }
 
@@ -879,17 +879,21 @@ pub extern "C" fn wgpu_client_create_swap_chain(
     width: i32,
     height: i32,
     format: crate::SurfaceFormat,
-    buffers: FfiSlice<'_, id::BufferId>,
     remote_texture_owner_id: crate::RemoteTextureOwnerId,
     use_shared_texture_in_swap_chain: bool,
 ) {
+    let identities = client.identities.lock();
+    let buffer_ids: [id::BufferId; crate::MAX_SWAPCHAIN_BUFFER_COUNT] =
+        array::from_fn(|_| identities.buffers.process());
+    drop(identities);
+
     let message = Message::CreateSwapChain {
         device_id,
         queue_id,
         width,
         height,
         format,
-        buffer_ids: Cow::Borrowed(unsafe { buffers.as_slice() }),
+        buffer_ids,
         remote_texture_owner_id,
         use_shared_texture_in_swap_chain,
     };

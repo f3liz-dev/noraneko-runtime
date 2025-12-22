@@ -17,7 +17,6 @@
 #include "PlatformEncoderModule.h"
 #include "ipc/EnumSerializer.h"
 #include "mozilla/CDMProxy.h"
-#include "mozilla/EnumSet.h"
 #include "mozilla/GfxMessageUtils.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/ParamTraits_TiedFields.h"
@@ -222,6 +221,13 @@ struct ParamTraits<mozilla::MediaDataDecoder::ConversionRequired>
           mozilla::MediaDataDecoder::ConversionRequired(0),
           mozilla::MediaDataDecoder::ConversionRequired(
               mozilla::MediaDataDecoder::ConversionRequired::kNeedHVCC)> {};
+
+template <>
+struct ParamTraits<mozilla::MediaDataDecoder::PropertyName>
+    : public ContiguousEnumSerializerInclusive<
+          mozilla::MediaDataDecoder::PropertyName,
+          mozilla::MediaDataDecoder::PropertyName(0),
+          mozilla::MediaDataDecoder::sHighestPropertyName> {};
 
 template <>
 struct ParamTraits<mozilla::media::TimeUnit> {

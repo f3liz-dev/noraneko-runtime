@@ -225,7 +225,7 @@ void CookieServiceChild::RemoveSingleCookie(const CookieStruct& aCookie,
     if (cookie->Name().Equals(aCookie.name()) &&
         cookie->Host().Equals(aCookie.host()) &&
         cookie->Path().Equals(aCookie.path()) &&
-        cookie->Expiry() <= aCookie.expiry()) {
+        cookie->ExpiryInMSec() <= aCookie.expiryInMSec()) {
       cookiesList->RemoveElementAt(i);
       NotifyObservers(cookie, aAttrs, CookieNotificationAction::CookieDeleted,
                       aOperationID);
@@ -325,8 +325,6 @@ CookieServiceChild::RecordDocumentCookie(Cookie* aCookie,
     COOKIE_LOGSTRING(LogLevel::Error,
                      ("Invalid first-party partitioned cookie without "
                       "partitioned cookie attribution from the document."));
-    mozilla::glean::networking::set_invalid_first_party_partitioned_cookie.Add(
-        1);
     MOZ_ASSERT(false);
     return CookieNotificationAction::NoActionNeeded;
   }
@@ -347,12 +345,12 @@ CookieServiceChild::RecordDocumentCookie(Cookie* aCookie,
         cookie->Host().Equals(aCookie->Host()) &&
         cookie->Path().Equals(aCookie->Path())) {
       if (cookie->Value().Equals(aCookie->Value()) &&
-          cookie->Expiry() == aCookie->Expiry() &&
+          cookie->ExpiryInMSec() == aCookie->ExpiryInMSec() &&
           cookie->IsSecure() == aCookie->IsSecure() &&
           cookie->SameSite() == aCookie->SameSite() &&
           cookie->IsSession() == aCookie->IsSession() &&
           cookie->IsHttpOnly() == aCookie->IsHttpOnly()) {
-        cookie->SetLastAccessed(aCookie->LastAccessed());
+        cookie->SetLastAccessedInUSec(aCookie->LastAccessedInUSec());
         return CookieNotificationAction::NoActionNeeded;
       }
       cookiesList->RemoveElementAt(i);
@@ -361,8 +359,8 @@ CookieServiceChild::RecordDocumentCookie(Cookie* aCookie,
     }
   }
 
-  int64_t currentTime = PR_Now() / PR_USEC_PER_MSEC;
-  if (aCookie->Expiry() <= currentTime) {
+  int64_t currentTimeInMSec = PR_Now() / PR_USEC_PER_MSEC;
+  if (aCookie->ExpiryInMSec() <= currentTimeInMSec) {
     return cookieFound ? CookieNotificationAction::CookieDeleted
                        : CookieNotificationAction::NoActionNeeded;
   }

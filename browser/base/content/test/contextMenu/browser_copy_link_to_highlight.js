@@ -10,7 +10,6 @@ add_setup(async function () {
     set: [
       ["privacy.query_stripping.strip_list", "stripParam"],
       ["privacy.query_stripping.strip_on_share.enabled", true],
-      ["privacy.query_stripping.strip_on_share.canDisable", false],
       ["dom.text_fragments.create_text_fragment.enabled", true],
     ],
   });
@@ -78,8 +77,7 @@ add_task(async function isVisibleIfSelection() {
 
       // tests for enabled menu items
       Assert.ok(
-        !copyLinkToHighlight.hasAttribute("disabled") ||
-          copyLinkToHighlight.getAttribute("disabled") === "false",
+        !copyLinkToHighlight.disabled,
         "Copy Link to Highlight Menu item is enabled"
       );
     },
@@ -90,6 +88,72 @@ add_task(async function isVisibleIfSelection() {
 add_task(async function copiesToClipboard() {
   await testCopyLinkToHighlight({
     testPage: loremIpsumTestPage(true),
+    runTests: async ({ copyLinkToHighlight }) => {
+      await SimpleTest.promiseClipboardChange(
+        "https://www.example.com/?stripParam=1234#:~:text=eiusmod%20tempor%20incididunt&text=labore",
+        async () => {
+          await BrowserTestUtils.waitForCondition(
+            () => !copyLinkToHighlight.disabled,
+            "Waiting for copyLinkToHighlight to become enabled"
+          );
+          copyLinkToHighlight
+            .closest("menupopup")
+            .activateItem(copyLinkToHighlight);
+        }
+      );
+    },
+  });
+});
+
+// Clicking "Copy Clean Link to Highlight" copies the URL with text fragment and without tracking query params to the clipboard
+add_task(async function copiesCleanLinkToClipboard() {
+  await testCopyLinkToHighlight({
+    testPage: loremIpsumTestPage(true),
+    runTests: async ({ copyCleanLinkToHighlight }) => {
+      await SimpleTest.promiseClipboardChange(
+        "https://www.example.com/#:~:text=eiusmod%20tempor%20incididunt&text=labore",
+        async () => {
+          await BrowserTestUtils.waitForCondition(
+            () => !copyCleanLinkToHighlight.disabled,
+            "Waiting for copyLinkToHighlight to become enabled"
+          );
+          copyCleanLinkToHighlight
+            .closest("menupopup")
+            .activateItem(copyCleanLinkToHighlight);
+        }
+      );
+    },
+  });
+});
+
+// If there is already a highlight on the page, "Copy Link to Highlight" should work even if no text is selected.
+add_task(async function copiesToClipWithExistingHighlightAndNoSelection() {
+  await testCopyLinkToHighlight({
+    testPage: loremIpsumTestPage(false, true),
+    runTests: async ({ copyLinkToHighlight }) => {
+      await SimpleTest.promiseClipboardChange(
+        "https://www.example.com/?stripParam=1234#:~:text=Lorem",
+        async () => {
+          await BrowserTestUtils.waitForCondition(
+            () =>
+              !copyLinkToHighlight.hasAttribute("disabled") ||
+              copyLinkToHighlight.getAttribute("disabled") === "false",
+            "Waiting for copyLinkToHighlight to become enabled"
+          );
+          copyLinkToHighlight
+            .closest("menupopup")
+            .activateItem(copyLinkToHighlight);
+        }
+      );
+    },
+  });
+});
+
+// If there is already a highlight on the page and text is selected,
+// "Copy Link to Highlight" should use the selection over the existing highlight.
+add_task(async function copiesToClipWithExistingHighlightAndSelection() {
+  await testCopyLinkToHighlight({
+    testPage: loremIpsumTestPage(true, true),
     runTests: async ({ copyLinkToHighlight }) => {
       await SimpleTest.promiseClipboardChange(
         "https://www.example.com/?stripParam=1234#:~:text=eiusmod%20tempor%20incididunt&text=labore",
@@ -108,30 +172,6 @@ add_task(async function copiesToClipboard() {
     },
   });
 });
-
-// Clicking "Copy Clean Link to Highlight" copies the URL with text fragment and without tracking query params to the clipboard
-add_task(async function copiesToClipboard() {
-  await testCopyLinkToHighlight({
-    testPage: loremIpsumTestPage(true),
-    runTests: async ({ copyCleanLinkToHighlight }) => {
-      await SimpleTest.promiseClipboardChange(
-        "https://www.example.com/#:~:text=eiusmod%20tempor%20incididunt&text=labore",
-        async () => {
-          await BrowserTestUtils.waitForCondition(
-            () =>
-              !copyCleanLinkToHighlight.hasAttribute("disabled") ||
-              copyCleanLinkToHighlight.getAttribute("disabled") === "false",
-            "Waiting for copyLinkToHighlight to become enabled"
-          );
-          copyCleanLinkToHighlight
-            .closest("menupopup")
-            .activateItem(copyCleanLinkToHighlight);
-        }
-      );
-    },
-  });
-});
-
 /**
  * Tests the "Remove Highlight" context menu item.
  *
@@ -290,14 +330,16 @@ function editableTestPage() {
  *
  * @param {boolean} isTextSelected If true, two ranges are created in the
  *                                 document and added to the selection.
+ * @param {boolean} loadWithExistingHighlight If true, the page is loaded
+ *                                           with a text fragment in the URL.
  * @returns Async function which creates the content.
  */
-function loremIpsumTestPage(isTextSelected) {
+function loremIpsumTestPage(isTextSelected, loadWithExistingHighlight = false) {
   return async function (browser) {
     await SpecialPowers.spawn(
       browser,
-      [isTextSelected],
-      async function (selectText) {
+      [isTextSelected, loadWithExistingHighlight],
+      async function (selectText, existingHighlight) {
         const textBegin = content.document.createTextNode(
           "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do "
         );
@@ -319,6 +361,10 @@ function loremIpsumTestPage(isTextSelected) {
 
         paragraph.id = "text";
         content.document.body.prepend(paragraph);
+
+        if (existingHighlight) {
+          content.location.hash = ":~:text=Lorem";
+        }
 
         if (selectText) {
           const selection = content.getSelection();

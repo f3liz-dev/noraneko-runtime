@@ -109,11 +109,6 @@ VIAddVersionKey "OriginalFilename" "helper.exe"
 !insertmacro WriteRegDWORD2
 !insertmacro WriteRegStr2
 
-; This needs to be inserted after InitHashAppModelId because it uses
-; $AppUserModelID and the compiler can't handle using variables lexically before
-; they've been declared.
-!insertmacro GetInstallerRegistryPref
-
 !insertmacro un.ChangeMUIHeaderImage
 !insertmacro un.ChangeMUISidebarImage
 !insertmacro un.CheckForFilesInUse
@@ -448,6 +443,18 @@ Section "Uninstall"
     ${DeleteFile} "$INSTDIR\${FileMainEXE}"
     ClearErrors
   ${EndIf}
+
+  ReadRegDWORD $R4 HKCU "Software\Mozilla\${BrandFullNameInternal}" DesktopLauncherAppInstalled
+  ${IfNot} ${Errors}
+  ${AndIf} $R4 == "1"
+    ; The current user had a desktop launcher at some point, so remove it.
+    SetShellVarContext current
+    Delete "$DESKTOP\${BrandShortName}.exe"
+    ${IfNot} ${Errors}
+      DeleteRegValue HKCU "Software\Mozilla\${BrandFullNameInternal}" DesktopLauncherAppInstalled
+    ${EndIf}
+  ${EndIf}
+  ClearErrors
 
   SetShellVarContext current  ; Set SHCTX to HKCU
   ${un.RegCleanMain} "Software\Mozilla"

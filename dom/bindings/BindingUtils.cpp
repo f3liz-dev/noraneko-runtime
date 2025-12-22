@@ -33,13 +33,11 @@
 #include "mozilla/Assertions.h"
 #include "mozilla/DebugOnly.h"
 #include "mozilla/Encoding.h"
-#include "mozilla/FloatingPoint.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/ScopeExit.h"
 #include "mozilla/Sprintf.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/UniquePtr.h"
-#include "mozilla/Unused.h"
 #include "mozilla/UseCounter.h"
 #include "mozilla/dom/CustomElementRegistry.h"
 #include "mozilla/dom/DOMException.h"
@@ -3789,7 +3787,7 @@ bool HTMLConstructor(JSContext* aCx, unsigned aArgc, JS::Value* aVp,
 
   ErrorResult rv;
   auto scopeExit =
-      MakeScopeExit([&]() { Unused << rv.MaybeSetPendingException(aCx); });
+      MakeScopeExit([&]() { (void)rv.MaybeSetPendingException(aCx); });
 
   // Step 1.
   nsCOMPtr<nsPIDOMWindowInner> window =

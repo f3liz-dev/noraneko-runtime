@@ -76,8 +76,8 @@ class MacroAssemblerX64 : public MacroAssemblerX86Shared {
                            X86Encoding::XMMRegisterID destId));
 
  protected:
-  void flexibleDivMod64(Register rhs, Register lhsOutput, bool isUnsigned,
-                        bool isDiv);
+  void flexibleDivMod64(Register lhs, Register rhs, Register output,
+                        bool isUnsigned, bool isDiv);
 
  public:
   using MacroAssemblerX86Shared::load32;
@@ -153,14 +153,14 @@ class MacroAssemblerX64 : public MacroAssemblerX86Shared {
   }
   template <typename T>
   void storeValue(const Value& val, const T& dest) {
-    ScratchRegisterScope scratch(asMasm());
     if (val.isGCThing()) {
+      ScratchRegisterScope scratch(asMasm());
       movWithPatch(ImmWord(val.asRawBits()), scratch);
       writeDataRelocation(val);
+      movq(scratch, Operand(dest));
     } else {
-      mov(ImmWord(val.asRawBits()), scratch);
+      storePtr(ImmWord(val.asRawBits()), dest);
     }
-    movq(scratch, Operand(dest));
   }
   void storeValue(ValueOperand val, BaseIndex dest) {
     storeValue(val, Operand(dest));
@@ -185,15 +185,7 @@ class MacroAssemblerX64 : public MacroAssemblerX86Shared {
   void loadUnalignedValue(const Address& src, ValueOperand dest) {
     loadValue(src, dest);
   }
-  void tagValue(JSValueType type, Register payload, ValueOperand dest) {
-    ScratchRegisterScope scratch(asMasm());
-    MOZ_ASSERT(dest.valueReg() != scratch);
-    if (payload != dest.valueReg()) {
-      movq(payload, dest.valueReg());
-    }
-    mov(ImmShiftedTag(type), scratch);
-    orq(scratch, dest.valueReg());
-  }
+  void tagValue(JSValueType type, Register payload, ValueOperand dest);
   void pushValue(ValueOperand val) { push(val.valueReg()); }
   void popValue(ValueOperand val) { pop(val.valueReg()); }
   void pushValue(const Value& val) {
@@ -765,11 +757,9 @@ class MacroAssemblerX64 : public MacroAssemblerX86Shared {
     vmovq(src, dest.valueReg());
   }
   void boxNonDouble(JSValueType type, Register src, const ValueOperand& dest) {
-    MOZ_ASSERT(src != dest.valueReg());
     boxValue(type, src, dest.valueReg());
   }
   void boxNonDouble(Register type, Register src, const ValueOperand& dest) {
-    MOZ_ASSERT(src != dest.valueReg());
     boxValue(type, src, dest.valueReg());
   }
 
@@ -1081,7 +1071,13 @@ class MacroAssemblerX64 : public MacroAssemblerX86Shared {
                      FloatRegister dest);
   void vmulpdSimd128(const SimdConstant& v, FloatRegister lhs,
                      FloatRegister dest);
+  void vandpsSimd128(const SimdConstant& v, FloatRegister lhs,
+                     FloatRegister dest);
   void vandpdSimd128(const SimdConstant& v, FloatRegister lhs,
+                     FloatRegister dest);
+  void vxorpsSimd128(const SimdConstant& v, FloatRegister lhs,
+                     FloatRegister dest);
+  void vxorpdSimd128(const SimdConstant& v, FloatRegister lhs,
                      FloatRegister dest);
   void vminpdSimd128(const SimdConstant& v, FloatRegister lhs,
                      FloatRegister dest);

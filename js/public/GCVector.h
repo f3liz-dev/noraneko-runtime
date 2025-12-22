@@ -42,6 +42,7 @@ namespace JS {
 template <typename T, size_t MinInlineCapacity = 0,
           typename AllocPolicy = js::TempAllocPolicy>
 class GCVector {
+ protected:
   mozilla::Vector<T, MinInlineCapacity, AllocPolicy> vector;
 
  public:
@@ -136,7 +137,7 @@ class GCVector {
   template <typename T2, size_t MinInlineCapacity2, typename AllocPolicy2>
   [[nodiscard]] bool appendAll(
       GCVector<T2, MinInlineCapacity2, AllocPolicy2>&& aU) {
-    return vector.appendAll(aU.begin(), aU.end());
+    return vector.appendAll(std::move(aU.vector));
   }
 
   [[nodiscard]] bool appendN(const T& val, size_t count) {
@@ -154,6 +155,12 @@ class GCVector {
 
   void popBack() { return vector.popBack(); }
   T popCopy() { return vector.popCopy(); }
+
+  void swap(GCVector& other) {
+    // Note, this only will work for MinInlineCapacity of zero.
+    // See Bug 1987683.
+    vector.swap(other.vector);
+  }
 
   size_t sizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf) const {
     return vector.sizeOfExcludingThis(mallocSizeOf);
@@ -203,6 +210,22 @@ template <typename T, typename AllocPolicy>
 class MOZ_STACK_CLASS StackGCVector : public GCVector<T, 8, AllocPolicy> {
  public:
   using Base = GCVector<T, 8, AllocPolicy>;
+
+  void trace(JSTracer* trc) {
+    if constexpr (!GCPolicy<T>::mightBeInNursery()) {
+      // Skip tracing of non-nursery types in minor GC.
+      if (trc->isTenuringTracer()) {
+#ifdef DEBUG
+        for (auto& elem : this->vector) {
+          MOZ_ASSERT(GCPolicy<T>::isTenured(elem));
+        }
+#endif
+        return;
+      }
+    }
+
+    Base::trace(trc);
+  }
 
  private:
   // Inherit constructor from GCVector.

@@ -9,7 +9,6 @@
 
 #include "js/loader/ModuleLoaderBase.h"
 #include "js/loader/ScriptFetchOptions.h"
-#include "mozilla/UniquePtr.h"
 #include "mozilla/dom/SerializedStackHolder.h"
 
 namespace mozilla::dom::workerinternals::loader {
@@ -91,6 +90,14 @@ class WorkerModuleLoader : public JS::loader::ModuleLoaderBase {
   void OnModuleLoadComplete(ModuleLoadRequest* aRequest) override;
 
   bool IsModuleEvaluationAborted(ModuleLoadRequest* aRequest) override;
+
+  bool IsModuleTypeAllowed(JS::ModuleType aModuleType) override {
+    // https://html.spec.whatwg.org/#module-type-allowed
+    // If moduleType is "css" and the CSSStyleSheet interface is not exposed in
+    // settings's realm, then return false.
+    return aModuleType == JS::ModuleType::JavaScript ||
+           aModuleType == JS::ModuleType::JSON;
+  }
 };
 
 }  // namespace mozilla::dom::workerinternals::loader

@@ -54,6 +54,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
     "resource:///modules/asrouter/ASRouterPreferences.sys.mjs",
   AttributionCode:
     "moz-src:///browser/components/attribution/AttributionCode.sys.mjs",
+  BackupService: "resource:///modules/backup/BackupService.sys.mjs",
   BrowserUtils: "resource://gre/modules/BrowserUtils.sys.mjs",
   BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.sys.mjs",
   ClientEnvironment: "resource://normandy/lib/ClientEnvironment.sys.mjs",
@@ -70,6 +71,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
     "resource:///modules/profiles/SelectableProfileService.sys.mjs",
   SessionStore: "resource:///modules/sessionstore/SessionStore.sys.mjs",
   TargetingContext: "resource://messaging-system/targeting/Targeting.sys.mjs",
+  TaskbarTabs: "resource:///modules/taskbartabs/TaskbarTabs.sys.mjs",
   TelemetryEnvironment: "resource://gre/modules/TelemetryEnvironment.sys.mjs",
   TelemetrySession: "resource://gre/modules/TelemetrySession.sys.mjs",
   WindowsLaunchOnLogin: "resource://gre/modules/WindowsLaunchOnLogin.sys.mjs",
@@ -200,14 +202,20 @@ XPCOMUtils.defineLazyPreferenceGetter(
 );
 
 XPCOMUtils.defineLazyServiceGetters(lazy, {
-  AUS: ["@mozilla.org/updates/update-service;1", "nsIApplicationUpdateService"],
-  BrowserHandler: ["@mozilla.org/browser/clh;1", "nsIBrowserHandler"],
-  ScreenManager: ["@mozilla.org/gfx/screenmanager;1", "nsIScreenManager"],
+  AUS: [
+    "@mozilla.org/updates/update-service;1",
+    Ci.nsIApplicationUpdateService,
+  ],
+  BrowserHandler: ["@mozilla.org/browser/clh;1", Ci.nsIBrowserHandler],
+  ScreenManager: ["@mozilla.org/gfx/screenmanager;1", Ci.nsIScreenManager],
   TrackingDBService: [
     "@mozilla.org/tracking-db-service;1",
-    "nsITrackingDBService",
+    Ci.nsITrackingDBService,
   ],
-  UpdateCheckSvc: ["@mozilla.org/updates/update-checker;1", "nsIUpdateChecker"],
+  UpdateCheckSvc: [
+    "@mozilla.org/updates/update-checker;1",
+    Ci.nsIUpdateChecker,
+  ],
 });
 
 const FXA_USERNAME_PREF = "services.sync.username";
@@ -419,6 +427,39 @@ export const QueryCache = {
       FRECENT_SITES_UPDATE_INTERVAL,
       ClientID
     ),
+    profileGroupProfileCount: new CachedTargetingGetter(
+      "getProfileGroupProfileCount",
+      null,
+      FRECENT_SITES_UPDATE_INTERVAL,
+      {
+        getProfileGroupProfileCount() {
+          if (
+            !Services.prefs.getBoolPref("browser.profiles.enabled", false) ||
+            !Services.prefs.getBoolPref("browser.profiles.created", false)
+          ) {
+            return 0;
+          }
+
+          return lazy.SelectableProfileService.getProfileCount();
+        },
+      }
+    ),
+    backupsInfo: new CachedTargetingGetter(
+      "findBackupsInWellKnownLocations",
+      null,
+      FRECENT_SITES_UPDATE_INTERVAL,
+      {
+        async findBackupsInWellKnownLocations() {
+          let bs;
+          try {
+            bs = lazy.BackupService.get();
+          } catch {
+            bs = lazy.BackupService.init();
+          }
+          return bs.findBackupsInWellKnownLocations();
+        },
+      }
+    ),
   },
 };
 
@@ -506,11 +547,7 @@ export function getSortedMessages(messages, options = {}) {
  *                    its type (web extenstion or custom url) and the parsed url(s)
  *
  * @param {string} url - A URL string for home page or newtab page
- * @returns {Object} {
- *   isWebExt: boolean,
- *   isCustomUrl: boolean,
- *   urls: Array<{url: string, host: string}>
- * }
+ * @returns  {{isWebExt: boolean, isCustomUrl: boolean, urls: {url: string, host: string}[]}}
  */
 function parseAboutPageURL(url) {
   let ret = {
@@ -812,6 +849,27 @@ const TargetingGetters = {
     let totalTabGroups = win.gBrowser.getAllTabGroups().length;
     return totalTabGroups;
   },
+  get currentTabInstalledAsWebApp() {
+    let win = lazy.BrowserWindowTracker.getTopWindow({
+      allowFromInactiveWorkspace: true,
+    });
+    if (!win) {
+      // There is no active tab, so it isn't a web app.
+      return false;
+    }
+
+    // Note: this is a promise!
+    return (
+      lazy.TaskbarTabs.findTaskbarTab(
+        win.gBrowser.selectedBrowser.currentURI,
+        win.gBrowser.selectedTab.userContextId
+      )
+        .then(aTaskbarTab => aTaskbarTab !== null)
+        // If this is not an nsIURL (e.g. if it's about:blank), then this will
+        // throw; in that case there isn't a matching web app.
+        .catch(() => false)
+    );
+  },
   get hasPinnedTabs() {
     for (let win of Services.wm.getEnumerator("navigator:browser")) {
       if (win.closed || !win.ownerGlobal.gBrowser) {
@@ -1075,7 +1133,8 @@ const TargetingGetters = {
       .getCharPref("distribution.id", "");
   },
 
-  /** Where the Firefox View button is shown, if at all.
+  /**
+   * Where the Firefox View button is shown, if at all.
    * @return {string} container of the button if it is shown in the toolbar/overflow menu
    * @return {string} `null` if the button has been removed
    */
@@ -1276,8 +1335,45 @@ const TargetingGetters = {
     return lazy.SelectableProfileService.currentProfile.id.toString();
   },
 
+  get profileGroupProfileCount() {
+    return QueryCache.getters.profileGroupProfileCount.get();
+  },
+
   get buildId() {
     return parseInt(AppConstants.MOZ_BUILDID, 10);
+  },
+
+  get backupsInfo() {
+    return QueryCache.getters.backupsInfo.get().catch(() => null);
+  },
+
+  get backupArchiveEnabled() {
+    let bs;
+    try {
+      bs = lazy.BackupService.get();
+    } catch {
+      bs = lazy.BackupService.init();
+    }
+    return bs.archiveEnabledStatus.enabled;
+  },
+
+  get backupRestoreEnabled() {
+    let bs;
+    try {
+      bs = lazy.BackupService.get();
+    } catch {
+      bs = lazy.BackupService.init();
+    }
+    return bs.restoreEnabledStatus.enabled;
+  },
+
+  get isEncryptedBackup() {
+    const isEncryptedBackup =
+      Services.prefs.getStringPref(
+        "messaging-system-action.backupChooser",
+        null
+      ) === "full";
+    return isEncryptedBackup;
   },
 };
 

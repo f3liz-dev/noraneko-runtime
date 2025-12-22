@@ -11,6 +11,10 @@ ChromeUtils.defineESModuleGetters(lazy, {
     "resource:///modules/ipprotection/IPProtectionService.sys.mjs",
 });
 
+const { ERRORS } = ChromeUtils.importESModule(
+  "chrome://browser/content/ipprotection/ipprotection-constants.mjs"
+);
+
 async function resetStateToObj(content, originalState) {
   content.state = originalState;
   content.requestUpdate();
@@ -28,7 +32,6 @@ add_task(async function user_toggle_on_and_off() {
     "IP Protection widget should be added to the navbar"
   );
 
-  lazy.IPProtectionService.isSignedIn = true;
   await putServerInRemoteSettings();
 
   let panelShownPromise = waitForPanelEvent(document, "popupshown");
@@ -50,22 +53,23 @@ add_task(async function user_toggle_on_and_off() {
 
   setupService({
     isSignedIn: true,
-    isEnrolled: true,
+    isEnrolledAndEntitled: true,
   });
-  IPProtectionService.isEnrolled = true;
-  IPProtectionService.isEntitled = true;
-  content.state.isSignedOut = false;
-  content.requestUpdate();
+  IPProtectionService.updateState();
   await content.updateComplete;
 
-  let toggle = content.connectionToggleEl;
+  let statusCard = content.shadowRoot.querySelector("ipprotection-status-card");
+
+  let toggle = statusCard.connectionToggleEl;
   Assert.ok(toggle, "Status card connection toggle should be present");
 
   Services.fog.testResetFOG();
   await Services.fog.testFlushAllChildren();
   let vpnOnPromise = BrowserTestUtils.waitForEvent(
     lazy.IPProtectionService,
-    "IPProtectionService:Started"
+    "IPProtectionService:StateChanged",
+    false,
+    () => !!IPProtectionService.activatedAt
   );
   // Toggle the VPN on
   toggle.click();
@@ -79,7 +83,9 @@ add_task(async function user_toggle_on_and_off() {
 
   let vpnOffPromise = BrowserTestUtils.waitForEvent(
     lazy.IPProtectionService,
-    "IPProtectionService:Stopped"
+    "IPProtectionService:StateChanged",
+    false,
+    () => !IPProtectionService.activatedAt
   );
   // Toggle the VPN off
   toggle.click();
@@ -90,10 +96,13 @@ add_task(async function user_toggle_on_and_off() {
   Assert.equal(toggledEvents[1].name, "toggled");
   Assert.equal(toggledEvents[1].extra.enabled, "false");
   Assert.equal(toggledEvents[1].extra.userAction, "true");
+  Assert.greater(
+    Math.ceil(toggledEvents[1].extra.duration),
+    0,
+    "Should have positive duration"
+  );
 
   Services.fog.testResetFOG();
-  IPProtectionService.isEnrolled = false;
-  IPProtectionService.isEntitled = false;
   cleanupService();
 
   // Close the panel
@@ -131,24 +140,23 @@ add_task(async function toggle_off_on_shutdown() {
 
   setupService({
     isSignedIn: true,
-    isEnrolled: true,
+    isEnrolledAndEntitled: true,
   });
-  IPProtectionService.isEnrolled = true;
-  IPProtectionService.isEntitled = true;
-  content.state.isSignedOut = false;
-  content.requestUpdate();
+  IPProtectionService.updateState();
   await content.updateComplete;
-  lazy.IPProtectionService.isSignedIn = true;
   await putServerInRemoteSettings();
 
-  let toggle = content.connectionToggleEl;
+  let statusCard = content.statusCardEl;
+  let toggle = statusCard.connectionToggleEl;
   Assert.ok(toggle, "Status card connection toggle should be present");
 
   Services.fog.testResetFOG();
 
   let vpnOnPromise = BrowserTestUtils.waitForEvent(
     lazy.IPProtectionService,
-    "IPProtectionService:Started"
+    "IPProtectionService:StateChanged",
+    false,
+    () => !!IPProtectionService.activatedAt
   );
   // Toggle the VPN on
   toggle.click();
@@ -168,11 +176,19 @@ add_task(async function toggle_off_on_shutdown() {
   Assert.equal(toggledEvents[1].name, "toggled");
   Assert.equal(toggledEvents[1].extra.enabled, "false");
   Assert.equal(toggledEvents[1].extra.userAction, "false");
+  Assert.greater(
+    Math.ceil(toggledEvents[1].extra.duration),
+    0,
+    "Should have positive duration"
+  );
+
+  // Clear userEnabled pref to avoid breaking tests
+  Services.prefs.clearUserPref("browser.ipProtection.userEnabled");
 
   Services.fog.testResetFOG();
   // Re-initialize to avoid breaking tests that follow
   cleanupService();
-  lazy.IPProtectionService.init();
+  await lazy.IPProtectionService.init();
   let widget = document.getElementById(IPProtectionWidget.WIDGET_ID);
   Assert.ok(
     BrowserTestUtils.isVisible(widget),
@@ -190,7 +206,7 @@ add_task(async function click_upgrade_button() {
     "IP Protection widget should be added to the navbar"
   );
 
-  lazy.IPProtectionService.isSignedIn = true;
+  lazy.IPProtectionService.setState(IPProtectionStates.READY);
   await putServerInRemoteSettings();
 
   let panelShownPromise = waitForPanelEvent(document, "popupshown");
@@ -229,4 +245,30 @@ add_task(async function click_upgrade_button() {
   Services.fog.testResetFOG();
 
   BrowserTestUtils.removeTab(newTab);
+});
+
+/**
+ * Tests that the error event is recorded when an error is triggered
+ */
+add_task(async function test_error_state() {
+  Services.fog.testResetFOG();
+  let button = document.getElementById(IPProtectionWidget.WIDGET_ID);
+  Assert.ok(
+    BrowserTestUtils.isVisible(button),
+    "IP Protection widget should be added to the navbar"
+  );
+
+  let panelShownPromise = waitForPanelEvent(document, "popupshown");
+  let panelInitPromise = BrowserTestUtils.waitForEvent(
+    document,
+    "IPProtection:Init"
+  );
+  button.click();
+  await Promise.all([panelShownPromise, panelInitPromise]);
+
+  lazy.IPProtectionService.setErrorState(ERRORS.GENERIC, ERRORS.GENERIC);
+  let errorEvent = Glean.ipprotection.error.testGetValue();
+  Assert.equal(errorEvent.length, 1, "should have recorded an error");
+  Services.fog.testResetFOG();
+  await closePanel();
 });

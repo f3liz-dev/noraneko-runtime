@@ -72,6 +72,7 @@ l10n_description_schema = Schema(
         # Description of the localized task
         Required("description"): _by_platform(str),
         Optional("run-on-projects"): job_description_schema["run-on-projects"],
+        Optional("run-on-repo-type"): job_description_schema["run-on-repo-type"],
         # worker-type to utilize
         Required("worker-type"): _by_platform(str),
         # File which contains the used locales
@@ -374,6 +375,7 @@ def make_job_description(config, jobs):
             "run-on-projects": (
                 job.get("run-on-projects") if job.get("run-on-projects") else []
             ),
+            "run-on-repo-type": job.get("run-on-repo-type", ["git", "hg"]),
         }
         if job.get("extra"):
             job_description["extra"] = job["extra"]
@@ -419,3 +421,27 @@ def make_job_description(config, jobs):
             job_description["shipping-product"] = job["shipping-product"]
 
         yield job_description
+
+
+@transforms.add
+def add_macos_signing_artifacts(config, jobs):
+    for job in jobs:
+        if "macosx" not in job["name"]:
+            yield job
+            continue
+        build_dep = None
+        for dep_job in get_dependencies(config, job):
+            if dep_job.kind == "build":
+                build_dep = dep_job
+                break
+        assert build_dep, f"l10n job {job['name']} has no build dependency"
+        for path, artifact in build_dep.task["payload"]["artifacts"].items():
+            if path.startswith("public/build/security/"):
+                job["worker"].setdefault("artifacts", []).append(
+                    {
+                        "name": path,
+                        "path": artifact["path"],
+                        "type": "file",
+                    }
+                )
+        yield job

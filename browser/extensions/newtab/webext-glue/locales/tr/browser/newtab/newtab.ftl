@@ -229,7 +229,7 @@ newtab-section-expand-section-label =
 ## Section Headers.
 
 newtab-section-header-topsites = Sık Kullanılan Siteler
-newtab-section-header-recent-activity = Son Etkinlikler
+newtab-section-header-recent-activity = Son etkinlikler
 # Variables:
 #   $provider (string) - Name of the corresponding content provider.
 newtab-section-header-pocket = { $provider } öneriyor
@@ -403,7 +403,7 @@ newtab-wallpaper-abstract-purple-green = Mor ve yeşil ışık geçişi
 newtab-wallpaper-abstract-blue-purple-waves = Mavi ve mor dalgalı şekiller
 newtab-wallpaper-abstract-black-waves = Siyah dalgalı şekiller
 
-## Celestial
+## Firefox
 
 newtab-wallpaper-category-title-photographs = Fotoğraflar
 newtab-wallpaper-beach-at-sunrise = Gün doğumunda sahil
@@ -432,6 +432,10 @@ feature-highlight-dismiss-button =
 feature-highlight-wallpaper =
     .title = { -newtab-wallpaper-feature-highlight-header }
     .aria-label = { -newtab-wallpaper-feature-highlight-content }
+
+## Firefox
+
+newtab-wallpaper-category-title-firefox = { -brand-product-name }
 
 ## Celestial
 
@@ -474,8 +478,16 @@ newtab-weather-menu-change-temperature-units-fahrenheit = Fahrenhayta geç
 newtab-weather-menu-change-temperature-units-celsius = Celsius’a geç
 newtab-weather-menu-hide-weather = Yeni sekmede hava durumunu gizle
 newtab-weather-menu-learn-more = Daha fazla bilgi al
+newtab-weather-menu-detect-my-location = Konumumu tespit et
 # This message is shown if user is working offline
 newtab-weather-error-not-available = Hava durumu verileri şu anda mevcut değil.
+newtab-weather-opt-in-see-weather = Bulunduğunuz yerin hava durumunu görmek ister misiniz?
+newtab-weather-opt-in-not-now =
+    .label = Şimdi değil
+newtab-weather-opt-in-yes =
+    .label = Evet
+# We'll be showing static (fake) weather data if the user has not opted in to using their location
+newtab-weather-static-city = New York City
 
 ## Topic Labels
 
@@ -642,6 +654,9 @@ newtab-widget-lists-input-menu-move-up = Yukarı taşı
 newtab-widget-lists-input-menu-move-down = Aşağı taşı
 newtab-widget-lists-input-menu-delete = Sil
 newtab-widget-lists-input-menu-edit = Düzenle
+# the + symbol emphasises the functionality of adding a new list
+newtab-widget-lists-dropdown-create =
+    .label = + Yeni liste oluştur
 newtab-widget-lists-name-label-default =
     .label = Görev listesi
 newtab-widget-lists-name-placeholder-default =
@@ -661,10 +676,6 @@ newtab-widget-timer-mode-focus =
     .label = Odaklan
 newtab-widget-timer-mode-break =
     .label = Mola ver
-newtab-widget-timer-play =
-    .title = Başlat
-newtab-widget-timer-pause =
-    .title = Duraklat
 newtab-widget-timer-label-play =
     .label = Başlat
 newtab-widget-timer-label-pause =

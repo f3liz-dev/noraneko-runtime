@@ -14,7 +14,6 @@ use crate::shared_lock::{
     DeepCloneWithLock, Locked, SharedRwLock, SharedRwLockReadGuard, ToCssWithGuard,
 };
 use crate::simple_buckets_map::SimpleBucketsMap;
-use crate::str::CssStringWriter;
 use crate::stylesheets::CssRules;
 use cssparser::{Parser, SourceLocation, ToCss};
 #[cfg(feature = "gecko")]
@@ -27,7 +26,7 @@ use selectors::parser::{Component, ParseRelative, Selector, SelectorList};
 use selectors::OpaqueElement;
 use servo_arc::Arc;
 use std::fmt::{self, Write};
-use style_traits::{CssWriter, ParseError};
+use style_traits::{CssStringWriter, CssWriter, ParseError};
 
 /// A scoped rule.
 #[derive(Debug, ToShmem)]
@@ -128,10 +127,6 @@ fn parse_scope<'a>(
             return Ok(None);
         }
         input.parse_nested_block(|input| {
-            if input.is_exhausted() {
-                // `@scope () {}` is valid.
-                return Ok(None);
-            }
             let selector_parser = SelectorParser {
                 stylesheet_origin: context.stylesheet_origin,
                 namespaces: &context.namespaces,
@@ -307,9 +302,6 @@ where
     let mut parent = Some(element);
     let mut proximity = 0usize;
     while let Some(p) = parent {
-        if ceiling == Some(p.opaque()) {
-            break;
-        }
         if target.check(p, ceiling, scope_subject_map, context) {
             result.push(ScopeRootCandidate {
                 root: p.opaque(),
@@ -317,6 +309,9 @@ where
             });
             // Note that we can't really break here - we need to consider
             // ALL scope roots to figure out whch one didn't end.
+        }
+        if ceiling == Some(p.opaque()) {
+            break;
         }
         parent = p.parent_element();
         proximity += 1;

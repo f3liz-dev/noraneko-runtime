@@ -750,7 +750,11 @@ bool nsContentSecurityUtils::IsEvalAllowed(JSContext* cx,
   MOZ_CRASH_UNSAFE_PRINTF("%s", crashString.get());
 #endif
 
+#if defined(ANDROID) && !defined(NIGHTLY_BUILD)
+  return true;
+#else
   return false;
+#endif
 }
 
 /* static */
@@ -1000,10 +1004,10 @@ nsresult CheckCSPFrameAncestorPolicy(nsIChannel* aChannel,
 
   nsAutoCString tCspHeaderValue, tCspROHeaderValue;
   if (httpChannel) {
-    Unused << httpChannel->GetResponseHeader("content-security-policy"_ns,
-                                             tCspHeaderValue);
+    (void)httpChannel->GetResponseHeader("content-security-policy"_ns,
+                                         tCspHeaderValue);
 
-    Unused << httpChannel->GetResponseHeader(
+    (void)httpChannel->GetResponseHeader(
         "content-security-policy-report-only"_ns, tCspROHeaderValue);
 
     // if there are no CSP values, then there is nothing to do here.
@@ -1288,8 +1292,10 @@ static nsLiteralCString sStyleSrcUnsafeInlineAllowList[] = {
     "chrome://devtools/content/framework/toolbox-window.xhtml"_ns,
     "chrome://devtools/content/inspector/index.xhtml"_ns,
     "chrome://devtools/content/inspector/markup/markup.xhtml"_ns,
+    "chrome://devtools/content/netmonitor/index.html"_ns,
     "chrome://devtools/content/memory/index.xhtml"_ns,
     "chrome://devtools/content/shared/sourceeditor/codemirror/cmiframe.html"_ns,
+    "chrome://devtools/content/webconsole/index.html"_ns,
     "chrome://formautofill/content/manageAddresses.xhtml"_ns,
     "chrome://formautofill/content/manageCreditCards.xhtml"_ns,
     "chrome://gfxsanity/content/sanityparent.html"_ns,
@@ -1341,7 +1347,6 @@ static nsLiteralCString sImgSrcDataBlobAllowList[] = {
     "chrome://browser/content/aboutDialog.xhtml"_ns,
     "chrome://browser/content/aboutlogins/aboutLogins.html"_ns,
     "chrome://browser/content/genai/chat.html"_ns,
-    "chrome://browser/content/pageinfo/pageInfo.xhtml"_ns,
     "chrome://browser/content/places/bookmarksSidebar.xhtml"_ns,
     "chrome://browser/content/places/places.xhtml"_ns,
     "chrome://browser/content/preferences/dialogs/permissions.xhtml"_ns,
@@ -1402,8 +1407,7 @@ static nsLiteralCString sImgSrcAddonsAllowList[] = {
 // img-src *
 //  UNSAFE! Allows loading everything.
 static nsLiteralCString sImgSrcWildcardAllowList[] = {
-    "about:reader"_ns, "chrome://browser/content/pageinfo/pageInfo.xhtml"_ns,
-    "chrome://browser/content/syncedtabs/sidebar.xhtml"_ns,
+    "about:reader"_ns, "chrome://browser/content/syncedtabs/sidebar.xhtml"_ns,
     // STOP! Do not add anything to this list.
 };
 // img-src https://example.org
@@ -1413,14 +1417,10 @@ static nsLiteralCString sImgSrcHttpsHostAllowList[] = {
     "chrome://browser/content/aboutlogins/aboutLogins.html"_ns,
     "chrome://browser/content/spotlight.html"_ns,
 };
-// media-src data: blob:
-static nsLiteralCString sMediaSrcDataBlobAllowList[] = {
-    "chrome://browser/content/pageinfo/pageInfo.xhtml"_ns,
-};
 // media-src *
 //  UNSAFE! Allows loading everything.
 static nsLiteralCString sMediaSrcWildcardAllowList[] = {
-    "about:reader"_ns, "chrome://browser/content/pageinfo/pageInfo.xhtml"_ns,
+    "about:reader"_ns,
     // STOP! Do not add anything to this list.
 };
 // media-src https://example.org
@@ -1639,20 +1639,6 @@ class MediaSrcVisitor : public AllowBuiltinSrcVisitor {
   MediaSrcVisitor(CSPDirective aDirective, nsACString& aURL)
       : AllowBuiltinSrcVisitor(aDirective, aURL) {
     MOZ_ASSERT(aDirective == CSPDirective::MEDIA_SRC_DIRECTIVE);
-  }
-
-  bool visitSchemeSrc(const nsCSPSchemeSrc& src) override {
-    nsAutoString scheme;
-    src.getScheme(scheme);
-
-    // data: and blob: can be used to decode arbitrary media.
-    if (scheme == u"data"_ns || scheme == u"blob") {
-      if (CheckAllowList(sMediaSrcDataBlobAllowList)) {
-        return true;
-      }
-    }
-
-    return AllowBuiltinSrcVisitor::visitSchemeSrc(src);
   }
 
   bool visitHostSrc(const nsCSPHostSrc& src) override {

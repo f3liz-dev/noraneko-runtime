@@ -17,8 +17,8 @@ import mozilla.components.browser.state.search.DefaultSearchEngineProvider
 import mozilla.components.browser.state.search.SearchEngine
 import mozilla.components.browser.state.store.BrowserStore
 import mozilla.components.compose.browser.toolbar.store.BrowserEditToolbarAction
-import mozilla.components.compose.browser.toolbar.store.BrowserEditToolbarAction.PrivateModeUpdated
 import mozilla.components.compose.browser.toolbar.store.BrowserToolbarStore
+import mozilla.components.compose.browser.toolbar.ui.BrowserToolbarQuery
 import mozilla.components.concept.awesomebar.AwesomeBar
 import mozilla.components.concept.engine.Engine
 import mozilla.components.concept.engine.EngineSession.LoadUrlFlags
@@ -34,7 +34,7 @@ import mozilla.telemetry.glean.private.NoExtras
 import org.mozilla.fenix.GleanMetrics.BookmarksManagement
 import org.mozilla.fenix.GleanMetrics.Events
 import org.mozilla.fenix.GleanMetrics.History
-import org.mozilla.fenix.GleanMetrics.UnifiedSearch
+import org.mozilla.fenix.GleanMetrics.Toolbar
 import org.mozilla.fenix.R
 import org.mozilla.fenix.browser.browsingmode.BrowsingMode
 import org.mozilla.fenix.components.AppStore
@@ -65,6 +65,8 @@ import org.mozilla.fenix.search.awesomebar.DefaultSuggestionIconProvider
 import org.mozilla.fenix.search.awesomebar.DefaultSuggestionsStringsProvider
 import org.mozilla.fenix.search.awesomebar.SearchSuggestionsProvidersBuilder
 import org.mozilla.fenix.search.awesomebar.toSearchProviderState
+import org.mozilla.fenix.telemetry.ACTION_SEARCH_ENGINE_SELECTED
+import org.mozilla.fenix.telemetry.SOURCE_ADDRESS_BAR
 import org.mozilla.fenix.utils.Settings
 import mozilla.components.lib.state.Action as MVIAction
 
@@ -116,12 +118,6 @@ class FenixSearchMiddleware(
             }
 
             is SearchStarted -> {
-                toolbarStore.dispatch(
-                    PrivateModeUpdated(
-                        environment?.browsingModeManager?.mode?.isPrivate == true,
-                    ),
-                )
-
                 next(action)
 
                 engine.speculativeCreateSession(action.inPrivateMode)
@@ -162,13 +158,13 @@ class FenixSearchMiddleware(
                     }
                 }
                 browserStore.dispatch(AwesomeBarAction.SuggestionClicked(suggestion))
-                toolbarStore.dispatch(BrowserEditToolbarAction.SearchQueryUpdated(""))
+                toolbarStore.dispatch(BrowserEditToolbarAction.SearchQueryUpdated(BrowserToolbarQuery("")))
                 suggestion.onSuggestionClicked?.invoke()
             }
 
             is SuggestionSelected -> {
                 action.suggestion.editSuggestion?.let {
-                    toolbarStore.dispatch(BrowserEditToolbarAction.SearchQueryUpdated(it))
+                    toolbarStore.dispatch(BrowserEditToolbarAction.SearchQueryUpdated(BrowserToolbarQuery(it)))
                 }
             }
 
@@ -260,7 +256,7 @@ class FenixSearchMiddleware(
         query: String,
     ) {
         val shouldShowTrendingSearches = context.state.run {
-            (showTrendingSearches || showRecentSearches || showShortcutsSuggestions) &&
+            (showTrendingSearches || showRecentSearches) &&
                 (searchStartedForCurrentUrl || FxNimbus.features.searchSuggestionsOnHomepage.value().enabled)
         }
         val shouldShowSearchSuggestions = with(context.state) {
@@ -438,7 +434,13 @@ class FenixSearchMiddleware(
     ) {
         handleSearchShortcutEngineSelected(context, searchEngine)
 
-        UnifiedSearch.engineSelected.record(UnifiedSearch.EngineSelectedExtra(searchEngine.telemetryName()))
+        Toolbar.buttonTapped.record(
+            Toolbar.ButtonTappedExtra(
+                source = SOURCE_ADDRESS_BAR,
+                item = ACTION_SEARCH_ENGINE_SELECTED,
+                extra = searchEngine.telemetryName(),
+            ),
+        )
     }
 
     /**

@@ -31,6 +31,7 @@
 
 using namespace mozilla;
 using mozilla::dom::Document;
+using mozilla::dom::ForceMediaDocument;
 
 already_AddRefed<nsIDocumentViewer> NS_NewDocumentViewer();
 
@@ -182,7 +183,7 @@ nsContentDLF::CreateInstance(const char* aCommand, nsIChannel* aChannel,
     // type of the data.  If it's known, use it; otherwise use
     // text/plain.
     nsAutoCString type;
-    mozilla::Unused << viewSourceChannel->GetOriginalContentType(type);
+    (void)viewSourceChannel->GetOriginalContentType(type);
     bool knownType = (!type.EqualsLiteral(VIEWSOURCE_CONTENT_TYPE) &&
                       IsTypeInList(type, gHTMLTypes)) ||
                      nsContentUtils::IsPlainTextType(type) ||
@@ -203,17 +204,24 @@ nsContentDLF::CreateInstance(const char* aCommand, nsIChannel* aChannel,
   }
 
   nsCOMPtr<nsILoadInfo> loadInfo = aChannel->LoadInfo();
-  CreateDocumentKind kind;
-  switch (loadInfo->GetForceMediaDocument()) {
-    case dom::ForceMediaDocument::Image:
-      kind = CreateDocumentKind::Image;
-      break;
-    case dom::ForceMediaDocument::Video:
-      kind = CreateDocumentKind::Video;
-      break;
-    case dom::ForceMediaDocument::None:
-      kind = GetCreateDocumentKind(contentType);
-      break;
+  CreateDocumentKind kind = CreateDocumentKind::None;
+  // SVGDocumentWrapper::SetupViewer needs to be able to create a proper SVG
+  // document internally even when creating an ImageDocument.
+  if ((!aCommand || strcmp(aCommand, "external-resource") != 0) &&
+      loadInfo->GetForceMediaDocument() != ForceMediaDocument::None) {
+    switch (loadInfo->GetForceMediaDocument()) {
+      case dom::ForceMediaDocument::Video:
+        kind = CreateDocumentKind::Video;
+        break;
+      case dom::ForceMediaDocument::Image:
+        kind = CreateDocumentKind::Image;
+        break;
+      case dom::ForceMediaDocument::None:
+        MOZ_ASSERT_UNREACHABLE("Can't be None");
+        break;
+    }
+  } else {
+    kind = GetCreateDocumentKind(contentType);
   }
 
   if (kind == CreateDocumentKind::None) {
@@ -246,8 +254,7 @@ already_AddRefed<Document> nsContentDLF::CreateBlankDocument(
     nsIPrincipal* aPartitionedPrincipal, nsDocShell* aContainer) {
   // create a new blank HTML document
   RefPtr<Document> blankDoc;
-  mozilla::Unused << NS_NewHTMLDocument(getter_AddRefs(blankDoc), nullptr,
-                                        nullptr);
+  (void)NS_NewHTMLDocument(getter_AddRefs(blankDoc), nullptr, nullptr);
 
   if (!blankDoc) {
     return nullptr;

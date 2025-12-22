@@ -13,7 +13,7 @@
 edition = "2021"
 rust-version = "1.82.0"
 name = "wgpu-hal"
-version = "26.0.0"
+version = "27.0.0"
 authors = ["gfx-rs developers"]
 build = "build.rs"
 autolib = false
@@ -49,7 +49,6 @@ targets = [
 ]
 
 [features]
-cargo-clippy = []
 device_lost_panic = []
 dx12 = [
     "naga/hlsl-out",
@@ -60,11 +59,14 @@ dx12 = [
     "dep:libloading",
     "dep:log",
     "dep:ordered-float",
+    "dep:once_cell",
     "dep:parking_lot",
     "dep:profiling",
     "dep:range-alloc",
     "dep:windows-core",
+    "dep:gpu-allocator",
     "gpu-allocator/d3d12",
+    "windows/Win32_Devices_DeviceAndDriverInstallation",
     "windows/Win32_Graphics_Direct3D_Fxc",
     "windows/Win32_Graphics_Direct3D_Dxc",
     "windows/Win32_Graphics_Direct3D",
@@ -189,7 +191,7 @@ version = "0.16"
 optional = true
 
 [dependencies.hashbrown]
-version = "0.15"
+version = "0.16"
 features = [
     "default-hasher",
     "inline-more",
@@ -202,11 +204,11 @@ version = "0.4.21"
 optional = true
 
 [dependencies.naga]
-version = "26.0.0"
+version = "27.0.0"
 path = "../naga"
 
 [dependencies.ordered-float]
-version = ">=3, <=5.0"
+version = ">=3, <6.0"
 optional = true
 default-features = false
 
@@ -223,17 +225,12 @@ default-features = false
 version = "0.6.2"
 default-features = false
 
-[dependencies.rustc-hash]
-version = "1.1"
-optional = true
-default-features = false
-
 [dependencies.thiserror]
 version = "2.0.12"
 default-features = false
 
 [dependencies.wgpu-types]
-version = "26.0.0"
+version = "27.0.0"
 path = "../wgpu-types"
 default-features = false
 
@@ -242,10 +239,10 @@ version = "0.11"
 default-features = false
 
 [dev-dependencies.glam]
-version = "0.30"
+version = "0.30.7"
 
 [dev-dependencies.naga]
-version = "26.0.0"
+version = "27.0.0"
 path = "../naga"
 features = [
     "wgsl-in",
@@ -346,7 +343,7 @@ version = "1"
 optional = true
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies.smallvec]
-version = "1.13.1"
+version = "1.14"
 features = ["union"]
 optional = true
 
@@ -392,7 +389,7 @@ version = "0.2.5"
 optional = true
 
 [target."cfg(unix)".dependencies.libc]
-version = "0.2.168"
+version = "0.2.171"
 optional = true
 default-features = false
 
@@ -407,6 +404,12 @@ optional = true
 
 [target."cfg(windows)".dependencies.gpu-allocator]
 version = "0.27"
+features = ["d3d12"]
+optional = true
+default-features = false
+
+[target."cfg(windows)".dependencies.once_cell]
+version = "1.21"
 optional = true
 default-features = false
 
@@ -427,4 +430,7 @@ default-features = false
 [lints.rust.unexpected_cfgs]
 level = "warn"
 priority = 0
-check-cfg = ["cfg(web_sys_unstable_apis)"]
+check-cfg = [
+    'cfg(feature, values("cargo-clippy"))',
+    "cfg(web_sys_unstable_apis)",
+]

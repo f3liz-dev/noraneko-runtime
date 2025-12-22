@@ -191,7 +191,10 @@ export class PictureInPictureLauncherChild extends JSWindowActorChild {
           detail: { reason },
         }
       );
-      video.dispatchEvent(stopPipEvent);
+      this.contentWindow.windowUtils.dispatchEventToChromeOnly(
+        video,
+        stopPipEvent
+      );
       return;
     }
 
@@ -390,7 +393,7 @@ export class PictureInPictureToggleChild extends JSWindowActorChild {
     }
 
     switch (data) {
-      case TOGGLE_FIRST_SEEN_PREF:
+      case TOGGLE_FIRST_SEEN_PREF: {
         const firstSeenSeconds = Services.prefs.getIntPref(
           TOGGLE_FIRST_SEEN_PREF
         );
@@ -399,6 +402,7 @@ export class PictureInPictureToggleChild extends JSWindowActorChild {
         }
         this.changeToIconIfDurationEnd(firstSeenSeconds);
         break;
+      }
     }
   }
 
@@ -687,7 +691,7 @@ export class PictureInPictureToggleChild extends JSWindowActorChild {
           detail: { reason: "UrlBar", eventExtraKeys },
         }
       );
-      video.dispatchEvent(pipEvent);
+      this.contentWindow.windowUtils.dispatchEventToChromeOnly(video, pipEvent);
     }
   }
 
@@ -1076,7 +1080,7 @@ export class PictureInPictureToggleChild extends JSWindowActorChild {
         detail: { reason: "Toggle" },
       }
     );
-    video.dispatchEvent(pipEvent);
+    this.contentWindow.windowUtils.dispatchEventToChromeOnly(video, pipEvent);
 
     // Since we've initiated Picture-in-Picture, we can go ahead and
     // hide the toggle now.
@@ -2674,7 +2678,7 @@ export class PictureInPictureChild extends JSWindowActorChild {
           this.videoWrapper.setCurrentTime(video, newval >= 0 ? newval : 0);
           break;
         case "rightArrow": /* Seek forward 5 seconds */
-        case "accel-rightArrow" /* Seek forward 10% */:
+        case "accel-rightArrow" /* Seek forward 10% */: {
           if (
             this.isKeyDisabled(lazy.KEYBOARD_CONTROLS.SEEK) ||
             (isVideoStreaming &&
@@ -2693,6 +2697,7 @@ export class PictureInPictureChild extends JSWindowActorChild {
           let selectedTime = newval <= maxtime ? newval : maxtime;
           this.videoWrapper.setCurrentTime(video, selectedTime);
           break;
+        }
         case "home" /* Seek to beginning */:
           if (this.isKeyDisabled(lazy.KEYBOARD_CONTROLS.SEEK)) {
             return;
@@ -2701,7 +2706,7 @@ export class PictureInPictureChild extends JSWindowActorChild {
             this.videoWrapper.setCurrentTime(video, 0);
           }
           break;
-        case "end" /* Seek to end */:
+        case "end" /* Seek to end */: {
           if (this.isKeyDisabled(lazy.KEYBOARD_CONTROLS.SEEK)) {
             return;
           }
@@ -2714,6 +2719,7 @@ export class PictureInPictureChild extends JSWindowActorChild {
             this.videoWrapper.setCurrentTime(video, duration);
           }
           break;
+        }
         default:
       }
     } catch (e) {
@@ -3061,7 +3067,7 @@ class PictureInPictureChildVideoWrapper {
    * @param {Number} aSeconds
    *  The time in seconds
    * @returns {String} Timestamp string
-   **/
+   */
   timeFromSeconds(aSeconds) {
     aSeconds = isNaN(aSeconds) ? 0 : Math.round(aSeconds);
     let seconds = Math.floor(aSeconds % 60),
@@ -3082,7 +3088,7 @@ class PictureInPictureChildVideoWrapper {
    * @param {Number} aDuration
    *  The total duration in seconds
    * @returns {String} Formatted timestamp
-   **/
+   */
   formatTimestamp(aCurrentTime, aDuration) {
     // We can't format numbers that can't be represented as decimal digits.
     if (!Number.isFinite(aCurrentTime) || !Number.isFinite(aDuration)) {

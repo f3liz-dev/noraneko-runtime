@@ -1,7 +1,7 @@
 //! This library describes the API surface of WebGPU that is agnostic of the backend.
 //! This API is used for targeting both Web and Native.
 
-#![cfg_attr(docsrs, feature(doc_cfg, doc_auto_cfg))]
+#![cfg_attr(docsrs, feature(doc_cfg))]
 #![allow(
     // We don't use syntax sugar where it's not necessary.
     clippy::match_like_matches_macro,
@@ -16,13 +16,14 @@ extern crate alloc;
 
 use alloc::borrow::Cow;
 use alloc::{string::String, vec, vec::Vec};
-use core::cmp::Ordering;
 use core::{
+    cmp::Ordering,
     fmt,
     hash::{Hash, Hasher},
     mem,
     num::NonZeroU32,
     ops::Range,
+    time::Duration,
 };
 
 use bytemuck::{Pod, Zeroable};
@@ -666,9 +667,9 @@ pub struct Limits {
     /// Defaults to 65535. Higher is "better".
     pub max_compute_workgroups_per_dimension: u32,
 
-    /// Minimal number of invocations in a subgroup. Higher is "better".
+    /// Minimal number of invocations in a subgroup. Lower is "better".
     pub min_subgroup_size: u32,
-    /// Maximal number of invocations in a subgroup. Lower is "better".
+    /// Maximal number of invocations in a subgroup. Higher is "better".
     pub max_subgroup_size: u32,
     /// Amount of storage available for push constants in bytes. Defaults to 0. Higher is "better".
     /// Requesting more than 0 during device creation requires [`Features::PUSH_CONSTANTS`] to be enabled.
@@ -1408,12 +1409,21 @@ pub struct AdapterInfo {
     pub device: u32,
     /// Type of device
     pub device_type: DeviceType,
+    /// [`Backend`]-specific PCI bus ID of the adapter.
+    ///
+    /// * For [`Backend::Vulkan`], [`VkPhysicalDevicePCIBusInfoPropertiesEXT`] is used,
+    ///   if available, in the form `bus:device.function`, e.g. `0000:01:00.0`.
+    ///
+    /// [`VkPhysicalDevicePCIBusInfoPropertiesEXT`]: https://registry.khronos.org/vulkan/specs/latest/man/html/VkPhysicalDevicePCIBusInfoPropertiesEXT.html
+    pub device_pci_bus_id: String,
     /// Driver name
     pub driver: String,
     /// Driver info
     pub driver_info: String,
     /// Backend used for device
     pub backend: Backend,
+    /// If true, adding [`TextureUsages::TRANSIENT`] to a texture will decrease memory usage.
+    pub transient_saves_memory: bool,
 }
 
 /// Hints to the device about the memory allocation strategy.
@@ -3120,7 +3130,7 @@ impl TextureFormat {
         // Flags
         let basic =
             TextureUsages::COPY_SRC | TextureUsages::COPY_DST | TextureUsages::TEXTURE_BINDING;
-        let attachment = basic | TextureUsages::RENDER_ATTACHMENT;
+        let attachment = basic | TextureUsages::RENDER_ATTACHMENT | TextureUsages::TRANSIENT;
         let storage = basic | TextureUsages::STORAGE_BINDING;
         let binding = TextureUsages::TEXTURE_BINDING;
         let all_flags = attachment | storage | binding;
@@ -4502,37 +4512,42 @@ pub enum PollType<T> {
     ///
     /// On WebGPU, this has no effect. Callbacks are invoked from the
     /// window event loop.
-    WaitForSubmissionIndex(T),
-    /// Same as `WaitForSubmissionIndex` but waits for the most recent submission.
-    Wait,
+    Wait {
+        /// Submission index to wait for.
+        ///
+        /// If not specified, will wait for the most recent submission at the time of the poll.
+        /// By the time the method returns, more submissions may have taken place.
+        submission_index: Option<T>,
+
+        /// Max time to wait for the submission to complete.
+        ///
+        /// If not specified, will wait indefinitely (or until an error is detected).
+        /// If waiting for the GPU device takes this long or longer, the poll will return [`PollError::Timeout`].
+        timeout: Option<Duration>,
+    },
+
     /// Check the device for a single time without blocking.
     Poll,
 }
 
 impl<T> PollType<T> {
-    /// Construct a [`Self::Wait`] variant
+    /// Wait indefinitely until for the most recent submission to complete.
+    ///
+    /// This is a convenience function that creates a [`Self::Wait`] variant with
+    /// no timeout and no submission index.
     #[must_use]
-    pub fn wait() -> Self {
-        // This function seems a little silly, but it is useful to allow
-        // <https://github.com/gfx-rs/wgpu/pull/5012> to be split up, as
-        // it has meaning in that PR.
-        Self::Wait
-    }
-
-    /// Construct a [`Self::WaitForSubmissionIndex`] variant
-    #[must_use]
-    pub fn wait_for(submission_index: T) -> Self {
-        // This function seems a little silly, but it is useful to allow
-        // <https://github.com/gfx-rs/wgpu/pull/5012> to be split up, as
-        // it has meaning in that PR.
-        Self::WaitForSubmissionIndex(submission_index)
+    pub const fn wait_indefinitely() -> Self {
+        Self::Wait {
+            submission_index: None,
+            timeout: None,
+        }
     }
 
     /// This `PollType` represents a wait of some kind.
     #[must_use]
     pub fn is_wait(&self) -> bool {
         match *self {
-            Self::WaitForSubmissionIndex(..) | Self::Wait => true,
+            Self::Wait { .. } => true,
             Self::Poll => false,
         }
     }
@@ -4544,30 +4559,46 @@ impl<T> PollType<T> {
         F: FnOnce(T) -> U,
     {
         match self {
-            Self::WaitForSubmissionIndex(i) => PollType::WaitForSubmissionIndex(func(i)),
-            Self::Wait => PollType::Wait,
+            Self::Wait {
+                submission_index,
+                timeout,
+            } => PollType::Wait {
+                submission_index: submission_index.map(func),
+                timeout,
+            },
             Self::Poll => PollType::Poll,
         }
     }
 }
 
-/// Error states after a device poll
+/// Error states after a device poll.
 #[derive(Debug)]
-#[cfg_attr(feature = "std", derive(thiserror::Error))]
 pub enum PollError {
     /// The requested Wait timed out before the submission was completed.
-    #[cfg_attr(
-        feature = "std",
-        error("The requested Wait timed out before the submission was completed.")
-    )]
     Timeout,
     /// The requested Wait was given a wrong submission index.
-    #[cfg_attr(
-        feature = "std",
-        error("Tried to wait using a submission index ({0}) that has not been returned by a successful submission (last successful submission: {1})")
-    )]
     WrongSubmissionIndex(u64, u64),
 }
+
+// This impl could be derived by `thiserror`, but by not doing so, we can reduce the number of
+// dependencies this early in the dependency graph, which may improve build parallelism.
+impl fmt::Display for PollError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            PollError::Timeout => {
+                f.write_str("The requested Wait timed out before the submission was completed.")
+            }
+            PollError::WrongSubmissionIndex(requested, successful) => write!(
+                f,
+                "Tried to wait using a submission index ({requested}) \
+                that has not been returned by a successful submission \
+                (last successful submission: {successful}"
+            ),
+        }
+    }
+}
+
+impl core::error::Error for PollError {}
 
 /// Status of device poll operation.
 #[derive(Debug, PartialEq, Eq)]
@@ -5365,7 +5396,7 @@ bitflags::bitflags! {
 }
 
 /// A buffer transition for use with `CommandEncoder::transition_resources`.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct BufferTransition<T> {
     /// The buffer to transition.
     pub buffer: T,
@@ -5601,6 +5632,8 @@ bitflags::bitflags! {
         /// Allows a texture to be a [`BindingType::StorageTexture`] in a bind group.
         const STORAGE_BINDING = 1 << 3;
         /// Allows a texture to be an output attachment of a render pass.
+        ///
+        /// Consider adding [`TextureUsages::TRANSIENT`] if the contents are not reused.
         const RENDER_ATTACHMENT = 1 << 4;
 
         //
@@ -5610,6 +5643,15 @@ bitflags::bitflags! {
         //
         /// Allows a texture to be used with image atomics. Requires [`Features::TEXTURE_ATOMIC`].
         const STORAGE_ATOMIC = 1 << 16;
+        /// Specifies the contents of this texture will not be used in another pass to potentially reduce memory usage and bandwidth.
+        ///
+        /// No-op on platforms on platforms that do not benefit from transient textures.
+        /// Generally mobile and Apple chips care about this.
+        ///
+        /// Incompatible with ALL other usages except [`TextureUsages::RENDER_ATTACHMENT`] and requires it.
+        ///
+        /// Requires [`StoreOp::Discard`].
+        const TRANSIENT = 1 << 17;
     }
 }
 
@@ -5647,6 +5689,8 @@ bitflags::bitflags! {
         /// Image atomic enabled storage.
         /// cbindgen:ignore
         const STORAGE_ATOMIC = 1 << 11;
+        /// Transient texture that may not have any backing memory. Not a resource state stored in the trackers, only used for passing down usages to create_texture.
+        const TRANSIENT = 1 << 12;
         /// The combination of states that a texture may be in _at the same time_.
         /// cbindgen:ignore
         const INCLUSIVE = Self::COPY_SRC.bits() | Self::RESOURCE.bits() | Self::DEPTH_STENCIL_READ.bits();
@@ -5660,15 +5704,15 @@ bitflags::bitflags! {
         const ORDERED = Self::INCLUSIVE.bits() | Self::COLOR_TARGET.bits() | Self::DEPTH_STENCIL_WRITE.bits() | Self::STORAGE_READ_ONLY.bits();
 
         /// Flag used by the wgpu-core texture tracker to say a texture is in different states for every sub-resource
-        const COMPLEX = 1 << 12;
+        const COMPLEX = 1 << 13;
         /// Flag used by the wgpu-core texture tracker to say that the tracker does not know the state of the sub-resource.
         /// This is different from UNINITIALIZED as that says the tracker does know, but the texture has not been initialized.
-        const UNKNOWN = 1 << 13;
+        const UNKNOWN = 1 << 14;
     }
 }
 
 /// A texture transition for use with `CommandEncoder::transition_resources`.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct TextureTransition<T> {
     /// The texture to transition.
     pub texture: T,
@@ -6576,7 +6620,7 @@ pub struct SamplerDescriptor<L> {
     /// How to filter the texture when it needs to be minified (made smaller)
     pub min_filter: FilterMode,
     /// How to filter between mip map levels
-    pub mipmap_filter: FilterMode,
+    pub mipmap_filter: MipmapFilterMode,
     /// Minimum level of detail (i.e. mip level) to use
     pub lod_min_clamp: f32,
     /// Maximum level of detail (i.e. mip level) to use
@@ -6681,12 +6725,32 @@ pub enum AddressMode {
 pub enum FilterMode {
     /// Nearest neighbor sampling.
     ///
-    /// This creates a pixelated effect when used as a mag filter
+    /// This creates a pixelated effect.
     #[default]
     Nearest = 0,
     /// Linear Interpolation
     ///
-    /// This makes textures smooth but blurry when used as a mag filter.
+    /// This makes textures smooth but blurry.
+    Linear = 1,
+}
+
+/// Texel mixing mode when sampling between texels.
+///
+/// Corresponds to [WebGPU `GPUMipmapFilterMode`](
+/// https://gpuweb.github.io/gpuweb/#enumdef-gpumipmapfiltermode).
+#[repr(C)]
+#[derive(Copy, Clone, Debug, Default, Hash, Eq, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde", serde(rename_all = "kebab-case"))]
+pub enum MipmapFilterMode {
+    /// Nearest neighbor sampling.
+    ///
+    /// Return the value of the texel nearest to the texture coordinates.
+    #[default]
+    Nearest = 0,
+    /// Linear Interpolation
+    ///
+    /// Select two texels in each dimension and return a linear interpolation between their values.
     Linear = 1,
 }
 
@@ -7824,7 +7888,7 @@ pub struct ShaderRuntimeChecks {
 impl ShaderRuntimeChecks {
     /// Creates a new configuration where the shader is fully checked.
     #[must_use]
-    pub fn checked() -> Self {
+    pub const fn checked() -> Self {
         unsafe { Self::all(true) }
     }
 
@@ -7835,7 +7899,7 @@ impl ShaderRuntimeChecks {
     /// See the documentation for the `set_*` methods for the safety requirements
     /// of each sub-configuration.
     #[must_use]
-    pub fn unchecked() -> Self {
+    pub const fn unchecked() -> Self {
         unsafe { Self::all(false) }
     }
 
@@ -7847,7 +7911,7 @@ impl ShaderRuntimeChecks {
     /// See the documentation for the `set_*` methods for the safety requirements
     /// of each sub-configuration.
     #[must_use]
-    pub unsafe fn all(all_checks: bool) -> Self {
+    pub const unsafe fn all(all_checks: bool) -> Self {
         Self {
             bounds_checks: all_checks,
             force_loop_bounding: all_checks,

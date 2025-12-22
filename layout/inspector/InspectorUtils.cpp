@@ -7,9 +7,9 @@
 #include "mozilla/dom/InspectorUtils.h"
 
 #include "ChildIterator.h"
+#include "Units.h"
 #include "gfxTextRun.h"
 #include "inLayoutUtils.h"
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/DeclarationBlock.h"
 #include "mozilla/EventStateManager.h"
 #include "mozilla/PresShell.h"
@@ -52,6 +52,7 @@
 #include "nsContentList.h"
 #include "nsFieldSetFrame.h"
 #include "nsGlobalWindowInner.h"
+#include "nsGridContainerFrame.h"
 #include "nsIContentInlines.h"
 #include "nsLayoutUtils.h"
 #include "nsNameSpaceManager.h"
@@ -422,6 +423,8 @@ static void GetCSSRulesFromComputedValues(
             return DeclarationOrigin::User;
           case StyleMatchingDeclarationBlockOrigin::UserAgent:
             return DeclarationOrigin::User_agent;
+          case StyleMatchingDeclarationBlockOrigin::PositionFallback:
+            return DeclarationOrigin::Position_fallback;
           case StyleMatchingDeclarationBlockOrigin::Animations:
             return DeclarationOrigin::Animations;
           case StyleMatchingDeclarationBlockOrigin::Transitions:
@@ -567,9 +570,10 @@ static uint32_t CollectAtRules(ServoCSSRuleList& aRuleList,
       case StyleCssRuleType::LayerBlock:
       case StyleCssRuleType::Property:
       case StyleCssRuleType::Container: {
-        Unused << aResult.AppendElement(OwningNonNull(*rule), fallible);
+        (void)aResult.AppendElement(OwningNonNull(*rule), fallible);
         break;
       }
+      case StyleCssRuleType::CustomMedia:
       case StyleCssRuleType::Style:
       case StyleCssRuleType::Import:
       case StyleCssRuleType::Document:
@@ -1307,7 +1311,7 @@ void InspectorUtils::ReplaceBlockRuleBodyTextInStylesheet(
 
 void InspectorUtils::SetVerticalClipping(GlobalObject&,
                                          BrowsingContext* aContext,
-                                         mozilla::ScreenIntCoord aOffset) {
+                                         mozilla::CSSCoord aOffset) {
   MOZ_ASSERT(XRE_IsParentProcess());
   if (!aContext) {
     return;
@@ -1322,17 +1326,23 @@ void InspectorUtils::SetVerticalClipping(GlobalObject&,
   if (!parent) {
     return;
   }
-  parent->DynamicToolbarOffsetChanged(aOffset);
+  const LayoutDeviceToCSSScale scale = parent->GetLayoutDeviceToCSSScale();
+  const mozilla::LayoutDeviceCoord layoutOffset = aOffset / scale;
+  const mozilla::ScreenCoord screenOffset = ViewAs<ScreenPixel>(
+      layoutOffset, PixelCastJustification::LayoutDeviceIsScreenForBounds);
+  const mozilla::ScreenIntCoord offset = screenOffset.Rounded();
+  parent->DynamicToolbarOffsetChanged(offset);
 
   RefPtr<nsIWidget> widget = canonical->GetParentProcessWidgetContaining();
   if (!widget) {
     return;
   }
-  widget->DynamicToolbarOffsetChanged(aOffset);
+  widget->DynamicToolbarOffsetChanged(offset);
 }
 
-void InspectorUtils::SetDynamicToolbarMaxHeight(
-    GlobalObject&, BrowsingContext* aContext, mozilla::ScreenIntCoord aHeight) {
+void InspectorUtils::SetDynamicToolbarMaxHeight(GlobalObject&,
+                                                BrowsingContext* aContext,
+                                                mozilla::CSSCoord aHeight) {
   MOZ_ASSERT(XRE_IsParentProcess());
   if (!aContext) {
     return;
@@ -1348,6 +1358,29 @@ void InspectorUtils::SetDynamicToolbarMaxHeight(
     return;
   }
 
-  parent->DynamicToolbarMaxHeightChanged(aHeight);
+  const LayoutDeviceToCSSScale scale = parent->GetLayoutDeviceToCSSScale();
+  const mozilla::LayoutDeviceCoord layoutOffset = aHeight / scale;
+  const mozilla::ScreenCoord screenOffset = ViewAs<ScreenPixel>(
+      layoutOffset, PixelCastJustification::LayoutDeviceIsScreenForBounds);
+  const mozilla::ScreenIntCoord height = screenOffset.Rounded();
+  parent->DynamicToolbarMaxHeightChanged(height);
 }
+
+uint16_t InspectorUtils::GetGridContainerType(GlobalObject&,
+                                              Element& aElement) {
+  auto* f = nsGridContainerFrame::GetGridContainerFrame(
+      aElement.GetPrimaryFrame(FlushType::Frames));
+  if (!f) {
+    return InspectorUtils_Binding::GRID_NONE;
+  }
+  uint16_t result = InspectorUtils_Binding::GRID_CONTAINER;
+  if (f->IsRowSubgrid()) {
+    result |= InspectorUtils_Binding::GRID_SUBGRID_ROW;
+  }
+  if (f->IsColSubgrid()) {
+    result |= InspectorUtils_Binding::GRID_SUBGRID_COL;
+  }
+  return result;
+}
+
 }  // namespace mozilla::dom

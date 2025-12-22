@@ -407,7 +407,7 @@ newtab-wallpaper-abstract-purple-green = Διαβάθμιση μοβ και πρ
 newtab-wallpaper-abstract-blue-purple-waves = Μπλε και μοβ κυματιστές μορφές
 newtab-wallpaper-abstract-black-waves = Μαύρες κυματιστές μορφές
 
-## Celestial
+## Firefox
 
 newtab-wallpaper-category-title-photographs = Φωτογραφίες
 newtab-wallpaper-beach-at-sunrise = Παραλία στην ανατολή του ήλιου
@@ -436,6 +436,10 @@ feature-highlight-dismiss-button =
 feature-highlight-wallpaper =
     .title = { -newtab-wallpaper-feature-highlight-header }
     .aria-label = { -newtab-wallpaper-feature-highlight-content }
+
+## Firefox
+
+newtab-wallpaper-category-title-firefox = { -brand-product-name }
 
 ## Celestial
 
@@ -478,8 +482,16 @@ newtab-weather-menu-change-temperature-units-fahrenheit = Εναλλαγή σε 
 newtab-weather-menu-change-temperature-units-celsius = Εναλλαγή σε Κελσίου
 newtab-weather-menu-hide-weather = Απόκρυψη καιρού στη νέα καρτέλα
 newtab-weather-menu-learn-more = Μάθετε περισσότερα
+newtab-weather-menu-detect-my-location = Εντοπισμός τοποθεσίας
 # This message is shown if user is working offline
 newtab-weather-error-not-available = Τα δεδομένα καιρού δεν είναι διαθέσιμα αυτήν τη στιγμή.
+newtab-weather-opt-in-see-weather = Θέλετε να δείτε τον καιρό για την τοποθεσία σας;
+newtab-weather-opt-in-not-now =
+    .label = Όχι τώρα
+newtab-weather-opt-in-yes =
+    .label = Ναι
+# We'll be showing static (fake) weather data if the user has not opted in to using their location
+newtab-weather-static-city = Νέα Υόρκη
 
 ## Topic Labels
 
@@ -646,6 +658,9 @@ newtab-widget-lists-input-menu-move-up = Μετακίνηση πάνω
 newtab-widget-lists-input-menu-move-down = Μετακίνηση κάτω
 newtab-widget-lists-input-menu-delete = Διαγραφή
 newtab-widget-lists-input-menu-edit = Επεξεργασία
+# the + symbol emphasises the functionality of adding a new list
+newtab-widget-lists-dropdown-create =
+    .label = + Δημιουργία νέας λίστας
 newtab-widget-lists-name-label-default =
     .label = Λίστα εργασιών
 newtab-widget-lists-name-placeholder-default =
@@ -658,19 +673,15 @@ newtab-widget-lists-name-placeholder-new =
 ## When the timer ends, a system notification may be shown. Depending on which mode the timer is in, that message would be shown
 
 newtab-widget-timer-notification-title = Αντίστροφη μέτρηση
-newtab-widget-timer-notification-focus = Ο χρόνος συγκέντρωσης τελείωσε. Καλή δουλειά. Χρειάζεστε διάλειμμα;
+newtab-widget-timer-notification-focus = Ο χρόνος συγκέντρωσης τελείωσε. Πολύ καλή δουλειά! Χρειάζεστε ένα διάλειμμα;
 newtab-widget-timer-notification-break = Το διάλειμμά σας τελείωσε. Έτοιμοι για συγκέντρωση;
 newtab-widget-timer-notification-warning = Οι ειδοποιήσεις είναι ανενεργές
 newtab-widget-timer-mode-focus =
     .label = Συγκέντρωση
 newtab-widget-timer-mode-break =
     .label = Διάλειμμα
-newtab-widget-timer-play =
-    .title = Αναπαραγωγή
-newtab-widget-timer-pause =
-    .title = Παύση
 newtab-widget-timer-label-play =
-    .label = Αναπαραγωγή
+    .label = Έναρξη
 newtab-widget-timer-label-pause =
     .label = Παύση
 newtab-widget-timer-reset =

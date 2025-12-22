@@ -32,6 +32,7 @@
 
 #include "gc/Barrier.h"
 #include "gc/Memory.h"
+#include "jit/InlinableNatives.h"
 #include "js/ArrayBuffer.h"
 #include "js/Conversions.h"
 #include "js/experimental/TypedData.h"  // JS_IsArrayBufferViewObject
@@ -346,7 +347,8 @@ static const JSFunctionSpec arraybuffer_proto_functions[] = {
 };
 
 static const JSPropertySpec arraybuffer_proto_properties[] = {
-    JS_PSG("byteLength", ArrayBufferObject::byteLengthGetter, 0),
+    JS_INLINABLE_PSG("byteLength", ArrayBufferObject::byteLengthGetter, 0,
+                     ArrayBufferByteLength),
     JS_PSG("maxByteLength", ArrayBufferObject::maxByteLengthGetter, 0),
     JS_PSG("resizable", ArrayBufferObject::resizableGetter, 0),
     JS_PSG("detached", ArrayBufferObject::detachedGetter, 0),
@@ -545,6 +547,19 @@ bool ArrayBufferObject::maxByteLengthGetterImpl(JSContext* cx,
   MOZ_ASSERT(IsArrayBuffer(args.thisv()));
 
   auto* buffer = &args.thisv().toObject().as<ArrayBufferObject>();
+
+  // Special case for wasm with potentially 64-bits memory.
+  // Manually compute the maxByteLength to avoid an overflow on 32-bit machines.
+  if (buffer->isWasm() && buffer->isResizable()) {
+    Pages sourceMaxPages = buffer->wasmSourceMaxPages().value();
+    uint64_t sourceMaxBytes = sourceMaxPages.byteLength64();
+
+    MOZ_ASSERT(sourceMaxBytes <=
+               wasm::PageSize * wasm::MaxMemory64PagesValidation);
+    args.rval().setNumber(double(sourceMaxBytes));
+
+    return true;
+  }
 
   // Steps 4-6.
   size_t maxByteLength = buffer->maxByteLength();
@@ -2163,6 +2178,9 @@ static constexpr js::gc::AllocKind GetArrayBufferGCObjectKind(size_t numSlots) {
   if (numSlots <= 4) {
     return js::gc::AllocKind::ARRAYBUFFER4;
   }
+  if (numSlots <= 6) {
+    return js::gc::AllocKind::ARRAYBUFFER6;
+  }
   if (numSlots <= 8) {
     return js::gc::AllocKind::ARRAYBUFFER8;
   }
@@ -2176,6 +2194,7 @@ template <class ArrayBufferType>
 static ArrayBufferType* NewArrayBufferObject(JSContext* cx, HandleObject proto_,
                                              gc::AllocKind allocKind) {
   MOZ_ASSERT(allocKind == gc::AllocKind::ARRAYBUFFER4 ||
+             allocKind == gc::AllocKind::ARRAYBUFFER6 ||
              allocKind == gc::AllocKind::ARRAYBUFFER8 ||
              allocKind == gc::AllocKind::ARRAYBUFFER12 ||
              allocKind == gc::AllocKind::ARRAYBUFFER16);

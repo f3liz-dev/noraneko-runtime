@@ -14,7 +14,6 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.os.Build
-import android.os.Build.VERSION.SDK_INT
 import android.os.storage.StorageManager
 import android.os.storage.StorageVolume
 import android.util.Log
@@ -54,7 +53,6 @@ import java.io.IOException
 import java.io.InputStream
 import java.util.concurrent.TimeUnit
 
-@Suppress("TooManyFunctions")
 object TestHelper {
     @JvmField
     var mDevice = UiDevice.getInstance(getInstrumentation())
@@ -187,19 +185,17 @@ object TestHelper {
 
     // Method for granting app permission to access location/camera/mic
     fun grantAppPermission() {
-        if (SDK_INT >= 23) {
-            val permissionOption =
-                mDevice.findObject(
-                    UiSelector().textContains(
-                        when {
-                            SDK_INT >= 30 -> "While using the app"
-                            else -> "Allow"
-                        },
-                    ),
-                )
-            permissionOption.waitForExists(waitingTime)
-            permissionOption.click()
-        }
+        val permissionOption =
+            mDevice.findObject(
+                UiSelector().textContains(
+                    when {
+                        Build.VERSION.SDK_INT >= 30 -> "While using the app"
+                        else -> "Allow"
+                    },
+                ),
+            )
+        permissionOption.waitForExists(waitingTime)
+        permissionOption.click()
     }
 
     fun UiAutomation.executeShellCommandBlocking(command: String) {

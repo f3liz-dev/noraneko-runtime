@@ -298,9 +298,24 @@ void MacroAssemblerX64::vmulpdSimd128(const SimdConstant& v, FloatRegister lhs,
   vpRiprOpSimd128(v, lhs, dest, &X86Encoding::BaseAssemblerX64::vmulpd_ripr);
 }
 
+void MacroAssemblerX64::vandpsSimd128(const SimdConstant& v, FloatRegister lhs,
+                                      FloatRegister dest) {
+  vpRiprOpSimd128(v, lhs, dest, &X86Encoding::BaseAssemblerX64::vandps_ripr);
+}
+
 void MacroAssemblerX64::vandpdSimd128(const SimdConstant& v, FloatRegister lhs,
                                       FloatRegister dest) {
   vpRiprOpSimd128(v, lhs, dest, &X86Encoding::BaseAssemblerX64::vandpd_ripr);
+}
+
+void MacroAssemblerX64::vxorpsSimd128(const SimdConstant& v, FloatRegister lhs,
+                                      FloatRegister dest) {
+  vpRiprOpSimd128(v, lhs, dest, &X86Encoding::BaseAssemblerX64::vxorps_ripr);
+}
+
+void MacroAssemblerX64::vxorpdSimd128(const SimdConstant& v, FloatRegister lhs,
+                                      FloatRegister dest) {
+  vpRiprOpSimd128(v, lhs, dest, &X86Encoding::BaseAssemblerX64::vxorpd_ripr);
 }
 
 void MacroAssemblerX64::vminpdSimd128(const SimdConstant& v, FloatRegister lhs,
@@ -488,19 +503,69 @@ void MacroAssemblerX64::finish() {
   MacroAssemblerX86Shared::finish();
 }
 
+#ifdef DEBUG
+static constexpr int32_t PayloadSize(JSValueType type) {
+  switch (type) {
+    case JSVAL_TYPE_UNDEFINED:
+    case JSVAL_TYPE_NULL:
+      return 0;
+    case JSVAL_TYPE_BOOLEAN:
+      return 1;
+    case JSVAL_TYPE_INT32:
+    case JSVAL_TYPE_MAGIC:
+      return 32;
+    case JSVAL_TYPE_STRING:
+    case JSVAL_TYPE_SYMBOL:
+    case JSVAL_TYPE_PRIVATE_GCTHING:
+    case JSVAL_TYPE_BIGINT:
+    case JSVAL_TYPE_OBJECT:
+      return JSVAL_TAG_SHIFT;
+    case JSVAL_TYPE_DOUBLE:
+    case JSVAL_TYPE_UNKNOWN:
+      break;
+  }
+  MOZ_CRASH("bad value type");
+}
+#endif
+
+static void AssertValidPayload(MacroAssemblerX64& masm, JSValueType type,
+                               Register payload, Register scratch) {
+#ifdef DEBUG
+  // All bits above the payload must be zeroed.
+  Label upperBitsZeroed;
+  masm.movq(payload, scratch);
+  masm.shrq(Imm32(PayloadSize(type)), scratch);
+  masm.cmpPtr(scratch, scratch);
+  masm.j(Assembler::Zero, &upperBitsZeroed);
+  masm.breakpoint();
+  masm.bind(&upperBitsZeroed);
+#endif
+}
+
+void MacroAssemblerX64::tagValue(JSValueType type, Register payload,
+                                 ValueOperand dest) {
+  MOZ_ASSERT(type != JSVAL_TYPE_UNDEFINED && type != JSVAL_TYPE_NULL);
+
+  if (payload == dest.valueReg()) {
+    ScratchRegisterScope scratch(asMasm());
+    MOZ_ASSERT(dest.valueReg() != scratch);
+
+    AssertValidPayload(*this, type, payload, scratch);
+
+    mov(ImmShiftedTag(type), scratch);
+    orq(scratch, dest.valueReg());
+  } else {
+    boxNonDouble(type, payload, dest);
+  }
+}
+
 void MacroAssemblerX64::boxValue(JSValueType type, Register src,
                                  Register dest) {
+  MOZ_ASSERT(type != JSVAL_TYPE_UNDEFINED && type != JSVAL_TYPE_NULL);
   MOZ_ASSERT(src != dest);
 
-#ifdef DEBUG
-  if (type == JSVAL_TYPE_INT32 || type == JSVAL_TYPE_BOOLEAN) {
-    Label upper32BitsZeroed;
-    movePtr(ImmWord(UINT32_MAX), dest);
-    asMasm().branchPtr(Assembler::BelowOrEqual, src, dest, &upper32BitsZeroed);
-    breakpoint();
-    bind(&upper32BitsZeroed);
-  }
-#endif
+  AssertValidPayload(*this, type, src, dest);
+
   mov(ImmShiftedTag(type), dest);
   orq(src, dest);
 }
@@ -509,19 +574,63 @@ void MacroAssemblerX64::boxValue(Register type, Register src, Register dest) {
   MOZ_ASSERT(src != dest);
 
 #ifdef DEBUG
-  Label check, done;
-  asMasm().branch32(Assembler::Equal, type, Imm32(JSVAL_TYPE_INT32), &check);
-  asMasm().branch32(Assembler::Equal, type, Imm32(JSVAL_TYPE_BOOLEAN), &check);
-  asMasm().branch32(Assembler::Equal, type, Imm32(JSVAL_TYPE_NULL), &check);
-  asMasm().branch32(Assembler::NotEqual, type, Imm32(JSVAL_TYPE_UNDEFINED),
-                    &done);
   {
-    bind(&check);
-    asMasm().branchPtr(Assembler::BelowOrEqual, src, ImmWord(UINT32_MAX),
-                       &done);
+    ScratchRegisterScope scratch(asMasm());
+
+    movq(src, scratch);
+
+    Label check, isNullOrUndefined, isBoolean, isInt32OrMagic, isPointerSized;
+
+    asMasm().branch32(Assembler::Equal, type, Imm32(JSVAL_TYPE_NULL),
+                      &isNullOrUndefined);
+    asMasm().branch32(Assembler::Equal, type, Imm32(JSVAL_TYPE_UNDEFINED),
+                      &isNullOrUndefined);
+    asMasm().branch32(Assembler::Equal, type, Imm32(JSVAL_TYPE_BOOLEAN),
+                      &isBoolean);
+    asMasm().branch32(Assembler::Equal, type, Imm32(JSVAL_TYPE_INT32),
+                      &isInt32OrMagic);
+    asMasm().branch32(Assembler::Equal, type, Imm32(JSVAL_TYPE_MAGIC),
+                      &isInt32OrMagic);
+    asMasm().branch32(Assembler::Equal, type, Imm32(JSVAL_TYPE_STRING),
+                      &isPointerSized);
+    asMasm().branch32(Assembler::Equal, type, Imm32(JSVAL_TYPE_SYMBOL),
+                      &isPointerSized);
+    asMasm().branch32(Assembler::Equal, type, Imm32(JSVAL_TYPE_PRIVATE_GCTHING),
+                      &isPointerSized);
+    asMasm().branch32(Assembler::Equal, type, Imm32(JSVAL_TYPE_BIGINT),
+                      &isPointerSized);
+    asMasm().branch32(Assembler::Equal, type, Imm32(JSVAL_TYPE_OBJECT),
+                      &isPointerSized);
     breakpoint();
+    {
+      bind(&isNullOrUndefined);
+      shrq(Imm32(PayloadSize(JSVAL_TYPE_NULL)), scratch);
+      jump(&check);
+    }
+    {
+      bind(&isBoolean);
+      shrq(Imm32(PayloadSize(JSVAL_TYPE_BOOLEAN)), scratch);
+      jump(&check);
+    }
+    {
+      bind(&isInt32OrMagic);
+      shrq(Imm32(PayloadSize(JSVAL_TYPE_INT32)), scratch);
+      jump(&check);
+    }
+    {
+      bind(&isPointerSized);
+      shrq(Imm32(PayloadSize(JSVAL_TYPE_STRING)), scratch);
+      // fall-through
+    }
+    bind(&check);
+
+    // All bits above the payload must be zeroed.
+    Label upperBitsZeroed;
+    cmpPtr(scratch, scratch);
+    j(Assembler::Zero, &upperBitsZeroed);
+    breakpoint();
+    bind(&upperBitsZeroed);
   }
-  bind(&done);
 #endif
 
   if (type != dest) {
@@ -764,9 +873,10 @@ void MacroAssemblerX64::convertDoubleToPtr(FloatRegister src, Register dest,
 }
 
 // This operation really consists of five phases, in order to enforce the
-// restriction that on x64, srcDest must be rax and rdx will be clobbered.
+// restriction that on x64, the dividend must be rax and both rax and rdx will
+// be clobbered.
 //
-//     Input: { rhs, lhsOutput }
+//     Input: { lhs, rhs }
 //
 //  [PUSH] Preserve registers
 //  [MOVE] Generate moves to specific registers
@@ -774,16 +884,17 @@ void MacroAssemblerX64::convertDoubleToPtr(FloatRegister src, Register dest,
 //  [DIV] Input: { regForRhs, RAX }
 //  [DIV] extend RAX into RDX
 //  [DIV] x64 Division operator
-//  [DIV] Ouptut: { RAX, RDX }
+//  [DIV] Output: { RAX, RDX }
 //
 //  [MOVE] Move specific registers to outputs
 //  [POP] Restore registers
 //
-//    Output: { lhsOutput, remainderOutput }
-void MacroAssemblerX64::flexibleDivMod64(Register rhs, Register lhsOutput,
-                                         bool isUnsigned, bool isDiv) {
-  if (lhsOutput == rhs) {
-    movq(ImmWord(isDiv ? 1 : 0), lhsOutput);
+//    Output: { output }
+void MacroAssemblerX64::flexibleDivMod64(Register lhs, Register rhs,
+                                         Register output, bool isUnsigned,
+                                         bool isDiv) {
+  if (lhs == rhs) {
+    movq(ImmWord(isDiv ? 1 : 0), output);
     return;
   }
 
@@ -796,14 +907,16 @@ void MacroAssemblerX64::flexibleDivMod64(Register rhs, Register lhsOutput,
   LiveGeneralRegisterSet preserve;
   preserve.add(rdx);
   preserve.add(rax);
-  preserve.add(regForRhs);
+  if (rhs != regForRhs) {
+    preserve.add(regForRhs);
+  }
 
-  preserve.takeUnchecked(lhsOutput);
+  preserve.takeUnchecked(output);
 
   asMasm().PushRegsInMask(preserve);
 
   // Shuffle input into place.
-  asMasm().moveRegPair(lhsOutput, rhs, rax, regForRhs);
+  asMasm().moveRegPair(lhs, rhs, rax, regForRhs);
   if (oom()) {
     return;
   }
@@ -818,8 +931,8 @@ void MacroAssemblerX64::flexibleDivMod64(Register rhs, Register lhsOutput,
   }
 
   Register result = isDiv ? rax : rdx;
-  if (result != lhsOutput) {
-    movq(result, lhsOutput);
+  if (result != output) {
+    movq(result, output);
   }
 
   asMasm().PopRegsInMask(preserve);
@@ -954,15 +1067,15 @@ void MacroAssembler::moveValue(const Value& src, const ValueOperand& dest) {
 // Arithmetic functions
 
 void MacroAssembler::flexibleQuotientPtr(
-    Register rhs, Register srcDest, bool isUnsigned,
+    Register lhs, Register rhs, Register dest, bool isUnsigned,
     const LiveRegisterSet& volatileLiveRegs) {
-  flexibleDivMod64(rhs, srcDest, isUnsigned, /* isDiv= */ true);
+  flexibleDivMod64(lhs, rhs, dest, isUnsigned, /* isDiv= */ true);
 }
 
 void MacroAssembler::flexibleRemainderPtr(
-    Register rhs, Register srcDest, bool isUnsigned,
+    Register lhs, Register rhs, Register dest, bool isUnsigned,
     const LiveRegisterSet& volatileLiveRegs) {
-  flexibleDivMod64(rhs, srcDest, isUnsigned, /* isDiv= */ false);
+  flexibleDivMod64(lhs, rhs, dest, isUnsigned, /* isDiv= */ false);
 }
 
 // ===============================================================

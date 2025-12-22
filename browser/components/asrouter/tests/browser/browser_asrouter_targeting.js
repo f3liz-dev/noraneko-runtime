@@ -25,8 +25,11 @@ ChromeUtils.defineESModuleGetters(this, {
   QueryCache: "resource:///modules/asrouter/ASRouterTargeting.sys.mjs",
   Region: "resource://gre/modules/Region.sys.mjs",
   ShellService: "moz-src:///browser/components/shell/ShellService.sys.mjs",
+  sinon: "resource://testing-common/Sinon.sys.mjs",
   Spotlight: "resource:///modules/asrouter/Spotlight.sys.mjs",
   TargetingContext: "resource://messaging-system/targeting/Targeting.sys.mjs",
+  TaskbarTabs: "resource:///modules/taskbartabs/TaskbarTabs.sys.mjs",
+  TaskbarTabsPin: "resource:///modules/taskbartabs/TaskbarTabsPin.sys.mjs",
   TelemetryEnvironment: "resource://gre/modules/TelemetryEnvironment.sys.mjs",
   TelemetrySession: "resource://gre/modules/TelemetrySession.sys.mjs",
 });
@@ -318,6 +321,8 @@ add_task(async function check_canCreateSelectableProfiles() {
   );
 
   await ProfilesDatastoreService.resetProfileService(null);
+  await SpecialPowers.popPrefEnv();
+  await SpecialPowers.popPrefEnv();
 });
 
 add_task(async function check_hasSelectableProfiles() {
@@ -340,6 +345,7 @@ add_task(async function check_hasSelectableProfiles() {
     message,
     "should select correct item by hasSelectableProfiles"
   );
+  await SpecialPowers.popPrefEnv();
 });
 
 add_task(async function check_usesFirefoxSync() {
@@ -356,6 +362,7 @@ add_task(async function check_usesFirefoxSync() {
     message,
     "should select correct item by usesFirefoxSync"
   );
+  await SpecialPowers.popPrefEnv();
 });
 
 add_task(async function check_isFxAEnabled() {
@@ -371,6 +378,7 @@ add_task(async function check_isFxAEnabled() {
     !(await ASRouterTargeting.findMatchingMessage({ messages: [message] })),
     "should not select a message if fxa is disabled"
   );
+  await SpecialPowers.popPrefEnv();
 });
 
 add_task(async function check_isFxAEnabled() {
@@ -387,6 +395,7 @@ add_task(async function check_isFxAEnabled() {
     message,
     "should select the correct message"
   );
+  await SpecialPowers.popPrefEnv();
 });
 
 add_task(async function check_isFxASignedIn_false() {
@@ -411,6 +420,7 @@ add_task(async function check_isFxASignedIn_false() {
   );
 
   sandbox.restore();
+  await SpecialPowers.popPrefEnv();
 });
 
 add_task(async function check_isFxASignedIn_true() {
@@ -435,6 +445,7 @@ add_task(async function check_isFxASignedIn_true() {
   );
 
   sandbox.restore();
+  await SpecialPowers.popPrefEnv();
 });
 
 add_task(async function check_totalBookmarksCount() {
@@ -571,6 +582,7 @@ add_task(async function checkdevToolsOpenedCount() {
     message,
     "should select correct item by devToolsOpenedCount"
   );
+  await SpecialPowers.popPrefEnv();
 });
 
 add_task(async function check_platformName() {
@@ -953,6 +965,8 @@ add_task(async function check_provider_cohorts() {
     "bar",
     "should have cohort bar for cfr"
   );
+  await SpecialPowers.popPrefEnv();
+  await SpecialPowers.popPrefEnv();
 });
 
 add_task(async function check_xpinstall_enabled() {
@@ -964,6 +978,53 @@ add_task(async function check_xpinstall_enabled() {
   // flip to true, check targeting reflects that
   await pushPrefs(["xpinstall.enabled", true]);
   is(await ASRouterTargeting.Environment.xpinstallEnabled, true);
+  await SpecialPowers.popPrefEnv();
+  await SpecialPowers.popPrefEnv();
+});
+
+add_task(async function check_current_tab_installed_as_web_app() {
+  // By default, Taskbar Tabs will try and pin this to the taskbar, but we
+  // don't want to do that in this test.
+  const sandbox = sinon.createSandbox();
+  sandbox.stub(TaskbarTabsPin, "pinTaskbarTab");
+  sandbox.stub(TaskbarTabsPin, "unpinTaskbarTab");
+
+  const kUri = "https://example.com";
+
+  await BrowserTestUtils.withNewTab(kUri, async () => {
+    is(
+      await ASRouterTargeting.Environment.currentTabInstalledAsWebApp,
+      false,
+      "no taskbar tab exists yet"
+    );
+
+    const tt = await TaskbarTabs.findOrCreateTaskbarTab(
+      Services.io.newURI(kUri),
+      0
+    );
+    is(
+      await ASRouterTargeting.Environment.currentTabInstalledAsWebApp,
+      true,
+      "should be true when a Taskbar Tab exists for this tab"
+    );
+
+    await BrowserTestUtils.withNewTab("mochi.test:8888", async () => {
+      is(
+        await ASRouterTargeting.Environment.currentTabInstalledAsWebApp,
+        false,
+        "should be false even if a Taskbar Tab exists for a different tab"
+      );
+    });
+
+    await TaskbarTabs.removeTaskbarTab(tt.id);
+    is(
+      await ASRouterTargeting.Environment.currentTabInstalledAsWebApp,
+      false,
+      "should be false after removing the Taskbar Tab"
+    );
+  });
+
+  sandbox.restore();
 });
 
 add_task(async function check_pinned_tabs() {
@@ -1004,6 +1065,7 @@ add_task(async function check_hasAccessedFxAPanel() {
     true,
     "Should detect panel access"
   );
+  await SpecialPowers.popPrefEnv();
 });
 
 add_task(async function checkCFRFeaturesUserPref() {
@@ -1022,6 +1084,7 @@ add_task(async function checkCFRFeaturesUserPref() {
     message,
     "should select correct item by cfrFeature"
   );
+  await SpecialPowers.popPrefEnv();
 });
 
 add_task(async function checkCFRAddonsUserPref() {
@@ -1040,6 +1103,7 @@ add_task(async function checkCFRAddonsUserPref() {
     message,
     "should select correct item by cfrAddons"
   );
+  await SpecialPowers.popPrefEnv();
 });
 
 add_task(async function check_blockedCountByType() {
@@ -1594,6 +1658,8 @@ add_task(async function test_migrationInteractions() {
     ok(!(await ASRouterTargeting.Environment[getterName]));
     await pushPrefs([pref, true]);
     ok(await ASRouterTargeting.Environment[getterName]);
+    await SpecialPowers.popPrefEnv();
+    await SpecialPowers.popPrefEnv();
   }
 });
 
@@ -1625,6 +1691,10 @@ add_task(async function check_useEmbeddedMigrationWizard() {
   ]);
 
   ok(!(await ASRouterTargeting.Environment.useEmbeddedMigrationWizard));
+  await SpecialPowers.popPrefEnv();
+  await SpecialPowers.popPrefEnv();
+  await SpecialPowers.popPrefEnv();
+  await SpecialPowers.popPrefEnv();
 });
 
 add_task(async function check_isMSIX() {
@@ -1965,6 +2035,7 @@ add_task(async function check_totalSearches() {
     20,
     "should return a value of 20"
   );
+  await SpecialPowers.popPrefEnv();
 });
 
 add_task(async function checkisDefaultBrowserUncached() {
@@ -2029,6 +2100,7 @@ add_task(
       false,
       "activeNotifications should be false if the topic selection modal on newtab was last shown more than a minute ago"
     );
+    await SpecialPowers.popPrefEnv();
   }
 );
 
@@ -2071,6 +2143,7 @@ add_task(
       true,
       "activeNotifications should be true if the topic selection modal on newtab was last shown less than a minute ago"
     );
+    await SpecialPowers.popPrefEnv();
   }
 );
 
@@ -2102,7 +2175,12 @@ add_task(async function check_activeNotifications_newtabMessages() {
 
 add_task(async function activeNotifications_default_prompt_shown() {
   let sb = sinon.createSandbox();
+
   const win = await BrowserTestUtils.openNewBrowserWindow();
+
+  let visibilityChange = new Promise(res =>
+    win.document.addEventListener("visibilitychange", res, { once: true })
+  );
 
   sb.stub(DefaultBrowserCheck, "willCheckDefaultBrowser").returns(true);
   const promptSpy = sb.spy(DefaultBrowserCheck, "prompt");
@@ -2110,6 +2188,10 @@ add_task(async function activeNotifications_default_prompt_shown() {
   await BROWSER_GLUE._maybeShowDefaultBrowserPrompt();
 
   Assert.equal(promptSpy.callCount, 1, "default prompt should be called");
+
+  // activeNotifications are updated by visibilitychanges, so make sure we get
+  // one before testing it.
+  await visibilityChange;
 
   is(
     await ASRouterTargeting.Environment.activeNotifications,
@@ -2237,8 +2319,8 @@ add_task(async function check_unhandledCampaignAction() {
       before: async () => {
         await pushPrefs([DID_HANDLE_CAMAPAIGN_ACTION_PREF, true]);
       },
-      after: () => {
-        Services.prefs.clearUserPref(DID_HANDLE_CAMAPAIGN_ACTION_PREF);
+      after: async () => {
+        await SpecialPowers.popPrefEnv();
         QueryCache.queries.UnhandledCampaignAction.expire();
       },
     },
@@ -2334,4 +2416,132 @@ add_task(async function test_newtabAddonVersion() {
     message,
     "should select correct item when filtering by newtabAddonVersion"
   );
+});
+
+add_task(async function check_backupsInfo() {
+  const sandbox = sinon.createSandbox();
+  registerCleanupFunction(() => sandbox.restore());
+
+  const testBackupResponse = {
+    found: true,
+    backupFileToRestore: "/tmp/profile-backup.jsonlz4",
+    multipleBackupsFound: false,
+  };
+
+  const stub = sandbox
+    .stub(QueryCache.getters.backupsInfo, "get")
+    .resolves(testBackupResponse);
+
+  Assert.deepEqual(
+    await ASRouterTargeting.Environment.backupsInfo,
+    testBackupResponse,
+    "Should return structured backup info from the cached getter"
+  );
+
+  const message = { id: "foo", targeting: "backupsInfo.found" };
+  is(
+    await ASRouterTargeting.findMatchingMessage({ messages: [message] }),
+    message,
+    "Should select message when a backup was found"
+  );
+
+  Assert.ok(stub.called, "backupsInfo getter was called");
+});
+
+add_task(async function check_isEncryptedBackup() {
+  const sandbox = sinon.createSandbox();
+  registerCleanupFunction(() => sandbox.restore());
+
+  is(
+    await ASRouterTargeting.Environment.isEncryptedBackup,
+    false,
+    "should return false if the pref is unset"
+  );
+
+  await pushPrefs(["messaging-system-action.backupChooser", "easy"]);
+  is(
+    await ASRouterTargeting.Environment.isEncryptedBackup,
+    false,
+    "should return false if the pref value is easy"
+  );
+
+  await pushPrefs(["messaging-system-action.backupChooser", "full"]);
+  is(
+    await ASRouterTargeting.Environment.isEncryptedBackup,
+    true,
+    "should return true if the pref value is full"
+  );
+  await SpecialPowers.popPrefEnv();
+  await SpecialPowers.popPrefEnv();
+});
+
+add_task(async function check_backupArchiveEnabled() {
+  const sandbox = sinon.createSandbox();
+  registerCleanupFunction(() => sandbox.restore());
+
+  await pushPrefs(
+    ["browser.backup.archive.enabled", true],
+    ["browser.backup.archive.overridePlatformCheck", true]
+  );
+
+  is(
+    await ASRouterTargeting.Environment.backupArchiveEnabled,
+    true,
+    "should return true if the killswitch is not on"
+  );
+  await SpecialPowers.popPrefEnv();
+  const archiveExperiment = await NimbusTestUtils.enrollWithFeatureConfig({
+    featureId: "backupService",
+    value: { archiveKillswitch: true },
+  });
+  await pushPrefs(
+    ["browser.backup.archive.enabled", true],
+    ["browser.backup.archive.overridePlatformCheck", false]
+  );
+
+  is(
+    await ASRouterTargeting.Environment.backupArchiveEnabled,
+    false,
+    "should return false if the killswitch is on"
+  );
+
+  // End the experiment.
+  await archiveExperiment();
+  await SpecialPowers.popPrefEnv();
+});
+
+add_task(async function check_backupRestoreEnabled() {
+  const sandbox = sinon.createSandbox();
+  registerCleanupFunction(() => sandbox.restore());
+
+  await pushPrefs(
+    ["browser.backup.restore.enabled", true],
+    ["browser.backup.restore.overridePlatformCheck", true]
+  );
+
+  is(
+    await ASRouterTargeting.Environment.backupRestoreEnabled,
+    true,
+    "should return true if the killswitch is not on"
+  );
+  await SpecialPowers.popPrefEnv();
+  await pushPrefs(
+    ["browser.backup.restore.enabled", true],
+    ["browser.backup.restore.overridePlatformCheck", false]
+  );
+
+  const restoreExperiment = await NimbusTestUtils.enrollWithFeatureConfig({
+    featureId: "backupService",
+    value: { restoreKillswitch: true },
+  });
+
+  is(
+    await ASRouterTargeting.Environment.backupRestoreEnabled,
+    false,
+    "should return false if the killswitch is on"
+  );
+
+  // End the experiment.
+  await restoreExperiment();
+  await SpecialPowers.popPrefEnv();
 });

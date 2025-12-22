@@ -5,17 +5,17 @@
 package org.mozilla.fenix.home.pocket.ui
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -33,51 +33,55 @@ import mozilla.components.service.pocket.PocketStory.PocketSponsoredStory
 import mozilla.components.service.pocket.PocketStory.SponsoredContent
 import org.mozilla.fenix.compose.Favicon
 import org.mozilla.fenix.compose.Image
+import org.mozilla.fenix.compose.skeletonLoader
 import org.mozilla.fenix.home.fake.FakeHomepagePreview
 import org.mozilla.fenix.theme.FirefoxTheme
 import kotlin.math.roundToInt
 
 private val cardShape = RoundedCornerShape(8.dp)
 private val defaultCardContentPadding = 8.dp
-private val imageSize = 345.dp
+private val imageWidth = 345.dp
 private val imageHeight = 180.dp
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun StoryCard(
     story: PocketStory,
     onClick: (story: PocketStory, position: Triple<Int, Int, Int>) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val imageUrl = story.imageUrl.replace(
+        "{wh}",
+        with(LocalDensity.current) {
+            "${imageWidth.toPx().roundToInt()}x${
+                imageWidth.toPx().roundToInt()
+            }"
+        },
+    )
+
     Card(
         onClick = {
             onClick(story, Triple(0, 0, 0))
         },
         modifier = modifier,
         shape = cardShape,
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
         colors = CardDefaults.cardColors(containerColor = FirefoxTheme.colors.layer2),
     ) {
         Column(
             modifier = Modifier.padding(all = defaultCardContentPadding),
         ) {
-            val imageUrl = story.imageUrl.replace(
-                "{wh}",
-                with(LocalDensity.current) {
-                    "${imageSize.toPx().roundToInt()}x${
-                        imageSize.toPx().roundToInt()
-                    }"
-                },
-            )
-
             Image(
                 url = imageUrl,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(imageHeight)
+                    .aspectRatio(imageWidth / imageHeight)
                     .clip(cardShape),
                 private = false,
-                targetSize = imageSize,
+                targetSize = imageWidth,
                 contentScale = ContentScale.Crop,
+                placeholder = {
+                    Placeholder()
+                },
             )
 
             Column(
@@ -88,6 +92,7 @@ internal fun StoryCard(
                     text = story.title,
                     color = FirefoxTheme.colors.textPrimary,
                     overflow = TextOverflow.Ellipsis,
+                    maxLines = 2,
                     style = FirefoxTheme.typography.headline7,
                 )
 
@@ -103,7 +108,7 @@ internal fun StoryCard(
 
                     is PocketRecommendedStory,
                     is PocketSponsoredStory,
-                    -> {
+                        -> {
                         // no-op, don't handle these [PocketStory] types as they are no longer
                         // supported after the Merino recommendation migration.
                     }
@@ -126,6 +131,15 @@ internal fun StoryCard(
             }
         }
     }
+}
+
+@Composable
+private fun Placeholder() {
+    Box(
+        modifier = Modifier
+            .aspectRatio(imageWidth / imageHeight)
+            .skeletonLoader(),
+    )
 }
 
 @PreviewLightDark

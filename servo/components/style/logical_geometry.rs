@@ -40,6 +40,7 @@ pub enum InlineBaseDirection {
     ToCss,
     ToResolvedValue,
     ToShmem,
+    ToTyped,
 )]
 #[repr(u8)]
 pub enum WritingModeProperty {
@@ -304,6 +305,25 @@ impl WritingMode {
             (true, true) => PhysicalSide::Right,
             (true, false) => PhysicalSide::Left,
         }
+    }
+
+    /// Given a physical side, flips the start on that axis, and returns the corresponding
+    /// physical side.
+    #[inline]
+    pub fn flipped_start_side(&self, side: PhysicalSide) -> PhysicalSide {
+        let bs = self.block_start_physical_side();
+        if side == bs {
+            return self.inline_start_physical_side();
+        }
+        let be = self.block_end_physical_side();
+        if side == be {
+            return self.inline_end_physical_side();
+        }
+        if side == self.inline_start_physical_side() {
+            return bs;
+        }
+        debug_assert_eq!(side, self.inline_end_physical_side());
+        be
     }
 
     #[inline]
@@ -1608,8 +1628,24 @@ pub enum PhysicalSide {
 }
 
 impl PhysicalSide {
-    fn orthogonal_to(self, other: Self) -> bool {
+    /// Returns whether one physical side is parallel to another.
+    pub fn parallel_to(self, other: Self) -> bool {
+        !self.orthogonal_to(other)
+    }
+
+    /// Returns whether one physical side is orthogonal to another.
+    pub fn orthogonal_to(self, other: Self) -> bool {
         matches!(self, Self::Top | Self::Bottom) != matches!(other, Self::Top | Self::Bottom)
+    }
+
+    /// Returns the opposite side.
+    pub fn opposite_side(self) -> Self {
+        match self {
+            Self::Top => Self::Bottom,
+            Self::Right => Self::Left,
+            Self::Bottom => Self::Top,
+            Self::Left => Self::Right,
+        }
     }
 }
 

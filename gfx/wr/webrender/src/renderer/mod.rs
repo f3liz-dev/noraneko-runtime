@@ -34,7 +34,7 @@
 //! up the scissor, are accepting already transformed coordinates, which we can get by
 //! calling `DrawTarget::to_framebuffer_rect`
 
-use api::{ClipMode, ColorF, ColorU, MixBlendMode};
+use api::{ClipMode, ColorF, ColorU, MixBlendMode, TextureCacheCategory};
 use api::{DocumentId, Epoch, ExternalImageHandler, RenderReasons};
 #[cfg(feature = "replay")]
 use api::ExternalImageId;
@@ -58,6 +58,8 @@ use crate::composite::{CompositeState, CompositeTileSurface, CompositorInputLaye
 use crate::composite::{CompositorKind, Compositor, NativeTileId, CompositeFeatures, CompositeSurfaceFormat, ResolvedExternalSurfaceColorData};
 use crate::composite::{CompositorConfig, NativeSurfaceOperationDetails, NativeSurfaceId, NativeSurfaceOperation, ClipRadius};
 use crate::composite::TileKind;
+#[cfg(feature = "debugger")]
+use api::debugger::{CompositorDebugInfo, DebuggerTextureContent};
 use crate::segment::SegmentBuilder;
 use crate::{debug_colors, CompositorInputConfig, CompositorSurfaceUsage};
 use crate::device::{DepthFunction, Device, DrawTarget, ExternalTexture, GpuFrameId, UploadPBOPool};
@@ -72,7 +74,7 @@ use crate::gpu_cache::{GpuCacheUpdate, GpuCacheUpdateList};
 use crate::gpu_cache::{GpuCacheDebugChunk, GpuCacheDebugCmd};
 use crate::gpu_types::{ScalingInstance, SvgFilterInstance, SVGFEFilterInstance, CopyInstance, PrimitiveInstanceData};
 use crate::gpu_types::{BlurInstance, ClearInstance, CompositeInstance, ZBufferId};
-use crate::internal_types::{TextureSource, TextureSourceExternal, TextureCacheCategory, FrameId, FrameVec};
+use crate::internal_types::{TextureSource, TextureSourceExternal, FrameId, FrameVec};
 #[cfg(any(feature = "capture", feature = "replay"))]
 use crate::internal_types::DebugOutput;
 use crate::internal_types::{CacheTextureId, FastHashMap, FastHashSet, RenderedDocument, ResultMsg};
@@ -94,7 +96,7 @@ use crate::tile_cache::PictureCacheDebugInfo;
 use crate::util::drain_filter;
 use crate::rectangle_occlusion as occlusion;
 #[cfg(feature = "debugger")]
-use crate::debugger::Debugger;
+use crate::debugger::{Debugger, DebugQueryKind};
 use upload::{upload_to_texture_cache, UploadTexturePool};
 use init::*;
 
@@ -129,7 +131,8 @@ pub(crate) mod init;
 pub use debug::DebugRenderer;
 pub use shade::{PendingShadersToPrecache, Shaders, SharedShaders};
 pub use vertex::{desc, VertexArrayKind, MAX_VERTEX_TEXTURE_WIDTH};
-pub use gpu_buffer::{GpuBuffer, GpuBufferF, GpuBufferBuilderF, GpuBufferI, GpuBufferBuilderI, GpuBufferAddress, GpuBufferBuilder};
+pub use gpu_buffer::{GpuBuffer, GpuBufferF, GpuBufferBuilderF, GpuBufferI, GpuBufferBuilderI};
+pub use gpu_buffer::{GpuBufferAddress, GpuBufferBuilder, GpuBufferWriterF};
 
 /// The size of the array of each type of vertex data texture that
 /// is round-robin-ed each frame during bind_frame_data. Doing this
@@ -192,6 +195,10 @@ const GPU_TAG_CACHE_FAST_LINEAR_GRADIENT: GpuProfileTag = GpuProfileTag {
 };
 const GPU_TAG_CACHE_LINEAR_GRADIENT: GpuProfileTag = GpuProfileTag {
     label: "C_LinearGradient",
+    color: debug_colors::BROWN,
+};
+const GPU_TAG_GRADIENT: GpuProfileTag = GpuProfileTag {
+    label: "C_Gradient",
     color: debug_colors::BROWN,
 };
 const GPU_TAG_RADIAL_GRADIENT: GpuProfileTag = GpuProfileTag {
@@ -332,6 +339,7 @@ impl BatchKind {
             }
             BatchKind::TextRun(_) => GPU_TAG_PRIM_TEXT_RUN,
             BatchKind::Quad(PatternKind::ColorOrTexture) => GPU_TAG_PRIMITIVE,
+            BatchKind::Quad(PatternKind::Gradient) => GPU_TAG_GRADIENT,
             BatchKind::Quad(PatternKind::RadialGradient) => GPU_TAG_RADIAL_GRADIENT,
             BatchKind::Quad(PatternKind::ConicGradient) => GPU_TAG_CONIC_GRADIENT,
             BatchKind::Quad(PatternKind::Mask) => GPU_TAG_INDIRECT_MASK,
@@ -949,6 +957,9 @@ pub struct Renderer {
 
     /// Hold previous frame compositing state with layer compositor.
     layer_compositor_frame_state_in_prev_frame: Option<LayerCompositorFrameState>,
+
+    /// Hold DebugItems of DebugFlags::EXTERNAL_COMPOSITE_BORDERS for debug overlay
+    external_composite_debug_items: Vec<DebugItem>,
 }
 
 #[derive(Debug)]
@@ -1277,8 +1288,76 @@ impl Renderer {
                 panic!("Should be handled by render backend");
             }
             #[cfg(feature = "debugger")]
-            DebugCommand::Query(_) => {
-                panic!("Should be handled by render backend");
+            DebugCommand::Query(ref query) => {
+                match query.kind {
+                    DebugQueryKind::SpatialTree { .. } => {
+                        panic!("Should be handled by render backend");
+                    }
+                    DebugQueryKind::CompositorConfig { .. } => {
+                        let result = match self.active_documents.iter().last() {
+                            Some((_, doc)) => {
+                                doc.frame.composite_state.print_to_string()
+                            }
+                            None => {
+                                "No active documents".into()
+                            }
+                        };
+                        query.result.send(result).ok();
+                    }
+                    DebugQueryKind::CompositorView { .. } => {
+                        let result = match self.active_documents.iter().last() {
+                            Some((_, doc)) => {
+                                let info = CompositorDebugInfo::from(&doc.frame.composite_state);
+                                serde_json::to_string(&info).unwrap()
+                            }
+                            None => {
+                                "No active documents".into()
+                            }
+                        };
+                        query.result.send(result).ok();
+                    }
+                    DebugQueryKind::Textures { category } => {
+                        let mut texture_list = Vec::new();
+
+                        self.device.begin_frame();
+                        self.device.bind_read_target_impl(self.read_fbo, DeviceIntPoint::zero());
+
+                        for (id, item) in &self.texture_resolver.texture_cache_map {
+                            if category.is_some() && category != Some(item.category) {
+                                continue;
+                            }
+
+                            let size = item.texture.get_dimensions();
+                            let format = item.texture.get_format();
+                            let buffer_size = (size.area() * format.bytes_per_pixel()) as usize;
+                            let mut data = vec![0u8; buffer_size];
+                            let rect = size.cast_unit().into();
+                            self.device.attach_read_texture(&item.texture);
+                            self.device.read_pixels_into(rect, format, &mut data);
+
+                            let category_str = match item.category {
+                                TextureCacheCategory::Atlas => "atlas",
+                                TextureCacheCategory::Standalone => "standalone",
+                                TextureCacheCategory::PictureTile => "tile",
+                                TextureCacheCategory::RenderTarget => "target",
+                            };
+
+                            let texture_msg = DebuggerTextureContent {
+                                name: format!("{category_str}-{:02}", id.0),
+                                category: item.category,
+                                width: size.width as u32,
+                                height: size.height as u32,
+                                format,
+                                data,
+                            };
+                            texture_list.push(texture_msg);
+                        }
+                        self.device.reset_read_target();
+                        self.device.end_frame();
+
+                        query.result.send(serde_json::to_string(&texture_list).unwrap()).ok();
+                    }
+                }
             }
             DebugCommand::SaveCapture(..) |
             DebugCommand::LoadCapture(..) |
@@ -1408,6 +1487,8 @@ impl Renderer {
         // event. Otherwise they would just pile up in this vector forever.
         self.notifications.clear();
 
+        self.external_composite_debug_items = Vec::new();
+
         tracy_frame_marker!();
 
         result
@@ -1428,9 +1509,10 @@ impl Renderer {
             DebugFlags::EPOCHS |
             DebugFlags::GPU_CACHE_DBG |
             DebugFlags::PICTURE_CACHING_DBG |
-            DebugFlags::PRIMITIVE_DBG |
+            DebugFlags::PICTURE_BORDERS |
             DebugFlags::ZOOM_DBG |
-            DebugFlags::WINDOW_VISIBILITY_DBG
+            DebugFlags::WINDOW_VISIBILITY_DBG |
+            DebugFlags::EXTERNAL_COMPOSITE_BORDERS
         );
 
         // Update the debug overlay surface, if we are running in native compositor mode.
@@ -1723,6 +1805,7 @@ impl Renderer {
                 self.draw_zoom_debug(device_size);
                 self.draw_epoch_debug();
                 self.draw_window_visibility_debug();
+                self.draw_external_composite_borders_debug();
                 draw_target
             })
         });
@@ -3814,6 +3897,15 @@ impl Renderer {
                         let clip_rect = tile.device_clip_rect.to_i32();
                         let is_opaque = tile.kind != TileKind::Alpha;
 
+                        if self.debug_flags.contains(DebugFlags::EXTERNAL_COMPOSITE_BORDERS) {
+                            self.external_composite_debug_items.push(DebugItem::Rect {
+                                outer_color: debug_colors::ORANGERED,
+                                inner_color: ColorF { r: 0.0, g: 0.0, b: 0.0, a: 0.0 },
+                                rect: tile.device_clip_rect,
+                                thickness: 10,
+                            });
+                        }
+
                         (rect.min.to_i32(), clip_rect, is_opaque)
                     }
                     CompositorSurfaceUsage::DebugOverlay => unreachable!(),
@@ -3907,7 +3999,7 @@ impl Renderer {
             }
         }
 
-        let mut full_render = false;
+        let mut full_render = self.debug_overlay_state.is_enabled;
 
         // Start compositing if using OS compositor
         if let Some(ref mut compositor) = self.compositor_config.layer_compositor() {
@@ -3915,7 +4007,7 @@ impl Renderer {
                 enable_screenshot,
                 layers: &input_layers,
             };
-            full_render = compositor.begin_frame(&input);
+            full_render |= compositor.begin_frame(&input);
         }
 
         // Full render is requested when layer tree is updated.
@@ -5912,6 +6004,32 @@ impl Renderer {
         }
 
 
+    }
+
+    fn draw_external_composite_borders_debug(&mut self) {
+        if !self.debug_flags.contains(DebugFlags::EXTERNAL_COMPOSITE_BORDERS) {
+            return;
+        }
+
+        let debug_renderer = match self.debug.get_mut(&mut self.device) {
+            Some(render) => render,
+            None => return,
+        };
+
+        for item in &self.external_composite_debug_items {
+            match item {
+                DebugItem::Rect { rect, outer_color, inner_color: _, thickness } => {
+                    if outer_color.a > 0.001 {
+                        debug_renderer.add_rect(
+                            &rect.to_i32(),
+                            *thickness,
+                            (*outer_color).into(),
+                        );
+                    }
+                }
+                DebugItem::Text { .. } => {}
+            }
+        }
     }
 
     fn draw_gpu_cache_debug(&mut self, device_size: DeviceIntSize) {

@@ -12,11 +12,13 @@ import mozilla.components.concept.storage.CreditCardsAddressesStorage
 import mozilla.components.concept.storage.LoginsStorage
 import org.mozilla.fenix.R
 import org.mozilla.fenix.debugsettings.addons.ui.AddonsDebugToolsScreen
-import org.mozilla.fenix.debugsettings.addresses.AddressesDebugLocalesRepository
+import org.mozilla.fenix.debugsettings.addresses.AddressesDebugRegionRepository
 import org.mozilla.fenix.debugsettings.addresses.AddressesTools
+import org.mozilla.fenix.debugsettings.autofill.AutofillTools
 import org.mozilla.fenix.debugsettings.cfrs.CfrToolsState
 import org.mozilla.fenix.debugsettings.cfrs.CfrToolsStore
 import org.mozilla.fenix.debugsettings.crashtools.CrashTools
+import org.mozilla.fenix.debugsettings.creditcards.CreditCardsTools
 import org.mozilla.fenix.debugsettings.gleandebugtools.GleanDebugToolsStore
 import org.mozilla.fenix.debugsettings.gleandebugtools.ui.GleanDebugToolsScreen
 import org.mozilla.fenix.debugsettings.logins.LoginsTools
@@ -49,6 +51,14 @@ enum class DebugDrawerRoute(val route: String, @param:StringRes val title: Int) 
         route = "addresses",
         title = R.string.debug_drawer_addresses_title,
     ),
+    CreditCards(
+        route = "credit_cards",
+        title = R.string.debug_drawer_credit_cards_title,
+    ),
+    Autofill(
+        route = "autofill",
+        title = R.string.debug_drawer_autofill_title,
+    ),
     CfrTools(
         route = "cfr_tools",
         title = R.string.debug_drawer_cfr_tools_title,
@@ -80,7 +90,7 @@ enum class DebugDrawerRoute(val route: String, @param:StringRes val title: Int) 
          * @param cfrToolsStore [CfrToolsStore] used to access [CfrToolsState].
          * @param gleanDebugToolsStore [GleanDebugToolsStore] used to dispatch glean debug tools actions.
          * @param loginsStorage [LoginsStorage] used to access logins for [LoginsScreen].
-         * @param addressesDebugLocalesRepository used to control storage for [AddressesTools].
+         * @param addressesDebugRegionRepository used to control storage for [AddressesTools].
          * @param creditCardsAddressesStorage used to access addresses for [AddressesTools].
          * @param inactiveTabsEnabled Whether the inactive tabs feature is enabled.
          */
@@ -91,11 +101,12 @@ enum class DebugDrawerRoute(val route: String, @param:StringRes val title: Int) 
             cfrToolsStore: CfrToolsStore,
             gleanDebugToolsStore: GleanDebugToolsStore,
             loginsStorage: LoginsStorage,
-            addressesDebugLocalesRepository: AddressesDebugLocalesRepository,
+            addressesDebugRegionRepository: AddressesDebugRegionRepository,
             creditCardsAddressesStorage: CreditCardsAddressesStorage,
             inactiveTabsEnabled: Boolean,
         ): List<DebugDrawerDestination> =
             entries.map { debugDrawerRoute ->
+                var isChildDestination: Boolean = false
                 val onClick: () -> Unit
                 val content: @Composable () -> Unit
                 when (debugDrawerRoute) {
@@ -112,6 +123,7 @@ enum class DebugDrawerRoute(val route: String, @param:StringRes val title: Int) 
                     }
 
                     Logins -> {
+                        isChildDestination = true
                         onClick = {
                             debugDrawerStore.dispatch(DebugDrawerAction.NavigateTo.Logins)
                         }
@@ -124,13 +136,36 @@ enum class DebugDrawerRoute(val route: String, @param:StringRes val title: Int) 
                     }
 
                     Addresses -> {
+                        isChildDestination = true
                         onClick = {
                             debugDrawerStore.dispatch(DebugDrawerAction.NavigateTo.Addresses)
                         }
                         content = {
                             AddressesTools(
-                                debugLocalesRepository = addressesDebugLocalesRepository,
+                                debugRegionRepository = addressesDebugRegionRepository,
                                 creditCardsAddressesStorage = creditCardsAddressesStorage,
+                            )
+                        }
+                    }
+
+                    CreditCards -> {
+                        isChildDestination = true
+                        onClick = {
+                            debugDrawerStore.dispatch(DebugDrawerAction.NavigateTo.CreditCards)
+                        }
+                        content = {
+                            CreditCardsTools(
+                                creditCardsAddressesStorage = creditCardsAddressesStorage,
+                            )
+                        }
+                    }
+                    Autofill -> {
+                        onClick = {
+                            debugDrawerStore.dispatch(DebugDrawerAction.NavigateTo.Autofill)
+                        }
+                        content = {
+                            AutofillTools(
+                                debugDrawerStore = debugDrawerStore,
                             )
                         }
                     }
@@ -186,6 +221,7 @@ enum class DebugDrawerRoute(val route: String, @param:StringRes val title: Int) 
                 DebugDrawerDestination(
                     route = debugDrawerRoute.route,
                     title = debugDrawerRoute.title,
+                    isChildDestination = isChildDestination,
                     onClick = onClick,
                     content = content,
                 )

@@ -540,6 +540,9 @@ function clearWarningMessage() {
  * @param {number} length context length for a request
  */
 async function showSummarizeWarning(length) {
+  // if previous request showed the message clear previous message
+  clearWarningMessage();
+
   const messageContainer = document.getElementById("message-container");
   const warningEl = lazy.GenAI.createWarningEl(document, null, true);
 
@@ -571,7 +574,8 @@ async function showSummarizeWarning(length) {
   });
 }
 
-/** Expose Sidebar entry for new prompt
+/**
+ * Expose Sidebar entry for new prompt
  *
  * @param {object} opt for new prompt
  * @param {boolean} [opt.show]

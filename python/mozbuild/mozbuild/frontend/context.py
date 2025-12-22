@@ -563,6 +563,11 @@ class CompileFlags(TargetCompileFlags):
         self.flag_variables = (
             ("STL", context.config.substs.get("STL_FLAGS"), ("CXXFLAGS",)),
             (
+                "STL_HARDENING",
+                context.config.substs.get("MOZ_STL_HARDENING_FLAGS"),
+                ("CXXFLAGS",),
+            ),
+            (
                 "VISIBILITY",
                 context.config.substs.get("VISIBILITY_FLAGS"),
                 ("CXXFLAGS", "CFLAGS"),
@@ -2077,6 +2082,17 @@ VARIABLES = {
         """Extra flags passed to the dumpsymbols utility when generating symbols for the crash reporter.
         """,
     ),
+    "LEGACY_RUN_TESTS": (
+        TypedList(dict),
+        list,
+        """Scripts to run during check phase.
+
+        This variable holds scripts that used to be part of ``make check`` rule
+        and which should probably migrate to another test target.
+
+        Please don't add new values to it.
+        """,
+    ),
     "JAR_MANIFESTS": (
         ContextDerivedTypedList(SourcePath, StrictOrderingOnAppendList),
         list,
@@ -2854,9 +2870,9 @@ SPECIAL_VARIABLES = {
         str,
         """Constant defining the relative path of this file.
 
-        The relative path is from ``TOPSRCDIR``. This is defined as relative
-        to the main file being executed, regardless of whether additional
-        files have been included using ``include()``.
+        The relative path is from ``TOPSRCDIR``. When a file is included using
+        ``include()``, this variable reflects the relative path of the current
+        file being processed, not the main file that initiated the inclusion.
         """,
     ),
     "SRCDIR": (

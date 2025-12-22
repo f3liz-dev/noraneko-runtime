@@ -5,10 +5,11 @@
 task-defaults:
     description: Make sure the content of .buildconfig.yml matches what gradle knows about its projects
     always-target: true
+    run-on-repo-type: [hg]
     run:
         using: run-task
         cwd: '{checkout}'
-    worker-type: t-linux-docker
+    worker-type: t-linux-docker-amd
     worker:
         artifacts:
             - type: directory
@@ -23,7 +24,7 @@ task-defaults:
     platform: lint/opt
     treeherder:
         kind: other
-        tier: 2
+        tier: 1
     fetches:
         toolchain:
             - linux64-jdk-repack

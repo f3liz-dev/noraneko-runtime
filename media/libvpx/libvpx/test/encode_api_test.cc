@@ -1606,6 +1606,42 @@ TEST(EncodeAPI, Buganizer311294795) {
   encoder.Encode(false);
 }
 
+// Test case to capture assert issue triggered in
+// vp9_bitstream.c for good_quality, speed 1, lossless;
+// See comment#22 in issue:433941753.
+TEST(EncodeAPI, AssertIssueGoodQualitySpeed1Lossless) {
+  vpx_codec_iface_t *const iface = vpx_codec_vp9_cx();
+  vpx_codec_ctx_t enc;
+  vpx_codec_enc_cfg_t cfg;
+  ASSERT_EQ(vpx_codec_enc_config_default(iface, &cfg, 0), VPX_CODEC_OK);
+  cfg.g_w = 1540;
+  cfg.g_h = 838;
+  cfg.g_profile = 0;
+  cfg.g_bit_depth = VPX_BITS_8;
+  cfg.g_timebase.num = 1;
+  cfg.g_timebase.den = 10000;
+  cfg.g_pass = VPX_RC_ONE_PASS;
+  cfg.g_lag_in_frames = 0;
+  cfg.rc_end_usage = VPX_VBR;
+  cfg.g_threads = 1;
+  cfg.rc_target_bitrate = 10000;
+  ASSERT_EQ(vpx_codec_enc_init(&enc, iface, &cfg, 0), VPX_CODEC_OK);
+  ASSERT_EQ(vpx_codec_control(&enc, VP9E_SET_LOSSLESS, 1), VPX_CODEC_OK);
+  ASSERT_EQ(vpx_codec_control(&enc, VP8E_SET_CPUUSED, 1), VPX_CODEC_OK);
+  libvpx_test::RandomVideoSource video;
+  video.SetSize(cfg.g_w, cfg.g_h);
+  video.SetImageFormat(VPX_IMG_FMT_I420);
+  video.set_limit(20);
+  video.Begin();
+  do {
+    ASSERT_EQ(vpx_codec_encode(&enc, video.img(), video.pts(), video.duration(),
+                               0, VPX_DL_GOOD_QUALITY),
+              VPX_CODEC_OK);
+    video.Next();
+  } while (video.img() != nullptr);
+  ASSERT_EQ(vpx_codec_destroy(&enc), VPX_CODEC_OK);
+}
+
 TEST(EncodeAPI, Buganizer317105128) {
   VP9Encoder encoder(-9);
   encoder.Configure(0, 1, 1, VPX_CBR, VPX_DL_GOOD_QUALITY);
@@ -1705,6 +1741,110 @@ TEST(EncodeAPI, Buganizer331108922BitDepth8) {
   encoder.Configure(/*threads=*/16, /*width=*/1, /*height=*/798, VPX_CBR,
                     VPX_DL_REALTIME);
   encoder.Encode(/*key_frame=*/false);
+}
+
+// Encode some frames, flip from BEST_QUALITY to REALTIME after 2 frames.
+// This test is taken from the code snippet in issue:441668134.
+TEST(EncodeAPI, Buganizer441668134) {
+  // Get VP9 encoder interface.
+  vpx_codec_iface_t *iface = vpx_codec_vp9_cx();
+  // Initialize encoder configuration with default values.
+  vpx_codec_enc_cfg_t cfg;
+  ASSERT_EQ(vpx_codec_enc_config_default(iface, &cfg, 0), VPX_CODEC_OK);
+  cfg.g_lag_in_frames = 0;
+  cfg.rc_max_quantizer = 0;
+  unsigned long init_flags = 0;
+  vpx_codec_ctx_t ctx;
+  ASSERT_EQ(vpx_codec_enc_init(&ctx, iface, &cfg, init_flags), VPX_CODEC_OK);
+  ASSERT_EQ(vpx_codec_control_(&ctx, VP8E_SET_CPUUSED, 9), 0);
+  ASSERT_EQ(vpx_codec_control_(&ctx, VP9E_SET_DELTA_Q_UV, -15), 0);
+  // Image allocation.
+  vpx_img_fmt_t img_fmt = VPX_IMG_FMT_I420;
+  vpx_image_t *img = vpx_img_alloc(NULL, img_fmt, cfg.g_w, cfg.g_h, 32);
+  for (unsigned int y = 0; y < img->d_h; y++) {
+    for (unsigned int x = 0; x < img->d_w; x++) {
+      img->planes[0][y * img->stride[0] + x] = ((x ^ y) * 127) & 0xFF;
+    }
+  }
+  const unsigned int uv_height = (img->d_h + 1) >> 1;
+  for (int i : { VPX_PLANE_U, VPX_PLANE_V }) {
+    memset(img->planes[i], 0, img->stride[i] * uv_height);
+  }
+  // Encode some frames.
+  int num_frames = 6;
+  static constexpr int kChoices[6] = { 1, 1, 0, 0, 0, 0 };
+  for (int frame = 0; frame < num_frames; frame++) {
+    vpx_enc_deadline_t deadline = VPX_DL_REALTIME;
+    uint8_t dl_choice = kChoices[frame];
+    if (dl_choice == 1) deadline = VPX_DL_BEST_QUALITY;
+    // Encode frame.
+    ASSERT_EQ(vpx_codec_encode(&ctx, img, frame, 1, 0, deadline), VPX_CODEC_OK);
+  }
+  vpx_img_free(img);
+  vpx_codec_destroy(&ctx);
+}
+
+// Encode a few frames, with realtime mode and tile_rows set to 1,
+// with row-mt enabled. This triggers an assertion in vp9_bitstream.c (in
+// function write_modes()), as in the issue:42105459. In this test it happens on
+// very first encoded frame since lag_in_frames = 0. Issue is due to enabling
+// TILE_ROWS: passes if tile_rows is disabled (set to 0), or if height is above
+// 64 (so both row-tiles are non-empty).
+TEST(EncodeAPI, DISABLED_Buganizer442105459) {
+  // Initialize VP9 encoder interface
+  vpx_codec_iface_t *iface = vpx_codec_vp9_cx();
+  // Get default encoder configuration
+  vpx_codec_enc_cfg_t cfg;
+  ASSERT_EQ(vpx_codec_enc_config_default(iface, &cfg, 0), VPX_CODEC_OK);
+  // Configure encoder
+  cfg.g_w = 946u;
+  cfg.g_h = 64u;
+  cfg.g_threads = 1;
+  cfg.g_profile = 0;
+  cfg.g_bit_depth = VPX_BITS_8;
+  // Rate control targeting deeper encoding paths
+  cfg.rc_target_bitrate = 100;
+  cfg.rc_min_quantizer = 0;
+  cfg.rc_max_quantizer = 0;
+  cfg.rc_end_usage = VPX_VBR;
+  cfg.ss_number_layers = 1;
+  cfg.g_lag_in_frames = 0;
+  // Initialize encoder context
+  vpx_codec_ctx_t ctx;
+  ASSERT_EQ(vpx_codec_enc_init(&ctx, iface, &cfg, 0), VPX_CODEC_OK);
+  // Set control parameters
+  vpx_codec_control_(&ctx, VP8E_SET_CPUUSED, -5);
+  vpx_codec_control_(&ctx, VP9E_SET_TILE_ROWS, 1);
+  vpx_codec_control_(&ctx, VP9E_SET_ROW_MT, 1);
+  // Image format selection
+  vpx_img_fmt_t img_fmt = VPX_IMG_FMT_I420;
+  // Allocate image with varied alignment
+  vpx_image_t *img = vpx_img_alloc(nullptr, img_fmt, cfg.g_w, cfg.g_h, 1);
+  // Encode with dynamic configuration changes
+  int num_frames = 2;
+  // Per-frame constants captured from the original run (indices consumed per
+  // frame)
+  const unsigned long frame_pts_mul[] = { 33333UL, 33333UL };
+  const unsigned long frame_durations[] = { 33333UL, 33333UL };
+  const vpx_enc_deadline_t frame_deadlines[] = { VPX_DL_REALTIME,
+                                                 VPX_DL_REALTIME };
+  for (int frame = 0; frame < num_frames; frame++) {
+    // Encode frame
+    vpx_codec_pts_t pts = frame * frame_pts_mul[frame];
+    unsigned long duration = frame_durations[frame];
+    vpx_enc_deadline_t deadline = frame_deadlines[frame];
+    ASSERT_EQ(vpx_codec_encode(&ctx, img, pts, duration, /*flags*/ 0, deadline),
+              VPX_CODEC_OK);
+  }
+  // Flush encoder.
+  ASSERT_EQ(vpx_codec_encode(&ctx, NULL, 0, 0, 0, VPX_DL_REALTIME), 0);
+  // Get remaining data
+  vpx_codec_iter_t iter = NULL;
+  while (vpx_codec_get_cx_data(&ctx, &iter) != NULL) {
+    // Process remaining packets
+  }
+  vpx_img_free(img);
+  vpx_codec_destroy(&ctx);
 }
 
 #if CONFIG_VP9_HIGHBITDEPTH

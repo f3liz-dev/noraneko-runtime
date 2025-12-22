@@ -20,6 +20,7 @@
 #include "jsfriendapi.h"
 #include "jsmath.h"
 
+#include "builtin/String.h"
 #include "frontend/CompilationStencil.h"
 #include "frontend/ParserAtom.h"  // frontend::WellKnownParserAtoms
 #include "gc/GC.h"
@@ -37,6 +38,7 @@
 #include "js/Wrapper.h"
 #include "js/WrapperCallbacks.h"
 #include "vm/DateTime.h"
+#include "vm/JSFunction.h"
 #include "vm/JSObject.h"
 #include "vm/JSScript.h"
 #include "vm/PromiseObject.h"  // js::PromiseObject
@@ -148,7 +150,8 @@ JSRuntime::JSRuntime(JSRuntime* parentRuntime)
       stackFormat_(parentRuntime ? js::StackFormat::Default
                                  : js::StackFormat::SpiderMonkey),
       wasmInstances(mutexid::WasmRuntimeInstances),
-      moduleAsyncEvaluatingPostOrder(ASYNC_EVALUATING_POST_ORDER_INIT) {
+      moduleAsyncEvaluatingPostOrder(0),
+      pendingAsyncModuleEvaluations(0) {
   JS_COUNT_CTOR(JSRuntime);
   liveRuntimesCount++;
 
@@ -334,11 +337,6 @@ void JSRuntime::addSizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf,
       gc.nursery().sizeOfMallocedBuffers(mallocSizeOf);
   gc.storeBuffer().addSizeOfExcludingThis(mallocSizeOf, &rtSizes->gc);
 
-  rtSizes->gc.nurseryMallocedBlockCache +=
-      gc.nursery().sizeOfMallocedBlockCache(mallocSizeOf);
-  rtSizes->gc.nurseryTrailerBlockSets +=
-      gc.nursery().sizeOfTrailerBlockSets(mallocSizeOf);
-
   if (isMainRuntime()) {
     rtSizes->sharedImmutableStringsCache +=
         js::SharedImmutableStringsCache::getSingleton().sizeOfExcludingThis(
@@ -518,6 +516,13 @@ bool JSRuntime::setDefaultLocale(const char* locale) {
     return false;
   }
 
+#if JS_HAS_INTL_API
+  if (!LocaleHasDefaultCaseMapping(newLocale.get())) {
+    runtimeFuses.ref().defaultLocaleHasDefaultCaseMappingFuse.popFuse(
+        mainContextFromOwnThread());
+  }
+#endif
+
   defaultLocale.ref() = std::move(newLocale);
   return true;
 }
@@ -555,6 +560,13 @@ const char* JSRuntime::getDefaultLocale() {
     *p = '-';
   }
 
+#if JS_HAS_INTL_API
+  if (!LocaleHasDefaultCaseMapping(lang.get())) {
+    runtimeFuses.ref().defaultLocaleHasDefaultCaseMappingFuse.popFuse(
+        mainContextFromOwnThread());
+  }
+#endif
+
   defaultLocale.ref() = std::move(lang);
   return defaultLocale.ref().get();
 }
@@ -576,6 +588,26 @@ bool JSRuntime::getHostDefinedData(JSContext* cx,
   return cx->jobQueue->getHostDefinedData(cx, data);
 }
 
+JS_PUBLIC_API JSObject*
+JS::MaybeGetPromiseAllocationSiteFromPossiblyWrappedPromise(
+    HandleObject promise) {
+  if (!promise) {
+    return nullptr;
+  }
+
+  JSObject* unwrappedPromise = promise;
+  // While the job object is guaranteed to be unwrapped, the promise
+  // might be wrapped. See the comments in EnqueuePromiseReactionJob in
+  // builtin/Promise.cpp for details.
+  if (IsWrapper(promise)) {
+    unwrappedPromise = UncheckedUnwrap(promise);
+  }
+  if (unwrappedPromise->is<PromiseObject>()) {
+    return unwrappedPromise->as<PromiseObject>().allocationSite();
+  }
+  return nullptr;
+}
+
 bool JSRuntime::enqueuePromiseJob(JSContext* cx, HandleFunction job,
                                   HandleObject promise,
                                   HandleObject hostDefinedData) {
@@ -583,23 +615,14 @@ bool JSRuntime::enqueuePromiseJob(JSContext* cx, HandleFunction job,
              "Must select a JobQueue implementation using JS::JobQueue "
              "or js::UseInternalJobQueues before using Promises");
 
-  RootedObject allocationSite(cx);
   if (promise) {
 #ifdef DEBUG
     AssertSameCompartment(job, promise);
 #endif
-
-    RootedObject unwrappedPromise(cx, promise);
-    // While the job object is guaranteed to be unwrapped, the promise
-    // might be wrapped. See the comments in EnqueuePromiseReactionJob in
-    // builtin/Promise.cpp for details.
-    if (IsWrapper(promise)) {
-      unwrappedPromise = UncheckedUnwrap(promise);
-    }
-    if (unwrappedPromise->is<PromiseObject>()) {
-      allocationSite = JS::GetPromiseAllocationSite(unwrappedPromise);
-    }
   }
+
+  RootedObject allocationSite(
+      cx, JS::MaybeGetPromiseAllocationSiteFromPossiblyWrappedPromise(promise));
   return cx->jobQueue->enqueuePromiseJob(cx, promise, job, allocationSite,
                                          hostDefinedData);
 }
@@ -875,17 +898,5 @@ void JSRuntime::ensureRealmIsRecordingAllocations(
     // Ensure the probability is up to date with the current combination of
     // debuggers and runtime profiling.
     global->realm()->chooseAllocationSamplingProbability();
-  }
-}
-
-void js::HasSeenObjectEmulateUndefinedFuse::popFuse(JSContext* cx) {
-  js::InvalidatingRuntimeFuse::popFuse(cx);
-  MOZ_ASSERT(cx->global());
-  cx->runtime()->setUseCounter(cx->global(), JSUseCounter::ISHTMLDDA_FUSE);
-}
-
-void js::HasSeenArrayExceedsInt32LengthFuse::popFuse(JSContext* cx) {
-  if (intact()) {
-    js::InvalidatingRuntimeFuse::popFuse(cx);
   }
 }

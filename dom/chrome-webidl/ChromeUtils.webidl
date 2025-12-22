@@ -442,6 +442,20 @@ namespace ChromeUtils {
   UTF8String encodeURIForSrcset(UTF8String uri);
 
   /**
+   * Returns, in bytes, a platform-normalized estimate of the process's private physical memory usage.
+   * Any error when calling the underlying platform-specific API will be thrown.
+   */
+  [Throws]
+  readonly attribute unsigned long long currentProcessMemoryUsage;
+
+  /**
+   * Return the number of milliseconds of CPU time used since process start.
+   * Any error when calling the underlying platform-specific API will be thrown.
+   */
+  [Throws]
+  readonly attribute unsigned long long cpuTimeSinceProcessStart;
+
+  /**
    * IF YOU ADD NEW METHODS HERE, MAKE SURE THEY ARE THREAD-SAFE.
    */
 };
@@ -637,13 +651,19 @@ partial namespace ChromeUtils {
 
   /**
    * Set the collection of specific detailed performance timing information.
-   * Selecting 0 for the mask will end existing collection. All metrics that
-   * are chosen will be cleared after updating the mask.
+   * Passing an empty array will end existing collection. All metrics that
+   * are chosen will be cleared after updating the features.
    *
-   * @param aCollectionMask A bitmask where each bit corresponds to a metric
-   *        to be collected as listed in PerfStats::Metric.
+   * @param aMetrics An array of metric names corresponding to the Metric enum
+   *        values in PerfStats::Metric.
    */
-  undefined setPerfStatsCollectionMask(unsigned long long aCollectionMask);
+  undefined setPerfStatsFeatures(sequence<DOMString> aMetrics);
+
+  /**
+   * Enables the collection of all perf stats features.  Will override the features
+   * enabled by setPerfStatsFeatures.
+   */
+  undefined enableAllPerfStatsFeatures();
 
   /**
    * Collect results of detailed performance timing information.
@@ -1222,7 +1242,6 @@ dictionary CDMInformation {
   required DOMString keySystemName;
   required DOMString capabilities;
   required boolean clearlead;
-  required boolean isHDCP22Compatible;
   required boolean isHardwareDecryption;
 };
 

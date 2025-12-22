@@ -7,7 +7,6 @@
 #ifndef nsMathMLTokenFrame_h___
 #define nsMathMLTokenFrame_h___
 
-#include "mozilla/Attributes.h"
 #include "nsMathMLContainerFrame.h"
 
 namespace mozilla {
@@ -53,8 +52,8 @@ class nsMathMLTokenFrame : public nsMathMLContainerFrame {
               const ReflowInput& aReflowInput,
               nsReflowStatus& aStatus) override;
 
-  nsresult Place(DrawTarget* aDrawTarget, const PlaceFlags& aFlags,
-                 ReflowOutput& aDesiredSize) override;
+  void Place(DrawTarget* aDrawTarget, const PlaceFlags& aFlags,
+             ReflowOutput& aDesiredSize) override;
 
  protected:
   explicit nsMathMLTokenFrame(ComputedStyle* aStyle,

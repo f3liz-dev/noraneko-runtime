@@ -33,13 +33,11 @@
 #include "mozilla/Maybe.h"
 #include "mozilla/MozPromise.h"
 #include "mozilla/Mutex.h"
-#include "mozilla/NotNull.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/Result.h"
 #include "mozilla/StaticAnalysisFunctions.h"
 #include "mozilla/StorageAccess.h"
 #include "mozilla/UniquePtr.h"
-#include "mozilla/Unused.h"
 #include "mozilla/dom/AutoEntryScript.h"
 #include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/dom/BindingUtils.h"
@@ -212,9 +210,8 @@ static const char* GetTimeoutReasonString(Timeout* aTimeout) {
       return "AbortSignal timeout";
     case Timeout::Reason::eDelayedWebTaskTimeout:
       return "delayedWebTaskCallback handler (timed out)";
-    default:
-      MOZ_CRASH("Unexpected enum value");
-      return "";
+    case Timeout::Reason::eJSTimeout:
+      return "JS timeout";
   }
   MOZ_CRASH("Unexpected enum value");
   return "";
@@ -273,7 +270,8 @@ WorkerGlobalScopeBase::WorkerGlobalScopeBase(
       mClientSource(std::move(aClientSource)),
       mSerialEventTarget(aWorkerPrivate->HybridEventTarget()) {
   mTimeoutManager = MakeUnique<dom::TimeoutManager>(
-      *this, /* not used on workers */ 0, mSerialEventTarget);
+      *this, /* not used on workers */ 0, mSerialEventTarget,
+      mWorkerPrivate->IsChromeWorker());
   LOG(("WorkerGlobalScopeBase::WorkerGlobalScopeBase [%p]", this));
   MOZ_ASSERT(mWorkerPrivate);
 #ifdef DEBUG
@@ -657,7 +655,7 @@ void WorkerGlobalScope::SetOnerror(OnErrorEventHandlerNonNull* aHandler) {
 
 void WorkerGlobalScope::ImportScripts(
     JSContext* aCx, const Sequence<OwningTrustedScriptURLOrString>& aScriptURLs,
-    ErrorResult& aRv) {
+    nsIPrincipal* aSubjectPrincipal, ErrorResult& aRv) {
   AssertIsOnWorkerThread();
 
   UniquePtr<SerializedStackHolder> stack;
@@ -674,7 +672,7 @@ void WorkerGlobalScope::ImportScripts(
       const nsAString* compliantString =
           TrustedTypeUtils::GetTrustedTypesCompliantString(
               scriptURL, sink, kTrustedTypesOnlySinkGroup, *pinnedGlobal,
-              nullptr, compliantStringHolder, aRv);
+              aSubjectPrincipal, compliantStringHolder, aRv);
       if (aRv.Failed()) {
         return;
       }

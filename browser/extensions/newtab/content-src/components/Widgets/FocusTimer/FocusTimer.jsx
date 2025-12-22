@@ -46,6 +46,27 @@ export const formatTime = seconds => {
 };
 
 /**
+ * Validates that the inputs in the timer only allow numerical digits (0-9)
+ *
+ * @param input - The character being input
+ * @returns boolean - true if valid numeric input, false otherwise
+ */
+export const isNumericValue = input => {
+  // Check for null/undefined input or non-numeric characters
+  return input && /^\d+$/.test(input);
+};
+
+/**
+ * Validates if adding a new digit would exceed the 2-character limit
+ *
+ * @param currentValue - The current value in the field
+ * @returns boolean - true if at 2-character limit, false otherwise
+ */
+export const isAtMaxLength = currentValue => {
+  return currentValue.length >= 2;
+};
+
+/**
  * Converts a polar coordinate (angle on circle) into a percentage-based [x,y] position for clip-path
  *
  * @param cx
@@ -207,6 +228,15 @@ export const FocusTimer = ({ dispatch, handleUserInteraction }) => {
 
     setTimeLeft(newTime);
 
+    // Set progress for paused timers (handles page load and timer type toggling)
+    if (!isRunning && duration < initialDuration) {
+      // Show previously elapsed time
+      setProgress((initialDuration - duration) / initialDuration);
+    } else if (!isRunning) {
+      // Reset progress for fresh timers
+      setProgress(0);
+    }
+
     return () => clearInterval(interval);
   }, [
     isRunning,
@@ -222,9 +252,14 @@ export const FocusTimer = ({ dispatch, handleUserInteraction }) => {
   // Update the clip-path of the gradient circle to match the current progress value
   useEffect(() => {
     if (arcRef?.current) {
-      arcRef.current.style.clipPath = getClipPath(progress);
+      // Only set clip-path if current timer has been started or is running
+      if (progress > 0 || isRunning) {
+        arcRef.current.style.clipPath = getClipPath(progress);
+      } else {
+        arcRef.current.style.clipPath = "";
+      }
     }
-  }, [progress, timerType]);
+  }, [progress, isRunning]);
 
   // set timer function
   const setTimerDuration = () => {
@@ -402,13 +437,9 @@ export const FocusTimer = ({ dispatch, handleUserInteraction }) => {
     const values = e.target.innerText.trim();
 
     // only allow numerical digits 0–9 for time input
-    if (!/^\d+$/.test(input)) {
+    if (!isNumericValue(input)) {
       e.preventDefault();
-    }
-
-    // only allow 2 values each for minutes and seconds
-    if (values.length >= 2) {
-      e.preventDefault();
+      return;
     }
 
     const selection = window.getSelection();
@@ -427,6 +458,12 @@ export const FocusTimer = ({ dispatch, handleUserInteraction }) => {
       const sel = window.getSelection();
       sel.removeAllRanges();
       sel.addRange(range);
+      return;
+    }
+
+    // only allow 2 values each for minutes and seconds
+    if (isAtMaxLength(values)) {
+      e.preventDefault();
     }
   };
 

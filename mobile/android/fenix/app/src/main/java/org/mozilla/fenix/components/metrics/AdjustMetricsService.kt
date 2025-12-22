@@ -35,6 +35,7 @@ class AdjustMetricsService(
 
     override fun start() {
         val settings = application.components.settings
+
         if ((BuildConfig.ADJUST_TOKEN.isNullOrBlank())) {
             logger.info("No adjust token defined")
 
@@ -60,6 +61,14 @@ class AdjustMetricsService(
         )
         config.enablePreinstallTracking()
 
+        val distributionIdManager = application.components.distributionIdManager
+
+        // If we skipped the marketing consent screen, enable COPPA compliance to prevent
+        // personal identifiers from being shared with Adjust.
+        if (distributionIdManager.shouldSkipMarketingConsentScreen()) {
+            config.enableCoppaCompliance()
+        }
+
         val timerId = AdjustAttribution.adjustAttributionTime.start()
         config.setOnAttributionChangedListener {
             AdjustAttribution.adjustAttributionTime.stopAndAccumulate(timerId)
@@ -84,9 +93,15 @@ class AdjustMetricsService(
             triggerPing()
         }
 
-        config.setLogLevel(LogLevel.SUPPRESS)
+        if (Config.channel.isNightlyOrDebug) {
+            config.setLogLevel(LogLevel.VERBOSE)
+        } else {
+            config.setLogLevel(LogLevel.SUPPRESS)
+        }
+
         Adjust.initSdk(config)
         Adjust.enable()
+        logger.info("Adjust SDK enabled")
     }
 
     override fun stop() {

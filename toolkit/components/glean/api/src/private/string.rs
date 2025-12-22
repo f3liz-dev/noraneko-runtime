@@ -134,7 +134,9 @@ impl glean::traits::String for StringMetric {
 }
 
 #[inherent]
-impl glean::TestGetValue<std::string::String> for StringMetric {
+impl glean::TestGetValue for StringMetric {
+    type Output = std::string::String;
+
     /// **Exported for test purposes.**
     ///
     /// Gets the currently stored value as a string.
@@ -172,7 +174,9 @@ mod test {
 
         assert_eq!(
             "test_string_value",
-            metric.test_get_value(Some("test-ping".to_string())).unwrap()
+            metric
+                .test_get_value(Some("test-ping".to_string()))
+                .unwrap()
         );
     }
 
@@ -200,7 +204,10 @@ mod test {
         assert!(ipc::replay_from_buf(&ipc::take_buf().unwrap()).is_ok());
 
         assert!(
-            "test_parent_value" == parent_metric.test_get_value(Some("test-ping".to_string())).unwrap(),
+            "test_parent_value"
+                == parent_metric
+                    .test_get_value(Some("test-ping".to_string()))
+                    .unwrap(),
             "String metrics should only work in the parent process"
         );
     }

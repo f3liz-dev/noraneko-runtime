@@ -7,7 +7,6 @@
 #ifndef DOM_MEDIA_WEBRTC_RTCDATACHANNEL_H_
 #define DOM_MEDIA_WEBRTC_RTCDATACHANNEL_H_
 
-#include "mozilla/Attributes.h"
 #include "mozilla/DOMEventTargetHelper.h"
 #include "mozilla/dom/Nullable.h"
 #include "mozilla/dom/RTCDataChannelBinding.h"
@@ -116,14 +115,7 @@ class RTCDataChannel final : public DOMEventTargetHelper {
 
   dom::RTCDataChannelStats GetStats(const DOMHighResTimeStamp aTimestamp) const;
 
-  void AppendStatsToReport(const UniquePtr<RTCStatsCollection>& aReport,
-                           const DOMHighResTimeStamp aTimestamp) const;
-
-  void UnsetWorkerNeedsUs() {
-    MOZ_ASSERT(mEventTarget->IsOnCurrentThread());
-    mWorkerNeedsUs = false;
-    UpdateMustKeepAlive();
-  }
+  void UnsetWorkerNeedsUs();
 
  protected:
   ~RTCDataChannel();

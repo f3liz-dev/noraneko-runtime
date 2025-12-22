@@ -35,6 +35,15 @@ class ToggleRadioButtonPreference @JvmOverloads constructor(
     private var trueOptionIconRes: Int = 0
     private var falseOptionIconRes: Int = 0
 
+    private var onToggleChanged: ((Boolean) -> Unit)? = null
+
+    /**
+     * Registers a listener that is invoked whenever the toggle selection changes.
+     */
+    fun setOnToggleChanged(listener: (Boolean) -> Unit) {
+        onToggleChanged = listener
+    }
+
     init {
         layoutResource = R.layout.preference_widget_toggle_radio_button
         isSelectable = false
@@ -59,6 +68,8 @@ class ToggleRadioButtonPreference @JvmOverloads constructor(
 
         val optionTrueRadio = optionTrueView.findViewById<RadioButton>(R.id.radio_button)
         val optionFalseRadio = optionFalseView.findViewById<RadioButton>(R.id.radio_button)
+        optionTrueRadio.setStartCheckedIndicator()
+        optionFalseRadio.setStartCheckedIndicator()
 
         val optionTrueTitle = optionTrueView.findViewById<TextView>(R.id.title)
         val optionFalseTitle = optionFalseView.findViewById<TextView>(R.id.title)
@@ -80,6 +91,7 @@ class ToggleRadioButtonPreference @JvmOverloads constructor(
             optionFalseIconView.isSelected = false
             preferences.edit { putBoolean(sharedKey, true) }
             notifyChanged()
+            onToggleChanged?.invoke(true)
         }
 
         optionFalseView.setOnClickListener {
@@ -87,6 +99,7 @@ class ToggleRadioButtonPreference @JvmOverloads constructor(
             optionFalseIconView.isSelected = true
             preferences.edit { putBoolean(sharedKey, false) }
             notifyChanged()
+            onToggleChanged?.invoke(false)
         }
     }
 

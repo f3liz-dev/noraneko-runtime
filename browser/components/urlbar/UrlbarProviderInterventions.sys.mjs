@@ -6,7 +6,7 @@ import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 import {
   UrlbarProvider,
   UrlbarUtils,
-} from "resource:///modules/UrlbarUtils.sys.mjs";
+} from "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs";
 
 const lazy = {};
 
@@ -18,9 +18,9 @@ ChromeUtils.defineESModuleGetters(lazy, {
   ResetProfile: "resource://gre/modules/ResetProfile.sys.mjs",
   Sanitizer: "resource:///modules/Sanitizer.sys.mjs",
   UrlbarProviderGlobalActions:
-    "resource:///modules/UrlbarProviderGlobalActions.sys.mjs",
-  UrlbarResult: "resource:///modules/UrlbarResult.sys.mjs",
-  UrlbarTokenizer: "resource:///modules/UrlbarTokenizer.sys.mjs",
+    "moz-src:///browser/components/urlbar/UrlbarProviderGlobalActions.sys.mjs",
+  UrlbarResult: "moz-src:///browser/components/urlbar/UrlbarResult.sys.mjs",
+  UrlUtils: "resource://gre/modules/UrlUtils.sys.mjs",
 });
 
 ChromeUtils.defineLazyGetter(lazy, "appUpdater", () => new lazy.AppUpdater());
@@ -485,14 +485,12 @@ export class UrlbarProviderInterventions extends UrlbarProvider {
     if (
       !queryContext.searchString ||
       queryContext.searchString.length > UrlbarUtils.MAX_TEXT_LENGTH ||
-      lazy.UrlbarTokenizer.REGEXP_LIKE_PROTOCOL.test(
-        queryContext.searchString
-      ) ||
+      lazy.UrlUtils.REGEXP_LIKE_PROTOCOL.test(queryContext.searchString) ||
       !EN_LOCALE_MATCH.test(Services.locale.appLocaleAsBCP47) ||
       !Services.policies.isAllowed("urlbarinterventions") ||
       (await this.queryInstance
         .getProvider(lazy.UrlbarProviderGlobalActions.name)
-        ?.isActive())
+        ?.isActive(queryContext))
     ) {
       return false;
     }
@@ -595,9 +593,9 @@ export class UrlbarProviderInterventions extends UrlbarProvider {
   /**
    * Starts querying.
    *
-   * @param {UrlbarQueryContext} queryContext The query context object
-   * @param {Function} addCallback Callback invoked by the provider to add a new
-   *        result. A UrlbarResult should be passed to it.
+   * @param {UrlbarQueryContext} queryContext
+   * @param {(provider: UrlbarProvider, result: UrlbarResult) => void} addCallback
+   *   Callback invoked by the provider to add a new result.
    */
   async startQuery(queryContext, addCallback) {
     let instance = this.queryInstance;
@@ -645,19 +643,19 @@ export class UrlbarProviderInterventions extends UrlbarProvider {
     // At this point, this.currentTip != TIPS.UPDATE_CHECKING because we
     // returned early above if it was.
 
-    let result = new lazy.UrlbarResult(
-      UrlbarUtils.RESULT_TYPE.TIP,
-      UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
-      {
+    let result = new lazy.UrlbarResult({
+      type: UrlbarUtils.RESULT_TYPE.TIP,
+      source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+      suggestedIndex: 1,
+      payload: {
         ...getPayloadForTip(this.currentTip),
         type: this.currentTip,
         icon: UrlbarUtils.ICON.TIP,
         helpL10n: {
           id: "urlbar-result-menu-tip-get-help",
         },
-      }
-    );
-    result.suggestedIndex = 1;
+      },
+    });
     addCallback(this, result);
   }
 

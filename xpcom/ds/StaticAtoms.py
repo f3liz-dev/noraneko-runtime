@@ -77,6 +77,7 @@ STATIC_ATOMS = [
     Atom("actuate", "actuate"),
     Atom("address", "address"),
     Atom("adoptedsheetclones", "adoptedsheetclones"),
+    Atom("adult", "adult"),
     Atom("after", "after"),
     Atom("align", "align"),
     Atom("alink", "alink"),
@@ -119,6 +120,7 @@ STATIC_ATOMS = [
     Atom("archive", "archive"),
     Atom("area", "area"),
     Atom("aria", "aria"),
+    Atom("aria_actions", "aria-actions"),
     Atom("aria_activedescendant", "aria-activedescendant"),
     Atom("aria_atomic", "aria-atomic"),
     Atom("aria_autocomplete", "aria-autocomplete"),
@@ -246,6 +248,7 @@ STATIC_ATOMS = [
     Atom("classid", "classid"),
     Atom("clear", "clear"),
     Atom("click", "click"),
+    Atom("clickToPlay", "clickToPlay"),
     Atom("clickcount", "clickcount"),
     Atom("movetoclick", "movetoclick"),
     Atom("clip", "clip"),
@@ -289,6 +292,7 @@ STATIC_ATOMS = [
     Atom("context", "context"),
     Atom("contextmenu", "contextmenu"),
     Atom("control", "control"),
+    Atom("controlBar", "controlBar"),
     Atom("controls", "controls"),
     Atom("coords", "coords"),
     Atom("copy", "copy"),
@@ -336,6 +340,7 @@ STATIC_ATOMS = [
     Atom("description", "description"),
     Atom("destructor", "destructor"),
     Atom("details", "details"),
+    Atom("details_from", "details-from"),
     Atom("deviceAspectRatio", "device-aspect-ratio"),
     Atom("deviceHeight", "device-height"),
     Atom("devicePixelRatio", "device-pixel-ratio"),
@@ -512,6 +517,7 @@ STATIC_ATOMS = [
     Atom("handler", "handler"),
     Atom("handlers", "handlers"),
     Atom("HARD", "HARD"),
+    Atom("hasActions", "has-actions"),
     Atom("hasSameNode", "has-same-node"),
     Atom("hbox", "hbox"),
     Atom("head", "head"),
@@ -605,6 +611,7 @@ STATIC_ATOMS = [
     Atom("label", "label"),
     Atom("lang", "lang"),
     Atom("language", "language"),
+    Atom("largestContentfulPaint", "largest-contentful-paint"),
     Atom("last", "last"),
     Atom("layer", "layer"),
     Atom("LayerActivity", "LayerActivity"),
@@ -765,7 +772,6 @@ STATIC_ATOMS = [
     Atom("onmozaccesskeynotfound", "onmozaccesskeynotfound"),
     Atom("onactivate", "onactivate"),
     Atom("onafterprint", "onafterprint"),
-    Atom("onafterscriptexecute", "onafterscriptexecute"),
     Atom("onanimationcancel", "onanimationcancel"),
     Atom("onanimationend", "onanimationend"),
     Atom("onanimationiteration", "onanimationiteration"),
@@ -779,7 +785,6 @@ STATIC_ATOMS = [
     Atom("onbeforematch", "onbeforematch"),
     Atom("onbeforepaste", "onbeforepaste"),
     Atom("onbeforeprint", "onbeforeprint"),
-    Atom("onbeforescriptexecute", "onbeforescriptexecute"),
     Atom("onbeforeunload", "onbeforeunload"),
     Atom("onblocked", "onblocked"),
     Atom("onblur", "onblur"),
@@ -1069,6 +1074,7 @@ STATIC_ATOMS = [
     Atom("radioLabel", "radio-label"),
     Atom("radiogroup", "radiogroup"),
     Atom("range", "range"),
+    Atom("rating", "rating"),
     Atom("readonly", "readonly"),
     Atom("rect", "rect"),
     Atom("rectangle", "rectangle"),
@@ -1091,6 +1097,9 @@ STATIC_ATOMS = [
     Atom("resizer", "resizer"),
     Atom("resolution", "resolution"),
     Atom("resources", "resources"),
+    # legacy string from an unknown ontology, but used by several sites and
+    # respected by Google Search, for <meta name="rating"> content attributes
+    Atom("restrictToAdults", "RTA-5042-1996-1400-1577-RTA"),
     Atom("result", "result"),
     Atom("resultPrefix", "result-prefix"),
     Atom("retargetdocumentfocus", "retargetdocumentfocus"),
@@ -2239,6 +2248,7 @@ STATIC_ATOMS = [
     Atom("ga", "ga"),
     # Atom("lt", "lt"),  # "lt" is present above (atom name "lt_")
     Atom("nl", "nl"),
+    # TODO(1788937): Remove with mathml.font-family-math.enabled
     # mathematical language, used for MathML
     Atom("x_math", "x-math"),
     # other languages mentioned in :lang() rules in UA style sheets
@@ -2280,6 +2290,7 @@ STATIC_ATOMS = [
     Atom("_moz_windows_mica", "-moz-windows-mica"),
     Atom("_moz_windows_mica_popups", "-moz-windows-mica-popups"),
     Atom("_moz_mac_big_sur_theme", "-moz-mac-big-sur-theme"),
+    Atom("_moz_mac_tahoe_theme", "-moz-mac-tahoe-theme"),
     Atom("_moz_mac_rtl", "-moz-mac-rtl"),
     Atom("_moz_mac_titlebar_height", "-moz-mac-titlebar-height"),
     Atom("_moz_platform", "-moz-platform"),
@@ -2305,6 +2316,7 @@ STATIC_ATOMS = [
     Atom("_moz_content_prefers_color_scheme", "-moz-content-prefers-color-scheme"),
     Atom("_moz_content_preferred_color_scheme", "-moz-content-preferred-color-scheme"),
     Atom("_moz_system_dark_theme", "-moz-system-dark-theme"),
+    Atom("_moz_native_theme", "-moz-native-theme"),
     Atom("_moz_panel_animations", "-moz-panel-animations"),
     # application commands
     Atom("Back", "Back"),
@@ -2437,6 +2449,7 @@ STATIC_ATOMS = [
     Atom("onsupportedkeyschange", "onsupportedkeyschange"),
     # Media query prefs for UA sheets.
     Atom("mathml_legacy_mathvariant_attribute_disabled", "mathml.legacy_mathvariant_attribute.disabled"),
+    Atom("mathml_font_family_math_enabled", "mathml.font_family_math.enabled"),
     Atom("layout_css_always_underline_links", "layout.css.always_underline_links"),
     Atom("layout_css_android_pip_enabled", "layout.css.android-pip.enabled"),
     Atom("layout_css_cached_scrollbar_styles_enabled", "layout.css.cached-scrollbar-styles.enabled"),
@@ -2511,6 +2524,8 @@ STATIC_ATOMS = [
     Atom("_ua_view_transition_fade_out", "-ua-view-transition-fade-out"),
     Atom("_ua_view_transition_fade_in", "-ua-view-transition-fade-in"),
     Atom("_ua_mix_blend_mode_plus_lighter", "-ua-mix-blend-mode-plus-lighter"),
+    # CSS anchor positioning implicit anchor
+    Atom("AnchorPosImplicitAnchor", "AnchorPosImplicitAnchor"),
     # CSS pseudo-elements -- these must appear in the same order as
     # in nsCSSPseudoElementList.h
     PseudoElementAtom("PseudoElement_after", ":after"),

@@ -395,7 +395,17 @@ bool TexUnpackBlob::ConvertIfNeeded(
 
   if (!rowLength || !rowCount) return true;
 
-  if (srcStride <= 0 || dstStride <= 0) {
+  auto minSrcStride =
+      CheckedInt<size_t>(
+          WebGLTexelConversions::TexelBytesForFormat(srcFormat)) *
+      rowLength;
+  auto minDstStride =
+      CheckedInt<size_t>(
+          WebGLTexelConversions::TexelBytesForFormat(dstFormat)) *
+      rowLength;
+  if (srcStride <= 0 || dstStride <= 0 || !minSrcStride.isValid() ||
+      !minDstStride.isValid() || size_t(srcStride) < minSrcStride.value() ||
+      size_t(dstStride) < minDstStride.value()) {
     webgl->ErrorInvalidOperation("Invalid stride.");
     return false;
   }
@@ -646,7 +656,10 @@ bool TexUnpackBytes::TexOrSubImage(bool isSubImage, bool needsRespec,
 
   const auto lastRowOffset =
       unpacking.metrics.totalBytesStrided - unpacking.metrics.bytesPerRowStride;
-  const auto lastRowPtr = uploadPtr + lastRowOffset;
+  const auto lastRowPtr =
+      mDesc.pboOffset
+          ? reinterpret_cast<const uint8_t*>(*mDesc.pboOffset + lastRowOffset)
+          : (uploadPtr ? uploadPtr + lastRowOffset : nullptr);
 
   gl->fPixelStorei(LOCAL_GL_UNPACK_ALIGNMENT, 1);    // No stride padding.
   gl->fPixelStorei(LOCAL_GL_UNPACK_ROW_LENGTH, 0);   // No padding in general.

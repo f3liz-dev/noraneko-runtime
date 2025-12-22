@@ -8,10 +8,9 @@
 #define ds_LifoAlloc_h
 
 #include "mozilla/Attributes.h"
+#include "mozilla/CheckedArithmetic.h"
 #include "mozilla/MemoryChecking.h"
 #include "mozilla/MemoryReporting.h"
-#include "mozilla/MulOverflowMask.h"
-#include "mozilla/PodOperations.h"
 
 #include <algorithm>
 #include <new>
@@ -979,10 +978,8 @@ class LifoAlloc {
 
   void release(Mark mark);
 
- private:
   void cancelMark(Mark mark) { markCount--; }
 
- public:
   void releaseAll() {
     MOZ_ASSERT(!markCount);
 
@@ -1212,8 +1209,11 @@ class LifoAllocPolicy {
     if (MOZ_UNLIKELY(!n)) {
       return nullptr;
     }
-    MOZ_ASSERT(!(oldSize & mozilla::MulOverflowMask<sizeof(T)>()));
-    memcpy(n, p, std::min(oldSize * sizeof(T), newSize * sizeof(T)));
+    size_t oldLength;
+    [[maybe_unused]] bool nooverflow =
+        mozilla::SafeMul(oldSize, sizeof(T), &oldLength);
+    MOZ_ASSERT(nooverflow);
+    memcpy(n, p, std::min(oldLength, newSize * sizeof(T)));
     return n;
   }
   template <typename T>

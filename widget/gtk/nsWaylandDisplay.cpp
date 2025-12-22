@@ -11,9 +11,7 @@
 #include "base/task.h"            // for NewRunnableMethod, etc
 #include "mozilla/gfx/Logging.h"  // for gfxCriticalNote
 #include "mozilla/StaticMutex.h"
-#include "mozilla/Array.h"
 #include "mozilla/StaticPtr.h"
-#include "mozilla/ThreadLocal.h"
 #include "mozilla/StaticPrefs_widget.h"
 #include "mozilla/StaticPrefs_general.h"
 #include "mozilla/Sprintf.h"
@@ -207,7 +205,9 @@ static void pointer_handle_motion(void* data, struct wl_pointer* pointer,
 static void pointer_handle_button(void* data, struct wl_pointer* pointer,
                                   uint32_t serial, uint32_t time,
                                   uint32_t button, uint32_t state) {
-  gLastSerial = serial;
+  if (state == WL_POINTER_BUTTON_STATE_PRESSED) {
+    gLastSerial = serial;
+  }
 }
 
 static void pointer_handle_axis(void* data, struct wl_pointer* pointer,
@@ -322,6 +322,13 @@ static void seat_handle_capabilities(void* data, struct wl_seat* seat,
   } else if (!(caps & WL_SEAT_CAPABILITY_KEYBOARD) && keyboard) {
     display->ClearKeyboard();
   }
+
+  wl_touch* touch = display->GetTouch();
+  if ((caps & WL_SEAT_CAPABILITY_TOUCH) && !touch) {
+    display->SetTouch(wl_seat_get_touch(seat));
+  } else if (!(caps & WL_SEAT_CAPABILITY_TOUCH) && touch) {
+    display->ClearTouch();
+  }
 }
 
 static void seat_handle_name(void* data, struct wl_seat* seat,
@@ -357,18 +364,20 @@ static void keyboard_handle_keymap(void* data, struct wl_keyboard* wl_keyboard,
 static void keyboard_handle_enter(void* data, struct wl_keyboard* keyboard,
                                   uint32_t serial, struct wl_surface* surface,
                                   struct wl_array* keys) {
-  KeymapWrapper::SetFocusIn(surface, serial);
+  gLastSerial = serial;
 }
 
 static void keyboard_handle_leave(void* data, struct wl_keyboard* keyboard,
                                   uint32_t serial, struct wl_surface* surface) {
-  KeymapWrapper::SetFocusOut(surface);
+  KeymapWrapper::ResetRepeatState();
 }
 
 static void keyboard_handle_key(void* data, struct wl_keyboard* keyboard,
                                 uint32_t serial, uint32_t time, uint32_t key,
                                 uint32_t state) {
-  gLastSerial = serial;
+  if (state == WL_KEYBOARD_KEY_STATE_PRESSED) {
+    gLastSerial = serial;
+  }
   // hardware key code is +8.
   // https://gitlab.gnome.org/GNOME/gtk/-/blob/3.24.41/gdk/wayland/gdkdevice-wayland.c#L2341
   KeymapWrapper::KeyboardHandlerForWayland(serial, key + 8, state);
@@ -396,10 +405,44 @@ void nsWaylandDisplay::SetKeyboard(wl_keyboard* aKeyboard) {
 
 void nsWaylandDisplay::ClearKeyboard() {
   if (mKeyboard) {
-    wl_keyboard_destroy(mKeyboard);
+    wl_keyboard_release(mKeyboard);
     mKeyboard = nullptr;
     KeymapWrapper::ClearKeymap();
   }
+}
+
+static void touch_handle_down(void* data, struct wl_touch* touch,
+                              uint32_t serial, uint32_t time,
+                              struct wl_surface* surface, int32_t id,
+                              wl_fixed_t x, wl_fixed_t y) {
+  gLastSerial = serial;
+}
+
+static void touch_handle_up(void* data, struct wl_touch* touch, uint32_t serial,
+                            uint32_t time, int32_t id) {}
+
+static void touch_handle_motion(void* data, struct wl_touch* touch,
+                                uint32_t time, int32_t id, wl_fixed_t x,
+                                wl_fixed_t y) {}
+
+static void touch_handle_frame(void* data, struct wl_touch* touch) {}
+
+static void touch_handle_cancel(void* data, struct wl_touch* touch) {}
+
+static const struct wl_touch_listener touch_listener = {
+    touch_handle_down,  touch_handle_up,     touch_handle_motion,
+    touch_handle_frame, touch_handle_cancel,
+};
+
+void nsWaylandDisplay::SetTouch(wl_touch* aTouch) {
+  MOZ_ASSERT(aTouch);
+  MOZ_DIAGNOSTIC_ASSERT(!mTouch);
+  mTouch = aTouch;
+  wl_touch_add_listener(mTouch, &touch_listener, nullptr);
+}
+
+void nsWaylandDisplay::ClearTouch() {
+  MozClearPointer(mTouch, wl_touch_release);
 }
 
 void nsWaylandDisplay::SetCompositor(wl_compositor* aCompositor) {
@@ -833,6 +876,97 @@ void nsWaylandDisplay::WaitForAsyncRoundtrips() {
   }
 }
 
+// Separate crash functions for different Wayland protocol error patterns.
+// These functions are marked MOZ_NEVER_INLINE to ensure distinct crash
+// signatures for different error types, making them easier to track and fix.
+//
+// Pattern analysis is based on 25 recent crash reports with the
+// mozilla::widget::WlLogHandler signature. Frequencies are noted in comments
+// below.
+
+// 32% of crashes - Example: "unknown object (4278190083), message error(ous)"
+MOZ_NEVER_INLINE static void WlLogHandler_UnknownObject(const char* error) {
+  MOZ_CRASH_UNSAFE_PRINTF("(%s) %s Proxy: %s",
+                          GetDesktopEnvironmentIdentifier().get(), error,
+                          WaylandProxy::GetState());
+}
+
+// 20% of crashes - Example: "wp_viewport#296: error 2: source rectangle out
+// of buffer bounds"
+MOZ_NEVER_INLINE static void WlLogHandler_ViewportBufferBounds(
+    const char* error) {
+  MOZ_CRASH_UNSAFE_PRINTF("(%s) %s Proxy: %s",
+                          GetDesktopEnvironmentIdentifier().get(), error,
+                          WaylandProxy::GetState());
+}
+
+// 20% of crashes - Example: "wl_display#1: error 1: invalid arguments for
+// wl_surface#730.frame"
+MOZ_NEVER_INLINE static void WlLogHandler_InvalidSurfaceFrame(
+    const char* error) {
+  MOZ_CRASH_UNSAFE_PRINTF("(%s) %s Proxy: %s",
+                          GetDesktopEnvironmentIdentifier().get(), error,
+                          WaylandProxy::GetState());
+}
+
+// 12% of crashes - Example: "wp_color_manager_v1#44: error -1: Invalid output
+// (2)"
+MOZ_NEVER_INLINE static void WlLogHandler_ColorManagerInvalidOutput(
+    const char* error) {
+  MOZ_CRASH_UNSAFE_PRINTF("(%s) %s Proxy: %s",
+                          GetDesktopEnvironmentIdentifier().get(), error,
+                          WaylandProxy::GetState());
+}
+
+// 8% of crashes - Example: "Message length 22222 exceeds limit 4096"
+MOZ_NEVER_INLINE static void WlLogHandler_MessageLengthExceeded(
+    const char* error) {
+  MOZ_CRASH_UNSAFE_PRINTF("(%s) %s Proxy: %s",
+                          GetDesktopEnvironmentIdentifier().get(), error,
+                          WaylandProxy::GetState());
+}
+
+// 4% of crashes - Example: "wl_display#1: error 0: invalid object 61246"
+MOZ_NEVER_INLINE static void WlLogHandler_InvalidDisplayObject(
+    const char* error) {
+  MOZ_CRASH_UNSAFE_PRINTF("(%s) %s Proxy: %s",
+                          GetDesktopEnvironmentIdentifier().get(), error,
+                          WaylandProxy::GetState());
+}
+
+// 4% of crashes - Example: "failed to import supplied dmabufs: EGL failed to
+// allocate resources"
+MOZ_NEVER_INLINE static void WlLogHandler_DmabufImportFailed(
+    const char* error) {
+  MOZ_CRASH_UNSAFE_PRINTF("(%s) %s Proxy: %s",
+                          GetDesktopEnvironmentIdentifier().get(), error,
+                          WaylandProxy::GetState());
+}
+
+// 4% of crashes - Example: "wl_registry@36: error 0: invalid global
+// wl_output (55)"
+MOZ_NEVER_INLINE static void WlLogHandler_RegistryError(const char* error) {
+  MOZ_CRASH_UNSAFE_PRINTF("(%s) %s Proxy: %s",
+                          GetDesktopEnvironmentIdentifier().get(), error,
+                          WaylandProxy::GetState());
+}
+
+// 4% of crashes - Example: "invalid object (277), type (wl_callback), message
+// begin(3uuou)"
+MOZ_NEVER_INLINE static void WlLogHandler_CallbackInvalid(const char* error) {
+  MOZ_CRASH_UNSAFE_PRINTF("(%s) %s Proxy: %s",
+                          GetDesktopEnvironmentIdentifier().get(), error,
+                          WaylandProxy::GetState());
+}
+
+// 4% of crashes - Example: "error marshalling arguments for set_surface
+// (signature o): null value passed for arg 0"
+MOZ_NEVER_INLINE static void WlLogHandler_MarshallingError(const char* error) {
+  MOZ_CRASH_UNSAFE_PRINTF("(%s) %s Proxy: %s",
+                          GetDesktopEnvironmentIdentifier().get(), error,
+                          WaylandProxy::GetState());
+}
+
 static void WlLogHandler(const char* format, va_list args) {
   char error[1000];
   VsprintfLiteral(error, format, args);
@@ -848,6 +982,65 @@ static void WlLogHandler(const char* format, va_list args) {
     return;
   }
 
+  // Pattern matching to dispatch to specific crash functions.
+  // Patterns ordered by frequency (most common first) for performance.
+
+  // Pattern 1: Unknown object errors (32% of crashes)
+  if (strstr(error, "unknown object") && strstr(error, "message error")) {
+    WlLogHandler_UnknownObject(error);
+  }
+
+  // Pattern 2: wp_viewport buffer bounds errors (20% of crashes)
+  if (strstr(error, "wp_viewport") &&
+      strstr(error, "source rectangle out of buffer bounds")) {
+    WlLogHandler_ViewportBufferBounds(error);
+  }
+
+  // Pattern 3: Invalid wl_surface.frame arguments (20% of crashes)
+  if (strstr(error, "wl_display") && strstr(error, "invalid arguments") &&
+      strstr(error, "wl_surface") && strstr(error, ".frame")) {
+    WlLogHandler_InvalidSurfaceFrame(error);
+  }
+
+  // Pattern 4: wp_color_manager_v1 invalid output (12% of crashes)
+  if (strstr(error, "wp_color_manager_v1") && strstr(error, "Invalid output")) {
+    WlLogHandler_ColorManagerInvalidOutput(error);
+  }
+
+  // Pattern 5: Message length exceeded (8% of crashes)
+  if ((strstr(error, "message length") || strstr(error, "Message length")) &&
+      strstr(error, "exceeds")) {
+    WlLogHandler_MessageLengthExceeded(error);
+  }
+
+  // Pattern 6: Invalid wl_display object (4% of crashes)
+  if (strstr(error, "wl_display") && strstr(error, "invalid object") &&
+      !strstr(error, "unknown object")) {
+    WlLogHandler_InvalidDisplayObject(error);
+  }
+
+  // Pattern 7: dmabuf import failures (4% of crashes)
+  if (strstr(error, "dmabuf") && strstr(error, "failed") &&
+      strstr(error, "EGL")) {
+    WlLogHandler_DmabufImportFailed(error);
+  }
+
+  // Pattern 8: wl_registry errors (4% of crashes)
+  if (strstr(error, "wl_registry") && strstr(error, "wl_output")) {
+    WlLogHandler_RegistryError(error);
+  }
+
+  // Pattern 9: wl_callback invalid (4% of crashes)
+  if (strstr(error, "wl_callback") && strstr(error, "invalid object")) {
+    WlLogHandler_CallbackInvalid(error);
+  }
+
+  // Pattern 10: Marshalling errors (4% of crashes)
+  if (strstr(error, "error marshalling arguments")) {
+    WlLogHandler_MarshallingError(error);
+  }
+
+  // Fallback for unmatched patterns - use original inline code
   MOZ_CRASH_UNSAFE_PRINTF("(%s) %s Proxy: %s",
                           GetDesktopEnvironmentIdentifier().get(), error,
                           WaylandProxy::GetState());

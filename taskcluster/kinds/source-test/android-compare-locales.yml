@@ -4,11 +4,12 @@
 ---
 task-defaults:
     description: 'Validate android strings.xml with compare-locales'
+    run-on-repo-type: [hg]
     run:
         using: run-task
         cwd: '{checkout}'
         command: 'pip install --break-system-packages --user "compare-locales>=5.0.2,<6.0" && /builds/worker/.local/bin/compare-locales --validate l10n.toml .'
-    worker-type: t-linux-docker
+    worker-type: t-linux-docker-amd
     platform: lint/opt
     treeherder:
         kind: other

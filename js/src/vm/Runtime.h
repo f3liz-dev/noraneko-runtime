@@ -55,7 +55,8 @@
 #include "vm/JSScript.h"
 #include "vm/Logging.h"
 #include "vm/OffThreadPromiseRuntimeState.h"  // js::OffThreadPromiseRuntimeState
-#include "vm/SharedScriptDataTableHolder.h"   // js::SharedScriptDataTableHolder
+#include "vm/RuntimeFuses.h"
+#include "vm/SharedScriptDataTableHolder.h"  // js::SharedScriptDataTableHolder
 #include "vm/Stack.h"
 #include "wasm/WasmTypeDecls.h"
 
@@ -296,31 +297,6 @@ class Metrics {
   }
   FOR_EACH_JS_METRIC(DECLARE_METRIC_HELPER)
 #undef DECLARE_METRIC_HELPER
-};
-
-class HasSeenObjectEmulateUndefinedFuse : public js::InvalidatingRuntimeFuse {
-  virtual const char* name() override {
-    return "HasSeenObjectEmulateUndefinedFuse";
-  }
-  virtual bool checkInvariant(JSContext* cx) override {
-    // Without traversing the GC heap I don't think it's possible to assert
-    // this invariant directly.
-    return true;
-  }
-
- public:
-  virtual void popFuse(JSContext* cx) override;
-};
-
-class HasSeenArrayExceedsInt32LengthFuse : public js::InvalidatingRuntimeFuse {
-  virtual const char* name() override {
-    return "HasSeenArrayExceedsInt32LengthFuse";
-  }
-
-  virtual bool checkInvariant(JSContext* cx) override { return true; }
-
- public:
-  virtual void popFuse(JSContext* cx) override;
 };
 
 }  // namespace js
@@ -818,8 +794,16 @@ struct JSRuntime {
   /* Reset the default locale to OS defaults. */
   void resetDefaultLocale();
 
-  /* Gets current default locale. String remains owned by context. */
+  /* Gets current default locale. String remains owned by runtime. */
   const char* getDefaultLocale();
+
+  /*
+   * Gets current default locale or nullptr if not initialized.
+   * String remains owned by runtime.
+   */
+  const char* getDefaultLocaleIfInitialized() const {
+    return defaultLocale.ref().get();
+  }
 
   /* Garbage collector state. */
   js::gc::GCRuntime gc;
@@ -1090,14 +1074,17 @@ struct JSRuntime {
   // threads for purposes of wasm::InterruptRunningCode().
   js::ExclusiveData<js::wasm::InstanceVector> wasmInstances;
 
-  // A counter used when recording the order in which modules had their
-  // AsyncEvaluation field set to true. This is used to order queued
-  // evaluations. This is reset when the last module that was async evaluating
-  // is finished.
+  // The [[ModuleAsyncEvaluationCount]] field of agent records
   //
-  // See https://tc39.es/ecma262/#sec-async-module-execution-fulfilled step 10
-  // for use.
+  // See https://tc39.es/ecma262/#sec-agents.
   js::MainThreadData<uint32_t> moduleAsyncEvaluatingPostOrder;
+
+  // A counter used to detect when there are no pending async modules, so
+  // that we can reset [[ModuleAsyncEvaluationCount]] to 0.
+  //
+  // See the note in
+  // https://tc39.es/ecma262/#sec-IncrementModuleAsyncEvaluationCount for use.
+  js::MainThreadData<uint32_t> pendingAsyncModuleEvaluations;
 
   // The implementation-defined abstract operation HostLoadImportedModule.
   js::MainThreadData<JS::ModuleLoadHook> moduleLoadHook;
@@ -1158,64 +1145,13 @@ struct JSRuntime {
   js::MainThreadData<JS::GlobalCreationCallback>
       shadowRealmGlobalCreationCallback;
 
-  js::MainThreadData<js::HasSeenObjectEmulateUndefinedFuse>
-      hasSeenObjectEmulateUndefinedFuse;
-
-  js::MainThreadData<js::HasSeenArrayExceedsInt32LengthFuse>
-      hasSeenArrayExceedsInt32LengthFuse;
+  js::MainThreadData<js::RuntimeFuses> runtimeFuses;
 };
 
 namespace js {
 
 void Metrics::addTelemetry(JSMetric id, uint32_t sample) {
   rt_->addTelemetry(id, sample);
-}
-
-static MOZ_ALWAYS_INLINE void MakeRangeGCSafe(Value* vec, size_t len) {
-  // Don't PodZero here because JS::Value is non-trivial.
-  for (size_t i = 0; i < len; i++) {
-    vec[i].setDouble(+0.0);
-  }
-}
-
-static MOZ_ALWAYS_INLINE void MakeRangeGCSafe(Value* beg, Value* end) {
-  MakeRangeGCSafe(beg, end - beg);
-}
-
-static MOZ_ALWAYS_INLINE void MakeRangeGCSafe(jsid* beg, jsid* end) {
-  std::fill(beg, end, PropertyKey::Int(0));
-}
-
-static MOZ_ALWAYS_INLINE void MakeRangeGCSafe(jsid* vec, size_t len) {
-  MakeRangeGCSafe(vec, vec + len);
-}
-
-static MOZ_ALWAYS_INLINE void MakeRangeGCSafe(Shape** beg, Shape** end) {
-  std::fill(beg, end, nullptr);
-}
-
-static MOZ_ALWAYS_INLINE void MakeRangeGCSafe(Shape** vec, size_t len) {
-  MakeRangeGCSafe(vec, vec + len);
-}
-
-static MOZ_ALWAYS_INLINE void SetValueRangeToUndefined(Value* beg, Value* end) {
-  for (Value* v = beg; v != end; ++v) {
-    v->setUndefined();
-  }
-}
-
-static MOZ_ALWAYS_INLINE void SetValueRangeToUndefined(Value* vec, size_t len) {
-  SetValueRangeToUndefined(vec, vec + len);
-}
-
-static MOZ_ALWAYS_INLINE void SetValueRangeToNull(Value* beg, Value* end) {
-  for (Value* v = beg; v != end; ++v) {
-    v->setNull();
-  }
-}
-
-static MOZ_ALWAYS_INLINE void SetValueRangeToNull(Value* vec, size_t len) {
-  SetValueRangeToNull(vec, vec + len);
 }
 
 extern const JSSecurityCallbacks NullSecurityCallbacks;

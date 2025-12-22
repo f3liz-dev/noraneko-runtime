@@ -71,6 +71,8 @@ class HomeActivityTestRule(
         isUseNewCrashReporterDialog: Boolean = false,
         isTabSwipeCFREnabled: Boolean = false,
         isTermsOfServiceAccepted: Boolean = true,
+        isComposeLoginsEnabled: Boolean = false,
+        openLinksInExternalApp: OpenLinksInApp = getOpenLinksInApp(settings),
     ) : this(initialTouchMode, launchActivity, skipOnboarding) {
         this.isHomepageHeaderEnabled = isHomepageHeaderEnabled
         this.isPocketEnabled = isPocketEnabled
@@ -92,6 +94,8 @@ class HomeActivityTestRule(
         this.isUseNewCrashReporterDialog = isUseNewCrashReporterDialog
         this.isTabSwipeCFREnabled = isTabSwipeCFREnabled
         this.isTermsOfServiceAccepted = isTermsOfServiceAccepted
+        this.isComposeLoginsEnabled = isComposeLoginsEnabled
+        this.openLinksInExternalApp = openLinksInExternalApp
     }
 
     /**
@@ -156,6 +160,7 @@ class HomeActivityTestRule(
             isUseNewCrashReporterDialog = useNewCrashReporterDialog,
             isTabSwipeCFREnabled = true,
             isTermsOfServiceAccepted = true,
+            isComposeLoginsEnabled = false,
         )
     }
 }
@@ -201,6 +206,9 @@ class HomeActivityIntentTestRule internal constructor(
         onboardingFeatureEnabled: Boolean = true,
         isTabSwipeCFREnabled: Boolean = false,
         isTermsOfServiceAccepted: Boolean = true,
+        isComposeLoginsEnabled: Boolean = false,
+        openLinksInExternalApp: OpenLinksInApp = getOpenLinksInApp(settings),
+        tabManagerOpeningAnimationEnabled: Boolean = false,
     ) : this(initialTouchMode, launchActivity, skipOnboarding) {
         this.isHomepageHeaderEnabled = isHomepageHeaderEnabled
         this.isPocketEnabled = isPocketEnabled
@@ -222,6 +230,9 @@ class HomeActivityIntentTestRule internal constructor(
         this.onboardingFeatureEnabled = onboardingFeatureEnabled
         this.isTabSwipeCFREnabled = isTabSwipeCFREnabled
         this.isTermsOfServiceAccepted = isTermsOfServiceAccepted
+        this.isComposeLoginsEnabled = isComposeLoginsEnabled
+        this.openLinksInExternalApp = openLinksInExternalApp
+        this.tabManagerOpeningAnimationEnabled = tabManagerOpeningAnimationEnabled
     }
 
     private val longTapUserPreference = getLongPressTimeout()
@@ -295,6 +306,9 @@ class HomeActivityIntentTestRule internal constructor(
         shouldUseBottomToolbar = settings.shouldUseBottomToolbar
         isTabSwipeCFREnabled = !settings.hasShownTabSwipeCFR
         isTermsOfServiceAccepted = settings.hasAcceptedTermsOfService
+        isComposeLoginsEnabled = settings.enableComposeLogins
+        openLinksInExternalApp = getOpenLinksInApp(settings)
+        tabManagerOpeningAnimationEnabled = settings.tabManagerOpeningAnimationEnabled
     }
 
     companion object {
@@ -325,6 +339,8 @@ class HomeActivityIntentTestRule internal constructor(
             isPageLoadTranslationsPromptEnabled = false,
             isTabSwipeCFREnabled = true,
             isTermsOfServiceAccepted = true,
+            isComposeLoginsEnabled = false,
+            tabManagerOpeningAnimationEnabled = false,
         )
     }
 }
@@ -354,7 +370,7 @@ private fun skipOnboardingBeforeLaunch() {
     // As we are disabling the onboarding we need to initialize glean manually,
     // as it runs after the onboarding finishes
     Handler(Looper.getMainLooper()).post {
-        appContext.components.strictMode.resetAfter(StrictMode.allowThreadDiskReads()) {
+        appContext.components.strictMode.allowViolation(StrictMode::allowThreadDiskReads) {
             initializeGlean(
                 applicationContext = appContext,
                 logger = Logger(),

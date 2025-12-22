@@ -30,8 +30,8 @@ class nsLabelsNodeList;
 class nsDOMAttributeMap;
 class nsDOMTokenList;
 class nsIControllers;
-class nsICSSDeclaration;
 class nsDOMCSSAttributeDeclaration;
+class nsDOMCSSDeclaration;
 class nsDOMStringMap;
 class nsIURI;
 
@@ -142,7 +142,7 @@ class FragmentOrElement : public nsIContent {
   /**
    * Is the HTML local name a void element?
    */
-  static bool IsHTMLVoid(nsAtom* aLocalName);
+  static bool IsHTMLVoid(const nsAtom* aLocalName);
 
  protected:
   virtual ~FragmentOrElement();
@@ -302,7 +302,7 @@ class FragmentOrElement : public nsIContent {
      * style rules)
      * @see nsGenericHTMLElement::GetStyle
      */
-    nsCOMPtr<nsICSSDeclaration> mStyle;
+    nsCOMPtr<nsDOMCSSDeclaration> mStyle;
 
     /**
      * @see Element::Attributes

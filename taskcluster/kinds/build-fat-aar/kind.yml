@@ -18,6 +18,7 @@ transforms:
     - gecko_taskgraph.transforms.task:transforms
 
 task-defaults:
+    run-on-repo-type: [hg]
     attributes:
         artifact_map: taskcluster/gecko_taskgraph/manifests/fennec_geckoview.yml
     index:
@@ -88,6 +89,7 @@ task-defaults:
                 nightly-larch: nightly-larch
                 nightly-oak: nightly-oak
                 nightly-pine: nightly-pine
+                nightly-cypress: nightly-cypress
                 beta:
                     by-shipping-product:
                         devedition: aurora

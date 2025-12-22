@@ -2,12 +2,12 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/* eslint-env mozilla/remote-page */
 /* eslint-disable import/no-unassigned-import */
 
 import { NetErrorCard } from "chrome://global/content/net-error-card.mjs";
 import {
   gIsCertError,
+  isCaptive,
   gErrorCode,
   gHasSts,
   searchParams,
@@ -91,10 +91,6 @@ document.getElementById("favicon").href =
 
 function getDescription() {
   return searchParams.get("d");
-}
-
-function isCaptive() {
-  return searchParams.get("captive") == "true";
 }
 
 /**
@@ -1470,14 +1466,11 @@ function shouldUseFeltPrivacyRefresh() {
     return false;
   }
 
-  let failedCertInfo;
-  try {
-    failedCertInfo = document.getFailedCertSecurityInfo();
-  } catch {
-    return false;
-  }
+  const errorInfo = gIsCertError
+    ? document.getFailedCertSecurityInfo()
+    : document.getNetErrorInfo();
 
-  return NetErrorCard.ERROR_CODES.has(failedCertInfo.errorCodeString);
+  return NetErrorCard.ERROR_CODES.has(errorInfo.errorCodeString);
 }
 
 if (!shouldUseFeltPrivacyRefresh()) {

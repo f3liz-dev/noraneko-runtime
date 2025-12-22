@@ -148,7 +148,7 @@ ObjectRealm::getOrCreateNonSyntacticLexicalEnvironment(JSContext* cx,
   MOZ_ASSERT(&ObjectRealm::get(enclosing) == this);
 
   if (!nonSyntacticLexicalEnvironments_) {
-    auto map = cx->make_unique<ObjectWeakMap>(cx);
+    auto map = cx->make_unique<NonSyntacticLexialEnvironmentsMap>(cx);
     if (!map) {
       return nullptr;
     }
@@ -419,7 +419,7 @@ void Realm::setNewObjectMetadata(JSContext* cx, HandleObject obj) {
     cx->check(metadata);
 
     if (!objects_.objectMetadataTable) {
-      auto table = cx->make_unique<ObjectWeakMap>(cx);
+      auto table = cx->make_unique<ObjectRealm::ObjectMetadataTable>(cx);
       if (!table) {
         oomUnsafe.crash("setNewObjectMetadata");
       }
@@ -533,17 +533,20 @@ const char* Realm::getLocale() const {
   if (RefPtr<LocaleString> locale = behaviors_.localeOverride()) {
     return locale->chars();
   }
-
-  if (RefPtr<LocaleString> locale = creationOptions_.locale()) {
-    return locale->chars();
-  }
-
   return runtime_->getDefaultLocale();
+}
+
+void Realm::setLocaleOverride(const char* locale) {
+  // Clear any jitcode in the runtime, because compiled code doesn't handle
+  // updates to a realm's locale override.
+  ReleaseAllJITCode(runtime_->gcContext());
+
+  behaviors_.setLocaleOverride(locale);
 }
 
 js::DateTimeInfo* Realm::getDateTimeInfo() {
 #if JS_HAS_INTL_API
-  if (RefPtr<TimeZoneString> timeZone = behaviors_.timeZone()) {
+  if (RefPtr<TimeZoneString> timeZone = behaviors_.timeZoneOverride()) {
     if (!dateTimeInfo_) {
       AutoEnterOOMUnsafeRegion oomUnsafe;
 
@@ -561,12 +564,12 @@ js::DateTimeInfo* Realm::getDateTimeInfo() {
   return nullptr;
 }
 
-void Realm::setTimeZone(const char* timeZone) {
+void Realm::setTimeZoneOverride(const char* timeZone) {
   // Clear any jitcode in the runtime, because compiled code doesn't handle
   // updates to a realm's time zone override.
   ReleaseAllJITCode(runtime_->gcContext());
 
-  behaviors_.setTimeZoneCopyZ(timeZone);
+  behaviors_.setTimeZoneOverride(timeZone);
 }
 
 void ObjectRealm::addSizeOfExcludingThis(

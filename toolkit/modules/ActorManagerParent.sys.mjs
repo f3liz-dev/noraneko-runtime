@@ -119,24 +119,18 @@ let JSWINDOWACTORS = {
     allFrames: true,
   },
 
-  AboutTranslations: {
+  AboutRestricted: {
     parent: {
-      esModuleURI: "resource://gre/actors/AboutTranslationsParent.sys.mjs",
+      esModuleURI: "resource://gre/actors/AboutRestrictedParent.sys.mjs",
     },
     child: {
-      esModuleURI: "resource://gre/actors/AboutTranslationsChild.sys.mjs",
+      esModuleURI: "resource://gre/actors/AboutRestrictedChild.sys.mjs",
       events: {
-        // Run the actor before any content of the page appears to inject functions.
         DOMDocElementInserted: {},
-        DOMContentLoaded: {},
-        // Used to show and hide the translations button.
-        pageshow: { mozSystemGroup: true },
-        pagehide: { mozSystemGroup: true },
       },
     },
-    matches: ["about:translations"],
-    remoteTypes: ["privilegedabout"],
-    enablePreference: "browser.translations.enable",
+    matches: ["about:restricted?*"],
+    allFrames: true,
   },
 
   AudioPlayback: {
@@ -472,6 +466,27 @@ let JSWINDOWACTORS = {
     allFrames: true,
   },
 
+  PageExtractor: {
+    parent: {
+      esModuleURI: "resource://gre/actors/PageExtractorParent.sys.mjs",
+    },
+    child: {
+      esModuleURI: "resource://gre/actors/PageExtractorChild.sys.mjs",
+      events: {
+        DOMContentLoaded: { createActor: false },
+      },
+    },
+    matches: [
+      "http://*/*",
+      "https://*/*",
+      "file:///*",
+      "moz-extension://*",
+      "data:text/html,*",
+      "about:reader?*",
+    ],
+    messageManagerGroups: ["browsers"],
+  },
+
   PopupAndRedirectBlocking: {
     parent: {
       esModuleURI:
@@ -594,18 +609,16 @@ let JSWINDOWACTORS = {
       esModuleURI: "resource://gre/actors/TranslationsChild.sys.mjs",
       events: {
         DOMContentLoaded: {},
+        load: {
+          // Once the page is loaded, it's important that we react to the page's
+          // language tag as soon as possible in order to give a good response time
+          // for showing the translations panel, or for auto-translating, etc.
+          capture: true,
+          createActor: false,
+        },
       },
     },
-    matches: [
-      "http://*/*",
-      "https://*/*",
-      "file:///*",
-      "moz-extension://*",
-
-      // The actor is explicitly loaded by this page,
-      // so it needs to be allowed for it.
-      "about:translations",
-    ],
+    matches: ["http://*/*", "https://*/*", "file:///*", "moz-extension://*"],
     messageManagerGroups: ["browsers"],
     enablePreference: "browser.translations.enable",
   },
@@ -738,6 +751,26 @@ if (AppConstants.platform != "android") {
     },
     messageManagerGroups: ["browsers"],
     allFrames: true,
+  };
+
+  JSWINDOWACTORS.AboutTranslations = {
+    parent: {
+      esModuleURI: "resource://gre/actors/AboutTranslationsParent.sys.mjs",
+    },
+    child: {
+      esModuleURI: "resource://gre/actors/AboutTranslationsChild.sys.mjs",
+      events: {
+        // Run the actor before any content of the page appears to inject functions.
+        DOMDocElementInserted: {},
+        DOMContentLoaded: {},
+        // Used to show and hide the translations button.
+        pageshow: { mozSystemGroup: true },
+        pagehide: { mozSystemGroup: true },
+      },
+    },
+    matches: ["about:translations"],
+    remoteTypes: ["privilegedabout"],
+    enablePreference: "browser.translations.enable",
   };
 }
 

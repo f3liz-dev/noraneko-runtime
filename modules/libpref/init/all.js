@@ -56,11 +56,7 @@ pref("security.remote_settings.intermediates.enabled", true);
 pref("security.remote_settings.intermediates.downloads_per_poll", 5000);
 pref("security.remote_settings.intermediates.parallel_downloads", 8);
 
-#if !defined(MOZ_WIDGET_ANDROID)
-  pref("security.remote_settings.crlite_filters.enabled", true);
-#else
-  pref("security.remote_settings.crlite_filters.enabled", false);
-#endif
+pref("security.remote_settings.crlite_filters.enabled", true);
 
 pref("security.osreauthenticator.blank_password", false);
 pref("security.osreauthenticator.password_last_changed_lo", 0);
@@ -245,15 +241,14 @@ pref("media.videocontrols.keyboard-tab-to-all-controls", true);
     pref("media.peerconnection.sdp.alternate_parse_mode", "parallel");
     pref("media.peerconnection.sdp.strict_success", false);
     pref("media.navigator.video.red_ulpfec_enabled", true);
-    pref("media.peerconnection.sctp.use_dcsctp", true);
   #else
     pref("media.peerconnection.sdp.parser", "sipcc");
     pref("media.peerconnection.sdp.alternate_parse_mode", "never");
     pref("media.peerconnection.sdp.strict_success", false);
     pref("media.navigator.video.red_ulpfec_enabled", true);
-    pref("media.peerconnection.sctp.use_dcsctp", false);
   #endif
 
+  pref("media.peerconnection.sctp.use_dcsctp", true);
   pref("media.peerconnection.sdp.disable_stereo_fmtp", false);
   pref("media.webrtc.debug.log_file", "");
 
@@ -401,15 +396,9 @@ pref("gfx.downloadable_fonts.fallback_delay_short", 100);
   pref("gfx.font_rendering.directwrite.use_gdi_table_loading", true);
 #endif
 
-#if defined(XP_WIN)
-  // comma separated list of backends to use in order of preference
-  // e.g., pref("gfx.canvas.azure.backends", "direct2d,skia");
-  pref("gfx.canvas.azure.backends", "direct2d1.1,skia");
-#elif defined(XP_MACOSX)
-  pref("gfx.canvas.azure.backends", "skia");
-#else
-  pref("gfx.canvas.azure.backends", "skia");
-#endif
+// comma separated list of backends to use in order of preference
+// e.g., pref("gfx.canvas.azure.backends", "direct2d,skia");
+pref("gfx.canvas.azure.backends", "skia");
 pref("gfx.content.azure.backends", "skia");
 
 #ifdef XP_WIN
@@ -442,6 +431,7 @@ pref("gfx.webrender.debug.glyph-flashing", false);
 pref("gfx.webrender.debug.capture-profiler", false);
 pref("gfx.webrender.debug.profiler-ui", "Default");
 pref("gfx.webrender.debug.window-visibility", false);
+pref("gfx.webrender.debug.external-composite-borders", false);
 
 pref("gfx.webrender.multithreading", true);
 #ifdef XP_WIN
@@ -1028,6 +1018,26 @@ pref("javascript.options.dump_stack_on_debuggee_would_run", false);
 // advanced prefs
 pref("image.animation_mode",                "normal");
 
+pref("keyword.enabled", true);
+
+// Fixup whitelists, the urlbar won't try to search for these words, but will
+// instead consider them valid TLDs. Don't check these directly, use
+// Services.uriFixup.isDomainKnown() instead.
+pref("browser.fixup.domainwhitelist.localhost", true);
+// https://tools.ietf.org/html/rfc2606
+pref("browser.fixup.domainsuffixwhitelist.test", true);
+pref("browser.fixup.domainsuffixwhitelist.example", true);
+pref("browser.fixup.domainsuffixwhitelist.invalid", true);
+pref("browser.fixup.domainsuffixwhitelist.localhost", true);
+// https://tools.ietf.org/html/draft-wkumari-dnsop-internal-00
+pref("browser.fixup.domainsuffixwhitelist.internal", true);
+// https://tools.ietf.org/html/rfc6762
+pref("browser.fixup.domainsuffixwhitelist.local", true);
+
+// Whether to always go through the DNS server before sending a single word
+// search string, that may contain a valid host, to a search engine.
+pref("browser.fixup.dns_first_for_single_words", false);
+
 // If there is ever a security firedrill that requires
 // us to block certian ports global, this is the pref
 // to use.  Is is a comma delimited list of port numbers
@@ -1171,6 +1181,9 @@ pref("network.http.redirection-limit", 20);
 // NOTE: separate values with comma+space (", "): see bug 576033
 pref("network.http.accept-encoding", "gzip, deflate");
 pref("network.http.accept-encoding.secure", "gzip, deflate, br, zstd");
+// dictionary compression is always only for secure connections
+// Added to network.http.accept-encoding.secure
+pref("network.http.accept-encoding.dictionary", "dcb, dcz");
 
 // Prompt for redirects resulting in unsafe HTTP requests
 pref("network.http.prompt-temp-redirect", false);
@@ -1471,15 +1484,15 @@ pref("network.proxy.enable_wpad_over_dhcp", true);
 pref("converter.html2txt.structs",          true); // Output structured phrases (strong, em, code, sub, sup, b, i, u)
 pref("converter.html2txt.header_strategy",  1); // 0 = no indention; 1 = indention, increased with header level; 2 = numbering and slight indention
 
-pref("intl.accept_languages",               "chrome://global/locale/intl.properties");
-pref("intl.menuitems.alwaysappendaccesskeys","chrome://global/locale/intl.properties");
-pref("intl.menuitems.insertseparatorbeforeaccesskeys","chrome://global/locale/intl.properties");
-pref("intl.ellipsis",                       "chrome://global-platform/locale/intl.properties");
+// The default value of this pref depends on the current app locale,
+// and so should always be read via Services.locale.acceptLanguages.
+pref("intl.accept_languages",               "und");
+
 // this pref allows user to request that all internationalization formatters
 // like date/time formatting, unit formatting, calendars etc. should use
 // OS locale set instead of the app locale set.
 pref("intl.regional_prefs.use_os_locales",  false);
-pref("font.language.group",                 "chrome://global/locale/intl.properties");
+
 pref("font.cjk_pref_fallback_order",        "zh-cn,zh-hk,zh-tw,ja,ko");
 
 // This pref controls pseudolocales for testing localization.
@@ -1791,11 +1804,7 @@ pref("extensions.browser_style_mv3.same_as_mv2", false);
 
 // If set to true, browser.cookies.set() will throw exceptions if the cookie is
 // invalid. Otherwise, a warning message will be shown in the console.
-#ifdef NIGHTLY_BUILD
 pref("extensions.cookie.rejectWhenInvalid", true);
-#else
-pref("extensions.cookie.rejectWhenInvalid", false);
-#endif
 
 // Experimental Inference API
 pref("extensions.ml.enabled", true);
@@ -2220,7 +2229,7 @@ pref("font.size.monospace.x-math", 13);
   pref("font.name-list.monospace.x-math", "Consolas");
   pref("font.name-list.cursive.x-math", "Comic Sans MS");
 
-  // ClearType tuning parameters for directwrite/d2d.
+  // ClearType tuning parameters for directwrite.
   //
   // Allows overriding of underlying registry values in:
   //   HKCU/Software/Microsoft/Avalon.Graphics/<display> (contrast and level)
@@ -2492,7 +2501,6 @@ pref("font.size.monospace.x-math", 13);
   // XP_MACOSX changes to default font sizes
   pref("font.minimum-size.th", 10);
 
-  // Apple's Symbol is Unicode so use it
   pref("font.name-list.serif.x-math", "Latin Modern Math, STIX Two Math, XITS Math, Cambria Math, Libertinus Math, DejaVu Math TeX Gyre, TeX Gyre Bonum Math, TeX Gyre Pagella Math, TeX Gyre Schola, TeX Gyre Termes Math, STIX Math, Asana Math, STIXGeneral, DejaVu Serif, DejaVu Sans, Symbol, Times");
   pref("font.name-list.sans-serif.x-math", "Helvetica");
   pref("font.name-list.monospace.x-math", "Menlo");
@@ -3029,6 +3037,12 @@ pref("signon.firefoxRelay.terms_of_service_url", "https://www.mozilla.org/%LOCAL
 pref("signon.firefoxRelay.privacy_policy_url", "https://www.mozilla.org/%LOCALE%/privacy/subscription-services/");
 pref("signon.signupDetection.confidenceThreshold",     "0.75");
 
+#ifdef NIGHTLY_BUILD
+  pref("signon.rustMirror.enabled", true);
+#else
+  pref("signon.rustMirror.enabled", false);
+#endif
+
 // Satchel (Form Manager) prefs
 pref("browser.formfill.debug",            false);
 pref("browser.formfill.enable",           true);
@@ -3278,6 +3292,10 @@ pref("network.trr.confirmationNS", "example.com");
 pref("network.trr.excluded-domains", "");
 pref("network.trr.builtin-excluded-domains", "localhost,local");
 
+// This preference controls if LNA blocking should be tied to ETP strict modes.
+// Used for progressive rollout of LNA for ETP strict users
+pref("network.lna.etp.enabled", false);
+
 pref("captivedetect.canonicalURL", "http://detectportal.firefox.com/canonical.html");
 pref("captivedetect.canonicalContent", "<meta http-equiv=\"refresh\" content=\"0;url=https://support.mozilla.org/kb/captive-portal\"/>");
 pref("captivedetect.maxWaitingTime", 5000);
@@ -3339,8 +3357,8 @@ pref("privacy.trackingprotection.emailtracking.webapp.domains", "mail.163.com,ma
 // and baseline) for users in ETP "strict" and "custom" mode.
 pref("privacy.trackingprotection.allow_list.hasMigratedCategoryPrefs", false);
 
-// Indicates if the user has interacted with the ETP category, tracking protection baseline exceptions, 
-// or convenience exceptions by changing them in the prefs or in the UI. This is used to determine 
+// Indicates if the user has interacted with the ETP category, tracking protection baseline exceptions,
+// or convenience exceptions by changing them in the prefs or in the UI. This is used to determine
 // if we should show the ETP Strict exceptions onboarding message again.
 pref("privacy.trackingprotection.allow_list.hasUserInteractedWithETPSettings", false);
 
@@ -3405,10 +3423,19 @@ pref("browser.safebrowsing.provider.google4.dataSharingURL", "https://safebrowsi
 pref("browser.safebrowsing.provider.google4.dataSharing.enabled", false);
 
 // Google Safe Browsing V5 prefs.
+#ifdef NIGHTLY_BUILD
+pref("browser.safebrowsing.provider.google5.enabled", true);
+#else
 pref("browser.safebrowsing.provider.google5.enabled", false);
+#endif
+pref("browser.safebrowsing.provider.google5.lists", "goog-badbinurl-proto,goog-downloadwhite-proto,goog-phish-proto,googpub-phish-proto,goog-malware-proto,goog-unwanted-proto,goog-harmful-proto");
 pref("browser.safebrowsing.provider.google5.updateURL", "https://safebrowsing.googleapis.com/v5/hashLists:batchGet?key=%GOOGLE_SAFEBROWSING_API_KEY%");
 pref("browser.safebrowsing.provider.google5.gethashURL", "https://safebrowsing.googleapis.com/v5/hashes:search?key=%GOOGLE_SAFEBROWSING_API_KEY%");
-pref("browser.safebrowsing.provider.google5.lists", "");
+pref("browser.safebrowsing.provider.google5.reportURL", "https://safebrowsing.google.com/safebrowsing/diagnostic?site=");
+pref("browser.safebrowsing.provider.google5.reportPhishMistakeURL", "https://%LOCALE%.phish-error.mozilla.com/?url=");
+pref("browser.safebrowsing.provider.google5.reportMalwareMistakeURL", "https://%LOCALE%.malware-error.mozilla.com/?url=");
+pref("browser.safebrowsing.provider.google5.advisoryURL", "https://developers.google.com/safe-browsing/v4/advisory");
+pref("browser.safebrowsing.provider.google5.advisoryName", "Google Safe Browsing");
 
 #endif // ifndef MOZ_WIDGET_ANDROID
 
@@ -3547,10 +3574,10 @@ pref("reader.content_width", 3);
 pref("reader.line_height", 4);
 
 // The default character spacing in reader mode (1-9)
-pref("reader.character_spacing", 0);
+pref("reader.character_spacing", 1);
 
 // The default word spacing in reader mode (1-9)
-pref("reader.word_spacing", 0);
+pref("reader.word_spacing", 1);
 
 // The default text alignment direction in reader mode
 pref("reader.text_alignment", "start");
@@ -3986,9 +4013,6 @@ pref("devtools.remote.adb.extensionID", "adb@mozilla.org");
 // path).
 pref("devtools.remote.adb.extensionURL", "https://ftp.mozilla.org/pub/labs/devtools/adb-extension/#OS#/adb-extension-latest-#OS#.xpi");
 
-// Enable Inactive CSS detection; used both by the client and the server.
-pref("devtools.inspector.inactive.css.enabled", true);
-
 // Should F12 open the Developer Tools toolbox.
 pref("devtools.f12_enabled", true);
 
@@ -4116,9 +4140,6 @@ pref("privacy.query_stripping.strip_on_share.enableTestMode", false);
   pref("toolkit.backgroundtasks.tests.geckoPrefsInherited", 17);
   pref("toolkit.backgroundtasks.tests.geckoPrefsOverriden", 18);
 #endif
-
-// To disable the Strip on Share context menu option if nothing can be stripped
-pref("privacy.query_stripping.strip_on_share.canDisable", true);
 
 // Captcha Detection
 pref("captchadetection.loglevel", "Warn");

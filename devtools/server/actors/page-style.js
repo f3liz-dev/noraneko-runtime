@@ -12,7 +12,6 @@ const {
 const {
   LongStringActor,
 } = require("resource://devtools/server/actors/string.js");
-const TrackChangeEmitter = require("resource://devtools/server/actors/utils/track-change-emitter.js");
 
 const {
   style: { ELEMENT_STYLE },
@@ -153,8 +152,6 @@ class PageStyleActor extends Actor {
         // expected support of font-stretch at CSS Fonts Level 4.
         fontWeightLevel4:
           CSS.supports("font-weight: 1") && CSS.supports("font-stretch: 100%"),
-        // @backward-compat { version 144 } This trait can be removed when 144 reaches release
-        newInactiveCssDataShape: true,
       },
     };
   }
@@ -1263,7 +1260,7 @@ class PageStyleActor extends Actor {
     const cssRule = sheet.cssRules.item(index);
     const ruleActor = this._styleRef(cssRule, null, true);
 
-    TrackChangeEmitter.trackChange({
+    this.inspector.targetActor.emit("track-css-change", {
       ...ruleActor.metadata,
       type: "rule-add",
       add: null,

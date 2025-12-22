@@ -10,7 +10,6 @@
 #include "mozilla/FloatingPoint.h"
 #include "mozilla/MathAlgorithms.h"
 #include "mozilla/Maybe.h"
-#include "mozilla/ScopeExit.h"
 
 #include <array>
 #include <utility>
@@ -4250,6 +4249,7 @@ static void AssertKnownClass(TempAllocator& alloc, MInstruction* ins,
 
 MDefinition* MBoxNonStrictThis::foldsTo(TempAllocator& alloc) {
   MDefinition* in = input();
+
   if (!in->isBox()) {
     return this;
   }
@@ -4257,6 +4257,10 @@ MDefinition* MBoxNonStrictThis::foldsTo(TempAllocator& alloc) {
   MDefinition* unboxed = in->toBox()->input();
   if (unboxed->type() == MIRType::Object) {
     return unboxed;
+  }
+
+  if (unboxed->typeIsOneOf({MIRType::Undefined, MIRType::Null})) {
+    return MConstant::NewObject(alloc, this->globalThis());
   }
 
   return this;
@@ -7163,21 +7167,18 @@ MDefinition* MGuardSpecificInt32::foldsTo(TempAllocator& alloc) {
   return this;
 }
 
-bool MCallBindVar::congruentTo(const MDefinition* ins) const {
-  if (!ins->isCallBindVar()) {
-    return false;
+MDefinition* MGuardShape::foldsTo(TempAllocator& alloc) {
+  if (object()->isGuardShape() &&
+      shape() == object()->toGuardShape()->shape() && dependency() &&
+      object()->dependency() == dependency()) {
+    return object();
   }
-  return congruentIfOperandsEqual(ins);
+  return this;
 }
 
 bool MGuardShape::congruentTo(const MDefinition* ins) const {
-  if (!ins->isGuardShape()) {
-    return false;
-  }
-  if (shape() != ins->toGuardShape()->shape()) {
-    return false;
-  }
-  return congruentIfOperandsEqual(ins);
+  return congruentIfOperandsEqual(ins) &&
+         shape() == ins->toGuardShape()->shape();
 }
 
 AliasSet MGuardShape::getAliasSet() const {
@@ -7739,6 +7740,10 @@ AliasSet MGuardElementsArePacked::getAliasSet() const {
 }
 
 AliasSet MSuperFunction::getAliasSet() const {
+  return AliasSet::Load(AliasSet::ObjectFields);
+}
+
+AliasSet MSuperFunctionAndUnbox::getAliasSet() const {
   return AliasSet::Load(AliasSet::ObjectFields);
 }
 
@@ -8319,4 +8324,60 @@ bool MInt32ToStringWithBase::congruentTo(const MDefinition* ins) const {
     return false;
   }
   return congruentIfOperandsEqual(ins);
+}
+
+// Returns `false` if it can be proven that (1) both `mtyA` and `mtyB` are
+// struct types and (2) they are not related by inheritance.  Returns `true` in
+// all other cases.  `true` is the safe-but-possibly-suboptimal return value.
+static bool StructTypesMightBeRelatedByInheritance(wasm::MaybeRefType mtyA,
+                                                   wasm::MaybeRefType mtyB) {
+  if (!mtyA.isSome() || !mtyB.isSome()) {
+    // The "Track Wasm ref types" pass couldn't establish that both `mtyA` and
+    // `mtyB` are ref types.  Give up.
+    return true;
+  }
+
+  wasm::RefType tyA = mtyA.value();
+  wasm::RefType tyB = mtyB.value();
+  if (!tyA.isTypeRef() || !tyA.typeDef()->isStructType() || !tyB.isTypeRef() ||
+      !tyB.typeDef()->isStructType()) {
+    // They aren't both struct types.  Give up.
+    return true;
+  }
+
+  // They are both struct types.  So they are related by inheritance if one is
+  // a subtype of the other.  (Which is also the case if they are the same
+  // type.)
+  return wasm::RefType::valuesMightAlias(tyA, tyB);
+}
+
+MDefinition::AliasType MWasmLoadField::mightAlias(
+    const MDefinition* ins) const {
+  if (!(getAliasSet().flags() & ins->getAliasSet().flags())) {
+    return AliasType::NoAlias;
+  }
+  MOZ_ASSERT(!isEffectful() && ins->isEffectful());
+
+  // Pick off cases where we can easily prove non-aliasing.  The idea is that
+  // two struct field accesses can't alias if either they are at different
+  // offsets, or the struct types are unrelated (which implies that the struct
+  // base pointer for one of the accesses could not validly be handed to the
+  // other access).
+  if (ins->isWasmStoreField()) {
+    const MWasmStoreField* store = ins->toWasmStoreField();
+    if (offset() != store->offset() ||
+        !StructTypesMightBeRelatedByInheritance(base()->wasmRefType(),
+                                                store->base()->wasmRefType())) {
+      return AliasType::NoAlias;
+    }
+  } else if (ins->isWasmStoreFieldRef()) {
+    const MWasmStoreFieldRef* store = ins->toWasmStoreFieldRef();
+    if (offset() != store->offset() ||
+        !StructTypesMightBeRelatedByInheritance(base()->wasmRefType(),
+                                                store->base()->wasmRefType())) {
+      return AliasType::NoAlias;
+    }
+  }
+
+  return AliasType::MayAlias;
 }

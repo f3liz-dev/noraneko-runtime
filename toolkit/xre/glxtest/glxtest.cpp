@@ -48,7 +48,6 @@
 #include <vector>
 #include <sys/wait.h>
 #include "mozilla/ScopeExit.h"
-#include "mozilla/Types.h"
 
 #include "mozilla/GfxInfoUtils.h"
 
@@ -599,11 +598,15 @@ static bool get_egl_status(EGLNativeDisplayType native_dpy) {
     return false;
   }
 
+  log("GLX_TEST: get_egl_status eglGetDisplay()\n");
+
   dpy = eglGetDisplay(native_dpy);
   if (!dpy) {
     record_warning("libEGL no display");
     return false;
   }
+
+  log("GLX_TEST: get_egl_status eglInitialize()\n");
 
   EGLint major, minor;
   if (!eglInitialize(dpy, &major, &minor)) {
@@ -611,11 +614,14 @@ static bool get_egl_status(EGLNativeDisplayType native_dpy) {
     return false;
   }
 
+  log("GLX_TEST: get_egl_status eglInitialize() OK\n");
+
   typedef const char* (*PFNEGLGETDISPLAYDRIVERNAMEPROC)(EGLDisplay dpy);
   PFNEGLGETDISPLAYDRIVERNAMEPROC eglGetDisplayDriverName =
       cast<PFNEGLGETDISPLAYDRIVERNAMEPROC>(
           eglGetProcAddress("eglGetDisplayDriverName"));
   if (eglGetDisplayDriverName) {
+    log("GLX_TEST: get_egl_status eglGetDisplayDriverName()\n");
     const char* driDriver = eglGetDisplayDriverName(dpy);
     if (driDriver) {
       record_value("DRI_DRIVER\n%s\n", driDriver);
@@ -1044,7 +1050,7 @@ int main(int argc, char** argv) {
   }
   if (getenv("MOZ_AVOID_OPENGL_ALTOGETHER")) {
     const char* msg = "ERROR\nMOZ_AVOID_OPENGL_ALTOGETHER envvar set";
-    MOZ_UNUSED(write(output_pipe, msg, strlen(msg)));
+    [[maybe_unused]] ssize_t _ = write(output_pipe, msg, strlen(msg));
     exit(EXIT_FAILURE);
   }
   const char* env = getenv("MOZ_GFX_DEBUG");

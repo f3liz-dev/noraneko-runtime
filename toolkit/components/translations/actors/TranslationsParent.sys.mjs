@@ -62,14 +62,14 @@ if (AppConstants.ENABLE_WEBDRIVER) {
     lazy,
     "Marionette",
     "@mozilla.org/remote/marionette;1",
-    "nsIMarionette"
+    Ci.nsIMarionette
   );
 
   XPCOMUtils.defineLazyServiceGetter(
     lazy,
     "RemoteAgent",
     "@mozilla.org/remote/agent;1",
-    "nsIRemoteAgent"
+    Ci.nsIRemoteAgent
   );
 } else {
   lazy.Marionette = { running: false };
@@ -77,10 +77,12 @@ if (AppConstants.ENABLE_WEBDRIVER) {
 }
 
 XPCOMUtils.defineLazyServiceGetters(lazy, {
-  BrowserHandler: ["@mozilla.org/browser/clh;1", "nsIBrowserHandler"],
+  BrowserHandler: ["@mozilla.org/browser/clh;1", Ci.nsIBrowserHandler],
 });
 
 ChromeUtils.defineESModuleGetters(lazy, {
+  LanguageDetector:
+    "resource://gre/modules/translations/LanguageDetector.sys.mjs",
   RemoteSettings: "resource://services-settings/remote-settings.sys.mjs",
   setTimeout: "resource://gre/modules/Timer.sys.mjs",
   TranslationsTelemetry:
@@ -370,12 +372,17 @@ export class TranslationsParent extends JSWindowActorParent {
    *     Notes: The 2.x WASM binary introduces segmentation changes that are necessary
    *            to translate CJK languages.
    *
-   * 3.x Wasm Major Versions
+   * 3.x WASM Major Versions
    *
    *   - This update introduces memory savings that required a new bergamot-translator.js
    *     file due to ASM offsets, but makes no other changes.
+   *
+   * 4.X WASM Major Versions
+   *
+   *   - This update changes the format of the WASM to be compressed with zstd.
+   *     The WASM is decompressed only when loaded into the engine.
    */
-  static BERGAMOT_MAJOR_VERSION = 3;
+  static BERGAMOT_MAJOR_VERSION = 4;
 
   /**
    * The BERGAMOT_MAJOR_VERSION defined above has only a single value, because there will
@@ -415,6 +422,7 @@ export class TranslationsParent extends JSWindowActorParent {
    *
    *   - Compatible with 1.x Bergamot WASM binaries.
    *   - Compatible with 2.x Bergamot WASM binaries.
+   *   - Compatible with 3.x Bergamot WASM binaries.
    *
    *   Notes: 1.x models are referred to as "tiny" models, and are the models that were shipped with the original
    *          release of Translations in Firefox.
@@ -422,14 +430,69 @@ export class TranslationsParent extends JSWindowActorParent {
    * 2.x Model Major Versions
    *
    *   - Compatible with 2.x Bergamot WASM binaries.
+   *   - Compatible with 3.x Bergamot WASM binaries.
    *
    *   Notes: 2.x models are defined by any of two characteristics. The first characteristic is any CJK language model.
    *          Only the 2.x WASM binaries support the segmentation concerns needed to interop with CJK language models.
    *          The second characteristic is any "base" language model, which is larger than the "tiny" 1.x models.
    *          Compatibility for base models is dependent on the code changes in Bug 1926100.
+   *
+   * 3.X Model Major Versions
+   *
+   *   - Compatible with 4.x Bergamot WASM binaries.
+   *
+   *   Notes: 3.x models are compressed with zstd. They are decompressed only when they are loaded into the engine.
    */
-  static LANGUAGE_MODEL_MAJOR_VERSION_MIN = 1;
-  static LANGUAGE_MODEL_MAJOR_VERSION_MAX = 2;
+  static LANGUAGE_MODEL_MAJOR_VERSION_MIN = 3;
+  static LANGUAGE_MODEL_MAJOR_VERSION_MAX = 3;
+
+  /**
+   * The shorter the text, the less confidence we should have in the result of the language
+   * identification. Add another heuristic to report the ID as not confident if the length
+   * of the code units of the text is less than this threshold.
+   *
+   * This was determined by plotting a kernel density estimation of the number of times the
+   * source language had to be changed in the SelectTranslationsPanel vs. the code units in
+   * the source text.
+   *
+   * 0013 code units or less - 49.5% of language changes
+   * 0036 code units or less - 74.9% of language changes
+   * 0153 code units or less - 90.0% of language changes
+   * 0200 code units or less - 91.5% of language changes
+   * 0427 code units or less - 95.0% of language changes
+   * 1382 code units or less - 98.0% of language changes
+   * 3506 code units or less - 99.0% of language changes
+   *
+   * @type {number}
+   */
+  static #DOC_CONFIDENCE_THRESHOLD = 150;
+
+  /**
+   * The maximum time that we will wait to react to the page's
+   * language after observing the DOMContentLoaded event.
+   *
+   * In an ideal scenario, we want to fully wait for the "load"
+   * event before we scrape the page for text, but we also need
+   * mindful that some pages may take a long time to fully load
+   * depending on the complexity of the page and the speed of
+   * the user's connection.
+   *
+   * This is the worst-case scenario where we will start scraping
+   * the page text even if it has not yet fully loaded.
+   */
+  static #REACT_TO_PAGE_LANGUAGE_TIMEOUT = 500;
+
+  /**
+   * A race that determines when to react to to the page's language tag.
+   *
+   * Ideally, we want to wait for the page to fully load, but we may have
+   * to take action before that.
+   *
+   * @see {TranslationsParent#REACT_TO_PAGE_LANGUAGE_TIMEOUT}
+   *
+   * @type {PromiseWithResolvers<string> | null}
+   */
+  #reactToPageLanguageRace = null;
 
   /**
    * Contains the state that would affect UI. Anytime this state is changed, a dispatch
@@ -715,19 +778,6 @@ export class TranslationsParent extends JSWindowActorParent {
     const { documentURI } = this.browsingContext.currentWindowGlobal;
 
     if (
-      TranslationsParent.isInAutomation() &&
-      !TranslationsParent.testAutomaticPopup
-    ) {
-      // Do not offer translations in automation, as many tests do not expect this
-      // behavior.
-      lazy.console.log(
-        "maybeOfferTranslations - Do not offer translations in automation.",
-        documentURI?.spec
-      );
-      return;
-    }
-
-    if (
       !detectedLanguages.docLangTag ||
       !detectedLanguages.userLangTag ||
       !detectedLanguages.isDocLangTagSupported
@@ -769,7 +819,7 @@ export class TranslationsParent extends JSWindowActorParent {
         detectedLanguages.userLangTag
       )
     ) {
-      lazy.console.error(
+      lazy.console.log(
         "maybeOfferTranslations - The document and user lang tag are the same, not offering a translation.",
         documentURI?.spec
       );
@@ -782,7 +832,7 @@ export class TranslationsParent extends JSWindowActorParent {
     // popup will not be shown.
     if (detectedLanguages.htmlLangAttribute && !detectedLanguages.identified) {
       // Compare language langTagsMatch
-      detectedLanguages.identified = await this.queryIdentifyLanguage();
+      detectedLanguages.identified = await this.#identifyPageLanguage();
 
       if (
         !lazy.TranslationsUtils.langTagsMatch(
@@ -831,7 +881,7 @@ export class TranslationsParent extends JSWindowActorParent {
 
           if (
             !TranslationsParent.findCompatibleSourceLangTagSync(
-              detectedLanguages.identifiedLangTag,
+              detectedLanguages.identified.language,
               await TranslationsParent.getNonPivotLanguagePairs()
             )
           ) {
@@ -895,6 +945,19 @@ export class TranslationsParent extends JSWindowActorParent {
       // In Android, the active window is the active tab.
       isCurrentPage = documentURI?.spec === browser.documentURI?.spec;
     }
+
+    if (
+      TranslationsParent.isInAutomation() &&
+      !TranslationsParent.testAutomaticPopup
+    ) {
+      // Do not show the panel in automation, as many tests do not expect this behavior.
+      lazy.console.log(
+        "maybeOfferTranslations - Do not show the translations panel in automation.",
+        documentURI?.spec
+      );
+      return;
+    }
+
     if (isCurrentPage) {
       lazy.console.log(
         "maybeOfferTranslations - Offering a translation",
@@ -1055,18 +1118,14 @@ export class TranslationsParent extends JSWindowActorParent {
    * The "Accept-Language" values that the localizer or user has indicated for
    * the preferences for the web. https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Accept-Language
    *
-   * Note that this preference always has English in the fallback chain, even if the
+   * Note that this preference often has English in the fallback chain, even if the
    * user doesn't actually speak English, and to other languages they potentially do
    * not speak. However, this preference will be used as an indication that a user may
    * prefer this language.
-   *
-   * https://transvision.flod.org/string/?entity=toolkit/chrome/global/intl.properties:intl.accept_languages&repo=gecko_strings
    */
   static getWebContentLanguages() {
     if (!TranslationsParent.#webContentLanguages) {
-      const values = Services.prefs
-        .getComplexValue(ACCEPT_LANGUAGES_PREF, Ci.nsIPrefLocalizedString)
-        .data.split(/\s*,\s*/g);
+      const values = Services.locale.acceptLanguages.split(/\s*,\s*/g);
 
       TranslationsParent.#webContentLanguages = new Set();
 
@@ -1514,58 +1573,92 @@ export class TranslationsParent extends JSWindowActorParent {
     return port2;
   }
 
+  /**
+   * Reacts to the page's language tag by considering the HTML lang attribute
+   * and also scraping a sample of the visible text on the page.
+   *
+   * An action is taken based on the agreement between the detected language
+   * and the HTML lang attribute (or lack thereof).
+   *
+   * @param {string} htmlLangAttribute
+   * @param {string} reason
+   */
+  async #reactToPageLanguage(htmlLangAttribute, reason) {
+    lazy.console.debug(`Reacting to page language due to "${reason}".`);
+
+    const detectedLanguages = await this.getDetectedLanguages(
+      htmlLangAttribute
+    ).catch(error => {
+      // Detecting the languages can fail if the page gets destroyed before it
+      // can be completed. This runs on every page that doesn't have a lang tag,
+      // so only report the error if you have Translations logging turned on to
+      // avoid console spam.
+      lazy.console.log("Failed to get the detected languages.", error);
+    });
+
+    if (this.#isDestroyed) {
+      return;
+    }
+
+    if (!detectedLanguages) {
+      // The actor was already destroyed, and the detectedLanguages weren't reported
+      // in time.
+      return;
+    }
+
+    this.languageState.detectedLanguages = detectedLanguages;
+
+    if (await this.shouldAutoTranslate(detectedLanguages)) {
+      if (this.#isDestroyed) {
+        return;
+      }
+
+      this.translate(
+        {
+          sourceLanguage: detectedLanguages.docLangTag,
+          targetLanguage: detectedLanguages.userLangTag,
+        },
+        true // reportAsAutoTranslate
+      );
+    } else {
+      if (this.#isDestroyed) {
+        return;
+      }
+
+      this.maybeOfferTranslations(detectedLanguages).catch(error =>
+        lazy.console.error(error)
+      );
+    }
+  }
+
   async receiveMessage({ name, data }) {
     if (this.#isDestroyed) {
       return undefined;
     }
 
     switch (name) {
-      case "Translations:ReportLangTags": {
-        const { htmlLangAttribute, href } = data;
-        const detectedLanguages = await this.getDetectedLanguages(
-          htmlLangAttribute,
-          href
-        ).catch(error => {
-          // Detecting the languages can fail if the page gets destroyed before it
-          // can be completed. This runs on every page that doesn't have a lang tag,
-          // so only report the error if you have Translations logging turned on to
-          // avoid console spam.
-          lazy.console.log("Failed to get the detected languages.", error);
+      case "Translations:DOMContentLoaded": {
+        const { htmlLangAttribute } = data;
+
+        this.#reactToPageLanguageRace = Promise.withResolvers();
+        const { promise, resolve } = this.#reactToPageLanguageRace;
+
+        promise.then(reason => {
+          if (this.#isDestroyed) {
+            return;
+          }
+          this.#reactToPageLanguage(htmlLangAttribute, reason);
+          this.#reactToPageLanguageRace = null;
         });
 
-        if (this.#isDestroyed) {
-          return undefined;
-        }
+        lazy.setTimeout(() => {
+          resolve("timeout");
+        }, TranslationsParent.#REACT_TO_PAGE_LANGUAGE_TIMEOUT);
 
-        if (!detectedLanguages) {
-          // The actor was already destroyed, and the detectedLanguages weren't reported
-          // in time.
-          return undefined;
-        }
-
-        this.languageState.detectedLanguages = detectedLanguages;
-
-        if (await this.shouldAutoTranslate(detectedLanguages)) {
-          if (this.#isDestroyed) {
-            return undefined;
-          }
-
-          this.translate(
-            {
-              sourceLanguage: detectedLanguages.docLangTag,
-              targetLanguage: detectedLanguages.userLangTag,
-            },
-            true // reportAsAutoTranslate
-          );
-        } else {
-          if (this.#isDestroyed) {
-            return undefined;
-          }
-
-          this.maybeOfferTranslations(detectedLanguages).catch(error =>
-            lazy.console.error(error)
-          );
-        }
+        return undefined;
+      }
+      case "Translations:Load": {
+        this.#reactToPageLanguageRace?.resolve("load");
         return undefined;
       }
       case "Translations:RequestPort": {
@@ -1628,9 +1721,8 @@ export class TranslationsParent extends JSWindowActorParent {
    */
   static async getTranslationsEnginePayload(languagePair) {
     const wasmStartTime = ChromeUtils.now();
-    const bergamotWasmArrayBufferPromise =
-      TranslationsParent.#getBergamotWasmArrayBuffer();
-    bergamotWasmArrayBufferPromise
+    const bergamotWasmBlobPromise = TranslationsParent.#getBergamotWasmBlob();
+    bergamotWasmBlobPromise
       .then(() => {
         ChromeUtils.addProfilerMarker(
           "TranslationsParent",
@@ -1688,10 +1780,11 @@ export class TranslationsParent extends JSWindowActorParent {
       "Loading translation model files"
     );
 
-    const bergamotWasmArrayBuffer = await bergamotWasmArrayBufferPromise;
+    const bergamotWasmBlob = await bergamotWasmBlobPromise;
 
     return {
-      bergamotWasmArrayBuffer,
+      bergamotWasmBlob,
+      bergamotWasmArrayBuffer: null,
       translationModelPayloads,
       isMocked: TranslationsParent.#isTranslationsEngineMocked,
     };
@@ -1768,8 +1861,8 @@ export class TranslationsParent extends JSWindowActorParent {
           const languagePairMap = new Map();
 
           for (const {
-            fromLang: sourceLanguage,
-            toLang: targetLanguage,
+            sourceLanguage,
+            targetLanguage,
             variant,
           } of records.values()) {
             const key = TranslationsParent.nonPivotKey(
@@ -2157,7 +2250,7 @@ export class TranslationsParent extends JSWindowActorParent {
     }
 
     /** @type {RemoteSettingsClient} */
-    const client = lazy.RemoteSettings("translations-models");
+    const client = lazy.RemoteSettings("translations-models-v2");
     TranslationsParent.#translationModelsRemoteClient = client;
     client.on("sync", TranslationsParent.#handleTranslationsModelsSync);
 
@@ -2175,8 +2268,8 @@ export class TranslationsParent extends JSWindowActorParent {
    *   @param {object} [options.filters={}]
    *     The filters to apply when retrieving the records from RemoteSettings.
    *     Filters should correspond to properties on the RemoteSettings records themselves.
-   *     For example, A filter to retrieve only records with a `fromLang` value of "en" and a `toLang` value of "es":
-   *     { filters: { fromLang: "en", toLang: "es" } }
+   *     For example, A filter to retrieve only records with a `sourceLanguage` value of "en" and a `targetLanguage` value of "es":
+   *     { filters: { sourceLanguage: "en", targetLanguage: "es" } }
    *   @param {number} options.minSupportedMajorVersion
    *     The minimum major record version that is supported in this build of Firefox.
    *   @param {number} options.maxSupportedMajorVersion
@@ -2321,8 +2414,8 @@ export class TranslationsParent extends JSWindowActorParent {
         // to guarantee uniqueness.
         lookupKey: record =>
           `${record.name}${TranslationsParent.nonPivotKey(
-            record.fromLang,
-            record.toLang,
+            record.sourceLanguage,
+            record.targetLanguage,
             record.variant
           )}`,
       });
@@ -2384,65 +2477,65 @@ export class TranslationsParent extends JSWindowActorParent {
       return records;
     }
     // lang -> pivot
-    const hasToPivot = new Set();
+    const hasTargetPivot = new Set();
     // pivot -> en
-    const hasFromPivot = new Set();
+    const hasSourcePivot = new Set();
 
-    const fromLangs = new Set();
-    const toLangs = new Set();
+    const sourceLanguages = new Set();
+    const targetLanguages = new Set();
 
-    for (const { fromLang, toLang } of records) {
-      fromLangs.add(fromLang);
-      toLangs.add(toLang);
+    for (const { sourceLanguage, targetLanguage } of records) {
+      sourceLanguages.add(sourceLanguage);
+      targetLanguages.add(targetLanguage);
 
-      if (toLang === PIVOT_LANGUAGE) {
+      if (targetLanguage === PIVOT_LANGUAGE) {
         // lang -> pivot
-        hasToPivot.add(fromLang);
+        hasTargetPivot.add(sourceLanguage);
       }
-      if (fromLang === PIVOT_LANGUAGE) {
+      if (sourceLanguage === PIVOT_LANGUAGE) {
         // pivot -> en
-        hasFromPivot.add(toLang);
+        hasSourcePivot.add(targetLanguage);
       }
     }
 
-    const fromLangsToRemove = new Set();
-    const toLangsToRemove = new Set();
+    const sourceLanguagesToRemove = new Set();
+    const targetLanguagesToRemove = new Set();
 
-    for (const lang of fromLangs) {
-      if (lang === PIVOT_LANGUAGE) {
+    for (const language of sourceLanguages) {
+      if (language === PIVOT_LANGUAGE) {
         continue;
       }
       // Check for "lang -> pivot"
-      if (!hasToPivot.has(lang)) {
+      if (!hasTargetPivot.has(language)) {
         TranslationsParent.reportError(
           new Error(
-            `The "from" language model "${lang}" is being discarded as it doesn't have a pivot language.`
+            `The source language model "${language}" is being discarded as it doesn't have a pivot language.`
           )
         );
-        fromLangsToRemove.add(lang);
+        sourceLanguagesToRemove.add(language);
       }
     }
 
-    for (const lang of toLangs) {
-      if (lang === PIVOT_LANGUAGE) {
+    for (const language of targetLanguages) {
+      if (language === PIVOT_LANGUAGE) {
         continue;
       }
       // Check for "pivot -> lang"
-      if (!hasFromPivot.has(lang)) {
+      if (!hasSourcePivot.has(language)) {
         TranslationsParent.reportError(
           new Error(
-            `The "to" language model "${lang}" is being discarded as it doesn't have a pivot language.`
+            `The target language model "${language}" is being discarded as it doesn't have a pivot language.`
           )
         );
-        toLangsToRemove.add(lang);
+        targetLanguagesToRemove.add(language);
       }
     }
 
     const after = records.filter(record => {
-      if (fromLangsToRemove.has(record.fromLang)) {
+      if (sourceLanguagesToRemove.has(record.sourceLanguage)) {
         return false;
       }
-      if (toLangsToRemove.has(record.toLang)) {
+      if (targetLanguagesToRemove.has(record.targetLanguage)) {
         return false;
       }
       return true;
@@ -2471,8 +2564,8 @@ export class TranslationsParent extends JSWindowActorParent {
     const recordGroups = new Map();
     for (const record of records) {
       const key = TranslationsParent.nonPivotKey(
-        record.fromLang,
-        record.toLang,
+        record.sourceLanguage,
+        record.targetLanguage,
         record.variant
       );
 
@@ -2516,7 +2609,7 @@ export class TranslationsParent extends JSWindowActorParent {
     }
 
     /** @type {RemoteSettingsClient} */
-    const client = lazy.RemoteSettings("translations-wasm");
+    const client = lazy.RemoteSettings("translations-wasm-v2");
     TranslationsParent.#translationsWasmRemoteClient = client;
     client.on("sync", TranslationsParent.#handleTranslationsWasmSync);
 
@@ -2539,17 +2632,20 @@ export class TranslationsParent extends JSWindowActorParent {
    * 2. Uncomment the .wasm file in: toolkit/components/translations/jar.mn
    * 3. Run: ./mach build
    * 4. Run: ./mach run
+   *
+   * @returns {Promise<Blob | null>}
    */
-  static async #maybeFetchLocalBergamotWasmArrayBuffer() {
+  static async #maybeFetchLocalBergamotWasmBlob() {
     if (TranslationsParent.#lookForLocalWasmBuild) {
       // Attempt to get a local copy of the translator. Most likely this will be a 404.
       try {
         const response = await fetch(
-          "chrome://global/content/translations/bergamot-translator.wasm"
+          "chrome://global/content/translations/bergamot-translator.wasm.zst"
         );
-        const arrayBuffer = response.arrayBuffer();
+
         lazy.console.log(`Using a local copy of Bergamot.`);
-        return arrayBuffer;
+
+        return response.blob();
       } catch {
         // Only attempt to fetch once, if it fails don't try again.
         TranslationsParent.#lookForLocalWasmBuild = false;
@@ -2565,14 +2661,14 @@ export class TranslationsParent extends JSWindowActorParent {
    * https://github.com/mozilla/bergamot-translator/
    */
   /**
-   * @returns {Promise<ArrayBuffer>}
+   * @returns {Promise<Blob>}
    */
-  static async #getBergamotWasmArrayBuffer() {
+  static async #getBergamotWasmBlob() {
     const start = Date.now();
     const client = TranslationsParent.#getTranslationsWasmRemoteClient();
 
     const localCopy =
-      await TranslationsParent.#maybeFetchLocalBergamotWasmArrayBuffer();
+      await TranslationsParent.#maybeFetchLocalBergamotWasmBlob();
     if (localCopy) {
       return localCopy;
     }
@@ -2641,17 +2737,18 @@ export class TranslationsParent extends JSWindowActorParent {
     try {
       await chaosModeError(1 / 3);
 
-      /** @type {{buffer: ArrayBuffer}} */
-      const { buffer } = await client.attachments.download(
+      const payload = await client.attachments.download(
         await TranslationsParent.#bergamotWasmRecord
       );
+
+      const blob = payload.blob ?? new Blob([payload.buffer]);
 
       const duration = Date.now() - start;
       lazy.console.log(
         `"bergamot-translator" wasm binary loaded in ${duration / 1000} seconds`
       );
 
-      return buffer;
+      return blob;
     } catch (error) {
       TranslationsParent.#bergamotWasmRecord = null;
       throw error;
@@ -2747,7 +2844,7 @@ export class TranslationsParent extends JSWindowActorParent {
     }
 
     queue.push({
-      download: () => TranslationsParent.#getBergamotWasmArrayBuffer(),
+      download: () => TranslationsParent.#getBergamotWasmBlob(),
     });
 
     return downloadManager(queue);
@@ -2852,16 +2949,16 @@ export class TranslationsParent extends JSWindowActorParent {
       if (isDownloaded) {
         downloadedPairs.add(
           TranslationsParent.nonPivotKey(
-            record.fromLang,
-            record.toLang,
+            record.sourceLanguage,
+            record.targetLanguage,
             record.variant
           )
         );
       } else {
         nonDownloadedPairs.add(
           TranslationsParent.nonPivotKey(
-            record.fromLang,
-            record.toLang,
+            record.sourceLanguage,
+            record.targetLanguage,
             record.variant
           )
         );
@@ -2926,10 +3023,13 @@ export class TranslationsParent extends JSWindowActorParent {
       for (const record of records.values()) {
         if (
           lazy.TranslationsUtils.langTagsMatch(
-            record.fromLang,
+            record.sourceLanguage,
             sourceLanguage
           ) &&
-          lazy.TranslationsUtils.langTagsMatch(record.toLang, targetLanguage)
+          lazy.TranslationsUtils.langTagsMatch(
+            record.targetLanguage,
+            targetLanguage
+          )
         ) {
           matchedRecords.add(record);
           matchFound = true;
@@ -3035,11 +3135,11 @@ export class TranslationsParent extends JSWindowActorParent {
 
         if (
           !lazy.TranslationsUtils.langTagsMatch(
-            record.fromLang,
+            record.sourceLanguage,
             sourceLanguage
           ) ||
           !lazy.TranslationsUtils.langTagsMatch(
-            record.toLang,
+            record.targetLanguage,
             targetLanguage
           ) ||
           record.variant !== variant
@@ -3054,19 +3154,19 @@ export class TranslationsParent extends JSWindowActorParent {
 
         await chaosMode(1 / 3);
 
-        /** @type {{buffer: ArrayBuffer }} */
-        const { buffer } = await client.attachments.download(record);
+        const payload = await client.attachments.download(record);
+        const blob = payload.blob ?? new Blob([payload.buffer]);
 
         languageModelFiles[record.fileType] = {
-          buffer,
+          blob,
           record,
         };
 
         const duration = Date.now() - start;
         lazy.console.log(
           `Translation model fetched in ${duration / 1000} seconds:`,
-          record.fromLang,
-          record.toLang,
+          record.sourceLanguage,
+          record.targetLanguage,
           record.variant,
           record.fileType,
           record.version
@@ -3124,8 +3224,11 @@ export class TranslationsParent extends JSWindowActorParent {
     await Promise.all(
       records.map(async record => {
         if (
-          !lazy.TranslationsUtils.langTagsMatch(record.fromLang, language) &&
-          !lazy.TranslationsUtils.langTagsMatch(record.toLang, language)
+          !lazy.TranslationsUtils.langTagsMatch(
+            record.sourceLanguage,
+            language
+          ) &&
+          !lazy.TranslationsUtils.langTagsMatch(record.targetLanguage, language)
         ) {
           return;
         }
@@ -3204,10 +3307,13 @@ export class TranslationsParent extends JSWindowActorParent {
 
         if (
           !lazy.TranslationsUtils.langTagsMatch(
-            record.fromLang,
+            record.sourceLanguage,
             sourceLanguage
           ) ||
-          !lazy.TranslationsUtils.langTagsMatch(record.toLang, targetLanguage)
+          !lazy.TranslationsUtils.langTagsMatch(
+            record.targetLanguage,
+            targetLanguage
+          )
         ) {
           return;
         }
@@ -3444,23 +3550,103 @@ export class TranslationsParent extends JSWindowActorParent {
   }
 
   /**
+   * Extracts a substring of visible text from the content document and
+   * runs it through the language detector to determine the page's language.
+   *
    * @returns {Promise<DetectionResult>}
    */
-  async queryIdentifyLanguage() {
-    if (
-      TranslationsParent.isInAutomation() &&
-      !TranslationsParent.#isTranslationsEngineMocked
-    ) {
-      // In automation assume English is the language, but don't be confident.
-      return { confident: false, language: "en", languages: [] };
+  async #identifyPageLanguage() {
+    if (this.languageState?.detectedLanguages?.identified) {
+      return this.languageState.detectedLanguages.identified;
     }
-    return this.sendQuery("Translations:IdentifyLanguage").catch(error => {
-      if (this.#isDestroyed) {
-        // The actor was destroyed while this message was still being resolved.
-        return null;
-      }
-      return Promise.reject(error);
+
+    lazy.console.log(
+      "Beginning text extraction:",
+      this.browsingContext?.currentURI?.spec
+    );
+
+    const extractionStartTime = ChromeUtils.now();
+    const pageText = await this.sendQuery("Translations:ExtractPageText", {
+      sufficientLength: 4096,
     });
+
+    if (this.#isDestroyed) {
+      return { language: "en", confident: false, languages: [] };
+    }
+
+    const extractionTime = ChromeUtils.now() - extractionStartTime;
+
+    lazy.console.debug(
+      `Extracted Page Text (${pageText.length} code units):\n\n`,
+      pageText
+    );
+
+    const extractionLog =
+      `Extracted ${pageText.length} code units of text in ` +
+      `${extractionTime.toFixed(3)} ms.`;
+
+    lazy.console.log(extractionLog);
+    ChromeUtils.addProfilerMarker(
+      "TranslationsParent",
+      { startTime: extractionStartTime, innerWindowId: this.innerWindowId },
+      extractionLog
+    );
+
+    const identificationStartTime = ChromeUtils.now();
+    const result = await lazy.LanguageDetector.detectLanguage(pageText);
+
+    if (this.#isDestroyed) {
+      return { language: "en", confident: false, languages: [] };
+    }
+
+    const identificationTime = ChromeUtils.now() - identificationStartTime;
+    const identificationLog =
+      `Identified ${pageText.length} code units of text as "${result.language}" ` +
+      `in ${identificationTime.toFixed(3)} ms.`;
+
+    lazy.console.log(identificationLog);
+    ChromeUtils.addProfilerMarker(
+      "TranslationsParent",
+      { startTime: identificationStartTime, innerWindowId: this.innerWindowId },
+      identificationLog
+    );
+    ChromeUtils.addProfilerMarker(
+      "TranslationsParent",
+      { startTime: extractionStartTime, innerWindowId: this.innerWindowId },
+      "Total time to identify page language."
+    );
+
+    if (pageText.length < TranslationsParent.#DOC_CONFIDENCE_THRESHOLD) {
+      result.confident = false;
+    }
+
+    // Some language tags are not supported by CLD2
+    result.language = this.maybeRefineMacroLanguageTag(result.language);
+
+    const htmlLangAttribute =
+      this.languageState?.detectedLanguages?.htmlLangAttribute ?? null;
+    const identifiedLanguage = result.language;
+
+    TranslationsParent.telemetry().onIdentifyPageLanguage({
+      htmlLangAttribute,
+      identifiedLanguage,
+      langTagsMatch: htmlLangAttribute
+        ? lazy.TranslationsUtils.langTagsMatch(
+            htmlLangAttribute,
+            identifiedLanguage
+          )
+        : null,
+      isLangAttributeValid: htmlLangAttribute
+        ? lazy.TranslationsUtils.isLangTagValid(htmlLangAttribute)
+        : null,
+      extractedCodeUnits: pageText.length,
+      extractionTime,
+      identificationTime,
+      totalTime: extractionTime + identificationTime,
+      confident: result.confident,
+    });
+
+    return result;
   }
 
   /**
@@ -3503,7 +3689,7 @@ export class TranslationsParent extends JSWindowActorParent {
       // Do a final check that the identified language matches the reported language
       // tag to ensure that the page isn't reporting the incorrect languages. This
       // check is deferred to now for performance considerations.
-      langTags.identified = await this.queryIdentifyLanguage();
+      langTags.identified = await this.#identifyPageLanguage();
       langTags.docLangTag = langTags.identified.language;
 
       if (
@@ -3653,11 +3839,10 @@ export class TranslationsParent extends JSWindowActorParent {
    * rather than the child to remove the per-content process memory allocation amount.
    *
    * @param {string} [htmlLangAttribute]
-   * @param {string} [href]
    * @returns {Promise<LangTags | null>} - Returns null if the actor was destroyed before
    *   the result could be resolved.
    */
-  async getDetectedLanguages(htmlLangAttribute, href) {
+  async getDetectedLanguages(htmlLangAttribute) {
     if (this.languageState.detectedLanguages) {
       return this.languageState.detectedLanguages;
     }
@@ -3666,14 +3851,9 @@ export class TranslationsParent extends JSWindowActorParent {
       return null;
     }
 
-    if (htmlLangAttribute === undefined) {
-      htmlLangAttribute = await this.queryDocumentElementLang();
-      if (this.#isDestroyed) {
-        return null;
-      }
+    if (htmlLangAttribute) {
+      htmlLangAttribute = this.maybeRefineMacroLanguageTag(htmlLangAttribute);
     }
-
-    htmlLangAttribute = this.maybeRefineMacroLanguageTag(htmlLangAttribute);
 
     let languagePairs = await TranslationsParent.getNonPivotLanguagePairs();
     if (this.#isDestroyed) {
@@ -3686,7 +3866,7 @@ export class TranslationsParent extends JSWindowActorParent {
       userLangTag: null,
       isDocLangTagSupported: false,
       htmlLangAttribute: htmlLangAttribute ?? null,
-      identifiedLangTag: null,
+      identified: null,
     };
 
     /**
@@ -3737,7 +3917,7 @@ export class TranslationsParent extends JSWindowActorParent {
     if (!langTags.docLangTag) {
       // If the document's markup had no specified langTag, attempt to identify the
       // page's language.
-      langTags.identified = await this.queryIdentifyLanguage();
+      langTags.identified = await this.#identifyPageLanguage();
       langTags.docLangTag = langTags.identified.language;
       maybeNormalizeDocLangTag();
       langTags.identified.language = langTags.docLangTag;
@@ -3754,7 +3934,7 @@ export class TranslationsParent extends JSWindowActorParent {
         { innerWindowId: this.innerWindowId },
         message
       );
-      lazy.console.log(message, href);
+      lazy.console.log(message);
 
       const langTag = await TranslationsParent.getTopPreferredSupportedToLang();
       if (this.#isDestroyed) {
@@ -3784,7 +3964,8 @@ export class TranslationsParent extends JSWindowActorParent {
         { innerWindowId: this.innerWindowId },
         message
       );
-      lazy.console.log(message, href);
+      lazy.console.log(message);
+
       // The docLangTag will be set, while the userLangTag will be null.
       return langTags;
     }

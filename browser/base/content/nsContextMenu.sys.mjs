@@ -22,7 +22,6 @@ ChromeUtils.defineESModuleGetters(lazy, {
     "resource://gre/modules/LoginManagerContextMenu.sys.mjs",
   NetUtil: "resource://gre/modules/NetUtil.sys.mjs",
   NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
-  PlacesUIUtils: "moz-src:///browser/components/places/PlacesUIUtils.sys.mjs",
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
   ScreenshotsUtils: "resource:///modules/ScreenshotsUtils.sys.mjs",
   SearchUIUtils: "moz-src:///browser/components/search/SearchUIUtils.sys.mjs",
@@ -59,13 +58,6 @@ XPCOMUtils.defineLazyPreferenceGetter(
 
 XPCOMUtils.defineLazyPreferenceGetter(
   lazy,
-  "STRIP_ON_SHARE_CAN_DISABLE",
-  "privacy.query_stripping.strip_on_share.canDisable",
-  false
-);
-
-XPCOMUtils.defineLazyPreferenceGetter(
-  lazy,
   "PDFJS_ENABLE_COMMENT",
   "pdfjs.enableComment",
   false
@@ -82,14 +74,14 @@ XPCOMUtils.defineLazyServiceGetter(
   lazy,
   "QueryStringStripper",
   "@mozilla.org/url-query-string-stripper;1",
-  "nsIURLQueryStringStripper"
+  Ci.nsIURLQueryStringStripper
 );
 
 XPCOMUtils.defineLazyServiceGetter(
   lazy,
   "clipboard",
   "@mozilla.org/widget/clipboardhelper;1",
-  "nsIClipboardHelper"
+  Ci.nsIClipboardHelper
 );
 
 XPCOMUtils.defineLazyPreferenceGetter(
@@ -184,13 +176,6 @@ export class nsContextMenu {
     this.viewFrameSourceElement = this.document.getElementById(
       "context-viewframesource"
     );
-    this.ellipsis = "\u2026";
-    try {
-      this.ellipsis = Services.prefs.getComplexValue(
-        "intl.ellipsis",
-        Ci.nsIPrefLocalizedString
-      ).data;
-    } catch (e) {}
 
     // Reset after "on-build-contextmenu" notification in case selection was
     // changed during the notification.
@@ -249,7 +234,6 @@ export class nsContextMenu {
     this.onPiPVideo = context.onPiPVideo;
     this.onEditable = context.onEditable;
     this.onImage = context.onImage;
-    this.onKeywordField = context.onKeywordField;
     this.onSearchField = context.onSearchField;
     this.onLink = context.onLink;
     this.onLoadedImage = context.onLoadedImage;
@@ -345,7 +329,6 @@ export class nsContextMenu {
     }
 
     this.hasTextFragments = context.hasTextFragments;
-    this.textDirectiveTarget = context.textDirectiveTarget;
     this.textFragmentURL = null;
   } // setContext
 
@@ -480,7 +463,7 @@ export class nsContextMenu {
         this.onEditable ||
         this.browser.currentURI.schemeIs("view-source")
       ) &&
-      this.textDirectiveTarget;
+      (this.hasTextFragments || this.isContentSelected);
     this.showItem("context-copy-link-to-highlight", shouldShow);
     this.showItem("context-copy-clean-link-to-highlight", shouldShow);
 
@@ -506,18 +489,13 @@ export class nsContextMenu {
 
     // enable menu items when a text fragment can be built
     if (this.textFragmentURL) {
-      this.setItemAttr("context-copy-link-to-highlight", "disabled", false);
-
-      // only enables the clean link based on preference and canStripForShare()
-      // this follows the same pattern as https://bugzilla.mozilla.org/show_bug.cgi?id=1895334
-      let canNotStripTextFragmentParams =
-        lazy.STRIP_ON_SHARE_CAN_DISABLE &&
-        !this.#canStripParams(this.getLinkURI(this.textFragmentURL));
-
+      this.setItemAttr("context-copy-link-to-highlight", "disabled", null);
+      let link = this.getLinkURI(this.textFragmentURL);
+      let disabledAttr = this.#canStripParams(link) ? null : true;
       this.setItemAttr(
         "context-copy-clean-link-to-highlight",
         "disabled",
-        canNotStripTextFragmentParams
+        disabledAttr
       );
     }
   }
@@ -949,7 +927,6 @@ export class nsContextMenu {
         this.onPlainTextLink
     );
     this.showItem("context-add-engine", this.shouldShowAddEngine());
-    this.showItem("context-keywordfield", this.shouldShowAddKeyword());
     this.showItem("frame", this.inFrame);
 
     if (this.inFrame) {
@@ -1105,10 +1082,8 @@ export class nsContextMenu {
         !this.isSecureAboutPage()
     );
 
-    let canNotStrip =
-      lazy.STRIP_ON_SHARE_CAN_DISABLE && !this.#canStripParams();
-
-    this.setItemAttr("context-stripOnShareLink", "disabled", canNotStrip);
+    let disabledAttr = this.#canStripParams() ? null : true;
+    this.setItemAttr("context-stripOnShareLink", "disabled", disabledAttr);
 
     let copyLinkSeparator = this.document.getElementById(
       "context-sep-copylink"
@@ -1396,7 +1371,7 @@ export class nsContextMenu {
 
         count = 0;
       } else if (!menuItem.hidden) {
-        if (menuItem.localName == "menu") {
+        if (menuItem.localName == "menu" && menuItem.menupopup) {
           this.showHideSeparators(menuItem.menupopup);
         } else if (menuItem.localName == "menugroup") {
           this.showHideSeparators(menuItem);
@@ -2323,28 +2298,6 @@ export class nsContextMenu {
     }
   }
 
-  addKeywordForSearchField() {
-    this.actor.getSearchFieldBookmarkData(this.targetIdentifier).then(data => {
-      let title = this.window.gNavigatorBundle.getFormattedString(
-        "addKeywordTitleAutoFill",
-        [data.title]
-      );
-      lazy.PlacesUIUtils.showBookmarkDialog(
-        {
-          action: "add",
-          type: "bookmark",
-          uri: this.window.makeURI(data.spec),
-          title,
-          keyword: "",
-          postData: data.postData,
-          charSet: data.charset,
-          hiddenRows: ["location", "tags"],
-        },
-        this.window
-      );
-    });
-  }
-
   async addSearchFieldAsEngine() {
     let { url, formData, charset, method } =
       await this.actor.getSearchFieldEngineData(this.targetIdentifier);
@@ -2523,18 +2476,6 @@ export class nsContextMenu {
     return false;
   }
 
-  shouldShowAddKeyword() {
-    return (
-      this.onTextInput &&
-      this.onKeywordField &&
-      !this.isLoginForm() &&
-      !Services.prefs.getBoolPref(
-        "browser.urlbar.update2.engineAliasRefresh",
-        false
-      )
-    );
-  }
-
   shouldShowAddEngine() {
     let uri = this.browser.currentURI;
 
@@ -2542,11 +2483,7 @@ export class nsContextMenu {
       this.onTextInput &&
       this.onSearchField &&
       !this.isLoginForm() &&
-      (uri.schemeIs("http") || uri.schemeIs("https")) &&
-      Services.prefs.getBoolPref(
-        "browser.urlbar.update2.engineAliasRefresh",
-        false
-      )
+      (uri.schemeIs("http") || uri.schemeIs("https"))
     );
   }
 
@@ -2557,10 +2494,7 @@ export class nsContextMenu {
 
     var locale = "-";
     try {
-      locale = Services.prefs.getComplexValue(
-        "intl.accept_languages",
-        Ci.nsIPrefLocalizedString
-      ).data;
+      locale = Services.locale.acceptLanguages;
     } catch (e) {}
 
     var version = "-";
@@ -2842,7 +2776,8 @@ export class nsContextMenu {
       if (truncChar >= 0xdc00 && truncChar <= 0xdfff) {
         truncLength++;
       }
-      selectedText = selectedText.substr(0, truncLength) + this.ellipsis;
+      selectedText =
+        selectedText.substr(0, truncLength) + Services.locale.ellipsis;
     }
 
     const { gNavigatorBundle } = this.window;
@@ -2893,6 +2828,11 @@ export class nsContextMenu {
       return;
     }
     if (!Services.search.hasSuccessfullyInitialized) {
+      menuitem.hidden = true;
+      return;
+    }
+
+    if (isPrivateSearchMenuitem && !lazy.PrivateBrowsingUtils.enabled) {
       menuitem.hidden = true;
       return;
     }
@@ -2976,7 +2916,7 @@ export class nsContextMenu {
       );
       this.window.document.l10n.setAttributes(
         menuitem,
-        "main-context-menu-visual-search",
+        "main-context-menu-visual-search-2",
         {
           engine: visualSearchUrl.displayName || menuitem.engine.name,
         }

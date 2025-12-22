@@ -9,11 +9,9 @@
 #ifndef nsComputedDOMStyle_h__
 #define nsComputedDOMStyle_h__
 
-#include "mozilla/Attributes.h"
 #include "mozilla/ComputedStyle.h"
 #include "mozilla/PseudoStyleType.h"
 #include "mozilla/StyleColorInlines.h"
-#include "mozilla/UniquePtr.h"
 #include "mozilla/WritingModes.h"
 #include "mozilla/gfx/Types.h"
 #include "nsCOMPtr.h"
@@ -410,7 +408,8 @@ already_AddRefed<nsComputedDOMStyle> NS_NewComputedDOMStyle(
 inline AnchorPosResolutionParams AnchorPosResolutionParams::From(
     const nsComputedDOMStyle* aComputedDOMStyle) {
   return {aComputedDOMStyle->mOuterFrame,
-          aComputedDOMStyle->StyleDisplay()->mPosition};
+          aComputedDOMStyle->StyleDisplay()->mPosition,
+          aComputedDOMStyle->StylePosition()->mPositionArea};
 }
 
 #endif /* nsComputedDOMStyle_h__ */

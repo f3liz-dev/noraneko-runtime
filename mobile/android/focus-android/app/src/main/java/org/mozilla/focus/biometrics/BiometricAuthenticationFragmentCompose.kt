@@ -17,7 +17,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -29,6 +28,7 @@ import org.mozilla.focus.R
 import org.mozilla.focus.ui.theme.FocusTheme
 import org.mozilla.focus.ui.theme.focusTypography
 import org.mozilla.focus.ui.theme.gradientBackground
+import mozilla.components.ui.icons.R as iconsR
 
 @Composable
 @Preview
@@ -55,9 +55,8 @@ fun BiometricPromptContent(biometricErrorText: String, showBiometricPrompt: () -
     ) {
         Image(
             painter = painterResource(R.drawable.wordmark2),
-            contentDescription = LocalContext.current.getString(R.string.app_name),
-            modifier = Modifier
-                .padding(start = 24.dp, end = 24.dp),
+            contentDescription = stringResource(R.string.app_name),
+            modifier = Modifier.padding(start = 24.dp, end = 24.dp),
         )
         Text(
             style = focusTypography.onboardingButton,
@@ -65,9 +64,7 @@ fun BiometricPromptContent(biometricErrorText: String, showBiometricPrompt: () -
             text = biometricErrorText,
             modifier = Modifier.padding(top = 16.dp, bottom = 16.dp),
         )
-        ComponentShowBiometricPromptButton {
-            showBiometricPrompt()
-        }
+        ComponentShowBiometricPromptButton { showBiometricPrompt() }
     }
 }
 
@@ -83,14 +80,13 @@ private fun ComponentShowBiometricPromptButton(showBiometricPrompt: () -> Unit) 
             .fillMaxWidth(),
     ) {
         Image(
-            painter = painterResource(R.drawable.ic_fingerprint),
-            contentDescription = LocalContext.current.getString(R.string.biometric_auth_image_description),
-            modifier = Modifier
-                .padding(end = 10.dp),
+            painter = painterResource(iconsR.drawable.mozac_ic_fingerprinter_24),
+            contentDescription = stringResource(R.string.biometric_auth_image_description),
+            modifier = Modifier.padding(end = 10.dp),
         )
         Text(
             color = PhotonColors.White,
-            text = AnnotatedString(stringResource(id = R.string.show_biometric_button_text)),
+            text = AnnotatedString(stringResource(R.string.show_biometric_button_text)),
         )
     }
 }

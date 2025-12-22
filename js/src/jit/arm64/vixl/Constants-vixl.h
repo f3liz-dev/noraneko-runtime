@@ -381,7 +381,8 @@ enum StatusFlags {
   SVENotLastFlag = CFlag
 };
 
-enum Shift {
+// Mozilla change: Use sized enum to allow better packing for Shift uses.
+enum Shift : int8_t {
   NO_SHIFT = -1,
   LSL = 0x0,
   LSR = 0x1,
@@ -390,7 +391,8 @@ enum Shift {
   MSL = 0x4
 };
 
-enum Extend {
+// Mozilla change: Use sized enum to allow better packing for Extend uses.
+enum Extend : int8_t {
   NO_EXTEND = -1,
   UXTB      = 0,
   UXTH      = 1,
@@ -1003,7 +1005,11 @@ enum ExceptionOp : uint32_t {
   SMC            = ExceptionFixed | 0x00000003,
   DCPS1          = ExceptionFixed | 0x00A00001,
   DCPS2          = ExceptionFixed | 0x00A00002,
-  DCPS3          = ExceptionFixed | 0x00A00003
+  DCPS3          = ExceptionFixed | 0x00A00003,
+
+  // Mozilla change:
+  // Add pseudo-instruction for Wasm traps.
+  DCPS0          = ExceptionFixed | 0x00A00000,
 };
 
 enum MemBarrierOp : uint32_t {
@@ -4555,7 +4561,7 @@ enum MaxMinImmediateOp : uint32_t {
 // 0x5ac00c00 (rbit variant)
 //
 // This instruction is "dcps0", also has 16-bit payload if needed.
-static constexpr uint32_t UNDEFINED_INST_PATTERN = 0xd4a00000;
+static constexpr uint32_t UNDEFINED_INST_PATTERN = DCPS0;
 
 }  // namespace vixl
 

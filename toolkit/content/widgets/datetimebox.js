@@ -215,7 +215,7 @@ this.DateTimeBoxWidget = class {
     // This is to open the picker when input element is tapped on Android
     // or for type=time inputs (this includes padding area).
     this.isAndroid = this.window.navigator.appVersion.includes("Android");
-    if (this.isAndroid || this.type == "time") {
+    if (this.showPickerOnClick) {
       this.mInputElement.addEventListener(
         "click",
         this,
@@ -679,8 +679,8 @@ this.DateTimeBoxWidget = class {
     }
 
     switch (aEvent.key) {
-      // Toggle the picker on Space/Enter on Calendar button or Space on input,
-      // close on Escape anywhere.
+      // Toggle the date picker on Space/Enter on Calendar button or Space on input,
+      // time picker on Space on input, close picker on Escape anywhere.
       case "Escape": {
         if (this.mIsPickerOpen) {
           this.closeDateTimePicker();
@@ -924,13 +924,14 @@ this.DateTimeBoxWidget = class {
           // Give aria autocomplete hint for am/pm
           this.mDayPeriodField.setAttribute("aria-autocomplete", "inline");
           break;
-        default:
+        default: {
           let span = this.shadowRoot.createElementAndAppendChildAt(
             root,
             "span"
           );
           span.textContent = part.value;
           break;
+        }
       }
     });
   }
@@ -1534,14 +1535,16 @@ this.DateTimeBoxWidget = class {
         this.incrementFieldValue(targetField, 0 - interval);
         break;
       }
-      case "Home":
+      case "Home": {
         let min = targetField.getAttribute("min");
         this.setFieldValue(targetField, min);
         break;
-      case "End":
+      }
+      case "End": {
         let max = targetField.getAttribute("max");
         this.setFieldValue(targetField, max);
         break;
+      }
     }
     this.setInputValueFromFields();
   }

@@ -14,7 +14,6 @@
 #include "gfxContext.h"
 #include "gfxPlatform.h"
 #include "gfxUtils.h"
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/SVGContentUtils.h"
@@ -268,8 +267,9 @@ void SVGGeometryFrame::ReflowSVG() {
     return;
   }
 
-  uint32_t flags = SVGUtils::eBBoxIncludeFill | SVGUtils::eBBoxIncludeStroke |
-                   SVGUtils::eBBoxIncludeMarkers;
+  uint32_t flags = SVGUtils::eBBoxIncludeFillGeometry |
+                   SVGUtils::eBBoxIncludeStroke | SVGUtils::eBBoxIncludeMarkers;
+
   // Our "visual" overflow rect needs to be valid for building display lists
   // for hit testing, which means that for certain values of 'pointer-events'
   // it needs to include the geometry of the fill or stroke even when the fill/
@@ -284,8 +284,9 @@ void SVGGeometryFrame::ReflowSVG() {
     flags |= SVGUtils::eBBoxIncludeStrokeGeometry;
   }
 
-  gfxRect extent = GetBBoxContribution({}, flags).ToThebesRect();
-  mRect = nsLayoutUtils::RoundGfxRectToAppRect(extent, AppUnitsPerCSSPixel());
+  SVGBBox extent = GetBBoxContribution({}, flags).ToThebesRect();
+  mRect = nsLayoutUtils::RoundGfxRectToAppRect((const Rect&)extent,
+                                               AppUnitsPerCSSPixel());
 
   if (HasAnyStateBits(NS_FRAME_FIRST_REFLOW)) {
     // Make sure we have our filter property (if any) before calling

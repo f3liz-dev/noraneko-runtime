@@ -268,6 +268,24 @@ Element* ViewTransition::GetViewTransitionTreeRoot() const {
              : nullptr;
 }
 
+void ViewTransition::GetCapturedFrames(
+    nsTArray<nsIFrame*>& aCapturedFrames) const {
+  if (mOldCaptureElements) {
+    for (const auto& [f, _] : *mOldCaptureElements) {
+      aCapturedFrames.AppendElement(f);
+    }
+  }
+
+  for (const auto& entry : mNamedElements) {
+    CapturedElement& capturedElement = *entry.GetData();
+    if (capturedElement.mNewElement &&
+        capturedElement.mNewElement->GetPrimaryFrame()) {
+      aCapturedFrames.AppendElement(
+          capturedElement.mNewElement->GetPrimaryFrame());
+    }
+  }
+}
+
 Maybe<nsRect> ViewTransition::GetOldInkOverflowRect(nsAtom* aName) const {
   auto* el = mNamedElements.Get(aName);
   if (NS_WARN_IF(!el)) {
@@ -574,7 +592,7 @@ static bool SetProp(StyleLockedDeclarationBlock* aDecls, Document* aDoc,
       aDecls, aProp, &aValue,
       /* is_important = */ false, aDoc->DefaultStyleAttrURLData(),
       StyleParsingMode::DEFAULT, eCompatibility_FullStandards,
-      aDoc->CSSLoader(), StyleCssRuleType::Style, {});
+      &aDoc->EnsureCSSLoader(), StyleCssRuleType::Style, {});
 }
 
 static bool SetProp(StyleLockedDeclarationBlock* aDecls, Document*,
@@ -1267,7 +1285,7 @@ Maybe<SkipTransitionReason> ViewTransition::CaptureOldState() {
   // Step 3: Let usedTransitionNames be a new set of strings.
   nsTHashSet<nsAtom*> usedTransitionNames;
   // Step 4: Let captureElements be a new list of elements.
-  AutoTArray<std::pair<nsIFrame*, RefPtr<nsAtom>>, 32> captureElements;
+  OldCaptureFramesArray captureElements;
 
   // Step 5: If the snapshot containing block size exceeds an
   // implementation-defined maximum, then return failure.
@@ -1328,17 +1346,21 @@ Maybe<SkipTransitionReason> ViewTransition::CaptureOldState() {
   }
 
   if (!captureElements.IsEmpty()) {
+    AutoRestore guard{mOldCaptureElements};
+    mOldCaptureElements = &captureElements;
     // When snapshotting an iframe, we need to paint from the root subdoc.
     if (RefPtr<PresShell> ps =
             nsContentUtils::GetInProcessSubtreeRootDocument(mDocument)
                 ->GetPresShell()) {
-      VT_LOG("ViewTransitions::CaptureOldState(), requesting composite");
       // Build a display list and send it to WR in order to perform the
       // capturing of old content.
-      RefPtr<nsViewManager> vm = ps->GetViewManager();
-      ps->PaintAndRequestComposite(vm->GetRootView(),
-                                   PaintFlags::PaintCompositeOffscreen);
-      VT_LOG("ViewTransitions::CaptureOldState(), requesting composite end");
+      if (RefPtr widget = ps->GetRootWidget()) {
+        VT_LOG("ViewTransitions::CaptureOldState(), requesting composite");
+        ps->PaintAndRequestComposite(ps->GetRootFrame(),
+                                     widget->GetWindowRenderer(),
+                                     PaintFlags::PaintCompositeOffscreen);
+        VT_LOG("ViewTransitions::CaptureOldState(), requesting composite end");
+      }
     }
   }
 

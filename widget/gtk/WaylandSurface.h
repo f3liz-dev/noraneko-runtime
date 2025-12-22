@@ -72,13 +72,10 @@ class WaylandSurface final {
       const WaylandSurfaceLock& aProofOfLock,
       const std::function<void(bool)>& aFrameCallbackStateHandler);
 
-  // Create and resize EGL window.
-  // GetEGLWindow() takes unscaled window size as we derive size from GdkWindow.
-  // It's scaled internally by WaylandSurface fractional scale.
-  wl_egl_window* GetEGLWindow(nsIntSize aUnscaledSize);
-  // SetEGLWindowSize() takes scaled size - it's called from rendering code
-  // which uses scaled sizes.
-  bool SetEGLWindowSize(nsIntSize aScaledSize);
+  // Create and resize EGL window (Gdk coordinates).
+  wl_egl_window* GetEGLWindow(DesktopIntSize aSize);
+  // Resize EGL window (pixel coordinates).
+  bool SetEGLWindowSize(LayoutDeviceIntSize aSize);
   bool HasEGLWindow() const { return !!mEGLWindow; }
 
   // Read to draw means we got frame callback from parent surface
@@ -260,7 +257,8 @@ class WaylandSurface final {
   bool EnableColorManagementLocked(const WaylandSurfaceLock& aProofOfLock);
   void SetColorRepresentationLocked(const WaylandSurfaceLock& aProofOfLock,
                                     mozilla::gfx::YUVColorSpace aColorSpace,
-                                    bool aFullRange);
+                                    bool aFullRange,
+                                    uint32_t aWPChromaLocation);
 
   static void ImageDescriptionFailed(
       void* aData, struct wp_image_description_v1* aImageDescription,

@@ -19,7 +19,7 @@ import mozilla.components.browser.state.selector.findTabOrCustomTab
 import mozilla.components.browser.state.state.AppIntentState
 import mozilla.components.browser.state.state.BrowserState
 import mozilla.components.browser.state.state.LoadRequestState
-import mozilla.components.browser.state.state.SecurityInfoState
+import mozilla.components.browser.state.state.SecurityInfo
 import mozilla.components.browser.state.state.content.DownloadState
 import mozilla.components.browser.state.state.content.DownloadState.Status.INITIATED
 import mozilla.components.browser.state.state.content.FindResultState
@@ -37,6 +37,7 @@ import mozilla.components.concept.engine.translate.TranslationEngineState
 import mozilla.components.concept.engine.translate.TranslationError
 import mozilla.components.concept.engine.translate.TranslationOperation
 import mozilla.components.concept.engine.window.WindowRequest
+import mozilla.components.concept.fetch.Headers.Names.E_TAG
 import mozilla.components.concept.fetch.Response
 import mozilla.components.lib.state.Store
 
@@ -161,7 +162,7 @@ internal class EngineObserver(
         store.dispatch(
             ContentAction.UpdateSecurityInfoAction(
                 tabId,
-                SecurityInfoState(secure, host ?: "", issuer ?: ""),
+                SecurityInfo.from(secure, host ?: "", issuer ?: ""),
             ),
         )
     }
@@ -241,6 +242,7 @@ internal class EngineObserver(
             skipConfirmation = skipConfirmation,
             openInApp = openInApp,
             response = response,
+            etag = response?.headers?.get(E_TAG),
         )
 
         store.dispatch(

@@ -233,6 +233,10 @@ pref("extensions.strictCompatibility", false);
 pref("extensions.systemAddon.update.enabled", true);
 pref("extensions.systemAddon.update.url", "https://aus5.mozilla.org/update/3/SystemAddons/%VERSION%/%BUILD_ID%/%BUILD_TARGET%/%LOCALE%/%CHANNEL%/%OS_VERSION%/%DISTRIBUTION%/%DISTRIBUTION_VERSION%/update.xml");
 
+// Enable the EnvironmentAddonBuilder collecting the Glean
+// activeAddons/theme/GMPlugins metrics.
+pref("extensions.telemetry.EnvironmentAddonBuilder", true);
+
 pref("extensions.update.background.url", "https://versioncheck-bg.addons.mozilla.org/update/VersionCheck.php?reqVersion=%REQ_VERSION%&id=%ITEM_ID%&version=%ITEM_VERSION%&maxAppVersion=%ITEM_MAXAPPVERSION%&status=%ITEM_STATUS%&appID=%APP_ID%&appVersion=%APP_VERSION%&appOS=%APP_OS%&appABI=%APP_ABI%&locale=%APP_LOCALE%&currentAppVersion=%CURRENT_APP_VERSION%&updateType=%UPDATE_TYPE%&compatMode=%COMPATIBILITY_MODE%");
 pref("extensions.update.enabled", true);
 pref("extensions.update.interval", 86400);
@@ -264,8 +268,6 @@ pref("image.cache.size", 1048576); // bytes
 
 // Inherit locale from the OS, used for multi-locale builds
 pref("intl.locale.requested", "");
-
-pref("keyword.enabled", true);
 
 // Always tilt the caret to match the text selection guideline (bug 1097398)
 pref("layout.accessiblecaret.always_tilt", true);
@@ -320,14 +322,6 @@ pref("media.navigator.permission.device", true);
 // if we're using a cellular connection, even if the download is slow,
 // this is to preserve battery and data (bug 1540573)
 pref("media.throttle-cellular-regardless-of-download-rate", true);
-
-// Number of video frames we buffer while decoding video.
-// On Android this is decided by a similar value which varies for
-// each OMX decoder |OMX_PARAM_PORTDEFINITIONTYPE::nBufferCountMin|. This
-// number must be less than the OMX equivalent or gecko will think it is
-// chronically starved of video frames. All decoders seen so far have a value
-// of at least 4. (bug 973408)
-pref("media.video-queue.default-size", 3);
 
 // The maximum number of queued frames to send to the compositor.
 // On Android, it needs to be throttled because SurfaceTexture contains only one
@@ -397,6 +391,9 @@ pref("toolkit.telemetry.unified", false);
 // Download protection lists are not available on Android (bug 1397938, bug 1394017)
 pref("urlclassifier.downloadAllowTable", "");
 pref("urlclassifier.downloadBlockTable", "");
+
+// Delay the CRC32 check for URLClassifier to improve applink performance. (bug 1956920, bug 1971949)
+pref("urlclassifier.delay_prefixes_crc32_check", true);
 
 // The Potentially Harmful Apps list replaces the malware one on Android (bug 1394017)
 pref("urlclassifier.malwareTable", "goog-harmful-proto,goog-unwanted-proto,moztest-harmful-simple,moztest-malware-simple,moztest-unwanted-simple");

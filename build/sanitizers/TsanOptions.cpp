@@ -3,7 +3,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/Attributes.h"
 #include "mozilla/Types.h"
 
 //
@@ -79,6 +78,7 @@ extern "C" MOZ_EXPORT const char* __tsan_default_suppressions() {
          "called_from_lib:libgvfscommon\n"
          "called_from_lib:libgvfsdbus\n"
          "called_from_lib:libibus-1\n"
+         "called_from_lib:libnvidia-egl-wayland\n"
          "called_from_lib:libnvidia-eglcore\n"
          "called_from_lib:libnvidia-glsi\n"
          "called_from_lib:libogg.so\n"

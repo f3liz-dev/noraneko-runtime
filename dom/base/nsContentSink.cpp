@@ -96,7 +96,6 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(nsContentSink)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mDocument)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mParser)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mDocShell)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK(mCSSLoader)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mNodeInfoManager)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mScriptLoader)
   NS_IMPL_CYCLE_COLLECTION_UNLINK_WEAK_REFERENCE
@@ -105,7 +104,6 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(nsContentSink)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mDocument)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mParser)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mDocShell)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mCSSLoader)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mNodeInfoManager)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mScriptLoader)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
@@ -163,7 +161,7 @@ nsresult nsContentSink::Init(Document* aDoc, nsIURI* aURI,
 
   mDocumentURI = aURI;
   mDocShell = do_QueryInterface(aContainer);
-  mScriptLoader = mDocument->ScriptLoader();
+  mScriptLoader = mDocument->GetScriptLoader();
 
   if (!mRunsToCompletion) {
     if (mDocShell) {
@@ -175,8 +173,6 @@ nsresult nsContentSink::Init(Document* aDoc, nsIURI* aURI,
 
     ProcessHTTPHeaders(aChannel);
   }
-
-  mCSSLoader = aDoc->CSSLoader();
 
   mNodeInfoManager = aDoc->NodeInfoManager();
 
@@ -218,11 +214,13 @@ nsContentSink::StyleSheetLoaded(StyleSheet* aSheet, bool aWasDeferred,
     ScrollToRef();
   }
 
-  mScriptLoader->RemoveParserBlockingScriptExecutionBlocker();
+  if (mScriptLoader) {
+    mScriptLoader->RemoveParserBlockingScriptExecutionBlocker();
 
-  if (loadedAllSheets &&
-      mDocument->GetReadyStateEnum() >= Document::READYSTATE_INTERACTIVE) {
-    mScriptLoader->DeferCheckpointReached();
+    if (loadedAllSheets &&
+        mDocument->GetReadyStateEnum() >= Document::READYSTATE_INTERACTIVE) {
+      mScriptLoader->DeferCheckpointReached();
+    }
   }
 
   return NS_OK;
@@ -316,14 +314,24 @@ nsresult nsContentSink::ProcessLinkFromHeader(const net::LinkHeader& aHeader,
     }
 
     if (linkTypes & LinkStyle::ePRELOAD) {
-      PreloadHref(aHeader.mHref, aHeader.mAs, aHeader.mType, aHeader.mMedia,
-                  aHeader.mNonce, aHeader.mIntegrity, aHeader.mSrcset,
-                  aHeader.mSizes, aHeader.mCrossOrigin, aHeader.mReferrerPolicy,
-                  aEarlyHintPreloaderId, aHeader.mFetchPriority);
+      PreloadHref(aHeader.mHref, aHeader.mAs, aHeader.mRel, aHeader.mType,
+                  aHeader.mMedia, aHeader.mNonce, aHeader.mIntegrity,
+                  aHeader.mSrcset, aHeader.mSizes, aHeader.mCrossOrigin,
+                  aHeader.mReferrerPolicy, aEarlyHintPreloaderId,
+                  aHeader.mFetchPriority);
+    }
+
+    if (linkTypes & LinkStyle::eCOMPRESSION_DICTIONARY) {
+      PreloadHref(aHeader.mHref, u"fetch"_ns, aHeader.mRel, aHeader.mType,
+                  aHeader.mMedia, aHeader.mNonce, aHeader.mIntegrity,
+                  aHeader.mSrcset, aHeader.mSizes, aHeader.mCrossOrigin,
+                  aHeader.mReferrerPolicy, aEarlyHintPreloaderId,
+                  aHeader.mFetchPriority);
     }
 
     if ((linkTypes & LinkStyle::eMODULE_PRELOAD) &&
-        mDocument->ScriptLoader()->GetModuleLoader()) {
+        mDocument->GetScriptLoader() &&
+        mDocument->GetScriptLoader()->GetModuleLoader()) {
       PreloadModule(aHeader.mHref, aHeader.mAs, aHeader.mMedia, aHeader.mNonce,
                     aHeader.mIntegrity, aHeader.mCrossOrigin,
                     aHeader.mReferrerPolicy, aEarlyHintPreloaderId,
@@ -399,15 +407,17 @@ nsresult nsContentSink::ProcessStyleLinkFromHeader(
       fetchPriority,
   };
 
-  auto loadResultOrErr =
-      mCSSLoader->LoadStyleLink(info, mRunsToCompletion ? nullptr : this);
+  auto loadResultOrErr = mDocument->EnsureCSSLoader().LoadStyleLink(
+      info, mRunsToCompletion ? nullptr : this);
   if (loadResultOrErr.isErr()) {
     return loadResultOrErr.unwrapErr();
   }
 
   if (loadResultOrErr.inspect().ShouldBlock() && !mRunsToCompletion) {
     ++mPendingSheetCount;
-    mScriptLoader->AddParserBlockingScriptExecutionBlocker();
+    if (mScriptLoader) {
+      mScriptLoader->AddParserBlockingScriptExecutionBlocker();
+    }
   }
 
   return NS_OK;
@@ -431,15 +441,13 @@ void nsContentSink::PrefetchHref(const nsAString& aHref, const nsAString& aAs,
   }
 }
 
-void nsContentSink::PreloadHref(const nsAString& aHref, const nsAString& aAs,
-                                const nsAString& aType, const nsAString& aMedia,
-                                const nsAString& aNonce,
-                                const nsAString& aIntegrity,
-                                const nsAString& aSrcset,
-                                const nsAString& aSizes, const nsAString& aCORS,
-                                const nsAString& aReferrerPolicy,
-                                uint64_t aEarlyHintPreloaderId,
-                                const nsAString& aFetchPriority) {
+void nsContentSink::PreloadHref(
+    const nsAString& aHref, const nsAString& aAs, const nsAString& aRel,
+    const nsAString& aType, const nsAString& aMedia, const nsAString& aNonce,
+    const nsAString& aIntegrity, const nsAString& aSrcset,
+    const nsAString& aSizes, const nsAString& aCORS,
+    const nsAString& aReferrerPolicy, uint64_t aEarlyHintPreloaderId,
+    const nsAString& aFetchPriority) {
   auto encoding = mDocument->GetDocumentCharacterSet();
   nsCOMPtr<nsIURI> uri;
   NS_NewURI(getter_AddRefs(uri), aHref, encoding, mDocument->GetDocBaseURI());
@@ -464,8 +472,8 @@ void nsContentSink::PreloadHref(const nsAString& aHref, const nsAString& aAs,
   }
 
   mDocument->Preloads().PreloadLinkHeader(
-      uri, aHref, policyType, aAs, aType, aNonce, aIntegrity, aSrcset, aSizes,
-      aCORS, aReferrerPolicy, aEarlyHintPreloaderId, aFetchPriority);
+      uri, aHref, policyType, aAs, aRel, aType, aNonce, aIntegrity, aSrcset,
+      aSizes, aCORS, aReferrerPolicy, aEarlyHintPreloaderId, aFetchPriority);
 }
 
 void nsContentSink::PreloadModule(
@@ -473,7 +481,11 @@ void nsContentSink::PreloadModule(
     const nsAString& aNonce, const nsAString& aIntegrity,
     const nsAString& aCORS, const nsAString& aReferrerPolicy,
     uint64_t aEarlyHintPreloaderId, const nsAString& aFetchPriority) {
-  ModuleLoader* moduleLoader = mDocument->ScriptLoader()->GetModuleLoader();
+  dom::ScriptLoader* scriptLoader = mDocument->GetScriptLoader();
+  if (!scriptLoader) {
+    return;
+  }
+  ModuleLoader* moduleLoader = scriptLoader->GetModuleLoader();
 
   if (!StaticPrefs::network_modulepreload()) {
     // Keep behavior from https://phabricator.services.mozilla.com/D149371,
@@ -506,9 +518,9 @@ void nsContentSink::PreloadModule(
   moduleLoader->DisallowImportMaps();
 
   mDocument->Preloads().PreloadLinkHeader(
-      uri, aHref, nsIContentPolicy::TYPE_SCRIPT, u"script"_ns, u"module"_ns,
-      aNonce, aIntegrity, u""_ns, u""_ns, aCORS, aReferrerPolicy,
-      aEarlyHintPreloaderId, aFetchPriority);
+      uri, aHref, nsIContentPolicy::TYPE_SCRIPT, u"script"_ns,
+      u"modulepreload"_ns, u"module"_ns, aNonce, aIntegrity, u""_ns, u""_ns,
+      aCORS, aReferrerPolicy, aEarlyHintPreloaderId, aFetchPriority);
 }
 
 void nsContentSink::PrefetchDNS(const nsAString& aHref) {
@@ -767,9 +779,7 @@ nsresult nsContentSink::DidProcessATokenImpl() {
   if (StaticPrefs::content_sink_pending_event_mode() != 0 &&
       !mHasPendingEvent &&
       (mDeflectedCount % StaticPrefs::content_sink_event_probe_rate()) == 0) {
-    nsViewManager* vm = presShell->GetViewManager();
-    NS_ENSURE_TRUE(vm, NS_ERROR_FAILURE);
-    nsCOMPtr<nsIWidget> widget = vm->GetRootWidget();
+    nsIWidget* widget = presShell->GetRootWidget();
     mHasPendingEvent = widget && widget->HasPendingInputEvent();
   }
 
@@ -868,7 +878,7 @@ void nsContentSink::DropParserAndPerfHint(void) {
   // Drop our reference to the parser to get rid of a circular
   // reference.
   RefPtr<nsParserBase> kungFuDeathGrip = std::move(mParser);
-  mozilla::Unused << kungFuDeathGrip;
+  (void)kungFuDeathGrip;
 
   // Call UnblockOnload only if mRunsToComletion is false and if
   // we have already started loading because it's possible that this function
@@ -882,7 +892,7 @@ void nsContentSink::DropParserAndPerfHint(void) {
 }
 
 bool nsContentSink::IsScriptExecutingImpl() {
-  return !!mScriptLoader->GetCurrentScript();
+  return mScriptLoader && mScriptLoader->GetCurrentScript();
 }
 
 void nsContentSink::ContinueParsingDocumentAfterCurrentScriptImpl() {
@@ -904,11 +914,7 @@ nsresult nsContentSink::WillParseImpl(void) {
   uint32_t currentTime = PR_IntervalToMicroseconds(PR_IntervalNow());
 
   if (StaticPrefs::content_sink_enable_perf_mode() == 0) {
-    nsViewManager* vm = presShell->GetViewManager();
-    NS_ENSURE_TRUE(vm, NS_ERROR_FAILURE);
-    uint32_t lastEventTime;
-    vm->GetLastUserEventTime(lastEventTime);
-
+    uint32_t lastEventTime = nsViewManager::GetLastUserEventTime();
     bool newDynLower = mDocument->IsInBackgroundWindow() ||
                        ((currentTime - mBeginLoadTime) >
                             StaticPrefs::content_sink_initial_perf_time() &&

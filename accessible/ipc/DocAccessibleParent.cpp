@@ -604,7 +604,7 @@ mozilla::ipc::IPCResult DocAccessibleParent::RecvMutationEvents(
 
 mozilla::ipc::IPCResult DocAccessibleParent::RecvRequestAckMutationEvents() {
   if (!mShutdown) {
-    Unused << SendAckMutationEvents();
+    (void)SendAckMutationEvents();
   }
   return IPC_OK();
 }
@@ -840,7 +840,7 @@ mozilla::ipc::IPCResult DocAccessibleParent::RecvRoleChangedEvent(
     return IPC_FAIL(this, "Invalid role map entry index");
   }
 
-  mRole = aRole;
+  mNativeRole = aRole;
   mRoleMapEntryIndex = aRoleMapEntryIndex;
 
 #ifdef MOZ_WIDGET_COCOA

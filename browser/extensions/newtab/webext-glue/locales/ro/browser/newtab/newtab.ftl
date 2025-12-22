@@ -64,7 +64,7 @@ newtab-topsites-title-input =
     .placeholder = Introdu un titlu
 newtab-topsites-url-label = URL
 newtab-topsites-url-input =
-    .placeholder = Tastează sau lipește un URL
+    .placeholder = Tastează sau inserează un URL
 newtab-topsites-url-validation = URL valid necesar
 newtab-topsites-image-url-label = URL pentru imagine personalizată
 newtab-topsites-use-image-link = Folosește o imagine personalizată…
@@ -404,7 +404,7 @@ newtab-wallpaper-abstract-purple-green = Gradient de lumină violet și verde
 newtab-wallpaper-abstract-blue-purple-waves = Forme ondulate albastre și violete
 newtab-wallpaper-abstract-black-waves = Forme ondulate negre
 
-## Celestial
+## Firefox
 
 newtab-wallpaper-category-title-photographs = Fotografii
 newtab-wallpaper-beach-at-sunrise = Plajă la răsărit
@@ -433,6 +433,10 @@ feature-highlight-dismiss-button =
 feature-highlight-wallpaper =
     .title = { -newtab-wallpaper-feature-highlight-header }
     .aria-label = { -newtab-wallpaper-feature-highlight-content }
+
+## Firefox
+
+newtab-wallpaper-category-title-firefox = { -brand-product-name }
 
 ## Celestial
 
@@ -475,8 +479,16 @@ newtab-weather-menu-change-temperature-units-fahrenheit = Treci pe Fahrenheit
 newtab-weather-menu-change-temperature-units-celsius = Treci pe Celsius
 newtab-weather-menu-hide-weather = Ascunde vremea în fila nouă
 newtab-weather-menu-learn-more = Află mai multe
+newtab-weather-menu-detect-my-location = Detectează-mi locația
 # This message is shown if user is working offline
 newtab-weather-error-not-available = Datele meteo nu sunt disponibile momentan.
+newtab-weather-opt-in-see-weather = Vrei să vezi vremea pentru locația ta?
+newtab-weather-opt-in-not-now =
+    .label = Nu acum
+newtab-weather-opt-in-yes =
+    .label = Da
+# We'll be showing static (fake) weather data if the user has not opted in to using their location
+newtab-weather-static-city = New York City
 
 ## Topic Labels
 
@@ -643,6 +655,9 @@ newtab-widget-lists-input-menu-move-up = Mută în sus
 newtab-widget-lists-input-menu-move-down = Mută în jos
 newtab-widget-lists-input-menu-delete = Șterge
 newtab-widget-lists-input-menu-edit = Editează
+# the + symbol emphasises the functionality of adding a new list
+newtab-widget-lists-dropdown-create =
+    .label = + Creează o listă nouă
 newtab-widget-lists-name-label-default =
     .label = Listă de sarcini
 newtab-widget-lists-name-placeholder-default =
@@ -662,10 +677,6 @@ newtab-widget-timer-mode-focus =
     .label = Concentrează-te
 newtab-widget-timer-mode-break =
     .label = Pauză
-newtab-widget-timer-play =
-    .title = Redă
-newtab-widget-timer-pause =
-    .title = Pauză
 newtab-widget-timer-label-play =
     .label = Redă
 newtab-widget-timer-label-pause =

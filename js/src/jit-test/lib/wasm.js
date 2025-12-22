@@ -13,7 +13,7 @@ function canRunHugeMemoryTests() {
     // blocklist of properties that can't be true is great.  But the latter is
     // probably better.
     let blocked = ['rooting-analysis','simulator',
-                   'android','wasi','asan','tsan','ubsan','dtrace','valgrind'];
+                   'android','wasi','asan','tsan','ubsan','valgrind'];
     for ( let b of blocked ) {
         if (getBuildConfiguration(b)) {
             print("Failing canRunHugeMemoryTests() because '" + b + "' is true");
@@ -518,6 +518,12 @@ let WasmExternrefValues = [null, ...WasmNonNullExternrefValues];
 
 // Max number of memories in a single wasm module.
 let MaxMemories = 100
+
+// Constants related to memory sizes.
+const MaxMemory64PagesValidation = BigInt(Math.pow(2, 37) - 1); // from spec
+const MaxTable64ElemsValidation = 0xFFFF_FFFF_FFFF_FFFFn; // from spec
+const MaxTableElemsRuntime = 10000000; // from WasmConstants.h
+const MaxUint32 = 0xFFFF_FFFF;
 
 // Common array utilities
 

@@ -1,6 +1,5 @@
 /* -*- js-indent-level: 2; tab-width: 2; indent-tabs-mode: nil -*- */
 
-/* eslint-env mozilla/browser-window */
 /* import-globals-from chrome-harness.js */
 /* import-globals-from mochitest-e10s-utils.js */
 
@@ -144,7 +143,7 @@ function testInit() {
 
     let processCount = Services.prefs.getIntPref("dom.ipc.processCount", 1);
     if (processCount > 1) {
-      // Currently starting a content process is slow, to aviod timeouts, let's
+      // Currently starting a content process is slow, to avoid timeouts, let's
       // keep alive content processes.
       Services.prefs.setIntPref("dom.ipc.keepProcessesAlive.web", processCount);
     }
@@ -345,6 +344,10 @@ Tester.prototype = {
       this._coverageCollector = new CoverageCollector(coveragePath);
     }
 
+    if (gConfig.debugger || gConfig.debuggerInteractive || gConfig.jsdebugger) {
+      gTimeoutSeconds = 24 * 60 * 60 * 1000; // 24 hours
+    }
+
     this.structuredLogger.info("*** Start BrowserChrome Test Results ***");
     Services.console.registerListener(this);
     this._globalProperties = Object.keys(window);
@@ -435,57 +438,69 @@ Tester.prototype = {
         ? "Found an unexpected {elt} at the end of test run"
         : "Found an unexpected {elt}";
 
-    // Remove stale tabs
-    if (
-      this.currentTest &&
-      window.gBrowser &&
-      AppConstants.MOZ_APP_NAME != "thunderbird" &&
-      gBrowser.tabs.length > 1
-    ) {
-      let lastURI = "";
-      let lastURIcount = 0;
-      while (gBrowser.tabs.length > 1) {
-        let lastTab = gBrowser.tabs[gBrowser.tabs.length - 1];
-        if (!lastTab.closing) {
-          // Report the stale tab as an error only when they're not closing.
-          // Tests can finish without waiting for the closing tabs.
-          if (lastURI != lastTab.linkedBrowser.currentURI.spec) {
-            lastURI = lastTab.linkedBrowser.currentURI.spec;
-          } else {
-            lastURIcount++;
-            if (lastURIcount >= 3) {
-              this.currentTest.addResult(
-                new testResult({
-                  name: "terminating browser early - unable to close tabs; skipping remaining tests in folder",
-                  allowFailure: this.currentTest.allowFailure,
-                })
-              );
-              this.finish();
+    // Clean up the Firefox window.
+    // But not the Thunderbird window, it doesn't have these things!
+    if (AppConstants.MOZ_APP_NAME != "thunderbird") {
+      // Remove stale tabs
+      if (this.currentTest && window.gBrowser && gBrowser.tabs.length > 1) {
+        let lastURI = "";
+        let lastURIcount = 0;
+        while (gBrowser.tabs.length > 1) {
+          let lastTab = gBrowser.tabs[gBrowser.tabs.length - 1];
+          if (!lastTab.closing) {
+            // Report the stale tab as an error only when they're not closing.
+            // Tests can finish without waiting for the closing tabs.
+            if (lastURI != lastTab.linkedBrowser.currentURI.spec) {
+              lastURI = lastTab.linkedBrowser.currentURI.spec;
+            } else {
+              lastURIcount++;
+              if (lastURIcount >= 3) {
+                this.currentTest.addResult(
+                  new testResult({
+                    name: "terminating browser early - unable to close tabs; skipping remaining tests in folder",
+                    allowFailure: this.currentTest.allowFailure,
+                  })
+                );
+                this.finish();
+              }
             }
+            this.currentTest.addResult(
+              new testResult({
+                name:
+                  baseMsg.replace("{elt}", "tab") +
+                  ": " +
+                  lastTab.linkedBrowser.currentURI.spec,
+                allowFailure: this.currentTest.allowFailure,
+              })
+            );
           }
-          this.currentTest.addResult(
-            new testResult({
-              name:
-                baseMsg.replace("{elt}", "tab") +
-                ": " +
-                lastTab.linkedBrowser.currentURI.spec,
-              allowFailure: this.currentTest.allowFailure,
-            })
-          );
+          gBrowser.removeTab(lastTab);
         }
-        gBrowser.removeTab(lastTab);
       }
-    }
 
-    // Replace the last tab with a fresh one
-    if (window.gBrowser && AppConstants.MOZ_APP_NAME != "thunderbird") {
-      gBrowser.addTab("about:blank", {
-        skipAnimation: true,
-        triggeringPrincipal:
-          Services.scriptSecurityManager.getSystemPrincipal(),
-      });
-      gBrowser.removeTab(gBrowser.selectedTab, { skipPermitUnload: true });
-      gBrowser.stop();
+      // Replace the last tab with a fresh one
+      if (window.gBrowser) {
+        gBrowser.addTab("about:blank", {
+          skipAnimation: true,
+          triggeringPrincipal:
+            Services.scriptSecurityManager.getSystemPrincipal(),
+        });
+        gBrowser.removeTab(gBrowser.selectedTab, { skipPermitUnload: true });
+        gBrowser.stop();
+      }
+
+      // Tests shouldn't leave sidebars open
+      this.structuredLogger.info("checking for open sidebars");
+      const sidebarContainer = document.getElementById("sidebar-box");
+      if (!sidebarContainer.hidden) {
+        window.SidebarController.hide({ dismissPanel: true });
+        this.currentTest.addResult(
+          new testResult({
+            name: baseMsg.replace("{elt}", "open sidebar"),
+            allowFailure: this.currentTest.allowFailure,
+          })
+        );
+      }
     }
 
     // Remove stale windows
@@ -773,6 +788,41 @@ Tester.prototype = {
     }
   },
 
+  /**
+   * In the event that a test module left any traces in Session Restore state,
+   * clean those up so that each test module starts execution with the same
+   * fresh Session Restore state.
+   */
+  resetSessionState() {
+    // Forget all closed windows.
+    while (window.SessionStore.getClosedWindowCount() > 0) {
+      window.SessionStore.forgetClosedWindow(0);
+    }
+
+    // Forget all closed tabs for the test window.
+    const closedTabCount =
+      window.SessionStore.getClosedTabCountForWindow(window);
+    for (let i = 0; i < closedTabCount; i++) {
+      try {
+        window.SessionStore.forgetClosedTab(window, 0);
+      } catch (err) {
+        // This will fail if there are tab groups in here
+      }
+    }
+
+    // Forget saved tab groups.
+    const savedTabGroups = window.SessionStore.getSavedTabGroups();
+    savedTabGroups.forEach(tabGroup =>
+      window.SessionStore.forgetSavedTabGroup(tabGroup.id)
+    );
+
+    // Forget closed tab groups in the test window.
+    const closedTabGroups = window.SessionStore.getClosedTabGroups(window);
+    closedTabGroups.forEach(tabGroup =>
+      window.SessionStore.forgetClosedTabGroup(window, tabGroup.id)
+    );
+  },
+
   async notifyProfilerOfTestEnd() {
     // Note the test run time
     let name = this.currentTest.path;
@@ -934,6 +984,10 @@ Tester.prototype = {
       await this.checkPreferencesAfterTest();
 
       window.SpecialPowers.cleanupAllClipboard();
+
+      if (AppConstants.MOZ_APP_NAME != "thunderbird") {
+        this.resetSessionState();
+      }
 
       if (gConfig.cleanupCrashes) {
         let gdir = Services.dirsvc.get("UAppData", Ci.nsIFile);
@@ -1226,9 +1280,7 @@ Tester.prototype = {
     let currentScope = currentTest.scope;
     let desc = isSetup ? "setup" : "test";
     currentScope.SimpleTest.info(`Entering ${desc} ${task.name}`);
-    // This newtab train-hop compatibility shim can be removed once Firefox 144
-    // makes it to the release channel.
-    let startTimestamp = ChromeUtils.now?.() || performance.now();
+    let startTimestamp = ChromeUtils.now();
     let controller = new AbortController();
     currentScope.__signal = controller.signal;
     if (isSetup) {
@@ -1457,9 +1509,7 @@ Tester.prototype = {
 
     // Import the test script.
     try {
-      // This newtab train-hop compatibility shim can be removed once Firefox 144
-      // makes it to the release channel.
-      this.lastStartTimestamp = ChromeUtils.now?.() || performance.now();
+      this.lastStartTimestamp = ChromeUtils.now();
       this.TestUtils.promiseTestFinished = new Promise(resolve => {
         this.resolveFinishTestPromise = resolve;
       });

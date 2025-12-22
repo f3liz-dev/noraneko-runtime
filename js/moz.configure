@@ -710,7 +710,7 @@ def default_wasm_jspi(
         return
 
     if simulator:
-        return simulator[0] in ("arm64", "arm", "riscv64")
+        return simulator[0] in ("arm64", "arm", "loong64", "riscv64")
 
     if target.cpu in ("x86_64", "x86", "aarch64", "arm", "loongarch64", "riscv64"):
         return True
@@ -737,8 +737,10 @@ def wasm_jspi(value, jit_enabled, simulator, no_experimental, target):
     if not jit_enabled:
         die("--enable-wasm-jspi requires --enable-jit")
 
-    if simulator and simulator[0] not in ("arm64", "arm", "riscv64"):
-        die("--enable-wasm-jspi is only supported for arm64/arm/riscv64 simulators")
+    if simulator and simulator[0] not in ("arm64", "arm", "loong64", "riscv64"):
+        die(
+            "--enable-wasm-jspi is only supported for arm64/arm/loong64/riscv64 simulators"
+        )
 
     if target.cpu in ("x86_64", "x86", "aarch64", "arm", "loongarch64", "riscv64"):
         return True
@@ -909,9 +911,9 @@ set_define("ENABLE_WASM_AVX", wasm_avx)
 # =====================================================
 
 
-@depends(milestone.is_nightly, "--enable-wasm-simd")
-def default_wasm_relaxed_simd(is_nightly, wasm_simd):
-    if is_nightly and wasm_simd:
+@depends("--enable-wasm-simd")
+def default_wasm_relaxed_simd(wasm_simd):
+    if wasm_simd:
         return True
 
 
@@ -922,9 +924,9 @@ option(
 )
 
 
-@depends("--enable-wasm-relaxed-simd", "--enable-wasm-simd", "--wasm-no-experimental")
-def wasm_relaxed_simd(value, wasm_simd, no_experimental):
-    if no_experimental or not value:
+@depends("--enable-wasm-relaxed-simd", "--enable-wasm-simd")
+def wasm_relaxed_simd(value, wasm_simd):
+    if not value:
         return
 
     if not wasm_simd:
@@ -1205,14 +1207,9 @@ set_define(
 # =========================================
 
 
-@depends(milestone.is_nightly)
-def default_wasm_resizable_arraybuffer(is_nightly):
-    return is_nightly
-
-
 option(
-    "--enable-wasm-resizable-arraybuffer",
-    default=default_wasm_resizable_arraybuffer,
+    "--disable-wasm-resizable-arraybuffer",
+    default=True,
     help="{Enable|Disable} resizable ArrayBuffer in WASM",
 )
 

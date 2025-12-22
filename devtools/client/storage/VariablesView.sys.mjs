@@ -42,7 +42,7 @@ XPCOMUtils.defineLazyServiceGetter(
   lazy,
   "clipboardHelper",
   "@mozilla.org/widget/clipboardhelper;1",
-  "nsIClipboardHelper"
+  Ci.nsIClipboardHelper
 );
 
 /**
@@ -150,10 +150,7 @@ VariablesView.prototype = {
       return;
     }
 
-    while (this._list.hasChildNodes()) {
-      this._list.firstChild.remove();
-    }
-
+    this._list.replaceChildren();
     this._appendEmptyNotice();
     this._toggleSearchVisibility(false);
   },

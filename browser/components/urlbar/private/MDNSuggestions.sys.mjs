@@ -2,15 +2,15 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-import { SuggestProvider } from "resource:///modules/urlbar/private/SuggestFeature.sys.mjs";
+import { SuggestProvider } from "moz-src:///browser/components/urlbar/private/SuggestFeature.sys.mjs";
 
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
-  QuickSuggest: "resource:///modules/QuickSuggest.sys.mjs",
-  UrlbarPrefs: "resource:///modules/UrlbarPrefs.sys.mjs",
-  UrlbarResult: "resource:///modules/UrlbarResult.sys.mjs",
-  UrlbarUtils: "resource:///modules/UrlbarUtils.sys.mjs",
+  QuickSuggest: "moz-src:///browser/components/urlbar/QuickSuggest.sys.mjs",
+  UrlbarPrefs: "moz-src:///browser/components/urlbar/UrlbarPrefs.sys.mjs",
+  UrlbarResult: "moz-src:///browser/components/urlbar/UrlbarResult.sys.mjs",
+  UrlbarUtils: "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs",
 });
 
 const RESULT_MENU_COMMAND = {
@@ -24,11 +24,7 @@ const RESULT_MENU_COMMAND = {
  */
 export class MDNSuggestions extends SuggestProvider {
   get enablingPreferences() {
-    return [
-      "mdn.featureGate",
-      "suggest.mdn",
-      "suggest.quicksuggest.nonsponsored",
-    ];
+    return ["mdn.featureGate", "suggest.mdn", "suggest.quicksuggest.all"];
   }
 
   get primaryUserControlledPreferences() {
@@ -66,23 +62,22 @@ export class MDNSuggestions extends SuggestProvider {
       title: [suggestion.title, lazy.UrlbarUtils.HIGHLIGHT.TYPED],
       description: suggestion.description,
       shouldShowUrl: true,
-      bottomTextL10n: { id: "firefox-suggest-mdn-bottom-text" },
+      bottomTextL10n: {
+        id: "firefox-suggest-mdn-bottom-text",
+        cacheable: true,
+      },
     };
 
-    return Object.assign(
-      new lazy.UrlbarResult(
-        lazy.UrlbarUtils.RESULT_TYPE.URL,
-        lazy.UrlbarUtils.RESULT_SOURCE.OTHER_NETWORK,
-        ...lazy.UrlbarResult.payloadAndSimpleHighlights(
-          queryContext.tokens,
-          payload
-        )
+    return new lazy.UrlbarResult({
+      type: lazy.UrlbarUtils.RESULT_TYPE.URL,
+      source: lazy.UrlbarUtils.RESULT_SOURCE.OTHER_NETWORK,
+      isBestMatch: true,
+      showFeedbackMenu: true,
+      ...lazy.UrlbarResult.payloadAndSimpleHighlights(
+        queryContext.tokens,
+        payload
       ),
-      {
-        isBestMatch: true,
-        showFeedbackMenu: true,
-      }
-    );
+    });
   }
 
   /**

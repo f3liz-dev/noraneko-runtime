@@ -9,10 +9,13 @@ import android.view.ViewGroup
 import android.widget.CheckedTextView
 import androidx.annotation.VisibleForTesting
 import androidx.appcompat.content.res.AppCompatResources
+import androidx.core.graphics.drawable.DrawableCompat
 import androidx.core.view.updatePaddingRelative
 import androidx.recyclerview.widget.RecyclerView
+import com.google.android.material.color.MaterialColors
 import mozilla.components.support.ktx.android.view.putCompoundDrawablesRelativeWithIntrinsicBounds
 import org.mozilla.fenix.R
+import com.google.android.material.R as materialR
 import mozilla.components.ui.icons.R as iconsR
 
 /**
@@ -47,11 +50,22 @@ class CollectionsListAdapter(
             )
             holder.textView.compoundDrawablePadding =
                 resources.getDimensionPixelSize(R.dimen.tab_tray_new_collection_drawable_padding)
+            val drawable = AppCompatResources.getDrawable(
+                holder.textView.context,
+                iconsR.drawable.mozac_ic_plus_24,
+            )?.mutate()
+            drawable?.let {
+                DrawableCompat.setTint(
+                    it,
+                    MaterialColors.getColor(
+                        holder.textView.context,
+                        materialR.attr.colorOnSurface,
+                        "Could not resolve themed color",
+                    ),
+                )
+            }
             holder.textView.putCompoundDrawablesRelativeWithIntrinsicBounds(
-                start = AppCompatResources.getDrawable(
-                    holder.textView.context,
-                    iconsR.drawable.mozac_ic_plus_24,
-                ),
+                start = drawable,
             )
         } else {
             holder.textView.isChecked = checkedPosition == position

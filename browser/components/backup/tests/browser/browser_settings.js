@@ -8,6 +8,8 @@ const { MockRegistrar } = ChromeUtils.importESModule(
 );
 
 const SCHEDULED_BACKUPS_ENABLED_PREF = "browser.backup.scheduled.enabled";
+const BACKUP_ARCHIVE_ENABLED_PREF = "browser.backup.archive.enabled";
+const BACKUP_RESTORE_ENABLED_PREF = "browser.backup.restore.enabled";
 
 add_setup(async () => {
   MockFilePicker.init(window.browsingContext);
@@ -17,39 +19,63 @@ add_setup(async () => {
 });
 
 /**
- * Tests that the section for controlling backup in about:preferences is
+ * Tests that the section for controlling backup in about:preferences#sync is
  * visible, but can also be hidden via a pref.
  */
 add_task(async function test_preferences_visibility() {
-  await BrowserTestUtils.withNewTab("about:preferences", async browser => {
-    let backupSection =
-      browser.contentDocument.querySelector("#dataBackupGroup");
-    Assert.ok(backupSection, "Found backup preferences section");
+  await BrowserTestUtils.withNewTab("about:preferences#sync", async browser => {
+    const sandbox = sinon.createSandbox();
+    let settings = browser.contentDocument.querySelector("backup-settings");
 
     // Our mochitest-browser tests are configured to have the section visible
     // by default.
     Assert.ok(
-      BrowserTestUtils.isVisible(backupSection),
+      BrowserTestUtils.isVisible(settings.restoreSectionEl) &&
+        BrowserTestUtils.isVisible(settings.archiveSectionEl),
       "Backup section is visible"
     );
-  });
 
-  await SpecialPowers.pushPrefEnv({
-    set: [["browser.backup.preferences.ui.enabled", false]],
-  });
-
-  await BrowserTestUtils.withNewTab("about:preferences", async browser => {
-    let backupSection =
-      browser.contentDocument.querySelector("#dataBackupGroup");
-    Assert.ok(backupSection, "Found backup preferences section");
+    await SpecialPowers.pushPrefEnv({
+      set: [["privacy.sanitize.sanitizeOnShutdown", true]],
+    });
 
     Assert.ok(
-      BrowserTestUtils.isHidden(backupSection),
-      "Backup section is now hidden"
+      !settings.restoreSectionEl && !settings.archiveSectionEl,
+      "Backup section is not available when sanitizeOnShutdown is enabled"
     );
-  });
 
-  await SpecialPowers.popPrefEnv();
+    await SpecialPowers.popPrefEnv();
+
+    Assert.ok(
+      BrowserTestUtils.isVisible(settings.restoreSectionEl) &&
+        BrowserTestUtils.isVisible(settings.archiveSectionEl),
+      "Backup section is visible now"
+    );
+
+    await SpecialPowers.pushPrefEnv({
+      set: [[BACKUP_ARCHIVE_ENABLED_PREF, false]],
+    });
+
+    Assert.ok(
+      BrowserTestUtils.isVisible(settings.restoreSectionEl) &&
+        !settings.archiveSectionEl,
+      "Backup section is still visible since restore is enabled"
+    );
+
+    await SpecialPowers.pushPrefEnv({
+      set: [[BACKUP_RESTORE_ENABLED_PREF, false]],
+    });
+
+    Assert.ok(
+      !settings.restoreSectionEl && !settings.archiveSectionEl,
+      "Backup section is not available anymore after both archive and restore are disabled"
+    );
+
+    await SpecialPowers.popPrefEnv();
+    await SpecialPowers.popPrefEnv();
+
+    sandbox.restore();
+  });
 });
 
 /**
@@ -60,11 +86,23 @@ add_task(async function test_disable_backup_encryption_confirm() {
   Services.telemetry.clearEvents();
   Services.fog.testResetFOG();
 
-  await BrowserTestUtils.withNewTab("about:preferences", async browser => {
+  await BrowserTestUtils.withNewTab("about:preferences#sync", async browser => {
     let sandbox = sinon.createSandbox();
     let disableEncryptionStub = sandbox
       .stub(BackupService.prototype, "disableEncryption")
       .resolves(true);
+    let createBackupStub = sandbox
+      .stub(BackupService.prototype, "createBackup")
+      .resolves(true);
+
+    Assert.ok(
+      Services.prefs.getBoolPref(BACKUP_RESTORE_ENABLED_PREF),
+      "Restore pref is back to true"
+    );
+    Assert.ok(
+      Services.prefs.getBoolPref(BACKUP_ARCHIVE_ENABLED_PREF),
+      "Archive pref is back to true"
+    );
 
     await SpecialPowers.pushPrefEnv({
       set: [[SCHEDULED_BACKUPS_ENABLED_PREF, true]],
@@ -119,6 +157,16 @@ add_task(async function test_disable_backup_encryption_confirm() {
       "BackupService was called to disable encryption"
     );
 
+    Assert.ok(
+      createBackupStub.calledOnce,
+      "BackupService was called to create a new backup"
+    );
+    Assert.equal(
+      createBackupStub.firstCall.args[0].reason,
+      "encryption",
+      "Backup reason is set"
+    );
+
     let legacyEvents = TelemetryTestUtils.getEvents(
       {
         category: "browser.backup",
@@ -144,7 +192,7 @@ add_task(async function test_disable_backup_encryption_confirm() {
  * Tests that the a backup file can be restored from the settings page.
  */
 add_task(async function test_restore_from_backup() {
-  await BrowserTestUtils.withNewTab("about:preferences", async browser => {
+  await BrowserTestUtils.withNewTab("about:preferences#sync", async browser => {
     let sandbox = sinon.createSandbox();
     let recoverFromBackupArchiveStub = sandbox
       .stub(BackupService.prototype, "recoverFromBackupArchive")
@@ -187,17 +235,40 @@ add_task(async function test_restore_from_backup() {
 
     let infoPromise = BrowserTestUtils.waitForEvent(
       window,
-      "getBackupFileInfo"
+      "BackupUI:GetBackupFileInfo"
     );
 
     restoreFromBackup.chooseButtonEl.click();
+
     await filePickerShownPromise;
+    restoreFromBackup.backupServiceState = {
+      ...restoreFromBackup.backupServiceState,
+      backupFileToRestore: mockBackupFilePath,
+    };
+    await restoreFromBackup.updateComplete;
+
+    // Dispatch the event that would normally be sent by BackupUIChild
+    // after a file is selected
+    restoreFromBackup.dispatchEvent(
+      new CustomEvent("BackupUI:SelectNewFilepickerPath", {
+        bubbles: true,
+        composed: true,
+        detail: {
+          path: mockBackupFilePath,
+          filename: mockBackupFile.leafName,
+          iconURL: "",
+        },
+      })
+    );
 
     await infoPromise;
     // Set mock file info
-    restoreFromBackup.backupFileInfo = {
-      date: new Date(),
-      isEncrypted: true,
+    restoreFromBackup.backupServiceState = {
+      ...restoreFromBackup.backupServiceState,
+      backupFileInfo: {
+        date: new Date(),
+        isEncrypted: true,
+      },
     };
     await restoreFromBackup.updateComplete;
 
@@ -206,15 +277,29 @@ add_task(async function test_restore_from_backup() {
 
     let restorePromise = BrowserTestUtils.waitForEvent(
       window,
-      "restoreFromBackupConfirm"
+      "BackupUI:RestoreFromBackupFile"
     );
 
     Assert.ok(
       restoreFromBackup.confirmButtonEl,
       "Confirm button should be found"
     );
+    Assert.ok(
+      !restoreFromBackup.confirmButtonEl.disabled,
+      "Confirm button should not be disabled"
+    );
 
     await restoreFromBackup.updateComplete;
+
+    let quitObservedPromise = TestUtils.topicObserved(
+      "quit-application-requested",
+      subject => {
+        let cancelQuit = subject.QueryInterface(Ci.nsISupportsPRBool);
+        cancelQuit.data = true;
+        return true;
+      }
+    );
+
     restoreFromBackup.confirmButtonEl.click();
 
     await restorePromise.then(e => {
@@ -228,6 +313,8 @@ add_task(async function test_restore_from_backup() {
         "Event should contain the file and password"
       );
     });
+
+    await quitObservedPromise;
 
     Assert.ok(
       recoverFromBackupArchiveStub.calledOnce,
@@ -255,9 +342,9 @@ add_task(async function test_last_backup_info_and_location() {
     set: [[SCHEDULED_BACKUPS_ENABLED_PREF, true]],
   });
 
-  await BrowserTestUtils.withNewTab("about:preferences", async browser => {
+  await BrowserTestUtils.withNewTab("about:preferences#sync", async browser => {
     let sandbox = sinon.createSandbox();
-    let bs = BackupService.get();
+    let bs = getAndMaybeInitBackupService();
 
     await SpecialPowers.pushPrefEnv({
       set: [["browser.backup.location", TEST_PROFILE_PATH]],
@@ -352,5 +439,51 @@ add_task(async function test_last_backup_info_and_location() {
     await SpecialPowers.popPrefEnv();
     sandbox.restore();
   });
+  await SpecialPowers.popPrefEnv();
+});
+
+add_task(async function test_dialogs_close_on_cancel_with_restore_disabled() {
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      [BACKUP_ARCHIVE_ENABLED_PREF, true],
+      [BACKUP_RESTORE_ENABLED_PREF, false],
+    ],
+  });
+
+  await BrowserTestUtils.withNewTab("about:preferences#sync", async browser => {
+    let settings = browser.contentDocument.querySelector("backup-settings");
+    await settings.updateComplete;
+
+    for (let dialog of settings.dialogs.filter(element => !!element)) {
+      dialog.showModal();
+      is(dialog.open, true, `${dialog.id} was opened.`);
+      settings.dispatchEvent(new CustomEvent("dialogCancel"));
+      is(dialog.open, false, `${dialog.id} was closed by dialogCancel.`);
+    }
+  });
+
+  await SpecialPowers.popPrefEnv();
+});
+
+add_task(async function test_dialogs_close_on_cancel_with_archive_disabled() {
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      [BACKUP_ARCHIVE_ENABLED_PREF, false],
+      [BACKUP_RESTORE_ENABLED_PREF, true],
+    ],
+  });
+
+  await BrowserTestUtils.withNewTab("about:preferences#sync", async browser => {
+    let settings = browser.contentDocument.querySelector("backup-settings");
+    await settings.updateComplete;
+
+    for (let dialog of settings.dialogs.filter(element => !!element)) {
+      dialog.showModal();
+      is(dialog.open, true, `${dialog.id} was opened.`);
+      settings.dispatchEvent(new CustomEvent("dialogCancel"));
+      is(dialog.open, false, `${dialog.id} was closed by dialogCancel.`);
+    }
+  });
+
   await SpecialPowers.popPrefEnv();
 });

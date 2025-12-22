@@ -97,7 +97,9 @@ impl Boolean for LabeledBooleanMetric {
 }
 
 #[inherent]
-impl glean::TestGetValue<bool> for LabeledBooleanMetric {
+impl glean::TestGetValue for LabeledBooleanMetric {
+    type Output = bool;
+
     pub fn test_get_value(&self, ping_name: Option<String>) -> Option<bool> {
         match self {
             LabeledBooleanMetric::Parent(p) => p.test_get_value(ping_name),
@@ -134,7 +136,10 @@ mod test {
         let metric = &metrics::test_only_ipc::an_unordered_labeled_boolean;
         metric.get("a_label").set(true);
 
-        assert!(metric.get("a_label").test_get_value(Some("test-ping".to_string())).unwrap());
+        assert!(metric
+            .get("a_label")
+            .test_get_value(Some("test-ping".to_string()))
+            .unwrap());
     }
 
     #[test]

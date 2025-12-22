@@ -2,8 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/* eslint-env mozilla/remote-page */
-
 import {
   parse,
   pemToDER,
@@ -30,6 +28,10 @@ export let gErrorCode = searchParams.get("e");
 export let gIsCertError = gErrorCode == "nssBadCert";
 export let gHasSts = gIsCertError && getCSSClass() === "badStsCert";
 const HOST_NAME = getHostName();
+
+export function isCaptive() {
+  return searchParams.get("captive") == "true";
+}
 
 export function getCSSClass() {
   return searchParams.get("s");

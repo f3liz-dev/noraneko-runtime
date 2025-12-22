@@ -44,19 +44,68 @@ static inline ARMRegister R(Register r, Width w) {
   return ARMRegister(r, unsigned(w));
 }
 
-void MacroAssemblerCompat::boxValue(JSValueType type, Register src,
-                                    Register dest) {
-  MOZ_ASSERT(src != dest);
+#ifdef DEBUG
+static constexpr int32_t PayloadSize(JSValueType type) {
+  switch (type) {
+    case JSVAL_TYPE_UNDEFINED:
+    case JSVAL_TYPE_NULL:
+      return 0;
+    case JSVAL_TYPE_BOOLEAN:
+      return 1;
+    case JSVAL_TYPE_INT32:
+    case JSVAL_TYPE_MAGIC:
+      return 32;
+    case JSVAL_TYPE_STRING:
+    case JSVAL_TYPE_SYMBOL:
+    case JSVAL_TYPE_PRIVATE_GCTHING:
+    case JSVAL_TYPE_BIGINT:
+    case JSVAL_TYPE_OBJECT:
+      return JSVAL_TAG_SHIFT;
+    case JSVAL_TYPE_DOUBLE:
+    case JSVAL_TYPE_UNKNOWN:
+      break;
+  }
+  MOZ_CRASH("bad value type");
+}
+#endif
+
+static void AssertValidPayload(MacroAssemblerCompat& masm, JSValueType type,
+                               Register payload, Register scratch) {
+#ifdef DEBUG
+  // All bits above the payload must be zeroed.
+  Label upperBitsZeroed;
+  masm.Lsr(ARMRegister(scratch, 64), ARMRegister(payload, 64),
+           PayloadSize(type));
+  masm.Cbz(ARMRegister(scratch, 64), &upperBitsZeroed);
+  masm.breakpoint();
+  masm.bind(&upperBitsZeroed);
+#endif
+}
+
+void MacroAssemblerCompat::tagValue(JSValueType type, Register payload,
+                                    ValueOperand dest) {
+  MOZ_ASSERT(type != JSVAL_TYPE_UNDEFINED && type != JSVAL_TYPE_NULL);
 
 #ifdef DEBUG
-  if (type == JSVAL_TYPE_INT32 || type == JSVAL_TYPE_BOOLEAN) {
-    Label upper32BitsZeroed;
-    movePtr(ImmWord(UINT32_MAX), dest);
-    asMasm().branchPtr(Assembler::BelowOrEqual, src, dest, &upper32BitsZeroed);
-    breakpoint();
-    bind(&upper32BitsZeroed);
+  {
+    vixl::UseScratchRegisterScope temps(this);
+    Register scratch = temps.AcquireX().asUnsized();
+
+    AssertValidPayload(*this, type, payload, scratch);
   }
 #endif
+
+  Orr(ARMRegister(dest.valueReg(), 64), ARMRegister(payload, 64),
+      Operand(ImmShiftedTag(type).value));
+}
+
+void MacroAssemblerCompat::boxValue(JSValueType type, Register src,
+                                    Register dest) {
+  MOZ_ASSERT(type != JSVAL_TYPE_UNDEFINED && type != JSVAL_TYPE_NULL);
+  MOZ_ASSERT(src != dest);
+
+  AssertValidPayload(*this, type, src, dest);
+
   Orr(ARMRegister(dest, 64), ARMRegister(src, 64),
       Operand(ImmShiftedTag(type).value));
 }
@@ -66,19 +115,63 @@ void MacroAssemblerCompat::boxValue(Register type, Register src,
   MOZ_ASSERT(src != dest);
 
 #ifdef DEBUG
-  Label check, done;
-  asMasm().branch32(Assembler::Equal, type, Imm32(JSVAL_TYPE_INT32), &check);
-  asMasm().branch32(Assembler::Equal, type, Imm32(JSVAL_TYPE_BOOLEAN), &check);
-  asMasm().branch32(Assembler::Equal, type, Imm32(JSVAL_TYPE_NULL), &check);
-  asMasm().branch32(Assembler::NotEqual, type, Imm32(JSVAL_TYPE_UNDEFINED),
-                    &done);
   {
-    bind(&check);
-    asMasm().branchPtr(Assembler::BelowOrEqual, src, ImmWord(UINT32_MAX),
-                       &done);
+    vixl::UseScratchRegisterScope temps(this);
+    Register scratch = temps.AcquireX().asUnsized();
+
+    Label check, isNullOrUndefined, isBoolean, isInt32OrMagic, isPointerSized;
+
+    asMasm().branch32(Assembler::Equal, type, Imm32(JSVAL_TYPE_NULL),
+                      &isNullOrUndefined);
+    asMasm().branch32(Assembler::Equal, type, Imm32(JSVAL_TYPE_UNDEFINED),
+                      &isNullOrUndefined);
+    asMasm().branch32(Assembler::Equal, type, Imm32(JSVAL_TYPE_BOOLEAN),
+                      &isBoolean);
+    asMasm().branch32(Assembler::Equal, type, Imm32(JSVAL_TYPE_INT32),
+                      &isInt32OrMagic);
+    asMasm().branch32(Assembler::Equal, type, Imm32(JSVAL_TYPE_MAGIC),
+                      &isInt32OrMagic);
+    asMasm().branch32(Assembler::Equal, type, Imm32(JSVAL_TYPE_STRING),
+                      &isPointerSized);
+    asMasm().branch32(Assembler::Equal, type, Imm32(JSVAL_TYPE_SYMBOL),
+                      &isPointerSized);
+    asMasm().branch32(Assembler::Equal, type, Imm32(JSVAL_TYPE_PRIVATE_GCTHING),
+                      &isPointerSized);
+    asMasm().branch32(Assembler::Equal, type, Imm32(JSVAL_TYPE_BIGINT),
+                      &isPointerSized);
+    asMasm().branch32(Assembler::Equal, type, Imm32(JSVAL_TYPE_OBJECT),
+                      &isPointerSized);
     breakpoint();
+    {
+      bind(&isNullOrUndefined);
+      move32(Imm32(PayloadSize(JSVAL_TYPE_NULL)), scratch);
+      jump(&check);
+    }
+    {
+      bind(&isBoolean);
+      move32(Imm32(PayloadSize(JSVAL_TYPE_BOOLEAN)), scratch);
+      jump(&check);
+    }
+    {
+      bind(&isInt32OrMagic);
+      move32(Imm32(PayloadSize(JSVAL_TYPE_INT32)), scratch);
+      jump(&check);
+    }
+    {
+      bind(&isPointerSized);
+      move32(Imm32(PayloadSize(JSVAL_TYPE_STRING)), scratch);
+      // fall-through
+    }
+    bind(&check);
+
+    // All bits above the payload must be zeroed.
+    Label upperBitsZeroed;
+    Lsr(ARMRegister(scratch, 64), ARMRegister(src, 64),
+        ARMRegister(scratch, 64));
+    Cbz(ARMRegister(scratch, 64), &upperBitsZeroed);
+    breakpoint();
+    bind(&upperBitsZeroed);
   }
-  bind(&done);
 #endif
 
   Orr(ARMRegister(dest, 64), ARMRegister(type, 64),
@@ -1528,10 +1621,9 @@ void MacroAssembler::call(ImmPtr imm) {
   // eg testcase: asm.js/testTimeout5.js
   syncStackPtr();
   vixl::UseScratchRegisterScope temps(this);
-  MOZ_ASSERT(temps.IsAvailable(ScratchReg64));  // ip0
-  temps.Exclude(ScratchReg64);
-  movePtr(imm, ScratchReg64.asUnsized());
-  Blr(ScratchReg64);
+  const Register scratch = temps.AcquireX().asUnsized();
+  movePtr(imm, scratch);
+  Blr(ARMRegister(scratch, 64));
 }
 
 void MacroAssembler::call(ImmWord imm) { call(ImmPtr((void*)imm.value)); }
@@ -1547,7 +1639,7 @@ CodeOffset MacroAssembler::call(wasm::SymbolicAddress imm) {
   return CodeOffset(currentOffset());
 }
 
-void MacroAssembler::call(const Address& addr) {
+CodeOffset MacroAssembler::call(const Address& addr) {
   vixl::UseScratchRegisterScope temps(this);
   const Register scratch = temps.AcquireX().asUnsized();
   // This sync has been observed (and is expected) to be necessary.
@@ -1555,6 +1647,7 @@ void MacroAssembler::call(const Address& addr) {
   syncStackPtr();
   loadPtr(addr, scratch);
   Blr(ARMRegister(scratch, 64));
+  return CodeOffset(currentOffset());
 }
 
 void MacroAssembler::call(JitCode* c) {
@@ -2038,7 +2131,7 @@ void MacroAssembler::wasmBoundsCheck64(Condition cond, Register64 index,
 
 void MacroAssembler::wasmBoundsCheck64(Condition cond, Register64 index,
                                        Address boundsCheckLimit, Label* label) {
-  branchPtr(InvertCondition(cond), boundsCheckLimit, index.reg, label);
+  branchPtr(SwapCmpOperandsCondition(cond), boundsCheckLimit, index.reg, label);
   if (JitOptions.spectreIndexMasking) {
     csel(ARMRegister(index.reg, 64), vixl::xzr, ARMRegister(index.reg, 64),
          cond);
@@ -3182,48 +3275,47 @@ void MacroAssembler::atomicEffectOpJS(Scalar::Type arrayType,
 
 void MacroAssembler::atomicPause() { Isb(); }
 
-void MacroAssembler::flexibleQuotient32(Register rhs, Register srcDest,
-                                        bool isUnsigned,
+void MacroAssembler::flexibleQuotient32(Register lhs, Register rhs,
+                                        Register dest, bool isUnsigned,
                                         const LiveRegisterSet&) {
-  quotient32(rhs, srcDest, isUnsigned);
+  quotient32(lhs, rhs, dest, isUnsigned);
 }
 
 void MacroAssembler::flexibleQuotientPtr(
-    Register rhs, Register srcDest, bool isUnsigned,
+    Register lhs, Register rhs, Register dest, bool isUnsigned,
     const LiveRegisterSet& volatileLiveRegs) {
-  quotient64(rhs, srcDest, isUnsigned);
+  quotient64(lhs, rhs, dest, isUnsigned);
 }
 
-void MacroAssembler::flexibleRemainder32(Register rhs, Register srcDest,
-                                         bool isUnsigned,
+void MacroAssembler::flexibleRemainder32(Register lhs, Register rhs,
+                                         Register dest, bool isUnsigned,
                                          const LiveRegisterSet&) {
-  remainder32(rhs, srcDest, isUnsigned);
+  remainder32(lhs, rhs, dest, isUnsigned);
 }
 
 void MacroAssembler::flexibleRemainderPtr(
-    Register rhs, Register srcDest, bool isUnsigned,
+    Register lhs, Register rhs, Register dest, bool isUnsigned,
     const LiveRegisterSet& volatileLiveRegs) {
-  remainder64(rhs, srcDest, isUnsigned);
+  remainder64(lhs, rhs, dest, isUnsigned);
 }
 
-void MacroAssembler::flexibleDivMod32(Register rhs, Register srcDest,
-                                      Register remOutput, bool isUnsigned,
-                                      const LiveRegisterSet&) {
-  vixl::UseScratchRegisterScope temps(this);
-  ARMRegister src = temps.AcquireW();
-
-  // Preserve src for remainder computation
-  Mov(src, ARMRegister(srcDest, 32));
+void MacroAssembler::flexibleDivMod32(Register lhs, Register rhs,
+                                      Register divOutput, Register remOutput,
+                                      bool isUnsigned, const LiveRegisterSet&) {
+  MOZ_ASSERT(lhs != divOutput && lhs != remOutput, "lhs is preserved");
+  MOZ_ASSERT(rhs != divOutput && rhs != remOutput, "rhs is preserved");
 
   if (isUnsigned) {
-    Udiv(ARMRegister(srcDest, 32), src, ARMRegister(rhs, 32));
+    Udiv(ARMRegister(divOutput, 32), ARMRegister(lhs, 32),
+         ARMRegister(rhs, 32));
   } else {
-    Sdiv(ARMRegister(srcDest, 32), src, ARMRegister(rhs, 32));
+    Sdiv(ARMRegister(divOutput, 32), ARMRegister(lhs, 32),
+         ARMRegister(rhs, 32));
   }
 
-  // Compute the remainder: remOutput = src - (srcDest * rhs).
-  Msub(/* result= */ ARMRegister(remOutput, 32), ARMRegister(srcDest, 32),
-       ARMRegister(rhs, 32), src);
+  // Compute the remainder: remOutput = lhs - (divOutput * rhs).
+  Msub(/* result= */ ARMRegister(remOutput, 32), ARMRegister(divOutput, 32),
+       ARMRegister(rhs, 32), ARMRegister(lhs, 32));
 }
 
 CodeOffset MacroAssembler::moveNearAddressWithPatch(Register dest) {
@@ -3281,8 +3373,8 @@ void MacroAssembler::floorFloat32ToInt32(FloatRegister src, Register dest,
   B(&fin);
 
   bind(&handleZero);
-  // Move the top word of the float into the output reg, if it is non-zero,
-  // then the original value was -0.0.
+  // Move the float into the output reg, if it is non-zero, then the original
+  // value was -0.0.
   Fmov(o32, iFlt);
   Cbnz(o32, fail);
   bind(&fin);
@@ -3292,7 +3384,6 @@ void MacroAssembler::floorDoubleToInt32(FloatRegister src, Register dest,
                                         Label* fail) {
   ARMFPRegister iDbl(src, 64);
   ARMRegister o64(dest, 64);
-  ARMRegister o32(dest, 32);
 
   Label handleZero;
   Label fin;
@@ -3315,8 +3406,8 @@ void MacroAssembler::floorDoubleToInt32(FloatRegister src, Register dest,
   B(&fin);
 
   bind(&handleZero);
-  // Move the top word of the double into the output reg, if it is non-zero,
-  // then the original value was -0.0.
+  // Move the double into the output reg, if it is non-zero, then the original
+  // value was -0.0.
   Fmov(o64, iDbl);
   Cbnz(o64, fail);
   bind(&fin);
@@ -3347,8 +3438,8 @@ void MacroAssembler::ceilFloat32ToInt32(FloatRegister src, Register dest,
 
   // Bail if the input is in (-1, -0] or NaN.
   bind(&handleZero);
-  // Move the top word of the float into the output reg, if it is non-zero,
-  // then the original value wasn't +0.0.
+  // Move the float into the output reg, if it is non-zero, then the original
+  // value wasn't +0.0.
   Fmov(o32, iFlt);
   Cbnz(o32, fail);
   bind(&fin);
@@ -3358,7 +3449,6 @@ void MacroAssembler::ceilDoubleToInt32(FloatRegister src, Register dest,
                                        Label* fail) {
   ARMFPRegister iDbl(src, 64);
   ARMRegister o64(dest, 64);
-  ARMRegister o32(dest, 32);
 
   Label handleZero;
   Label fin;
@@ -3379,8 +3469,8 @@ void MacroAssembler::ceilDoubleToInt32(FloatRegister src, Register dest,
 
   // Bail if the input is in (-1, -0] or NaN.
   bind(&handleZero);
-  // Move the top word of the double into the output reg, if it is non-zero,
-  // then the original value wasn't +0.0.
+  // Move the double into the output reg, if it is non-zero, then the original
+  // value wasn't +0.0.
   Fmov(o64, iDbl);
   Cbnz(o64, fail);
   bind(&fin);
@@ -3710,7 +3800,10 @@ void MacroAssembler::shiftIndex32AndAdd(Register indexTemp32, int shift,
       Operand(ARMRegister(indexTemp32, 64), vixl::LSL, shift));
 }
 
-void MacroAssembler::wasmMarkCallAsSlow() { Mov(x28, x28); }
+void MacroAssembler::wasmMarkCallAsSlow() {
+  // Use mov() instead of Mov() to ensure this no-op move isn't elided.
+  vixl::MacroAssembler::mov(x28, x28);
+}
 
 const int32_t SlowCallMarker = 0xaa1c03fc;
 

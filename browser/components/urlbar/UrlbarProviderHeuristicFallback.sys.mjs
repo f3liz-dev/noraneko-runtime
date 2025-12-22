@@ -11,15 +11,18 @@
 import {
   UrlbarProvider,
   UrlbarUtils,
-} from "resource:///modules/UrlbarUtils.sys.mjs";
+} from "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs";
 
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
-  UrlbarPrefs: "resource:///modules/UrlbarPrefs.sys.mjs",
-  UrlbarResult: "resource:///modules/UrlbarResult.sys.mjs",
-  UrlbarSearchUtils: "resource:///modules/UrlbarSearchUtils.sys.mjs",
-  UrlbarTokenizer: "resource:///modules/UrlbarTokenizer.sys.mjs",
+  UrlbarPrefs: "moz-src:///browser/components/urlbar/UrlbarPrefs.sys.mjs",
+  UrlbarResult: "moz-src:///browser/components/urlbar/UrlbarResult.sys.mjs",
+  UrlbarSearchUtils:
+    "moz-src:///browser/components/urlbar/UrlbarSearchUtils.sys.mjs",
+  UrlbarTokenizer:
+    "moz-src:///browser/components/urlbar/UrlbarTokenizer.sys.mjs",
+  UrlUtils: "resource://gre/modules/UrlUtils.sys.mjs",
 });
 
 /**
@@ -58,10 +61,9 @@ export class UrlbarProviderHeuristicFallback extends UrlbarProvider {
   /**
    * Starts querying.
    *
-   * @param {object} queryContext The query context object
-   * @param {Function} addCallback Callback invoked by the provider to add a new
-   *        result.
-   * @returns {Promise} resolved when the query stops.
+   * @param {UrlbarQueryContext} queryContext
+   * @param {(provider: UrlbarProvider, result: UrlbarResult) => void} addCallback
+   *   Callback invoked by the provider to add a new result.
    */
   async startQuery(queryContext, addCallback) {
     let instance = this.queryInstance;
@@ -76,13 +78,13 @@ export class UrlbarProviderHeuristicFallback extends UrlbarProvider {
       if (!URL.canParse(str)) {
         if (
           lazy.UrlbarPrefs.get("keyword.enabled") &&
-          (lazy.UrlbarTokenizer.looksLikeOrigin(str, {
+          (lazy.UrlUtils.looksLikeOrigin(str, {
             noIp: true,
             noPort: true,
           }) ||
-            lazy.UrlbarTokenizer.REGEXP_COMMON_EMAIL.test(str))
+            lazy.UrlUtils.REGEXP_COMMON_EMAIL.test(str))
         ) {
-          let searchResult = await this._engineSearchResult(queryContext);
+          let searchResult = await this._engineSearchResult({ queryContext });
           if (instance != this.queryInstance) {
             return;
           }
@@ -106,12 +108,14 @@ export class UrlbarProviderHeuristicFallback extends UrlbarProvider {
       queryContext.restrictSource == UrlbarUtils.RESULT_SOURCE.SEARCH ||
       queryContext.searchMode
     ) {
-      result = await this._engineSearchResult(queryContext);
+      result = await this._engineSearchResult({
+        queryContext,
+        heuristic: true,
+      });
       if (instance != this.queryInstance) {
         return;
       }
       if (result) {
-        result.heuristic = true;
         addCallback(this, result);
       }
     }
@@ -151,16 +155,15 @@ export class UrlbarProviderHeuristicFallback extends UrlbarProvider {
         queryContext.fixupError == Cr.NS_ERROR_MALFORMED_URI &&
         !lazy.UrlbarPrefs.get("keyword.enabled")
       ) {
-        let result = new lazy.UrlbarResult(
-          UrlbarUtils.RESULT_TYPE.URL,
-          UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+        return new lazy.UrlbarResult({
+          type: UrlbarUtils.RESULT_TYPE.URL,
+          source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+          heuristic: true,
           ...lazy.UrlbarResult.payloadAndSimpleHighlights(queryContext.tokens, {
             fallbackTitle: [searchUrl, UrlbarUtils.HIGHLIGHT.NONE],
             url: [searchUrl, UrlbarUtils.HIGHLIGHT.NONE],
-          })
-        );
-        result.heuristic = true;
-        return result;
+          }),
+        });
       }
 
       return null;
@@ -214,21 +217,20 @@ export class UrlbarProviderHeuristicFallback extends UrlbarProvider {
       iconUri = `page-icon:${prePath}/`;
     }
 
-    let result = new lazy.UrlbarResult(
-      UrlbarUtils.RESULT_TYPE.URL,
-      UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+    return new lazy.UrlbarResult({
+      type: UrlbarUtils.RESULT_TYPE.URL,
+      source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+      heuristic: true,
       ...lazy.UrlbarResult.payloadAndSimpleHighlights(queryContext.tokens, {
         fallbackTitle: [displayURL, UrlbarUtils.HIGHLIGHT.NONE],
         url: [escapedURL, UrlbarUtils.HIGHLIGHT.NONE],
         icon: iconUri,
-      })
-    );
-    result.heuristic = true;
-    return result;
+      }),
+    });
   }
 
   async _searchModeKeywordResult(queryContext) {
-    if (!queryContext.tokens.length) {
+    if (!queryContext.tokens.length || queryContext.sapName != "urlbar") {
       return null;
     }
 
@@ -259,28 +261,34 @@ export class UrlbarProviderHeuristicFallback extends UrlbarProvider {
       queryContext.searchString,
       firstToken
     );
-    if (!lazy.UrlbarTokenizer.REGEXP_SPACES_START.test(query)) {
+    if (!lazy.UrlUtils.REGEXP_SPACES_START.test(query)) {
       return null;
     }
 
-    let result;
     if (queryContext.restrictSource == UrlbarUtils.RESULT_SOURCE.SEARCH) {
-      result = await this._engineSearchResult(queryContext, firstToken);
-    } else {
-      result = new lazy.UrlbarResult(
-        UrlbarUtils.RESULT_TYPE.SEARCH,
-        UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
-        ...lazy.UrlbarResult.payloadAndSimpleHighlights(queryContext.tokens, {
-          query: [query.trimStart(), UrlbarUtils.HIGHLIGHT.NONE],
-          keyword: [firstToken, UrlbarUtils.HIGHLIGHT.NONE],
-        })
-      );
+      return await this._engineSearchResult({
+        queryContext,
+        keyword: firstToken,
+        heuristic: true,
+      });
     }
-    result.heuristic = true;
-    return result;
+
+    return new lazy.UrlbarResult({
+      type: UrlbarUtils.RESULT_TYPE.SEARCH,
+      source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+      heuristic: true,
+      ...lazy.UrlbarResult.payloadAndSimpleHighlights(queryContext.tokens, {
+        query: [query.trimStart(), UrlbarUtils.HIGHLIGHT.NONE],
+        keyword: [firstToken, UrlbarUtils.HIGHLIGHT.NONE],
+      }),
+    });
   }
 
-  async _engineSearchResult(queryContext, keyword = null) {
+  async _engineSearchResult({
+    queryContext,
+    keyword = null,
+    heuristic = false,
+  }) {
     let engine;
     if (queryContext.searchMode?.engineName) {
       engine = lazy.UrlbarSearchUtils.getEngineByName(
@@ -309,15 +317,16 @@ export class UrlbarProviderHeuristicFallback extends UrlbarProvider {
       ).trim();
     }
 
-    return new lazy.UrlbarResult(
-      UrlbarUtils.RESULT_TYPE.SEARCH,
-      UrlbarUtils.RESULT_SOURCE.SEARCH,
+    return new lazy.UrlbarResult({
+      type: UrlbarUtils.RESULT_TYPE.SEARCH,
+      source: UrlbarUtils.RESULT_SOURCE.SEARCH,
+      heuristic,
       ...lazy.UrlbarResult.payloadAndSimpleHighlights(queryContext.tokens, {
         engine: [engine.name, UrlbarUtils.HIGHLIGHT.TYPED],
         icon: UrlbarUtils.ICON.SEARCH_GLASS,
         query: [query, UrlbarUtils.HIGHLIGHT.NONE],
         keyword: keyword ? [keyword, UrlbarUtils.HIGHLIGHT.NONE] : undefined,
-      })
-    );
+      }),
+    });
   }
 }

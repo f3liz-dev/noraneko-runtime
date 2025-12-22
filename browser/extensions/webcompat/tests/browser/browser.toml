@@ -11,6 +11,7 @@ support-files = [
   "smartblock_embed_test.html",
   "embed_test.js",
 ]
+prefs = ["extensions.webcompat.disabled_interventions.test6=true","extensions.webcompat.disabled_interventions.test7=false"]
 
 ["browser_aboutcompat.js"]
 skip-if = ["debug"] # disabled until bug 1961939 is fixed.
@@ -24,6 +25,8 @@ skip-if = ["debug"] # disabled until bug 1961939 is fixed.
 ["browser_interventions.js"]
 
 ["browser_pref_check.js"]
+
+["browser_remote_settings_updates.js"]
 
 ["browser_shims.js"]
 https_first_disabled = true

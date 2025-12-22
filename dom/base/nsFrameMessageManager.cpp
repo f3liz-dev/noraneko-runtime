@@ -37,8 +37,6 @@
 #include "mozilla/Assertions.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/ErrorResult.h"
-#include "mozilla/MacroForEach.h"
-#include "mozilla/NotNull.h"
 #include "mozilla/OwningNonNull.h"
 #include "mozilla/ProfilerLabels.h"
 #include "mozilla/RefPtr.h"
@@ -46,9 +44,7 @@
 #include "mozilla/Services.h"
 #include "mozilla/StaticPtr.h"
 #include "mozilla/TimeStamp.h"
-#include "mozilla/TypedEnumBits.h"
 #include "mozilla/UniquePtr.h"
-#include "mozilla/Unused.h"
 #include "mozilla/dom/AutoEntryScript.h"
 #include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/dom/CallbackObject.h"
@@ -149,7 +145,7 @@ struct FrameMessageMarker {
                              MS::PayloadFlags::Searchable);
     schema.AddKeyLabelFormat("sync", "Sync", MS::Format::String);
     schema.SetTooltipLabel("FrameMessage - {marker.name}");
-    schema.SetTableLabel("{marker.name} - {marker.data.name}");
+    schema.SetTableLabel("{marker.data.name}");
     return schema;
   }
 };
@@ -1216,7 +1212,7 @@ void nsMessageManagerScriptExecutor::LoadScriptInternal(
         if (!envChain.append(aMessageManager)) {
           return;
         }
-        Unused << JS_ExecuteScript(cx, envChain, script, &rval);
+        (void)JS_ExecuteScript(cx, envChain, script, &rval);
       }
     }
   }

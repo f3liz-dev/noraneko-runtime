@@ -14,6 +14,7 @@ transforms:
     - gecko_taskgraph.transforms.task:transforms
 
 task-defaults:
+    run-on-repo-type: [hg]
     treeherder:
         kind: other
         tier: 2
@@ -48,7 +49,7 @@ tasks:
             - full
         fetches:
             build:
-                - artifact: target.condprof.tests.tar.gz
+                - artifact: target.condprof.tests.tar.zst
                 - artifact: target.zip
             toolchain:
                 - win64-geckodriver
@@ -82,7 +83,7 @@ tasks:
             - full
         fetches:
             build:
-                - artifact: target.condprof.tests.tar.gz
+                - artifact: target.condprof.tests.tar.zst
                 - artifact: target.tar.xz
             toolchain:
                 - linux64-geckodriver
@@ -115,7 +116,7 @@ tasks:
             build: build-macosx64-shippable/opt
         fetches:
             build:
-                - artifact: target.condprof.tests.tar.gz
+                - artifact: target.condprof.tests.tar.zst
                 - artifact: target.dmg
                   extract: false
             toolchain:

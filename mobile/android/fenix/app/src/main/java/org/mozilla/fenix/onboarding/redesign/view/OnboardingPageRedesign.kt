@@ -4,228 +4,243 @@
 
 package org.mozilla.fenix.onboarding.redesign.view
 
-import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.BoxWithConstraints
-import androidx.compose.foundation.layout.BoxWithConstraintsScope
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Card
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTag
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
-import mozilla.components.compose.base.annotation.FlexibleWindowLightDarkPreview
-import mozilla.components.compose.base.button.PrimaryButton
-import mozilla.components.compose.base.button.SecondaryButton
+import mozilla.components.compose.base.button.FilledButton
+import mozilla.components.compose.base.button.TextButton
 import org.mozilla.fenix.R
-import org.mozilla.fenix.compose.LinkText
+import org.mozilla.fenix.onboarding.notification.NotificationMainImage
+import org.mozilla.fenix.onboarding.redesign.view.defaultbrowser.SetToDefaultMainImage
+import org.mozilla.fenix.onboarding.redesign.view.sync.SyncMainImage
 import org.mozilla.fenix.onboarding.view.Action
 import org.mozilla.fenix.onboarding.view.OnboardingPageState
+import org.mozilla.fenix.onboarding.widget.SetSearchWidgetMainImage
 import org.mozilla.fenix.theme.FirefoxTheme
-import mozilla.components.ui.icons.R as iconsR
 
-/**
- * The ratio of the image height to the parent height. This was determined from the designs in figma
- * taking the ratio of the image height to the mockup height.
- */
-private const val IMAGE_HEIGHT_RATIO_DEFAULT = 0.4f
+const val TITLE_TOP_SPACER_WEIGHT = 0.1f
+const val CONTENT_WEIGHT = 1f
 
-/**
- * The ratio of the image height to the parent height for medium sized devices.
- */
-private const val IMAGE_HEIGHT_RATIO_MEDIUM = 0.36f
-
-/**
- * The ratio of the image height to the parent height for small devices like Nexus 4, Nexus 1.
- */
-private const val IMAGE_HEIGHT_RATIO_SMALL = 0.28f
-
-/**
- * The small device height definition for onboarding in dp.
- */
-val ONBOARDING_SMALL_DEVICE = 550.dp
-
-/**
- * The medium device height definition for onboarding in dp.
- */
-val ONBOARDING_MEDIUM_DEVICE = 650.dp
+val CONTENT_IMAGE_HEIGHT = 176.dp
 
 /**
  * A composable for displaying onboarding page content.
  *
  * @param pageState [OnboardingPageState] The page content that's displayed.
- * @param modifier The modifier to be applied to the Composable.
- * @param onDismiss Invoked when the user clicks the close button. This defaults to null. When null,
- * it doesn't show the close button.
+ * @param mainImage A [Composable] for displaying the main image.
  */
 @Composable
-@Suppress("LongMethod")
 fun OnboardingPageRedesign(
     pageState: OnboardingPageState,
-    modifier: Modifier = Modifier,
-    onDismiss: (() -> Unit)? = null,
+    mainImage: @Composable () -> Unit = {},
 ) {
-    Card {
-        BoxWithConstraints(
-            modifier = Modifier
-                .background(FirefoxTheme.colors.layer1)
-                .padding(bottom = if (pageState.secondaryButton == null) 32.dp else 24.dp)
-                .then(modifier),
+    CardView(
+        pageState = pageState,
+        mainImage = mainImage,
+    )
+
+    LaunchedEffect(pageState) {
+        pageState.onRecordImpressionEvent()
+    }
+}
+
+@Composable
+private fun SecondaryButton(
+    title: String,
+    secondaryButton: Action,
+) {
+    TextButton(
+        modifier = Modifier
+            .width(width = FirefoxTheme.layout.size.maxWidth.small)
+            .semantics {
+                testTag = title + "onboarding_card_redesign.negative_button"
+            },
+        text = secondaryButton.text,
+        onClick = secondaryButton.onClick,
+    )
+}
+
+@Composable
+private fun CardView(
+    pageState: OnboardingPageState,
+    mainImage: @Composable () -> Unit,
+) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            val boxWithConstraintsScope = this
-            Column(
+            Spacer(modifier = Modifier.weight(TITLE_TOP_SPACER_WEIGHT))
+
+            Content(pageState) { mainImage() }
+
+            FilledButton(
                 modifier = Modifier
-                    .fillMaxSize()
-                    .verticalScroll(rememberScrollState()),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.SpaceBetween,
-            ) {
-                if (onDismiss != null) {
-                    IconButton(
-                        onClick = onDismiss,
-                        modifier = Modifier.align(Alignment.End),
-                    ) {
-                        Icon(
-                            painter = painterResource(id = iconsR.drawable.mozac_ic_cross_24),
-                            contentDescription =
-                                stringResource(R.string.onboarding_home_content_description_close_button),
-                            tint = FirefoxTheme.colors.iconPrimary,
-                        )
-                    }
-                } else {
-                    Spacer(Modifier)
-                }
+                    .width(width = FirefoxTheme.layout.size.maxWidth.small)
+                    .semantics {
+                        testTag = pageState.title + "onboarding_card_redesign.positive_button"
+                    },
+                text = pageState.primaryButton.text,
+                onClick = pageState.primaryButton.onClick,
+            )
 
-                Column(
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 32.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                ) {
-                    Image(
-                        painter = painterResource(id = pageState.imageRes),
-                        contentDescription = null,
-                        modifier = Modifier.height(imageHeight(boxWithConstraintsScope)),
-                    )
-
-                    Spacer(modifier = Modifier.height(32.dp))
-
-                    Text(
-                        text = pageState.title,
-                        color = FirefoxTheme.colors.textPrimary,
-                        textAlign = TextAlign.Center,
-                        style = FirefoxTheme.typography.headline5,
-                    )
-
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    Text(
-                        text = pageState.description,
-                        color = FirefoxTheme.colors.textSecondary,
-                        textAlign = TextAlign.Center,
-                        style = FirefoxTheme.typography.body2,
-                    )
-
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    pageState.privacyCaption?.let { privacyCaption ->
-                        LinkText(
-                            text = privacyCaption.text,
-                            linkTextStates = listOf(privacyCaption.linkTextState),
-                        )
-                    }
-                }
-
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    modifier = Modifier.padding(horizontal = 16.dp),
-                ) {
-                    PrimaryButton(
-                        modifier = Modifier
-                            .width(width = FirefoxTheme.layout.size.maxWidth.small)
-                            .semantics {
-                                testTag = pageState.title + "onboarding_card.positive_button"
-                            },
-                        text = pageState.primaryButton.text,
-                        onClick = pageState.primaryButton.onClick,
-                    )
-
-                    if (pageState.secondaryButton != null) {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        SecondaryButton(
-                            modifier = Modifier
-                                .width(width = FirefoxTheme.layout.size.maxWidth.small)
-                                .semantics {
-                                    testTag = pageState.title + "onboarding_card.negative_button"
-                                },
-                            text = pageState.secondaryButton.text,
-                            onClick = pageState.secondaryButton.onClick,
-                        )
-                    }
-                }
-
-                LaunchedEffect(pageState) {
-                    pageState.onRecordImpressionEvent()
-                }
+            pageState.secondaryButton?.let {
+                SecondaryButton(title = pageState.title, secondaryButton = it)
             }
         }
     }
 }
 
-/**
- * Calculates the image height to be set. The ratio is selected based on parent height.
- */
-fun imageHeight(boxWithConstraintsScope: BoxWithConstraintsScope): Dp {
-    val imageHeightRatio: Float = when {
-        boxWithConstraintsScope.maxHeight <= ONBOARDING_SMALL_DEVICE -> IMAGE_HEIGHT_RATIO_SMALL
-        boxWithConstraintsScope.maxHeight <= ONBOARDING_MEDIUM_DEVICE -> IMAGE_HEIGHT_RATIO_MEDIUM
-        else -> IMAGE_HEIGHT_RATIO_DEFAULT
+@Composable
+private fun ColumnScope.Content(
+    pageState: OnboardingPageState,
+    mainImage: @Composable () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .padding(horizontal = 20.dp)
+            .weight(CONTENT_WEIGHT)
+            .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(36.dp),
+    ) {
+        Text(
+            text = pageState.title,
+            style = MaterialTheme.typography.headlineSmall,
+        )
+
+        Box(
+            modifier = Modifier
+                .height(CONTENT_IMAGE_HEIGHT)
+                .fillMaxWidth(),
+            contentAlignment = Alignment.Center,
+        ) {
+            mainImage()
+        }
+
+        Text(
+            text = pageState.description,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = FirefoxTheme.typography.subtitle1,
+        )
     }
-    return boxWithConstraintsScope.maxHeight.times(imageHeightRatio)
 }
 
-@FlexibleWindowLightDarkPreview
+@PreviewLightDark
 @Composable
-private fun OnboardingPagePreview() {
+private fun OnboardingPageSetToDefaultPreview() {
     FirefoxTheme {
         OnboardingPageRedesign(
             pageState = OnboardingPageState(
                 imageRes = R.drawable.ic_notification_permission,
-                title = stringResource(
-                    id = R.string.juno_onboarding_default_browser_title_nimbus_2,
-                ),
-                description = stringResource(
-                    id = R.string.juno_onboarding_default_browser_description_nimbus_3,
-                ),
+                title = stringResource(R.string.onboarding_redesign_set_default_browser_title),
+                description = stringResource(R.string.onboarding_redesign_set_default_browser_body),
                 primaryButton = Action(
-                    text = stringResource(
-                        id = R.string.juno_onboarding_default_browser_positive_button,
-                    ),
+                    text = stringResource(R.string.juno_onboarding_default_browser_positive_button),
                     onClick = {},
                 ),
                 secondaryButton = Action(
-                    text = stringResource(id = R.string.juno_onboarding_default_browser_negative_button),
+                    text = stringResource(R.string.juno_onboarding_default_browser_negative_button),
                     onClick = {},
                 ),
                 onRecordImpressionEvent = {},
             ),
-            onDismiss = {},
+            mainImage = { SetToDefaultMainImage() },
+        )
+    }
+}
+
+@PreviewLightDark
+@Composable
+private fun OnboardingPageSyncPreview() {
+    FirefoxTheme {
+        OnboardingPageRedesign(
+            pageState = OnboardingPageState(
+                imageRes = R.drawable.ic_notification_permission, // Unused in the redesign.
+                title = stringResource(R.string.onboarding_redesign_sync_title),
+                description = stringResource(R.string.onboarding_redesign_sync_body),
+                primaryButton = Action(
+                    text = stringResource(R.string.onboarding_redesign_sync_positive_button),
+                    onClick = {},
+                ),
+                secondaryButton = Action(
+                    text = stringResource(R.string.onboarding_redesign_sync_negative_button),
+                    onClick = {},
+                ),
+                onRecordImpressionEvent = {},
+            ),
+            mainImage = { SyncMainImage() },
+        )
+    }
+}
+
+@PreviewLightDark
+@Composable
+private fun OnboardingPageNotificationPreview() {
+    FirefoxTheme {
+        OnboardingPageRedesign(
+            pageState = OnboardingPageState(
+                imageRes = R.drawable.ic_notification_permission, // Unused in the redesign.
+                title = stringResource(R.string.juno_onboarding_enable_notifications_title_nimbus_2),
+                description = stringResource(R.string.juno_onboarding_enable_notifications_description_nimbus_2),
+                primaryButton = Action(
+                    text = stringResource(R.string.juno_onboarding_enable_notifications_positive_button),
+                    onClick = {},
+                ),
+                secondaryButton = Action(
+                    text = stringResource(R.string.juno_onboarding_enable_notifications_negative_button),
+                    onClick = {},
+                ),
+                onRecordImpressionEvent = {},
+            ),
+            mainImage = { NotificationMainImage() },
+        )
+    }
+}
+
+@PreviewLightDark
+@Composable
+private fun OnboardingPageSearchWidgetPreview() {
+    FirefoxTheme {
+        OnboardingPageRedesign(
+            pageState = OnboardingPageState(
+                imageRes = R.drawable.ic_notification_permission, // Unused in the redesign.
+                title = stringResource(R.string.juno_onboarding_add_search_widget_title),
+                description = stringResource(R.string.juno_onboarding_add_search_widget_description),
+                primaryButton = Action(
+                    text = stringResource(R.string.juno_onboarding_add_search_widget_positive_button),
+                    onClick = {},
+                ),
+                secondaryButton = Action(
+                    text = stringResource(R.string.juno_onboarding_add_search_widget_negative_button),
+                    onClick = {},
+                ),
+                onRecordImpressionEvent = {},
+            ),
+            mainImage = { SetSearchWidgetMainImage() },
         )
     }
 }

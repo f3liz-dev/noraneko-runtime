@@ -1227,7 +1227,7 @@ JS_PUBLIC_API void HeapValueWriteBarriers(Value* valuep, const Value& prev,
                                           const Value& next);
 
 template <>
-struct GCPolicy<JS::Value> {
+struct GCPolicy<JS::Value> : public GCPolicyBase<JS::Value> {
   static void trace(JSTracer* trc, Value* v, const char* name) {
     // This should only be called as part of root marking since that's the only
     // time we should trace unbarriered GC thing pointers. This will assert if
@@ -1379,7 +1379,7 @@ template <typename Wrapper>
 class HeapOperations<JS::Value, Wrapper>
     : public MutableWrappedPtrOperations<JS::Value, Wrapper> {};
 
-MOZ_HAVE_NORETURN MOZ_COLD MOZ_NEVER_INLINE void ReportBadValueTypeAndCrash(
+[[noreturn]] MOZ_COLD MOZ_NEVER_INLINE void ReportBadValueTypeAndCrash(
     const JS::Value& val);
 
 // If the Value is a GC pointer type, call |f| with the pointer cast to that

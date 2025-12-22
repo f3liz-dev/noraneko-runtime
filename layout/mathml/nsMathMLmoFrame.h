@@ -7,7 +7,6 @@
 #ifndef nsMathMLmoFrame_h___
 #define nsMathMLmoFrame_h___
 
-#include "mozilla/Attributes.h"
 #include "nsMathMLChar.h"
 #include "nsMathMLTokenFrame.h"
 
@@ -46,8 +45,8 @@ class nsMathMLmoFrame final : public nsMathMLTokenFrame {
               const ReflowInput& aReflowInput,
               nsReflowStatus& aStatus) override;
 
-  nsresult Place(DrawTarget* aDrawTarget, const PlaceFlags& aFlags,
-                 ReflowOutput& aDesiredSize) override;
+  void Place(DrawTarget* aDrawTarget, const PlaceFlags& aFlags,
+             ReflowOutput& aDesiredSize) override;
 
   void MarkIntrinsicISizesDirty() override;
 

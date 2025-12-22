@@ -10,9 +10,9 @@ import mozilla.components.compose.browser.toolbar.store.BrowserDisplayToolbarAct
 import mozilla.components.compose.browser.toolbar.store.BrowserDisplayToolbarAction.PageActionsEndUpdated
 import mozilla.components.compose.browser.toolbar.store.BrowserDisplayToolbarAction.PageActionsStartUpdated
 import mozilla.components.compose.browser.toolbar.store.BrowserDisplayToolbarAction.PageOriginUpdated
-import mozilla.components.compose.browser.toolbar.store.BrowserEditToolbarAction.SearchAborted
-import mozilla.components.compose.browser.toolbar.store.BrowserEditToolbarAction.UrlSuggestionAutocompleted
+import mozilla.components.compose.browser.toolbar.store.BrowserEditToolbarAction.AutocompleteSuggestionUpdated
 import mozilla.components.compose.browser.toolbar.store.BrowserToolbarInteraction.BrowserToolbarEvent
+import mozilla.components.compose.browser.toolbar.ui.BrowserToolbarQuery
 import mozilla.components.lib.state.Middleware
 import mozilla.components.lib.state.UiStore
 
@@ -50,10 +50,14 @@ private fun reduce(state: BrowserToolbarState, action: BrowserToolbarAction): Br
             gravity = action.gravity,
         )
 
-        is BrowserToolbarAction.ToggleEditMode -> state.copy(
-            mode = if (action.editMode) Mode.EDIT else Mode.DISPLAY,
+        is BrowserToolbarAction.EnterEditMode -> state.copy(
+            mode = Mode.EDIT,
+        )
+
+        is BrowserToolbarAction.ExitEditMode -> state.copy(
+            mode = Mode.DISPLAY,
             editState = state.editState.copy(
-                query = if (action.editMode) state.editState.query else "",
+                query = BrowserToolbarQuery(""),
             ),
         )
 
@@ -112,9 +116,9 @@ private fun reduce(state: BrowserToolbarState, action: BrowserToolbarAction): Br
             ),
         )
 
-        is BrowserEditToolbarAction.AutocompleteProvidersUpdated -> state.copy(
+        is AutocompleteSuggestionUpdated -> state.copy(
             editState = state.editState.copy(
-                autocompleteProviders = action.autocompleteProviders,
+                suggestion = action.autocompletedSuggestion,
             ),
         )
 
@@ -138,8 +142,6 @@ private fun reduce(state: BrowserToolbarState, action: BrowserToolbarAction): Br
 
         is EnvironmentRehydrated,
         is EnvironmentCleared,
-        is SearchAborted,
-        is UrlSuggestionAutocompleted,
         is BrowserToolbarEvent,
             -> {
             // no-op

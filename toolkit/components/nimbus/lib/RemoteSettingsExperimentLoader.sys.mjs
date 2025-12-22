@@ -2,6 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+/** @import { RemoteSettingsSyncErrorReason } from "./Telemetry.sys.mjs" */
+
 import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 
 const lazy = {};
@@ -18,6 +20,8 @@ ChromeUtils.defineESModuleGetters(lazy, {
   NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
   NimbusTelemetry: "resource://nimbus/lib/Telemetry.sys.mjs",
   RemoteSettings: "resource://services-settings/remote-settings.sys.mjs",
+  RemoteSettingsClient:
+    "resource://services-settings/RemoteSettingsClient.sys.mjs",
   TargetingContext: "resource://messaging-system/targeting/Targeting.sys.mjs",
   recordTargetingContext:
     "resource://nimbus/lib/TargetingContextRecorder.sys.mjs",
@@ -34,7 +38,7 @@ XPCOMUtils.defineLazyServiceGetter(
   lazy,
   "timerManager",
   "@mozilla.org/updates/timer-manager;1",
-  "nsIUpdateTimerManager"
+  Ci.nsIUpdateTimerManager
 );
 
 const COLLECTION_ID_PREF = "messaging-system.rsexperimentloader.collection_id";
@@ -112,6 +116,7 @@ export const MatchStatus = Object.freeze({
   TARGETING_ONLY: "TARGETING_ONLY",
   TARGETING_AND_BUCKETING: "TARGETING_AND_BUCKETING",
   UNENROLLED_IN_ANOTHER_PROFILE: "UNENROLLED_IN_ANOTHER_PROFILE",
+  DISABLED: "DISABLED",
 });
 
 export const CheckRecipeResult = {
@@ -170,6 +175,13 @@ export const CheckRecipeResult = {
     };
   },
 };
+
+/**
+ * @typedef {object} RecipeCollection
+ * @property {string} collectionName
+ * @property {object[]} recipes
+ * @property {number} lastModified
+ */
 
 export class RemoteSettingsExperimentLoader {
   /**
@@ -248,40 +260,39 @@ export class RemoteSettingsExperimentLoader {
       );
     }
 
-    if (this._enabled) {
-      return;
-    }
+    if (!this._enabled) {
+      if (!lazy.ExperimentAPI.enabled) {
+        lazy.log.debug(
+          "Not enabling RemoteSettingsExperimentLoader: Nimbus disabled"
+        );
+        return;
+      }
 
-    if (!lazy.ExperimentAPI.studiesEnabled) {
-      lazy.log.debug(
-        "Not enabling RemoteSettingsExperimentLoader: studies disabled"
+      if (
+        Services.startup.isInOrBeyondShutdownPhase(
+          Ci.nsIAppStartup.SHUTDOWN_PHASE_APPSHUTDOWNCONFIRMED
+        )
+      ) {
+        lazy.log.debug(
+          "Not enabling RemoteSettingsExperimentLoader: shutting down"
+        );
+        return;
+      }
+
+      this.#shutdownBlocker = async () => {
+        await this.finishedUpdating();
+        this.disable();
+      };
+
+      lazy.AsyncShutdown.appShutdownConfirmed.addBlocker(
+        "RemoteSettingsExperimentLoader: disabling",
+        this.#shutdownBlocker
       );
-      return;
+
+      this.setTimer();
+
+      this._enabled = true;
     }
-
-    if (
-      Services.startup.isInOrBeyondShutdownPhase(
-        Ci.nsIAppStartup.SHUTDOWN_PHASE_APPSHUTDOWNCONFIRMED
-      )
-    ) {
-      lazy.log.debug(
-        "Not enabling RemoteSettingsExperimentLoader: shutting down"
-      );
-      return;
-    }
-
-    this.#shutdownBlocker = async () => {
-      await this.finishedUpdating();
-      this.disable();
-    };
-
-    lazy.AsyncShutdown.appShutdownConfirmed.addBlocker(
-      "RemoteSettingsExperimentLoader: disabling",
-      this.#shutdownBlocker
-    );
-
-    this.setTimer();
-    this._enabled = true;
 
     await this.updateRecipes("enabled", { forceSync });
   }
@@ -400,10 +411,18 @@ export class RemoteSettingsExperimentLoader {
         await SCHEMAS.NimbusExperiment
       );
     }
-    const { recipes: allRecipes, loadingError } =
-      await this.getRecipesFromAllCollections({ forceSync, trigger });
 
-    if (!loadingError) {
+    let allRecipes = null;
+    try {
+      allRecipes = await this.getRecipesFromAllCollections({
+        forceSync,
+        trigger,
+      });
+    } catch (e) {
+      lazy.log.debug("Failed to update", e);
+    }
+
+    if (allRecipes !== null) {
       const unenrolledExperimentSlugs = lazy.NimbusEnrollments
         .syncEnrollmentsEnabled
         ? await lazy.NimbusEnrollments.loadUnenrolledExperimentSlugsFromOtherProfiles()
@@ -414,6 +433,8 @@ export class RemoteSettingsExperimentLoader {
         recipeValidator,
         {
           validationEnabled,
+          labsEnabled: lazy.ExperimentAPI.labsEnabled,
+          studiesEnabled: lazy.ExperimentAPI.studiesEnabled,
           shouldCheckTargeting: true,
           unenrolledExperimentSlugs,
         }
@@ -448,7 +469,10 @@ export class RemoteSettingsExperimentLoader {
       Services.prefs.setIntPref(TIMER_LAST_UPDATE_PREF, lastUpdateTime);
     }
 
-    Services.obs.notifyObservers(null, "nimbus:enrollments-updated");
+    if (allRecipes !== null) {
+      // Enrollments have not changed, so we don't need to notify.
+      Services.obs.notifyObservers(null, "nimbus:enrollments-updated");
+    }
   }
 
   /**
@@ -465,45 +489,91 @@ export class RemoteSettingsExperimentLoader {
    * @param {string} options.trigger The name of the event that triggered the
    * update.
    *
-   * @returns {Promise<{ recipes: object[]; loadingError: boolean; }>} The
-   * recipes from Remote Settings.
+   * @returns {Promise<object[]>} The recipes from Remote Settings.
+   *
+   * @throws {RemoteSettingsSyncError}
    */
   async getRecipesFromAllCollections({ forceSync = false, trigger } = {}) {
-    const recipes = [];
-    let loadingError = false;
+    try {
+      const recipes = [];
 
-    const experiments = await this.getRecipesFromCollection({
-      forceSync,
-      client: this.remoteSettingsClients[EXPERIMENTS_COLLECTION],
-      ...RS_COLLECTION_OPTIONS[EXPERIMENTS_COLLECTION],
-    });
+      // We may be in an xpcshell test that has not initialized the
+      // ProfilesDatastoreService.
+      //
+      // TODO(bug 1967779): require the ProfilesDatastoreService to be initialized
+      // and remove this check.
+      const timestamps = lazy.NimbusEnrollments.databaseEnabled
+        ? new Map()
+        : null;
 
-    if (experiments !== null) {
-      recipes.push(...experiments);
-    } else {
-      loadingError = true;
+      for (const collectionKind of [
+        EXPERIMENTS_COLLECTION,
+        SECURE_EXPERIMENTS_COLLECTION,
+      ]) {
+        const client = this.remoteSettingsClients[collectionKind];
+        const collectionOptions = RS_COLLECTION_OPTIONS[collectionKind];
+
+        const collection = await this.getRecipesFromCollection({
+          forceSync,
+          client,
+          ...collectionOptions,
+        });
+
+        // It is much more likely for the secure experiments collection to be
+        // empty, so we do not emit telemetry when that is the case.
+        if (
+          collection.recipes.length === 0 &&
+          collectionKind !== SECURE_EXPERIMENTS_COLLECTION
+        ) {
+          lazy.NimbusTelemetry.recordRemoteSettingsSyncError(
+            client.collectionName,
+            lazy.NimbusTelemetry.RemoteSettingsSyncErrorReason.EMPTY,
+            { forceSync, trigger }
+          );
+        }
+
+        timestamps?.set(client.collectionName, collection.lastModified);
+
+        recipes.push(...collection.recipes);
+      }
+
+      if (timestamps) {
+        // We may be in an xpcshell test that has not initialized the
+        // ProfilesDatastoreService.
+        //
+        // TODO(bug 1967779): require the ProfilesDatastoreService to be initialized
+        // and remove this check.
+        await this.manager.store._db.updateSyncTimestamps(timestamps);
+      }
+
+      return recipes;
+    } catch (e) {
+      let suppressLog = false;
+
+      if (e instanceof RemoteSettingsSyncError) {
+        // Suppress console errors about the RS database not yet being synced.
+        // This spams logs in tests where the RS client does not have a valid
+        // URL to sync with.
+        if (
+          e.reason ===
+          lazy.NimbusTelemetry.RemoteSettingsSyncErrorReason.NOT_YET_SYNCED
+        ) {
+          suppressLog = true;
+        }
+
+        lazy.NimbusTelemetry.recordRemoteSettingsSyncError(
+          e.collectionName,
+          e.reason,
+          { forceSync, trigger }
+        );
+      }
+
+      if (!suppressLog) {
+        lazy.log.error("Failed to retrieve recipes from Remote Settings", e);
+      }
+
+      throw e;
     }
-
-    const secureExperiments = await this.getRecipesFromCollection({
-      forceSync,
-      client: this.remoteSettingsClients[SECURE_EXPERIMENTS_COLLECTION],
-      ...RS_COLLECTION_OPTIONS[SECURE_EXPERIMENTS_COLLECTION],
-    });
-
-    if (secureExperiments !== null) {
-      recipes.push(...secureExperiments);
-    } else {
-      loadingError = true;
-    }
-
-    lazy.NimbusTelemetry.recordRemoteSettingsSync(
-      forceSync,
-      experiments,
-      secureExperiments,
-      trigger
-    );
-
-    return { recipes, loadingError };
   }
 
   /**
@@ -520,10 +590,12 @@ export class RemoteSettingsExperimentLoader {
    * @param {Set<string> | undefined} options.disallowedFeatureIds
    *        If a recipe uses any features in this list, it will be rejected.
    *
-   * @returns {object[] | null}
-   *          Recipes from the collection, filtered to match the allowed and
-   *          disallowed feature IDs, or null if there was an error syncing the
-   *          collection.
+   * @returns {Promise<RecipeCollection>} The recipes and last modified
+   * timestamp from the collection, filtered based on `requiredFeatureIds` and
+   * `disallowedFeatureIds`.
+   *
+   * @throws {RemoteSettingsSyncError} If we fail to get the recipes from the
+   * Remote Settings client.
    */
   async getRecipesFromCollection({
     client,
@@ -537,29 +609,47 @@ export class RemoteSettingsExperimentLoader {
         forceSync,
         emptyListFallback: false, // Throw instead of returning an empty list.
       });
-      if (!Array.isArray(recipes)) {
-        throw new Error("Remote Settings did not return an array");
-      }
-      if (
-        recipes.length === 0 &&
-        (await client.db.getLastModified()) === null
-      ) {
-        throw new Error(
-          "Remote Settings returned an empty list but should have thrown (no last modified)"
-        );
-      }
-      lazy.log.debug(
-        `Got ${recipes.length} recipes from ${client.collectionName}`
-      );
     } catch (e) {
-      lazy.log.debug(
-        `Error getting recipes from Remote Settings collection ${client.collectionName}: ${e}`
-      );
+      const reason =
+        e instanceof lazy.RemoteSettingsClient.EmptyDatabaseError
+          ? lazy.NimbusTelemetry.RemoteSettingsSyncErrorReason.NOT_YET_SYNCED
+          : lazy.NimbusTelemetry.RemoteSettingsSyncErrorReason.GET_EXCEPTION;
 
-      return null;
+      throw new RemoteSettingsSyncError(client.collectionName, reason, {
+        cause: e,
+      });
     }
 
-    return recipes.filter(recipe => {
+    if (!Array.isArray(recipes)) {
+      throw new RemoteSettingsSyncError(
+        client.collectionName,
+        lazy.NimbusTelemetry.RemoteSettingsSyncErrorReason.INVALID_DATA
+      );
+    }
+
+    let lastModified;
+    try {
+      lastModified = await client.db.getLastModified();
+    } catch (e) {
+      throw new RemoteSettingsSyncError(
+        client.collectionName,
+        lazy.NimbusTelemetry.RemoteSettingsSyncErrorReason.LAST_MODIFIED_EXCEPTION,
+        { cause: e }
+      );
+    }
+
+    if (recipes.length === 0 && lastModified === null) {
+      throw new RemoteSettingsSyncError(
+        client.collectionName,
+        lazy.NimbusTelemetry.RemoteSettingsSyncErrorReason.NULL_LAST_MODIFIED
+      );
+    }
+
+    lazy.log.debug(
+      `Got ${recipes.length} recipes from ${client.collectionName}`
+    );
+
+    const filteredRecipes = recipes.filter(recipe => {
       if (
         requiredFeatureIds &&
         !recipe.featureIds.some(featureId => requiredFeatureIds.has(featureId))
@@ -583,6 +673,12 @@ export class RemoteSettingsExperimentLoader {
 
       return true;
     });
+
+    return {
+      collectionName: client.collectionName,
+      recipes: filteredRecipes,
+      lastModified,
+    };
   }
 
   async _optInToExperiment({
@@ -691,19 +787,14 @@ export class RemoteSettingsExperimentLoader {
   }
 
   /**
-   * Handles feature status based on STUDIES_OPT_OUT_PREF.
-   *
-   * Changing this pref to false will turn off any recipe fetching and
-   * processing.
+   * Disable the RemoteSettingsExperimentLoader if Nimbus has become disabled
+   * and vice versa.
    */
   async onEnabledPrefChange() {
-    if (this._enabled && !lazy.ExperimentAPI.studiesEnabled) {
-      this.disable();
-    } else if (!this._enabled && lazy.ExperimentAPI.studiesEnabled) {
-      // If the feature pref is turned on then turn on recipe processing.
-      // If the opt in pref is turned on then turn on recipe processing only if
-      // the feature pref is also enabled.
+    if (lazy.ExperimentAPI.enabled) {
       await this.enable();
+    } else {
+      this.disable();
     }
   }
 
@@ -741,12 +832,12 @@ export class RemoteSettingsExperimentLoader {
    * Resolves when the RemoteSettingsExperimentLoader has updated at least once
    * and is not in the middle of an update.
    *
-   * If studies are disabled or the RemoteSettingsExperimentLoader has been
+   * If Nimbus is disabled or the RemoteSettingsExperimentLoader has been
    * disabled (i.e., during shutdown), then this will always resolve
    * immediately.
    */
   finishedUpdating() {
-    if (!lazy.ExperimentAPI.studiesEnabled || !this._enabled) {
+    if (!lazy.ExperimentAPI.enabled || !this._enabled) {
       return Promise.resolve();
     }
 
@@ -835,12 +926,17 @@ export class EnrollmentsContext {
       validationEnabled = true,
       shouldCheckTargeting = true,
       unenrolledExperimentSlugs,
+      studiesEnabled = true,
+      labsEnabled = true,
     } = {}
   ) {
     this.manager = manager;
     this.recipeValidator = recipeValidator;
 
     this.validationEnabled = validationEnabled;
+    this.studiesEnabled = studiesEnabled;
+    this.labsEnabled = labsEnabled;
+
     this.validatorCache = {};
     this.shouldCheckTargeting = shouldCheckTargeting;
     this.unenrolledExperimentSlugs = unenrolledExperimentSlugs;
@@ -872,6 +968,13 @@ export class EnrollmentsContext {
 
         return CheckRecipeResult.InvalidRecipe();
       }
+    }
+
+    if (
+      (recipe.isFirefoxLabsOptIn && !this.labsEnabled) ||
+      (!recipe.isFirefoxLabsOptIn && !this.studiesEnabled)
+    ) {
+      return CheckRecipeResult.Ok(MatchStatus.DISABLED);
     }
 
     // We don't include missing features here because if validation is enabled we report those errors later.
@@ -1184,5 +1287,46 @@ export class EnrollmentsContext {
     }
 
     return schema;
+  }
+}
+
+export class RemoteSettingsSyncError extends Error {
+  static getMessage(reason) {
+    const { RemoteSettingsSyncErrorReason } = lazy.NimbusTelemetry;
+
+    switch (reason) {
+      case RemoteSettingsSyncErrorReason.BACKWARDS_SYNC:
+        return "would sync backwards";
+
+      case RemoteSettingsSyncErrorReason.GET_EXCEPTION:
+        return "RemoteSettings client threw an error";
+
+      case RemoteSettingsSyncErrorReason.INVALID_DATA:
+        return "did not return an array";
+
+      case RemoteSettingsSyncErrorReason.INVALID_LAST_MODIFIED:
+        return "invalid lastModified";
+
+      case RemoteSettingsSyncErrorReason.LAST_MODIFIED_EXCEPTION:
+        return "client threw when retrieving lastModified";
+
+      case RemoteSettingsSyncErrorReason.NULL_LAST_MODIFIED:
+        return "returned an empty list but lastModified was null";
+
+      default:
+        return "unknown error";
+    }
+  }
+
+  /**
+   * @param {string} collectionName The name of the collection.
+   * @param {RemoteSettingsSyncErrorReason} reason The reason for the error.
+   * @param {ErrorOptions | undefined} options Arguments to pass to the Error constructor.
+   */
+  constructor(collectionName, reason, options) {
+    super(`Could not sync ${collectionName}: ${reason}`, options);
+
+    this.collectionName = collectionName;
+    this.reason = reason;
   }
 }

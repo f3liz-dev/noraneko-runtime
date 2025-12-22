@@ -4,18 +4,53 @@
 
 add_setup(async function () {
   await SpecialPowers.pushPrefEnv({
-    set: [["sidebar.verticalTabs", false]],
+    set: [
+      ["sidebar.verticalTabs", true],
+      ["dom.security.https_first", false],
+    ],
   });
 });
 
 registerCleanupFunction(async function () {
-  await SpecialPowers.pushPrefEnv({
-    set: [
-      ["sidebar.verticalTabs", false],
-      ["sidebar.revamp", false],
-    ],
-  });
+  Services.prefs.clearUserPref("sidebar.revamp");
+  Services.prefs.clearUserPref(
+    "browser.toolbarbuttons.introduced.sidebar-button"
+  );
 });
+
+async function addTabAndLoadBrowser() {
+  const tab = BrowserTestUtils.addTab(gBrowser, "https://example.com");
+  await BrowserTestUtils.browserLoaded(tab.linkedBrowser);
+  return tab;
+}
+
+async function checkSplitViewPanelVisible(tab, isVisible) {
+  const panel = document.getElementById(tab.linkedPanel);
+  await BrowserTestUtils.waitForMutationCondition(
+    panel,
+    { attributes: true },
+    () => panel.classList.contains("split-view-panel") == isVisible
+  );
+  if (isVisible) {
+    Assert.ok(
+      gBrowser.splitViewBrowsers.includes(tab.linkedBrowser),
+      "Split view panel is active."
+    );
+  } else {
+    Assert.ok(
+      !gBrowser.splitViewBrowsers.includes(tab.linkedBrowser),
+      "Split view panel is inactive."
+    );
+  }
+}
+
+function dragSplitter(deltaX, splitter) {
+  AccessibilityUtils.setEnv({ mustHaveAccessibleRule: false });
+  EventUtils.synthesizeMouseAtCenter(splitter, { type: "mousedown" });
+  EventUtils.synthesizeMouse(splitter, deltaX, 0, { type: "mousemove" });
+  EventUtils.synthesizeMouse(splitter, 0, 0, { type: "mouseup" });
+  AccessibilityUtils.resetEnv();
+}
 
 add_task(async function test_splitViewCreateAndAddTabs() {
   let tab1 = BrowserTestUtils.addTab(gBrowser, "about:blank");
@@ -81,4 +116,224 @@ add_task(async function test_splitViewCreateAndAddTabs() {
   // Remove split view and close tabs
   splitview.close();
   splitview2.close();
+});
+
+add_task(async function test_split_view_panels() {
+  const tab1 = await addTabAndLoadBrowser();
+  const tab2 = await addTabAndLoadBrowser();
+  const originalTab = gBrowser.selectedTab;
+  await BrowserTestUtils.switchTab(gBrowser, tab1);
+
+  info("Activate split view.");
+  const splitView = gBrowser.addTabSplitView([tab1, tab2]);
+  for (const tab of splitView.tabs) {
+    await checkSplitViewPanelVisible(tab, true);
+  }
+
+  info("Select tabs using tab panels.");
+  await SimpleTest.promiseFocus(tab1.linkedBrowser);
+  let panel = document.getElementById(tab1.linkedPanel);
+  Assert.ok(
+    panel.classList.contains("deck-selected"),
+    "First panel is selected."
+  );
+
+  await SimpleTest.promiseFocus(tab2.linkedBrowser);
+  panel = document.getElementById(tab2.linkedPanel);
+  Assert.ok(
+    panel.classList.contains("deck-selected"),
+    "Second panel is selected."
+  );
+
+  info("Switch to a non-split view tab.");
+  await BrowserTestUtils.switchTab(gBrowser, originalTab);
+  for (const tab of splitView.tabs) {
+    await checkSplitViewPanelVisible(tab, false);
+  }
+
+  info("Switch back to a split view tab.");
+  await BrowserTestUtils.switchTab(gBrowser, tab1);
+  for (const tab of splitView.tabs) {
+    await checkSplitViewPanelVisible(tab, true);
+  }
+
+  info("Remove the split view, keeping tabs intact.");
+  splitView.unsplitTabs();
+  await checkSplitViewPanelVisible(tab1, false);
+  await checkSplitViewPanelVisible(tab2, false);
+
+  BrowserTestUtils.removeTab(tab1);
+  BrowserTestUtils.removeTab(tab2);
+});
+
+add_task(async function test_split_view_preserves_multiple_pairings() {
+  info("Create four tabs for two split view pairings.");
+  const tab1 = await addTabAndLoadBrowser();
+  const tab2 = await addTabAndLoadBrowser();
+  const tab3 = await addTabAndLoadBrowser();
+  const tab4 = await addTabAndLoadBrowser();
+
+  info("Create two split views (Tab 1 + Tab 2) & (Tab 3 + Tab 4).");
+  const splitView1 = gBrowser.addTabSplitView([tab1, tab2]);
+  const splitView2 = gBrowser.addTabSplitView([tab3, tab4]);
+
+  info("Switch to Tab 1 to activate the first split view.");
+  await BrowserTestUtils.switchTab(gBrowser, tab1);
+  await checkSplitViewPanelVisible(tab1, true);
+  await checkSplitViewPanelVisible(tab2, true);
+  await checkSplitViewPanelVisible(tab3, false);
+  await checkSplitViewPanelVisible(tab4, false);
+
+  info("Switch to Tab 3 to activate the second split view.");
+  await BrowserTestUtils.switchTab(gBrowser, tab3);
+  await checkSplitViewPanelVisible(tab1, false);
+  await checkSplitViewPanelVisible(tab2, false);
+  await checkSplitViewPanelVisible(tab3, true);
+  await checkSplitViewPanelVisible(tab4, true);
+
+  info("Switch back to the first split view.");
+  await BrowserTestUtils.switchTab(gBrowser, tab1);
+  await checkSplitViewPanelVisible(tab1, true);
+  await checkSplitViewPanelVisible(tab2, true);
+  await checkSplitViewPanelVisible(tab3, false);
+  await checkSplitViewPanelVisible(tab4, false);
+
+  splitView1.close();
+  splitView2.close();
+});
+
+add_task(async function test_resize_split_view_panels() {
+  const tab1 = await addTabAndLoadBrowser();
+  const tab2 = await addTabAndLoadBrowser();
+  await BrowserTestUtils.switchTab(gBrowser, tab1);
+
+  info("Activate split view.");
+  const splitView = gBrowser.addTabSplitView([tab1, tab2]);
+  const { tabpanels } = gBrowser;
+  await BrowserTestUtils.waitForMutationCondition(
+    tabpanels,
+    { childList: true },
+    () => tabpanels.querySelector(".split-view-splitter")
+  );
+  await BrowserTestUtils.waitForMutationCondition(
+    tabpanels.splitViewSplitter,
+    { attributes: true },
+    () => BrowserTestUtils.isVisible(tabpanels.splitViewSplitter)
+  );
+
+  info("Resize split view panels.");
+  const leftPanel = document.getElementById(tab1.linkedPanel);
+  const rightPanel = document.getElementById(tab2.linkedPanel);
+  const originalLeftWidth = leftPanel.getBoundingClientRect().width;
+  const originalRightWidth = rightPanel.getBoundingClientRect().width;
+  dragSplitter(-100, tabpanels.splitViewSplitter);
+  Assert.less(
+    leftPanel.getBoundingClientRect().width,
+    originalLeftWidth,
+    "Left panel is smaller."
+  );
+  Assert.greater(
+    rightPanel.getBoundingClientRect().width,
+    originalRightWidth,
+    "Right panel is larger."
+  );
+
+  splitView.close();
+});
+
+add_task(async function test_split_view_panel_footers() {
+  const tab1 = await addTabAndLoadBrowser();
+  const tab2 = await addTabAndLoadBrowser();
+  await BrowserTestUtils.switchTab(gBrowser, tab1);
+
+  info("Activate split view.");
+  const splitView = gBrowser.addTabSplitView([tab1, tab2]);
+  await checkSplitViewPanelVisible(tab1, true);
+  await checkSplitViewPanelVisible(tab2, true);
+
+  const panel1 = document.getElementById(tab1.linkedPanel);
+  const panel2 = document.getElementById(tab2.linkedPanel);
+  const panel1Footer = panel1.querySelector("split-view-footer");
+  const panel2Footer = panel2.querySelector("split-view-footer");
+
+  info("Focus the first panel.");
+  await SimpleTest.promiseFocus(tab1.linkedBrowser);
+  Assert.ok(
+    BrowserTestUtils.isHidden(panel1Footer),
+    "First (active) panel does not contain a footer."
+  );
+  Assert.ok(
+    BrowserTestUtils.isVisible(panel2Footer),
+    "Second (inactive) panel contains a footer."
+  );
+  Assert.equal(
+    panel2Footer.uriElement.textContent,
+    "example.com",
+    "Footer displays the domain name of the site."
+  );
+
+  info("Focus the second panel.");
+  await SimpleTest.promiseFocus(tab2.linkedBrowser);
+  Assert.ok(
+    BrowserTestUtils.isVisible(panel1Footer),
+    "First panel now contains a footer."
+  );
+  Assert.ok(
+    BrowserTestUtils.isHidden(panel2Footer),
+    "Second panel no longer contains a footer."
+  );
+
+  info("Navigate to a different location.");
+  const promiseLoaded = BrowserTestUtils.browserLoaded(tab1.linkedBrowser);
+  BrowserTestUtils.startLoadingURIString(tab1.linkedBrowser, "about:robots");
+  await promiseLoaded;
+  Assert.equal(
+    panel1Footer.uriElement.textContent,
+    "about:robots",
+    "Footer displays the new location."
+  );
+
+  splitView.close();
+});
+
+add_task(async function test_split_view_security_warning() {
+  const tab1 = await addTabAndLoadBrowser();
+  const tab2 = await addTabAndLoadBrowser();
+  await BrowserTestUtils.switchTab(gBrowser, tab1);
+
+  info("Activate split view.");
+  const splitView = gBrowser.addTabSplitView([tab1, tab2]);
+  await checkSplitViewPanelVisible(tab1, true);
+  await checkSplitViewPanelVisible(tab2, true);
+  await SimpleTest.promiseFocus(tab1.linkedBrowser);
+
+  const inactivePanel = document.getElementById(tab2.linkedPanel);
+  const footer = inactivePanel.querySelector("split-view-footer");
+  Assert.ok(
+    BrowserTestUtils.isHidden(footer.securityElement),
+    "No security warning for HTTPS."
+  );
+
+  info("Load an insecure website.");
+  let promiseLoaded = BrowserTestUtils.browserLoaded(tab2.linkedBrowser);
+  BrowserTestUtils.startLoadingURIString(
+    tab2.linkedBrowser,
+    "http://example.com/" // eslint-disable-line @microsoft/sdl/no-insecure-url
+  );
+  await promiseLoaded;
+  Assert.ok(
+    BrowserTestUtils.isVisible(footer.securityElement),
+    "Security warning for HTTP."
+  );
+
+  info("Load a local site.");
+  promiseLoaded = BrowserTestUtils.browserLoaded(tab2.linkedBrowser);
+  BrowserTestUtils.startLoadingURIString(tab2.linkedBrowser, "about:robots");
+  await promiseLoaded;
+  Assert.ok(
+    BrowserTestUtils.isHidden(footer.securityElement),
+    "No security warning for local sites."
+  );
+
+  splitView.close();
 });

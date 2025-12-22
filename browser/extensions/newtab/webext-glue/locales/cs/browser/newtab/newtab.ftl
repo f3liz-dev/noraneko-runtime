@@ -383,7 +383,7 @@ newtab-wallpaper-light-fox-anniversary = Liška na louce se zamlženou horskou k
 
 ## Solid Colors
 
-newtab-wallpaper-category-title-colors = Plné barvy
+newtab-wallpaper-category-title-colors = Jednobarevné
 newtab-wallpaper-blue = Modrá
 newtab-wallpaper-light-blue = Světle modrá
 newtab-wallpaper-light-purple = Světle fialová
@@ -414,7 +414,7 @@ newtab-wallpaper-abstract-purple-green = Přechod fialové a zelené barvy
 newtab-wallpaper-abstract-blue-purple-waves = Modré a fialové zvlněné tvary
 newtab-wallpaper-abstract-black-waves = Černé zvlněné tvary
 
-## Celestial
+## Firefox
 
 newtab-wallpaper-category-title-photographs = Fotografie
 newtab-wallpaper-beach-at-sunrise = Pláž při východu slunce
@@ -443,6 +443,10 @@ feature-highlight-dismiss-button =
 feature-highlight-wallpaper =
     .title = { -newtab-wallpaper-feature-highlight-header }
     .aria-label = { -newtab-wallpaper-feature-highlight-content }
+
+## Firefox
+
+newtab-wallpaper-category-title-firefox = { -brand-product-name }
 
 ## Celestial
 
@@ -485,8 +489,16 @@ newtab-weather-menu-change-temperature-units-fahrenheit = Přepnout na stupně F
 newtab-weather-menu-change-temperature-units-celsius = Přepnout na stupně Celsia
 newtab-weather-menu-hide-weather = Skrýt počasí na novém panelu
 newtab-weather-menu-learn-more = Zjistit více
+newtab-weather-menu-detect-my-location = Zjistit mou polohu
 # This message is shown if user is working offline
 newtab-weather-error-not-available = Údaje o počasí nejsou momentálně dostupné.
+newtab-weather-opt-in-see-weather = Chcete vidět počasí pro vaši oblast?
+newtab-weather-opt-in-not-now =
+    .label = Teď ne
+newtab-weather-opt-in-yes =
+    .label = Ano
+# We'll be showing static (fake) weather data if the user has not opted in to using their location
+newtab-weather-static-city = New York
 
 ## Topic Labels
 
@@ -648,7 +660,7 @@ newtab-trending-searches-title = Trendy ve vyhledávání
 ## Strings for task / to-do list productivity widget
 
 # "Add one" means adding a new task to the list (e.g., "Walk the dog")
-newtab-widget-lists-empty-cta = Možnosti jsou nekonečné. Přidat další.
+newtab-widget-lists-empty-cta = Možnosti jsou nekonečné. Přidejte si svůj.
 # A simple label next to the default list name letting users know this is a new / beta feature
 newtab-widget-lists-label-new =
     .label = Nový
@@ -673,6 +685,9 @@ newtab-widget-lists-input-menu-move-up = Posunout výše
 newtab-widget-lists-input-menu-move-down = Posunout níže
 newtab-widget-lists-input-menu-delete = Smazat
 newtab-widget-lists-input-menu-edit = Upravit
+# the + symbol emphasises the functionality of adding a new list
+newtab-widget-lists-dropdown-create =
+    .label = + Vytvořit nový seznam
 newtab-widget-lists-name-label-default =
     .label = Seznam úkolů
 newtab-widget-lists-name-placeholder-default =
@@ -692,12 +707,8 @@ newtab-widget-timer-mode-focus =
     .label = Soustředění
 newtab-widget-timer-mode-break =
     .label = Přestávka
-newtab-widget-timer-play =
-    .title = Přehrát
-newtab-widget-timer-pause =
-    .title = Pozastavit
 newtab-widget-timer-label-play =
-    .label = Přehrát
+    .label = Spustit
 newtab-widget-timer-label-pause =
     .label = Pozastavit
 newtab-widget-timer-reset =

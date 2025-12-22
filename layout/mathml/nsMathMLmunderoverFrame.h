@@ -7,7 +7,6 @@
 #ifndef nsMathMLmunderoverFrame_h___
 #define nsMathMLmunderoverFrame_h___
 
-#include "mozilla/Attributes.h"
 #include "nsIReflowCallback.h"
 #include "nsMathMLContainerFrame.h"
 
@@ -27,8 +26,8 @@ class nsMathMLmunderoverFrame final : public nsMathMLContainerFrame,
   friend nsIFrame* NS_NewMathMLmunderoverFrame(mozilla::PresShell* aPresShell,
                                                ComputedStyle* aStyle);
 
-  nsresult Place(DrawTarget* aDrawTarget, const PlaceFlags& aFlags,
-                 ReflowOutput& aDesiredSize) override;
+  void Place(DrawTarget* aDrawTarget, const PlaceFlags& aFlags,
+             ReflowOutput& aDesiredSize) override;
 
   NS_IMETHOD InheritAutomaticData(nsIFrame* aParent) override;
 

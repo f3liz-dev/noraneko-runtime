@@ -10,7 +10,6 @@
 #include "mozilla/ipc/ProtocolUtils.h"
 #include "mozilla/layers/CompositorBridgeParent.h"
 #include "mozilla/layers/CompositorThread.h"
-#include "mozilla/UniquePtr.h"
 
 namespace mozilla::layers {
 
@@ -138,15 +137,10 @@ class ContentCompositorBridgeParent final : public CompositorBridgeParentBase {
 
   bool IsSameProcess() const override;
 
-  PCompositorWidgetParent* AllocPCompositorWidgetParent(
+  already_AddRefed<PCompositorWidgetParent> AllocPCompositorWidgetParent(
       const CompositorWidgetInitData& aInitData) override {
     // Not allowed.
     return nullptr;
-  }
-  bool DeallocPCompositorWidgetParent(
-      PCompositorWidgetParent* aActor) override {
-    // Not allowed.
-    return false;
   }
 
   PAPZCTreeManagerParent* AllocPAPZCTreeManagerParent(

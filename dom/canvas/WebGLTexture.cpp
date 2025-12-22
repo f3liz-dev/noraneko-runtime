@@ -15,11 +15,9 @@
 #include "WebGLFramebuffer.h"
 #include "WebGLSampler.h"
 #include "WebGLTexelConversions.h"
-#include "mozilla/Casting.h"
 #include "mozilla/IntegerRange.h"
 #include "mozilla/MathAlgorithms.h"
 #include "mozilla/ScopeExit.h"
-#include "mozilla/Unused.h"
 #include "mozilla/dom/WebGLRenderingContextBinding.h"
 #include "mozilla/gfx/Logging.h"
 

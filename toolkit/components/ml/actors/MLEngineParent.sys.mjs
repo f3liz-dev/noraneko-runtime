@@ -4,26 +4,10 @@
 import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 
 /**
- * @typedef {object} Lazy
- * @typedef {import("../content/Utils.sys.mjs").ProgressAndStatusCallbackParams} ProgressAndStatusCallbackParams
- * @property {typeof console} console
- * @property {typeof import("../content/Utils.sys.mjs").getRuntimeWasmFilename} getRuntimeWasmFilename
- * @property {typeof import("../../../../services/settings/remote-settings.sys.mjs").RemoteSettings} RemoteSettings
- * @property {typeof import("../../translations/actors/TranslationsParent.sys.mjs").TranslationsParent} TranslationsParent
- * @typedef {import("../../translations").WasmRecord} WasmRecord
+ * @import { MLEngineChild } from "./MLEngineChild.sys.mjs"
  */
 
-/** @type {Lazy} */
-const lazy = {};
-
-ChromeUtils.defineLazyGetter(lazy, "console", () => {
-  return console.createInstance({
-    maxLogLevelPref: "browser.ml.logLevel",
-    prefix: "GeckoMLEngineParent",
-  });
-});
-
-ChromeUtils.defineESModuleGetters(lazy, {
+const lazy = XPCOMUtils.declareLazy({
   RemoteSettings: "resource://services-settings/remote-settings.sys.mjs",
   Utils: "resource://services-settings/Utils.sys.mjs",
   TranslationsParent: "resource://gre/actors/TranslationsParent.sys.mjs",
@@ -34,26 +18,16 @@ ChromeUtils.defineESModuleGetters(lazy, {
   isAddonEngineId: "chrome://global/content/ml/Utils.sys.mjs",
   OPFS: "chrome://global/content/ml/OPFS.sys.mjs",
   BACKENDS: "chrome://global/content/ml/EngineProcess.sys.mjs",
+  stringifyForLog: "chrome://global/content/ml/Utils.sys.mjs",
+  console: () =>
+    console.createInstance({
+      maxLogLevelPref: "browser.ml.logLevel",
+      prefix: "GeckoMLEngineParent",
+    }),
+  mlUtils: { service: "@mozilla.org/ml-utils;1", iid: Ci.nsIMLUtils },
+  CHECK_FOR_MEMORY: { pref: "browser.ml.checkForMemory" },
+  MINIMUM_PHYSICAL_MEMORY: { pref: "browser.ml.minimumPhysicalMemory" },
 });
-
-XPCOMUtils.defineLazyServiceGetter(
-  lazy,
-  "mlUtils",
-  "@mozilla.org/ml-utils;1",
-  "nsIMLUtils"
-);
-
-XPCOMUtils.defineLazyPreferenceGetter(
-  lazy,
-  "CHECK_FOR_MEMORY",
-  "browser.ml.checkForMemory"
-);
-
-XPCOMUtils.defineLazyPreferenceGetter(
-  lazy,
-  "MINIMUM_PHYSICAL_MEMORY",
-  "browser.ml.minimumPhysicalMemory"
-);
 
 const ONE_GiB = 1024 * 1024 * 1024;
 const RS_RUNTIME_COLLECTION = "ml-onnx-runtime";
@@ -257,10 +231,8 @@ export class MLEngineParent extends JSProcessActorParent {
       // Wait for the existing lock to resolve
       await MLEngineParent.engineLocks.get(engineId);
     }
-    let resolveLock;
-    const lockPromise = new Promise(resolve => {
-      resolveLock = resolve;
-    });
+    const { promise: lockPromise, resolve: resolveLock } =
+      Promise.withResolvers();
     MLEngineParent.engineLocks.set(engineId, lockPromise);
     MLEngineParent.engineCreationAbortSignal.set(engineId, abortSignal);
     try {
@@ -268,8 +240,7 @@ export class MLEngineParent extends JSProcessActorParent {
       if (currentEngine) {
         if (
           currentEngine.pipelineOptions.equals(pipelineOptions) &&
-          currentEngine.engineStatus !== "closed" &&
-          currentEngine.engineStatus !== "crashed"
+          currentEngine.engineStatus === "ready"
         ) {
           lazy.console.debug(`Reusing existing engine for ${engineId}`);
           return currentEngine;
@@ -524,7 +495,8 @@ export class MLEngineParent extends JSProcessActorParent {
     });
   }
 
-  /** Gets the wasm file from remote settings.
+  /**
+   * Gets the wasm file from remote settings.
    *
    * @param {RemoteSettingsClient} client
    * @param {string} backend - The ML engine for which the WASM buffer is requested.
@@ -813,10 +785,15 @@ export class MLEngineParent extends JSProcessActorParent {
   }
 
   /**
-   * Gets a status
+   * Goes through the engines and determines their status. This is used by about:inference
+   * to display debug information about the engines.
+   *
+   * @see MLEngineChild#getStatusByEngineId
+   *
+   * @returns {Promise<StatusByEngineId>}
    */
-  getStatus() {
-    return this.sendQuery("MLEngine:GetStatus");
+  getStatusByEngineId() {
+    return this.sendQuery("MLEngine:GetStatusByEngineId");
   }
 
   /**
@@ -940,15 +917,21 @@ class ResponseOrChunkResolvers {
  * potentially large amounts of memory to run models, with the speed and ease of running
  * the engine.
  *
- * @typedef {object} Request
+ * @typedef {object} EngineRunRequest
  * @property {?string} [id] - The identifier for tracking this request. If not provided, an id will be auto-generated. Each inference callback will reference this id.
  * @property {any[]} args - The arguments to pass to the pipeline. The required arguments depend on your model. See [Hugging Face Transformers documentation](https://huggingface.co/docs/transformers.js/en/api/models) for more details.
- * @property {?object} options - The generation options to pass to the model. Refer to the [GenerationConfigType documentation](https://huggingface.co/docs/transformers.js/en/api/utils/generation#module_utils/generation..GenerationConfigType) for available options.
+ * @property {?object} [options] - The generation options to pass to the model. Refer to the [GenerationConfigType documentation](https://huggingface.co/docs/transformers.js/en/api/utils/generation#module_utils/generation..GenerationConfigType) for available options.
  * @property {?Uint8Array} [data] - For the imagetoText model, this is the array containing the image data.
  *
- * @template Response
+ * @typedef {object} MLEntry
+ *
+ * @typedef {object} MetricsResponse
+ *   The metrics of the query
+ * @property {{name: string, when: number}[]} metrics
+ *
+ * @typedef {MLEntry[] & MetricsResponse} EngineRunResponse
  */
-class MLEngine {
+export class MLEngine {
   /**
    * The cached engines.
    *
@@ -966,12 +949,12 @@ class MLEngine {
   /**
    * Tie together a message id to a resolved response.
    *
-   * @type {Map<number, PromiseWithResolvers<Request>>}
+   * @type {Map<number, PromiseWithResolvers<EngineRunRequest>>}
    */
   #requests = new Map();
 
   /**
-   * @type {"uninitialized" | "ready" | "error" | "closed"}
+   * @type {"uninitialized" | "ready" | "error" | "closed" | "crashed"}
    */
   engineStatus = "uninitialized";
 
@@ -981,6 +964,14 @@ class MLEngine {
    * @type {string}
    */
   engineId;
+
+  /**
+   * Allow tests to await on the last resource request, as this is not exposed
+   * in the response, @see {MLEngine#run}.
+   *
+   * @type {null | Promise<void>}
+   */
+  lastResourceRequest = null;
 
   /**
    * Callback to call when receiving an initializing progress status.
@@ -1439,12 +1430,40 @@ class MLEngine {
   }
 
   /**
+   * @returns {Promise<null | { cpuTime: null | number, memory: null | number}>}
+   */
+  async getInferenceResources() {
+    // TODO(Greg): ask that question directly to the inference process *or* move your metrics down into the child process
+    // so you don't have to do any IPC at all.
+    // you can get the memory with ChromeUtils.currentProcessMemoryUsage and the CPU since start with ChromeUtils.cpuTimeSinceProcessStart
+    // theses call can be done anywhere in the inference process including the workers, which means you can Glean metrics in any place with
+    // no IPC
+    try {
+      const { children } = await ChromeUtils.requestProcInfo();
+      const [inference] = children.filter(child => child.type == "inference");
+      if (!inference) {
+        lazy.console.log(
+          "Could not find the inference process cpu information."
+        );
+        return null;
+      }
+      return {
+        cpuTime: inference.cpuTime ?? null,
+        memory: inference.memory ?? null,
+      };
+    } catch (error) {
+      lazy.console.error(error);
+      return null;
+    }
+  }
+
+  /**
    * Run the inference request
    *
-   * @param {Request} request
-   * @returns {Promise<Response>}
+   * @param {EngineRunRequest} request
+   * @returns {Promise<EngineRunResponse>}
    */
-  run(request) {
+  async run(request) {
     const resolvers = Promise.withResolvers();
     const requestId = this.#nextRequestId++;
     this.#requests.set(requestId, resolvers);
@@ -1458,6 +1477,9 @@ class MLEngine {
       throw new Error("Port does not exist");
     }
 
+    const resourcesPromise = this.getInferenceResources();
+    const beforeRun = ChromeUtils.now();
+
     this.#port.postMessage(
       {
         type: "EnginePort:Run",
@@ -1467,14 +1489,58 @@ class MLEngine {
       },
       transferables
     );
+
+    this.lastResourceRequest = Promise.all([
+      resourcesPromise,
+      resolvers.promise.catch(() => {
+        // Catch this error so that we don't trigger an unhandled promise rejection.
+        return false;
+      }),
+    ]).then(async ([resourcesBefore, result]) => {
+      if (!result) {
+        // The request failed, do not report the telemetry.
+        return;
+      }
+      const resourcesAfter = await this.getInferenceResources();
+      if (!resourcesBefore || !resourcesAfter) {
+        return;
+      }
+
+      // Convert nanoseconds to milliseconds
+      const cpuMilliseconds =
+        (resourcesAfter.cpuTime - resourcesBefore.cpuTime) / 1_000_000;
+      const wallMilliseconds = ChromeUtils.now() - beforeRun;
+      const cores = lazy.mlUtils.getOptimalCPUConcurrency();
+      const cpuUtilization = cpuMilliseconds / wallMilliseconds / cores;
+      const memoryBytes = resourcesAfter.memory;
+
+      const data = {
+        // Timing:
+        cpu_milliseconds: cpuMilliseconds,
+        wall_milliseconds: wallMilliseconds,
+        cores,
+        cpu_utilization: cpuUtilization,
+        memory_bytes: memoryBytes,
+
+        // Model information:
+        engine_id: this.engineId,
+        model_id: this.pipelineOptions.modelId,
+        feature_id: this.pipelineOptions.featureId,
+        backend: this.pipelineOptions.backend,
+      };
+
+      lazy.console?.debug("[Glean.firefoxAiRuntime.engineRun]", data);
+      Glean.firefoxAiRuntime.engineRun.record(data);
+    });
+
     return resolvers.promise;
   }
 
   /**
    * Run the inference request using an async generator function.
    *
-   * @param {Request} request - The inference request containing the input data.
-   * @returns {AsyncGenerator<Response, Response, unknown>} An async generator yielding chunks of generated responses.
+   * @param {EngineRunRequest} request - The inference request containing the input data.
+   * @returns {AsyncGenerator<EngineRunResponse, EngineRunResponse, unknown>} An async generator yielding chunks of generated responses.
    */
   runWithGenerator = async function* (request) {
     lazy.console.debug(`runWithGenerator called for request ${request}`);
@@ -1531,14 +1597,13 @@ class MLEngine {
       // If there was no timeout we can yield the chunk and move to the next
       if (!chunk.timeout) {
         lazy.console.debug(
-          `Chunk received ${JSON.stringify(chunk.metadata, (_, v) =>
-            typeof v === "bigint" ? v.toString() : v
-          )}`
+          `Chunk received ${lazy.stringifyForLog(chunk.metadata)}`
         );
         yield {
           text: chunk.metadata.text,
           tokens: chunk.metadata.tokens,
           isPrompt: chunk.metadata.isPrompt,
+          toolCalls: chunk.metadata.toolCalls,
         };
         chunkPromise = responseChunkResolvers.getAndAdvanceChunkPromise();
       } else if (this.#port === null) {
@@ -1547,7 +1612,7 @@ class MLEngine {
         if (this.engineStatus === "crashed") {
           throw new Error(
             "The inference process has crashed, the port is null. This was for the following request: " +
-              JSON.stringify(request)
+              lazy.stringifyForLog(request)
           );
         }
         break;

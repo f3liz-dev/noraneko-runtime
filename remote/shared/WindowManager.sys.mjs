@@ -16,6 +16,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
   EventPromise: "chrome://remote/content/shared/Sync.sys.mjs",
   generateUUID: "chrome://remote/content/shared/UUID.sys.mjs",
   Log: "chrome://remote/content/shared/Log.sys.mjs",
+  NavigableManager: "chrome://remote/content/shared/NavigableManager.sys.mjs",
   TabManager: "chrome://remote/content/shared/TabManager.sys.mjs",
   TimedPromise: "chrome://remote/content/shared/Sync.sys.mjs",
   UserContextManager:
@@ -109,7 +110,8 @@ class WindowManager {
           let contentBrowser = lazy.TabManager.getBrowserForTab(
             tabBrowser.tabs[i]
           );
-          let contentWindowId = lazy.TabManager.getIdForBrowser(contentBrowser);
+          let contentWindowId =
+            lazy.NavigableManager.getIdForBrowser(contentBrowser);
 
           if (contentWindowId == handle) {
             return this.getWindowProperties(win, { tabIndex: i });
@@ -169,7 +171,7 @@ class WindowManager {
    *    The ID of the window associated with the browsing context.
    */
   getIdForBrowsingContext(context) {
-    const window = this.#getBrowsingContextWindow(context);
+    const window = this.getWindowForBrowsingContext(context);
 
     return window
       ? this.getIdForWindow(window)
@@ -338,6 +340,21 @@ class WindowManager {
   }
 
   /**
+   * Returns the window for a specific browsing context.
+   *
+   * @param {BrowsingContext} context
+   *    The browsing context for which we want to retrieve the window.
+   *
+   * @returns {ChromeWindow}
+   *    The chrome window associated with the browsing context.
+   */
+  getWindowForBrowsingContext(context) {
+    return lazy.AppInfo.isAndroid
+      ? context.top.embedderElement?.ownerGlobal
+      : context.topChromeWindow;
+  }
+
+  /**
    * Open a new browser window.
    *
    * @param {object=} options
@@ -363,7 +380,7 @@ class WindowManager {
     } = options;
 
     switch (lazy.AppInfo.name) {
-      case "Firefox":
+      case "Firefox": {
         if (openerWindow === null) {
           // If no opener was provided, fallback to the topmost window.
           openerWindow = Services.wm.getMostRecentBrowserWindow();
@@ -406,6 +423,7 @@ class WindowManager {
         }
 
         return browser.ownerGlobal;
+      }
 
       default:
         throw new lazy.error.UnsupportedOperationError(
@@ -517,25 +535,10 @@ class WindowManager {
     );
   }
 
-  /**
-   * Returns the window for a specific browsing context.
-   *
-   * @param {BrowsingContext} context
-   *    The browsing context for which we want to retrieve the window.
-   *
-   * @returns {(window|undefined)}
-   *    The window associated with the browsing context.
-   */
-  #getBrowsingContextWindow(context) {
-    return lazy.AppInfo.isAndroid
-      ? context.top.embedderElement?.ownerGlobal
-      : context.topChromeWindow;
-  }
-
   #onContextAttached = (_, data = {}) => {
     const { browsingContext } = data;
 
-    const window = this.#getBrowsingContextWindow(browsingContext);
+    const window = this.getWindowForBrowsingContext(browsingContext);
     if (!window) {
       // Short-lived iframes might already be disconnected from their parent
       // window.

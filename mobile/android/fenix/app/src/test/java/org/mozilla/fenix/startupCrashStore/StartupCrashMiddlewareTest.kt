@@ -3,6 +3,7 @@ package org.mozilla.fenix.startupCrashStore
 import android.text.format.DateUtils
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
@@ -18,7 +19,6 @@ import org.mockito.ArgumentMatchers.anyLong
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.`when`
-import org.mozilla.fenix.crashes.StartupCrashCanary
 import org.mozilla.fenix.startupCrash.NoTapped
 import org.mozilla.fenix.startupCrash.ReopenTapped
 import org.mozilla.fenix.startupCrash.ReportTapped
@@ -30,18 +30,17 @@ import org.mozilla.fenix.utils.Settings
 
 private const val FIVE_DAYS_IN_MILLIS = DateUtils.DAY_IN_MILLIS * 5
 
+@OptIn(ExperimentalCoroutinesApi::class) // advanceUntilIdle
 @RunWith(AndroidJUnit4::class)
 class StartupCrashMiddlewareTest {
 
     private lateinit var settings: Settings
     private lateinit var crashReporter: CrashReporter
-    private lateinit var canaryRepo: StartupCrashCanary
 
     @Before
     fun setup() {
         settings = mock()
         crashReporter = mock()
-        canaryRepo = mock()
     }
 
     @Test
@@ -69,7 +68,6 @@ class StartupCrashMiddlewareTest {
         verify(crashReporter).submitReport(crashCaptor.capture(), any())
         assertEquals(crash, crashCaptor.value)
 
-        verify(canaryRepo).clearCanary()
         assertEquals(UiState.Finished, store.state.uiState)
     }
 
@@ -82,7 +80,6 @@ class StartupCrashMiddlewareTest {
         store.dispatch(NoTapped)
         advanceUntilIdle()
 
-        verify(canaryRepo).clearCanary()
         verify(settings).crashReportDeferredUntil = currentTime + FIVE_DAYS_IN_MILLIS
         assertEquals(UiState.Finished, store.state.uiState)
     }
@@ -110,8 +107,7 @@ class StartupCrashMiddlewareTest {
         val middleware = StartupCrashMiddleware(
             settings = settings,
             crashReporter = crashReporter,
-            reinitializeHandler = { called = true },
-            startupCrashCanaryCache = canaryRepo,
+            restartHandler = { called = true },
             currentTimeInMillis = currentTime,
             scope = scope,
         )

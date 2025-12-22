@@ -199,7 +199,9 @@ impl CustomDistribution for CustomDistributionMetric {
 }
 
 #[inherent]
-impl glean::TestGetValue<DistributionData> for CustomDistributionMetric {
+impl glean::TestGetValue for CustomDistributionMetric {
+    type Output = DistributionData;
+
     pub fn test_get_value(&self, ping_name: Option<String>) -> Option<DistributionData> {
         match self {
             CustomDistributionMetric::Parent { inner, .. } => inner.test_get_value(ping_name),
@@ -225,7 +227,9 @@ mod test {
 
         metric.accumulate_samples_signed(vec![1, 2, 3]);
 
-        assert!(metric.test_get_value(Some("test-ping".to_string())).is_some());
+        assert!(metric
+            .test_get_value(Some("test-ping".to_string()))
+            .is_some());
     }
 
     #[test]

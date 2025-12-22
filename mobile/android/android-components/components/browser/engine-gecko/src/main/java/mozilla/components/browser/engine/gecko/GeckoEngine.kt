@@ -14,6 +14,8 @@ import mozilla.components.ExperimentalAndroidComponentsApi
 import mozilla.components.browser.engine.fission.GeckoWebContentIsolationMapper.intoWebContentIsolationStrategy
 import mozilla.components.browser.engine.gecko.activity.GeckoActivityDelegate
 import mozilla.components.browser.engine.gecko.activity.GeckoScreenOrientationDelegate
+import mozilla.components.browser.engine.gecko.autofill.DefaultRuntimeAddressStructureAccessor
+import mozilla.components.browser.engine.gecko.autofill.RuntimeAddressStructureAccessor
 import mozilla.components.browser.engine.gecko.ext.getAntiTrackingPolicy
 import mozilla.components.browser.engine.gecko.ext.getEtpCategory
 import mozilla.components.browser.engine.gecko.ext.getEtpLevel
@@ -49,6 +51,7 @@ import mozilla.components.concept.engine.EngineView
 import mozilla.components.concept.engine.Settings
 import mozilla.components.concept.engine.activity.ActivityDelegate
 import mozilla.components.concept.engine.activity.OrientationDelegate
+import mozilla.components.concept.engine.autofill.AddressStructure
 import mozilla.components.concept.engine.content.blocking.TrackerLog
 import mozilla.components.concept.engine.content.blocking.TrackingProtectionExceptionStorage
 import mozilla.components.concept.engine.fission.WebContentIsolationStrategy
@@ -110,6 +113,7 @@ class GeckoEngine(
         GeckoTrackingProtectionExceptionStorage(runtime),
     private val geckoPreferenceAccessor: GeckoPreferenceAccessor = DefaultGeckoPreferenceAccessor(),
     private val runtimeTranslationAccessor: RuntimeTranslationAccessor = DefaultRuntimeTranslationAccessor(),
+    private val addressStructureAccessor: RuntimeAddressStructureAccessor = DefaultRuntimeAddressStructureAccessor(),
 ) : Engine, WebExtensionRuntime, TranslationsRuntime, BrowserPreferencesRuntime {
     private val executor by lazy { executorProvider.invoke() }
     private val localeUpdater = LocaleSettingUpdater(context, runtime)
@@ -1214,6 +1218,14 @@ class GeckoEngine(
         )
     }
 
+    override fun getAddressStructure(
+        countryCode: String,
+        onSuccess: (AddressStructure) -> Unit,
+        onError: (Throwable) -> Unit,
+    ) {
+        addressStructureAccessor.getAddressStructure(countryCode, onSuccess, onError)
+    }
+
     /**
      * See [Engine.profiler].
      */
@@ -1636,9 +1648,9 @@ class GeckoEngine(
             get() = runtime.settings.cookieBehaviorOptInPartitioningPBM
             set(value) { runtime.settings.setCookieBehaviorOptInPartitioningPBM(value) }
 
-        override var certificateTransparencyMode: Int
-            get() = runtime.settings.certificateTransparencyMode
-            set(value) { runtime.settings.setCertificateTransparencyMode(value) }
+        override var certificateTransparencyMode: Int?
+            get() = runtime.settings.certificateTransparencyMode.or(2)
+            set(value) { value?.let { runtime.settings.setCertificateTransparencyMode(value) } }
 
         override var postQuantumKeyExchangeEnabled: Boolean?
             get() = runtime.settings.postQuantumKeyExchangeEnabled.or(false)
@@ -1655,6 +1667,14 @@ class GeckoEngine(
         override var lnaBlockingEnabled: Boolean
             get() = runtime.settings.lnaBlockingEnabled
             set(value) { runtime.settings.setLnaBlockingEnabled(value) }
+
+        override var crliteChannel: String?
+            get() = runtime.settings.crliteChannel
+            set(value) { value?.let { runtime.settings.setCrliteChannel(value) } }
+
+        override var safeBrowsingV5Enabled: Boolean?
+            get() = runtime.settings.contentBlocking.safeBrowsingV5Enabled.or(false)
+            set(value) { value?.let { runtime.settings.contentBlocking.setSafeBrowsingV5Enabled(value) } }
     }.apply {
         defaultSettings?.let {
             this.javascriptEnabled = it.javascriptEnabled
@@ -1702,10 +1722,11 @@ class GeckoEngine(
             this.dohAutoselectEnabled = it.dohAutoselectEnabled
             this.bannedPorts = it.bannedPorts
             this.lnaBlockingEnabled = it.lnaBlockingEnabled
+            this.crliteChannel = it.crliteChannel
+            this.safeBrowsingV5Enabled = it.safeBrowsingV5Enabled
         }
     }
 
-    @Suppress("ComplexMethod")
     internal fun ContentBlockingController.LogEntry.BlockingData.getLoadedCategory(): TrackingCategory {
         val socialTrackingProtectionEnabled = settings.trackingProtectionPolicy?.strictSocialTrackingProtection
             ?: false

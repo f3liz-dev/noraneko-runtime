@@ -44,7 +44,6 @@
 #include "mozilla/Atomics.h"
 #include "mozilla/StaticMutex.h"
 #include "mozilla/UniquePtr.h"
-#include "mozilla/Unused.h"
 
 // Use OS specific iovec array limit where it's possible.
 #if defined(IOV_MAX)
@@ -423,8 +422,9 @@ bool ChannelPosix::ProcessIncomingMessages() {
           error = "Message needs unreceived descriptors";
         }
 
-        if (m.header()->num_handles >
-            IPC::Message::MAX_DESCRIPTORS_PER_MESSAGE) {
+        size_t maxHandles = std::min<size_t>(
+            m.size(), IPC::Message::MAX_DESCRIPTORS_PER_MESSAGE);
+        if (m.header()->num_handles > maxHandles) {
           // There are too many descriptors in this message
           error = "Message requires an excessive number of descriptors";
         }
@@ -540,8 +540,9 @@ bool ChannelPosix::ProcessOutgoingMessages() {
       }
 #endif
 
-      if (msg->attached_handles_.Length() >
-          IPC::Message::MAX_DESCRIPTORS_PER_MESSAGE) {
+      size_t maxHandles = std::min<size_t>(
+          msg->size(), IPC::Message::MAX_DESCRIPTORS_PER_MESSAGE);
+      if (msg->attached_handles_.Length() > maxHandles) {
         MOZ_DIAGNOSTIC_CRASH("Too many file descriptors!");
         CHROMIUM_LOG(FATAL) << "Too many file descriptors!";
         // This should not be reached.

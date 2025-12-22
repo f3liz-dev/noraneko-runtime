@@ -8,7 +8,6 @@
 #include <unordered_set>
 
 #include "ExternalTexture.h"
-#include "mozilla/PodOperations.h"
 #include "mozilla/ScopeExit.h"
 #include "mozilla/dom/WebGPUBinding.h"
 #include "mozilla/gfx/FileHandleWrapper.h"
@@ -216,11 +215,10 @@ extern void wgpu_server_set_buffer_map_data(
     uintptr_t aShmemIndex) {
   auto* parent = static_cast<WebGPUParent*>(aParent);
 
-  auto mapping = std::move(parent->mTempMappings.ElementAt(aShmemIndex));
-  MOZ_ASSERT(mapping.isSome());
+  auto mapping = parent->mTempMappings.at(aShmemIndex);
 
   auto data = WebGPUParent::BufferMapData{
-      std::move(*mapping), aHasMapFlags, aMappedOffset, aMappedSize, aDeviceId,
+      mapping, aHasMapFlags, aMappedOffset, aMappedSize, aDeviceId,
   };
 
   parent->mSharedMemoryMap.insert({aBufferId, std::move(data)});
@@ -737,9 +735,9 @@ void WebGPUParent::MapCallback(uint8_t* aUserData,
 
       MOZ_RELEASE_ASSERT(!error.GetError());
 
-      MOZ_RELEASE_ASSERT(mapData->mShmem.Size() >= offset + size);
+      MOZ_RELEASE_ASSERT(mapData->mShmem->Size() >= offset + size);
       if (src.ptr != nullptr && src.length >= size) {
-        auto dst = mapData->mShmem.DataAsSpan<uint8_t>().Subspan(offset, size);
+        auto dst = mapData->mShmem->DataAsSpan<uint8_t>().Subspan(offset, size);
         memcpy(dst.data(), src.ptr, size);
       }
     }
@@ -774,11 +772,11 @@ void WebGPUParent::BufferUnmap(RawId aDeviceId, RawId aBufferId, bool aFlush) {
     ForwardError(getRangeError);
 
     if (mapped.ptr != nullptr && mapped.length >= size) {
-      auto shmSize = mapData->mShmem.Size();
+      auto shmSize = mapData->mShmem->Size();
       MOZ_RELEASE_ASSERT(offset <= shmSize);
       MOZ_RELEASE_ASSERT(size <= shmSize - offset);
 
-      auto src = mapData->mShmem.DataAsSpan<uint8_t>().Subspan(offset, size);
+      auto src = mapData->mShmem->DataAsSpan<uint8_t>().Subspan(offset, size);
       memcpy(mapped.ptr, src.data(), size);
     }
 
@@ -1546,9 +1544,19 @@ void WebGPUParent::SwapChainDrop(const layers::RemoteTextureOwnerId& aOwnerId,
 
   for (const auto bid : data->mAvailableBufferIds) {
     ffi::wgpu_server_buffer_drop(mContext.get(), bid);
+    data->mUnassignedBufferIds.push_back(bid);
   }
   for (const auto bid : data->mQueuedBufferIds) {
     ffi::wgpu_server_buffer_drop(mContext.get(), bid);
+    data->mUnassignedBufferIds.push_back(bid);
+  }
+
+  ipc::ByteBuf bb;
+  ffi::wgpu_server_pack_free_swap_chain_buffer_ids(
+      ToFFI(&bb),
+      {data->mUnassignedBufferIds.data(), data->mUnassignedBufferIds.size()});
+  if (!SendServerMessage(std::move(bb))) {
+    NS_ERROR("SendServerMessage failed");
   }
 }
 
@@ -1568,9 +1576,9 @@ ipc::IPCResult WebGPUParent::RecvMessages(
     uint32_t nrOfMessages, ipc::ByteBuf&& aSerializedMessages,
     nsTArray<ipc::ByteBuf>&& aDataBuffers,
     nsTArray<MutableSharedMemoryHandle>&& aShmems) {
-  MOZ_ASSERT(mTempMappings.IsEmpty());
+  MOZ_ASSERT(mTempMappings.empty());
 
-  mTempMappings.SetCapacity(aShmems.Length());
+  mTempMappings.reserve(aShmems.Length());
 
   nsTArray<ffi::WGPUFfiSlice_u8> shmem_mappings(aShmems.Length());
 
@@ -1584,7 +1592,8 @@ ipc::IPCResult WebGPUParent::RecvMessages(
 
     // `aShmem` may be an invalid handle, however this will simply result in an
     // invalid mapping with 0 size, which we use safely.
-    mTempMappings.AppendElement(Some(std::move(mapping)));
+    mTempMappings.push_back(
+        std::make_shared<ipc::SharedMemoryMapping>(std::move(mapping)));
   }
 
   ffi::WGPUFfiSlice_ByteBuf data_buffers{ToFFI(aDataBuffers.Elements()),
@@ -1597,7 +1606,7 @@ ipc::IPCResult WebGPUParent::RecvMessages(
                             ToFFI(&aSerializedMessages), data_buffers,
                             shmem_mapping_slices);
 
-  mTempMappings.Clear();
+  mTempMappings.clear();
 
   return IPC_OK();
 }

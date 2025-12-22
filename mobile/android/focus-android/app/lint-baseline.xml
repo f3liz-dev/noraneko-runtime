@@ -51,28 +51,6 @@
         errorLine1="    android:width=&quot;640dp&quot;"
         errorLine2="                   ~~~~~">
         <location
-            file="src/main/res/drawable-land/dark_background.xml"
-            line="8"
-            column="20"/>
-    </issue>
-
-    <issue
-        id="VectorRaster"
-        message="Limit vector icons sizes to 200×200 to keep icon drawing fast; see https://developer.android.com/studio/write/vector-asset-studio#when for more"
-        errorLine1="    android:width=&quot;360dp&quot;"
-        errorLine2="                   ~~~~~">
-        <location
-            file="src/main/res/drawable/dark_background.xml"
-            line="8"
-            column="20"/>
-    </issue>
-
-    <issue
-        id="VectorRaster"
-        message="Limit vector icons sizes to 200×200 to keep icon drawing fast; see https://developer.android.com/studio/write/vector-asset-studio#when for more"
-        errorLine1="    android:width=&quot;640dp&quot;"
-        errorLine2="                   ~~~~~">
-        <location
             file="src/main/res/drawable-land-night/home_background.xml"
             line="8"
             column="20"/>
@@ -131,171 +109,6 @@
             file="src/main/res/drawable/wordmark2.xml"
             line="7"
             column="20"/>
-    </issue>
-
-    <issue
-        id="UsingMaterialAndMaterial3Libraries"
-        message="Using a material import while also using the material3 library"
-        errorLine1="import androidx.compose.material.TopAppBar"
-        errorLine2="       ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/java/org/mozilla/focus/settings/BaseComposeFragment.kt"
-            line="17"
-            column="8"/>
-    </issue>
-
-    <issue
-        id="UsingMaterialAndMaterial3Libraries"
-        message="Using a material import while also using the material3 library"
-        errorLine1="import androidx.compose.material.DropdownMenu"
-        errorLine2="       ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/java/org/mozilla/focus/ui/menu/CustomDropdownMenu.kt"
-            line="8"
-            column="8"/>
-    </issue>
-
-    <issue
-        id="UsingMaterialAndMaterial3Libraries"
-        message="Using a material import while also using the material3 library"
-        errorLine1="import androidx.compose.material.DropdownMenuItem"
-        errorLine2="       ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/java/org/mozilla/focus/ui/menu/CustomDropdownMenu.kt"
-            line="9"
-            column="8"/>
-    </issue>
-
-    <issue
-        id="UsingMaterialAndMaterial3Libraries"
-        message="Using a material import while also using the material3 library"
-        errorLine1="import androidx.compose.material.Colors"
-        errorLine2="       ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/java/org/mozilla/focus/ui/theme/FocusColors.kt"
-            line="7"
-            column="8"/>
-    </issue>
-
-    <issue
-        id="UsingMaterialAndMaterial3Libraries"
-        message="Using a material import while also using the material3 library"
-        errorLine1="import androidx.compose.material.AlertDialog"
-        errorLine2="       ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/java/org/mozilla/focus/ui/dialog/FocusDialog.kt"
-            line="9"
-            column="8"/>
-    </issue>
-
-    <issue
-        id="UsingMaterialAndMaterial3Libraries"
-        message="Using a material import while also using the material3 library"
-        errorLine1="import androidx.compose.material.MaterialTheme"
-        errorLine2="       ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/java/org/mozilla/focus/ui/dialog/FocusDialog.kt"
-            line="10"
-            column="8"/>
-    </issue>
-
-    <issue
-        id="UsingMaterialAndMaterial3Libraries"
-        message="Using a material import while also using the material3 library"
-        errorLine1="import androidx.compose.material.TextField"
-        errorLine2="       ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/java/org/mozilla/focus/ui/dialog/FocusDialog.kt"
-            line="11"
-            column="8"/>
-    </issue>
-
-    <issue
-        id="UsingMaterialAndMaterial3Libraries"
-        message="Using a material import while also using the material3 library"
-        errorLine1="import androidx.compose.material.TextFieldDefaults"
-        errorLine2="       ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/java/org/mozilla/focus/ui/dialog/FocusDialog.kt"
-            line="12"
-            column="8"/>
-    </issue>
-
-    <issue
-        id="UsingMaterialAndMaterial3Libraries"
-        message="Using a material import while also using the material3 library"
-        errorLine1="import androidx.compose.material.Colors"
-        errorLine2="       ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/java/org/mozilla/focus/ui/theme/FocusTheme.kt"
-            line="8"
-            column="8"/>
-    </issue>
-
-    <issue
-        id="UsingMaterialAndMaterial3Libraries"
-        message="Using a material import while also using the material3 library"
-        errorLine1="import androidx.compose.material.MaterialTheme"
-        errorLine2="       ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/java/org/mozilla/focus/ui/theme/FocusTheme.kt"
-            line="9"
-            column="8"/>
-    </issue>
-
-    <issue
-        id="UsingMaterialAndMaterial3Libraries"
-        message="Using a material import while also using the material3 library"
-        errorLine1="import androidx.compose.material.darkColors"
-        errorLine2="       ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/java/org/mozilla/focus/ui/theme/FocusTheme.kt"
-            line="10"
-            column="8"/>
-    </issue>
-
-    <issue
-        id="UsingMaterialAndMaterial3Libraries"
-        message="Using a material import while also using the material3 library"
-        errorLine1="import androidx.compose.material.lightColors"
-        errorLine2="       ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/java/org/mozilla/focus/ui/theme/FocusTheme.kt"
-            line="11"
-            column="8"/>
-    </issue>
-
-    <issue
-        id="UsingMaterialAndMaterial3Libraries"
-        message="Using a material import while also using the material3 library"
-        errorLine1="import androidx.compose.material.Typography"
-        errorLine2="       ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/java/org/mozilla/focus/ui/theme/FocusTypography.kt"
-            line="7"
-            column="8"/>
-    </issue>
-
-    <issue
-        id="UsingMaterialAndMaterial3Libraries"
-        message="Using a material import while also using the material3 library"
-        errorLine1="import androidx.compose.material.ContentAlpha"
-        errorLine2="       ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/java/org/mozilla/focus/searchsuggestions/ui/SearchOverlay.kt"
-            line="10"
-            column="8"/>
-    </issue>
-
-    <issue
-        id="UsingMaterialAndMaterial3Libraries"
-        message="Using a material import while also using the material3 library"
-        errorLine1="import androidx.compose.material.Card"
-        errorLine2="       ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/java/org/mozilla/focus/topsites/TopSites.kt"
-            line="20"
-            column="8"/>
     </issue>
 
     <issue
@@ -483,17 +296,6 @@
             file="src/main/res/values/app.xml"
             line="9"
             column="13"/>
-    </issue>
-
-    <issue
-        id="UnusedResources"
-        message="The resource `R.drawable.background_snackbar` appears to be unused"
-        errorLine1="&lt;layer-list xmlns:android=&quot;http://schemas.android.com/apk/res/android&quot;>"
-        errorLine2="^">
-        <location
-            file="src/main/res/drawable/background_snackbar.xml"
-            line="5"
-            column="1"/>
     </issue>
 
     <issue
@@ -811,7 +613,7 @@
         errorLine2="           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/res/values/colors.xml"
-            line="125"
+            line="124"
             column="12"/>
     </issue>
 
@@ -822,7 +624,7 @@
         errorLine2="           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/res/values/colors.xml"
-            line="126"
+            line="125"
             column="12"/>
     </issue>
 
@@ -833,7 +635,7 @@
         errorLine2="           ~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/res/values/colors.xml"
-            line="132"
+            line="131"
             column="12"/>
     </issue>
 
@@ -850,34 +652,12 @@
 
     <issue
         id="UnusedResources"
-        message="The resource `R.drawable.context_menu_navigation_view_background` appears to be unused"
-        errorLine1="&lt;shape xmlns:android=&quot;http://schemas.android.com/apk/res/android&quot;>"
-        errorLine2="^">
-        <location
-            file="src/main/res/drawable/context_menu_navigation_view_background.xml"
-            line="4"
-            column="1"/>
-    </issue>
-
-    <issue
-        id="UnusedResources"
         message="The resource `R.layout.custom_tab_menu_item` appears to be unused"
         errorLine1="&lt;TextView style=&quot;@android:style/TextAppearance.Material.Menu&quot;"
         errorLine2="^">
         <location
             file="src/main/res/layout/custom_tab_menu_item.xml"
             line="9"
-            column="1"/>
-    </issue>
-
-    <issue
-        id="UnusedResources"
-        message="The resource `R.drawable.dark_background` appears to be unused"
-        errorLine1="&lt;vector xmlns:android=&quot;http://schemas.android.com/apk/res/android&quot;"
-        errorLine2="^">
-        <location
-            file="src/main/res/drawable/dark_background.xml"
-            line="6"
             column="1"/>
     </issue>
 
@@ -899,7 +679,7 @@
         errorLine2="           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/res/values/dimens.xml"
-            line="15"
+            line="16"
             column="12"/>
     </issue>
 
@@ -910,7 +690,7 @@
         errorLine2="           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/res/values/dimens.xml"
-            line="18"
+            line="19"
             column="12"/>
     </issue>
 
@@ -921,7 +701,7 @@
         errorLine2="           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/res/values/dimens.xml"
-            line="19"
+            line="20"
             column="12"/>
     </issue>
 
@@ -932,7 +712,7 @@
         errorLine2="           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/res/values/dimens.xml"
-            line="20"
+            line="21"
             column="12"/>
     </issue>
 
@@ -943,7 +723,7 @@
         errorLine2="           ~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/res/values/dimens.xml"
-            line="22"
+            line="23"
             column="12"/>
     </issue>
 
@@ -954,7 +734,7 @@
         errorLine2="           ~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/res/values/dimens.xml"
-            line="23"
+            line="24"
             column="12"/>
     </issue>
 
@@ -965,7 +745,7 @@
         errorLine2="           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/res/values/dimens.xml"
-            line="25"
+            line="26"
             column="12"/>
     </issue>
 
@@ -976,7 +756,7 @@
         errorLine2="           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/res/values/dimens.xml"
-            line="26"
+            line="27"
             column="12"/>
     </issue>
 
@@ -987,7 +767,7 @@
         errorLine2="           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/res/values/dimens.xml"
-            line="28"
+            line="29"
             column="12"/>
     </issue>
 
@@ -998,7 +778,7 @@
         errorLine2="           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/res/values/dimens.xml"
-            line="32"
+            line="33"
             column="12"/>
     </issue>
 
@@ -1009,7 +789,7 @@
         errorLine2="           ~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/res/values/dimens.xml"
-            line="46"
+            line="47"
             column="12"/>
     </issue>
 
@@ -1020,7 +800,7 @@
         errorLine2="           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/res/values/dimens.xml"
-            line="47"
+            line="48"
             column="12"/>
     </issue>
 
@@ -1031,7 +811,7 @@
         errorLine2="           ~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/res/values/dimens.xml"
-            line="48"
+            line="49"
             column="12"/>
     </issue>
 
@@ -1042,7 +822,7 @@
         errorLine2="           ~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/res/values/dimens.xml"
-            line="49"
+            line="50"
             column="12"/>
     </issue>
 
@@ -1053,7 +833,7 @@
         errorLine2="           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/res/values/dimens.xml"
-            line="50"
+            line="51"
             column="12"/>
     </issue>
 
@@ -1064,7 +844,7 @@
         errorLine2="           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/res/values/dimens.xml"
-            line="51"
+            line="52"
             column="12"/>
     </issue>
 
@@ -1075,7 +855,7 @@
         errorLine2="           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/res/values/dimens.xml"
-            line="52"
+            line="53"
             column="12"/>
     </issue>
 
@@ -1086,7 +866,7 @@
         errorLine2="           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/res/values/dimens.xml"
-            line="53"
+            line="54"
             column="12"/>
     </issue>
 
@@ -1097,7 +877,7 @@
         errorLine2="           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/res/values/dimens.xml"
-            line="54"
+            line="55"
             column="12"/>
     </issue>
 
@@ -1108,7 +888,7 @@
         errorLine2="           ~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/res/values/dimens.xml"
-            line="55"
+            line="56"
             column="12"/>
     </issue>
 
@@ -1119,7 +899,7 @@
         errorLine2="           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/res/values/dimens.xml"
-            line="56"
+            line="57"
             column="12"/>
     </issue>
 
@@ -1130,7 +910,7 @@
         errorLine2="           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/res/values/dimens.xml"
-            line="57"
+            line="58"
             column="12"/>
     </issue>
 
@@ -1141,7 +921,7 @@
         errorLine2="           ~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/res/values/dimens.xml"
-            line="59"
+            line="60"
             column="12"/>
     </issue>
 
@@ -1152,7 +932,7 @@
         errorLine2="           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/res/values/dimens.xml"
-            line="61"
+            line="62"
             column="12"/>
     </issue>
 
@@ -1163,7 +943,7 @@
         errorLine2="           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/res/values/dimens.xml"
-            line="62"
+            line="63"
             column="12"/>
     </issue>
 
@@ -1174,7 +954,7 @@
         errorLine2="           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/res/values/dimens.xml"
-            line="63"
+            line="64"
             column="12"/>
     </issue>
 
@@ -1185,7 +965,7 @@
         errorLine2="           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/res/values/dimens.xml"
-            line="64"
+            line="65"
             column="12"/>
     </issue>
 
@@ -1196,7 +976,7 @@
         errorLine2="           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/res/values/dimens.xml"
-            line="66"
+            line="67"
             column="12"/>
     </issue>
 
@@ -1207,7 +987,7 @@
         errorLine2="           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/res/values/dimens.xml"
-            line="67"
+            line="68"
             column="12"/>
     </issue>
 
@@ -1224,34 +1004,12 @@
 
     <issue
         id="UnusedResources"
-        message="The resource `R.drawable.find_in_page_background` appears to be unused"
-        errorLine1="&lt;layer-list xmlns:android=&quot;http://schemas.android.com/apk/res/android&quot;"
-        errorLine2="^">
-        <location
-            file="src/main/res/drawable/find_in_page_background.xml"
-            line="4"
-            column="1"/>
-    </issue>
-
-    <issue
-        id="UnusedResources"
         message="The resource `R.layout.focus_preference_left_checkbox` appears to be unused"
         errorLine1="&lt;androidx.constraintlayout.widget.ConstraintLayout xmlns:android=&quot;http://schemas.android.com/apk/res/android&quot;"
         errorLine2="^">
         <location
             file="src/main/res/layout/focus_preference_left_checkbox.xml"
             line="4"
-            column="1"/>
-    </issue>
-
-    <issue
-        id="UnusedResources"
-        message="The resource `R.drawable.foreground_list_item_erase` appears to be unused"
-        errorLine1="&lt;ripple"
-        errorLine2="^">
-        <location
-            file="src/main/res/drawable/foreground_list_item_erase.xml"
-            line="5"
             column="1"/>
     </issue>
 
@@ -1279,185 +1037,9 @@
 
     <issue
         id="UnusedResources"
-        message="The resource `R.drawable.highlight_dot` appears to be unused"
-        errorLine1="&lt;shape"
-        errorLine2="^">
-        <location
-            file="src/main/res/drawable/highlight_dot.xml"
-            line="5"
-            column="1"/>
-    </issue>
-
-    <issue
-        id="UnusedResources"
-        message="The resource `R.drawable.ic_arrowhead_down` appears to be unused"
-        errorLine1="&lt;vector xmlns:android=&quot;http://schemas.android.com/apk/res/android&quot;"
-        errorLine2="^">
-        <location
-            file="src/main/res/drawable/ic_arrowhead_down.xml"
-            line="5"
-            column="1"/>
-    </issue>
-
-    <issue
-        id="UnusedResources"
-        message="The resource `R.drawable.ic_arrowhead_up` appears to be unused"
-        errorLine1="&lt;vector xmlns:android=&quot;http://schemas.android.com/apk/res/android&quot;"
-        errorLine2="^">
-        <location
-            file="src/main/res/drawable/ic_arrowhead_up.xml"
-            line="5"
-            column="1"/>
-    </issue>
-
-    <issue
-        id="UnusedResources"
-        message="The resource `R.drawable.ic_check` appears to be unused"
-        errorLine1="&lt;vector xmlns:android=&quot;http://schemas.android.com/apk/res/android&quot;"
-        errorLine2="^">
-        <location
-            file="src/main/res/drawable/ic_check.xml"
-            line="5"
-            column="1"/>
-    </issue>
-
-    <issue
-        id="UnusedResources"
-        message="The resource `R.drawable.ic_developer` appears to be unused"
-        errorLine1="&lt;vector xmlns:android=&quot;http://schemas.android.com/apk/res/android&quot;"
-        errorLine2="^">
-        <location
-            file="src/main/res/drawable/ic_developer.xml"
-            line="4"
-            column="1"/>
-    </issue>
-
-    <issue
-        id="UnusedResources"
-        message="The resource `R.drawable.ic_download` appears to be unused"
-        errorLine1="&lt;vector xmlns:android=&quot;http://schemas.android.com/apk/res/android&quot;"
-        errorLine2="^">
-        <location
-            file="src/main/res/drawable/ic_download.xml"
-            line="5"
-            column="1"/>
-    </issue>
-
-    <issue
-        id="UnusedResources"
-        message="The resource `R.drawable.ic_firefox` appears to be unused"
-        errorLine1="&lt;vector xmlns:android=&quot;http://schemas.android.com/apk/res/android&quot;"
-        errorLine2="^">
-        <location
-            file="src/main/res/drawable/ic_firefox.xml"
-            line="5"
-            column="1"/>
-    </issue>
-
-    <issue
-        id="UnusedResources"
-        message="The resource `R.drawable.ic_info` appears to be unused"
-        errorLine1="&lt;vector xmlns:android=&quot;http://schemas.android.com/apk/res/android&quot;"
-        errorLine2="^">
-        <location
-            file="src/main/res/drawable/ic_info.xml"
-            line="5"
-            column="1"/>
-    </issue>
-
-    <issue
-        id="UnusedResources"
-        message="The resource `R.drawable.ic_internet` appears to be unused"
-        errorLine1="&lt;vector xmlns:android=&quot;http://schemas.android.com/apk/res/android&quot;"
-        errorLine2="^">
-        <location
-            file="src/main/res/drawable/ic_internet.xml"
-            line="5"
-            column="1"/>
-    </issue>
-
-    <issue
-        id="UnusedResources"
-        message="The resource `R.drawable.ic_language` appears to be unused"
-        errorLine1="&lt;vector xmlns:android=&quot;http://schemas.android.com/apk/res/android&quot;"
-        errorLine2="^">
-        <location
-            file="src/main/res/drawable/ic_language.xml"
-            line="5"
-            column="1"/>
-    </issue>
-
-    <issue
-        id="UnusedResources"
         message="The resource `R.mipmap.ic_launcher_round` appears to be unused">
         <location
             file="src/main/res/mipmap-hdpi/ic_launcher_round.png"/>
-    </issue>
-
-    <issue
-        id="UnusedResources"
-        message="The resource `R.drawable.ic_menu` appears to be unused"
-        errorLine1="&lt;vector xmlns:android=&quot;http://schemas.android.com/apk/res/android&quot;"
-        errorLine2="^">
-        <location
-            file="src/main/res/drawable/ic_menu.xml"
-            line="5"
-            column="1"/>
-    </issue>
-
-    <issue
-        id="UnusedResources"
-        message="The resource `R.drawable.ic_mozilla` appears to be unused"
-        errorLine1="&lt;vector xmlns:android=&quot;http://schemas.android.com/apk/res/android&quot;"
-        errorLine2="^">
-        <location
-            file="src/main/res/drawable/ic_mozilla.xml"
-            line="5"
-            column="1"/>
-    </issue>
-
-    <issue
-        id="UnusedResources"
-        message="The resource `R.drawable.indicator_onboarding` appears to be unused"
-        errorLine1="&lt;selector xmlns:android=&quot;http://schemas.android.com/apk/res/android&quot;>"
-        errorLine2="^">
-        <location
-            file="src/main/res/drawable/indicator_onboarding.xml"
-            line="5"
-            column="1"/>
-    </issue>
-
-    <issue
-        id="UnusedResources"
-        message="The resource `R.drawable.indicator_onboarding_default` appears to be unused"
-        errorLine1="&lt;layer-list xmlns:android=&quot;http://schemas.android.com/apk/res/android&quot;>"
-        errorLine2="^">
-        <location
-            file="src/main/res/drawable/indicator_onboarding_default.xml"
-            line="5"
-            column="1"/>
-    </issue>
-
-    <issue
-        id="UnusedResources"
-        message="The resource `R.drawable.indicator_onboarding_selected` appears to be unused"
-        errorLine1="&lt;layer-list xmlns:android=&quot;http://schemas.android.com/apk/res/android&quot;>"
-        errorLine2="^">
-        <location
-            file="src/main/res/drawable/indicator_onboarding_selected.xml"
-            line="5"
-            column="1"/>
-    </issue>
-
-    <issue
-        id="UnusedResources"
-        message="The resource `R.layout.item_indicator_menu_button` appears to be unused"
-        errorLine1="&lt;merge"
-        errorLine2="^">
-        <location
-            file="src/main/res/layout/item_indicator_menu_button.xml"
-            line="5"
-            column="1"/>
     </issue>
 
     <issue
@@ -1473,34 +1055,12 @@
 
     <issue
         id="UnusedResources"
-        message="The resource `R.drawable.menu_item_dark_background` appears to be unused"
-        errorLine1="&lt;layer-list xmlns:android=&quot;http://schemas.android.com/apk/res/android&quot;>"
-        errorLine2="^">
-        <location
-            file="src/main/res/drawable/menu_item_dark_background.xml"
-            line="5"
-            column="1"/>
-    </issue>
-
-    <issue
-        id="UnusedResources"
         message="The resource `R.layout.menu_navigation` appears to be unused"
         errorLine1="&lt;LinearLayout"
         errorLine2="^">
         <location
             file="src/main/res/layout/menu_navigation.xml"
             line="6"
-            column="1"/>
-    </issue>
-
-    <issue
-        id="UnusedResources"
-        message="The resource `R.drawable.mozac_ic_broken_lock` appears to be unused"
-        errorLine1="&lt;vector xmlns:android=&quot;http://schemas.android.com/apk/res/android&quot;"
-        errorLine2="^">
-        <location
-            file="src/main/res/drawable/mozac_ic_broken_lock.xml"
-            line="5"
             column="1"/>
     </issue>
 
@@ -1561,23 +1121,12 @@
 
     <issue
         id="UnusedResources"
-        message="The resource `R.string.has_opened_new_tab` appears to be unused"
-        errorLine1="    &lt;string name=&quot;has_opened_new_tab&quot; translatable=&quot;false&quot;>&lt;xliff:g id=&quot;preference_key&quot;>has_opened_new_tab&lt;/xliff:g>&lt;/string>"
-        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/res/values/preference_keys.xml"
-            line="76"
-            column="13"/>
-    </issue>
-
-    <issue
-        id="UnusedResources"
         message="The resource `R.string.pref_key_category_safe_browsing` appears to be unused"
         errorLine1="    &lt;string name=&quot;pref_key_category_safe_browsing&quot; translatable=&quot;false&quot;>&lt;xliff:g id=&quot;preference_key&quot;>safe_browsing_category&lt;/xliff:g>&lt;/string>"
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/res/values/preference_keys.xml"
-            line="80"
+            line="71"
             column="13"/>
     </issue>
 
@@ -1588,7 +1137,7 @@
         errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/res/values/preference_keys.xml"
-            line="120"
+            line="111"
             column="13"/>
     </issue>
 
@@ -2545,7 +2094,7 @@
         errorLine2="           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/res/values/styles.xml"
-            line="40"
+            line="47"
             column="12"/>
     </issue>
 
@@ -2556,7 +2105,7 @@
         errorLine2="           ~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/res/values/styles.xml"
-            line="118"
+            line="136"
             column="12"/>
     </issue>
 
@@ -2567,7 +2116,7 @@
         errorLine2="           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/res/values/styles.xml"
-            line="131"
+            line="149"
             column="12"/>
     </issue>
 
@@ -2578,7 +2127,7 @@
         errorLine2="           ~~~~~~~~~~~~~~~~">
         <location
             file="src/main/res/values/styles.xml"
-            line="152"
+            line="170"
             column="12"/>
     </issue>
 
@@ -2589,7 +2138,7 @@
         errorLine2="           ~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/res/values/styles.xml"
-            line="160"
+            line="178"
             column="12"/>
     </issue>
 
@@ -2600,7 +2149,7 @@
         errorLine2="           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/res/values/styles.xml"
-            line="165"
+            line="183"
             column="12"/>
     </issue>
 
@@ -2611,7 +2160,7 @@
         errorLine2="           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/res/values/styles.xml"
-            line="175"
+            line="193"
             column="12"/>
     </issue>
 
@@ -2622,7 +2171,7 @@
         errorLine2="           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/res/values/styles.xml"
-            line="197"
+            line="215"
             column="12"/>
     </issue>
 
@@ -2633,7 +2182,7 @@
         errorLine2="           ~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/res/values/styles.xml"
-            line="205"
+            line="223"
             column="12"/>
     </issue>
 
@@ -2644,7 +2193,7 @@
         errorLine2="           ~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/res/values/styles.xml"
-            line="210"
+            line="228"
             column="12"/>
     </issue>
 
@@ -2655,7 +2204,7 @@
         errorLine2="           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/res/values/styles.xml"
-            line="214"
+            line="232"
             column="12"/>
     </issue>
 
@@ -2666,7 +2215,7 @@
         errorLine2="           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/res/values/styles.xml"
-            line="218"
+            line="236"
             column="12"/>
     </issue>
 
@@ -2677,7 +2226,7 @@
         errorLine2="           ~~~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/res/values/styles.xml"
-            line="222"
+            line="240"
             column="12"/>
     </issue>
 
@@ -2688,41 +2237,8 @@
         errorLine2="           ~~~~~~~~~~~~~~~~~~~~~~~">
         <location
             file="src/main/res/values/styles.xml"
-            line="227"
+            line="245"
             column="12"/>
-    </issue>
-
-    <issue
-        id="UnusedResources"
-        message="The resource `R.drawable.tab_number_border` appears to be unused"
-        errorLine1="&lt;vector xmlns:android=&quot;http://schemas.android.com/apk/res/android&quot;"
-        errorLine2="^">
-        <location
-            file="src/main/res/drawable/tab_number_border.xml"
-            line="5"
-            column="1"/>
-    </issue>
-
-    <issue
-        id="UnusedResources"
-        message="The resource `R.drawable.top_rounded_corners_bottom_sheet_background` appears to be unused"
-        errorLine1="&lt;shape xmlns:android=&quot;http://schemas.android.com/apk/res/android&quot;"
-        errorLine2="^">
-        <location
-            file="src/main/res/drawable/top_rounded_corners_bottom_sheet_background.xml"
-            line="5"
-            column="1"/>
-    </issue>
-
-    <issue
-        id="UnusedResources"
-        message="The resource `R.drawable.urlbar_background` appears to be unused"
-        errorLine1="&lt;shape xmlns:android=&quot;http://schemas.android.com/apk/res/android&quot;>"
-        errorLine2="^">
-        <location
-            file="src/main/res/drawable/urlbar_background.xml"
-            line="4"
-            column="1"/>
     </issue>
 
     <issue
@@ -2748,28 +2264,10 @@
     </issue>
 
     <issue
-        id="IconLocation"
-        message="Found bitmap drawable `res/drawable/onboarding_second_screen_icon.png` in densityless folder">
-        <location
-            file="src/main/res/drawable/onboarding_second_screen_icon.png"/>
-    </issue>
-
-    <issue
         id="IconMissingDensityFolder"
         message="Missing density variation folders in `src/main/res`: drawable-mdpi, drawable-xhdpi, drawable-xxhdpi">
         <location
             file="src/main/res"/>
-    </issue>
-
-    <issue
-        id="ContentDescription"
-        message="Missing `contentDescription` attribute on image"
-        errorLine1="    &lt;ImageView"
-        errorLine2="     ~~~~~~~~~">
-        <location
-            file="src/main/res/layout/item_indicator_menu_button.xml"
-            line="9"
-            column="6"/>
     </issue>
 
     <issue

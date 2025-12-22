@@ -109,6 +109,7 @@
     #lastGroup;
     connectedCallback() {
       this.#updateOnTabGrouped();
+      this.#updateOnTabSplit();
       this.#lastGroup = this.group;
 
       this.initialize();
@@ -116,6 +117,7 @@
 
     disconnectedCallback() {
       this.#updateOnTabUngrouped();
+      this.#updateOnTabUnsplit();
     }
 
     initialize() {
@@ -271,6 +273,14 @@
       gBrowser._tabAttrModified(this, ["undiscardable"]);
     }
 
+    get animationsEnabled() {
+      return this.style.transition == "";
+    }
+
+    set animationsEnabled(val) {
+      this.style.transition = val ? "" : "none";
+    }
+
     get isEmpty() {
       // Determines if a tab is "empty", usually used in the context of determining
       // if it's ok to close the tab.
@@ -372,17 +382,12 @@
     }
 
     get group() {
-      if (this.parentElement?.tagName == "tab-group") {
-        return this.parentElement;
-      }
-      return null;
+      return this.closest("tab-group");
     }
 
     get splitview() {
-      if (
-        this.parentElement?.parentElement?.tagName == "tab-split-view-wrapper"
-      ) {
-        return this.parentElement.parentElement;
+      if (this.parentElement?.tagName == "tab-split-view-wrapper") {
+        return this.parentElement;
       }
       return null;
     }
@@ -764,6 +769,33 @@
         // given tab is "2 of 7" in the group, for example.
         this.removeAttribute("aria-posinset");
         this.removeAttribute("aria-setsize");
+      }
+    }
+
+    #updateOnTabSplit() {
+      if (this.splitview) {
+        this.setAttribute("aria-level", 2);
+
+        // Add "Split view" to label if tab is within a split view
+        let splitViewLabel = gBrowser.tabLocalization.formatValueSync(
+          "tabbrowser-tab-label-tab-split-view"
+        );
+        this.setAttribute(
+          "aria-label",
+          `${this.getAttribute("label")}, ${splitViewLabel}`
+        );
+      }
+    }
+
+    #updateOnTabUnsplit() {
+      if (this.splitview) {
+        this.setAttribute("aria-level", 1);
+        // `posinset` and `setsize` only need to be set explicitly
+        // on split view tabs so that a11y tools can tell users that a
+        // given tab is "1 of 2" in the split view, for example.
+        this.removeAttribute("aria-posinset");
+        this.removeAttribute("aria-setsize");
+        this.removeAttribute("aria-label");
       }
     }
   }

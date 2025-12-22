@@ -164,7 +164,7 @@ newtab-menu-bookmark = הוספת סימנייה
 
 newtab-menu-copy-download-link = העתקת קישור ההורדה
 newtab-menu-go-to-download-page = מעבר לעמוד ההורדה
-newtab-menu-remove-download = הסרה מההיסטורייה
+newtab-menu-remove-download = הסרה מההיסטוריה
 
 ## Context Menu - Download Menu: These are platform specific strings found in the context menu of an item that has
 ## been downloaded. The intention behind "this action" is that it will show where the downloaded file exists on the file
@@ -401,7 +401,7 @@ newtab-wallpaper-abstract-purple-green = מעברי צבע סגול וירוק
 newtab-wallpaper-abstract-blue-purple-waves = צורות גליות בצבע כחול וסגול
 newtab-wallpaper-abstract-black-waves = צורות גליות בצבע שחור
 
-## Celestial
+## Firefox
 
 newtab-wallpaper-category-title-photographs = תצלומים
 newtab-wallpaper-beach-at-sunrise = זריחה בחוף הים
@@ -430,6 +430,10 @@ feature-highlight-dismiss-button =
 feature-highlight-wallpaper =
     .title = { -newtab-wallpaper-feature-highlight-header }
     .aria-label = { -newtab-wallpaper-feature-highlight-content }
+
+## Firefox
+
+newtab-wallpaper-category-title-firefox = { -brand-product-name }
 
 ## Celestial
 
@@ -472,8 +476,16 @@ newtab-weather-menu-change-temperature-units-fahrenheit = מעבר לפרנהי�
 newtab-weather-menu-change-temperature-units-celsius = מעבר לצלזיוס
 newtab-weather-menu-hide-weather = הסתרת מזג האוויר בלשונית החדשה
 newtab-weather-menu-learn-more = מידע נוסף
+newtab-weather-menu-detect-my-location = זיהוי המיקום שלי
 # This message is shown if user is working offline
 newtab-weather-error-not-available = נתוני מזג האוויר אינם זמינים כעת.
+newtab-weather-opt-in-see-weather = האם ברצונך לראות את מזג האוויר עבור המיקום שלך?
+newtab-weather-opt-in-not-now =
+    .label = לא כעת
+newtab-weather-opt-in-yes =
+    .label = כן
+# We'll be showing static (fake) weather data if the user has not opted in to using their location
+newtab-weather-static-city = New York City
 
 ## Topic Labels
 
@@ -640,6 +652,9 @@ newtab-widget-lists-input-menu-move-up = להזיז מעלה
 newtab-widget-lists-input-menu-move-down = להזיז מטה
 newtab-widget-lists-input-menu-delete = מחיקה
 newtab-widget-lists-input-menu-edit = עריכה
+# the + symbol emphasises the functionality of adding a new list
+newtab-widget-lists-dropdown-create =
+    .label = + יצירת רשימה חדשה
 newtab-widget-lists-name-label-default =
     .label = רשימת משימות
 newtab-widget-lists-name-placeholder-default =
@@ -659,10 +674,6 @@ newtab-widget-timer-mode-focus =
     .label = ריכוז
 newtab-widget-timer-mode-break =
     .label = הפסקה
-newtab-widget-timer-play =
-    .title = הפעלה
-newtab-widget-timer-pause =
-    .title = השהייה
 newtab-widget-timer-label-play =
     .label = הפעלה
 newtab-widget-timer-label-pause =

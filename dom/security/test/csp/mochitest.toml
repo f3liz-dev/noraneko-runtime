@@ -352,8 +352,9 @@ skip-if = [
 
 ["test_bug836922_npolicies.html"]
 skip-if = [
-  "http3",
   "http2",
+  "http3",
+  "verify-standalone",
 ]
 
 ["test_bug885433.html"]
@@ -365,6 +366,10 @@ skip-if = [
 ["test_bug909029.html"]
 
 ["test_bug910139.html"]
+skip-if = [
+  "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && opt && verify-standalone",
+  "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && opt && verify-standalone",
+]
 
 ["test_bug941404.html"]
 
@@ -433,7 +438,6 @@ skip-if = [
 
 ["test_csp_error_messages.html"]
 support-files = ["file_csp_error_messages.html"]
-skip-if = ["os == 'android' && android_version == '24' && processor == 'x86_64' && debug"] # Bug 1915293
 
 ["test_csp_frame_ancestors_about_blank.html"]
 support-files = [

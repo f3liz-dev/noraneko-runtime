@@ -12,9 +12,7 @@
 #include <utility>
 #include <type_traits>
 
-#include "mozilla/AlreadyAddRefed.h"
 #include "mozilla/Assertions.h"
-#include "mozilla/Atomics.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/RefCountType.h"
 

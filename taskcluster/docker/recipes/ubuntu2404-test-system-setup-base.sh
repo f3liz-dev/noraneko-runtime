@@ -121,13 +121,13 @@ if [[ "$ARCH" == "amd64" ]]; then
     apt_packages=()
     apt_packages+=('libavcodec-extra60:i386')
     apt_packages+=('libpulse0:i386')
-    apt_packages+=('libxt6:i386')
+    apt_packages+=('libxt6t64:i386')
     apt_packages+=('libxtst6:i386')
     apt_packages+=('libsecret-1-0:i386')
-    apt_packages+=('libgtk-3-0:i386')
+    apt_packages+=('libgtk-3-0t64:i386')
     apt_packages+=('libx11-xcb1:i386')
     apt_packages+=('libxcb1:i386')
-    apt_packages+=('libasound2:i386')
+    apt_packages+=('libasound2t64:i386')
     apt_packages+=('libnotify4:i386')
 
     apt-get install --allow-downgrades "${apt_packages[@]}"
@@ -168,5 +168,14 @@ rm -rf /run/systemd/seats
 
 # Further cleanup
 apt-get autoremove --purge
+
+# Overwrite Ubuntu's Yaru theme with GTK's default (Adwaita), for consistency
+cat > /etc/gtk-3.0/settings.ini <<EOF
+[Settings]
+gtk-theme-name = Adwaita
+gtk-icon-theme-name = Yaru
+gtk-sound-theme-name = Yaru
+gtk-icon-sizes = panel-menu-bar=24,24
+EOF
 
 rm -f "$0"

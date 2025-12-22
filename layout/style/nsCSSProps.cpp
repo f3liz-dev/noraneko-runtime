@@ -12,8 +12,6 @@
 #include "nsCSSProps.h"
 
 #include "gfxPlatform.h"
-#include "mozilla/ArrayUtils.h"
-#include "mozilla/Casting.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/LookAndFeel.h"  // for system colors
 #include "mozilla/Preferences.h"
@@ -85,14 +83,8 @@ void nsCSSProps::RecomputeEnabledState(const char* aPref, void*) {
             gfx::gfxVars::GetAllowBackdropFilterOrDefault();
       }
 #ifdef FUZZING
-      // Even in fuzzing builds we only want to enable overflow-clip-box if the
-      // pref is flipped on (it's still enabled in UA sheets though). See bug
-      // 1936080.
-      if (pref->mPropID != eCSSProperty_overflow_clip_box &&
-          pref->mPropID != eCSSProperty_overflow_clip_box_block &&
-          pref->mPropID != eCSSProperty_overflow_clip_box_inline) {
-        gPropertyEnabled[pref->mPropID] = true;
-      }
+      // In fuzzing builds we want to enable all properties unconditionally.
+      gPropertyEnabled[pref->mPropID] = true;
 #endif
     }
   }

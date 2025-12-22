@@ -34,7 +34,7 @@
 #include "mozilla/StaticPresData.h"
 #include "mozilla/TextEditor.h"
 #include "mozilla/TextEvents.h"
-#include "mozilla/Unused.h"
+#include "mozilla/TextUtils.h"
 #include "mozilla/dom/CharacterDataBuffer.h"
 #include "mozilla/dom/PerformanceMainThread.h"
 #include "mozilla/gfx/2D.h"
@@ -105,11 +105,44 @@ using namespace mozilla;
 using namespace mozilla::dom;
 using namespace mozilla::gfx;
 
+static bool NeedsToMaskPassword(const nsTextFrame* aFrame) {
+  MOZ_ASSERT(aFrame);
+  MOZ_ASSERT(aFrame->GetContent());
+  if (!aFrame->GetContent()->HasFlag(NS_MAYBE_MASKED)) {
+    return false;
+  }
+  const nsIFrame* frame =
+      nsLayoutUtils::GetClosestFrameOfType(aFrame, LayoutFrameType::TextInput);
+  MOZ_ASSERT(frame, "How do we have a masked text node without a text input?");
+  return !frame || !frame->GetContent()->AsElement()->State().HasState(
+                       ElementState::REVEALED);
+}
+
 namespace mozilla {
 
+bool TextAutospace::ShouldSuppressLetterNumeralSpacing(const nsIFrame* aFrame) {
+  const auto wm = aFrame->GetWritingMode();
+  if (wm.IsVertical() && !wm.IsVerticalSideways() &&
+      aFrame->StyleVisibility()->mTextOrientation ==
+          StyleTextOrientation::Upright) {
+    // The characters are in vertical writing mode with forced upright glyph
+    // orientation.
+    return true;
+  }
+  if (aFrame->Style()->IsTextCombined()) {
+    // The characters have combined forced upright glyph orientation.
+    return true;
+  }
+  if (aFrame->StyleText()->mTextTransform & StyleTextTransform::FULL_WIDTH) {
+    // The characters are transformed to full-width, so non-ideographic
+    // letters/numerals look like ideograph letter/numerals.
+    return true;
+  }
+  return false;
+}
+
 bool TextAutospace::Enabled(const StyleTextAutospace& aStyleTextAutospace,
-                            const nsIFrame* aFrame,
-                            const CharacterDataBuffer& aBuffer) {
+                            const nsTextFrame* aFrame) {
   if (aStyleTextAutospace == StyleTextAutospace::NO_AUTOSPACE) {
     return false;
   }
@@ -121,21 +154,15 @@ bool TextAutospace::Enabled(const StyleTextAutospace& aStyleTextAutospace,
     return false;
   }
 
-  WritingMode wm = aFrame->GetWritingMode();
-  if (wm.IsVertical() && !wm.IsVerticalSideways() &&
-      aFrame->StyleVisibility()->mTextOrientation ==
-          StyleTextOrientation::Upright) {
-    // If writing-mode is vertical-* and 'text-orientation: upright',
-    // a character cannot be a non-ideographic letter or numeral,
-    // so ideograph-alpha or ideograph-numeric boundaries cannot occur.
-    //
-    // Note: 'text-combine-upright' is checked in
-    // PropertyProvider::GetSpacingInternal(), so we do not check it here.
+  if (ShouldSuppressLetterNumeralSpacing(aFrame)) {
+    // If we suppress the spacing for aFrame, ideograph-alpha or
+    // ideograph-numeric boundaries cannot occur.
     return false;
   }
 
-  if (!aBuffer.Is2b()) {
-    // An 8-bit character cannot be an ideograph.
+  if (NeedsToMaskPassword(aFrame)) {
+    // Don't allow autospacing in masked password fields, as it could reveal
+    // hints about the types of characters present.
     return false;
   }
 
@@ -169,20 +196,16 @@ bool TextAutospace::ShouldApplySpacing(CharClass aPrevClass,
   return false;
 }
 
-bool TextAutospace::IsIdeograph(char32_t aChar) const {
+bool TextAutospace::IsIdeograph(char32_t aChar) {
   // All characters in the range of U+3041 to U+30FF, except those that belong
   // to Unicode Punctuation [P*] general category.
   if (0x3041 <= aChar && aChar <= 0x30FF) {
     return !intl::UnicodeProperties::IsPunctuation(aChar);
   }
 
-  // CJK Strokes (U+31C0 to U+31EF).
-  if (0x31C0 <= aChar && aChar <= 0x31EF) {
-    return true;
-  }
-
-  // Katakana Phonetic Extensions (U+31F0 to U+31FF).
-  if (0x31F0 <= aChar && aChar <= 0x31FF) {
+  // CJK Strokes (U+31C0 to U+31EF) and Katakana Phonetic Extensions (U+31F0 to
+  // U+31FF).
+  if (0x31C0 <= aChar && aChar <= 0x31FF) {
     return true;
   }
 
@@ -194,7 +217,15 @@ bool TextAutospace::IsIdeograph(char32_t aChar) const {
   return false;
 }
 
-TextAutospace::CharClass TextAutospace::GetCharClass(char32_t aChar) const {
+TextAutospace::CharClass TextAutospace::GetCharClass(char32_t aChar) {
+  if (IsAsciiAlpha(aChar)) {
+    return CharClass::NonIdeographicLetter;
+  }
+
+  if (IsAsciiDigit(aChar)) {
+    return CharClass::NonIdeographicNumeral;
+  }
+
   if (IsIdeograph(aChar)) {
     return CharClass::Ideograph;
   }
@@ -238,19 +269,6 @@ TextAutospace::BoundarySet TextAutospace::InitBoundarySet(
 }
 
 }  // namespace mozilla
-
-static bool NeedsToMaskPassword(nsTextFrame* aFrame) {
-  MOZ_ASSERT(aFrame);
-  MOZ_ASSERT(aFrame->GetContent());
-  if (!aFrame->GetContent()->HasFlag(NS_MAYBE_MASKED)) {
-    return false;
-  }
-  nsIFrame* frame =
-      nsLayoutUtils::GetClosestFrameOfType(aFrame, LayoutFrameType::TextInput);
-  MOZ_ASSERT(frame, "How do we have a masked text node without a text input?");
-  return !frame || !frame->GetContent()->AsElement()->State().HasState(
-                       ElementState::REVEALED);
-}
 
 struct TabWidth {
   TabWidth(uint32_t aOffset, uint32_t aWidth)
@@ -1970,8 +1988,7 @@ gfx::ShapedTextFlags nsTextFrame::GetSpacingFlags() const {
   // to be rare, and avoiding TEXT_ENABLE_SPACING is just an optimization.
   bool nonStandardSpacing =
       !ls.IsDefinitelyZero() || !ws.IsDefinitelyZero() ||
-      TextAutospace::Enabled(styleText->EffectiveTextAutospace(), this,
-                             CharacterDataBuffer());
+      TextAutospace::Enabled(styleText->EffectiveTextAutospace(), this);
   return nonStandardSpacing ? gfx::ShapedTextFlags::TEXT_ENABLE_SPACING
                             : gfx::ShapedTextFlags();
 }
@@ -2724,7 +2741,7 @@ already_AddRefed<gfxTextRun> BuildTextRunsScanner::BuildTextRunForFrames(
   // Ownership of the factory has passed to the textrun
   // TODO: bug 1285316: clean up ownership transfer from the factory to
   // the textrun
-  Unused << transformingFactory.release();
+  (void)transformingFactory.release();
 
   if (anyTextEmphasis) {
     SetupTextEmphasisForTextRun(textRun.get(), textPtr);
@@ -3546,20 +3563,16 @@ static int32_t GetFrameLineNum(nsIFrame* aFrame, nsILineIterator* aLineIter) {
   if (!aLineIter) {
     return -1;
   }
-  int32_t n = aLineIter->FindLineContaining(aFrame);
-  if (n >= 0) {
-    return n;
-  }
-  // If we didn't find the frame directly, but its parent is an inline,
-  // we want the line that the inline ancestor is on.
-  nsIFrame* ancestor = aFrame->GetParent();
-  while (ancestor && ancestor->IsInlineFrame()) {
-    n = aLineIter->FindLineContaining(ancestor);
+  // If we don't find the frame directly, but its parent is an inline or other
+  // "line participant" (e.g. nsFirstLineFrame), we want the line that the
+  // inline ancestor is on.
+  do {
+    int32_t n = aLineIter->FindLineContaining(aFrame);
     if (n >= 0) {
       return n;
     }
-    ancestor = ancestor->GetParent();
-  }
+    aFrame = aFrame->GetParent();
+  } while (aFrame && aFrame->IsLineParticipant());
   return -1;
 }
 
@@ -3797,10 +3810,11 @@ JustificationInfo nsTextFrame::PropertyProvider::ComputeJustification(
   return info;
 }
 
-// aStart, aLength in transformed string offsets
-void nsTextFrame::PropertyProvider::GetSpacing(Range aRange,
+// aStart, aLength in transformed string offsets.
+// Returns false if no non-standard spacing was required.
+bool nsTextFrame::PropertyProvider::GetSpacing(Range aRange,
                                                Spacing* aSpacing) const {
-  GetSpacingInternal(
+  return GetSpacingInternal(
       aRange, aSpacing,
       !(mTextRun->GetFlags2() & nsTextFrameUtils::Flags::HasTab));
 }
@@ -3860,106 +3874,311 @@ static gfxFloat ComputeTabWidthAppUnits(const nsIFrame* aFrame) {
   RefPtr font = fm->GetThebesFontGroup()->GetFirstValidFont(' ');
   auto metrics = font->GetMetrics(vertical ? nsFontMetrics::eVertical
                                            : nsFontMetrics::eHorizontal);
-  nscoord spaceWidth = nscoord(
-      NS_round(metrics.spaceWidth * cb->PresContext()->AppUnitsPerDevPixel()));
+  nscoord spaceWidth = NSToCoordRound(metrics.spaceWidth *
+                                      cb->PresContext()->AppUnitsPerDevPixel());
   return spaces *
          (spaceWidth + styleText->mLetterSpacing.Resolve(fm->EmHeight()) +
           styleText->mWordSpacing.Resolve(spaceWidth));
 }
 
-void nsTextFrame::PropertyProvider::GetSpacingInternal(Range aRange,
+// Walk backward from aIter to prior cluster starts (within the same textframe's
+// content) and return the first non-mark autospace class.
+//
+// @param aContentOffsetAtFrameStart the original content offset at the start of
+// the textframe.
+static Maybe<TextAutospace::CharClass> LastNonMarkCharClass(
+    gfxSkipCharsIterator& aIter, int32_t aContentOffsetAtFrameStart,
+    const gfxTextRun* aTextRun, const CharacterDataBuffer& aBuffer) {
+  while (aIter.GetOriginalOffset() > aContentOffsetAtFrameStart) {
+    aIter.AdvanceOriginal(-1);
+    FindClusterStart(aTextRun, aContentOffsetAtFrameStart, &aIter);
+    const char32_t ch = aBuffer.ScalarValueAt(aIter.GetOriginalOffset());
+    auto cls = TextAutospace::GetCharClass(ch);
+    if (cls != TextAutospace::CharClass::CombiningMark) {
+      return Some(cls);
+    }
+  }
+  return Nothing();
+}
+
+// Walk backward through the frame's content and return the first non-mark
+// autospace class. (Unlike the function above, this is usable when the frame
+// does not currently have a textrun.)
+static Maybe<TextAutospace::CharClass> LastNonMarkCharClass(
+    const nsTextFrame* aFrame) {
+  using CharClass = TextAutospace::CharClass;
+  bool trimSpace = aFrame->HasAnyStateBits(TEXT_TRIMMED_TRAILING_WHITESPACE);
+  const auto& buffer = aFrame->CharacterDataBuffer();
+  const uint32_t startOffset = aFrame->GetContentOffset();
+  uint32_t i = aFrame->GetContentEnd();
+  while (i > startOffset) {
+    // Get trailing character, decoding surrogate pair if necessary.
+    char32_t ch = buffer.CharAt(--i);
+    if (NS_IS_LOW_SURROGATE(ch) && i > startOffset) {
+      // Get potential high surrogate, and decode.
+      char32 hi = buffer.CharAt(i - 1);
+      if (NS_IS_HIGH_SURROGATE(hi)) {
+        ch = SURROGATE_TO_UCS4(hi, ch);
+        --i;
+      }
+    }
+    // Skip over trailing whitespace if the frame was trimmed.
+    if (trimSpace) {
+      if (IsTrimmableSpace(ch)) {
+        continue;
+      }
+      trimSpace = false;
+    }
+    // If it has a non-CombiningMark class, return it.
+    auto cls = TextAutospace::GetCharClass(ch);
+    if (cls != CharClass::CombiningMark) {
+      return Some(cls);
+    }
+  }
+  // No (non-mark, non-trimmed) characters were found.
+  return Nothing();
+}
+
+// Return the first non-mark autospace class from the end of content in aFrame.
+static Maybe<TextAutospace::CharClass> LastNonMarkCharClassInFrame(
+    nsTextFrame* aFrame) {
+  using CharClass = TextAutospace::CharClass;
+  if (!aFrame->GetContentLength()) {
+    return Nothing();
+  }
+  Maybe<CharClass> prevClass;
+  if (aFrame->GetTextRun(nsTextFrame::eInflated)) {
+    // If the frame has a textrun, we can use that to find the last cluster
+    // start character and return its class.
+    gfxSkipCharsIterator iter = aFrame->EnsureTextRun(nsTextFrame::eInflated);
+    iter.SetOriginalOffset(aFrame->GetContentEnd());
+    prevClass = LastNonMarkCharClass(iter, aFrame->GetContentOffset(),
+                                     aFrame->GetTextRun(nsTextFrame::eInflated),
+                                     aFrame->CharacterDataBuffer());
+  } else {
+    // We can't call EnsureTextRun if it would build new textruns, because that
+    // could destroy the glyph runs that we're currently iterating over. So
+    // instead we fall back to inspecting the content directly. This means we
+    // ignore CSS whitespace-collapsing, which could mean some of the content
+    // should be skipped, but in practice none of the characters that are
+    // relevant for autospace classes would be affected.
+    prevClass = LastNonMarkCharClass(aFrame);
+  }
+  if (prevClass) {
+    return prevClass;
+  }
+  if (aFrame->GetPrevInFlow()) {
+    // If aFrame has a prev-in-flow, it is after a line-break, so autospace does
+    // not apply here; just return Other.
+    return Some(CharClass::Other);
+  }
+  return Nothing();
+}
+
+// Look for the autospace class of the content preceding the given aFrame
+// in the mapped flows of the current textrun.
+static Maybe<TextAutospace::CharClass> GetPrecedingCharClassFromMappedFlows(
+    const nsTextFrame* aFrame, const gfxTextRun* aTextRun) {
+  using CharClass = TextAutospace::CharClass;
+
+  if (aTextRun->GetFlags2() & nsTextFrameUtils::Flags::IsSimpleFlow) {
+    return Nothing();
+  }
+
+  auto data = static_cast<TextRunUserData*>(aTextRun->GetUserData());
+  if (!data) {
+    return Nothing();
+  }
+  TextRunMappedFlow* mappedFlows = GetMappedFlows(aTextRun);
+
+  // Search for aFrame in the mapped flows.
+  uint32_t i = 0;
+  for (; i < data->mMappedFlowCount; ++i) {
+    if (mappedFlows[i].mStartFrame == aFrame) {
+      break;
+    }
+  }
+  MOZ_ASSERT(mappedFlows[i].mStartFrame == aFrame,
+             "aFrame not found in mapped flows!");
+
+  while (i > 0) {
+    nsTextFrame* f = mappedFlows[--i].mStartFrame->LastInFlow();
+    if (Maybe<CharClass> prevClass = LastNonMarkCharClassInFrame(f)) {
+      return prevClass;
+    }
+  }
+  return Nothing();
+}
+
+// Look for the autospace class of content preceding the given frame.
+static Maybe<TextAutospace::CharClass> GetPrecedingCharClassFromFrameTree(
+    nsIFrame* aFrame) {
+  using CharClass = TextAutospace::CharClass;
+  while (!aFrame->GetPrevSibling() && aFrame->GetParent()->IsInlineFrame()) {
+    // If this is the first child of an inline container, we want to ascend to
+    // the parent and look at what precedes it.
+    aFrame = aFrame->GetParent();
+  }
+  aFrame = aFrame->GetPrevSibling();
+  while (aFrame) {
+    if (aFrame->IsPlaceholderFrame()) {
+      // Skip over out-of-flow placeholders.
+      aFrame = aFrame->GetPrevSibling();
+      continue;
+    }
+    if (aFrame->IsInlineFrame()) {
+      // Descend into inline containers and go backwards through their content.
+      aFrame = aFrame->PrincipalChildList().LastChild();
+      continue;
+    }
+    if (nsTextFrame* f = do_QueryFrame(aFrame)) {
+      // Look for the class of the last character in the textframe.
+      Maybe<CharClass> prevClass = LastNonMarkCharClassInFrame(f);
+      if (prevClass) {
+        if ((*prevClass == CharClass::NonIdeographicLetter ||
+             *prevClass == CharClass::NonIdeographicNumeral) &&
+            TextAutospace::ShouldSuppressLetterNumeralSpacing(f)) {
+          return Some(CharClass::Other);
+        }
+        return prevClass;
+      }
+      aFrame = aFrame->GetPrevSibling();
+      continue;
+    }
+    return Nothing();
+  }
+  return Nothing();
+}
+
+static bool HasCJKGlyphRun(const gfxTextRun* aTextRun) {
+  uint32_t numGlyphRuns;
+  const gfxTextRun::GlyphRun* run = aTextRun->GetGlyphRuns(&numGlyphRuns);
+  while (numGlyphRuns-- > 0) {
+    if (run->mIsCJK) {
+      return true;
+    }
+    run++;
+  }
+  return false;
+}
+
+bool nsTextFrame::PropertyProvider::GetSpacingInternal(Range aRange,
                                                        Spacing* aSpacing,
                                                        bool aIgnoreTabs) const {
   MOZ_ASSERT(IsInBounds(mStart, mLength, aRange), "Range out of bounds");
 
-  uint32_t index;
-  for (index = 0; index < aRange.Length(); ++index) {
-    aSpacing[index].mBefore = 0.0;
-    aSpacing[index].mAfter = 0.0;
-  }
+  std::memset(aSpacing, 0, aRange.Length() * sizeof(*aSpacing));
 
   if (mFrame->Style()->IsTextCombined()) {
-    return;
+    return false;
   }
 
-  // Find our offset into the original+transformed string
-  gfxSkipCharsIterator start(mStart);
-  start.SetSkippedOffset(aRange.start);
+  // Track whether any non-standard spacing is actually present in this range.
+  // If letter-spacing is non-zero this will always be true, but for the
+  /// word-spacing and text-autospace cases it will depend on the actual text.
+  bool spacingPresent = mLetterSpacing;
 
   // First, compute the word spacing, letter spacing, and text-autospace
   // spacing.
   if (mWordSpacing || mLetterSpacing || mTextAutospace) {
-    // Iterate over non-skipped characters
-    nsSkipCharsRunIterator run(
-        start, nsSkipCharsRunIterator::LENGTH_UNSKIPPED_ONLY, aRange.Length());
     bool newlineIsSignificant = mTextStyle->NewlineIsSignificant(mFrame);
     // Which letter-spacing model are we using?
     //   0 - Gecko legacy model, spacing added to trailing side of letter
     //   1 - WebKit/Blink-compatible, spacing added to right-hand side
     //   2 - Symmetrical spacing, half added to each side
-    gfxFloat before, after;
+    nscoord before, after;
     switch (StaticPrefs::layout_css_letter_spacing_model()) {
       default:  // use Gecko legacy behavior if pref value is unknown
       case 0:
-        before = 0.0;
+        before = 0;
         after = mLetterSpacing;
         break;
       case 1:
         if (mTextRun->IsRightToLeft()) {
           before = mLetterSpacing;
-          after = 0.0;
+          after = 0;
         } else {
-          before = 0.0;
+          before = 0;
           after = mLetterSpacing;
         }
         break;
       case 2:
-        before = mLetterSpacing / 2.0;
+        before = NSToCoordRound(mLetterSpacing * 0.5);
         after = mLetterSpacing - before;
         break;
     }
+
+    // Find our offset into the original+transformed string
+    gfxSkipCharsIterator start(mStart);
+    start.SetSkippedOffset(aRange.start);
     bool atStart = mStartOfLineOffset == start.GetSkippedOffset() &&
                    !mFrame->IsInSVGTextSubtree();
 
     using CharClass = TextAutospace::CharClass;
-    // Previous non-mark class of a scalar at a cluster start.
-    CharClass prevClass = CharClass::Other;
-    if (mTextAutospace) {
-      // We may need the class of the scalar immediately before the current
-      // aRange.
-      if (aRange.start > 0 && start.GetOriginalOffset() > 0) {
-        gfxSkipCharsIterator findPrevCluster = start;
-        do {
-          findPrevCluster.AdvanceOriginal(-1);
-          FindClusterStart(mTextRun, 0, &findPrevCluster);
-          const char32_t prevScalar = mCharacterDataBuffer.ScalarValueAt(
-              findPrevCluster.GetOriginalOffset());
-          prevClass = mTextAutospace->GetCharClass(prevScalar);
-        } while (prevClass == CharClass::CombiningMark &&
-                 findPrevCluster.GetOriginalOffset() > 0);
-      } else {
-        // Bug 1986837: Look for the last non-mark cluster start of the
-        // preceding frame, if any.
+    // The non-mark class of a previous character at a cluster start (if any).
+    Maybe<CharClass> prevClass;
+
+    // Initialization of prevClass at start-of-frame may be a bit expensive,
+    // and we don't always need that initial value, so we encapsulate it in a
+    // helper to be called on-demand.
+    auto findPrecedingClass = [&]() -> CharClass {
+      // Get the class of the character immediately before the current aRange.
+      Maybe<CharClass> prevClass;
+      if (aRange.start > 0) {
+        gfxSkipCharsIterator iter = start;
+        prevClass = LastNonMarkCharClass(iter, mFrame->GetContentOffset(),
+                                         mTextRun, mCharacterDataBuffer);
       }
-    }
+      // If no class was found, we need to look at the preceding content (if
+      // any) to see what it ended with.
+      if (!prevClass) {
+        // If we have a prev-in-flow, we're after a line-break, so autospace
+        // does not apply here; just set prevClass to Other.
+        if (mFrame->GetPrevInFlow()) {
+          prevClass = Some(CharClass::Other);
+        } else {
+          // If the textrun is mapping multiple content flows, we may be able
+          // to find preceding content from there (without having to walk the
+          // potentially more complex frame tree).
+          prevClass = GetPrecedingCharClassFromMappedFlows(mFrame, mTextRun);
+          // If we couldn't get it from an earlier flow covered by the textrun,
+          // we'll have to delve into the frame tree to see what preceded this.
+          if (!prevClass) {
+            prevClass = GetPrecedingCharClassFromFrameTree(mFrame);
+          }
+        }
+      }
+      // If no valid class was found, return `Other`, which never participates
+      // in autospacing rules.
+      return prevClass.valueOr(CharClass::Other);
+    };
+
+    // If text-autospace is enabled, we may be able to skip some processing if
+    // there are no CJK glyphs in the textrun, so check for their presence.
+    bool textIncludesCJK = mTextAutospace && mCharacterDataBuffer.Is2b() &&
+                           HasCJKGlyphRun(mTextRun);
+
+    // Iterate over non-skipped characters
+    nsSkipCharsRunIterator run(
+        start, nsSkipCharsRunIterator::LENGTH_UNSKIPPED_ONLY, aRange.Length());
     while (run.NextRun()) {
       uint32_t runOffsetInSubstring = run.GetSkippedOffset() - aRange.start;
       gfxSkipCharsIterator iter = run.GetPos();
       for (int32_t i = 0; i < run.GetRunLength(); ++i) {
-        if (!atStart && before != 0.0 &&
+        if (!atStart && before != 0 &&
             CanAddSpacingBefore(mTextRun, run.GetSkippedOffset() + i,
                                 newlineIsSignificant)) {
           aSpacing[runOffsetInSubstring + i].mBefore += before;
         }
-        if (after != 0.0 &&
+        if (after != 0 &&
             CanAddSpacingAfter(mTextRun, run.GetSkippedOffset() + i,
                                newlineIsSignificant)) {
           // End of a cluster, not in a ligature: put letter-spacing after it
           aSpacing[runOffsetInSubstring + i].mAfter += after;
         }
-        if (IsCSSWordSpacingSpace(mCharacterDataBuffer,
-                                  i + run.GetOriginalOffset(), mFrame,
-                                  mTextStyle)) {
+        if (mWordSpacing && IsCSSWordSpacingSpace(mCharacterDataBuffer,
+                                                  i + run.GetOriginalOffset(),
+                                                  mFrame, mTextStyle)) {
           // It kinda sucks, but space characters can be part of clusters,
           // and even still be whitespace (I think!)
           iter.SetSkippedOffset(run.GetSkippedOffset() + i);
@@ -3967,24 +4186,37 @@ void nsTextFrame::PropertyProvider::GetSpacingInternal(Range aRange,
                          &iter);
           uint32_t runOffset = iter.GetSkippedOffset() - aRange.start;
           aSpacing[runOffset].mAfter += mWordSpacing;
+          spacingPresent = true;
         }
-        // Add text-autospace spacing.
+        // Add text-autospace spacing only at cluster starts. Always check the
+        // character classes if the textrun includes CJK; otherwise, check only
+        // at the frame start (as preceding content might be an ideograph
+        // requiring autospacing).
         if (mTextAutospace &&
+            (textIncludesCJK ||
+             run.GetOriginalOffset() + i == mFrame->GetContentOffset()) &&
             mTextRun->IsClusterStart(run.GetSkippedOffset() + i)) {
           const char32_t currScalar =
               mCharacterDataBuffer.ScalarValueAt(run.GetOriginalOffset() + i);
-          const auto currClass = mTextAutospace->GetCharClass(currScalar);
+          const auto currClass = TextAutospace::GetCharClass(currScalar);
 
-          // It is rare for the current class to be is a combining mark, as
+          // It is rare for the current class to be a combining mark, as
           // combining marks are not cluster starts. We still check in case a
           // stray mark appears at the start of a frame.
           if (currClass != CharClass::CombiningMark) {
-            if (!atStart &&
-                mTextAutospace->ShouldApplySpacing(prevClass, currClass)) {
+            // We don't need to do anything if at start of line, or if the
+            // current class is `Other`, which never participates in spacing.
+            if (!atStart && currClass != CharClass::Other &&
+                mTextAutospace->ShouldApplySpacing(
+                    prevClass.valueOrFrom(findPrecedingClass), currClass)) {
               aSpacing[runOffsetInSubstring + i].mBefore +=
                   mTextAutospace->InterScriptSpacing();
+              spacingPresent = true;
             }
-            prevClass = currClass;
+            // Even if we didn't actually need to check spacing rules here, we
+            // record the new prevClass. (Incidentally, this ensure that we'll
+            // only call the findPrecedingClass() helper once.)
+            prevClass = Some(currClass);
           }
         }
         atStart = false;
@@ -4001,6 +4233,7 @@ void nsTextFrame::PropertyProvider::GetSpacingInternal(Range aRange,
         mTabWidths->ApplySpacing(aSpacing,
                                  aRange.start - mStart.GetSkippedOffset(),
                                  aRange.Length());
+        spacingPresent = true;
       }
     }
   }
@@ -4021,7 +4254,10 @@ void nsTextFrame::PropertyProvider::GetSpacingInternal(Range aRange,
       aSpacing[offset].mBefore += spacing.mBefore;
       aSpacing[offset].mAfter += spacing.mAfter;
     }
+    spacingPresent = true;
   }
+
+  return spacingPresent;
 }
 
 // aX and the result are in whole appunits.
@@ -4302,8 +4538,7 @@ void nsTextFrame::PropertyProvider::InitFontGroupAndFontMetrics() const {
 
 void nsTextFrame::PropertyProvider::InitTextAutospace() {
   const auto styleTextAutospace = mTextStyle->EffectiveTextAutospace();
-  if (TextAutospace::Enabled(styleTextAutospace, mFrame,
-                             mCharacterDataBuffer)) {
+  if (TextAutospace::Enabled(styleTextAutospace, mFrame)) {
     mTextAutospace.emplace(styleTextAutospace,
                            GetFontMetrics()->InterScriptSpacingWidth());
   }
@@ -5544,6 +5779,201 @@ static gfxFloat ComputeDecorationLineOffset(
   return 0;
 }
 
+// Helper to determine decoration inset.
+// Returns false if the inset would cut off the decoration entirely.
+// If aOnlyExtend is true, this will only consider cases with negative inset
+// (i.e. the line will actually be extended beyond the normal length).
+static bool ComputeDecorationInset(
+    nsTextFrame* aFrame, const nsPresContext* aPresCtx,
+    const nsIFrame* aDecFrame, const gfxFont::Metrics& aMetrics,
+    nsCSSRendering::DecorationRectParams& aParams, bool aOnlyExtend = false) {
+  const WritingMode wm = aDecFrame->GetWritingMode();
+  bool verticalDec = wm.IsVertical();
+
+  aParams.insetLeft = 0.0;
+  aParams.insetRight = 0.0;
+
+  // Find the decoration-line inset values for this frame.
+  const StyleTextDecorationInset& cssInset =
+      aDecFrame->StyleTextReset()->mTextDecorationInset;
+  nscoord insetLeft, insetRight;
+  if (cssInset.IsAuto()) {
+    // Use an inset factor of 1/12.5, so we get 2px of inset (resulting in 4px
+    // gap between adjacent lines) at font-size 25px.
+    constexpr gfxFloat kAutoInsetFactor = 1.0 / 12.5;
+    // Use the EM size multiplied by kAutoInsetFactor, with a minimum of one
+    // CSS pixel to ensure that at least some separation occurs.
+    const nscoord autoDecorationInset =
+        std::max(aPresCtx->DevPixelsToAppUnits(
+                     NS_round(aMetrics.emHeight * kAutoInsetFactor)),
+                 nsPresContext::CSSPixelsToAppUnits(1));
+    insetLeft = autoDecorationInset;
+    insetRight = autoDecorationInset;
+  } else {
+    MOZ_ASSERT(cssInset.IsLength(), "Impossible text-decoration-inset");
+    const auto& length = cssInset.AsLength();
+    if (length.start.IsZero() && length.end.IsZero()) {
+      // We can avoid doing the geometric calculations below, potentially
+      // walking up and back down the frame tree, and walking continuations.
+      return true;
+    }
+    insetLeft = length.start.ToAppUnits();
+    insetRight = length.end.ToAppUnits();
+  }
+
+  // If we only care about extended lines (for UnionAdditionalOverflow),
+  // we can bail out if neither inset value is negative.
+  if (aOnlyExtend && insetLeft >= 0 && insetRight >= 0) {
+    return true;
+  }
+
+  if (wm.IsInlineReversed()) {
+    std::swap(insetLeft, insetRight);
+  }
+
+  // The rect of the decorating box (if an inline) or of the current line (if
+  // the decoration is propagated from a block ancestor). We will need to
+  // compare this with the rect of the current frame, which may be only a
+  // sub-range of the entire decorated range.
+  nsRect decRect;
+
+  // The container of the decoration, or the fragment of it on this line.
+  const nsIFrame* decContainer;
+
+  // If the decorating frame is an inline frame, we can use it as the
+  // reference frame for measurements.
+  // If the decorating frame is not inline, then we will need to consider
+  // text indentation and calculate geometry using line boxes.
+  if (aDecFrame->IsInlineFrame()) {
+    decRect = aDecFrame->GetContentRectRelativeToSelf();
+    decContainer = aDecFrame;
+  } else {
+    nsIFrame* const lineContainer = FindLineContainer(aFrame);
+    MOZ_ASSERT(
+        lineContainer->GetWritingMode().IsVertical() == wm.IsVertical(),
+        "Decorating frame and line container must have writing modes in the "
+        "same axis");
+    if (nsILineIterator* const iter = lineContainer->GetLineIterator()) {
+      const int32_t lineNum = GetFrameLineNum(aFrame, iter);
+      const nsILineIterator::LineInfo lineInfo =
+          iter->GetLine(lineNum).unwrap();
+      decRect = lineInfo.mLineBounds;
+
+      // Account for text-indent, which will push text frames into the line box.
+      const StyleTextIndent& textIndent = aFrame->StyleText()->mTextIndent;
+      if (!textIndent.length.IsDefinitelyZero()) {
+        bool isFirstLineOrAfterHardBreak = true;
+        if (lineNum > 0 && !textIndent.each_line) {
+          isFirstLineOrAfterHardBreak = false;
+        } else if (nsBlockFrame* prevBlock =
+                       do_QueryFrame(lineContainer->GetPrevInFlow())) {
+          if (!(textIndent.each_line &&
+                (prevBlock->Lines().empty() ||
+                 !prevBlock->LinesEnd().prev()->IsLineWrapped()))) {
+            isFirstLineOrAfterHardBreak = false;
+          }
+        }
+        if (isFirstLineOrAfterHardBreak != textIndent.hanging) {
+          // Determine which side to shrink.
+          const Side side = wm.PhysicalSide(LogicalSide::IStart);
+          // Calculate the text indent, and shrink the line box by this amount
+          // to account for the indent size at the start of the line.
+          const nscoord basis = lineContainer->GetLogicalSize(wm).ISize(wm);
+          nsMargin indentMargin;
+          indentMargin.Side(side) = textIndent.length.Resolve(basis);
+          decRect.Deflate(indentMargin);
+        }
+      }
+
+      // We can't allow a block frame to retain a line iterator if we're
+      // currently in reflow, as it will become invalid as the line list is
+      // reflowed.
+      if (lineContainer->HasAnyStateBits(NS_FRAME_IN_REFLOW) &&
+          lineContainer->IsBlockFrameOrSubclass()) {
+        static_cast<nsBlockFrame*>(lineContainer)->ClearLineIterator();
+      }
+    } else {
+      // Not a block or similar container with multiple lines; just use the
+      // content rect directly.
+      decRect = lineContainer->GetContentRectRelativeToSelf();
+    }
+
+    decContainer = lineContainer;
+  }
+
+  // The rect of the current frame, mapped to the same coordinate space as
+  // decRect so that we can compare their edges.
+  const nsRect frameRect =
+      aFrame->GetRectRelativeToSelf() + aFrame->GetOffsetTo(decContainer);
+
+  // The nominal size of the decoration (prior to insets being applied) is
+  // reduced by any margin, border, and padding present on frames intervening
+  // between aFrame and decContainer.
+  for (const nsIFrame* parent = aFrame->GetParent(); parent != decContainer;
+       parent = parent->GetParent()) {
+    decRect.Deflate(parent->GetUsedMargin());
+    decRect.Deflate(parent->GetUsedBorderAndPadding());
+  }
+
+  // Find the margin of the of this frame inside its container.
+  nscoord marginLeft, marginRight, frameSize;
+  const nsMargin difference = decRect - frameRect;
+  if (verticalDec) {
+    marginLeft = difference.top;
+    marginRight = difference.bottom;
+    frameSize = frameRect.height;
+  } else {
+    marginLeft = difference.left;
+    marginRight = difference.right;
+    frameSize = frameRect.width;
+  }
+
+  const bool cloneDecBreak = aDecFrame->StyleBorder()->mBoxDecorationBreak ==
+                             StyleBoxDecorationBreak::Clone;
+  // TODO alaskanemily: This will not correctly account for the case that the
+  // continuations are bidi continuations.
+  bool applyLeft = cloneDecBreak || (!aFrame->GetPrevContinuation() &&
+                                     !aDecFrame->GetPrevContinuation());
+  bool applyRight = cloneDecBreak || (!aFrame->GetNextContinuation() &&
+                                      !aDecFrame->GetNextContinuation());
+  if (wm.IsInlineReversed()) {
+    std::swap(applyLeft, applyRight);
+  }
+  if (applyLeft) {
+    insetLeft -= marginLeft;
+  } else {
+    insetLeft = 0;
+  }
+  if (applyRight) {
+    insetRight -= marginRight;
+  } else {
+    insetRight = 0;
+  }
+
+  if (insetLeft + insetRight >= frameSize) {
+    // This frame does not contain the decoration at all.
+    return false;
+  }
+  // TODO alaskanemily: We currently determine if we should have a negative
+  // inset value by checking if we are at the edge of frame from which the
+  // decloration comes from.
+  //
+  // This is not absolutely correct, there could in theory be a zero-width
+  // frame before/after this frame, and we will draw the decoration extension
+  // twice (causing a visible inaccuracy for semi-transparent decorations).
+  //
+  // I am unsure if it's possible that the first/last frame might be inset
+  // for some reason, as well, in which case we will not draw the outset
+  // decorations.
+  if (insetLeft > 0 || marginLeft == 0) {
+    aParams.insetLeft = aPresCtx->AppUnitsToFloatDevPixels(insetLeft);
+  }
+  if (insetRight > 0 || marginRight == 0) {
+    aParams.insetRight = aPresCtx->AppUnitsToFloatDevPixels(insetRight);
+  }
+  return true;
+}
+
 void nsTextFrame::UnionAdditionalOverflow(nsPresContext* aPresContext,
                                           nsIFrame* aBlock,
                                           PropertyProvider& aProvider,
@@ -5655,7 +6085,6 @@ void nsTextFrame::UnionAdditionalOverflow(nsPresContext* aPresContext,
       params.vertical = verticalDec;
       params.sidewaysLeft = mTextRun->IsSidewaysLeft();
 
-      nscoord topOrLeft(nscoord_MAX), bottomOrRight(nscoord_MIN);
       typedef gfxFont::Metrics Metrics;
       auto accumulateDecorationRect =
           [&](const LineDecoration& dec, gfxFloat Metrics::* lineSize,
@@ -5686,18 +6115,17 @@ void nsTextFrame::UnionAdditionalOverflow(nsPresContext* aPresContext,
                 metrics, appUnitsPerDevUnit, this, parentWM.IsCentralBaseline(),
                 swapUnderline);
 
-            const nsRect decorationRect =
+            if (!ComputeDecorationInset(this, aPresContext, dec.mFrame, metrics,
+                                        params, /* aOnlyExtend = */ true)) {
+              return;
+            }
+
+            nsRect decorationRect =
                 nsCSSRendering::GetTextDecorationRect(aPresContext, params) +
                 (verticalDec ? nsPoint(frameBStart - dec.mBaselineOffset, 0)
                              : nsPoint(0, -dec.mBaselineOffset));
 
-            if (verticalDec) {
-              topOrLeft = std::min(decorationRect.x, topOrLeft);
-              bottomOrRight = std::max(decorationRect.XMost(), bottomOrRight);
-            } else {
-              topOrLeft = std::min(decorationRect.y, topOrLeft);
-              bottomOrRight = std::max(decorationRect.YMost(), bottomOrRight);
-            }
+            aInkOverflowRect->UnionRect(*aInkOverflowRect, decorationRect);
           };
 
       // Below we loop through all text decorations and compute the rectangle
@@ -5717,12 +6145,6 @@ void nsTextFrame::UnionAdditionalOverflow(nsPresContext* aPresContext,
         accumulateDecorationRect(dec, &Metrics::strikeoutSize,
                                  params.decoration);
       }
-
-      aInkOverflowRect->UnionRect(
-          *aInkOverflowRect,
-          verticalDec
-              ? nsRect(topOrLeft, 0, bottomOrRight - topOrLeft, measure)
-              : nsRect(0, topOrLeft, measure, bottomOrRight - topOrLeft));
     }
 
     aInkOverflowRect->UnionRect(*aInkOverflowRect,
@@ -5772,6 +6194,9 @@ gfxFloat nsTextFrame::ComputeDescentLimitForSelectionUnderline(
 
 // Make sure this stays in sync with DrawSelectionDecorations below
 static constexpr SelectionTypeMask kSelectionTypesWithDecorations =
+    ToSelectionTypeMask(SelectionType::eNormal) |
+    ToSelectionTypeMask(SelectionType::eTargetText) |
+    ToSelectionTypeMask(SelectionType::eHighlight) |
     ToSelectionTypeMask(SelectionType::eSpellCheck) |
     ToSelectionTypeMask(SelectionType::eURLStrikeout) |
     ToSelectionTypeMask(SelectionType::eIMERawClause) |
@@ -5784,6 +6209,9 @@ gfxFloat nsTextFrame::ComputeSelectionUnderlineHeight(
     nsPresContext* aPresContext, const gfxFont::Metrics& aFontMetrics,
     SelectionType aSelectionType) {
   switch (aSelectionType) {
+    case SelectionType::eNormal:
+    case SelectionType::eTargetText:
+    case SelectionType::eHighlight:
     case SelectionType::eIMERawClause:
     case SelectionType::eIMESelectedRawClause:
     case SelectionType::eIMEConvertedClause:
@@ -5829,6 +6257,7 @@ struct nsTextFrame::PaintDecorationLineParams
   DrawPathCallbacks* callbacks = nullptr;
   bool paintingShadows = false;
   bool allowInkSkipping = true;
+  StyleTextDecorationSkipInk skipInk = StyleTextDecorationSkipInk::None;
 };
 
 void nsTextFrame::PaintDecorationLine(
@@ -5841,6 +6270,7 @@ void nsTextFrame::PaintDecorationLine(
   params.icoordInFrame = Float(aParams.icoordInFrame);
   params.baselineOffset = Float(aParams.baselineOffset);
   params.allowInkSkipping = aParams.allowInkSkipping;
+  params.skipInk = aParams.skipInk;
   if (aParams.callbacks) {
     Rect path = nsCSSRendering::DecorationLineToPath(params);
     if (aParams.decorationType == DecorationType::Normal) {
@@ -5881,11 +6311,13 @@ static StyleTextDecorationStyle ToStyleLineStyle(const TextRangeStyle& aStyle) {
  */
 void nsTextFrame::DrawSelectionDecorations(
     gfxContext* aContext, const LayoutDeviceRect& aDirtyRect,
-    SelectionType aSelectionType, nsTextPaintStyle& aTextPaintStyle,
-    const TextRangeStyle& aRangeStyle, const Point& aPt,
-    gfxFloat aICoordInFrame, gfxFloat aWidth, gfxFloat aAscent,
-    const gfxFont::Metrics& aFontMetrics, DrawPathCallbacks* aCallbacks,
-    bool aVertical, StyleTextDecorationLine aDecoration) {
+    SelectionType aSelectionType, nsAtom* aHighlightName,
+    nsTextPaintStyle& aTextPaintStyle, const TextRangeStyle& aRangeStyle,
+    const Point& aPt, gfxFloat aICoordInFrame, gfxFloat aWidth,
+    gfxFloat aAscent, const gfxFont::Metrics& aFontMetrics,
+    DrawPathCallbacks* aCallbacks, bool aVertical,
+    StyleTextDecorationLine aDecoration, const Range& aGlyphRange,
+    PropertyProvider* aProvider) {
   PaintDecorationLineParams params;
   params.context = aContext;
   params.dirtyRect = aDirtyRect;
@@ -5899,20 +6331,74 @@ void nsTextFrame::DrawSelectionDecorations(
   params.sidewaysLeft = mTextRun->IsSidewaysLeft();
   params.descentLimit = ComputeDescentLimitForSelectionUnderline(
       aTextPaintStyle.PresContext(), aFontMetrics);
+  params.glyphRange = aGlyphRange;
+  params.provider = aProvider;
 
-  float relativeSize;
+  float relativeSize = 1.f;
   const auto& decThickness = StyleTextReset()->mTextDecorationThickness;
   const gfxFloat appUnitsPerDevPixel =
       aTextPaintStyle.PresContext()->AppUnitsPerDevPixel();
 
   const WritingMode wm = GetWritingMode();
   switch (aSelectionType) {
+    case SelectionType::eNormal:
+    case SelectionType::eHighlight:
+    case SelectionType::eTargetText: {
+      RefPtr computedStyleFromPseudo =
+          aTextPaintStyle.GetComputedStyleForSelectionPseudo(aSelectionType,
+                                                             aHighlightName);
+      const bool hasTextDecorations =
+          computedStyleFromPseudo
+              ? computedStyleFromPseudo->HasTextDecorationLines()
+              : false;
+      if (!hasTextDecorations) {
+        return;
+      }
+      params.style =
+          computedStyleFromPseudo->StyleTextReset()->mTextDecorationStyle;
+      params.color = computedStyleFromPseudo->StyleTextReset()
+                         ->mTextDecorationColor.CalcColor(this);
+      params.decoration =
+          computedStyleFromPseudo->StyleTextReset()->mTextDecorationLine;
+      params.descentLimit = -1.f;
+      params.defaultLineThickness = ComputeSelectionUnderlineHeight(
+          aTextPaintStyle.PresContext(), aFontMetrics, aSelectionType);
+      params.lineSize.height = ComputeDecorationLineThickness(
+          computedStyleFromPseudo->StyleTextReset()->mTextDecorationThickness,
+          params.defaultLineThickness, aFontMetrics, appUnitsPerDevPixel, this);
+
+      const bool swapUnderline =
+          wm.IsCentralBaseline() && IsUnderlineRight(*Style());
+      params.icoordInFrame = aICoordInFrame;
+      auto paintForLine = [&](StyleTextDecorationLine decoration) {
+        if (!(computedStyleFromPseudo->StyleTextReset()->mTextDecorationLine &
+              decoration)) {
+          return;
+        }
+
+        params.allowInkSkipping = true;
+        params.skipInk =
+            computedStyleFromPseudo->StyleText()->mTextDecorationSkipInk;
+        params.decoration = decoration;
+        params.offset = ComputeDecorationLineOffset(
+            params.decoration,
+            computedStyleFromPseudo->StyleText()->mTextUnderlinePosition,
+            computedStyleFromPseudo->StyleText()->mTextUnderlineOffset,
+            aFontMetrics, appUnitsPerDevPixel, this, wm.IsCentralBaseline(),
+            swapUnderline);
+
+        PaintDecorationLine(params);
+      };
+      paintForLine(StyleTextDecorationLine::UNDERLINE);
+      paintForLine(StyleTextDecorationLine::OVERLINE);
+      paintForLine(StyleTextDecorationLine::LINE_THROUGH);
+      return;
+    }
     case SelectionType::eIMERawClause:
     case SelectionType::eIMESelectedRawClause:
     case SelectionType::eIMEConvertedClause:
     case SelectionType::eIMESelectedClause:
-    case SelectionType::eSpellCheck:
-    case SelectionType::eHighlight: {
+    case SelectionType::eSpellCheck: {
       auto index = nsTextPaintStyle::GetUnderlineStyleIndexForSelectionType(
           aSelectionType);
       bool weDefineSelectionUnderline =
@@ -5931,8 +6417,7 @@ void nsTextFrame::DrawSelectionDecorations(
           styleText->mTextUnderlineOffset, aFontMetrics, appUnitsPerDevPixel,
           this, wm.IsCentralBaseline(), swapUnderline);
 
-      bool isIMEType = aSelectionType != SelectionType::eSpellCheck &&
-                       aSelectionType != SelectionType::eHighlight;
+      bool isIMEType = aSelectionType != SelectionType::eSpellCheck;
 
       if (isIMEType) {
         // IME decoration lines should not be drawn on the both ends, i.e., we
@@ -6771,11 +7256,12 @@ void nsTextFrame::PaintTextSelectionDecorations(
         }
         gfxFloat width = Abs(advance) / app;
         gfxFloat xInFrame = pt.x - (aParams.framePt.x / app);
-        DrawSelectionDecorations(aParams.context, aParams.dirtyRect,
-                                 aSelectionType, *aParams.textPaintStyle,
-                                 selectedStyles[index], pt, xInFrame, width,
-                                 mAscent / app, decorationMetrics,
-                                 aParams.callbacks, verticalRun, kDecoration);
+        DrawSelectionDecorations(
+            aParams.context, aParams.dirtyRect, aSelectionType,
+            highlightNames[index], *aParams.textPaintStyle,
+            selectedStyles[index], pt, xInFrame, width, mAscent / app,
+            decorationMetrics, aParams.callbacks, verticalRun, kDecoration,
+            aParams.glyphRange, aParams.provider);
       }
     }
     iterator.UpdateWithAdvance(advance);
@@ -6804,8 +7290,9 @@ bool nsTextFrame::PaintTextWithSelection(
   MOZ_ASSERT(kPresentSelectionTypes[0] == SelectionType::eNormal,
              "The following for loop assumes that the first item of "
              "kPresentSelectionTypes is SelectionType::eNormal");
-  for (size_t i = std::size(kPresentSelectionTypes) - 1; i >= 1; --i) {
-    SelectionType selectionType = kPresentSelectionTypes[i];
+
+  Span presentTypes(kPresentSelectionTypes);
+  for (SelectionType selectionType : Reversed(presentTypes)) {
     if (ToSelectionTypeMask(selectionType) & allSelectionTypeMask) {
       // There is some selection of this selectionType. Try to paint its
       // decorations (there might not be any for this type but that's OK,
@@ -7055,9 +7542,7 @@ void nsTextFrame::PaintShadows(Span<const StyleSimpleShadow> aShadows,
 
   // If the textrun uses any color or SVG fonts, we need to force use of a mask
   // for shadow rendering even if blur radius is zero.
-  // Force disable hardware acceleration for text shadows since it's usually
-  // more expensive than just doing it on the CPU.
-  uint32_t blurFlags = nsContextBoxBlur::DISABLE_HARDWARE_ACCELERATION_BLUR;
+  uint32_t blurFlags = 0;
   uint32_t numGlyphRuns;
   const gfxTextRun::GlyphRun* run = mTextRun->GetGlyphRuns(&numGlyphRuns);
   while (numGlyphRuns-- > 0) {
@@ -7410,6 +7895,40 @@ void nsTextFrame::DrawTextRunAndDecorations(
     }
   }
 
+  // We create a clip region in order to draw the decoration lines only in the
+  // range of the text. Restricting the draw area prevents the decoration lines
+  // to be drawn multiple times when a part of the text is selected.
+  Maybe<gfxRect> clipRect;
+
+  // We skip clipping for the following cases:
+  // - drawing the whole text
+  // - having different orientation of the text and the writing-mode, such as
+  //   "text-combine-upright" (Bug 1408825)
+  if (aRange.Length() != mTextRun->GetLength() && verticalDec == verticalRun) {
+    // Get the inline-size according to the specified range.
+    gfxFloat clipLength = mTextRun->GetAdvanceWidth(aRange, aParams.provider);
+    nsRect visualRect = InkOverflowRect();
+
+    const bool isInlineReversed = mTextRun->IsInlineReversed();
+    gfxFloat x, y, w, h;
+    if (verticalDec) {
+      x = aParams.framePt.x + visualRect.x;
+      y = isInlineReversed ? aTextBaselinePt.y.value - clipLength
+                           : aTextBaselinePt.y.value;
+      w = visualRect.width;
+      h = clipLength;
+    } else {
+      x = isInlineReversed ? aTextBaselinePt.x.value - clipLength
+                           : aTextBaselinePt.x.value;
+      y = aParams.framePt.y + visualRect.y;
+      w = clipLength;
+      h = visualRect.height;
+    }
+    clipRect.emplace(x, y, w, h);
+    clipRect->Scale(1 / app);
+    clipRect->Round();
+  }
+
   typedef gfxFont::Metrics Metrics;
   auto paintDecorationLine = [&](const LineDecoration& dec,
                                  gfxFloat Metrics::* lineSize,
@@ -7422,7 +7941,10 @@ void nsTextFrame::DrawTextRunAndDecorations(
         GetInflationForTextDecorations(dec.mFrame, inflationMinFontSize);
     const Metrics metrics = GetFirstFontMetrics(
         GetFontGroupForFrame(dec.mFrame, inflation), useVerticalMetrics);
-
+    if (!ComputeDecorationInset(this, aParams.textStyle->PresContext(),
+                                dec.mFrame, metrics, params)) {
+      return;
+    }
     bCoord = (frameBStart - dec.mBaselineOffset) / app;
 
     params.color = dec.mColor;
@@ -7439,45 +7961,17 @@ void nsTextFrame::DrawTextRunAndDecorations(
 
     params.style = dec.mStyle;
     params.allowInkSkipping = dec.mAllowInkSkipping;
+    params.skipInk = StyleText()->mTextDecorationSkipInk;
+    gfxClipAutoSaveRestore clipRestore(params.context);
+    // If we have a negative inset value, then the decoration will extend
+    // outside the edges of the text.
+    // TODO alaskanemily: Ideally we would adjust the clipping rect, but as
+    // an initial pass we just disable clipping in this case.
+    if (clipRect && !params.HasNegativeInset()) {
+      clipRestore.Clip(*clipRect);
+    }
     PaintDecorationLine(params);
   };
-
-  // We create a clip region in order to draw the decoration lines only in the
-  // range of the text. Restricting the draw area prevents the decoration lines
-  // to be drawn multiple times when a part of the text is selected.
-
-  // We skip clipping for the following cases:
-  // - drawing the whole text
-  // - having different orientation of the text and the writing-mode, such as
-  //   "text-combine-upright" (Bug 1408825)
-  bool skipClipping =
-      aRange.Length() == mTextRun->GetLength() || verticalDec != verticalRun;
-
-  gfxRect clipRect;
-  if (!skipClipping) {
-    // Get the inline-size according to the specified range.
-    gfxFloat clipLength = mTextRun->GetAdvanceWidth(aRange, aParams.provider);
-    nsRect visualRect = InkOverflowRect();
-
-    const bool isInlineReversed = mTextRun->IsInlineReversed();
-    if (verticalDec) {
-      clipRect.x = aParams.framePt.x + visualRect.x;
-      clipRect.y = isInlineReversed ? aTextBaselinePt.y.value - clipLength
-                                    : aTextBaselinePt.y.value;
-      clipRect.width = visualRect.width;
-      clipRect.height = clipLength;
-    } else {
-      clipRect.x = isInlineReversed ? aTextBaselinePt.x.value - clipLength
-                                    : aTextBaselinePt.x.value;
-      clipRect.y = aParams.framePt.y + visualRect.y;
-      clipRect.width = clipLength;
-      clipRect.height = visualRect.height;
-    }
-
-    clipRect.Scale(1 / app);
-    clipRect.Round();
-    params.context->Clip(clipRect);
-  }
 
   // Underlines
   params.decoration = StyleTextDecorationLine::UNDERLINE;
@@ -7491,11 +7985,9 @@ void nsTextFrame::DrawTextRunAndDecorations(
     paintDecorationLine(dec, &Metrics::underlineSize, params.decoration);
   }
 
-  // Some glyphs and emphasis marks may extend outside the region, so we reset
-  // the clip region here. For an example, italic glyphs.
-  if (!skipClipping) {
-    params.context->PopClip();
-  }
+  // Some glyphs and emphasis marks may extend outside the region, so we do
+  // not set the clip region here to the clip rect. For an example, italic
+  // glyphs.
 
   {
     gfxContextMatrixAutoSaveRestore unscaledRestorer;
@@ -7513,19 +8005,10 @@ void nsTextFrame::DrawTextRunAndDecorations(
   DrawEmphasisMarks(aParams.context, wm, aTextBaselinePt, aParams.framePt,
                     aRange, aParams.decorationOverrideColor, aParams.provider);
 
-  // Re-apply the clip region when the line-through is being drawn.
-  if (!skipClipping) {
-    params.context->Clip(clipRect);
-  }
-
   // Line-throughs
   params.decoration = StyleTextDecorationLine::LINE_THROUGH;
   for (const LineDecoration& dec : Reversed(aDecorations.mStrikes)) {
     paintDecorationLine(dec, &Metrics::strikeoutSize, params.decoration);
-  }
-
-  if (!skipClipping) {
-    params.context->PopClip();
   }
 }
 
@@ -7774,33 +8257,56 @@ bool nsTextFrame::CombineSelectionUnderlineRect(nsPresContext* aPresContext,
         sd->mSelectionType == SelectionType::eURLStrikeout) {
       continue;
     }
+    float relativeSize = 1.f;
+    RefPtr<ComputedStyle> style = Style();
 
-    float relativeSize;
-    auto index = nsTextPaintStyle::GetUnderlineStyleIndexForSelectionType(
-        sd->mSelectionType);
-    if (sd->mSelectionType == SelectionType::eSpellCheck) {
-      if (!nsTextPaintStyle::GetSelectionUnderline(
-              this, index, nullptr, &relativeSize, &params.style)) {
+    if (sd->mSelectionType == SelectionType::eNormal ||
+        sd->mSelectionType == SelectionType::eTargetText ||
+        sd->mSelectionType == SelectionType::eHighlight) {
+      style = [&]() {
+        if (sd->mSelectionType == SelectionType::eHighlight) {
+          return ComputeHighlightSelectionStyle(
+              sd->mHighlightData.mHighlightName);
+        }
+        if (sd->mSelectionType == SelectionType::eTargetText) {
+          return ComputeTargetTextStyle();
+        }
+        int16_t unusedFlags = 0;
+        const int16_t selectionStatus = GetSelectionStatus(&unusedFlags);
+        return ComputeSelectionStyle(selectionStatus);
+      }();
+      if (!style || !style->HasTextDecorationLines()) {
         continue;
       }
+      params.style = style->StyleTextReset()->mTextDecorationStyle;
     } else {
-      // IME selections
-      TextRangeStyle& rangeStyle = sd->mTextRangeStyle;
-      if (rangeStyle.IsDefined()) {
-        if (!rangeStyle.IsLineStyleDefined() ||
-            rangeStyle.mLineStyle == TextRangeStyle::LineStyle::None) {
+      auto index = nsTextPaintStyle::GetUnderlineStyleIndexForSelectionType(
+          sd->mSelectionType);
+      if (sd->mSelectionType == SelectionType::eSpellCheck) {
+        if (!nsTextPaintStyle::GetSelectionUnderline(
+                this, index, nullptr, &relativeSize, &params.style)) {
           continue;
         }
-        params.style = ToStyleLineStyle(rangeStyle);
-        relativeSize = rangeStyle.mIsBoldLine ? 2.0f : 1.0f;
-      } else if (!nsTextPaintStyle::GetSelectionUnderline(
-                     this, index, nullptr, &relativeSize, &params.style)) {
-        continue;
+      } else {
+        // IME selections
+        TextRangeStyle& rangeStyle = sd->mTextRangeStyle;
+        if (rangeStyle.IsDefined()) {
+          if (!rangeStyle.IsLineStyleDefined() ||
+              rangeStyle.mLineStyle == TextRangeStyle::LineStyle::None) {
+            continue;
+          }
+          params.style = ToStyleLineStyle(rangeStyle);
+          relativeSize = rangeStyle.mIsBoldLine ? 2.0f : 1.0f;
+        } else if (!nsTextPaintStyle::GetSelectionUnderline(
+                       this, index, nullptr, &relativeSize, &params.style)) {
+          continue;
+        }
       }
     }
     nsRect decorationArea;
 
-    const auto& decThickness = StyleTextReset()->mTextDecorationThickness;
+    const auto& decThickness =
+        style->StyleTextReset()->mTextDecorationThickness;
     params.lineSize.width = aPresContext->AppUnitsToGfxUnits(aRect.width);
     params.defaultLineThickness = ComputeSelectionUnderlineHeight(
         aPresContext, metrics, sd->mSelectionType);
@@ -7809,8 +8315,8 @@ bool nsTextFrame::CombineSelectionUnderlineRect(nsPresContext* aPresContext,
         decThickness, params.defaultLineThickness, metrics,
         aPresContext->AppUnitsPerDevPixel(), this);
 
-    bool swapUnderline = wm.IsCentralBaseline() && IsUnderlineRight(*Style());
-    const auto* styleText = StyleText();
+    bool swapUnderline = wm.IsCentralBaseline() && IsUnderlineRight(*style);
+    const auto* styleText = style->StyleText();
     params.offset = ComputeDecorationLineOffset(
         textDecs.HasUnderline() ? StyleTextDecorationLine::UNDERLINE
                                 : StyleTextDecorationLine::OVERLINE,
@@ -8331,7 +8837,7 @@ nsIFrame::FrameSearchResult nsTextFrame::PeekOffsetCharacter(
 
   if (!aOptions.mIgnoreUserStyleAll) {
     StyleUserSelect selectStyle;
-    Unused << IsSelectable(&selectStyle);
+    (void)IsSelectable(&selectStyle);
     if (selectStyle == StyleUserSelect::All) {
       return CONTINUE_UNSELECTABLE;
     }
@@ -8586,7 +9092,7 @@ nsIFrame::FrameSearchResult nsTextFrame::PeekOffsetWord(
   NS_ASSERTION(aOffset && *aOffset <= contentLength, "aOffset out of range");
 
   StyleUserSelect selectStyle;
-  Unused << IsSelectable(&selectStyle);
+  (void)IsSelectable(&selectStyle);
   if (selectStyle == StyleUserSelect::All) {
     return CONTINUE_UNSELECTABLE;
   }

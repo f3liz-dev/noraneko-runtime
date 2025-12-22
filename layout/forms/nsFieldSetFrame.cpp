@@ -125,7 +125,7 @@ class nsDisplayFieldSetBorder final : public nsPaintedDisplayItem {
 
 void nsDisplayFieldSetBorder::Paint(nsDisplayListBuilder* aBuilder,
                                     gfxContext* aCtx) {
-  Unused << static_cast<nsFieldSetFrame*>(mFrame)->PaintBorder(
+  (void)static_cast<nsFieldSetFrame*>(mFrame)->PaintBorder(
       aBuilder, *aCtx, ToReferenceFrame(), GetPaintRect(aBuilder, aCtx));
 }
 
@@ -221,6 +221,10 @@ void nsFieldSetFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
     DisplayOutlineUnconditional(aBuilder, aLists);
 
     DO_GLOBAL_REFLOW_COUNT_DSP("nsFieldSetFrame");
+  }
+
+  if (HidesContent()) {
+    return;
   }
 
   if (GetPrevInFlow()) {
@@ -373,8 +377,6 @@ void nsFieldSetFrame::Reflow(nsPresContext* aPresContext,
     AutoFrameListPtr prevOverflowFrames(PresContext(),
                                         prevInFlow->StealOverflowFrames());
     if (prevOverflowFrames) {
-      nsContainerFrame::ReparentFrameViewList(*prevOverflowFrames, prevInFlow,
-                                              this);
       mFrames.InsertFrames(this, nullptr, std::move(*prevOverflowFrames));
     }
   }

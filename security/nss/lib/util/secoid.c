@@ -1905,13 +1905,18 @@ const static SECOidData oids[SEC_OID_TOTAL] = {
        "X25519 key exchange", CKM_EC_MONTGOMERY_KEY_PAIR_GEN, INVALID_CERT_EXTENSION),
 
     ODE(SEC_OID_MLKEM768X25519,
-        "ML-KEM-768+X25519 key exchange", CKM_INVALID_MECHANISM, INVALID_CERT_EXTENSION),
+        "X25519+ML-KEM-768 Hybrid key exchange", CKM_INVALID_MECHANISM, INVALID_CERT_EXTENSION),
     ODE(SEC_OID_TLS_REQUIRE_EMS,
         "TLS Require EMS", CKM_INVALID_MECHANISM, INVALID_CERT_EXTENSION),
 
     OD(mlDsa44, SEC_OID_ML_DSA_44, "ML-DSA-44", CKM_ML_DSA, INVALID_CERT_EXTENSION),
     OD(mlDsa65, SEC_OID_ML_DSA_65, "ML-DSA-65", CKM_ML_DSA, INVALID_CERT_EXTENSION),
     OD(mlDsa87, SEC_OID_ML_DSA_87, "ML-DSA-87", CKM_ML_DSA, INVALID_CERT_EXTENSION),
+    ODE(SEC_OID_SECP256R1MLKEM768,
+        "SECP256R1+ML-KEM-768 Hybrid key exchange", CKM_INVALID_MECHANISM, INVALID_CERT_EXTENSION),
+    ODE(SEC_OID_SECP384R1MLKEM1024,
+        "SECP384R1+ML-KEM-1024 Hybrid key exchange", CKM_INVALID_MECHANISM, INVALID_CERT_EXTENSION),
+
 };
 
 /* PRIVATE EXTENDED SECOID Table
@@ -2346,6 +2351,35 @@ SECOID_FindOIDTagDescription(SECOidTag tagnum)
 {
     const SECOidData *oidData = SECOID_FindOIDByTag(tagnum);
     return oidData ? oidData->desc : 0;
+}
+
+/*
+ * find an oidtag from a descriptive string. Our tools
+ * have implemented this several times, so it's time to make
+ * it available to everyone.
+ */
+SECOidTag
+SECOID_FindOIDTagFromDescripton(const char *cipherString, size_t len,
+                                PRBool isCipher)
+{
+    SECOidTag tag;
+    SECOidData *oid;
+
+    if (len == (size_t)-1) {
+        len = PORT_Strlen(cipherString);
+    }
+    /* future enhancement: accept dotted oid spec? */
+    for (tag = 1; (oid = SECOID_FindOIDByTag(tag)) != NULL; tag++) {
+        /* only interested in oids that we actually understand */
+        if (isCipher && oid->mechanism == CKM_INVALID_MECHANISM) {
+            continue;
+        }
+        if (PORT_Strncasecmp(oid->desc, cipherString, len) != 0) {
+            continue;
+        }
+        return tag;
+    }
+    return SEC_OID_UNKNOWN;
 }
 
 /* return the total tags, including dymamic tags. NOTE: there is

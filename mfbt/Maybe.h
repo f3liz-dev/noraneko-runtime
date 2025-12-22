@@ -15,7 +15,6 @@
 #include <type_traits>
 #include <utility>
 
-#include "mozilla/Alignment.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/MaybeStorageBase.h"
@@ -35,9 +34,7 @@ namespace mozilla {
 
 struct Nothing {};
 
-inline constexpr bool operator==(const Nothing&, const Nothing&) {
-  return true;
-}
+constexpr bool operator==(const Nothing&, const Nothing&) { return true; }
 
 template <class T>
 class Maybe;
@@ -304,8 +301,7 @@ using IsMaybe = IsMaybeImpl<std::decay_t<T>>;
 
 }  // namespace detail
 
-template <typename T, typename U = typename std::remove_cv<
-                          typename std::remove_reference<T>::type>::type>
+template <typename T, typename U = std::remove_cv_t<std::remove_reference_t<T>>>
 constexpr Maybe<U> Some(T&& aValue);
 
 /*

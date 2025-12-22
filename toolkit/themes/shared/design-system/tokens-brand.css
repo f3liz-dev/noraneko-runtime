@@ -34,6 +34,7 @@
     --color-accent-primary: light-dark(var(--color-blue-60), var(--color-cyan-30));
     --color-accent-primary-hover: light-dark(var(--color-blue-70), var(--color-cyan-20));
     --color-accent-primary-active: light-dark(var(--color-blue-80), var(--color-cyan-10));
+    --color-accent-primary-selected: light-dark(var(--color-blue-60), var(--color-cyan-30));
 
     /** Font Size **/
     --font-size-root: 15px;
@@ -42,6 +43,7 @@
     --font-size-large: 1.133rem; /* 17px */
     --font-size-xlarge: 1.467rem; /* 22px */
     --font-size-xxlarge: 1.6rem; /* 24px */
+    --font-size-xxxlarge: 2.2rem; /* 33px */
 
     /** Link **/
     --link-color: var(--color-accent-primary);
@@ -54,6 +56,7 @@
 
     /** Text **/
     --text-color: light-dark(var(--color-gray-100), var(--color-gray-05));
+    --text-color-accent-primary-selected: light-dark(var(--color-white), var(--color-gray-100));
   }
 }
 

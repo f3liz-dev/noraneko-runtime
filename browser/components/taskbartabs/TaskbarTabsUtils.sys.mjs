@@ -8,8 +8,8 @@ import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 let lazy = {};
 
 XPCOMUtils.defineLazyServiceGetters(lazy, {
-  Favicons: ["@mozilla.org/browser/favicon-service;1", "nsIFaviconService"],
-  imgTools: ["@mozilla.org/image/tools;1", "imgITools"],
+  Favicons: ["@mozilla.org/browser/favicon-service;1", Ci.nsIFaviconService],
+  imgTools: ["@mozilla.org/image/tools;1", Ci.imgITools],
 });
 
 ChromeUtils.defineLazyGetter(lazy, "logConsole", () => {
@@ -148,6 +148,9 @@ function scaleImage(aImgContainer) {
   return aImgContainer;
 }
 
+/**
+ * A channel listener to aid with receiving image data.
+ */
 class ChannelListener {
   #request = null;
   #imageListener = null;

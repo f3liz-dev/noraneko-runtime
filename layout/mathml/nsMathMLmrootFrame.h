@@ -7,7 +7,6 @@
 #ifndef nsMathMLmrootFrame_h___
 #define nsMathMLmrootFrame_h___
 
-#include "mozilla/Attributes.h"
 #include "nsMathMLChar.h"
 #include "nsMathMLContainerFrame.h"
 
@@ -59,8 +58,8 @@ class nsMathMLmrootFrame : public nsMathMLContainerFrame {
  private:
   bool ShouldUseRowFallback();
   bool IsMrowLike() final;
-  nsresult Place(DrawTarget* aDrawTarget, const PlaceFlags& aFlags,
-                 ReflowOutput& aDesiredSize) final;
+  void Place(DrawTarget* aDrawTarget, const PlaceFlags& aFlags,
+             ReflowOutput& aDesiredSize) final;
 };
 
 #endif /* nsMathMLmrootFrame_h___ */

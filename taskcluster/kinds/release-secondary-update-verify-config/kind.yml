@@ -10,6 +10,7 @@ transforms:
     - gecko_taskgraph.transforms.task:transforms
 
 task-defaults:
+    run-on-repo-type: [hg]
     name: secondary-update-verify-config
     run-on-projects: []  # to make sure this never runs as part of CI
     shipping-product: firefox
@@ -55,18 +56,6 @@ task-defaults:
         channel: "beta-localtest"
 
 tasks:
-    firefox-secondary-linux:
-        treeherder:
-            symbol: UVCS
-            platform: linux-shippable/opt
-            kind: test
-            tier: 1
-        attributes:
-            build_platform: linux-shippable
-        extra:
-            platform: linux-i686
-            updater-platform: linux-x86_64
-
     firefox-secondary-linux64:
         treeherder:
             symbol: UVCS

@@ -3,8 +3,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/* eslint-env mozilla/browser-window */
-
 document.addEventListener(
   "DOMContentLoaded",
   () => {
@@ -25,6 +23,12 @@ document.addEventListener(
           break;
         case "context_ungroupTab":
           TabContextMenu.ungroupTabs();
+          break;
+        case "context_moveTabToSplitView":
+          TabContextMenu.moveTabsToSplitView();
+          break;
+        case "context_separateSplitView":
+          TabContextMenu.unsplitTabs();
           break;
         case "context_reloadTab":
           gBrowser.reloadTab(TabContextMenu.contextTab);
@@ -497,6 +501,11 @@ document.addEventListener(
           ToolbarContextMenu.updateDownloadsAlwaysOpenPanel(event.target);
           ToolbarContextMenu.updateExtensionsButtonContextMenu(event.target);
           ToolbarContextMenu.updateExtension(event.target);
+
+          // The following methods must be called last after updating the menu items above,
+          // as they may change which items are visible.
+          ToolbarContextMenu.updateCustomizationItemsVisibility(event.target);
+          ToolbarContextMenu.hideLeadingSeparatorIfNeeded(event.target);
           break;
         case "pageActionContextMenu":
           BrowserPageActions.onContextMenuShowing(event, event.target);
@@ -519,6 +528,12 @@ document.addEventListener(
           break;
         case "bhTooltip":
           BookmarksEventHandler.fillInBHTooltip(event.target, event);
+          break;
+        case "tabContextMenu":
+          TabContextMenu.addNewBadge();
+          break;
+        case "moveTabOptionsMenu":
+          gProfiles.populateMoveTabMenu(event.target);
           break;
       }
     });

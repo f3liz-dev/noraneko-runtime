@@ -403,7 +403,7 @@ newtab-wallpaper-abstract-purple-green = 紫色與綠色漸層
 newtab-wallpaper-abstract-blue-purple-waves = 藍色與紫色波浪圖
 newtab-wallpaper-abstract-black-waves = 黑色波浪圖
 
-## Celestial
+## Firefox
 
 newtab-wallpaper-category-title-photographs = 相片
 newtab-wallpaper-beach-at-sunrise = 海邊日出
@@ -432,6 +432,10 @@ feature-highlight-dismiss-button =
 feature-highlight-wallpaper =
     .title = { -newtab-wallpaper-feature-highlight-header }
     .aria-label = { -newtab-wallpaper-feature-highlight-content }
+
+## Firefox
+
+newtab-wallpaper-category-title-firefox = { -brand-product-name }
 
 ## Celestial
 
@@ -474,8 +478,16 @@ newtab-weather-menu-change-temperature-units-fahrenheit = 切換為華氏溫度
 newtab-weather-menu-change-temperature-units-celsius = 切換為攝氏溫度
 newtab-weather-menu-hide-weather = 隱藏新分頁的天氣資訊
 newtab-weather-menu-learn-more = 更多資訊
+newtab-weather-menu-detect-my-location = 偵測我的所在位置
 # This message is shown if user is working offline
 newtab-weather-error-not-available = 目前暫時無法提供天氣資訊。
+newtab-weather-opt-in-see-weather = 您想看到目前所在位置的天氣資訊嗎？
+newtab-weather-opt-in-not-now =
+    .label = 現在不要
+newtab-weather-opt-in-yes =
+    .label = 好的
+# We'll be showing static (fake) weather data if the user has not opted in to using their location
+newtab-weather-static-city = 紐約市
 
 ## Topic Labels
 
@@ -642,6 +654,9 @@ newtab-widget-lists-input-menu-move-up = 上移
 newtab-widget-lists-input-menu-move-down = 下移
 newtab-widget-lists-input-menu-delete = 刪除
 newtab-widget-lists-input-menu-edit = 編輯
+# the + symbol emphasises the functionality of adding a new list
+newtab-widget-lists-dropdown-create =
+    .label = + 新增清單
 newtab-widget-lists-name-label-default =
     .label = 任務清單
 newtab-widget-lists-name-placeholder-default =
@@ -661,10 +676,6 @@ newtab-widget-timer-mode-focus =
     .label = 專注
 newtab-widget-timer-mode-break =
     .label = 休息
-newtab-widget-timer-play =
-    .title = 播放
-newtab-widget-timer-pause =
-    .title = 暫停
 newtab-widget-timer-label-play =
     .label = 播放
 newtab-widget-timer-label-pause =

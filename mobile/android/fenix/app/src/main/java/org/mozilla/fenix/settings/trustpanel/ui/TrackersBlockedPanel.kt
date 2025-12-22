@@ -11,6 +11,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -19,7 +21,6 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
-import mozilla.components.compose.base.Divider
 import org.mozilla.fenix.R
 import org.mozilla.fenix.components.menu.compose.MenuGroup
 import org.mozilla.fenix.components.menu.compose.MenuItem
@@ -28,8 +29,6 @@ import org.mozilla.fenix.components.menu.compose.header.SubmenuHeader
 import org.mozilla.fenix.theme.FirefoxTheme
 import org.mozilla.fenix.trackingprotection.TrackerBuckets
 import org.mozilla.fenix.trackingprotection.TrackingProtectionCategory
-
-internal const val TRACKERS_PANEL_ROUTE = "trackers_panel"
 
 @Composable
 internal fun TrackersBlockedPanel(
@@ -60,7 +59,7 @@ internal fun TrackersBlockedPanel(
                         numberOfTrackersBlocked,
                     ),
                     modifier = Modifier.weight(1f),
-                    color = FirefoxTheme.colors.textAccent,
+                    color = MaterialTheme.colorScheme.tertiary,
                     style = FirefoxTheme.typography.headline8,
                 )
             }
@@ -71,7 +70,7 @@ internal fun TrackersBlockedPanel(
                 TrackingProtectionCategory.entries
                     .filter { bucketedTrackers.get(it, true).isNotEmpty() }
                     .forEachIndexed { index, trackingProtectionCategory ->
-                        if (index != 0) { Divider(color = FirefoxTheme.colors.borderSecondary) }
+                        if (index != 0) { HorizontalDivider() }
 
                         MenuItem(
                             label = stringResource(
@@ -94,7 +93,7 @@ private fun TrackersBlockedPanelPreview() {
     FirefoxTheme {
         Column(
             modifier = Modifier
-                .background(color = FirefoxTheme.colors.layer3),
+                .background(color = MaterialTheme.colorScheme.surface),
         ) {
             TrackersBlockedPanel(
                 title = "Mozilla",

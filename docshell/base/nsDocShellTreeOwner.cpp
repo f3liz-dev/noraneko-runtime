@@ -41,11 +41,8 @@
 #include "nsRect.h"
 #include "nsIContent.h"
 #include "nsServiceManagerUtils.h"
-#include "nsViewManager.h"
-#include "nsView.h"
 #include "nsXULTooltipListener.h"
 #include "nsIConstraintValidation.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/EventListenerManager.h"
 #include "mozilla/Try.h"
 #include "mozilla/dom/DragEvent.h"
@@ -598,9 +595,6 @@ nsDocShellTreeOwner::GetDimensions(DimensionKind aDimensionKind, int32_t* aX,
   NS_ENSURE_STATE(webBrowserChrome);
   return webBrowserChrome->GetDimensions(aDimensionKind, aX, aY, aCX, aCY);
 }
-
-NS_IMETHODIMP
-nsDocShellTreeOwner::Repaint(bool aForce) { return NS_ERROR_NULL_POINTER; }
 
 NS_IMETHODIMP
 nsDocShellTreeOwner::GetParentWidget(nsIWidget** aParentWidget) {

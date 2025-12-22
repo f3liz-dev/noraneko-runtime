@@ -56,17 +56,6 @@ function promiseBlobAsDataURL(blob) {
   });
 }
 
-function promiseBlobAsOctets(blob) {
-  return new Promise((resolve, reject) => {
-    let reader = new FileReader();
-    reader.addEventListener("load", () => {
-      resolve(Array.from(reader.result).map(c => c.charCodeAt(0)));
-    });
-    reader.addEventListener("error", reject);
-    reader.readAsBinaryString(blob);
-  });
-}
-
 function promiseImage(stream, type) {
   return new Promise((resolve, reject) => {
     let imgTools = Cc["@mozilla.org/image/tools;1"].getService(Ci.imgITools);
@@ -293,7 +282,7 @@ class FaviconLoad {
       let blob = new Blob([buffer], { type });
 
       if (type != "image/svg+xml") {
-        let octets = await promiseBlobAsOctets(blob);
+        let octets = new Uint8Array(buffer);
         let sniffer = Cc["@mozilla.org/image/loader;1"].createInstance(
           Ci.nsIContentSniffer
         );
@@ -350,7 +339,7 @@ class FaviconLoad {
   }
 }
 
-/*
+/**
  * Extract the icon width from the size attribute. It also sends the telemetry
  * about the size type and size dimension info.
  *
@@ -393,7 +382,7 @@ function extractIconSize(aSizes) {
   return width;
 }
 
-/*
+/**
  * Get link icon URI from a link dom node.
  *
  * @param {DOMNode} aLink A link dom node.
@@ -434,7 +423,7 @@ function guessType(icon) {
   return icon.type == "image/vnd.microsoft.icon" ? TYPE_ICO : icon.type || "";
 }
 
-/*
+/**
  * Selects the best rich icon and tab icon from a list of IconInfo objects.
  *
  * @param {Array} iconInfos A list of IconInfo objects.

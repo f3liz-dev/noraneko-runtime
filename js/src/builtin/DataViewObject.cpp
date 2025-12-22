@@ -6,7 +6,6 @@
 
 #include "builtin/DataViewObject.h"
 
-#include "mozilla/Casting.h"
 #include "mozilla/EndianUtils.h"
 #include "mozilla/IntegerTypeTraits.h"
 #include "mozilla/WrappingOperations.h"
@@ -1212,8 +1211,10 @@ const JSFunctionSpec DataViewObject::methods[] = {
 
 const JSPropertySpec DataViewObject::properties[] = {
     JS_PSG("buffer", DataViewObject::bufferGetter, 0),
-    JS_PSG("byteLength", DataViewObject::byteLengthGetter, 0),
-    JS_PSG("byteOffset", DataViewObject::byteOffsetGetter, 0),
+    JS_INLINABLE_PSG("byteLength", DataViewObject::byteLengthGetter, 0,
+                     DataViewByteLength),
+    JS_INLINABLE_PSG("byteOffset", DataViewObject::byteOffsetGetter, 0,
+                     DataViewByteOffset),
     JS_STRING_SYM_PS(toStringTag, "DataView", JSPROP_READONLY),
     JS_PS_END,
 };

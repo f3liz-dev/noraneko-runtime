@@ -16,7 +16,6 @@ use crate::properties::{
 };
 use crate::shared_lock::{DeepCloneWithLock, SharedRwLock, SharedRwLockReadGuard};
 use crate::shared_lock::{Locked, ToCssWithGuard};
-use crate::str::CssStringWriter;
 use crate::stylesheets::rule_parser::VendorPrefix;
 use crate::stylesheets::{CssRuleType, StylesheetContents};
 use crate::values::{serialize_percentage, KeyframesName};
@@ -27,7 +26,9 @@ use cssparser::{
 use servo_arc::Arc;
 use std::borrow::Cow;
 use std::fmt::{self, Write};
-use style_traits::{CssWriter, ParseError, ParsingMode, StyleParseErrorKind, ToCss};
+use style_traits::{
+    CssStringWriter, CssWriter, ParseError, ParsingMode, StyleParseErrorKind, ToCss,
+};
 
 /// A [`@keyframes`][keyframes] rule.
 ///
@@ -203,8 +204,8 @@ impl Keyframe {
         parent_stylesheet_contents: &StylesheetContents,
         lock: &SharedRwLock,
     ) -> Result<Arc<Locked<Self>>, ParseError<'i>> {
-        let url_data = parent_stylesheet_contents.url_data.read();
-        let namespaces = parent_stylesheet_contents.namespaces.read();
+        let url_data = &parent_stylesheet_contents.url_data;
+        let namespaces = &parent_stylesheet_contents.namespaces;
         let mut context = ParserContext::new(
             parent_stylesheet_contents.origin,
             &url_data,

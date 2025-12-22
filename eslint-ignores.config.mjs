@@ -39,7 +39,7 @@ export default [
   "**/reftest/",
   "**/reftests/",
   // Don't ignore the reftest harness files.
-  "!/layout/tools/reftest/",
+  "!layout/tools/reftest/",
 
   // Exclude expected objdirs.
   "obj*/",
@@ -95,6 +95,7 @@ export default [
 
   // Ignore devtools generated code
   "devtools/**/*.snapshot.mjs",
+  "tools/profiler/tests/browser/browser_test_feature_jstracing_objtestutils.snapshot.mjs",
   "devtools/client/webconsole/test/node/fixtures/stubs/*.js",
   "!devtools/client/webconsole/test/node/fixtures/stubs/index.js",
   "devtools/client/shared/source-map-loader/test/browser/fixtures/*.js",
@@ -152,12 +153,14 @@ export default [
 
   // Intentional broken files
   "dom/base/test/file_js_cache_syntax_error.js",
+  "dom/base/test/file_js_cache_large_syntax_error.js",
   "dom/base/test/jsmodules/test_scriptNotParsedAsModule.html",
   "dom/base/test/jsmodules/test_syntaxError.html",
   "dom/base/test/jsmodules/test_syntaxErrorAsync.html",
   "dom/base/test/jsmodules/module_badSyntax.mjs",
   "dom/base/test/jsmodules/test_syntaxErrorInline.html",
   "dom/base/test/jsmodules/test_syntaxErrorInlineAsync.html",
+  "dom/base/test/jsmodules/parse_error.js",
   "dom/base/test/test_bug687859.html",
   "dom/media/webrtc/tests/mochitests/identity/idp-bad.js",
   "dom/security/test/general/file_nonscript.json",
@@ -168,6 +171,10 @@ export default [
   "dom/workers/test/importScripts_worker_imported3.js",
   "dom/workers/test/invalid.js",
   "dom/workers/test/threadErrors_worker1.js",
+
+  // Test files for serialization tests
+  "dom/serializers/tests/mochitest/file_htmlserializer_1*",
+  "dom/serializers/tests/mochitest/file_xhtmlserializer_1*",
 
   // Tests the module loader's path handling.
   // Dynamic imports contains non-optimal paths.
@@ -210,6 +217,9 @@ export default [
   "mobile/android/android-components/docs/assets/js/icon-js.js",
   "mobile/android/fenix/app/src/androidTest/assets/",
   "mobile/android/focus-android/app/src/androidTest/assets/",
+
+  // Contains pref files.
+  "mobile/ios/app/",
 
   // Pre-processed/pref files
   "modules/libpref/greprefs.js",

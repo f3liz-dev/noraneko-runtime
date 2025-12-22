@@ -60,7 +60,6 @@
 #include "nsTreeBodyFrame.h"
 #include "nsTreeUtils.h"
 #include "mozilla/a11y/AccTypes.h"
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/dom/ContentParent.h"
 #include "mozilla/dom/DOMStringList.h"
 #include "mozilla/dom/EventTarget.h"
@@ -671,6 +670,68 @@ void nsAccessibilityService::NotifyOfDevPixelRatioChange(
     fields->SetAttribute(CacheKey::AppUnitsPerDevPixel, aAppUnitsPerDevPixel);
     data.AppendElement(mozilla::a11y::CacheData(0, fields));
     document->IPCDoc()->SendCache(CacheUpdateType::Update, data);
+  }
+}
+
+void nsAccessibilityService::NotifyAnchorPositionedRemoved(
+    mozilla::PresShell* aPresShell, nsIFrame* aFrame) {
+  DocAccessible* document = aPresShell->GetDocAccessible();
+  if (!document) {
+    return;
+  }
+
+  const nsIFrame* anchorFrame =
+      nsCoreUtils::GetAnchorForPositionedFrame(aPresShell, aFrame);
+  if (!anchorFrame) {
+    return;
+  }
+
+  if (LocalAccessible* anchorAcc =
+          document->GetAccessible(anchorFrame->GetContent())) {
+    document->QueueCacheUpdate(anchorAcc, CacheDomain::Relations);
+  }
+}
+
+void nsAccessibilityService::NotifyAnchorRemoved(mozilla::PresShell* aPresShell,
+                                                 nsIFrame* aFrame) {
+  DocAccessible* document = aPresShell->GetDocAccessible();
+  if (!document) {
+    return;
+  }
+
+  nsIFrame* positionedFrame =
+      nsCoreUtils::GetPositionedFrameForAnchor(aPresShell, aFrame);
+  if (!positionedFrame) {
+    return;
+  }
+
+  if (LocalAccessible* positionedAcc =
+          document->GetAccessible(positionedFrame->GetContent())) {
+    // If the anchor was removed, its positioned element may now have a 1:1
+    // relation with another anchor, and they would get a description a11y
+    // relation. So we need to go one level deeper here and refresh the cache of
+    // any potential anchors that remain on the positioned element.
+    document->RefreshAnchorRelationCacheForTarget(positionedAcc);
+  }
+}
+
+void nsAccessibilityService::NotifyAnchorPositionedScrollUpdate(
+    mozilla::PresShell* aPresShell, nsIFrame* aFrame) {
+  DocAccessible* document = aPresShell->GetDocAccessible();
+  if (!document) {
+    return;
+  }
+
+  if (LocalAccessible* positionedAcc =
+          document->GetAccessible(aFrame->GetContent())) {
+    // Refresh relations before reflow to notify current anchor.
+    document->RefreshAnchorRelationCacheForTarget(positionedAcc);
+
+    // Refresh relations after next tick when reflow updated to the
+    // new anchor state.
+    document->Controller()->ScheduleNotification<DocAccessible>(
+        document, &DocAccessible::RefreshAnchorRelationCacheForTarget,
+        positionedAcc);
   }
 }
 

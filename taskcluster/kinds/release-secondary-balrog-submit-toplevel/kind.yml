@@ -11,6 +11,7 @@ transforms:
     - gecko_taskgraph.transforms.task:transforms
 
 task-defaults:
+    run-on-repo-type: [hg]
     run-on-projects: []  # to make sure this never runs in CI
     shipping-phase: promote
     worker-type: balrog
@@ -18,7 +19,7 @@ task-defaults:
         implementation: balrog
         balrog-action: v2-submit-toplevel
         require-mirrors: false
-        platforms: ["linux", "linux64", "linux64-aarch64", "macosx64", "win32", "win64", "win64-aarch64"]
+        platforms: ["linux64", "linux64-aarch64", "macosx64", "win32", "win64", "win64-aarch64"]
         archive-domain:
             by-release-level:
                 production: archive.mozilla.org

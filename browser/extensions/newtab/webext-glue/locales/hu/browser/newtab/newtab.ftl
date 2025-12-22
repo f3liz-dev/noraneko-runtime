@@ -319,6 +319,9 @@ newtab-custom-pocket-subtitle = Kivételes tartalmak a { -pocket-brand-name } v�
 newtab-custom-stories-toggle =
     .label = Ajánlott történetek
     .description = Kivételes tartalmak a { -brand-product-name } család válogatásában
+newtab-custom-stories-personalized-toggle =
+    .label = Történetek
+newtab-custom-stories-personalized-checkbox-label = Személyre szabott történetek a tevékenysége alapján
 newtab-custom-pocket-sponsored = Szponzorált történetek
 newtab-custom-pocket-show-recent-saves = Legutóbbi mentések megjelenítése
 newtab-custom-recent-title = Legutóbbi tevékenység
@@ -354,6 +357,7 @@ newtab-wallpaper-custom-color = Válasszon színt
 # Variables
 #   $file_size (number) - The number of the maximum image file size (in MB) that may be uploaded
 newtab-wallpaper-error-max-file-size = A kép túllépte a { $file_size } MB-os fájlméretkorlátot. Próbáljon meg egy kisebb fájlt feltölteni.
+newtab-wallpaper-error-upload-file-type = Nem tudtuk feltölteni a fájlt. Próbálja meg újra egy képfájllal.
 newtab-wallpaper-error-file-type = Nem tudtuk feltölteni a fájlt. Próbálja meg újra egy másik fájltípussal.
 newtab-wallpaper-light-red-panda = Vörös panda
 newtab-wallpaper-light-mountain = Fehér hegy
@@ -403,7 +407,7 @@ newtab-wallpaper-abstract-purple-green = Lila és zöld fényátmenet
 newtab-wallpaper-abstract-blue-purple-waves = Kék és lila hullámos alakzatok
 newtab-wallpaper-abstract-black-waves = Fekete hullámos alakzatok
 
-## Celestial
+## Firefox
 
 newtab-wallpaper-category-title-photographs = Fényképek
 newtab-wallpaper-beach-at-sunrise = Strand napkeltekor
@@ -432,6 +436,10 @@ feature-highlight-dismiss-button =
 feature-highlight-wallpaper =
     .title = { -newtab-wallpaper-feature-highlight-header }
     .aria-label = { -newtab-wallpaper-feature-highlight-content }
+
+## Firefox
+
+newtab-wallpaper-category-title-firefox = { -brand-product-name }
 
 ## Celestial
 
@@ -474,8 +482,16 @@ newtab-weather-menu-change-temperature-units-fahrenheit = Váltás Fahrenheitre
 newtab-weather-menu-change-temperature-units-celsius = Váltás Celsiusra
 newtab-weather-menu-hide-weather = Időjárás elrejtése az Új lapon
 newtab-weather-menu-learn-more = További tudnivalók
+newtab-weather-menu-detect-my-location = Saját hely észlelése
 # This message is shown if user is working offline
 newtab-weather-error-not-available = Az időjárásadatok most nem érhetők el
+newtab-weather-opt-in-see-weather = Szeretné látni a helye időjárását?
+newtab-weather-opt-in-not-now =
+    .label = Most nem
+newtab-weather-opt-in-yes =
+    .label = Igen
+# We'll be showing static (fake) weather data if the user has not opted in to using their location
+newtab-weather-static-city = New York City
 
 ## Topic Labels
 
@@ -642,6 +658,9 @@ newtab-widget-lists-input-menu-move-up = Mozgatás felfelé
 newtab-widget-lists-input-menu-move-down = Mozgatás lefelé
 newtab-widget-lists-input-menu-delete = Törlés
 newtab-widget-lists-input-menu-edit = Szerkesztés
+# the + symbol emphasises the functionality of adding a new list
+newtab-widget-lists-dropdown-create =
+    .label = + Új lista létrehozása
 newtab-widget-lists-name-label-default =
     .label = Feladatlista
 newtab-widget-lists-name-placeholder-default =
@@ -661,10 +680,6 @@ newtab-widget-timer-mode-focus =
     .label = Fókusz
 newtab-widget-timer-mode-break =
     .label = Szünet
-newtab-widget-timer-play =
-    .title = Lejátszás
-newtab-widget-timer-pause =
-    .title = Szünet
 newtab-widget-timer-label-play =
     .label = Lejátszás
 newtab-widget-timer-label-pause =
@@ -677,6 +692,9 @@ newtab-widget-timer-menu-hide = Időzítő elrejtése
 newtab-widget-timer-menu-learn-more = További tudnivalók
 # Message that appears when widgets are full-height. This reminds users that there is more New Tab content to see if they scroll
 newtab-widget-keep-scrolling = Görgessen a továbbiakért
+newtab-widget-message-title = Maradjon fókuszált a listákkal és a beépített időzítővel
+# to-dos stands for "things to do".
+newtab-widget-message-copy = A gyors emlékeztetőktől a napi tennivalókig, fókuszált munkaszakaszoktól a nyújtó szünetekig — maradjon a feladatnál és időben.
 newtab-promo-card-title = Támogassa a { -brand-product-name }ot
 newtab-promo-card-body = Szponzoraink támogatják a küldetésünket, hogy jobb webet építsünk
 newtab-promo-card-cta = További tudnivalók

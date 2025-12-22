@@ -10,14 +10,15 @@
 import {
   UrlbarProvider,
   UrlbarUtils,
-} from "resource:///modules/UrlbarUtils.sys.mjs";
+} from "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs";
 
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
-  UrlbarPrefs: "resource:///modules/UrlbarPrefs.sys.mjs",
-  UrlbarResult: "resource:///modules/UrlbarResult.sys.mjs",
-  UrlbarTokenizer: "resource:///modules/UrlbarTokenizer.sys.mjs",
+  UrlbarPrefs: "moz-src:///browser/components/urlbar/UrlbarPrefs.sys.mjs",
+  UrlbarResult: "moz-src:///browser/components/urlbar/UrlbarResult.sys.mjs",
+  UrlbarTokenizer:
+    "moz-src:///browser/components/urlbar/UrlbarTokenizer.sys.mjs",
 });
 
 const RESTRICT_KEYWORDS_FEATURE_GATE = "searchRestrictKeywords.featureGate";
@@ -105,6 +106,13 @@ export class UrlbarProviderRestrictKeywordsAutofill extends UrlbarProvider {
     return false;
   }
 
+  /**
+   * Starts querying.
+   *
+   * @param {UrlbarQueryContext} queryContext
+   * @param {(provider: UrlbarProvider, result: UrlbarResult) => void} addCallback
+   *   Callback invoked by the provider to add a new result.
+   */
   async startQuery(queryContext, addCallback) {
     if (
       this.#autofillData &&
@@ -136,15 +144,16 @@ export class UrlbarProviderRestrictKeywordsAutofill extends UrlbarProvider {
     }
 
     if (restrictSymbol && typedKeyword == aliasKeyword) {
-      let result = new lazy.UrlbarResult(
-        UrlbarUtils.RESULT_TYPE.RESTRICT,
-        UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+      let result = new lazy.UrlbarResult({
+        type: UrlbarUtils.RESULT_TYPE.RESTRICT,
+        source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+        heuristic: true,
+        hideRowLabel: true,
         ...lazy.UrlbarResult.payloadAndSimpleHighlights(queryContext.tokens, {
           keyword: restrictSymbol,
           providesSearchMode: false,
-        })
-      );
-      result.heuristic = true;
+        }),
+      });
       addCallback(this, result);
     }
 
@@ -179,9 +188,15 @@ export class UrlbarProviderRestrictKeywordsAutofill extends UrlbarProvider {
           mode => mode.restrict == token
         )?.icon;
 
-        let result = new lazy.UrlbarResult(
-          UrlbarUtils.RESULT_TYPE.RESTRICT,
-          UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+        return new lazy.UrlbarResult({
+          type: UrlbarUtils.RESULT_TYPE.RESTRICT,
+          source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+          hideRowLabel: true,
+          autofill: {
+            value,
+            selectionStart: queryContext.searchString.length,
+            selectionEnd: value.length,
+          },
           ...lazy.UrlbarResult.payloadAndSimpleHighlights(queryContext.tokens, {
             icon,
             keyword: token,
@@ -194,16 +209,8 @@ export class UrlbarProviderRestrictKeywordsAutofill extends UrlbarProvider {
               UrlbarUtils.HIGHLIGHT.TYPED,
             ],
             providesSearchMode: true,
-          })
-        );
-
-        result.autofill = {
-          value,
-          selectionStart: queryContext.searchString.length,
-          selectionEnd: value.length,
-        };
-
-        return result;
+          }),
+        });
       }
     }
 

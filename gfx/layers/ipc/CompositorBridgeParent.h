@@ -9,7 +9,6 @@
 
 #include <stdint.h>  // for uint64_t
 #include <unordered_map>
-#include "mozilla/Assertions.h"  // for MOZ_ASSERT_HELPER2
 #include "mozilla/Maybe.h"
 #include "mozilla/Monitor.h"        // for Monitor
 #include "mozilla/RefPtr.h"         // for RefPtr
@@ -175,10 +174,8 @@ class CompositorBridgeParentBase : public PCompositorBridgeParent,
   virtual bool DeallocPWebRenderBridgeParent(
       PWebRenderBridgeParent* aActor) = 0;
 
-  virtual PCompositorWidgetParent* AllocPCompositorWidgetParent(
-      const CompositorWidgetInitData& aInitData) = 0;
-  virtual bool DeallocPCompositorWidgetParent(
-      PCompositorWidgetParent* aActor) = 0;
+  virtual already_AddRefed<PCompositorWidgetParent>
+  AllocPCompositorWidgetParent(const CompositorWidgetInitData& aInitData) = 0;
 
   virtual mozilla::ipc::IPCResult RecvAdoptChild(const LayersId& id) = 0;
   virtual mozilla::ipc::IPCResult RecvFlushRenderingAsync(
@@ -358,9 +355,8 @@ class CompositorBridgeParent final : public CompositorBridgeParentBase,
       RefPtr<const wr::WebRenderPipelineInfo> aInfo);
   RefPtr<AsyncImagePipelineManager> GetAsyncImagePipelineManager() const;
 
-  PCompositorWidgetParent* AllocPCompositorWidgetParent(
+  already_AddRefed<PCompositorWidgetParent> AllocPCompositorWidgetParent(
       const CompositorWidgetInitData& aInitData) override;
-  bool DeallocPCompositorWidgetParent(PCompositorWidgetParent* aActor) override;
 
   void ObserveLayersUpdate(LayersId aLayersId, bool aActive) override {}
 

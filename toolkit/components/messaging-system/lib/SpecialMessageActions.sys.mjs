@@ -193,6 +193,49 @@ export const SpecialMessageActions = {
   },
 
   /**
+   * Set a target pref's value to the value of a source pref.
+   *
+   * @param {string} targetPref - The name of a pref to be updated.
+   * @param {string} sourcePref - The name of the source pref whose value will be copied to the target pref.
+   */
+  copyPrefValue(targetPref, sourcePref) {
+    const sourceType = Services.prefs.getPrefType(sourcePref);
+    const targetType = Services.prefs.getPrefType(targetPref);
+    if (
+      targetType !== Services.prefs.PREF_INVALID &&
+      targetType !== sourceType
+    ) {
+      throw new Error(
+        `Special message action with type SET_PREF(copyFromPref), target pref "${targetPref}" has type ${targetType} which does not match source pref "${sourcePref}" type ${sourceType}.`
+      );
+    }
+    switch (sourceType) {
+      case Services.prefs.PREF_STRING:
+        Services.prefs.setStringPref(
+          targetPref,
+          Services.prefs.getStringPref(sourcePref)
+        );
+        break;
+      case Services.prefs.PREF_INT:
+        Services.prefs.setIntPref(
+          targetPref,
+          Services.prefs.getIntPref(sourcePref)
+        );
+        break;
+      case Services.prefs.PREF_BOOL:
+        Services.prefs.setBoolPref(
+          targetPref,
+          Services.prefs.getBoolPref(sourcePref)
+        );
+        break;
+      default:
+        throw new Error(
+          `Special message action with type SET_PREF(copyFromPref), pref of "${sourcePref}" is invalid or not a supported type.`
+        );
+    }
+  },
+
+  /**
    * Set prefs with special message actions
    *
    * @param {Object} pref - A pref to be updated.
@@ -235,6 +278,7 @@ export const SpecialMessageActions = {
       "sidebar.visibility",
       "termsofuse.acceptedVersion",
       "termsofuse.acceptedDate",
+      "termsofuse.firstAcceptedDate",
       "termsofuse.currentVersion",
       "termsofuse.minimumVersion",
       "privacy.trackingprotection.allow_list.baseline.enabled",
@@ -246,7 +290,10 @@ export const SpecialMessageActions = {
     // only prefs created on the fly are allowed. This is to ensure that adding
     // the abililty to set any in-tree prefs with this feature undergoes code
     // review.
-    const allowedSetOnImpressionPrefs = [];
+    const allowedSetOnImpressionPrefs = [
+      "termsofuse.firstAcceptedDate",
+      "termsofuse.acceptedDate",
+    ];
 
     const allowedPrefsList = onImpression
       ? allowedSetOnImpressionPrefs
@@ -263,6 +310,8 @@ export const SpecialMessageActions = {
       case "object":
         if (pref.value.timestamp) {
           Services.prefs.setStringPref(pref.name, Date.now().toString());
+        } else if (pref.value.copyFromPref) {
+          this.copyPrefValue(pref.name, pref.value.copyFromPref);
         } else {
           Services.prefs.clearUserPref(pref.name);
         }
@@ -592,7 +641,7 @@ export const SpecialMessageActions = {
           }
         );
         break;
-      case "OPEN_ABOUT_PAGE":
+      case "OPEN_ABOUT_PAGE": {
         let aboutPageURL = new URL(`about:${action.data.args}`);
         if (action.data.entrypoint) {
           aboutPageURL.search = action.data.entrypoint;
@@ -602,6 +651,7 @@ export const SpecialMessageActions = {
           action.data.where || "tab"
         );
         break;
+      }
       case "OPEN_FIREFOX_VIEW":
         window.FirefoxViewHandler.openTab();
         break;
@@ -616,7 +666,7 @@ export const SpecialMessageActions = {
       case "OPEN_APPLICATIONS_MENU":
         lazy.UITour.showMenu(window, action.data.args);
         break;
-      case "HIGHLIGHT_FEATURE":
+      case "HIGHLIGHT_FEATURE": {
         const highlight = await lazy.UITour.getTarget(window, action.data.args);
         if (highlight) {
           await lazy.UITour.showHighlight(window, highlight, "none", {
@@ -624,6 +674,7 @@ export const SpecialMessageActions = {
           });
         }
         break;
+      }
       case "INSTALL_ADDON_FROM_URL":
         await this.installAddonFromURL(
           browser,
@@ -661,20 +712,22 @@ export const SpecialMessageActions = {
           true
         );
         break;
-      case "CONFIRM_LAUNCH_ON_LOGIN":
+      case "CONFIRM_LAUNCH_ON_LOGIN": {
         const { WindowsLaunchOnLogin } = ChromeUtils.importESModule(
           "resource://gre/modules/WindowsLaunchOnLogin.sys.mjs"
         );
         await WindowsLaunchOnLogin.createLaunchOnLogin();
         break;
-      case "PIN_CURRENT_TAB":
+      }
+      case "PIN_CURRENT_TAB": {
         let tab = window.gBrowser.selectedTab;
         window.gBrowser.pinTab(tab);
         window.ConfirmationHint.show(tab, "confirmation-hint-pin-tab", {
           descriptionId: "confirmation-hint-pin-tab-description",
         });
         break;
-      case "SHOW_FIREFOX_ACCOUNTS":
+      }
+      case "SHOW_FIREFOX_ACCOUNTS": {
         if (!(await lazy.FxAccounts.canConnectAccount())) {
           break;
         }
@@ -690,13 +743,15 @@ export const SpecialMessageActions = {
             Services.scriptSecurityManager.createNullPrincipal({}),
         });
         break;
+      }
       case "FXA_SIGNIN_FLOW":
         /** @returns {Promise<boolean>} */
         return this.fxaSignInFlow(action.data, browser);
-      case "OPEN_PROTECTION_PANEL":
+      case "OPEN_PROTECTION_PANEL": {
         let { gProtectionsHandler } = window;
         gProtectionsHandler.showProtectionsPopup({});
         break;
+      }
       case "OPEN_PROTECTION_REPORT":
         window.gProtectionsHandler.openProtections();
         break;
@@ -747,12 +802,13 @@ export const SpecialMessageActions = {
         throw new Error(
           `Special message action with type ${action.type} is unsupported.`
         );
-      case "CLICK_ELEMENT":
+      case "CLICK_ELEMENT": {
         const clickElement = window.document.querySelector(
           action.data.selector
         );
         clickElement?.click();
         break;
+      }
       case "RELOAD_BROWSER":
         browser.reload();
         break;
@@ -783,11 +839,12 @@ export const SpecialMessageActions = {
         window.gURLBar.searchMode = action.data;
         window.gURLBar.focus();
         break;
-      case "SUMMARIZE_PAGE":
+      case "SUMMARIZE_PAGE": {
         const entry = action.data ?? "message";
         await lazy.GenAI.summarizeCurrentPage(window, entry);
         break;
-      case "OPEN_PANEL":
+      }
+      case "OPEN_PANEL": {
         let { anchor_id, widget_id, panel_id, fallback_to_app_menu } =
           action.data;
         let anchor;
@@ -802,10 +859,12 @@ export const SpecialMessageActions = {
         }
         await window.PanelUI.showSubView(panel_id, anchor);
         break;
-      case "CREATE_TASKBAR_TAB":
+      }
+      case "CREATE_TASKBAR_TAB": {
         let currentTab = window.gBrowser.selectedTab;
         await lazy.TaskbarTabs.moveTabIntoTaskbarTab(currentTab);
         break;
+      }
     }
     return undefined;
   },

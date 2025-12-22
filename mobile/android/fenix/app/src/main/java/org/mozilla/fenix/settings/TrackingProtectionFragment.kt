@@ -9,11 +9,13 @@ import android.os.Bundle
 import androidx.annotation.VisibleForTesting
 import androidx.appcompat.app.AlertDialog
 import androidx.navigation.findNavController
+import androidx.navigation.fragment.navArgs
 import androidx.preference.CheckBoxPreference
 import androidx.preference.DropDownPreference
 import androidx.preference.Preference
 import androidx.preference.PreferenceFragmentCompat
 import androidx.preference.SwitchPreference
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import org.mozilla.fenix.BrowserDirection
 import org.mozilla.fenix.GleanMetrics.TrackingProtection
 import org.mozilla.fenix.HomeActivity
@@ -30,6 +32,7 @@ import org.mozilla.fenix.utils.view.addToRadioGroup
  * to open info about the tracking protection [org.mozilla.fenix.settings.TrackingProtectionFragment].
  */
 class TrackingProtectionFragment : PreferenceFragmentCompat() {
+    private val args by navArgs<TrackingProtectionFragmentArgs>()
 
     private val exceptionsClickListener = Preference.OnPreferenceClickListener {
         val directions =
@@ -153,6 +156,10 @@ class TrackingProtectionFragment : PreferenceFragmentCompat() {
                     return super.onPreferenceChange(preference, newValue)
                 }
             }
+        }
+
+        args.preferenceToScrollTo?.let {
+            scrollToPreference(it)
         }
     }
 
@@ -416,7 +423,7 @@ class TrackingProtectionFragment : PreferenceFragmentCompat() {
      * `false` if in custom mode.
      */
     private fun showDisableBaselineDialog(isStrictTrackingMode: Boolean) {
-        alertDialog = AlertDialog.Builder(requireContext()).apply {
+        alertDialog = MaterialAlertDialogBuilder(requireContext()).apply {
             setTitle(R.string.preference_enhanced_tracking_protection_allow_list_dialog_title)
             setMessage(
                 getString(

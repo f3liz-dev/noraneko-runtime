@@ -211,6 +211,7 @@
 #include "wasm/WasmFeatures.h"
 #include "wasm/WasmJS.h"
 
+#include "gc/WeakMap-inl.h"
 #include "vm/Compartment-inl.h"
 #include "vm/ErrorObject-inl.h"
 #include "vm/Interpreter-inl.h"
@@ -879,6 +880,7 @@ enum class ShellGlobalKind {
   WindowProxy,
 };
 
+static void SetStandardRealmOptions(JS::RealmOptions& options);
 static JSObject* NewGlobalObject(JSContext* cx, JS::RealmOptions& options,
                                  JSPrincipals* principals, ShellGlobalKind kind,
                                  bool immutablePrototype);
@@ -1112,6 +1114,10 @@ static mozilla::UniqueFreePtr<char[]> GetLine(FILE* file, const char* prompt) {
   return buffer;
 }
 
+static bool EvaluateInner(JSContext* cx, HandleString code,
+                          MutableHandleObject global, HandleObject opts,
+                          HandleObject cacheEntry, MutableHandleValue rval);
+
 static bool ShellInterruptCallback(JSContext* cx) {
   ShellContext* sc = GetShellContext(cx);
   if (!sc->serviceInterrupt) {
@@ -1126,25 +1132,49 @@ static bool ShellInterruptCallback(JSContext* cx) {
 
   bool result;
   if (sc->haveInterruptFunc) {
+    RootedValue rval(cx);
     bool wasAlreadyThrowing = cx->isExceptionPending();
     JS::AutoSaveExceptionState savedExc(cx);
-    JSAutoRealm ar(cx, &sc->interruptFunc.toObject());
-    RootedValue rval(cx);
 
-    // Report any exceptions thrown by the JS interrupt callback, but do
-    // *not* keep it on the cx. The interrupt handler is invoked at points
-    // that are not expected to throw catchable exceptions, like at
-    // JSOp::RetRval.
-    //
-    // If the interrupted JS code was already throwing, any exceptions
-    // thrown by the interrupt handler are silently swallowed.
-    {
+    if (sc->interruptFunc.isObject()) {
+      JSAutoRealm ar(cx, &sc->interruptFunc.toObject());
+
+      // Report any exceptions thrown by the JS interrupt callback, but do
+      // *not* keep it on the cx. The interrupt handler is invoked at points
+      // that are not expected to throw catchable exceptions, like at
+      // JSOp::RetRval.
+      //
+      // If the interrupted JS code was already throwing, any exceptions
+      // thrown by the interrupt handler are silently swallowed.
       Maybe<AutoReportException> are;
       if (!wasAlreadyThrowing) {
         are.emplace(cx);
       }
       result = JS_CallFunctionValue(cx, nullptr, sc->interruptFunc,
                                     JS::HandleValueArray::empty(), &rval);
+    } else {
+      RootedString str(cx, sc->interruptFunc.toString());
+
+      Maybe<AutoReportException> are;
+      if (!wasAlreadyThrowing) {
+        are.emplace(cx);
+      }
+
+      JS::RealmOptions options;
+      SetStandardRealmOptions(options);
+      RootedObject glob(cx, NewGlobalObject(cx, options, nullptr,
+                                            ShellGlobalKind::WindowProxy,
+                                            /* immutablePrototype = */ true));
+      if (!glob) {
+        return false;
+      }
+
+      RootedObject opts(cx, nullptr);
+      RootedObject cacheEntry(cx, nullptr);
+      JSAutoRealm ar(cx, glob);
+      if (!EvaluateInner(cx, str, &glob, opts, cacheEntry, &rval)) {
+        return false;
+      }
     }
     savedExc.restore();
 
@@ -1452,18 +1482,35 @@ static bool DrainJobQueue(JSContext* cx, unsigned argc, Value* vp) {
 static bool GlobalOfFirstJobInQueue(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
 
-  RootedObject job(cx, cx->internalJobQueue->maybeFront());
-  if (!job) {
-    JS_ReportErrorASCII(cx, "Job queue is empty");
-    return false;
+  if (JS::Prefs::use_js_microtask_queue()) {
+    if (cx->microTaskQueues->microTaskQueue.empty()) {
+      JS_ReportErrorASCII(cx, "Job queue is empty");
+      return false;
+    }
+
+    auto& job = cx->microTaskQueues->microTaskQueue.front();
+    RootedObject global(cx, JS::GetExecutionGlobalFromJSMicroTask(job));
+    MOZ_ASSERT(global);
+    if (!cx->compartment()->wrap(cx, &global)) {
+      return false;
+    }
+
+    args.rval().setObject(*global);
+  } else {
+    RootedObject job(cx, cx->internalJobQueue->maybeFront());
+    if (!job) {
+      JS_ReportErrorASCII(cx, "Job queue is empty");
+      return false;
+    }
+
+    RootedObject global(cx, &job->nonCCWGlobal());
+    if (!cx->compartment()->wrap(cx, &global)) {
+      return false;
+    }
+
+    args.rval().setObject(*global);
   }
 
-  RootedObject global(cx, &job->nonCCWGlobal());
-  if (!cx->compartment()->wrap(cx, &global)) {
-    return false;
-  }
-
-  args.rval().setObject(*global);
   return true;
 }
 
@@ -2744,6 +2791,15 @@ static bool ConvertTranscodeResultToJSException(JSContext* cx,
 static void SetQuitting(JSContext* cx, int32_t code) {
   ShellContext* sc = GetShellContext(cx);
   js::StopDrainingJobQueue(cx);
+#ifdef DEBUG
+  {
+    AutoLockHelperThreadState helperLock;
+
+    OffThreadPromiseRuntimeState& state =
+        cx->runtime()->offThreadPromiseState.ref();
+    state.setForceQuitting();
+  }
+#endif
   sc->exitCode = code;
   sc->quitting = true;
 }
@@ -2798,6 +2854,12 @@ static bool Evaluate(JSContext* cx, unsigned argc, Value* vp) {
   RootedObject global(cx, JS::CurrentGlobalOrNull(cx));
   MOZ_ASSERT(global);
 
+  return EvaluateInner(cx, code, &global, opts, cacheEntry, args.rval());
+}
+
+static bool EvaluateInner(JSContext* cx, HandleString code,
+                          MutableHandleObject global, HandleObject opts,
+                          HandleObject cacheEntry, MutableHandleValue rval) {
   // Check "global" property before everything to use the given global's
   // option as the default value.
   Maybe<CompileOptions> maybeOptions;
@@ -2808,8 +2870,8 @@ static bool Evaluate(JSContext* cx, unsigned argc, Value* vp) {
     }
     if (!v.isUndefined()) {
       if (v.isObject()) {
-        global = js::CheckedUnwrapDynamic(&v.toObject(), cx,
-                                          /* stopAtWindowProxy = */ false);
+        global.set(js::CheckedUnwrapDynamic(&v.toObject(), cx,
+                                            /* stopAtWindowProxy = */ false));
         if (!global) {
           return false;
         }
@@ -3055,9 +3117,8 @@ static bool Evaluate(JSContext* cx, unsigned argc, Value* vp) {
     }
 
     if (execute) {
-      if (!(envChain.empty()
-                ? JS_ExecuteScript(cx, script, args.rval())
-                : JS_ExecuteScript(cx, envChain, script, args.rval()))) {
+      if (!(envChain.empty() ? JS_ExecuteScript(cx, script, rval)
+                             : JS_ExecuteScript(cx, envChain, script, rval))) {
         if (catchTermination && !JS_IsExceptionPending(cx)) {
           ShellContext* sc = GetShellContext(cx);
           if (sc->quitting) {
@@ -3069,7 +3130,7 @@ static bool Evaluate(JSContext* cx, unsigned argc, Value* vp) {
           if (!str) {
             return false;
           }
-          args.rval().setString(str);
+          rval.setString(str);
           return true;
         }
         return false;
@@ -3128,7 +3189,7 @@ static bool Evaluate(JSContext* cx, unsigned argc, Value* vp) {
     }
   }
 
-  return JS_WrapValue(cx, args.rval());
+  return JS_WrapValue(cx, rval);
 }
 
 JSString* js::shell::FileAsString(JSContext* cx, JS::HandleString pathnameStr) {
@@ -3291,6 +3352,14 @@ static int js_fgets(char* buf, int size, FILE* file) {
  */
 static bool ReadLine(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
+
+  // Don't support readline() on worker threads because js_fgets is not
+  // thread-safe. This also avoids non-deterministic behavior for fuzzers that
+  // use readline() for communication.
+  if (GetShellContext(cx)->isWorker) {
+    JS_ReportErrorASCII(cx, "readline() is not supported on worker threads");
+    return false;
+  }
 
   static constexpr size_t BUFSIZE = 256;
   FILE* from = stdin;
@@ -5020,6 +5089,21 @@ static bool SetTimeoutValue(JSContext* cx, double t) {
   return true;
 }
 
+static bool MaybeSetInterruptFunc(JSContext* cx, HandleValue func) {
+  ShellContext* sc = GetShellContext(cx);
+
+  bool isSupportedFunction =
+      func.isObject() && func.toObject().is<JSFunction>() && !fuzzingSafe;
+  if (!func.isString() && !isSupportedFunction) {
+    JS_ReportErrorASCII(cx, "Argument must be a function or string");
+    return false;
+  }
+  sc->interruptFunc = func;
+  sc->haveInterruptFunc = true;
+
+  return true;
+}
+
 static bool Timeout(JSContext* cx, unsigned argc, Value* vp) {
   ShellContext* sc = GetShellContext(cx);
   CallArgs args = CallArgsFromVp(argc, vp);
@@ -5041,12 +5125,9 @@ static bool Timeout(JSContext* cx, unsigned argc, Value* vp) {
 
   if (args.length() > 1) {
     RootedValue value(cx, args[1]);
-    if (!value.isObject() || !value.toObject().is<JSFunction>()) {
-      JS_ReportErrorASCII(cx, "Second argument must be a timeout function");
+    if (!MaybeSetInterruptFunc(cx, value)) {
       return false;
     }
-    sc->interruptFunc = value;
-    sc->haveInterruptFunc = true;
   }
 
   args.rval().setUndefined();
@@ -5115,12 +5196,9 @@ static bool SetInterruptCallback(JSContext* cx, unsigned argc, Value* vp) {
   }
 
   RootedValue value(cx, args[0]);
-  if (!value.isObject() || !value.toObject().is<JSFunction>()) {
-    JS_ReportErrorASCII(cx, "Argument must be a function");
+  if (!MaybeSetInterruptFunc(cx, value)) {
     return false;
   }
-  GetShellContext(cx)->interruptFunc = value;
-  GetShellContext(cx)->haveInterruptFunc = true;
 
   args.rval().setUndefined();
   return true;
@@ -7421,7 +7499,7 @@ static bool NewGlobal(JSContext* cx, unsigned argc, Value* vp) {
       if (!timeZone) {
         return false;
       }
-      behaviors.setTimeZoneCopyZ(timeZone.get());
+      behaviors.setTimeZoneOverride(timeZone.get());
     }
 
     if (!JS_GetProperty(cx, opts, "alwaysUseFdlibm", &v)) {
@@ -7440,7 +7518,7 @@ static bool NewGlobal(JSContext* cx, unsigned argc, Value* vp) {
       if (!locale) {
         return false;
       }
-      creationOptions.setLocaleCopyZ(locale.get());
+      behaviors.setLocaleOverride(locale.get());
     }
   }
 
@@ -7734,11 +7812,26 @@ static void PrintProfilerIntervals_Callback(mozilla::MarkerCategory,
           (TimeStamp::Now() - start).ToMilliseconds(), msg, details);
 }
 
+static void PrintProfilerFlow_Callback(mozilla::MarkerCategory,
+                                       const char* markerName,
+                                       uint64_t flowId) {
+  fprintf(stderr, "PROFILER FLOW: %s (flowId=%" PRIu64 ")\n", markerName,
+          flowId);
+}
+
+static void PrintProfilerTerminatingFlow_Callback(mozilla::MarkerCategory,
+                                                  const char* markerName,
+                                                  uint64_t flowId) {
+  fprintf(stderr, "PROFILER TERMINATING FLOW: %s (flowId=%" PRIu64 ")\n",
+          markerName, flowId);
+}
+
 static bool PrintProfilerEvents(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
   if (cx->runtime()->geckoProfiler().enabled()) {
-    js::RegisterContextProfilingEventMarker(cx, &PrintProfilerEvents_Callback,
-                                            &PrintProfilerIntervals_Callback);
+    js::RegisterContextProfilerMarkers(
+        cx, &PrintProfilerEvents_Callback, &PrintProfilerIntervals_Callback,
+        &PrintProfilerFlow_Callback, &PrintProfilerTerminatingFlow_Callback);
   }
   args.rval().setUndefined();
   return true;
@@ -7770,7 +7863,7 @@ static void SingleStepCallback(void* arg, jit::Simulator* sim, void* pc) {
   state.lr = (void*)sim->getRegister(jit::Simulator::ra);
   state.fp = (void*)sim->getRegister(jit::Simulator::fp);
   // see WasmTailCallFPScratchReg and CollapseWasmFrameFast
-  state.tempFP = (void*)sim->getRegister(jit::Simulator::t3);
+  state.tempFP = (void*)sim->getRegister(jit::Simulator::t7);
 #  elif defined(JS_SIMULATOR_LOONG64)
   state.sp = (void*)sim->getRegister(jit::Simulator::sp);
   state.lr = (void*)sim->getRegister(jit::Simulator::ra);
@@ -8150,12 +8243,11 @@ static bool SetSharedObject(JSContext* cx, unsigned argc, Value* vp) {
             cx, &obj->as<WasmMemoryObject>()
                      .buffer()
                      .as<SharedArrayBufferObject>());
-        MOZ_ASSERT(!sab->isGrowable(), "unexpected growable shared buffer");
         tag = MailboxTag::WasmMemory;
         value.sarb.buffer = sab->rawBufferObject();
         value.sarb.length = sab->byteLength();
         value.sarb.isHugeMemory = obj->as<WasmMemoryObject>().isHuge();
-        value.sarb.isGrowable = false;
+        value.sarb.isGrowable = sab->isGrowable();
         if (!value.sarb.buffer->addReference()) {
           JS_ReportErrorASCII(cx,
                               "Reference count overflow on SharedArrayBuffer");
@@ -8701,7 +8793,7 @@ static MarkBitObservers* EnsureMarkBitObservers(JSContext* cx) {
   ShellContext* sc = GetShellContext(cx);
   if (!sc->markObservers) {
     auto* observers =
-        cx->new_<MarkBitObservers>(cx->runtime(), NonshrinkingGCObjectVector());
+        cx->new_<MarkBitObservers>(cx->runtime(), NonShrinkingValueVector());
     if (!observers) {
       return nullptr;
     }
@@ -8749,19 +8841,17 @@ static bool AddMarkObservers(JSContext* cx, unsigned argc, Value* vp) {
   }
 
   RootedValue value(cx);
-  RootedObject object(cx);
   for (uint32_t i = 0; i < length; i++) {
     if (!JS_GetElement(cx, observersArg, i, &value)) {
       return false;
     }
 
-    if (!value.isObject()) {
-      JS_ReportErrorASCII(cx, "argument must be an Array of objects");
+    if (!CanBeHeldWeakly(value)) {
+      JS_ReportErrorASCII(cx, "Can only observe objects and symbols");
       return false;
     }
 
-    object = &value.toObject();
-    if (gc::IsInsideNursery(object)) {
+    if (gc::IsInsideNursery(value.toGCThing())) {
       // WeakCaches are not swept during a minor GC. To prevent
       // nursery-allocated contents from having the mark bits be deceptively
       // black until the second GC, they would need to be marked weakly (cf
@@ -8770,7 +8860,7 @@ static bool AddMarkObservers(JSContext* cx, unsigned argc, Value* vp) {
       cx->runtime()->gc.evictNursery();
     }
 
-    if (!markObservers->get().append(object)) {
+    if (!markObservers->get().append(value)) {
       ReportOutOfMemory(cx);
       return false;
     }
@@ -8778,6 +8868,30 @@ static bool AddMarkObservers(JSContext* cx, unsigned argc, Value* vp) {
 
   args.rval().setInt32(length);
   return true;
+}
+
+static const char* ObserveMarkColor(const Value& value) {
+  if (value.isUndefined()) {
+    return "dead";
+  }
+
+  gc::Cell* cell = value.toGCThing();
+  Zone* zone = cell->zone();
+  if (zone->isGCPreparing()) {
+    // The mark bits are not valid during unmarking.
+    return "unmarked";
+  }
+
+  gc::TenuredCell* tc = &cell->asTenured();
+  if (tc->isMarkedGray()) {
+    return "gray";
+  }
+
+  if (tc->isMarkedBlack()) {
+    return "black";
+  }
+
+  return "unmarked";
 }
 
 static bool GetMarks(JSContext* cx, unsigned argc, Value* vp) {
@@ -8796,27 +8910,10 @@ static bool GetMarks(JSContext* cx, unsigned argc, Value* vp) {
   }
 
   for (uint32_t i = 0; i < length; i++) {
-    const char* color;
-    JSObject* obj = observers->get()[i];
-    if (!obj) {
-      color = "dead";
-    } else if (obj->zone()->isGCPreparing()) {
-      color = "unmarked";
-    } else {
-      gc::TenuredCell* cell = &obj->asTenured();
-      if (cell->isMarkedGray()) {
-        color = "gray";
-      } else if (cell->isMarkedBlack()) {
-        color = "black";
-      } else {
-        color = "unmarked";
-      }
-    }
+    Value value = observers->get()[i];
+    const char* color = ObserveMarkColor(value);
     JSString* s = JS_NewStringCopyZ(cx, color);
-    if (!s) {
-      return false;
-    }
-    if (!NewbornArrayPush(cx, ret, StringValue(s))) {
+    if (!s || !NewbornArrayPush(cx, ret, StringValue(s))) {
       return false;
     }
   }
@@ -10233,6 +10330,8 @@ static const JSFunctionSpecWithHelp shell_functions[] = {
     JS_FN_HELP("setInterruptCallback", SetInterruptCallback, 1, 0,
 "setInterruptCallback(func)",
 "  Sets func as the interrupt callback function.\n"
+"  func must be a function or a string (which will be evaluated in a new\n"
+"  global). Only strings are supported in fuzzing builds.\n"
 "  Calling this function will replace any callback set by |timeout|.\n"
 "  If the callback returns a falsy value, the script is aborted.\n"),
 
@@ -12790,20 +12889,15 @@ bool InitOptionParser(OptionParser& op) {
                         "Enable iterator helpers") ||
       !op.addBoolOption('\0', "enable-async-iterator-helpers",
                         "Enable async iterator helpers") ||
-      !op.addBoolOption('\0', "enable-json-parse-with-source",
-                        "Enable JSON.parse with source") ||
       !op.addBoolOption('\0', "enable-shadow-realms", "Enable ShadowRealms") ||
       !op.addBoolOption('\0', "disable-array-grouping",
                         "Disable Object.groupBy and Map.groupBy") ||
       !op.addBoolOption('\0', "enable-symbols-as-weakmap-keys",
                         "Enable Symbols As WeakMap keys") ||
+      !op.addBoolOption('\0', "no-symbols-as-weakmap-keys",
+                        "Disable Symbols As WeakMap keys") ||
       !op.addBoolOption('\0', "enable-uint8array-base64",
                         "Enable Uint8Array base64/hex methods") ||
-      !op.addBoolOption('\0', "enable-regexp-duplicate-named-groups",
-                        "Enable Duplicate Named Capture Groups") ||
-      !op.addBoolOption('\0', "enable-regexp-modifiers",
-                        "Enable Pattern Modifiers") ||
-      !op.addBoolOption('\0', "enable-regexp-escape", "Enable RegExp.escape") ||
       !op.addBoolOption('\0', "enable-top-level-await",
                         "Enable top-level await") ||
       !op.addStringOption('\0', "shared-memory", "on/off",
@@ -13158,8 +13252,11 @@ bool InitOptionParser(OptionParser& op) {
                         "Disable Explicit Resource Management") ||
       !op.addBoolOption('\0', "enable-temporal", "Enable Temporal") ||
       !op.addBoolOption('\0', "enable-upsert", "Enable Upsert proposal") ||
+      !op.addBoolOption('\0', "enable-import-bytes", "Enable import bytes") ||
       !op.addBoolOption('\0', "enable-arraybuffer-immutable",
-                        "Enable immutable ArrayBuffers")) {
+                        "Enable immutable ArrayBuffers") ||
+      !op.addBoolOption('\0', "enable-iterator-chunking",
+                        "Enable Iterator Chunking")) {
     return false;
   }
 
@@ -13193,12 +13290,6 @@ bool SetGlobalOptionsPreJSInit(const OptionParser& op) {
   if (op.getBoolOption("enable-shadow-realms")) {
     JS::Prefs::set_experimental_shadow_realms(true);
   }
-  if (op.getBoolOption("enable-regexp-duplicate-named-groups")) {
-    JS::Prefs::setAtStartup_experimental_regexp_duplicate_named_groups(true);
-  }
-  if (op.getBoolOption("enable-regexp-modifiers")) {
-    JS::Prefs::setAtStartup_experimental_regexp_modifiers(true);
-  }
   if (op.getBoolOption("enable-uint8array-base64")) {
     JS::Prefs::setAtStartup_experimental_uint8array_base64(true);
   }
@@ -13211,12 +13302,20 @@ bool SetGlobalOptionsPreJSInit(const OptionParser& op) {
   if (op.getBoolOption("enable-error-iserror")) {
     JS::Prefs::set_experimental_error_iserror(true);
   }
+
+  bool symbolsAsWeakMapKeys = true;
+  if (op.getBoolOption("enable-symbols-as-weakmap-keys")) {
+    symbolsAsWeakMapKeys = true;
+  }
+  if (op.getBoolOption("no-symbols-as-weakmap-keys")) {
+    symbolsAsWeakMapKeys = false;
+  }
+  JS::Prefs::setAtStartup_experimental_symbols_as_weakmap_keys(
+      symbolsAsWeakMapKeys);
+
 #ifdef NIGHTLY_BUILD
   if (op.getBoolOption("enable-async-iterator-helpers")) {
     JS::Prefs::setAtStartup_experimental_async_iterator_helpers(true);
-  }
-  if (op.getBoolOption("enable-symbols-as-weakmap-keys")) {
-    JS::Prefs::setAtStartup_experimental_symbols_as_weakmap_keys(true);
   }
   if (op.getBoolOption("enable-iterator-sequencing")) {
     JS::Prefs::setAtStartup_experimental_iterator_sequencing(true);
@@ -13233,6 +13332,12 @@ bool SetGlobalOptionsPreJSInit(const OptionParser& op) {
   if (op.getBoolOption("enable-arraybuffer-immutable")) {
     JS::Prefs::setAtStartup_experimental_arraybuffer_immutable(true);
   }
+  if (op.getBoolOption("enable-import-bytes")) {
+    JS::Prefs::setAtStartup_experimental_import_bytes(true);
+  }
+  if (op.getBoolOption("enable-iterator-chunking")) {
+    JS::Prefs::setAtStartup_experimental_iterator_chunking(true);
+  }
 #endif
 #ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
   if (op.getBoolOption("enable-explicit-resource-management")) {
@@ -13247,10 +13352,6 @@ bool SetGlobalOptionsPreJSInit(const OptionParser& op) {
     JS::Prefs::setAtStartup_experimental_temporal(true);
   }
 #endif
-  if (op.getBoolOption("enable-json-parse-with-source")) {
-    JS::Prefs::set_experimental_json_parse_with_source(true);
-  }
-
   JS::Prefs::setAtStartup_experimental_weakrefs_expose_cleanupSome(true);
 
   if (op.getBoolOption("disable-property-error-message-fix")) {
@@ -14113,14 +14214,6 @@ bool SetContextJITOptions(JSContext* cx, const OptionParser& op) {
   }
 #  endif
 #endif
-
-  if (op.getBoolOption("enable-regexp-duplicate-named-groups")) {
-    jit::JitOptions.js_regexp_duplicate_named_groups = true;
-  }
-
-  if (op.getBoolOption("enable-regexp-modifiers")) {
-    jit::JitOptions.js_regexp_modifiers = true;
-  }
 
   return true;
 }

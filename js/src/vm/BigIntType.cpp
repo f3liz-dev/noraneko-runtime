@@ -79,6 +79,7 @@
 #include "vm/BigIntType.h"
 
 #include "mozilla/Casting.h"
+#include "mozilla/CheckedArithmetic.h"
 #include "mozilla/CheckedInt.h"
 #include "mozilla/FloatingPoint.h"
 #include "mozilla/HashFunctions.h"
@@ -106,7 +107,6 @@
 #include "js/Printer.h"               // js::GenericPrinter
 #include "js/StableStringChars.h"
 #include "js/Utility.h"
-#include "util/CheckedArithmetic.h"
 #include "util/DifferentialTesting.h"
 #include "vm/JSONPrinter.h"  // js::JSONPrinter
 #include "vm/StaticStrings.h"
@@ -1929,7 +1929,7 @@ BigInt* BigInt::mul(JSContext* cx, HandleBigInt x, HandleBigInt y) {
     uint64_t rhs = y->uint64FromAbsNonZero();
 
     uint64_t res;
-    if (js::SafeMul(lhs, rhs, &res)) {
+    if (mozilla::SafeMul(lhs, rhs, &res)) {
       MOZ_ASSERT(res != 0);
       return createFromNonZeroRawUint64(cx, res, resultNegative);
     }
@@ -2238,13 +2238,13 @@ BigInt* BigInt::pow(JSContext* cx, HandleBigInt x, HandleBigInt y) {
     while (true) {
       uint64_t runningSquareStart = runningSquareInt;
       uint64_t r;
-      if (!js::SafeMul(runningSquareInt, runningSquareInt, &r)) {
+      if (!mozilla::SafeMul(runningSquareInt, runningSquareInt, &r)) {
         break;
       }
       runningSquareInt = r;
 
       if (n & 1) {
-        if (!js::SafeMul(resultInt, runningSquareInt, &r)) {
+        if (!mozilla::SafeMul(resultInt, runningSquareInt, &r)) {
           // Recover |runningSquare| before we restart the loop.
           runningSquareInt = runningSquareStart;
           break;
@@ -3655,48 +3655,11 @@ bool BigInt::equal(const BigInt* lhs, double rhs) {
 
 JS::Result<bool> BigInt::equal(JSContext* cx, Handle<BigInt*> lhs,
                                HandleString rhs) {
-  BigInt* rhsBigInt;
-  MOZ_TRY_VAR(rhsBigInt, StringToBigInt(cx, rhs));
+  BigInt* rhsBigInt = MOZ_TRY(StringToBigInt(cx, rhs));
   if (!rhsBigInt) {
     return false;
   }
   return equal(lhs, rhsBigInt);
-}
-
-// BigInt proposal section 3.2.5
-JS::Result<bool> BigInt::looselyEqual(JSContext* cx, HandleBigInt lhs,
-                                      HandleValue rhs) {
-  // Step 1.
-  if (rhs.isBigInt()) {
-    return equal(lhs, rhs.toBigInt());
-  }
-
-  // Steps 2-5 (not applicable).
-
-  // Steps 6-7.
-  if (rhs.isString()) {
-    RootedString rhsString(cx, rhs.toString());
-    return equal(cx, lhs, rhsString);
-  }
-
-  // Steps 8-9 (not applicable).
-
-  // Steps 10-11.
-  if (rhs.isObject()) {
-    RootedValue rhsPrimitive(cx, rhs);
-    if (!ToPrimitive(cx, &rhsPrimitive)) {
-      return cx->alreadyReportedError();
-    }
-    return looselyEqual(cx, lhs, rhsPrimitive);
-  }
-
-  // Step 12.
-  if (rhs.isNumber()) {
-    return equal(lhs, rhs.toNumber());
-  }
-
-  // Step 13.
-  return false;
 }
 
 // BigInt proposal section 1.1.12. BigInt::lessThan ( x, y )

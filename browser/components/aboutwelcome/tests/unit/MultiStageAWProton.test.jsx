@@ -825,6 +825,195 @@ describe("MultiStageAboutWelcomeProton module", () => {
         "Second child is ProtonScreenActionButtons"
       );
     });
+
+    it("should render action buttons after tiles by default when no position is configured", async () => {
+      const SCREEN_PROPS = {
+        content: {
+          title: "Test title",
+          primary_button: { label: "Confirm and continue" },
+          tiles_header: { title: "Title" },
+          tiles: {
+            type: "multiselect",
+            data: [
+              { id: "checkbox-1", label: "Option 1" },
+              { id: "checkbox-2", label: "Option 2" },
+            ],
+          },
+        },
+      };
+
+      const wrapper = mount(<MultiStageProtonScreen {...SCREEN_PROPS} />);
+      assert.ok(wrapper.exists());
+
+      const mainInner = wrapper.find(".main-content-inner");
+      const lastChild = mainInner.children().last();
+      assert.strictEqual(
+        lastChild.type(),
+        ProtonScreenActionButtons,
+        "Last child is ProtonScreenActionButtons"
+      );
+    });
+
+    it("should render action buttons after subtitle when configured", async () => {
+      const SCREEN_PROPS = {
+        content: {
+          title: "Test title",
+          subtitle: "Test subtitle",
+          action_buttons_position: "after_subtitle",
+          primary_button: { label: "Get started" },
+        },
+      };
+
+      const wrapper = mount(<MultiStageProtonScreen {...SCREEN_PROPS} />);
+      assert.ok(wrapper.exists(), "Screen renders");
+
+      // Find the welcome text container
+      const welcomeTextEl = wrapper.find(".welcome-text");
+      assert.isTrue(welcomeTextEl.exists(), "Welcome text exists");
+
+      const subtitleEl = welcomeTextEl.find("h2");
+      assert.ok(subtitleEl.exists(), "Subtitle exists");
+      const nextEl = subtitleEl.getDOMNode().nextElementSibling;
+      assert.isTrue(
+        nextEl.classList.contains("action-buttons"),
+        "Next element is action-buttons"
+      );
+    });
+
+    it("should render action buttons after supporting content but before tiles when configured", async () => {
+      const SCREEN_PROPS = {
+        content: {
+          title: "Welcome to Firefox",
+          action_buttons_position: "after_supporting_content",
+          above_button_content: [
+            {
+              type: "text",
+              text: { string_id: "tou-existing-user-spotlight-body" },
+              font_styles: "legal",
+              link_keys: ["terms-of-use", "privacy-notice", "learn-more"],
+            },
+          ],
+          primary_button: { label: "Confirm and continue" },
+          tiles_container: { position: "after_supporting_content" },
+          tiles: {
+            type: "multiselect",
+            data: [
+              { id: "checkbox-1", label: "Checkbox 1" },
+              { id: "checkbox-2", label: "Checkbox 2" },
+            ],
+          },
+        },
+        setScreenMultiSelects: sinon.stub(),
+        setActiveMultiSelect: sinon.stub(),
+      };
+
+      const wrapper = mount(<MultiStageProtonScreen {...SCREEN_PROPS} />);
+      assert.ok(wrapper.exists());
+
+      const legalParagraphEl = wrapper.find(".legal-paragraph");
+      assert.equal(legalParagraphEl.exists(), true, "Legal paragraph renders");
+
+      const nextEl = legalParagraphEl.getDOMNode().nextElementSibling;
+      assert.isTrue(
+        nextEl.classList.contains("action-buttons"),
+        "Next element after legal paragraph should be action buttons"
+      );
+
+      const afterButtonsEl = nextEl.nextElementSibling;
+      assert.isTrue(
+        afterButtonsEl.classList.contains("content-tile"),
+        "Next element after action buttons should be content tile"
+      );
+    });
+
+    it("should render tiles before 'above_button_content' by default", async () => {
+      const SCREEN_PROPS = {
+        content: {
+          title: "Test title",
+          primary_button: { label: "Continue" },
+          above_button_content: [
+            {
+              type: "text",
+              text: { string_id: "tou-existing-user-spotlight-body" },
+              font_styles: "legal",
+              link_keys: ["terms-of-use", "privacy-notice", "learn-more"],
+            },
+          ],
+          tiles: {
+            type: "multiselect",
+            data: [
+              { id: "checkbox-1", label: "Checkbox 1" },
+              { id: "checkbox-2", label: "Checkbox 2" },
+            ],
+          },
+        },
+        setScreenMultiSelects: sinon.stub(),
+        setActiveMultiSelect: sinon.stub(),
+      };
+      const wrapper = mount(<MultiStageProtonScreen {...SCREEN_PROPS} />);
+      assert.ok(wrapper.exists());
+
+      const tilesEl = wrapper.find(".content-tile");
+      assert.isTrue(tilesEl.exists(), "Content tiles found");
+
+      const legalParagraphEl = wrapper.find(".legal-paragraph");
+      assert.isTrue(
+        legalParagraphEl.exists(),
+        "above_button_content legal paragraph element found"
+      );
+
+      assert.isTrue(
+        tilesEl
+          .getDOMNode()
+          .nextElementSibling.classList.contains("legal-paragraph"),
+        "the next element after tiles should be legal paragraph (above_button_content)"
+      );
+    });
+
+    it("should render tiles after 'above_button_content' when configured", async () => {
+      const SCREEN_PROPS = {
+        content: {
+          title: "Test title",
+          primary_button: { label: "Continue" },
+          above_button_content: [
+            {
+              type: "text",
+              text: { string_id: "tou-existing-user-spotlight-body" },
+              font_styles: "legal",
+              link_keys: ["terms-of-use", "privacy-notice", "learn-more"],
+            },
+          ],
+          tiles_container: { position: "after_supporting_content" },
+          tiles: {
+            type: "multiselect",
+            data: [
+              { id: "checkbox-1", label: "Checkbox 1" },
+              { id: "checkbox-2", label: "Checkbox 2" },
+            ],
+          },
+        },
+        setScreenMultiSelects: sinon.stub(),
+        setActiveMultiSelect: sinon.stub(),
+      };
+      const wrapper = mount(<MultiStageProtonScreen {...SCREEN_PROPS} />);
+      assert.ok(wrapper.exists());
+
+      const tilesEl = wrapper.find(".content-tile");
+      assert.isTrue(tilesEl.exists(), "Content tiles found");
+
+      const legalParagraphEl = wrapper.find(".legal-paragraph");
+      assert.isTrue(
+        legalParagraphEl.exists(),
+        "above_button_content legal paragraph element found"
+      );
+
+      assert.isTrue(
+        legalParagraphEl
+          .getDOMNode()
+          .nextElementSibling.classList.contains("content-tile"),
+        "the next element after legal paragraph (above_button_content) should be tiles"
+      );
+    });
   });
 
   describe("AboutWelcomeDefaults for proton", () => {
@@ -864,7 +1053,11 @@ describe("MultiStageAboutWelcomeProton module", () => {
         );
     });
     it("should have a multi action primary button by default", async () => {
-      const data = await prepConfig({}, ["AW_WELCOME_BACK", "RETURN_TO_AMO"]);
+      const data = await prepConfig({}, [
+        "AW_WELCOME_BACK",
+        "RETURN_TO_AMO",
+        "AW_BACKUP_RESTORE_EMBEDDED_BACKUP_FOUND",
+      ]);
       assert.propertyVal(
         data.screens[0].content.primary_button.action,
         "type",
@@ -872,7 +1065,10 @@ describe("MultiStageAboutWelcomeProton module", () => {
       );
     });
     it("should have a FxA button", async () => {
-      const data = await prepConfig({}, ["AW_WELCOME_BACK"]);
+      const data = await prepConfig({}, [
+        "AW_WELCOME_BACK",
+        "AW_BACKUP_RESTORE_EMBEDDED_BACKUP_FOUND",
+      ]);
 
       assert.notProperty(data, "skipFxA");
       assert.property(data.screens[0].content, "secondary_button_top");
@@ -1099,7 +1295,7 @@ describe("MultiStageAboutWelcomeProton module", () => {
     const SCREEN_PROP = {
       content: {
         title: "test title",
-        contentTilesContainer: {
+        tiles_container: {
           style: {
             flexDirection: "row",
             marginBlock: "16px",

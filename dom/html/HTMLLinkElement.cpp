@@ -12,10 +12,8 @@
 #include "MediaList.h"
 #include "imgLoader.h"
 #include "mozilla/AsyncEventDispatcher.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/Components.h"
 #include "mozilla/EventDispatcher.h"
-#include "mozilla/MemoryReporting.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/StaticPrefs_network.h"
@@ -132,7 +130,7 @@ void HTMLLinkElement::UnbindFromTree(UnbindContext& aContext) {
 
   nsGenericHTMLElement::UnbindFromTree(aContext);
 
-  Unused << UpdateStyleSheetInternal(oldDoc, oldShadowRoot);
+  (void)UpdateStyleSheetInternal(oldDoc, oldShadowRoot);
 }
 
 bool HTMLLinkElement::ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
@@ -291,7 +289,7 @@ void HTMLLinkElement::AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
           dropSheet || aName == nsGkAtoms::title || aName == nsGkAtoms::media ||
           aName == nsGkAtoms::type || aName == nsGkAtoms::disabled;
 
-      Unused << UpdateStyleSheetInternal(
+      (void)UpdateStyleSheetInternal(
           nullptr, nullptr, forceUpdate ? ForceUpdate::Yes : ForceUpdate::No);
     }
   } else {
@@ -304,7 +302,7 @@ void HTMLLinkElement::AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
       if (aName == nsGkAtoms::href || aName == nsGkAtoms::rel ||
           aName == nsGkAtoms::title || aName == nsGkAtoms::media ||
           aName == nsGkAtoms::type || aName == nsGkAtoms::disabled) {
-        Unused << UpdateStyleSheetInternal(nullptr, nullptr, ForceUpdate::Yes);
+        (void)UpdateStyleSheetInternal(nullptr, nullptr, ForceUpdate::Yes);
       }
       if ((aName == nsGkAtoms::as || aName == nsGkAtoms::type ||
            aName == nsGkAtoms::crossorigin || aName == nsGkAtoms::media) &&
@@ -323,17 +321,23 @@ void HTMLLinkElement::AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
   "preload", "prefetch", "dns-prefetch", "stylesheet", "next", "alternate", \
       "preconnect", "icon", "search", nullptr
 
-static const DOMTokenListSupportedToken sSupportedRelValueCombinations[][12] = {
+static const DOMTokenListSupportedToken sSupportedRelValueCombinations[][13] = {
     {SUPPORTED_REL_VALUES_BASE},
     {"manifest", SUPPORTED_REL_VALUES_BASE},
     {"modulepreload", SUPPORTED_REL_VALUES_BASE},
-    {"modulepreload", "manifest", SUPPORTED_REL_VALUES_BASE}};
+    {"modulepreload", "manifest", SUPPORTED_REL_VALUES_BASE},
+    {"compression-dictionary", SUPPORTED_REL_VALUES_BASE},
+    {"compression-dictionary", "manifest", SUPPORTED_REL_VALUES_BASE},
+    {"compression-dictionary", "modulepreload", SUPPORTED_REL_VALUES_BASE},
+    {"compression-dictionary", "modulepreload", "manifest",
+     SUPPORTED_REL_VALUES_BASE}};
 #undef SUPPORTED_REL_VALUES_BASE
 
 nsDOMTokenList* HTMLLinkElement::RelList() {
   if (!mRelList) {
     int index = (StaticPrefs::dom_manifest_enabled() ? 1 : 0) |
-                (StaticPrefs::network_modulepreload() ? 2 : 0);
+                (StaticPrefs::network_modulepreload() ? 2 : 0) |
+                (StaticPrefs::network_http_dictionaries_enable() ? 4 : 0);
 
     mRelList = new nsDOMTokenList(this, nsGkAtoms::rel,
                                   sSupportedRelValueCombinations[index]);
@@ -465,6 +469,13 @@ void HTMLLinkElement::
     }
   }
 
+  if (linkTypes & eCOMPRESSION_DICTIONARY) {
+    if (nsCOMPtr<nsIURI> uri = GetURI()) {
+      StartPreload(nsIContentPolicy::TYPE_INTERNAL_FETCH_PRELOAD);
+      return;
+    }
+  }
+
   if (linkTypes & ePRELOAD) {
     if (nsCOMPtr<nsIURI> uri = GetURI()) {
       nsContentPolicyType policyType;
@@ -508,7 +519,10 @@ void HTMLLinkElement::
   }
 
   if (linkTypes & eMODULE_PRELOAD) {
-    ScriptLoader* scriptLoader = OwnerDoc()->ScriptLoader();
+    ScriptLoader* scriptLoader = OwnerDoc()->GetScriptLoader();
+    if (!scriptLoader) {
+      return;
+    }
     ModuleLoader* moduleLoader = scriptLoader->GetModuleLoader();
 
     if (!moduleLoader) {

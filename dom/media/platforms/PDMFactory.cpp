@@ -314,7 +314,7 @@ void PDMFactory::EnsureInit() {
     // Ensure that all system variables are initialized.
     gfx::gfxVars::Initialize();
     // Prime the preferences system from the main thread.
-    Unused << BrowserTabsRemoteAutostart();
+    (void)BrowserTabsRemoteAutostart();
   };
   // There are some initialization needed to be done on the main thread.
   if (!gfx::gfxVars::IsInitialized()) {
@@ -702,7 +702,7 @@ void PDMFactory::CreateContentPDMs() {
 
   // Android still needs this, the actual decoder is remoted on java side
 #ifdef MOZ_WIDGET_ANDROID
-  if (StaticPrefs::media_android_media_codec_enabled()) {
+  if (AndroidDecoderModule::IsJavaDecoderModuleAllowed()) {
     StartupPDM(AndroidDecoderModule::Create(),
                StaticPrefs::media_android_media_codec_preferred());
   }
@@ -748,7 +748,7 @@ void PDMFactory::CreateDefaultPDMs() {
   }
 #endif
 #ifdef MOZ_WIDGET_ANDROID
-  if (StaticPrefs::media_android_media_codec_enabled()) {
+  if (AndroidDecoderModule::IsJavaDecoderModuleAllowed()) {
     StartupPDM(AndroidDecoderModule::Create(),
                StaticPrefs::media_android_media_codec_preferred());
   }
@@ -813,7 +813,7 @@ void PDMFactory::SetCDMProxy(CDMProxy* aProxy) {
 
 #ifdef MOZ_WIDGET_ANDROID
   if (IsWidevineKeySystem(aProxy->KeySystem()) &&
-      StaticPrefs::media_android_media_codec_enabled()) {
+      AndroidDecoderModule::IsJavaDecoderModuleAllowed()) {
     mEMEPDM = AndroidDecoderModule::Create(aProxy);
     return;
   }
@@ -855,7 +855,7 @@ media::MediaCodecsSupported PDMFactory::Supported(bool aForceRefresh) {
           cd.codec, pdm->SupportsMimeType(nsCString(cd.mimeTypeString)));
     }
 #ifdef MOZ_WIDGET_ANDROID
-    if (StaticPrefs::media_android_media_codec_enabled()) {
+    if (AndroidDecoderModule::IsJavaDecoderModuleAllowed()) {
       supported += AndroidDecoderModule::GetSupportedCodecs();
     }
 #endif

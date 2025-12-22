@@ -30,13 +30,11 @@
 #include "nsServiceManagerUtils.h"
 
 #ifdef MOZ_WIDGET_ANDROID
+#  include "AndroidDecoderModule.h"
 #  include "mozilla/MediaDrmCDMProxy.h"
 #  include "mozilla/RemoteCDMChild.h"
 #  include "mozilla/RemoteMediaManagerChild.h"
 #  include "mozilla/StaticPrefs_media.h"
-#endif
-#ifdef XP_WIN
-#  include "mozilla/WindowsVersion.h"
 #endif
 #ifdef MOZ_WMF_CDM
 #  include "mozilla/WMFCDMProxy.h"
@@ -191,9 +189,15 @@ void MediaKeys::Terminated() {
 }
 
 void MediaKeys::Shutdown() {
+  // Hold a self reference to keep us alive after we clear the self reference
+  // for each promise. This ensures we stay alive until we're done shutting
+  // down.
+  RefPtr<MediaKeys> selfReference = this;
+
   EME_LOG("MediaKeys[%p]::Shutdown()", this);
   if (mProxy) {
-    mProxy->Shutdown();
+    RefPtr<CDMProxy> proxy = mProxy;
+    proxy->Shutdown();
     mProxy = nullptr;
   }
 
@@ -202,11 +206,6 @@ void MediaKeys::Shutdown() {
   if (observerService && mObserverAdded) {
     observerService->RemoveObserver(this, kMediaKeysResponseTopic);
   }
-
-  // Hold a self reference to keep us alive after we clear the self reference
-  // for each promise. This ensures we stay alive until we're done shutting
-  // down.
-  RefPtr<MediaKeys> selfReference = this;
 
   for (const RefPtr<dom::DetailedPromise>& promise : mPromises.Values()) {
     promise->MaybeRejectWithInvalidStateError(
@@ -438,7 +437,7 @@ already_AddRefed<CDMProxy> MediaKeys::CreateCDMProxy() {
   RefPtr<CDMProxy> proxy;
 #ifdef MOZ_WIDGET_ANDROID
   if (IsWidevineKeySystem(mKeySystem)) {
-    if (StaticPrefs::media_android_media_codec_enabled()) {
+    if (AndroidDecoderModule::IsJavaDecoderModuleAllowed()) {
       proxy = new MediaDrmCDMProxy(
           this, mKeySystem,
           mConfig.mDistinctiveIdentifier == MediaKeysRequirement::Required,

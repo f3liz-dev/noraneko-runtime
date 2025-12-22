@@ -7,8 +7,6 @@ import { CollapsibleSection } from "content-src/components/CollapsibleSection/Co
 import { connect } from "react-redux";
 import { DSMessage } from "content-src/components/DiscoveryStreamComponents/DSMessage/DSMessage";
 import { ReportContent } from "../DiscoveryStreamComponents/ReportContent/ReportContent";
-import { DSSignup } from "content-src/components/DiscoveryStreamComponents/DSSignup/DSSignup";
-import { DSTextPromo } from "content-src/components/DiscoveryStreamComponents/DSTextPromo/DSTextPromo";
 import { Highlights } from "content-src/components/DiscoveryStreamComponents/Highlights/Highlights";
 import { HorizontalRule } from "content-src/components/DiscoveryStreamComponents/HorizontalRule/HorizontalRule";
 import { Navigation } from "content-src/components/DiscoveryStreamComponents/Navigation/Navigation";
@@ -121,22 +119,6 @@ export class _DiscoveryStreamBase extends React.PureComponent {
             <TopSites isFixed={true} title={component.header?.title} />
           </div>
         );
-      case "TextPromo":
-        return (
-          <DSTextPromo
-            dispatch={this.props.dispatch}
-            type={component.type}
-            data={component.data}
-          />
-        );
-      case "Signup":
-        return (
-          <DSSignup
-            dispatch={this.props.dispatch}
-            type={component.type}
-            data={component.data}
-          />
-        );
       case "Message":
         return (
           <DSMessage
@@ -176,6 +158,7 @@ export class _DiscoveryStreamBase extends React.PureComponent {
               firstVisibleTimestamp={this.props.firstVisibleTimestamp}
               ctaButtonSponsors={component.properties.ctaButtonSponsors}
               ctaButtonVariant={component.properties.ctaButtonVariant}
+              placeholder={this.props.placeholder}
             />
           );
         }
@@ -197,6 +180,7 @@ export class _DiscoveryStreamBase extends React.PureComponent {
             hideDescriptions={this.props.DiscoveryStream.hideDescriptions}
             firstVisibleTimestamp={this.props.firstVisibleTimestamp}
             spocPositions={component.spocs?.positions}
+            placeholder={this.props.placeholder}
           />
         );
       }
@@ -275,11 +259,16 @@ export class _DiscoveryStreamBase extends React.PureComponent {
 
     // There are two ways to enable widgets:
     // Via `widgets.system.*` prefs or Nimbus experiment
+    const widgetsNimbusTrainhopEnabled =
+      this.props.Prefs.values.trainhopConfig?.widgets?.enabled;
     const widgetsNimbusEnabled = this.props.Prefs.values.widgetsConfig?.enabled;
     const widgetsSystemPrefsEnabled =
       this.props.Prefs.values["widgets.system.enabled"];
 
-    const widgets = widgetsNimbusEnabled || widgetsSystemPrefsEnabled;
+    const widgets =
+      widgetsNimbusTrainhopEnabled ||
+      widgetsNimbusEnabled ||
+      widgetsSystemPrefsEnabled;
 
     const message = extractComponent("Message") || {
       header: {

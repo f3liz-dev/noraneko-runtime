@@ -56,6 +56,7 @@ pub mod url;
     ToCss,
     ToResolvedValue,
     ToShmem,
+    ToTyped,
 )]
 #[repr(transparent)]
 pub struct NonNegative<T>(pub T);
@@ -167,6 +168,7 @@ pub use self::GenericClipRect as ClipRect;
     ToCss,
     ToResolvedValue,
     ToShmem,
+    ToTyped,
 )]
 #[repr(C, u8)]
 pub enum GenericClipRectOrAuto<R> {
@@ -263,6 +265,14 @@ impl<T> Optional<T> {
         match *self {
             Self::Some(ref mut v) => Some(v),
             Self::None => None,
+        }
+    }
+
+    /// See Option::map.
+    pub fn map<U>(self, map: impl FnOnce(T) -> U) -> Optional<U> {
+        match self {
+            Self::Some(v) => Optional::Some(map(v)),
+            Self::None => Optional::None,
         }
     }
 }

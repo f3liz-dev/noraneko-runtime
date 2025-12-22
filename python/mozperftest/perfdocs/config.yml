@@ -43,7 +43,9 @@ suites:
     browser/components/translations/tests/browser:
         description: "Performance tests for Translations models on Firefox Desktop"
         tests:
-            "Full-Page Translation (Spanish to English)": ""
+            "Full-Page Translations Base Model": ""
+            "Full-Page Translations BaseMemory Model": ""
+            "Full-Page Translations Tiny Model": ""
 
     dom/serviceworkers/test/performance:
         description: "Performance tests running through Mochitest for Service Workers"
@@ -93,3 +95,8 @@ suites:
             "browser_addManyNodes.js": ""
             "browser_reflowPseudoelements.js": ""
             "browser_removeManySpellingErrors.js": ""
+
+    toolkit/components/places/tests/browser/performance:
+        description: "Performance tests for Toolkit: Places"
+        tests:
+            "Calculate Frecency Speed": ""

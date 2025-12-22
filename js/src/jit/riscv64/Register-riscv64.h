@@ -7,8 +7,6 @@
 #ifndef jit_riscv64_Register_riscv64_h
 #define jit_riscv64_Register_riscv64_h
 
-#include "mozilla/Assertions.h"
-
 #include <stdint.h>
 
 #include "jit/Registers.h"
@@ -86,7 +84,9 @@ static constexpr FloatRegister ft11{FloatRegisters::f31};
 static constexpr Register StackPointer{Registers::sp};
 static constexpr Register FramePointer{Registers::fp};
 static constexpr Register ReturnReg{Registers::a0};
-static constexpr Register ScratchRegister{Registers::s11};
+// Scratch register used for runtime call patching.
+// See MacroAssembler::patchNopToCall and MacroAssembler::PatchWrite_NearCall.
+static constexpr Register SavedScratchRegister{Registers::s11};
 static constexpr Register64 ReturnReg64(ReturnReg);
 
 static constexpr FloatRegister ReturnFloat32Reg{FloatRegisters::fa0,

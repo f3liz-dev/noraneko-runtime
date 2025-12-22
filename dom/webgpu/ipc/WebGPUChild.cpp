@@ -19,8 +19,6 @@
 #include "js/Value.h"
 #include "js/Warnings.h"  // JS::WarnUTF8
 #include "mozilla/Assertions.h"
-#include "mozilla/Attributes.h"
-#include "mozilla/EnumTypeTraits.h"
 #include "mozilla/ProfilerMarkers.h"
 #include "mozilla/dom/GPUUncapturedErrorEvent.h"
 #include "mozilla/dom/Promise.h"
@@ -372,10 +370,10 @@ ipc::IPCResult WebGPUChild::RecvUncapturedError(RawId aDeviceId,
                                                 const nsACString& aMessage) {
   MOZ_RELEASE_ASSERT(aDeviceId);
 
-  WeakPtr<Device> device;
+  RefPtr<Device> device;
   const auto itr = mDeviceMap.find(aDeviceId);
   if (itr != mDeviceMap.end()) {
-    device = itr->second;
+    device = itr->second.get();
   }
 
   if (!device) {
@@ -414,7 +412,7 @@ ipc::IPCResult WebGPUChild::RecvDeviceLost(RawId aDeviceId, uint8_t aReason,
 
     const auto itr = mDeviceMap.find(aDeviceId);
     if (itr != mDeviceMap.end()) {
-      WeakPtr<Device> device = itr->second;
+      RefPtr<Device> device = itr->second.get();
 
       if (!device) {
         return IPC_OK();
@@ -500,7 +498,7 @@ void WebGPUChild::ClearActorState() {
     // Empty device map and resolve all lost promises with an "unknown" reason.
     else if (!mDeviceMap.empty()) {
       auto device_map_entry = mDeviceMap.begin();
-      WeakPtr<Device> device = device_map_entry->second;
+      RefPtr<Device> device = device_map_entry->second.get();
       mDeviceMap.erase(device_map_entry->first);
 
       if (device) {

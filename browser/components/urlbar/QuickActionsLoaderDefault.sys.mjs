@@ -12,7 +12,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
   ResetProfile: "resource://gre/modules/ResetProfile.sys.mjs",
   ScreenshotsUtils: "resource:///modules/ScreenshotsUtils.sys.mjs",
   ActionsProviderQuickActions:
-    "resource:///modules/ActionsProviderQuickActions.sys.mjs",
+    "moz-src:///browser/components/urlbar/ActionsProviderQuickActions.sys.mjs",
 });
 
 import { AppConstants } from "resource://gre/modules/AppConstants.sys.mjs";
@@ -22,7 +22,7 @@ if (AppConstants.MOZ_UPDATER) {
     lazy,
     "AUS",
     "@mozilla.org/updates/update-service;1",
-    "nsIApplicationUpdateService"
+    Ci.nsIApplicationUpdateService
   );
 }
 

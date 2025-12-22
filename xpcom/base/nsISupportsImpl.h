@@ -22,9 +22,6 @@
 #include <type_traits>
 #include "mozilla/Attributes.h"
 #include "mozilla/Assertions.h"
-#include "mozilla/Atomics.h"
-#include "mozilla/Compiler.h"
-#include "mozilla/Likely.h"
 #include "mozilla/MacroArgs.h"
 #include "mozilla/MacroForEach.h"
 

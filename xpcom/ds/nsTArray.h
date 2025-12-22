@@ -18,7 +18,6 @@
 #include <type_traits>
 #include <utility>
 
-#include "mozilla/Alignment.h"
 #include "mozilla/ArrayIterator.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/Attributes.h"
@@ -510,7 +509,7 @@ class nsTArray_base {
 
   Header* Hdr() const MOZ_NONNULL_RETURN { return mHdr; }
   Header** PtrToHdr() MOZ_NONNULL_RETURN { return &mHdr; }
-  static Header* EmptyHdr() MOZ_NONNULL_RETURN {
+  static constexpr Header* EmptyHdr() MOZ_NONNULL_RETURN {
     return const_cast<Header*>(&sEmptyTArrayHeader);
   }
 
@@ -2614,7 +2613,7 @@ class MOZ_GSL_OWNER nsTArray
   using typename base_type::size_type;
   using typename base_type::value_type;
 
-  nsTArray() {}
+  constexpr nsTArray() {}
   explicit nsTArray(size_type aCapacity) : base_type(aCapacity) {}
   MOZ_IMPLICIT nsTArray(std::initializer_list<E> aIL) {
     AppendElements(aIL.begin(), aIL.size());
@@ -2972,7 +2971,7 @@ class MOZ_NON_MEMMOVABLE MOZ_GSL_OWNER AutoTArray : public nsTArray<E> {
       char mStorage[sizeof(value_type) * N];
     };
     AutoBuffer() : mHdr{.mLength = 0, .mCapacity = N, .mIsAutoArray = true} {}
-    ~AutoBuffer() {}
+    ~AutoBuffer() = default;
   } mAutoBuf;
   static_assert(offsetof(AutoBuffer, mStorage) == sizeof(nsTArrayHeader),
                 "Shouldn't have padding");

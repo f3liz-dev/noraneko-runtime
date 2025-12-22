@@ -1,4 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
 <resources xmlns:tools="http://schemas.android.com/tools">
   <!-- Text for confirmation for a positive action in dialog -->
   <string name="mozac_feature_prompts_ok">אישור</string>
@@ -52,6 +59,8 @@
   <string name="mozac_feature_prompts_deny">לדחות</string>
   <!-- Text of the title of a dialog when a page is requesting to open a new window. -->
   <string name="mozac_feature_prompts_popup_dialog_title">לאפשר לאתר זה להיפתח?</string>
+  <!-- Text of the title of a dialog when a third-party redirect is blocked. -->
+  <string name="mozac_feature_prompts_redirect_dialog_title">לאפשר הפניה לאתר זה?</string>
   <!-- Title of the dialog shown when a user is leaving a website and there is still data not saved yet. -->
   <string name="mozac_feature_prompt_before_unload_dialog_title">להמשיך?</string>
   <!-- Body text of the dialog shown when a user is leaving a website and there is still data not saved yet. -->
@@ -114,7 +123,7 @@
   <string name="mozac_feature_prompts_suggest_strong_password_updated_snackbar_title">הססמה עודכנה</string>
   <!-- Strings shown in a dialog that appear when users try to refresh a certain kind of webpages -->
   <string name="mozac_feature_prompt_repost_title">לשלוח את הנתונים לאתר הזה שוב?</string>
-  <string name="mozac_feature_prompt_repost_message">רענון העמוד הזה עשוי להוביל לשכפול הפעולות האחרונות, כגון ביצוע תשלום או פרסום תגובה פעמיים.</string>
+  <string name="mozac_feature_prompt_repost_message">ריענון העמוד הזה עשוי להוביל לשכפול הפעולות האחרונות, כגון ביצוע תשלום או פרסום תגובה פעמיים.</string>
   <!-- Pressing this will dismiss the dialog and reload the page sending again the previous data -->
   <string name="mozac_feature_prompt_repost_positive_button_text">שליחת נתונים מחדש</string>
   <!-- Pressing this will dismiss the dialog and not refresh the webpage -->

@@ -10,8 +10,6 @@
 #include "EditorForwards.h"
 #include "EditorUtils.h"
 
-#include "mozilla/AlreadyAddRefed.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/HTMLBRElement.h"

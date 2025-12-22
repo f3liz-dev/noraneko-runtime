@@ -403,7 +403,7 @@ newtab-wallpaper-abstract-purple-green = Dégradé violet et vert clair
 newtab-wallpaper-abstract-blue-purple-waves = Formes ondulées bleues et violettes
 newtab-wallpaper-abstract-black-waves = Formes ondulées noires
 
-## Celestial
+## Firefox
 
 newtab-wallpaper-category-title-photographs = Photos
 newtab-wallpaper-beach-at-sunrise = Plage au lever du soleil
@@ -432,6 +432,10 @@ feature-highlight-dismiss-button =
 feature-highlight-wallpaper =
     .title = { -newtab-wallpaper-feature-highlight-header }
     .aria-label = { -newtab-wallpaper-feature-highlight-content }
+
+## Firefox
+
+newtab-wallpaper-category-title-firefox = { -brand-product-name }
 
 ## Celestial
 
@@ -474,8 +478,16 @@ newtab-weather-menu-change-temperature-units-fahrenheit = Passer en Fahrenheit
 newtab-weather-menu-change-temperature-units-celsius = Passer en Celsius
 newtab-weather-menu-hide-weather = Masquer la météo sur la page Nouvel onglet
 newtab-weather-menu-learn-more = En savoir plus
+newtab-weather-menu-detect-my-location = Détecter ma localisation
 # This message is shown if user is working offline
 newtab-weather-error-not-available = Les données météo ne sont pas disponibles pour le moment.
+newtab-weather-opt-in-see-weather = Voulez-vous voir la météo pour votre localisation ?
+newtab-weather-opt-in-not-now =
+    .label = Plus tard
+newtab-weather-opt-in-yes =
+    .label = Oui
+# We'll be showing static (fake) weather data if the user has not opted in to using their location
+newtab-weather-static-city = New York
 
 ## Topic Labels
 
@@ -642,6 +654,9 @@ newtab-widget-lists-input-menu-move-up = Déplacer vers le haut
 newtab-widget-lists-input-menu-move-down = Déplacer vers le bas
 newtab-widget-lists-input-menu-delete = Supprimer
 newtab-widget-lists-input-menu-edit = Modifier
+# the + symbol emphasises the functionality of adding a new list
+newtab-widget-lists-dropdown-create =
+    .label = + Créer une nouvelle liste
 newtab-widget-lists-name-label-default =
     .label = Liste de tâches
 newtab-widget-lists-name-placeholder-default =
@@ -661,10 +676,6 @@ newtab-widget-timer-mode-focus =
     .label = Concentration
 newtab-widget-timer-mode-break =
     .label = Pause
-newtab-widget-timer-play =
-    .title = Démarrer
-newtab-widget-timer-pause =
-    .title = Pause
 newtab-widget-timer-label-play =
     .label = Démarrer
 newtab-widget-timer-label-pause =

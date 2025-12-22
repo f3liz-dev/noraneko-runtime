@@ -9,39 +9,116 @@ import os
 import os.path
 import pprint
 import re
+import shutil
 import sys
 import tempfile
+import time
 import urllib.parse
 from copy import deepcopy
 from pathlib import Path
 from statistics import median
-from typing import Any, Literal, Union
+
+# ruff linter deprecates Dict, List, Tuple required for Python 3.8 compatibility
+from typing import Any, Callable, Dict, List, Literal, Tuple, Union, cast  # noqa UP035
 from xmlrpc.client import Fault
 
-from failedplatform import FailedPlatform
-from mozinfo.platforminfo import PlatformInfo
-from yaml import load
-
-try:
-    from yaml import CLoader as Loader
-except ImportError:
-    from yaml import Loader
-
 import bugzilla
-import mozci.push
+import mozci.data
 import requests
+from bugzilla.bug import Bug
+from failedplatform import FailedPlatform
 from manifestparser import ManifestParser
-from manifestparser.toml import add_skip_if, alphabetize_toml_str, sort_paths
+from manifestparser.toml import (
+    Mode,
+    add_skip_if,
+    alphabetize_toml_str,
+    replace_tbd_skip_if,
+    sort_paths,
+)
+from mozci.push import Push
 from mozci.task import Optional, TestTask
 from mozci.util.taskcluster import get_task
+from mozinfo.platforminfo import PlatformInfo
+from taskcluster.exceptions import TaskclusterRestFailure
 from wpt_path_utils import (
     WPT_META0,
     WPT_META0_CLASSIC,
     parse_wpt_path,
 )
+from yaml import load
 
-from taskcluster.exceptions import TaskclusterRestFailure
+# Use faster LibYAML, if installed: https://pyyaml.org/wiki/PyYAMLDocumentation
+try:
+    from yaml import CLoader as Loader
+except ImportError:
+    from yaml import Loader
 
+ArtifactList = List[Dict[Literal["name"], str]]  # noqa UP006
+CreateBug = Optional[Callable[[], Bug]]
+DictStrList = Dict[str, List]  # noqa UP006
+Extras = Dict[str, PlatformInfo]  # noqa UP006
+FailedPlatforms = Dict[str, FailedPlatform]  # noqa UP006
+GenBugComment = Tuple[  # noqa UP006
+    CreateBug,  # noqa UP006
+    str,  # bugid
+    bool,  # meta_bug_blocked
+    dict,  # attachments
+    str,  # comment
+    int,  # line_number
+    str,  # summary
+    str,  # description
+    str,  # product
+    str,  # component
+]  # noqa UP006
+JSONType = Union[
+    None,
+    bool,
+    int,
+    float,
+    str,
+    List["JSONType"],  # noqa UP006
+    Dict[str, "JSONType"],  # noqa UP006
+]
+DictJSON = Dict[str, JSONType]  # noqa UP006
+ListBug = List[Bug]  # noqa UP006
+ListInt = List[int]  # noqa UP006
+ListStr = List[str]  # noqa UP006
+ManifestPaths = Dict[str, Dict[str, List[str]]]  # noqa UP006
+OptBug = Optional[Bug]
+BugsBySummary = Dict[str, OptBug]  # noqa UP006
+OptDifferences = Optional[List[int]]  # noqa UP006
+OptInt = Optional[int]
+OptJs = Optional[Dict[str, bool]]  # noqa UP006
+OptPlatformInfo = Optional[PlatformInfo]
+OptStr = Optional[str]
+OptTaskResult = Optional[Dict[str, Any]]  # noqa UP006
+PlatformPermutations = Dict[  # noqa UP006
+    str,  # Manifest
+    Dict[  # noqa UP006
+        str,  # OS
+        Dict[  # noqa UP006
+            str,  # OS Version
+            Dict[  # noqa UP006
+                str,  # Processor
+                Dict[  # noqa UP006
+                    str,  # Build type
+                    Dict[  # noqa UP006
+                        str,  # Test Variant
+                        Dict[str, int],  # noqa UP006 {'pass': x, 'fail': y}
+                    ],
+                ],
+            ],
+        ],
+    ],
+]
+Runs = Dict[str, Dict[str, Any]]  # noqa UP006
+Suggestion = Tuple[OptInt, OptStr, OptStr]  # noqa UP006
+TaskIdOrPlatformInfo = Union[str, PlatformInfo]
+Tasks = List[TestTask]  # noqa UP006
+TupleOptIntStrOptInt = Tuple[OptInt, str, OptInt]  # noqa UP006
+WptPaths = Tuple[OptStr, OptStr, OptStr, OptStr]  # noqa UP006
+
+BUGREF_REGEX = r"[Bb][Uu][Gg] ?([0-9]+|TBD)"
 TASK_LOG = "live_backing.log"
 TASK_ARTIFACT = "public/logs/" + TASK_LOG
 ATTACHMENT_DESCRIPTION = "Compressed " + TASK_ARTIFACT + " for task "
@@ -52,6 +129,8 @@ ATTACHMENT_REGEX = (
 )
 
 BUGZILLA_AUTHENTICATION_HELP = "Must create a Bugzilla API key per https://github.com/mozilla/mozci-tools/blob/main/citools/test_triage_bug_filer.py"
+CACHE_EXPIRY = 45  # days to expire entries in .skip_fails_cache
+CACHE_DIR = ".skip_fails_cache"
 
 MS_PER_MINUTE = 60 * 1000  # ms per minute
 DEBUG_THRESHOLD = 40 * MS_PER_MINUTE  # 40 minutes in ms
@@ -99,6 +178,37 @@ TOTAL_DURATION = "duration_total"
 TOTAL_RUNS = "runs_total"
 
 
+def read_json(filename: str):
+    """read data as JSON from filename"""
+    with open(filename, encoding="utf-8") as fp:
+        data = json.load(fp)
+    return data
+
+
+def default_serializer(obj):
+    if hasattr(obj, "to_dict"):
+        return obj.to_dict()
+    return str(obj)
+
+
+def write_json(filename: str, data):
+    """saves data as JSON to filename"""
+    # ensure that (at most ONE) parent dir exists
+    parent = os.path.dirname(filename)
+    grandparent = os.path.dirname(parent)
+    if not os.path.isdir(grandparent):
+        raise NotADirectoryError(
+            f"write_json: grand parent directory does not exist for: {filename}"
+        )
+    if not os.path.isdir(parent):
+        os.mkdir(parent)
+    with open(filename, "w", encoding="utf-8") as fp:
+        s: str = json.dumps(data, indent=2, sort_keys=True, default=default_serializer)
+        if s[-1] != "\n":
+            s += "\n"  # end with newline to match JSON linter
+        fp.write(s)
+
+
 class Mock:
     def __init__(self, data, defaults={}, inits=[]):
         self._data = data
@@ -139,13 +249,154 @@ class Kind:
     WPT = "wpt"
 
 
+class SkipfailsMode(Mode):
+    "Skipfails mode of operation"
+
+    @classmethod
+    def from_flags(
+        cls,
+        carryover_mode: bool,
+        known_intermittents_mode: bool,
+        new_failures_mode: bool,
+        replace_tbd_mode: bool,
+    ) -> int:
+        if (
+            sum(
+                [
+                    carryover_mode,
+                    known_intermittents_mode,
+                    new_failures_mode,
+                    replace_tbd_mode,
+                ]
+            )
+            > 1
+        ):
+            raise Exception(
+                "may not specifiy more than one mode: --carryover --known-intermittents --new-failures --replace-tbd"
+            )
+        if carryover_mode:
+            return cls.CARRYOVER
+        elif known_intermittents_mode:
+            return cls.KNOWN_INTERMITTENT
+        elif new_failures_mode:
+            return cls.NEW_FAILURE
+        elif replace_tbd_mode:
+            return cls.REPLACE_TBD
+        return cls.NORMAL
+
+    @classmethod
+    def edits_bugzilla(cls, mode: int) -> bool:
+        if mode in [cls.NORMAL, cls.REPLACE_TBD]:
+            return True
+        return False
+
+    @classmethod
+    def description(cls, mode: int) -> str:
+        if mode == cls.CARRYOVER:
+            return "Carryover mode: only platform match conditions considered, no bugs created or updated"
+        elif mode == cls.KNOWN_INTERMITTENT:
+            return "Known Intermittents mode: only failures with known intermittents considered, no bugs created or updated"
+        elif mode == cls.NEW_FAILURE:
+            return "New failures mode: Will only edit manifest skip-if conditions for new failures (i.e. not carryover nor known intermittents)"
+        elif mode == cls.REPLACE_TBD:
+            return "Replace TBD mode: Will only edit manifest skip-if conditions for new failures by filing new bugs and replacing TBD with actual bug number."
+        return "Normal mode"
+
+    @classmethod
+    def name(cls, mode: int) -> str:
+        if mode == cls.NORMAL:
+            return "NORMAL"
+        if mode == cls.CARRYOVER:
+            return "CARRYOVER"
+        elif mode == cls.KNOWN_INTERMITTENT:
+            return "KNOWN_INTERMITTENT"
+        elif mode == cls.NEW_FAILURE:
+            return "NEW_FAILURE"
+        elif mode == cls.REPLACE_TBD:
+            return "REPLACE_TBD"
+        if mode == cls.CARRYOVER_FILED:
+            return "CARRYOVER_FILED"
+        elif mode == cls.KNOWN_INTERMITTENT_FILED:
+            return "KNOWN_INTERMITTENT_FILED"
+        elif mode == cls.NEW_FAILURE_FILED:
+            return "NEW_FAILURE_FILED"
+        return ""
+
+    @classmethod
+    def bug_filed(cls, mode: int) -> int:
+        if mode == cls.CARRYOVER:
+            return cls.CARRYOVER_FILED
+        elif mode == cls.KNOWN_INTERMITTENT:
+            return cls.KNOWN_INTERMITTENT_FILED
+        elif mode == cls.NEW_FAILURE:
+            return cls.NEW_FAILURE_FILED
+        else:
+            raise Exception(
+                f"Skipfails mode {cls.name(mode)} cannot be promoted to a _FILED mode"
+            )
+        return mode
+
+
+class Action:
+    """
+    A defferred action to take for a failure as a result
+    of running in --carryover, --known-intermittents or --new-failures mode
+    to be acted upon in --replace-tbd mode
+    """
+
+    SENTINEL = "|"
+
+    def __init__(self, **kwargs):
+        self.bugid: str = str(kwargs.get("bugid", ""))
+        self.comment: str = kwargs.get("comment", "")
+        self.component: str = kwargs.get("component", "")
+        self.description: str = kwargs.get("description", "")
+        self.disposition: str = kwargs.get("disposition", Mode.NORMAL)
+        self.label: str = kwargs.get("label", "")
+        self.manifest: str = kwargs.get("manifest", "")
+        self.path: str = kwargs.get("path", "")
+        self.product: str = kwargs.get("product", "")
+        self.revision: str = kwargs.get("revision", "")
+        self.skip_if: str = kwargs.get("skip_if", "")
+        self.summary: str = kwargs.get("summary", "")
+        self.task_id: str = kwargs.get("task_id", "")
+
+    @classmethod
+    def make_key(cls, manifest: str, path: str, label: str) -> str:
+        if not manifest:
+            raise Exception(
+                "cannot create a key for an Action if the manifest is not specified"
+            )
+        if not path:
+            raise Exception(
+                "cannot create a key for an Action if the path is not specified"
+            )
+        if not label:
+            raise Exception(
+                "cannot create a key for an Action if the label is not specified"
+            )
+        return manifest + Action.SENTINEL + path + Action.SENTINEL + label
+
+    def key(self) -> str:
+        return Action.make_key(self.manifest, self.path, self.label)
+
+    def to_dict(self) -> Dict:  # noqa UP006
+        return self.__dict__
+
+
+DictAction = Dict[str, Action]  # noqa UP006
+OptAction = Optional[Action]  # noqa UP006
+
+
 class Skipfails:
     "mach manifest skip-fails implementation: Update manifests to skip failing tests"
 
     REPO = "repo"
     REVISION = "revision"
     TREEHERDER = "treeherder.mozilla.org"
-    BUGZILLA_SERVER_DEFAULT = "bugzilla.allizom.org"
+    BUGZILLA_DISABLE = "disable"
+    BUGZILLA_SERVER = "bugzilla.allizom.org"
+    BUGZILLA_SERVER_DEFAULT = BUGZILLA_DISABLE
 
     def __init__(
         self,
@@ -158,6 +409,8 @@ class Skipfails:
         implicit_vars=False,
         new_version=None,
         task_id=None,
+        user_agent=None,
+        clear_cache=None,
     ):
         self.command_context = command_context
         if self.command_context is not None:
@@ -169,19 +422,24 @@ class Skipfails:
             self.try_url = try_url[0]
         else:
             self.try_url = try_url
-        self.dry_run = dry_run
         self.implicit_vars = implicit_vars
         self.new_version = new_version
         self.verbose = verbose
         self.turbo = turbo
-        if bugzilla is not None and dry_run:
-            self.bugzilla = bugzilla
-        elif "BUGZILLA" in os.environ:
-            self.bugzilla = os.environ["BUGZILLA"]
+        self.edit_bugzilla = True
+        if bugzilla is None:
+            if "BUGZILLA" in os.environ:
+                self.bugzilla = os.environ["BUGZILLA"]
+            else:
+                self.bugzilla = Skipfails.BUGZILLA_SERVER_DEFAULT
         else:
-            self.bugzilla = Skipfails.BUGZILLA_SERVER_DEFAULT
-        if self.bugzilla == "disable":
+            self.bugzilla = bugzilla
+        if self.bugzilla == Skipfails.BUGZILLA_DISABLE:
             self.bugzilla = None  # Bug filing disabled
+            self.edit_bugzilla = False
+        self.dry_run = dry_run
+        if self.dry_run:
+            self.edit_bugzilla = False
         self.component = "skip-fails"
         self._bzapi = None
         self._attach_rx = None
@@ -194,33 +452,62 @@ class Skipfails:
         self.jobs_url = "https://treeherder.mozilla.org/api/jobs/"
         self.push_ids = {}
         self.job_ids = {}
-        self.extras: dict[str, PlatformInfo] = {}
+        self.extras: Extras = {}
         self.bugs = []  # preloaded bugs, currently not an updated cache
         self.error_summary = {}
         self._subtest_rx = None
         self.lmp = None
         self.failure_types = None
-        self.task_id: Optional[str] = task_id
-        self.failed_platforms: dict[str, FailedPlatform] = {}
-        self.platform_permutations: dict[
-            str,  # Manifest
-            dict[
-                str,  # OS
-                dict[
-                    str,  # OS Version
-                    dict[
-                        str,  # Processor
-                        dict[
-                            str,  # Build type
-                            dict[
-                                str,  # Test Variant
-                                dict[str, int],  # {'pass': x, 'fail': y}
-                            ],
-                        ],
-                    ],
-                ],
-            ],
-        ] = {}
+        self.task_id: OptStr = task_id
+        self.failed_platforms: FailedPlatforms = {}
+        self.platform_permutations: PlatformPermutations = {}
+        self.user_agent: OptStr = user_agent
+        self.suggestions: DictJSON = {}
+        self.clear_cache: OptStr = clear_cache
+        self.mode: int = Mode.NORMAL
+        self.bugs_by_summary: BugsBySummary = {}
+        self.actions: DictAction = {}
+        self._bugref_rx = None
+        self.check_cache()
+
+    def check_cache(self) -> None:
+        """
+        Will ensure that the cache directory is present
+        And will clear any entries based upon --clear-cache
+        Or revisions older than 45 days
+        """
+        cache_dir = self.full_path(CACHE_DIR)
+        if not os.path.exists(cache_dir):
+            self.vinfo(f"creating cache directory: {cache_dir}")
+            os.mkdir(cache_dir)
+            return
+        self.vinfo(f"clearing cache for revisions older than {CACHE_EXPIRY} days")
+        expiry: float = CACHE_EXPIRY * 24 * 3600
+        for rev_dir in [e.name for e in os.scandir(cache_dir) if e.is_dir()]:
+            rev_path = os.path.join(cache_dir, rev_dir)
+            if (
+                self.clear_cache is not None and self.clear_cache in (rev_dir, "all")
+            ) or self.file_age(rev_path) > expiry:
+                self.vinfo(f"clearing revision: {rev_path}")
+                self.delete_dir(rev_path)
+
+    def cached_path(self, revision: str, filename: str) -> str:
+        """Return full path for a cached filename for revision"""
+        cache_dir = self.full_path(CACHE_DIR)
+        return os.path.join(cache_dir, revision, filename)
+
+    def record_new_bug(self, revision: OptStr, bugid: int) -> None:
+        """Records this bug id in the cache of created bugs for this revision"""
+        if revision is not None:
+            new_bugs_path = self.cached_path(revision, "new-bugs.json")
+            new_bugs: ListInt = []
+            if os.path.exists(new_bugs_path):
+                self.vinfo(f"Reading cached new bugs for revision: {revision}")
+                new_bugs = read_json(new_bugs_path)
+            if bugid not in new_bugs:
+                new_bugs.append(bugid)
+                new_bugs.sort()
+            write_json(new_bugs_path, new_bugs)
 
     def _initialize_bzapi(self):
         """Lazily initializes the Bugzilla API (returns True on success)"""
@@ -278,19 +565,88 @@ class Skipfails:
 
         return os.path.exists(self.full_path(filename))
 
+    def file_age(self, path: str) -> float:
+        """Returns age of filename in seconds"""
+
+        age: float = 0.0
+        if os.path.exists(path):
+            stat: os.stat_result = os.stat(path)
+            mtime: float = stat.st_mtime
+            now: float = time.time()
+            age = now - mtime
+        return age
+
+    def delete_dir(self, path: str) -> None:
+        """Recursively deletes dir at path"""
+        abs_path: str = os.path.abspath(path)
+        # Safety: prevent root or empty deletions
+        if abs_path in ("", os.path.sep):
+            raise ValueError(f"Refusing to delete unsafe path: {path}")
+        # Ensure path is inside topsrcdir
+        if not abs_path.startswith(self.topsrcdir + os.path.sep):
+            raise ValueError(
+                f"Refusing to delete: {path} is not inside {self.topsrcdir}"
+            )
+        if not os.path.exists(abs_path):
+            raise FileNotFoundError(f"Path does not exist: {abs_path}")
+        if not os.path.isdir(abs_path):
+            raise NotADirectoryError(f"Not a directory: {abs_path}")
+        shutil.rmtree(abs_path)
+
     def run(
         self,
-        meta_bug_id=None,
-        save_tasks=None,
-        use_tasks=None,
-        save_failures=None,
-        use_failures=None,
-        max_failures=-1,
+        meta_bug_id: OptInt = None,
+        save_tasks: OptStr = None,
+        use_tasks: OptStr = None,
+        save_failures: OptStr = None,
+        use_failures: OptStr = None,
+        max_failures: int = -1,
+        failure_ratio: float = FAILURE_RATIO,
+        mode: int = Mode.NORMAL,
     ):
         "Run skip-fails on try_url, return True on success"
 
+        self.mode = mode
+        if self.mode != Mode.NORMAL and meta_bug_id is None:
+            raise Exception(
+                "must specifiy --meta-bug-id when using one of: --carryover --known-intermittents --new-failures --replace-tbd"
+            )
+        if self.mode != Mode.NORMAL:
+            self.read_actions(meta_bug_id)
+        self.vinfo(SkipfailsMode.description(self.mode))
+        if not SkipfailsMode.edits_bugzilla(self.mode):
+            self.edit_bugzilla = False
+        if self.bugzilla is None:
+            self.vinfo("Bugzilla has been disabled: bugs not created or updated.")
+        elif self.dry_run:
+            self.vinfo("Flag --dry-run: bugs not created or updated.")
+        if meta_bug_id is None:
+            self.edit_bugzilla = False
+            self.vinfo("No --meta-bug-id specified: bugs not created or updated.")
+        else:
+            self.vinfo(f"meta-bug-id: {meta_bug_id}")
+        if self.new_version is not None:
+            self.vinfo(
+                f"All skip-if conditions will use the --new-version for os_version: {self.new_version}"
+            )
+        if failure_ratio != FAILURE_RATIO:
+            self.vinfo(f"Failure ratio for this run: {failure_ratio}")
+        self.vinfo(
+            f"skip-fails assumes implicit-vars for reftest: {self.implicit_vars}"
+        )
         try_url = self.try_url
         revision, repo = self.get_revision(try_url)
+        self.cached_job_ids(revision)
+        use_tasks_cached = self.cached_path(revision, "tasks.json")
+        use_failures_cached = self.cached_path(revision, "failures.json")
+        if use_tasks is None and os.path.exists(use_tasks_cached):
+            use_tasks = use_tasks_cached
+        if save_tasks is None and use_tasks != use_tasks_cached:
+            save_tasks = use_tasks_cached
+        if use_failures is None and os.path.exists(use_failures_cached):
+            use_failures = use_failures_cached
+        if save_failures is None and use_failures != use_failures_cached:
+            save_failures = use_failures_cached
         if use_tasks is not None:
             tasks = self.read_tasks(use_tasks)
             self.vinfo(f"use tasks: {use_tasks}")
@@ -304,17 +660,17 @@ class Skipfails:
             failures = self.read_failures(use_failures)
             self.vinfo(f"use failures: {use_failures}")
         else:
-            failures = self.get_failures(tasks)
+            failures = self.get_failures(tasks, failure_ratio)
             if save_failures is not None:
-                self.write_json(save_failures, failures)
+                write_json(save_failures, failures)
                 self.vinfo(f"save failures: {save_failures}")
         if save_tasks is not None:
             self.write_tasks(save_tasks, tasks)
             self.vinfo(f"save tasks: {save_tasks}")
         num_failures = 0
-        self.vinfo(
-            f"skip-fails assumes implicit-vars for reftest: {self.implicit_vars}"
-        )
+        if self.mode == Mode.REPLACE_TBD:
+            self.replace_tbd(meta_bug_id)
+            failures = []
         for manifest in failures:
             kind = failures[manifest][KIND]
             for label in failures[manifest][LL]:
@@ -328,14 +684,28 @@ class Skipfails:
                         pixels = []
                         status = FAIL
                         lineno = failures[manifest][LL][label][PP][path].get(LINENO, 0)
-                        runs: dict[str, dict[str, Any]] = failures[manifest][LL][label][
-                            PP
-                        ][path][RUNS]
-                        # skip_failure only needs to run against one task for each path
-                        first_task_id = next(iter(runs))
+                        runs: Runs = failures[manifest][LL][label][PP][path][RUNS]
+                        k = Action.make_key(manifest, path, label)
+                        if (
+                            self.mode in [Mode.KNOWN_INTERMITTENT, Mode.NEW_FAILURE]
+                            and k in self.actions
+                        ):
+                            self.info(
+                                f"\n\n===== Previously handled {SkipfailsMode.name(self.actions[k].disposition)} in manifest: {manifest} ====="
+                            )
+                            self.info(f"    path: {path}")
+                            self.info(f"    label: {label}")
+                            continue
+
+                        # skip_failure only needs to run against one failing task for each path: first_task_id
+                        first_task_id: OptStr = None
                         for task_id in runs:
+                            if first_task_id is None and not runs[task_id].get(
+                                RR, False
+                            ):
+                                first_task_id = task_id
                             if kind == Kind.TOML:
-                                break
+                                continue
                             elif kind == Kind.LIST:
                                 difference = runs[task_id].get(DIFFERENCE, 0)
                                 if difference > 0:
@@ -365,9 +735,9 @@ class Skipfails:
                             kind,
                             path,
                             first_task_id,
-                            None,
-                            None,
-                            False,
+                            None,  # platform_info
+                            None,  # bug_id
+                            False,  # high_freq
                             anyjs,
                             differences,
                             pixels,
@@ -386,6 +756,9 @@ class Skipfails:
                                 f"max_failures={max_failures} threshold reached: stopping."
                             )
                             return True
+        self.cache_job_ids(revision)
+        if self.mode != Mode.NORMAL:
+            self.write_actions(meta_bug_id)
         return True
 
     def get_revision(self, url):
@@ -408,8 +781,33 @@ class Skipfails:
         return revision, repo
 
     def get_tasks(self, revision, repo):
-        push = mozci.push.Push(revision, repo)
-        return push.tasks
+        self.vinfo(f"Retrieving tasks for revision: {revision} ...")
+        push = Push(revision, repo)
+        tasks = None
+        try:
+            tasks = push.tasks
+        except requests.exceptions.HTTPError:
+            n = len(mozci.data.handler.sources)
+            self.error("Error querying mozci, sources are:")
+            tcs = -1
+            for i in range(n):
+                source = mozci.data.handler.sources[i]
+                self.error(f"  sources[{i}] is type {source.__class__.__name__}")
+                if source.__class__.__name__ == "TreeherderClientSource":
+                    tcs = i
+            if tcs < 0:
+                raise PermissionError("Error querying mozci with default User-Agent")
+            msg = f'Error querying mozci with User-Agent: {mozci.data.handler.sources[tcs].session.headers["User-Agent"]}'
+            if self.user_agent is None:
+                raise PermissionError(msg)
+            else:
+                self.error(msg)
+                self.error(f"Re-try with User-Agent: {self.user_agent}")
+                mozci.data.handler.sources[tcs].session.headers = {
+                    "User-Agent": self.user_agent
+                }
+                tasks = push.tasks
+        return tasks
 
     def get_kind_manifest(self, manifest: str):
         kind = Kind.UNKNOWN
@@ -419,6 +817,15 @@ class Skipfails:
         elif manifest.endswith(".list"):
             kind = Kind.LIST
         elif manifest.endswith(".toml"):
+            # NOTE: manifest may be a compound of manifest1:manifest2
+            # where manifest1 includes manifest2
+            # The skip-condition will need to be associated with manifest2
+            includes = manifest.split(":")
+            if len(includes) > 1:
+                manifest = includes[-1]
+                self.warning(
+                    f"manifest '{manifest}' is included from {':'.join(includes[0:-1])}"
+                )
             kind = Kind.TOML
         else:
             kind = Kind.WPT
@@ -443,7 +850,11 @@ class Skipfails:
         except ValueError:
             return task.label
 
-    def get_failures(self, tasks: list[TestTask]):
+    def get_failures(
+        self,
+        tasks: Tasks,
+        failure_ratio: float = FAILURE_RATIO,
+    ):
         """
         find failures and create structure comprised of runs by path:
            result:
@@ -459,7 +870,7 @@ class Skipfails:
         """
 
         failures = {}
-        manifest_paths: dict[str, dict[str, list[str]]] = {}
+        manifest_paths: ManifestPaths = {}
         manifest_ = {
             KIND: Kind.UNKNOWN,
             LL: {},
@@ -527,16 +938,19 @@ class Skipfails:
                     if config not in manifest_paths[manifest]:
                         manifest_paths[manifest][config] = []
 
-                    for path_type in failure_types[raw_manifest]:
-                        path, _type = path_type
+                    for included_path_type in failure_types[raw_manifest]:
+                        included_path, _type = included_path_type
+                        path = included_path.split(":")[
+                            -1
+                        ]  # strip 'included_from.toml:' prefix
                         query = None
-                        anyjs = None
+                        anyjs = {}
                         allpaths = []
                         if kind == Kind.WPT:
                             path, mmpath, query, anyjs = self.wpt_paths(path)
                             if path is None or mmpath is None:
                                 self.warning(
-                                    f"non existant failure path: {path_type[0]}"
+                                    f"non existant failure path: {included_path_type[0]}"
                                 )
                                 break
                             allpaths = [path]
@@ -579,7 +993,7 @@ class Skipfails:
                             task_path[RUNS][task.id][RR] = result
                             if query is not None:
                                 task_path[RUNS][task.id][QUERY] = query
-                            if anyjs is not None:
+                            if anyjs is not None and len(anyjs) > 0:
                                 task_path[RUNS][task.id][ANYJS] = anyjs
                             task_path[TOTAL_RUNS] += 1
                             if not result:
@@ -740,11 +1154,11 @@ class Skipfails:
                         for first_task_id in task_path[RUNS]:
                             status = task_path[RUNS][first_task_id].get(STATUS, status)
                         if kind == Kind.LIST:
-                            failure_ratio = INTERMITTENT_RATIO_REFTEST
+                            ratio = INTERMITTENT_RATIO_REFTEST
                         else:
-                            failure_ratio = FAILURE_RATIO
+                            ratio = failure_ratio
                         if total_runs >= MINIMUM_RUNS:
-                            if failed_runs / total_runs < failure_ratio:
+                            if failed_runs / total_runs < ratio:
                                 if failed_runs == 0:
                                     classification = Classification.SUCCESS
                                 else:
@@ -771,38 +1185,47 @@ class Skipfails:
 
         return failures
 
-    def _get_os_version(self, os, platform):
-        """Return the os_version given the label platform string"""
-        i = platform.find(os)
-        j = i + len(os)
-        yy = platform[j : j + 2]
-        mm = platform[j + 2 : j + 4]
-        return yy + "." + mm
+    def bugid_from_reference(self, bug_reference) -> str:
+        if self._bugref_rx is None:
+            self._bugref_rx = re.compile(BUGREF_REGEX)
+        m = self._bugref_rx.findall(bug_reference)
+        if len(m) == 1:
+            bugid = m[0]
+        else:
+            raise Exception("Carryover bug reference does not include a bug id")
+        return bugid
 
-    def get_bug_by_id(self, id):
+    def get_bug_by_id(self, id) -> OptBug:
         """Get bug by bug id"""
 
-        bug = None
+        bug: OptBug = None
         for b in self.bugs:
             if b.id == id:
                 bug = b
                 break
         if bug is None and self._initialize_bzapi():
+            self.vinfo(f"Retrieving bug id: {id} ...")
             bug = self._bzapi.getbug(id)
         return bug
 
-    def get_bugs_by_summary(self, summary):
+    def get_bugs_by_summary(self, summary, meta_bug_id: OptInt = None) -> ListBug:
         """Get bug by bug summary"""
 
-        if self.dry_run:
-            return []
-        bugs = []
+        bugs: ListBug = []
         for b in self.bugs:
             if b.summary == summary:
                 bugs.append(b)
-        if len(bugs) > 0:
+        if (
+            not self.edit_bugzilla
+            and len(bugs) == 0
+            and summary in self.bugs_by_summary
+        ):
+            bug = self.bugs_by_summary[summary]
+            if bug is not None:
+                bugs.append(bug)
             return bugs
-        if self._initialize_bzapi():
+        if len(bugs) == 0 and self.bugzilla is not None and self._initialize_bzapi():
+            self.vinfo(f"Retrieving bugs by summary: {summary} ...")
             query = self._bzapi.build_query(short_desc=summary)
             query["include_fields"] = [
                 "id",
@@ -817,20 +1240,31 @@ class Skipfails:
                 bugs = self._bzapi.query(query)
             except requests.exceptions.HTTPError:
                 raise
+        if len(bugs) > 0 and meta_bug_id is not None:
+            # narrow results to those blocking meta_bug_id
+            i = 0
+            while i < len(bugs):
+                if meta_bug_id not in bugs[i].blocks:
+                    del bugs[i]
+                else:
+                    i += 1
+        if not self.edit_bugzilla:
+            self.bugs_by_summary[summary] = bugs[0] if len(bugs) > 0 else None
         return bugs
 
     def create_bug(
         self,
-        summary="Bug short description",
-        description="Bug description",
-        product="Testing",
-        component="General",
-        version="unspecified",
-        bugtype="task",
-    ):
+        summary: str = "Bug short description",
+        description: str = "Bug description",
+        product: str = "Testing",
+        component: str = "General",
+        version: str = "unspecified",
+        bugtype: str = "task",
+        revision: OptStr = None,
+    ) -> OptBug:
         """Create a bug"""
 
-        bug = None
+        bug: OptBug = None
         if self._initialize_bzapi():
             if not self._bzapi.logged_in:
                 self.error(
@@ -846,9 +1280,12 @@ class Skipfails:
             )
             createinfo["type"] = bugtype
             bug = self._bzapi.createbug(createinfo)
+            if bug is not None:
+                self.vinfo(f'Created Bug {bug.id} {product}::{component} : "{summary}"')
+                self.record_new_bug(revision, bug.id)
         return bug
 
-    def add_bug_comment(self, id, comment, meta_bug_id=None):
+    def add_bug_comment(self, id: int, comment: str, meta_bug_id: OptInt = None):
         """Add a comment to an existing bug"""
 
         if self._initialize_bzapi():
@@ -871,17 +1308,41 @@ class Skipfails:
         path: str,
         skip_if: str,
         filename: str,
-        anyjs: Optional[dict[str, bool]],
-        lineno: Optional[int],
-        label: Optional[str],
-        classification: Optional[str],
-        task_id: Optional[str],
-        try_url: Optional[str],
-        revision: Optional[str],
-        repo: Optional[str],
-        meta_bug_id: Optional[str] = None,
-    ):
-        bug_reference = ""
+        anyjs: OptJs,
+        lineno: OptInt,
+        label: OptStr,
+        classification: OptStr,
+        task_id: OptStr,
+        try_url: OptStr,
+        revision: OptStr,
+        repo: OptStr,
+        meta_bug_id: OptInt = None,
+    ) -> GenBugComment:
+        """
+        Will create a comment for the failure details provided as arguments.
+        Will determine if a bug exists already for this manifest and meta-bug-id.
+        If exactly one bug is found, then set
+           bugid
+           meta_bug_blocked
+           attachments (to determine if the task log is in the attachments)
+        else
+           set bugid to TBD
+           if we should edit_bugzilla (not --dry-run) then we return a lambda function
+              to lazily create a bug later
+        Returns a tuple with
+          create_bug_lambda -- lambda function to create a bug (or None)
+          bugid -- id of bug found, or TBD
+          meta_bug_blocked -- True if bug found and meta_bug_id is already blocked
+          attachments -- dictionary of attachments if bug found
+          comment -- comment to add to the bug (if we should edit_bugzilla)
+        """
+
+        create_bug_lambda: CreateBug = None
+        bugid: str = "TBD"
+        meta_bug_blocked: bool = False
+        attachments: dict = {}
+        comment: str = ""
+        line_number: OptInt = None
         if classification == Classification.DISABLE_MANIFEST:
             comment = "Disabled entire manifest due to crash result"
         elif classification == Classification.DISABLE_TOO_LONG:
@@ -890,104 +1351,92 @@ class Skipfails:
             comment = f'Disabled test due to failures in test file: "{filename}"'
             if classification == Classification.SECONDARY:
                 comment += " (secondary)"
-                if kind != Kind.WPT:
-                    bug_reference = " (secondary)"
-        if kind != Kind.LIST:
-            self.vinfo(f"filename: {filename}")
         if kind == Kind.WPT and anyjs is not None and len(anyjs) > 1:
             comment += "\nAdditional WPT wildcard paths:"
             for p in sorted(anyjs.keys()):
                 if p != filename:
                     comment += f'\n  "{p}"'
-        if label is not None:
-            platform, testname = self.label_to_platform_testname(label)
-            if platform is not None:
-                comment += "\nCommand line to reproduce (experimental):\n"
-                comment += f"  \"mach try fuzzy -q '{platform}' {testname}\""
-        if try_url is not None:
-            comment += f"\nTry URL = {try_url}"
-        if revision is not None:
-            comment += f"\nrevision = {revision}"
-        if repo is not None:
-            comment += f"\nrepo = {repo}"
-        if label is not None:
-            comment += f"\nlabel = {label}"
         if task_id is not None:
-            comment += f"\ntask_id = {task_id}"
             if kind != Kind.LIST:
                 if revision is not None and repo is not None:
                     push_id = self.get_push_id(revision, repo)
                     if push_id is not None:
-                        comment += f"\npush_id = {push_id}"
                         job_id = self.get_job_id(push_id, task_id)
                         if job_id is not None:
-                            comment += f"\njob_id = {job_id}"
                             (
-                                suggestions_url,
                                 line_number,
                                 line,
                                 log_url,
-                            ) = self.get_bug_suggestions(repo, job_id, path, anyjs)
+                            ) = self.get_bug_suggestions(
+                                repo, revision, job_id, path, anyjs
+                            )
                             if log_url is not None:
-                                comment += f"\nBug suggestions: {suggestions_url}"
-                                comment += f"\nSpecifically see at line {line_number} in the attached log: {log_url}"
-                                comment += f'\n\n  "{line}"\n'
-        bug_summary = f"MANIFEST {manifest}"
-        attachments = {}
-        bugid = "TBD"
-        if self.bugzilla is None or self.dry_run:
-            self.vinfo("Bugzilla has been disabled: no bugs created or updated")
-        else:
-            bugs = self.get_bugs_by_summary(bug_summary)
-            if len(bugs) == 0:
-                description = (
-                    f"This bug covers excluded failing tests in the MANIFEST {manifest}"
-                )
-                description += "\n(generated by `mach manifest skip-fails`)"
-                if self.dry_run:
-                    self.warning(f'Dry-run NOT creating bug: "{bug_summary}"')
-                else:
-                    product, component = self.get_file_info(path)
-                    bug = self.create_bug(bug_summary, description, product, component)
-                    if bug is not None:
-                        bugid = bug.id
-                        self.vinfo(
-                            f'Created Bug {bugid} {product}::{component} : "{bug_summary}"'
-                        )
-            elif len(bugs) == 1:
-                bugid = bugs[0].id
-                product = bugs[0].product
-                component = bugs[0].component
-                self.vinfo(f'Found Bug {bugid} {product}::{component} "{bug_summary}"')
-                if meta_bug_id is not None:
-                    if meta_bug_id in bugs[0].blocks:
-                        self.vinfo(
-                            f"  Bug {bugid} already blocks meta bug {meta_bug_id}"
-                        )
-                        meta_bug_id = None  # no need to add again
-                comments = bugs[0].getcomments()
-                for i in range(len(comments)):
-                    text = comments[i]["text"]
-                    attach_rx = self._attach_rx
-                    if attach_rx is not None:
-                        m = attach_rx.findall(text)
-                        if len(m) == 1:
-                            a_task_id = m[0][1]
-                            attachments[a_task_id] = m[0][0]
-                            if a_task_id == task_id:
-                                self.vinfo(
-                                    f"  Bug {bugid} already has the compressed log attached for this task"
-                                )
-            else:
-                raise Exception(f'More than one bug found for summary: "{bug_summary}"')
-        bug_reference = f"Bug {bugid}" + bug_reference
-        if kind == Kind.LIST:
-            comment += (
-                f"\nfuzzy-if condition on line {lineno}: {skip_if} # {bug_reference}"
+                                comment += f"\nError log line {line_number}: {log_url}"
+        summary: str = f"MANIFEST {manifest}"
+        bugs: ListBug = []  # performance optimization when not editing bugzilla
+        if self.edit_bugzilla:
+            bugs = self.get_bugs_by_summary(summary, meta_bug_id)
+        if len(bugs) == 0:
+            description = (
+                f"This bug covers excluded failing tests in the MANIFEST {manifest}"
             )
+            description += "\n(generated by `mach manifest skip-fails`)"
+            product, component = self.get_file_info(path)
+            if self.edit_bugzilla:
+                create_bug_lambda = cast(
+                    CreateBug,
+                    lambda: self.create_bug(
+                        summary,
+                        description,
+                        product,
+                        component,
+                        "unspecified",
+                        "task",
+                        revision,
+                    ),
+                )
+        elif len(bugs) == 1:
+            bugid = str(bugs[0].id)
+            product = bugs[0].product
+            component = bugs[0].component
+            self.vinfo(f'Found Bug {bugid} {product}::{component} "{summary}"')
+            if meta_bug_id is not None:
+                if meta_bug_id in bugs[0].blocks:
+                    self.vinfo(f"  Bug {bugid} already blocks meta bug {meta_bug_id}")
+                    meta_bug_blocked = True
+            comments = bugs[0].getcomments()
+            for i in range(len(comments)):
+                text = comments[i]["text"]
+                attach_rx = self._attach_rx
+                if attach_rx is not None:
+                    m = attach_rx.findall(text)
+                    if len(m) == 1:
+                        a_task_id = m[0][1]
+                        attachments[a_task_id] = m[0][0]
+                        if a_task_id == task_id:
+                            self.vinfo(
+                                f"  Bug {bugid} already has the compressed log attached for this task"
+                            )
+        elif meta_bug_id is None:
+            raise Exception(f'More than one bug found for summary: "{summary}"')
         else:
-            comment += f"\nskip-if condition: {skip_if} # {bug_reference}"
-        return (comment, bug_reference, bugid, attachments)
+            raise Exception(
+                f'More than one bug found for summary: "{summary}" for meta-bug-id: {meta_bug_id}'
+            )
+        if kind == Kind.LIST:
+            comment += f"\nfuzzy-if condition on line {lineno}: {skip_if}"
+        return (
+            create_bug_lambda,
+            bugid,
+            meta_bug_blocked,
+            attachments,
+            comment,
+            line_number,
+            summary,
+            description,
+            product,
+            component,
+        )
 
     def resolve_failure_filename(self, path: str, kind: str, manifest: str) -> str:
         filename = DEF
@@ -1020,32 +1469,47 @@ class Skipfails:
         manifest: str,
         kind: str,
         path: str,
-        task_id: Optional[str],
-        platform_info: Optional[PlatformInfo] = None,
-        bug_id: Optional[str] = None,
+        task_id: OptStr,
+        platform_info: OptPlatformInfo = None,
+        bug_id: OptStr = None,
         high_freq: bool = False,
-        anyjs: Optional[dict[str, bool]] = None,
-        differences: Optional[list[int]] = None,
-        pixels: Optional[list[int]] = None,
-        lineno: Optional[int] = None,
-        status: Optional[str] = None,
-        label: Optional[str] = None,
-        classification: Optional[str] = None,
-        try_url: Optional[str] = None,
-        revision: Optional[str] = None,
-        repo: Optional[str] = None,
-        meta_bug_id: Optional[str] = None,
+        anyjs: OptJs = None,
+        differences: OptDifferences = None,
+        pixels: OptDifferences = None,
+        lineno: OptInt = None,
+        status: OptStr = None,
+        label: OptStr = None,
+        classification: OptStr = None,
+        try_url: OptStr = None,
+        revision: OptStr = None,
+        repo: OptStr = None,
+        meta_bug_id: OptInt = None,
     ):
         """
         Skip a failure (for TOML, WPT and REFTEST manifests)
         For wpt anyjs is a dictionary mapping from alternate basename to
         a boolean (indicating if the basename has been handled in the manifest)
         """
-        path = path.split(":")[-1]
 
-        self.vinfo(f"\n\n===== Skip failure in manifest: {manifest} =====")
-        self.vinfo(f"    path: {path}")
-        skip_if: Optional[str]
+        path: str = path.split(":")[-1]
+        self.info(f"\n\n===== Skip failure in manifest: {manifest} =====")
+        self.info(f"    path: {path}")
+        self.info(f"    label: {label}")
+        action: OptAction = None
+
+        if self.mode != Mode.NORMAL:
+            if bug_id is not None:
+                self.warning(
+                    f"skip_failure with bug_id specified not supported in {Mode.name(self.mode)} mode"
+                )
+                return
+            if kind != Kind.TOML:
+                self.warning(
+                    f"skip_failure in {SkipfailsMode.name(self.mode)} mode only supported for TOML manifests"
+                )
+                return
+
+        skip_if: OptStr
         if task_id is None:
             skip_if = "true"
         else:
@@ -1059,15 +1523,51 @@ class Skipfails:
         if skip_if is None:
             self.info("Not adding skip-if condition")
             return
+        self.vinfo(f"proposed skip-if: {skip_if}")
 
-        filename = self.resolve_failure_filename(path, kind, manifest)
-        manifest = self.resolve_failure_manifest(path, kind, manifest)
-        manifest_path = self.full_path(manifest)
-        manifest_str = ""
-        additional_comment = ""
+        filename: str = self.resolve_failure_filename(path, kind, manifest)
+        manifest: str = self.resolve_failure_manifest(path, kind, manifest)
+        manifest_path: str = self.full_path(manifest)
+        manifest_str: str = ""
+        comment: str = ""
+        line_number: OptInt = None
+        additional_comment: str = ""
+        meta_bug_blocked: bool = False
+        create_bug_lambda: CreateBug = None
+        bugid: OptInt
+
         if bug_id is None:
-            comment, generated_bug_reference, bugid, attachments = (
-                self.generate_bugzilla_comment(
+            if self.mode == Mode.KNOWN_INTERMITTENT and kind == Kind.TOML:
+                (bugid, comment, line_number) = self.find_known_intermittent(
+                    repo, revision, task_id, manifest, filename, skip_if
+                )
+                if bugid is None:
+                    self.info("Ignoring failure as it is not a known intermittent")
+                    return
+                self.vinfo(f"Found known intermittent: {bugid}")
+                action = Action(
+                    manifest=manifest,
+                    path=path,
+                    label=label,
+                    revision=revision,
+                    disposition=self.mode,
+                    bugid=bugid,
+                    task_id=task_id,
+                    skip_if=skip_if,
+                )
+            else:
+                (
+                    create_bug_lambda,
+                    bugid,
+                    meta_bug_blocked,
+                    attachments,
+                    comment,
+                    line_number,
+                    summary,
+                    description,
+                    product,
+                    component,
+                ) = self.generate_bugzilla_comment(
                     manifest,
                     kind,
                     path,
@@ -1083,16 +1583,37 @@ class Skipfails:
                     repo,
                     meta_bug_id,
                 )
-            )
-            bug_reference = generated_bug_reference
+            bug_reference: str = f"Bug {bugid}"
+            if classification == Classification.SECONDARY and kind != Kind.WPT:
+                bug_reference += " (secondary)"
+            if self.mode == Mode.NEW_FAILURE:
+                action = Action(
+                    manifest=manifest,
+                    path=path,
+                    label=label,
+                    revision=revision,
+                    disposition=self.mode,
+                    bugid=bugid,
+                    task_id=task_id,
+                    skip_if=skip_if,
+                    summary=summary,
+                    description=description,
+                    product=product,
+                    component=component,
+                )
         else:
             bug_reference = f"Bug {bug_id}"
+
         if kind == Kind.WPT:
             if os.path.exists(manifest_path):
                 manifest_str = open(manifest_path, encoding="utf-8").read()
             else:
                 # ensure parent directories exist
                 os.makedirs(os.path.dirname(manifest_path), exist_ok=True)
+            if bug_id is None and create_bug_lambda is not None:
+                bug = create_bug_lambda()
+                if bug is not None:
+                    bug_reference = f"Bug {bug.id}"
             manifest_str, additional_comment = self.wpt_add_skip_if(
                 manifest_str, anyjs, skip_if, bug_reference
             )
@@ -1105,17 +1626,41 @@ class Skipfails:
 
             document = mp.source_documents[manifest_path]
             try:
-                additional_comment = add_skip_if(
+                additional_comment, carryover, bug_reference = add_skip_if(
                     document,
                     filename,
                     skip_if,
                     bug_reference,
+                    create_bug_lambda,
+                    self.mode,
                 )
             except Exception:
                 # Note: this fails to find a comment at the desired index
                 # Note: manifestparser len(skip_if) yields: TypeError: object of type 'bool' has no len()
                 additional_comment = ""
-
+                carryover = False
+            if bug_reference is None:  # skip-if was ignored
+                self.warning(
+                    f'Did NOT add redundant skip-if to: ["{filename}"] in manifest: "{manifest}"'
+                )
+                return
+            if self.mode == Mode.CARRYOVER:
+                if not carryover:
+                    self.vinfo(
+                        f'No --carryover in: ["{filename}"] in manifest: "{manifest}"'
+                    )
+                    return
+                bugid = self.bugid_from_reference(bug_reference)
+                action = Action(
+                    manifest=manifest,
+                    path=path,
+                    label=label,
+                    revision=revision,
+                    disposition=self.mode,
+                    bugid=bugid,
+                    task_id=task_id,
+                    skip_if=skip_if,
+                )
             manifest_str = alphabetize_toml_str(document)
         elif kind == Kind.LIST:
             if lineno == 0:
@@ -1135,6 +1680,10 @@ class Skipfails:
                     zero = True  # refest lower ranges should include zero
                 else:
                     zero = False
+                if bug_id is None and create_bug_lambda is not None:
+                    bug = create_bug_lambda()
+                    if bug is not None:
+                        bug_reference = f"Bug {bug.id}"
                 manifest_str, additional_comment = self.reftest_add_fuzzy_if(
                     manifest_str,
                     filename,
@@ -1147,40 +1696,151 @@ class Skipfails:
                 )
                 if not manifest_str and additional_comment:
                     self.warning(additional_comment)
-        if additional_comment:
-            comment += "\n" + additional_comment
-        if len(manifest_str) > 0:
-            fp = open(manifest_path, "w", encoding="utf-8", newline="\n")
-            fp.write(manifest_str)
-            fp.close()
-            self.info(f'Edited ["{filename}"] in manifest: "{manifest}"')
+        if manifest_str:
+            if line_number is not None:
+                comment += "\n" + self.error_log_context(revision, task_id, line_number)
+            if additional_comment:
+                comment += "\n" + additional_comment
+            if action is not None:
+                action.comment = comment
+                self.actions[action.key()] = action
+            if self.dry_run:
+                prefix = "Would have (--dry-run): "
+            else:
+                prefix = ""
+                with open(manifest_path, "w", encoding="utf-8", newline="\n") as fp:
+                    fp.write(manifest_str)
+            self.info(f'{prefix}Edited ["{filename}"] in manifest: "{manifest}"')
             if kind != Kind.LIST:
-                self.info(f'added skip-if condition: "{skip_if}" # {bug_reference}')
-
+                self.info(
+                    f'{prefix}Added {SkipfailsMode.name(self.mode)} skip-if condition: "{skip_if} # {bug_reference}"'
+                )
             if bug_id is None:
-                if self.dry_run:
-                    self.info(f"Dry-run NOT adding comment to Bug {bugid}:\n{comment}")
-                    self.info(
-                        f'Dry-run NOT editing ["{filename}"] in manifest: "{manifest}"'
+                return
+            if self.mode == Mode.NORMAL:
+                if self.bugzilla is None:
+                    self.vinfo(
+                        f"Bugzilla has been disabled: comment not added to Bug {bugid}:\n{comment}"
                     )
-                    self.info(
-                        f'would add skip-if condition: "{skip_if}" # {bug_reference}'
+                elif meta_bug_id is None:
+                    self.vinfo(
+                        f"No --meta-bug-id specified: comment not added to Bug {bugid}:\n{comment}"
                     )
-                    if task_id is not None and task_id not in attachments:
-                        self.info("would add compressed log for this task")
-                    return
-                elif self.bugzilla is None:
-                    self.warning(f"NOT adding comment to Bug {bugid}:\n{comment}")
+                elif self.dry_run:
+                    self.vinfo(
+                        f"Flag --dry-run: comment not added to Bug {bugid}:\n{comment}"
+                    )
                 else:
-                    self.add_bug_comment(bugid, comment, meta_bug_id)
-                    self.info(f"Added comment to Bug {bugid}:\n{comment}")
+                    self.add_bug_comment(
+                        bugid, comment, None if meta_bug_blocked else meta_bug_id
+                    )
                     if meta_bug_id is not None:
                         self.info(f"  Bug {bugid} blocks meta Bug: {meta_bug_id}")
-                    if task_id is not None and task_id not in attachments:
-                        self.add_attachment_log_for_task(bugid, task_id)
-                        self.info("Added compressed log for this task")
+                    self.info(f"Added comment to Bug {bugid}:\n{comment}")
+            else:
+                self.vinfo(f"New comment for Bug {bugid}:\n{comment}")
         else:
             self.error(f'Error editing ["{filename}"] in manifest: "{manifest}"')
+
+    def replace_tbd(self, meta_bug_id: int):
+        # First pass: file new bugs for TBD, collect comments by bugid
+        comments_by_bugid: DictStrList = {}
+        for k in self.actions:
+            action: Action = self.actions[k]
+            self.info(f"\n\n===== Action in manifest: {action.manifest} =====")
+            self.info(f"    path: {action.path}")
+            self.info(f"    label: {action.label}")
+            self.info(f"    skip_if: {action.skip_if}")
+            self.info(f"    disposition: {SkipfailsMode.name(action.disposition)}")
+            self.info(f"    bug_id: {action.bugid}")
+
+            kind: Kind = Kind.TOML
+            if not action.manifest.endswith(".toml"):
+                raise Exception(
+                    f'Only TOML manifests supported for --replace-tbd: "{action.manifest}"'
+                )
+            if action.disposition == Mode.NEW_FAILURE:
+                if self.bugzilla is None:
+                    self.vinfo(
+                        f"Bugzilla has been disabled: new bug not created for Bug {action.bugid}"
+                    )
+                elif self.dry_run:
+                    self.vinfo(
+                        f"Flag --dry-run: new bug not created for Bug {action.bugid}"
+                    )
+                else:
+                    # Check for existing bug
+                    bugs = self.get_bugs_by_summary(action.summary, meta_bug_id)
+                    if len(bugs) == 0:
+                        bug = self.create_bug(
+                            action.summary,
+                            action.description,
+                            action.product,
+                            action.component,
+                        )
+                        if bug is not None:
+                            action.bugid = str(bug.id)
+                    elif len(bugs) == 1:
+                        action.bugid = str(bugs[0].id)
+                        self.vinfo(f'Found Bug {action.bugid} "{action.summary}"')
+                    else:
+                        raise Exception(
+                            f'More than one bug found for summary: "{action.summary}"'
+                        )
+                    manifest_path: str = self.full_path(action.manifest)
+                    filename: str = self.resolve_failure_filename(
+                        action.path, kind, action.manifest
+                    )
+
+                    mp = ManifestParser(use_toml=True, document=True)
+                    mp.read(manifest_path)
+                    document = mp.source_documents[manifest_path]
+                    updated = replace_tbd_skip_if(
+                        document, filename, action.skip_if, action.bugid
+                    )
+                    if updated:
+                        manifest_str = alphabetize_toml_str(document)
+                        with open(
+                            manifest_path, "w", encoding="utf-8", newline="\n"
+                        ) as fp:
+                            fp.write(manifest_str)
+                        self.info(
+                            f'Edited ["{filename}"] in manifest: "{action.manifest}"'
+                        )
+                    else:
+                        self.error(
+                            f'Error editing ["{filename}"] in manifest: "{action.manifest}"'
+                        )
+                    self.actions[k] = action
+            comments: ListStr = comments_by_bugid.get(action.bugid, [])
+            comments.append(action.comment)
+            comments_by_bugid[action.bugid] = comments
+        # Second pass: Add combined comment for each bugid
+        for k in self.actions:
+            action: Action = self.actions[k]
+            comments: ListStr = comments_by_bugid.get(action.bugid, [])
+            if self.bugzilla is not None and not self.dry_run:
+                action.disposition = SkipfailsMode.bug_filed(action.disposition)
+                self.actions[k] = action
+            if len(comments) > 0:  # comments not yet added
+                self.info(
+                    f"\n\n===== Filing Combined Comment for Bug {action.bugid} ====="
+                )
+                comment: str = ""
+                for c in comments:
+                    comment += c + "\n"
+                if self.bugzilla is None:
+                    self.vinfo(
+                        f"Bugzilla has been disabled: comment not added to Bug {action.bugid}:\n{comment}"
+                    )
+                elif self.dry_run:
+                    self.vinfo(
+                        f"Flag --dry-run: comment not added to Bug {action.bugid}:\n{comment}"
+                    )
+                else:
+                    self.add_bug_comment(int(action.bugid), comment)
+                    self.info(f"Added comment to Bug {action.bugid}:\n{comment}")
+                comments_by_bugid[action.bugid] = []
 
     def get_variants(self):
         """Get mozinfo for each test variants"""
@@ -1188,9 +1848,8 @@ class Skipfails:
         if len(self.variants) == 0:
             variants_file = "taskcluster/test_configs/variants.yml"
             variants_path = self.full_path(variants_file)
-            fp = open(variants_path, encoding="utf-8")
-            raw_variants = load(fp, Loader=Loader)
-            fp.close()
+            with open(variants_path, encoding="utf-8") as fp:
+                raw_variants = load(fp, Loader=Loader)
             for k, v in raw_variants.items():
                 mozinfo = k
                 if "mozinfo" in v:
@@ -1240,7 +1899,7 @@ class Skipfails:
         self.info("Fetching platform permutations...")
         import taskcluster
 
-        url: Optional[str] = None
+        url: OptStr = None
         index = taskcluster.Index(
             {
                 "rootUrl": "https://firefox-ci-tc.services.mozilla.com",
@@ -1254,12 +1913,12 @@ class Skipfails:
         )
 
         # Typing from findTask is wrong, so we need to convert to Any
-        result: Optional[dict[str, Any]] = index.findTask(route)
+        result: OptTaskResult = index.findTask(route)
         if result is not None:
             task_id: str = result["taskId"]
             result = queue.listLatestArtifacts(task_id)
             if result is not None and task_id is not None:
-                artifact_list: list[dict[Literal["name"], str]] = result["artifacts"]
+                artifact_list: ArtifactList = result["artifacts"]
                 for artifact in artifact_list:
                     artifact_name = artifact["name"]
                     if artifact_name.endswith("test-info-testrun-matrix.json"):
@@ -1269,6 +1928,7 @@ class Skipfails:
                         break
 
         if url is not None:
+            self.vinfo("Retrieving platform permutations ...")
             response = requests.get(url, headers={"User-agent": "mach-test-info/1.0"})
             self.platform_permutations = response.json()
         else:
@@ -1280,7 +1940,7 @@ class Skipfails:
 
         os = platform_info.os
         build_type = platform_info.build_type
-        runtimes = platform_info.test_variant
+        runtimes = platform_info.test_variant.split("+")
 
         skip_if = None
         if os == "linux":
@@ -1313,13 +1973,13 @@ class Skipfails:
                 skip_if += "ThreadSanitizer"
             # See implicit VARIANT_DEFAULTS in
             # https://searchfox.org/mozilla-central/source/layout/tools/reftest/manifest.sys.mjs#30
-            fission = "no-fission" not in runtimes
+            no_fission = "!fission" not in runtimes
             snapshot = "snapshot" in runtimes
             swgl = "swgl" in runtimes
             nogpu = "nogpu" in runtimes
-            if not self.implicit_vars and fission:
+            if not self.implicit_vars and no_fission:
                 skip_if += aa + "fission"
-            elif not fission:  # implicit default: fission
+            elif not no_fission:  # implicit default: fission
                 skip_if += aa + nn + "fission"
             if platform_info.bits is not None:
                 if platform_info.bits == "32":
@@ -1346,18 +2006,16 @@ class Skipfails:
     def task_to_skip_if(
         self,
         manifest: str,
-        task: Union[str, PlatformInfo],
+        task: TaskIdOrPlatformInfo,
         kind: str,
         file_path: str,
         high_freq: bool,
-    ) -> Optional[str]:
+    ) -> OptStr:
         """Calculate the skip-if condition for failing task task_id"""
         if isinstance(task, str):
-            self.info(f"Fetching task data for {task}")
             extra = self.get_extra(task)
         else:
             extra = task
-
         if kind == Kind.WPT:
             qq = '"'
             aa = " and "
@@ -1371,51 +2029,52 @@ class Skipfails:
         if os is not None:
             if kind == Kind.LIST:
                 skip_if = self._get_list_skip_if(extra)
-            elif os_version is not None:
-                skip_if = "os" + eq + qq + os + qq
-                if os == "android":
-                    skip_if += aa + "android_version" + eq + qq + os_version + qq
-                else:
-                    skip_if += aa + "os_version" + eq + qq + os_version + qq
-
-        processor = extra.arch
-        if skip_if is not None and kind != Kind.LIST:
-            # Rosetta specific hack for macos 11.20
-            if extra.os == "mac" and processor == "aarch64":
-                skip_if += aa + "arch" + eq + qq + processor + qq
-            elif processor is not None:
-                skip_if += aa + "processor" + eq + qq + processor + qq
-
-            failure_key = os + os_version + processor + manifest + file_path
-            if self.failed_platforms.get(failure_key) is None:
-                if not self.platform_permutations:
-                    self._fetch_platform_permutations()
-                permutations = (
-                    self.platform_permutations.get(manifest, {})
-                    .get(os, {})
-                    .get(os_version, {})
-                    .get(processor, None)
-                )
-
-                self.failed_platforms[failure_key] = FailedPlatform(
-                    permutations, high_freq
-                )
-
-            build_types = extra.build_type
-            skip_cond = self.failed_platforms[failure_key].get_skip_string(
-                aa, build_types, extra.test_variant
-            )
-            if skip_cond is not None:
-                if kind == Kind.WPT:
-                    # ensure ! -> 'not', primarily fission and e10s
-                    skip_cond = skip_cond.replace("!", "not ")
-                skip_if += skip_cond
             else:
-                skip_if = None
+                skip_if = "os" + eq + qq + os + qq
+                if os_version is not None:
+                    skip_if += aa + "os_version" + eq + qq + os_version + qq
+        arch = extra.arch
+        if arch is not None and skip_if is not None and kind != Kind.LIST:
+            skip_if += aa + "arch" + eq + qq + arch + qq
+            if high_freq:
+                failure_key = os + os_version + arch + manifest + file_path
+                if self.failed_platforms.get(failure_key) is None:
+                    if not self.platform_permutations:
+                        self._fetch_platform_permutations()
+                    permutations = (
+                        self.platform_permutations.get(manifest, {})
+                        .get(os, {})
+                        .get(os_version, {})
+                        .get(arch, None)
+                    )
+                    self.failed_platforms[failure_key] = FailedPlatform(
+                        permutations, high_freq
+                    )
+                skip_cond = self.failed_platforms[failure_key].get_skip_string(
+                    aa, extra.build_type, extra.test_variant
+                )
+                if skip_cond is not None:
+                    skip_if += skip_cond
+                else:
+                    skip_if = None
+            else:  # not high_freq
+                skip_if += aa + extra.build_type
+                variants = extra.test_variant.split("+")
+                if len(variants) >= 3:
+                    self.warning(
+                        f'Removing all variants "{" ".join(variants)}" from skip-if condition in manifest={manifest} and file={file_path}'
+                    )
+                else:
+                    for tv in variants:
+                        if tv != "no_variant":
+                            skip_if += aa + tv
         elif skip_if is None:
             raise Exception(
                 f"Unable to calculate skip-if condition from manifest={manifest} and file={file_path}"
             )
+        if skip_if is not None and kind == Kind.WPT:
+            # ensure ! -> 'not', primarily fission and e10s
+            skip_if = skip_if.replace("!", "not ")
         return skip_if
 
     def get_file_info(self, path, product="Testing", component="General"):
@@ -1427,9 +2086,14 @@ class Skipfails:
         if path != DEF and self.command_context is not None:
             reader = self.command_context.mozbuild_reader(config_mode="empty")
             info = reader.files_info([path])
-            cp = info[path]["BUG_COMPONENT"]
-            product = cp.product
-            component = cp.component
+            try:
+                cp = info[path]["BUG_COMPONENT"]
+            except TypeError:
+                # TypeError: BugzillaComponent.__new__() missing 2 required positional arguments: 'product' and 'component'
+                pass
+            else:
+                product = cp.product
+                component = cp.component
         return product, component
 
     def get_filename_in_manifest(self, manifest: str, path: str) -> str:
@@ -1453,8 +2117,8 @@ class Skipfails:
     def get_push_id(self, revision: str, repo: str):
         """Return the push_id for revision and repo (or None)"""
 
-        self.vinfo(f"Retrieving push_id for {repo} revision: {revision} ...")
         if revision in self.push_ids:  # if cached
+            self.vinfo(f"Getting push_id for {repo} revision: {revision} ...")
             push_id = self.push_ids[revision]
         else:
             push_id = None
@@ -1463,6 +2127,7 @@ class Skipfails:
             params["full"] = "true"
             params["count"] = 10
             params["revision"] = revision
+            self.vinfo(f"Retrieving push_id for {repo} revision: {revision} ...")
             r = requests.get(push_url, headers=self.headers, params=params)
             if r.status_code != 200:
                 self.warning(f"FAILED to query Treeherder = {r} for {r.url}")
@@ -1477,17 +2142,36 @@ class Skipfails:
             self.push_ids[revision] = push_id
         return push_id
 
+    def cached_job_ids(self, revision):
+        if len(self.push_ids) == 0 and len(self.job_ids) == 0:
+            # no pre-caching for tests
+            job_ids_cached = self.cached_path(revision, "job_ids.json")
+            if os.path.exists(job_ids_cached):
+                self.job_ids = read_json(job_ids_cached)
+                for k in self.job_ids:
+                    push_id, _task_id = k.split(":")
+                    self.push_ids[revision] = push_id
+                    break
+
+    def cache_job_ids(self, revision):
+        job_ids_cached = self.cached_path(revision, "job_ids.json")
+        if not os.path.exists(job_ids_cached):
+            write_json(job_ids_cached, self.job_ids)
+
     def get_job_id(self, push_id, task_id):
         """Return the job_id for push_id, task_id (or None)"""
 
-        self.vinfo(f"Retrieving job_id for push_id: {push_id}, task_id: {task_id} ...")
         k = f"{push_id}:{task_id}"
         if k in self.job_ids:  # if cached
+            self.vinfo(f"Getting job_id for push_id: {push_id}, task_id: {task_id} ...")
             job_id = self.job_ids[k]
         else:
             job_id = None
             params = {}
             params["push_id"] = push_id
+            self.vinfo(
+                f"Retrieving job_id for push_id: {push_id}, task_id: {task_id} ..."
+            )
             r = requests.get(self.jobs_url, headers=self.headers, params=params)
             if r.status_code != 200:
                 self.warning(f"FAILED to query Treeherder = {r} for {r.url}")
@@ -1504,48 +2188,67 @@ class Skipfails:
             self.job_ids[k] = job_id
         return job_id
 
-    def get_bug_suggestions(self, repo, job_id, path, anyjs=None):
+    def cached_bug_suggestions(self, repo, revision, job_id) -> JSONType:
         """
-        Return the (suggestions_url, line_number, line, log_url)
+        Return the bug_suggestions JSON for the job_id
+        Use the cache, if present, else download from treeherder
+        """
+
+        if job_id in self.suggestions:
+            self.vinfo(
+                f"Getting bug_suggestions for {repo} revision: {revision} job_id: {job_id}"
+            )
+            suggestions = self.suggestions[job_id]
+        else:
+            suggestions_path = self.cached_path(revision, f"suggest-{job_id}.json")
+            if os.path.exists(suggestions_path):
+                self.vinfo(
+                    f"Reading cached bug_suggestions for {repo} revision: {revision} job_id: {job_id}"
+                )
+                suggestions = read_json(suggestions_path)
+            else:
+                suggestions_url = f"https://treeherder.mozilla.org/api/project/{repo}/jobs/{job_id}/bug_suggestions/"
+                self.vinfo(
+                    f"Retrieving bug_suggestions for {repo} revision: {revision} job_id: {job_id}"
+                )
+                r = requests.get(suggestions_url, headers=self.headers)
+                if r.status_code != 200:
+                    self.warning(f"FAILED to query Treeherder = {r} for {r.url}")
+                    return None
+                suggestions = r.json()
+                write_json(suggestions_path, suggestions)
+            self.suggestions[job_id] = suggestions
+        return suggestions
+
+    def get_bug_suggestions(
+        self, repo, revision, job_id, path, anyjs=None
+    ) -> Suggestion:
+        """
+        Return the (line_number, line, log_url)
         for the given repo and job_id
         """
-        self.vinfo(
-            f"Retrieving bug_suggestions for {repo} job_id: {job_id}, path: {path} ..."
-        )
-        suggestions_url = f"https://treeherder.mozilla.org/api/project/{repo}/jobs/{job_id}/bug_suggestions/"
-        line_number = None
-        line = None
-        log_url = None
-        r = requests.get(suggestions_url, headers=self.headers)
-        if r.status_code != 200:
-            self.warning(f"FAILED to query Treeherder = {r} for {r.url}")
-        else:
-            if anyjs is not None:
-                pathdir = os.path.dirname(path) + "/"
+        line_number: int = None
+        line: str = None
+        log_url: str = None
+        suggestions: JSONType = self.cached_bug_suggestions(repo, revision, job_id)
+        if suggestions is not None:
+            paths: ListStr
+            if anyjs is not None and len(anyjs) > 0:
+                pathdir: str = os.path.dirname(path) + "/"
                 paths = [pathdir + f for f in anyjs.keys()]
             else:
                 paths = [path]
-            response = r.json()
-            if len(response) > 0:
-                for sugg in response:
+            if len(suggestions) > 0:
+                for suggestion in suggestions:
                     for p in paths:
-                        path_end = sugg.get("path_end", None)
+                        path_end = suggestion.get("path_end", None)
                         # handles WPT short paths
                         if path_end is not None and p.endswith(path_end):
-                            line_number = sugg["line_number"] + 1
-                            line = sugg["search"]
+                            line_number = suggestion["line_number"] + 1
+                            line = suggestion["search"]
                             log_url = f"https://treeherder.mozilla.org/logviewer?repo={repo}&job_id={job_id}&lineNumber={line_number}"
                             break
-        rv = (suggestions_url, line_number, line, log_url)
-        return rv
-
-    def read_json(self, filename):
-        """read data as JSON from filename"""
-
-        fp = open(filename, encoding="utf-8")
-        data = json.load(fp)
-        fp.close()
-        return data
+        return (line_number, line, log_url)
 
     def read_tasks(self, filename):
         """read tasks as JSON from filename"""
@@ -1553,7 +2256,7 @@ class Skipfails:
         if not os.path.exists(filename):
             msg = f"use-tasks JSON file does not exist: {filename}"
             raise OSError(2, msg, filename)
-        tasks = self.read_json(filename)
+        tasks = read_json(filename)
         tasks = [Mock(task, MOCK_TASK_DEFAULTS, MOCK_TASK_INITS) for task in tasks]
         for task in tasks:
             if len(task.extra) > 0:  # pre-warm cache for extra information
@@ -1569,7 +2272,7 @@ class Skipfails:
         if not os.path.exists(filename):
             msg = f"use-failures JSON file does not exist: {filename}"
             raise OSError(2, msg, filename)
-        failures = self.read_json(filename)
+        failures = read_json(filename)
         return failures
 
     def read_bugs(self, filename):
@@ -1578,23 +2281,14 @@ class Skipfails:
         if not os.path.exists(filename):
             msg = f"bugs JSON file does not exist: {filename}"
             raise OSError(2, msg, filename)
-        bugs = self.read_json(filename)
+        bugs = read_json(filename)
         bugs = [Mock(bug, MOCK_BUG_DEFAULTS) for bug in bugs]
         return bugs
-
-    def write_json(self, filename, data):
-        """saves data as JSON to filename"""
-        fp = open(filename, "w", encoding="utf-8")
-        json.dump(data, fp, indent=2, sort_keys=True)
-        fp.close()
 
     def write_tasks(self, save_tasks, tasks):
         """saves tasks as JSON to save_tasks"""
         jtasks = []
         for task in tasks:
-            if not isinstance(task, TestTask):
-                continue
-
             extras = self.get_extra(task.id)
             if not extras:
                 continue
@@ -1630,44 +2324,26 @@ class Skipfails:
                 except TaskclusterRestFailure:
                     continue
             for k in failure_types:
-                jft[k] = [[f[0], f[1].value] for f in task.failure_types[k]]
+                if isinstance(task, TestTask):
+                    jft[k] = [[f[0], f[1].value] for f in task.failure_types[k]]
+                else:
+                    jft[k] = [[f[0], f[1]] for f in task.failure_types[k]]
             jtask["failure_types"] = jft
             jtasks.append(jtask)
-        self.write_json(save_tasks, jtasks)
+        write_json(save_tasks, jtasks)
 
-    def label_to_platform_testname(self, label: str):
-        """convert from label to platform, testname for mach command line"""
-        platform = None
-        testname = None
-        platform_details = label.split("/")
-        if len(platform_details) == 2:
-            platform, details = platform_details
-            words = details.split("-")
-            if len(words) > 2:
-                platform += "/" + words.pop(0)  # opt or debug
-                try:
-                    _chunk = int(words[-1])
-                    words.pop()
-                except ValueError:
-                    pass
-                words.pop()  # remove test suffix
-                testname = "-".join(words)
-            else:
-                platform = None
-        return platform, testname
-
-    def add_attachment_log_for_task(self, bugid, task_id):
+    def add_attachment_log_for_task(self, bugid: str, task_id: str):
         """Adds compressed log for this task to bugid"""
 
         log_url = f"https://firefox-ci-tc.services.mozilla.com/api/queue/v1/task/{task_id}/artifacts/public/logs/live_backing.log"
+        self.vinfo(f"Retrieving full log for task: {task_id}")
         r = requests.get(log_url, headers=self.headers)
         if r.status_code != 200:
             self.error(f"Unable to get log for task: {task_id}")
             return
         attach_fp = tempfile.NamedTemporaryFile()
-        fp = gzip.open(attach_fp, "wb")
-        fp.write(r.text.encode("utf-8"))
-        fp.close()
+        with gzip.open(attach_fp, "wb") as fp:
+            fp.write(r.text.encode("utf-8"))
         if self._initialize_bzapi():
             description = ATTACHMENT_DESCRIPTION + task_id
             file_name = TASK_LOG + ".gz"
@@ -1675,7 +2351,7 @@ class Skipfails:
             content_type = "application/gzip"
             try:
                 self._bzapi.attachfile(
-                    [bugid],
+                    [int(bugid)],
                     attach_fp.name,
                     description,
                     file_name=file_name,
@@ -1686,9 +2362,7 @@ class Skipfails:
             except Fault:
                 pass  # Fault expected: Failed to fetch key 9372091 from network storage: The specified key does not exist.
 
-    def wpt_paths(
-        self, shortpath: str
-    ) -> tuple[Optional[str], Optional[str], Optional[str], Optional[str]]:
+    def wpt_paths(self, shortpath: str) -> WptPaths:
         """
         Analyzes the WPT short path for a test and returns
         (path, manifest, query, anyjs) where
@@ -1794,7 +2468,7 @@ class Skipfails:
             i += 2
             n += 2
             anyjs[section] = True
-        if anyjs:
+        if len(anyjs) > 0:
             for section in anyjs:
                 if not anyjs[section]:
                     if i > 0 and i - 1 < n and lines[i - 1] != "":
@@ -1962,12 +2636,12 @@ class Skipfails:
             if len(allpaths) > 0:
                 return allpaths  # cached (including self tests)
         error_url = f"https://firefox-ci-tc.services.mozilla.com/api/queue/v1/task/{task_id}/artifacts/public/test_info/reftest_errorsummary.log"
-        self.vinfo(f"Requesting reftest_errorsummary.log for task: {task_id}")
+        self.vinfo(f"Retrieving reftest_errorsummary.log for task: {task_id}")
         r = requests.get(error_url, headers=self.headers)
         if r.status_code != 200:
             self.error(f"Unable to get reftest_errorsummary.log for task: {task_id}")
             return allpaths
-        for line in r.text.encode("utf-8").splitlines():
+        for line in r.text.splitlines():
             summary = json.loads(line)
             group = summary.get(GROUP, "")
             if not group or not os.path.exists(group):  # not error line
@@ -2030,3 +2704,126 @@ class Skipfails:
             if test == path:
                 allpaths.append(test)
         return allpaths
+
+    def find_known_intermittent(
+        self,
+        repo: str,
+        revision: str,
+        task_id: str,
+        manifest: str,
+        filename: str,
+        skip_if: str,
+    ) -> TupleOptIntStrOptInt:
+        """
+        Returns bugid if a known intermittent is found.
+        Also returns a suggested comment to be added to the known intermittent
+        bug... (currently not implemented). The args
+          manifest, filename, skip_if
+        are only used to create the comment
+        """
+        bugid = None
+        suggestions: JSONType = None
+        line_number: OptInt = None
+        comment: str = f'Intermittent failure in manifest: "{manifest}"'
+        comment += f'\n  in test: "[{filename}]"'
+        comment += f'\n     added skip-if: "{skip_if}"'
+        if revision is not None and repo is not None:
+            push_id = self.get_push_id(revision, repo)
+            if push_id is not None:
+                job_id = self.get_job_id(push_id, task_id)
+                if job_id is not None:
+                    suggestions: JSONType = self.cached_bug_suggestions(
+                        repo, revision, job_id
+                    )
+        if suggestions is not None:
+            top: JSONType = None
+            for suggestion in suggestions:
+                path_end = suggestion.get("path_end", None)
+                search: str = suggestion.get("search", "")
+                if (
+                    path_end is not None
+                    and path_end.endswith(filename)
+                    and (
+                        search.startswith("PROCESS-CRASH")
+                        or (search.startswith("TEST-UNEXPECTED") and top is None)
+                    )
+                ):
+                    top = suggestion
+            if top is not None:
+                recent_bugs = top.get("bugs", {}).get("open_recent", [])
+                for bug in recent_bugs:
+                    summary: str = bug.get("summary", "")
+                    if summary.endswith("single tracking bug"):
+                        bugid: int = bug.get("id", None)
+                        line_number = top["line_number"] + 1
+                        log_url: str = (
+                            f"https://treeherder.mozilla.org/logviewer?repo={repo}&job_id={job_id}&lineNumber={line_number}"
+                        )
+                        comment += f"\nError log line {line_number}: {log_url}"
+        return (bugid, comment, line_number)
+
+    def error_log_context(self, revision: str, task_id: str, line_number: int) -> str:
+        context: str = ""
+        context_path: str = self.cached_path(
+            revision, f"context-{task_id}-{line_number}.txt"
+        )
+        path = Path(context_path)
+        if path.exists():
+            self.vinfo(
+                f"Reading cached error log context for revision: {revision} task-id: {task_id} line: {line_number}"
+            )
+            context = path.read_text(encoding="utf-8")
+        else:
+            delta: int = 10
+            log_url = f"https://firefoxci.taskcluster-artifacts.net/{task_id}/0/public/logs/live_backing.log"
+            self.vinfo(
+                f"Retrieving error log context for revision: {revision} task-id: {task_id} line: {line_number}"
+            )
+            r = requests.get(log_url, headers=self.headers)
+            if r.status_code != 200:
+                self.warning(f"Unable to get log for task: {task_id}")
+                return context
+            log: str = r.text
+            n: int = len(log)
+            i: int = 0
+            j: int = log.find("\n", i)
+            if j < 0:
+                j = n
+            line: int = 1
+            prefix: str
+            while i < n:
+                if line >= line_number - delta and line <= line_number + delta:
+                    prefix = f"{line:6d}"
+                    if line == line_number:
+                        prefix = prefix.replace(" ", ">")
+                    context += f"{prefix}: {log[i:j]}\n"
+                i = j + 1
+                j = log.find("\n", i)
+                if j < 0:
+                    j = n
+                line += 1
+            path.write_text(context, encoding="utf-8")
+        return context
+
+    def read_actions(self, meta_bug_id: int):
+        cache_dir = self.full_path(CACHE_DIR)
+        meta_dir = os.path.join(cache_dir, str(meta_bug_id))
+        actions_path = os.path.join(meta_dir, "actions.json")
+        if not os.path.exists(meta_dir):
+            self.vinfo(f"creating meta_bug_id cache dir: {meta_dir}")
+            os.mkdir(meta_dir)
+        actions: DictAction = {}
+        if os.path.exists(actions_path):
+            actions = read_json(actions_path)
+        for k in actions:
+            if k not in self.actions:  # do not supercede newly created actions
+                self.actions[k] = Action(**actions[k])
+
+    def write_actions(self, meta_bug_id: int):
+        cache_dir = self.full_path(CACHE_DIR)
+        meta_dir = os.path.join(cache_dir, str(meta_bug_id))
+        actions_path = os.path.join(meta_dir, "actions.json")
+        if not os.path.exists(meta_dir):
+            self.vinfo(f"creating meta_bug_id cache dir: {meta_dir}")
+            os.mkdir(meta_dir)
+        write_json(actions_path, self.actions)

@@ -82,7 +82,9 @@ const NO_ETAG = "NO_ETAG";
  */
 class ForbiddenURLError extends Error {
   constructor(url, rejectionType) {
-    super(`Forbidden URL: ${url} (${rejectionType})`);
+    super(
+      `Forbidden URL: ${url} (${rejectionType}). Set MOZ_ALLOW_EXTERNAL_ML_HUB=1 to allow external URLs.`
+    );
     this.name = "ForbiddenURLError";
     this.url = url;
   }
@@ -1389,6 +1391,9 @@ export class ModelHub {
     this.reset = reset;
   }
 
+  /**
+   * @param {string} url
+   */
   allowedURL(url) {
     if (this.allowDenyList === null) {
       return { allowed: true, rejectionType: lazy.RejectionType.NONE };
@@ -1495,7 +1500,8 @@ export class ModelHub {
     };
   }
 
-  /** Creates the file URL from the organization, model, and version.
+  /**
+   * Creates the file URL from the organization, model, and version.
    *
    * @param {object} config - The configuration object to be updated.
    * @param {string} config.model - model name
@@ -1517,7 +1523,8 @@ export class ModelHub {
     });
   }
 
-  /** Checks the model and revision inputs.
+  /**
+   * Checks the model and revision inputs.
    *
    * @param { string } model
    * @param { string } revision

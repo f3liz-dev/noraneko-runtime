@@ -902,10 +902,15 @@ static std::pair<uint32_t, uint32_t> FindStartOfUninitializedAndUndefinedSlots(
 }
 
 void MacroAssembler::initTypedArraySlots(
-    Register obj, Register length, Register temp1, Register temp2,
-    LiveRegisterSet liveRegs, Label* fail,
+    Register obj, Register length, Register temp1, Register temp2, Label* fail,
     const FixedLengthTypedArrayObject* templateObj) {
   MOZ_ASSERT(!templateObj->hasBuffer());
+  MOZ_ASSERT(obj != length);
+  MOZ_ASSERT(obj != temp1);
+  MOZ_ASSERT(obj != temp2);
+  MOZ_ASSERT(length != temp1);
+  MOZ_ASSERT(length != temp2);
+  MOZ_ASSERT(temp1 != temp2);
 
   constexpr size_t dataSlotOffset = ArrayBufferViewObject::dataOffset();
   constexpr size_t dataOffset = dataSlotOffset + sizeof(HeapSlot);
@@ -926,13 +931,14 @@ void MacroAssembler::initTypedArraySlots(
   size_t inlineCapacity = templateObj->tenuredSizeOfThis() - dataOffset;
   movePtr(ImmWord(inlineCapacity), temp2);
 
-  // Ensure volatile |obj| is saved across the call.
+  // Ensure volatile |obj| and |length| are saved across the call.
   if (obj.volatile_()) {
-    liveRegs.addUnchecked(obj);
+    Push(obj);
   }
-
+  if (length.volatile_()) {
+    Push(length);
+  }
   // Allocate a buffer on the heap to store the data elements.
-  PushRegsInMask(liveRegs);
   using Fn =
       void (*)(JSContext*, FixedLengthTypedArrayObject*, int32_t, size_t);
   setupUnalignedABICall(temp1);
@@ -942,7 +948,12 @@ void MacroAssembler::initTypedArraySlots(
   passABIArg(length);
   passABIArg(temp2);
   callWithABI<Fn, AllocateAndInitTypedArrayBuffer>();
-  PopRegsInMask(liveRegs);
+  if (length.volatile_()) {
+    Pop(length);
+  }
+  if (obj.volatile_()) {
+    Pop(obj);
+  }
 
   // Fail when data slot is UndefinedValue.
   branchTestUndefined(Assembler::Equal, Address(obj, dataSlotOffset), fail);
@@ -1985,8 +1996,7 @@ void MacroAssembler::loadInt32ToStringWithBase(
   branch32(Assembler::AboveOrEqual, input, scratch1, fail);
   {
     // Compute |scratch1 = input / base| and |scratch2 = input % base|.
-    move32(input, scratch1);
-    flexibleDivMod32(base, scratch1, scratch2, true, volatileRegs);
+    flexibleDivMod32(input, base, scratch1, scratch2, true, volatileRegs);
 
     // Compute the digits of the divisor and remainder.
     toChar(scratch1);
@@ -2692,6 +2702,17 @@ void MacroAssembler::loadRealmFuse(RealmFuses::FuseIndex index, Register dest) {
   loadPtr(AbsoluteAddress(ContextRealmPtr(runtime())), dest);
   loadPtr(Address(dest, RealmFuses::offsetOfFuseWordRelativeToRealm(index)),
           dest);
+}
+
+void MacroAssembler::loadRuntimeFuse(RuntimeFuses::FuseIndex index,
+                                     Register dest) {
+  loadPtr(AbsoluteAddress(runtime()->addressOfRuntimeFuse(index)), dest);
+}
+
+void MacroAssembler::guardRuntimeFuse(RuntimeFuses::FuseIndex index,
+                                      Label* fail) {
+  AbsoluteAddress addr(runtime()->addressOfRuntimeFuse(index));
+  branchPtr(Assembler::NotEqual, addr, ImmWord(0), fail);
 }
 
 void MacroAssembler::switchToRealm(const void* realm, Register scratch) {
@@ -4615,7 +4636,7 @@ void MacroAssembler::moveValue(const TypedOrValueRegister& src,
   AnyRegister reg = src.typedReg();
 
   if (!IsFloatingPointType(type)) {
-    boxNonDouble(ValueTypeFromMIRType(type), reg.gpr(), dest);
+    tagValue(ValueTypeFromMIRType(type), reg.gpr(), dest);
     return;
   }
 
@@ -5870,9 +5891,10 @@ static void MoveDataBlock(MacroAssembler& masm, Register base, int32_t from,
 #elif defined(JS_CODEGEN_ARM) || defined(JS_CODEGEN_X86)
   static constexpr Register scratch = ABINonArgReg0;
   masm.push(scratch);
-#elif defined(JS_CODEGEN_LOONG64) || defined(JS_CODEGEN_MIPS64) || \
+#elif defined(JS_CODEGEN_MIPS64) || defined(JS_CODEGEN_LOONG64) || \
     defined(JS_CODEGEN_RISCV64)
-  ScratchRegisterScope scratch(masm);
+  UseScratchRegisterScope temps(masm);
+  Register scratch = temps.Acquire();
 #elif !defined(JS_CODEGEN_NONE)
   const Register scratch = ScratchReg;
 #else
@@ -6181,11 +6203,16 @@ static void CollapseWasmFrameSlow(MacroAssembler& masm,
   masm.append(desc, CodeOffset(data.trampolineOffset));
 #else
 
-#  if defined(JS_CODEGEN_MIPS64) || defined(JS_CODEGEN_LOONG64)
+#  if defined(JS_CODEGEN_MIPS64)
   // intermediate values in ra can break the unwinder.
   masm.mov(&data.trampoline, ScratchRegister);
   // thus, modify ra in only one instruction.
   masm.mov(ScratchRegister, tempForRA);
+#  elif defined(JS_CODEGEN_LOONG64)
+  // intermediate values in ra can break the unwinder.
+  masm.mov(&data.trampoline, SavedScratchRegister);
+  // thus, modify ra in only one instruction.
+  masm.mov(SavedScratchRegister, tempForRA);
 #  else
   masm.mov(&data.trampoline, tempForRA);
 #  endif
@@ -7460,7 +7487,7 @@ void MacroAssembler::wasmNewStructObject(Register instance, Register result,
   // Don't execute the inline path if gc zeal or tracing are active.
   loadPtr(Address(instance, wasm::Instance::offsetOfAddressOfGCZealModeBits()),
           temp);
-  loadPtr(Address(temp, 0), temp);
+  load32(Address(temp, 0), temp);
   branch32(Assembler::NotEqual, temp, Imm32(0), fail);
 #endif
 
@@ -7517,7 +7544,7 @@ void MacroAssembler::wasmNewArrayObject(Register instance, Register result,
   // Don't execute the inline path if gc zeal or tracing are active.
   loadPtr(Address(instance, wasm::Instance::offsetOfAddressOfGCZealModeBits()),
           temp);
-  loadPtr(Address(temp, 0), temp);
+  load32(Address(temp, 0), temp);
   branch32(Assembler::NotEqual, temp, Imm32(0), fail);
 #endif
 
@@ -7681,7 +7708,7 @@ void MacroAssembler::wasmNewArrayObjectFixed(
   // Don't execute the inline path if gc zeal or tracing are active.
   loadPtr(Address(instance, wasm::Instance::offsetOfAddressOfGCZealModeBits()),
           temp1);
-  loadPtr(Address(temp1, 0), temp1);
+  load32(Address(temp1, 0), temp1);
   branch32(Assembler::NotEqual, temp1, Imm32(0), fail);
 #endif
 
@@ -8154,7 +8181,8 @@ void MacroAssembler::debugAssertCanonicalInt32(Register r) {
 #    elif defined(JS_CODEGEN_MIPS64) || defined(JS_CODEGEN_LOONG64) || \
         defined(JS_CODEGEN_RISCV64)
     Label ok;
-    ScratchRegisterScope scratch(asMasm());
+    UseScratchRegisterScope temps(*this);
+    Register scratch = temps.Acquire();
     move32SignExtendToPtr(r, scratch);
     branchPtr(Assembler::Equal, r, scratch, &ok);
     breakpoint();
@@ -9492,7 +9520,8 @@ void MacroAssembler::iteratorMore(Register obj, ValueOperand output,
 
   // If propertyCursor_ < propertiesEnd_, load the next string and advance
   // the cursor.  Otherwise return MagicValue(JS_NO_ITER_VALUE).
-  Label iterDone;
+  Label iterDone, restart;
+  bind(&restart);
   Address cursorAddr(outputScratch, NativeIterator::offsetOfPropertyCursor());
   Address cursorEndAddr(outputScratch, NativeIterator::offsetOfPropertiesEnd());
   loadPtr(cursorAddr, temp);
@@ -9502,7 +9531,11 @@ void MacroAssembler::iteratorMore(Register obj, ValueOperand output,
   loadPtr(Address(temp, 0), temp);
 
   // Increase the cursor.
-  addPtr(Imm32(sizeof(GCPtr<JSLinearString*>)), cursorAddr);
+  addPtr(Imm32(sizeof(IteratorProperty)), cursorAddr);
+
+  // Check if the property has been deleted while iterating. Skip it if so.
+  branchTestPtr(Assembler::NonZero, temp,
+                Imm32(uint32_t(IteratorProperty::DeletedBit)), &restart);
 
   tagValue(JSVAL_TYPE_STRING, temp, output);
   jump(&done);
@@ -9517,16 +9550,13 @@ void MacroAssembler::iteratorClose(Register obj, Register temp1, Register temp2,
                                    Register temp3) {
   LoadNativeIterator(*this, obj, temp1);
 
+  Address flagsAddr(temp1, NativeIterator::offsetOfFlagsAndCount());
+
   // The shared iterator used for for-in with null/undefined is immutable and
   // unlinked. See NativeIterator::isEmptyIteratorSingleton.
   Label done;
-  branchTest32(Assembler::NonZero,
-               Address(temp1, NativeIterator::offsetOfFlagsAndCount()),
+  branchTest32(Assembler::NonZero, flagsAddr,
                Imm32(NativeIterator::Flags::IsEmptyIteratorSingleton), &done);
-
-  // Clear active bit.
-  and32(Imm32(~NativeIterator::Flags::Active),
-        Address(temp1, NativeIterator::offsetOfFlagsAndCount()));
 
   // Clear objectBeingIterated.
   Address iterObjAddr(temp1, NativeIterator::offsetOfObjectBeingIterated());
@@ -9536,6 +9566,26 @@ void MacroAssembler::iteratorClose(Register obj, Register temp1, Register temp2,
   // Reset property cursor.
   loadPtr(Address(temp1, NativeIterator::offsetOfShapesEnd()), temp2);
   storePtr(temp2, Address(temp1, NativeIterator::offsetOfPropertyCursor()));
+
+  // Clear deleted bits (only if we have unvisited deletions)
+  Label clearDeletedLoopStart, clearDeletedLoopEnd;
+  branchTest32(Assembler::Zero, flagsAddr,
+               Imm32(NativeIterator::Flags::HasUnvisitedPropertyDeletion),
+               &clearDeletedLoopEnd);
+
+  loadPtr(Address(temp1, NativeIterator::offsetOfPropertiesEnd()), temp3);
+
+  bind(&clearDeletedLoopStart);
+  and32(Imm32(~uint32_t(IteratorProperty::DeletedBit)), Address(temp2, 0));
+  addPtr(Imm32(sizeof(IteratorProperty)), temp2);
+  branchPtr(Assembler::Below, temp2, temp3, &clearDeletedLoopStart);
+
+  bind(&clearDeletedLoopEnd);
+
+  // Clear active and unvisited deletions bits
+  and32(Imm32(~(NativeIterator::Flags::Active |
+                NativeIterator::Flags::HasUnvisitedPropertyDeletion)),
+        flagsAddr);
 
   // Unlink from the iterator list.
   const Register next = temp2;

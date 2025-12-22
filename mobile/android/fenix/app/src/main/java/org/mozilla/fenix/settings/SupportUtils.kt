@@ -22,7 +22,6 @@ import java.util.Locale
 
 object SupportUtils {
     const val RATE_APP_URL = "market://details?id=" + BuildConfig.APPLICATION_ID
-    const val WIKIPEDIA_URL = "https://www.wikipedia.org/"
     const val FENIX_PLAY_STORE_URL = "https://play.google.com/store/apps/details?id=${BuildConfig.APPLICATION_ID}"
     const val GOOGLE_URL = "https://www.google.com/"
     const val GOOGLE_US_URL = "https://www.google.com/webhp?client=firefox-b-1-m&channel=ts"
@@ -52,9 +51,11 @@ object SupportUtils {
         SMARTBLOCK("smartblock-enhanced-tracking-protection"),
         SPONSOR_PRIVACY("sponsor-privacy"),
         HTTPS_ONLY_MODE("https-only-mode-firefox-android"),
-        DNS_OVER_HTTPS("https-only-mode-firefox-android"), // FIXME
-        DNS_OVER_HTTPS_LOCAL_PROVIDER("https-only-mode-firefox-android"), // FIXME
-        DNS_OVER_HTTPS_NETWORK("https-only-mode-firefox-android"), // FIXME
+        DNS_OVER_HTTPS("configure-dns-over-https-protection-levels-firefox-android"),
+        DNS_OVER_HTTPS_LOCAL_PROVIDER(
+            "configure-dns-over-https-protection-levels-firefox-android#w_what-is-a-local-provider",
+        ),
+        DNS_OVER_HTTPS_NETWORK("configure-dns-over-https-protection-levels-firefox-android"),
         UNSIGNED_ADDONS("unsigned-addons"),
         REVIEW_QUALITY_CHECK("review_checker_mobile"),
         FX_SUGGEST("search-suggestions-firefox"),

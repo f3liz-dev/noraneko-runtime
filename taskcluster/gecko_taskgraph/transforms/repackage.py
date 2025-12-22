@@ -38,6 +38,7 @@ packaging_description_schema = Schema(
         # passed through to job description
         Optional("fetches"): job_description_schema["fetches"],
         Optional("run-on-projects"): job_description_schema["run-on-projects"],
+        Optional("run-on-repo-type"): job_description_schema["run-on-repo-type"],
         # Shipping product and phase
         Optional("shipping-product"): job_description_schema["shipping-product"],
         Optional("shipping-phase"): job_description_schema["shipping-phase"],
@@ -305,6 +306,8 @@ PACKAGE_FORMATS = {
             "{deb-l10n-templates}",
             "--product",
             "{shipping_product}",
+            "--extensions-dir",
+            "{extensions-dir}",
         ],
         "inputs": {
             "input-xpi-file": "target.langpack.xpi",
@@ -372,6 +375,7 @@ MOZHARNESS_EXPANSIONS = [
     "sfx-stub",
     "wsx-stub",
     "flatpak-templates",
+    "extensions-dir",
 ]
 
 transforms = TransformSequence()
@@ -478,6 +482,9 @@ def make_job_description(config, jobs):
             if "repackage-signing" in dependency:
                 repackage_signing_task = dependency
             elif "signing" in dependency or "notarization" in dependency:
+                signing_task = dependency
+            elif "shippable-l10n" in dependency:
+                # Thunderbird does not sign langpacks, so we find them in the langpack build task
                 signing_task = dependency
 
         if config.kind == "repackage-msi":
@@ -718,6 +725,7 @@ def make_job_description(config, jobs):
             "run-on-projects": job.get(
                 "run-on-projects", dep_job.attributes.get("run_on_projects")
             ),
+            "run-on-repo-type": job.get("run-on-repo-type", ["git", "hg"]),
             "optimization": dep_job.optimization,
             "treeherder": treeherder,
             "routes": job.get("routes", []),
@@ -748,6 +756,9 @@ def make_job_description(config, jobs):
 
         if "shipping-phase" in job:
             task["shipping-phase"] = job["shipping-phase"]
+
+        if "shipping-product" in job and job["shipping-product"] is not None:
+            task["shipping-product"] = job["shipping-product"]
 
         yield task
 

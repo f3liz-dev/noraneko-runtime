@@ -211,6 +211,7 @@ EXTRA_JS_MODULES += [
     "Timer.sys.mjs",
     "Troubleshoot.sys.mjs",
     "UpdateUtils.sys.mjs",
+    "UrlUtils.sys.mjs",
     "WebChannel.sys.mjs",
 ]
 
@@ -353,3 +354,7 @@ XPIDL_SOURCES += [
 ]
 
 XPIDL_MODULE = "toolkit_modules"
+
+MOZ_SRC_FILES += [
+    "PrefUtils.sys.mjs",
+]

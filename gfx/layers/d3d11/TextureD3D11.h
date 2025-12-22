@@ -135,8 +135,6 @@ class D3D11TextureData final : public TextureData {
                    const RefPtr<FenceD3D11> aWriteFence,
                    TextureAllocationFlags aFlags);
 
-  bool PrepareDrawTargetInLock(OpenMode aMode);
-
   friend class gl::GLBlitHelper;
   bool SerializeSpecific(SurfaceDescriptorD3D10* aOutDesc);
 
@@ -145,10 +143,6 @@ class D3D11TextureData final : public TextureData {
                                   gfx::SourceSurface* aSurface,
                                   TextureAllocationFlags aAllocFlags,
                                   ID3D11Device* aDevice = nullptr);
-
-  // Hold on to the DrawTarget because it is expensive to create one each
-  // ::Lock.
-  RefPtr<gfx::DrawTarget> mDrawTarget;
 
  public:
   const gfx::IntSize mSize;
@@ -378,8 +372,7 @@ class DXGITextureHostD3D11 : public TextureHost {
 
   // Return DataSourceSurface using aDevice withou readback to CPU.
   already_AddRefed<gfx::DataSourceSurface> GetAsSurfaceWithDevice(
-      ID3D11Device* const aDevice,
-      DataMutex<RefPtr<VideoProcessorD3D11>>& aVideoProcessorD3D11);
+      ID3D11Device* const aDevice);
 
   void CreateRenderTexture(
       const wr::ExternalImageId& aExternalImageId) override;
@@ -463,6 +456,9 @@ class DXGIYCbCrTextureHostD3D11 : public TextureHost {
 
   void SetReadFence(RefPtr<FenceD3D11> aReadFence);
 
+  // Handles will be closed automatically when `UniqueFileHandle` gets
+  // destroyed.
+  const RefPtr<gfx::FileHandleWrapper> mHandles[3];
   const gfx::IntSize mSize;
   const gfx::IntSize mSizeY;
   const gfx::IntSize mSizeCbCr;
@@ -472,9 +468,6 @@ class DXGIYCbCrTextureHostD3D11 : public TextureHost {
   const CompositeProcessFencesHolderId mFencesHolderId;
 
  protected:
-  // Handles will be closed automatically when `UniqueFileHandle` gets
-  // destroyed.
-  RefPtr<gfx::FileHandleWrapper> mHandles[3];
   bool mIsLocked = false;
   RefPtr<FenceD3D11> mReadFence;
 };

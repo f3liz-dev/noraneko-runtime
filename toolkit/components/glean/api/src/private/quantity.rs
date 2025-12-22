@@ -116,7 +116,9 @@ impl Quantity for QuantityMetric {
 }
 
 #[inherent]
-impl glean::TestGetValue<i64> for QuantityMetric {
+impl glean::TestGetValue for QuantityMetric {
+    type Output = i64;
+
     /// **Test-only API.**
     ///
     /// Get the currently stored value.
@@ -150,7 +152,12 @@ mod test {
         let metric = &metrics::test_only_ipc::a_quantity;
         metric.set(14);
 
-        assert_eq!(14, metric.test_get_value(Some("test-ping".to_string())).unwrap());
+        assert_eq!(
+            14,
+            metric
+                .test_get_value(Some("test-ping".to_string()))
+                .unwrap()
+        );
     }
 
     #[test]

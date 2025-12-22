@@ -382,7 +382,7 @@ newtab-wallpaper-abstract-purple-green = Gradiente roxo e verde claro
 newtab-wallpaper-abstract-blue-purple-waves = Formas onduladas azuis e roxas
 newtab-wallpaper-abstract-black-waves = Formas onduladas pretas
 
-## Celestial
+## Firefox
 
 newtab-wallpaper-category-title-photographs = Fotografias
 newtab-wallpaper-beach-at-sunrise = Praia ao nascer do sol
@@ -586,3 +586,10 @@ newtab-trending-searches-learn-more = Saber mais
 newtab-trending-searches-dismiss = Ocultar pesquisas em alta
 # "Trending searches refers to popular searches from search engines
 newtab-trending-searches-title = Pesquisas populares
+
+## Strings for timer productivity widget
+## When the timer ends, a system notification may be shown. Depending on which mode the timer is in, that message would be shown
+
+newtab-promo-card-dismiss-button =
+    .title = Dispensar
+    .aria-label = Dispensar

@@ -121,7 +121,10 @@ export class ContextMenuChild extends JSWindowActorChild {
                   },
                   this.contentWindow
                 );
-                media.dispatchEvent(event);
+                this.contentWindow.windowUtils.dispatchEventToChromeOnly(
+                  media,
+                  event
+                );
                 break;
               }
             }
@@ -174,50 +177,6 @@ export class ContextMenuChild extends JSWindowActorChild {
           image.forceReload();
         }
         break;
-      }
-
-      case "ContextMenu:SearchFieldBookmarkData": {
-        let node = lazy.ContentDOMReference.resolve(
-          message.data.targetIdentifier
-        );
-        let charset = node.ownerDocument.characterSet;
-        let formBaseURI = Services.io.newURI(node.form.baseURI, charset);
-        let formURI = Services.io.newURI(
-          node.form.getAttribute("action"),
-          charset,
-          formBaseURI
-        );
-        let spec = formURI.spec;
-        let isURLEncoded =
-          node.form.method.toUpperCase() == "POST" &&
-          (node.form.enctype == "application/x-www-form-urlencoded" ||
-            node.form.enctype == "");
-        let title = node.ownerDocument.title;
-
-        function escapeNameValuePair([aName, aValue]) {
-          if (isURLEncoded) {
-            return escape(aName + "=" + aValue);
-          }
-
-          return encodeURIComponent(aName) + "=" + encodeURIComponent(aValue);
-        }
-        let formData = new this.contentWindow.FormData(node.form);
-        formData.delete(node.name);
-        formData = Array.from(formData).map(escapeNameValuePair);
-        formData.push(
-          escape(node.name) + (isURLEncoded ? escape("=%s") : "=%s")
-        );
-
-        let postData;
-
-        if (isURLEncoded) {
-          postData = formData.join("&");
-        } else {
-          let separator = spec.includes("?") ? "&" : "?";
-          spec += separator + formData.join("&");
-        }
-
-        return Promise.resolve({ spec, title, postData, charset });
       }
 
       case "ContextMenu:SearchFieldEngineData": {
@@ -318,26 +277,22 @@ export class ContextMenuChild extends JSWindowActorChild {
         ) {
           return null;
         }
-        if (!this.textDirectiveTarget) {
-          return null;
-        }
         const sel = this.contentWindow.getSelection();
-        const ranges =
-          this.textDirectiveTarget === "selection"
-            ? Array.from({ length: sel.rangeCount }, (_, i) =>
-                sel.getRangeAt(i)
-              )
-            : this.document.fragmentDirective.getTextDirectiveRanges();
-        return this.document.fragmentDirective
-          .createTextDirectiveForRanges(ranges)
-          .then(textFragment => {
-            if (textFragment) {
-              let url = URL.fromURI(this.document?.documentURIObject);
-              url.hash += `:~:${textFragment}`;
-              return url.href;
-            }
-            return null;
-          });
+        const ranges = !sel.isCollapsed
+          ? Array.from({ length: sel.rangeCount }, (_, i) => sel.getRangeAt(i))
+          : this.document.fragmentDirective.getTextDirectiveRanges();
+        return ranges
+          ? this.document.fragmentDirective
+              .createTextDirectiveForRanges(ranges)
+              .then(textFragment => {
+                if (textFragment) {
+                  let url = URL.fromURI(this.document?.documentURIObject);
+                  url.hash += `:~:${textFragment}`;
+                  return url.href;
+                }
+                return null;
+              })
+          : null;
       }
       case "ContextMenu:RemoveAllTextFragments": {
         this.document.fragmentDirective.removeAllTextDirectives();
@@ -914,7 +869,6 @@ export class ContextMenuChild extends JSWindowActorChild {
     context.onPiPVideo = false;
     context.onEditable = false;
     context.onImage = false;
-    context.onKeywordField = false;
     context.onLink = false;
     context.onLoadedImage = false;
     context.onMailtoLink = false;
@@ -933,28 +887,6 @@ export class ContextMenuChild extends JSWindowActorChild {
       this.document.fragmentDirective?.getTextDirectiveRanges?.() || [];
     // .hasTextFragments indicates whether the page will show highlights.
     context.hasTextFragments = !!textDirectiveRanges.length;
-    const { offsetNode, offset } =
-      node.ownerDocument.caretPositionFromPoint(
-        aEvent.clientX,
-        aEvent.clientY
-      ) || {};
-    const sel = this.contentWindow.getSelection();
-    context.textDirectiveTarget = null;
-    if (offsetNode && offset != null) {
-      if (
-        !sel.isCollapsed &&
-        Array.from({ length: sel.rangeCount }, (_, i) =>
-          sel.getRangeAt(i)
-        ).some(r => r.isPointInRange(offsetNode, offset))
-      ) {
-        context.textDirectiveTarget = "selection";
-      } else if (
-        textDirectiveRanges.some(r => r.isPointInRange(offsetNode, offset))
-      ) {
-        context.textDirectiveTarget = "textDirective";
-      }
-    }
-    this.textDirectiveTarget = context.textDirectiveTarget;
 
     // Remember the node and its owner document that was clicked
     // This may be modifed before sending to nsContextMenu
@@ -1171,7 +1103,6 @@ export class ContextMenuChild extends JSWindowActorChild {
         context.shouldInitInlineSpellCheckerUINoChildren = true;
       }
 
-      context.onKeywordField = editFlags & lazy.SpellCheckHelper.KEYWORD;
       context.onSearchField = editFlags & lazy.SpellCheckHelper.SEARCHENGINE;
     } else if (this.contentWindow.HTMLHtmlElement.isInstance(context.target)) {
       const bodyElt = context.target.ownerDocument.body;
@@ -1299,7 +1230,6 @@ export class ContextMenuChild extends JSWindowActorChild {
         // If this.onEditable is false but editFlags is CONTENTEDITABLE, then
         // the document itself must be editable.
         context.onTextInput = true;
-        context.onKeywordField = false;
         context.onImage = false;
         context.onLoadedImage = false;
         context.onCompletedImage = false;

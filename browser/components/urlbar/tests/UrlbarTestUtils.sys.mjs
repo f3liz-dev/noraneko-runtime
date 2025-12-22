@@ -6,7 +6,7 @@ import { AppConstants } from "resource://gre/modules/AppConstants.sys.mjs";
 import {
   UrlbarProvider,
   UrlbarUtils,
-} from "resource:///modules/UrlbarUtils.sys.mjs";
+} from "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs";
 
 const lazy = {};
 
@@ -21,9 +21,11 @@ ChromeUtils.defineESModuleGetters(lazy, {
   NimbusTestUtils: "resource://testing-common/NimbusTestUtils.sys.mjs",
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
   TestUtils: "resource://testing-common/TestUtils.sys.mjs",
-  UrlbarController: "resource:///modules/UrlbarController.sys.mjs",
-  UrlbarPrefs: "resource:///modules/UrlbarPrefs.sys.mjs",
-  UrlbarSearchUtils: "resource:///modules/UrlbarSearchUtils.sys.mjs",
+  UrlbarController:
+    "moz-src:///browser/components/urlbar/UrlbarController.sys.mjs",
+  UrlbarPrefs: "moz-src:///browser/components/urlbar/UrlbarPrefs.sys.mjs",
+  UrlbarSearchUtils:
+    "moz-src:///browser/components/urlbar/UrlbarSearchUtils.sys.mjs",
   setTimeout: "resource://gre/modules/Timer.sys.mjs",
 });
 
@@ -1233,7 +1235,6 @@ export var UrlbarTestUtils = {
       Object.assign(
         {
           input: {
-            isAddressbar: true,
             isPrivate: false,
             onFirstResult() {
               return false;
@@ -1587,6 +1588,10 @@ class TestProvider extends UrlbarProvider {
    *   If non-zero, each result will be added on this timeout.  If zero, all
    *   results will be added immediately and synchronously.
    *   If there's no results, the query will be completed after this timeout.
+   * @param {Function} [options.getViewTemplate]
+   *   If given, override the UrlbarProvider.getViewTemplate().
+   * @param {Function} [options.getViewUpdate]
+   *   If given, override the UrlbarProvider.getViewUpdate().
    * @param {Function} [options.onCancel]
    *   If given, a function that will be called when the provider's cancelQuery
    *   method is called.
@@ -1612,6 +1617,8 @@ class TestProvider extends UrlbarProvider {
     type = UrlbarUtils.PROVIDER_TYPE.PROFILE,
     priority = 0,
     addTimeout = 0,
+    getViewTemplate = null,
+    getViewUpdate = null,
     onCancel = null,
     onSelection = null,
     onEngagement = null,
@@ -1639,6 +1646,14 @@ class TestProvider extends UrlbarProvider {
     // type to heuristic if any result is heuristic.
     if (!type && this.results?.some(r => r.heuristic)) {
       this._type = UrlbarUtils.PROVIDER_TYPE.HEURISTIC;
+    }
+
+    if (getViewTemplate) {
+      this.getViewTemplate = getViewTemplate.bind(this);
+    }
+
+    if (getViewUpdate) {
+      this.getViewUpdate = getViewUpdate.bind(this);
     }
 
     if (onEngagement) {

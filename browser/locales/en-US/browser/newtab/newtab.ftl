@@ -95,11 +95,6 @@ newtab-menu-section-tooltip =
     .title = Open menu
     .aria-label = Open menu
 
-# Tooltip for dismiss button
-newtab-dismiss-button-tooltip =
-    .title = Remove
-    .aria-label = Remove
-
 # This tooltip is for the context menu of Pocket cards or Topsites
 # Variables:
 #   $title (string) - The label or hostname of the site. This is for screen readers when the context menu button is focused/active.
@@ -117,7 +112,6 @@ newtab-menu-pin = Pin
 newtab-menu-unpin = Unpin
 newtab-menu-delete-history = Delete from History
 newtab-menu-show-privacy-info = Our sponsors & your privacy
-newtab-menu-about-fakespot = About { -fakespot-brand-name }
 # Report is a verb (i.e. report issue with the content).
 newtab-menu-report = Report
 # Context menu option to personalize New Tab recommended stories by blocking a section of stories,
@@ -365,6 +359,10 @@ newtab-wallpaper-celestial-eclipse-time-lapse = Lunar eclipse time lapse
 newtab-wallpaper-celestial-black-hole = Black hole galaxy illustration
 newtab-wallpaper-celestial-river = Satellite image of river
 
+## Firefox
+
+newtab-wallpaper-category-title-firefox = { -brand-product-name }
+
 
 # Variables
 #   $author_string (String) - The name of the creator of the photo.
@@ -409,8 +407,16 @@ newtab-weather-menu-change-temperature-units-fahrenheit = Switch to Fahrenheit
 newtab-weather-menu-change-temperature-units-celsius = Switch to Celsius
 newtab-weather-menu-hide-weather = Hide weather on New Tab
 newtab-weather-menu-learn-more = Learn more
+newtab-weather-menu-detect-my-location = Detect my location
 # This message is shown if user is working offline
 newtab-weather-error-not-available = Weather data is not available right now.
+newtab-weather-opt-in-see-weather = Do you want to see the weather for your location?
+newtab-weather-opt-in-not-now =
+    .label = Not now
+newtab-weather-opt-in-yes =
+    .label = Yes
+# We'll be showing static (fake) weather data if the user has not opted in to using their location
+newtab-weather-static-city = New York City
 
 ## Topic Labels
 
@@ -590,6 +596,10 @@ newtab-widget-lists-input-menu-move-down = Move down
 newtab-widget-lists-input-menu-delete = Delete
 newtab-widget-lists-input-menu-edit = Edit
 
+# the + symbol emphasises the functionality of adding a new list
+newtab-widget-lists-dropdown-create =
+    .label = + Create a new list
+
 ## Strings for timer productivity widget
 ## When the timer ends, a system notification may be shown. Depending on which mode the timer is in, that message would be shown
 
@@ -611,9 +621,6 @@ newtab-widget-timer-menu-notifications = Turn off notifications
 newtab-widget-timer-menu-notifications-on = Turn on notifications
 newtab-widget-timer-menu-hide = Hide timer
 newtab-widget-timer-menu-learn-more = Learn more
-
-# Message that appears when widgets are full-height. This reminds users that there is more New Tab content to see if they scroll
-newtab-widget-keep-scrolling = Scroll for more
 
 newtab-widget-message-title = Stay focused with lists and a built-in timer
 # to-dos stands for "things to do".

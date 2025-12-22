@@ -59,14 +59,14 @@ GeneratedFile(
 
 GeneratedFile(
     "geckoview/src/main/java/org/mozilla/geckoview/CrashReport.java",
-    script="/toolkit/crashreporter/generate_crash_reporter_sources.py",
-    entry_point="emit_java",
+    script="/toolkit/crashreporter/annotations/generate.py",
+    inputs=["!/toolkit/crashreporter/annotations/validated.yaml"],
 )
 
 GeneratedFile(
     "android-components/components/lib/crash/src/main/java/mozilla/components/lib/crash/service/CrashReport.kt",
-    script="/toolkit/crashreporter/generate_crash_reporter_sources.py",
-    entry_point="emit_java",
+    script="/toolkit/crashreporter/annotations/generate.py",
+    inputs=["!/toolkit/crashreporter/annotations/validated.yaml"],
 )
 
 CONFIGURE_SUBST_FILES += ["installer/Makefile"]
@@ -89,6 +89,8 @@ DIRS += [
 TEST_HARNESS_FILES.testing.mochitest.tests.junit += [
     "geckoview/src/androidTest/assets/www/forms_iframe.html",
     "geckoview/src/androidTest/assets/www/forms_xorigin.html",
+    "geckoview/src/androidTest/assets/www/framebusting_child.html",
+    "geckoview/src/androidTest/assets/www/framebusting_parent.html",
     "geckoview/src/androidTest/assets/www/hello.html",
     "geckoview/src/androidTest/assets/www/hsts_header.sjs",
     "geckoview/src/androidTest/assets/www/iframe_http_only.html",

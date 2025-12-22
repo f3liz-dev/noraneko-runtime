@@ -10,7 +10,6 @@
 #include "mozilla/dom/MimeType.h"
 #include "mozilla/StaticPrefs_network.h"
 #include "mozilla/TextUtils.h"
-#include "mozilla/Unused.h"
 #include "nsHttpResponseHead.h"
 #include "nsIHttpHeaderVisitor.h"
 #include "nsPrintfCString.h"
@@ -193,6 +192,19 @@ nsresult nsHttpResponseHead::SetHeader(const nsHttpAtom& hdr,
   return SetHeader_locked(hdr, ""_ns, val, merge);
 }
 
+// override the current value
+nsresult nsHttpResponseHead::SetHeaderOverride(const nsHttpAtom& atom,
+                                               const nsACString& val) {
+  RecursiveMutexAutoLock monitor(mRecursiveMutex);
+
+  if (mInVisitHeaders) {
+    return NS_ERROR_FAILURE;
+  }
+
+  return mHeaders.SetHeader(atom, ""_ns, val, false,
+                            nsHttpHeaderArray::eVarietyResponseOverride);
+}
+
 nsresult nsHttpResponseHead::SetHeader_locked(const nsHttpAtom& atom,
                                               const nsACString& hdr,
                                               const nsACString& val,
@@ -313,8 +325,8 @@ nsresult nsHttpResponseHead::ParseCachedHead(const char* block) {
     p = strstr(block, "\r\n");
     if (!p) return NS_ERROR_UNEXPECTED;
 
-    Unused << ParseHeaderLine_locked(nsDependentCSubstring(block, p - block),
-                                     false);
+    (void)ParseHeaderLine_locked(nsDependentCSubstring(block, p - block),
+                                 false);
 
   } while (true);
 
@@ -1203,7 +1215,7 @@ bool nsHttpResponseHead::GetContentTypeOptionsHeader(nsACString& aOutput) {
   // We need to fetch original headers and manually merge them because empty
   // header values are not retrieved with GetHeader. Ref - Bug 1819642
   RefPtr<ContentTypeOptionsVisitor> visitor = new ContentTypeOptionsVisitor();
-  Unused << GetOriginalHeader(nsHttp::X_Content_Type_Options, visitor);
+  (void)GetOriginalHeader(nsHttp::X_Content_Type_Options, visitor);
   visitor->GetMergedHeader(contentTypeOptionsHeader);
   if (contentTypeOptionsHeader.IsEmpty()) {
     // if there is no XCTO header, then there is nothing to do.

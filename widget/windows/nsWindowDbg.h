@@ -35,6 +35,8 @@ class MOZ_RAII AutoProfilerMessageMarker {
 
   ~AutoProfilerMessageMarker();
 
+  WPARAM WParam() const { return mWParam; }
+
  protected:
   Maybe<MarkerOptions> mOptions;
   Span<const char> mMsgLoopName;
@@ -105,7 +107,7 @@ struct EnumValueAndName {
 // 0, and it must come last in the flagsAndNames array.
 // Returns whether any info was appended to str.
 bool AppendFlagsInfo(nsCString& str, uint64_t flags,
-                     const nsTArray<EnumValueAndName>& flagsAndNames,
+                     Span<const EnumValueAndName> flagsAndNames,
                      const char* name);
 
 nsAutoCString WmSizeParamInfo(uint64_t wParam, uint64_t lParam, bool isPreCall);

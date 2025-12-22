@@ -4,6 +4,7 @@
 
 import { SelectableProfileService } from "resource:///modules/profiles/SelectableProfileService.sys.mjs";
 import { ProfileAge } from "resource://gre/modules/ProfileAge.sys.mjs";
+import { AppConstants } from "resource://gre/modules/AppConstants.sys.mjs";
 
 const lazy = {};
 
@@ -249,26 +250,14 @@ ChromeUtils.defineESModuleGetters(lazy, {
   AddonManager: "resource://gre/modules/AddonManager.sys.mjs",
 });
 
+/**
+ * Actor implementation for the profile about pages.
+ */
 export class ProfilesParent extends JSWindowActorParent {
   get tab() {
     const gBrowser = this.browsingContext.topChromeWindow.gBrowser;
     const tab = gBrowser.getTabForBrowser(this.browsingContext.embedderElement);
     return tab;
-  }
-
-  actorCreated() {
-    let favicon = this.tab.iconImage;
-    favicon.classList.add("profiles-tab");
-  }
-
-  didDestroy() {
-    const gBrowser = this.browsingContext.topChromeWindow?.gBrowser;
-    if (!gBrowser) {
-      // If gBrowser doesn't exist, then we've closed the tab so we can just return
-      return;
-    }
-    let favicon = this.tab.iconImage;
-    favicon.classList.remove("profiles-tab");
   }
 
   async #getProfileContent(isDark) {
@@ -279,10 +268,12 @@ export class ProfilesParent extends JSWindowActorParent {
     let themes = await this.getSafeForContentThemes(isDark);
     return {
       currentProfile: await currentProfile.toContentSafeObject(),
+      isInAutomation: Cu.isInAutomation,
+      hasDesktopShortcut: currentProfile.hasDesktopShortcut(),
+      platform: AppConstants.platform,
       profiles: await Promise.all(profiles.map(p => p.toContentSafeObject())),
       profileCreated: await profileAge.created,
       themes,
-      isInAutomation: Cu.isInAutomation,
     };
   }
 
@@ -381,6 +372,18 @@ export class ProfilesParent extends JSWindowActorParent {
         SelectableProfileService.currentProfile.name = profileObj.name;
         break;
       }
+      case "Profiles:SetDesktopShortcut": {
+        let profile = SelectableProfileService.currentProfile;
+        let { shouldEnable } = message.data;
+        if (shouldEnable) {
+          await profile.ensureDesktopShortcut();
+        } else {
+          await profile.removeDesktopShortcut();
+        }
+        return {
+          hasDesktopShortcut: profile.hasDesktopShortcut(),
+        };
+      }
       case "Profiles:GetDeleteProfileContent": {
         // Make sure SelectableProfileService is initialized
         await SelectableProfileService.init();
@@ -462,7 +465,7 @@ export class ProfilesParent extends JSWindowActorParent {
         // The enable theme promise resolves after the
         // "lightweight-theme-styling-update" observer so we know the profile
         // theme is up to date at this point.
-        return SelectableProfileService.currentProfile.theme;
+        return SelectableProfileService.currentProfile.toContentSafeObject();
       }
       case "Profiles:CloseProfileTab": {
         if (source === "about:editprofile") {

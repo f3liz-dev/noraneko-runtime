@@ -156,7 +156,9 @@ impl StringList for StringListMetric {
 }
 
 #[inherent]
-impl glean::TestGetValue<Vec<String>> for StringListMetric {
+impl glean::TestGetValue for StringListMetric {
+    type Output = Vec<String>;
+
     /// **Test-only API.**
     ///
     /// Get the currently stored values.
@@ -198,7 +200,9 @@ mod test {
 
         assert_eq!(
             vec!["test_string_value", "another test value"],
-            metric.test_get_value(Some("test-ping".to_string())).unwrap()
+            metric
+                .test_get_value(Some("test-ping".to_string()))
+                .unwrap()
         );
     }
 
@@ -231,7 +235,9 @@ mod test {
         assert!(ipc::replay_from_buf(&ipc::take_buf().unwrap()).is_ok());
         assert_eq!(
             vec!["test_string_value", "another test value"],
-            parent_metric.test_get_value(Some("test-ping".to_string())).unwrap()
+            parent_metric
+                .test_get_value(Some("test-ping".to_string()))
+                .unwrap()
         );
     }
 }

@@ -4,10 +4,12 @@
 
 package org.mozilla.fenix.reviewprompt
 
+import mozilla.components.support.test.assertUnused
 import mozilla.components.support.test.ext.joinBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Ignore
 import org.junit.Test
 import org.mozilla.experiments.nimbus.NimbusMessagingHelperInterface
 import org.mozilla.fenix.components.AppStore
@@ -20,16 +22,16 @@ class ReviewPromptMiddlewareTest {
 
     private val eventStore = FakeNimbusEventStore()
 
+    private var isFeatureFlagEnabled = true
     private var isTelemetryEnabled = true
     private lateinit var mainCriteria: Sequence<Boolean>
     private lateinit var subCriteria: Sequence<Boolean>
+    private lateinit var legacyCriteria: Sequence<Boolean>
 
     private val store = AppStore(
         middlewares = listOf(
             ReviewPromptMiddleware(
-                isReviewPromptFeatureEnabled = { true },
-                numberOfAppLaunches = { 5 },
-                isDefaultBrowser = { true },
+                isReviewPromptFeatureEnabled = { isFeatureFlagEnabled },
                 isTelemetryEnabled = { isTelemetryEnabled },
                 createJexlHelper = {
                     object : NimbusMessagingHelperInterface {
@@ -40,10 +42,65 @@ class ReviewPromptMiddlewareTest {
                 },
                 buildTriggerMainCriteria = { mainCriteria },
                 buildTriggerSubCriteria = { subCriteria },
+                buildTriggerLegacyCriteria = { legacyCriteria },
                 nimbusEventStore = eventStore,
             ),
         ),
     )
+
+    @Test
+    fun `GIVEN feature flag is enabled WHEN check requested THEN main and sub-criteria are checked`() {
+        isFeatureFlagEnabled = true
+
+        var mainCriteriaChecked = false
+        var subCriteriaChecked = false
+        var legacyCriteriaChecked = false
+        mainCriteria = sequence {
+            mainCriteriaChecked = true
+            yield(true)
+        }
+        subCriteria = sequence {
+            subCriteriaChecked = true
+            yield(true)
+        }
+        legacyCriteria = sequence {
+            legacyCriteriaChecked = true
+            yield(true)
+        }
+
+        store.dispatch(ReviewPromptAction.CheckIfEligibleForReviewPrompt).joinBlocking()
+
+        assertTrue(mainCriteriaChecked)
+        assertTrue(subCriteriaChecked)
+        assertFalse(legacyCriteriaChecked)
+    }
+
+    @Test
+    fun `GIVEN feature flag is disabled WHEN check requested THEN legacy criteria are checked`() {
+        isFeatureFlagEnabled = false
+
+        var mainCriteriaChecked = false
+        var subCriteriaChecked = false
+        var legacyCriteriaChecked = false
+        mainCriteria = sequence {
+            mainCriteriaChecked = true
+            yield(true)
+        }
+        subCriteria = sequence {
+            subCriteriaChecked = true
+            yield(true)
+        }
+        legacyCriteria = sequence {
+            legacyCriteriaChecked = true
+            yield(true)
+        }
+
+        store.dispatch(ReviewPromptAction.CheckIfEligibleForReviewPrompt).joinBlocking()
+
+        assertFalse(mainCriteriaChecked)
+        assertFalse(subCriteriaChecked)
+        assertTrue(legacyCriteriaChecked)
+    }
 
     @Test
     fun `GIVEN main criteria satisfied AND one of sub-criteria satisfied WHEN check requested THEN sets eligible`() {
@@ -179,6 +236,7 @@ class ReviewPromptMiddlewareTest {
         assertNoOp(ReviewPromptAction.ShowPlayStorePrompt)
     }
 
+    @Ignore("https://bugzilla.mozilla.org/show_bug.cgi?id=2001801")
     @Test
     fun `GIVEN telemetry enabled AND criteria satisfied WHEN check requested THEN sets eligible for Custom prompt`() {
         isTelemetryEnabled = true
@@ -198,6 +256,35 @@ class ReviewPromptMiddlewareTest {
         isTelemetryEnabled = false
         mainCriteria = sequenceOf(true)
         subCriteria = sequenceOf(true)
+
+        store.dispatch(ReviewPromptAction.CheckIfEligibleForReviewPrompt).joinBlocking()
+
+        assertEquals(
+            AppState(reviewPrompt = ReviewPromptState.Eligible(Type.PlayStore)),
+            store.state,
+        )
+    }
+
+    @Ignore("https://bugzilla.mozilla.org/show_bug.cgi?id=2001801")
+    @Test
+    fun `GIVEN feature flag disabled AND telemetry enabled AND criteria satisfied WHEN check requested THEN sets eligible for Custom prompt`() {
+        isFeatureFlagEnabled = false
+        isTelemetryEnabled = true
+        legacyCriteria = sequenceOf(true)
+
+        store.dispatch(ReviewPromptAction.CheckIfEligibleForReviewPrompt).joinBlocking()
+
+        assertEquals(
+            AppState(reviewPrompt = ReviewPromptState.Eligible(Type.Custom)),
+            store.state,
+        )
+    }
+
+    @Test
+    fun `GIVEN feature flag disabled AND telemetry disabled AND criteria satisfied WHEN check requested THEN sets eligible for Play Store prompt`() {
+        isFeatureFlagEnabled = false
+        isTelemetryEnabled = false
+        legacyCriteria = sequenceOf(true)
 
         store.dispatch(ReviewPromptAction.CheckIfEligibleForReviewPrompt).joinBlocking()
 
@@ -291,9 +378,6 @@ class ReviewPromptMiddlewareTest {
             store.state,
         )
     }
-
-    private fun assertUnused(): Nothing =
-        throw AssertionError("Expected unused function, but was called here ")
 
     private class FakeNimbusMessagingHelperInterface(val evalJexlValue: Boolean) :
         NimbusMessagingHelperInterface {

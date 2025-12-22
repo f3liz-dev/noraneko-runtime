@@ -231,28 +231,29 @@ class nsCSSFrameConstructor final : public nsFrameManager {
   void ContentRangeInserted(nsIContent* aStartChild, nsIContent* aEndChild,
                             InsertionKind aInsertionKind);
 
-  enum RemoveFlags {
-    REMOVE_CONTENT,
-    REMOVE_FOR_RECONSTRUCTION,
+  // The kind of removal we're dealing with.
+  enum class RemovalKind : uint8_t {
+    // The DOM node is getting removed from the document.
+    Dom,
+    // We're about to remove this frame, but we will insert it later.
+    ForReconstruction,
+    // We're about to remove this frame due to a style change but we know we
+    // are not going to create a frame later.
+    ForDisplayNoneChange,
   };
 
   /**
    * Recreate or destroy frames for aChild.
    *
-   * aFlags == REMOVE_CONTENT means aChild has been removed from the document.
-   * aFlags == REMOVE_FOR_RECONSTRUCTION means the caller will reconstruct the
-   * frames later.
-   *
-   * In both the above cases, this method will in some cases try to reconstruct
-   * frames on some ancestor of aChild.  This can happen regardless of the value
-   * of aFlags.
+   * Regardless of the removal kind, this method will in some cases try to
+   * reconstruct frames on some ancestor of aChild.
    *
    * The return value indicates whether this "reconstruct an ancestor" action
    * took place.  If true is returned, that means that the frame subtree rooted
    * at some ancestor of aChild's frame was destroyed and will be reconstructed
    * async.
    */
-  bool ContentWillBeRemoved(nsIContent* aChild, RemoveFlags aFlags);
+  bool ContentWillBeRemoved(nsIContent* aChild, RemovalKind);
 
   void CharacterDataChanged(nsIContent* aContent,
                             const CharacterDataChangeInfo& aInfo);
@@ -339,12 +340,10 @@ class nsCSSFrameConstructor final : public nsFrameManager {
    */
   nsContainerFrame* GetContentInsertionFrameFor(nsIContent* aContent);
 
-  // GetInitialContainingBlock() is deprecated in favor of
-  // GetRootElementFrame(); nsIFrame* GetInitialContainingBlock() { return
-  // mRootElementFrame; } This returns the outermost frame for the root element
+  // This returns the outermost frame for the root element.
   nsContainerFrame* GetRootElementFrame() { return mRootElementFrame; }
   // This returns the frame for the root element that does not
-  // have a psuedo-element style
+  // have a pseudo-element style
   nsIFrame* GetRootElementStyleFrame() { return mRootElementStyleFrame; }
   nsPageSequenceFrame* GetPageSequenceFrame() { return mPageSequenceFrame; }
   // Returns the outermost canvas frame. There's usually one per document, but
@@ -1132,7 +1131,6 @@ class nsCSSFrameConstructor final : public nsFrameManager {
           mIsAllInline(false),
           mIsBlock(false),
           mIsPopup(false),
-          mIsLineParticipant(false),
           mIsRenderedLegend(false) {
       MOZ_COUNT_CTOR(FrameConstructionItem);
     }
@@ -1203,8 +1201,6 @@ class nsCSSFrameConstructor final : public nsFrameManager {
     // Whether construction from this item will create a popup that needs to
     // go into the global popup items.
     bool mIsPopup : 1;
-    // Whether this item should be treated as a line participant
-    bool mIsLineParticipant : 1;
     // Whether this item is the rendered legend of a <fieldset>
     bool mIsRenderedLegend : 1;
 
@@ -1708,11 +1704,8 @@ class nsCSSFrameConstructor final : public nsFrameManager {
 
   /**
    * Recreate frames for aContent.
-   * @param aContent the content to recreate frames for
-   * @param aFlags normally you want to pass REMOVE_FOR_RECONSTRUCTION here
    */
-  void RecreateFramesForContent(nsIContent* aContent,
-                                InsertionKind aInsertionKind);
+  void RecreateFramesForContent(nsIContent* aContent, InsertionKind);
 
   /**
    *  Handles change of rowspan and colspan attributes on table cells.

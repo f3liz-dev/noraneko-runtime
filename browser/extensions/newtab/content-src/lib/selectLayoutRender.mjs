@@ -51,9 +51,7 @@ export const selectLayoutRender = ({ state = {}, prefs = {} }) => {
   const positions = {};
   const DS_COMPONENTS = [
     "Message",
-    "TextPromo",
     "SectionTitle",
-    "Signup",
     "Navigation",
     "Widgets",
     "CardGrid",
@@ -70,9 +68,14 @@ export const selectLayoutRender = ({ state = {}, prefs = {} }) => {
 
   // Filter sections is Widgets are turned off
   // Note extra logic is required bc this feature can be enabled via Nimbus
+  const nimbusWidgetsTrainhopEnabled = prefs.trainhopConfig?.widgets?.enabled;
   const nimbusWidgetsEnabled = prefs.widgetsConfig?.enabled;
   const widgetsEnabled = prefs["widgets.system.enabled"];
-  if (!nimbusWidgetsEnabled && !widgetsEnabled) {
+  if (
+    !nimbusWidgetsTrainhopEnabled &&
+    !nimbusWidgetsEnabled &&
+    !widgetsEnabled
+  ) {
     filterArray.push("Widgets");
   }
 
@@ -103,7 +106,7 @@ export const selectLayoutRender = ({ state = {}, prefs = {} }) => {
 
   const placeholderComponent = component => {
     if (!component.feed) {
-      // TODO we now need a placeholder for topsites and textPromo.
+      // TODO we now need a placeholder for topsites.
       return {
         ...component,
         data: {

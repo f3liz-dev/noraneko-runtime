@@ -82,7 +82,7 @@ const ZipReader = Components.Constructor(
 );
 
 XPCOMUtils.defineLazyServiceGetters(lazy, {
-  gCertDB: ["@mozilla.org/security/x509certdb;1", "nsIX509CertDB"],
+  gCertDB: ["@mozilla.org/security/x509certdb;1", Ci.nsIX509CertDB],
 });
 
 const PREF_INSTALL_REQUIRESECUREORIGIN =
@@ -1458,7 +1458,7 @@ class AddonInstall {
         this._callInstallListeners("onDownloadCancelled");
         this.removeTemporaryFile();
         break;
-      case AddonManager.STATE_POSTPONED:
+      case AddonManager.STATE_POSTPONED: {
         logger.debug(`Cancelling postponed install of ${this.addon.id}`);
         this.state = AddonManager.STATE_CANCELLED;
         this._cleanup();
@@ -1473,6 +1473,7 @@ class AddonInstall {
 
         this.unstageInstall(stagedAddon);
         break;
+      }
       default:
         throw new Error(
           "Cannot cancel install of " +
@@ -2178,11 +2179,12 @@ class AddonInstall {
       case "onDownloadCancelled":
       case "onDownloadFailed":
       case "onInstallCancelled":
-      case "onInstallFailed":
+      case "onInstallFailed": {
         let rej = Promise.reject(new Error(`Install failed: ${event}`));
         rej.catch(() => {});
         this._resolveInstallPromise(rej);
         break;
+      }
       case "onInstallEnded":
         this._resolveInstallPromise(
           Promise.resolve(this._startupPromise).then(() => args[0])
@@ -2531,7 +2533,7 @@ var DownloadAddonInstall = class extends AddonInstall {
     }
   }
 
-  /*
+  /**
    * Update the crypto hasher with the new data and call the progress listeners.
    *
    * @see nsIStreamListener
@@ -2544,7 +2546,7 @@ var DownloadAddonInstall = class extends AddonInstall {
     }
   }
 
-  /*
+  /**
    * Check the redirect response for a hash of the target XPI and verify that
    * we don't end up on an insecure channel.
    *
@@ -2582,7 +2584,7 @@ var DownloadAddonInstall = class extends AddonInstall {
     this.channel = aNewChannel;
   }
 
-  /*
+  /**
    * This is the first chance to get at real headers on the channel.
    *
    * @see nsIStreamListener
@@ -2626,7 +2628,7 @@ var DownloadAddonInstall = class extends AddonInstall {
     }
   }
 
-  /*
+  /**
    * The download is complete.
    *
    * @see nsIStreamListener

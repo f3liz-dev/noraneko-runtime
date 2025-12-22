@@ -7,7 +7,6 @@
 #ifndef nsMathMLmspaceFrame_h___
 #define nsMathMLmspaceFrame_h___
 
-#include "mozilla/Attributes.h"
 #include "nsCSSValue.h"
 #include "nsMathMLContainerFrame.h"
 
@@ -58,8 +57,8 @@ class nsMathMLmspaceFrame final : public nsMathMLContainerFrame {
                             AttrModType aModType) final;
   nscoord CalculateAttributeValue(nsAtom* aAtom, Attribute& aAttribute,
                                   uint32_t aFlags, float aFontSizeInflation);
-  nsresult Place(DrawTarget* aDrawTarget, const PlaceFlags& aFlags,
-                 ReflowOutput& aDesiredSize) final;
+  void Place(DrawTarget* aDrawTarget, const PlaceFlags& aFlags,
+             ReflowOutput& aDesiredSize) final;
 };
 
 #endif /* nsMathMLmspaceFrame_h___ */

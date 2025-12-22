@@ -195,6 +195,14 @@ class DesktopUnittest(TestingMixin, MercurialScript, MozbaseMixin, CodeCoverageM
                 },
             ],
             [
+                ["--timeout-factor"],
+                {
+                    "action": "store",
+                    "dest": "timeout_factor",
+                    "help": "Multiplier for test timeout values",
+                },
+            ],
+            [
                 ["--filter"],
                 {
                     "action": "store",
@@ -412,6 +420,7 @@ class DesktopUnittest(TestingMixin, MercurialScript, MozbaseMixin, CodeCoverageM
                 "download-and-extract",
                 "create-virtualenv",
                 "start-pulseaudio",
+                "unlock-keyring",
                 "install",
                 "stage-files",
                 "run-tests",
@@ -778,6 +787,9 @@ class DesktopUnittest(TestingMixin, MercurialScript, MozbaseMixin, CodeCoverageM
                         ]
                     )
 
+                if c.get("timeout_factor"):
+                    base_cmd.extend(["--timeout-factor", c["timeout_factor"]])
+
             if c["no_random"]:
                 if suite_category == "mochitest":
                     base_cmd.append("--bisect-chunk=default")
@@ -1027,6 +1039,23 @@ class DesktopUnittest(TestingMixin, MercurialScript, MozbaseMixin, CodeCoverageM
         super(DesktopUnittest, self).download_and_extract(
             extract_dirs=extract_dirs, suite_categories=target_categories
         )
+
+    def unlock_keyring(self):
+        if os.environ.get("NEED_GNOME_KEYRING") == "true":
+            self.log("replacing and unlocking gnome-keyring-daemon")
+            import subprocess
+
+            subprocess.run(
+                [
+                    "gnome-keyring-daemon",
+                    "-r",
+                    "-d",
+                    "--unlock",
+                    "--components=secrets",
+                ],
+                check=True,
+                input=b"\n",
+            )
 
     def start_pulseaudio(self):
         command = []

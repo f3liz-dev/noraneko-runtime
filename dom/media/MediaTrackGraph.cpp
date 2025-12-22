@@ -9,14 +9,13 @@
 #include "AudioNodeTrack.h"
 #include "AudioSegment.h"
 #include "CrossGraphPort.h"
+#include "CubebDeviceEnumerator.h"
 #include "ForwardedInputTrack.h"
 #include "ImageContainer.h"
 #include "MediaTrackGraphImpl.h"
 #include "VideoSegment.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/Logging.h"
-#include "mozilla/MathAlgorithms.h"
-#include "mozilla/Unused.h"
 #include "nsContentUtils.h"
 #include "nsGlobalWindowInner.h"
 #include "nsPrintfCString.h"
@@ -822,6 +821,7 @@ void MediaTrackGraphImpl::OpenAudioInput(DeviceInputTrack* aTrack) {
   };
 
   mDeviceInputTrackManagerMainThread.Add(aTrack);
+  UpdateEnumeratorDefaultDeviceTracking();
 
   this->AppendMessage(MakeUnique<Message>(this, aTrack));
 }
@@ -900,6 +900,7 @@ void MediaTrackGraphImpl::CloseAudioInput(DeviceInputTrack* aTrack) {
   // aTrack->Destroy() is called after this. See DeviceInputTrack::CloseAudio
   // for more details.
   mDeviceInputTrackManagerMainThread.Remove(aTrack);
+  UpdateEnumeratorDefaultDeviceTracking();
 
   this->AppendMessage(MakeUnique<Message>(this, aTrack));
 
@@ -1197,8 +1198,7 @@ bool MediaTrackGraphImpl::ShouldUpdateMainThread() {
   TimeStamp now = TimeStamp::Now();
   // For offline graphs, update now if it has been long enough since the last
   // update, or if it has reached the end.
-  if ((now - mLastMainThreadUpdate).ToMilliseconds() >
-          CurrentDriver()->IterationDuration() ||
+  if (now - mLastMainThreadUpdate > CurrentDriver()->IterationDuration() ||
       mStateComputedTime >= mEndTime) {
     mLastMainThreadUpdate = now;
     return true;
@@ -1305,8 +1305,8 @@ void MediaTrackGraphImpl::ProduceDataForTracksBlockByBlock(
     }
     mProcessedTime = next;
   }
-  NS_ASSERTION(mProcessedTime == mStateComputedTime,
-               "Something went wrong with rounding to block boundaries");
+  MOZ_ASSERT(mProcessedTime == mStateComputedTime,
+             "Something went wrong with rounding to block boundaries");
 }
 
 void MediaTrackGraphImpl::RunMessageAfterProcessing(
@@ -1421,8 +1421,8 @@ void MediaTrackGraphImpl::UpdateGraph(GraphTime aEndBlockingDecisions) {
     track->mStartBlocking = mStateComputedTime;
   }
 
-  // If the loop is woken up so soon that IterationEnd() barely advances or
-  // if an offline graph is not currently rendering, we end up having
+  // If the loop is woken up so soon that mStateComputedTime does not advance
+  // or if an offline graph is not currently rendering, we end up having
   // aEndBlockingDecisions == mStateComputedTime.
   // Since the process interval [mStateComputedTime, aEndBlockingDecision) is
   // empty, Process() will not find any unblocked track and so will not
@@ -1628,21 +1628,21 @@ bool MediaTrackGraphImpl::UpdateMainThreadState() {
 }
 
 auto MediaTrackGraphImpl::OneIteration(GraphTime aStateTime,
-                                       GraphTime aIterationEnd,
                                        MixerCallbackReceiver* aMixerReceiver)
     -> IterationResult {
   if (mGraphRunner) {
-    return mGraphRunner->OneIteration(aStateTime, aIterationEnd,
-                                      aMixerReceiver);
+    return mGraphRunner->OneIteration(aStateTime, aMixerReceiver);
   }
 
-  return OneIterationImpl(aStateTime, aIterationEnd, aMixerReceiver);
+  return OneIterationImpl(aStateTime, aMixerReceiver);
 }
 
 auto MediaTrackGraphImpl::OneIterationImpl(
-    GraphTime aStateTime, GraphTime aIterationEnd,
-    MixerCallbackReceiver* aMixerReceiver) -> IterationResult {
+    GraphTime aStateTime, MixerCallbackReceiver* aMixerReceiver)
+    -> IterationResult {
   TRACE("MTG::OneIterationImpl");
+  TRACE_AUDIO_CALLBACK_FRAME_COUNT(
+      "MTG graph advance", aStateTime - mStateComputedTime, mSampleRate);
 
   if (SoftRealTimeLimitReached()) {
     TRACE("MTG::Demoting real-time thread!");
@@ -1677,14 +1677,13 @@ auto MediaTrackGraphImpl::OneIterationImpl(
     NS_ProcessPendingEvents(nullptr);
   }
 
-  GraphTime stateTime = std::min(aStateTime, GraphTime(mEndTime));
-  UpdateGraph(stateTime);
+  UpdateGraph(aStateTime);
 
-  mStateComputedTime = stateTime;
+  mStateComputedTime = aStateTime;
 
   GraphTime oldProcessedTime = mProcessedTime;
   Process(aMixerReceiver);
-  MOZ_ASSERT(mProcessedTime == stateTime);
+  MOZ_ASSERT(mProcessedTime == aStateTime);
 
   UpdateCurrentTimeForTracks(oldProcessedTime);
 
@@ -1771,6 +1770,7 @@ MediaTrackGraphImpl::Notify(nsITimer* aTimer) {
   // Sigh, graph took too long to shut down.  Stop blocking system
   // shutdown and hope all is well.
   RemoveShutdownBlocker();
+  mOutputDevicesChangedListener.DisconnectIfExists();
   return NS_OK;
 }
 
@@ -3371,7 +3371,7 @@ already_AddRefed<MediaInputPort> ProcessedMediaTrack::AllocateInputPort(
       mPort->Init();
       // The graph holds its reference implicitly
       mPort->GraphImpl()->SetTrackOrderDirty();
-      Unused << mPort.forget();
+      NS_ADDREF(mPort.get());
     }
     void RunDuringShutdown() override { Run(); }
     RefPtr<MediaInputPort> mPort;
@@ -3506,8 +3506,7 @@ void MediaTrackGraphImpl::Init(GraphDriverType aDriverRequested,
     LOG(LogLevel::Debug, ("%p: document title: %s", this, streamName.get()));
     mDriver->SetStreamName(streamName);
   } else {
-    mDriver =
-        new OfflineClockDriver(this, mSampleRate, MEDIA_GRAPH_TARGET_PERIOD_MS);
+    mDriver = new OfflineClockDriver(this, mSampleRate);
   }
 
   mLastMainThreadUpdate = TimeStamp::Now();
@@ -4110,6 +4109,9 @@ double MediaTrackGraphImpl::AudioOutputLatency() {
 bool MediaTrackGraph::OutputForAECMightDrift() {
   return static_cast<MediaTrackGraphImpl*>(this)->OutputForAECMightDrift();
 }
+bool MediaTrackGraph::OutputForAECIsPrimary() {
+  return static_cast<MediaTrackGraphImpl*>(this)->OutputForAECIsPrimary();
+}
 bool MediaTrackGraph::IsNonRealtime() const {
   return !static_cast<const MediaTrackGraphImpl*>(this)->mRealtime;
 }
@@ -4120,25 +4122,17 @@ void MediaTrackGraph::StartNonRealtimeProcessing(uint32_t aTicksToProcess) {
   MediaTrackGraphImpl* graph = static_cast<MediaTrackGraphImpl*>(this);
   NS_ASSERTION(!graph->mRealtime, "non-realtime only");
 
-  class Message : public ControlMessage {
-   public:
-    explicit Message(MediaTrackGraphImpl* aGraph, uint32_t aTicksToProcess)
-        : ControlMessage(nullptr),
-          mGraph(aGraph),
-          mTicksToProcess(aTicksToProcess) {}
-    void Run() override {
-      TRACE("MTG::StartNonRealtimeProcessing ControlMessage");
-      MOZ_ASSERT(mGraph->mEndTime == 0,
-                 "StartNonRealtimeProcessing should be called only once");
-      mGraph->mEndTime = mGraph->RoundUpToEndOfAudioBlock(
-          mGraph->mStateComputedTime + mTicksToProcess);
-    }
-    // The graph owns this message.
-    MediaTrackGraphImpl* MOZ_NON_OWNING_REF mGraph;
-    uint32_t mTicksToProcess;
-  };
-
-  graph->AppendMessage(MakeUnique<Message>(graph, aTicksToProcess));
+  graph->QueueControlMessageWithNoShutdown([graph = RefPtr{graph},
+                                            aTicksToProcess]() {
+    TRACE("MTG::StartNonRealtimeProcessing ControlMessage");
+    MOZ_ASSERT(graph->mStateComputedTime == 0);
+    MOZ_ASSERT(graph->mEndTime == 0,
+               "StartNonRealtimeProcessing should be called only once");
+    graph->mEndTime = aTicksToProcess;
+    OfflineClockDriver* driver = graph->CurrentDriver()->AsOfflineClockDriver();
+    MOZ_ASSERT(driver);
+    driver->SetTickCountToRender(aTicksToProcess);
+  });
 }
 
 void MediaTrackGraphImpl::InterruptJS() {
@@ -4341,6 +4335,53 @@ void MediaTrackGraphImpl::SetNewNativeInput() {
       ("%p Native input device is set to device %p now", this, deviceId));
 
   MOZ_ASSERT(mDeviceInputTrackManagerMainThread.GetNativeInputTrack());
+}
+
+void MediaTrackGraphImpl::UpdateEnumeratorDefaultDeviceTracking() {
+  MOZ_ASSERT(NS_IsMainThread());
+  auto onExit = MakeScopeExit([&] { UpdateDefaultDevice(); });
+
+  if (!mDeviceInputTrackManagerMainThread.GetNativeInputTrack()) {
+    mEnumeratorMainThread = nullptr;
+    mOutputDevicesChangedListener.DisconnectIfExists();
+    LOG(LogLevel::Debug,
+        ("%p No longer tracking system default output device", this));
+    return;
+  }
+
+  if (mEnumeratorMainThread) {
+    onExit.release();
+    return;
+  }
+
+  mEnumeratorMainThread = CubebDeviceEnumerator::GetInstance();
+  mOutputDevicesChangedListener =
+      mEnumeratorMainThread->OnAudioOutputDeviceListChange().Connect(
+          GetCurrentSerialEventTarget(), this,
+          &MediaTrackGraphImpl::UpdateDefaultDevice);
+  LOG(LogLevel::Debug, ("%p Now tracking system default output device", this));
+}
+
+void MediaTrackGraphImpl::UpdateDefaultDevice() {
+  MOZ_ASSERT(NS_IsMainThread());
+  CubebUtils::AudioDeviceID id = nullptr;
+  auto onExit = MakeScopeExit([&] {
+    mDefaultOutputDeviceID.store(id, std::memory_order_relaxed);
+    LOG(LogLevel::Debug,
+        ("%p Tracked system default output device ID is now %p", this, id));
+  });
+
+  if (!mEnumeratorMainThread) {
+    return;
+  }
+
+  auto dev =
+      mEnumeratorMainThread->DefaultDevice(CubebDeviceEnumerator::Side::OUTPUT);
+  if (!dev) {
+    return;
+  }
+
+  id = dev->DeviceID();
 }
 
 // nsIThreadObserver methods

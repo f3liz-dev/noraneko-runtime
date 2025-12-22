@@ -77,12 +77,24 @@ public class ContentBlocking {
   /** {@link SafeBrowsingProvider} configuration for Google's SafeBrowsing V5 server. */
   public static final SafeBrowsingProvider GOOGLE_SAFE_BROWSING_V5_PROVIDER =
       SafeBrowsingProvider.withName("google5")
-          .lists("")
+          .lists(
+              "goog-badbinurl-proto",
+              "goog-downloadwhite-proto",
+              "goog-phish-proto",
+              "googpub-phish-proto",
+              "goog-malware-proto",
+              "goog-unwanted-proto",
+              "goog-harmful-proto")
           .updateUrl(
               "https://safebrowsing.googleapis.com/v5/hashLists:batchGet?key=%GOOGLE_SAFEBROWSING_API_KEY%")
           .getHashUrl(
               "https://safebrowsing.googleapis.com/v5/hashes:search?key=%GOOGLE_SAFEBROWSING_API_KEY%")
-          .enabled(false)
+          .reportUrl("https://safebrowsing.google.com/safebrowsing/diagnostic?site=")
+          .reportPhishingMistakeUrl("https://%LOCALE%.phish-error.mozilla.com/?url=")
+          .reportMalwareMistakeUrl("https://%LOCALE%.malware-error.mozilla.com/?url=")
+          .advisoryUrl("https://developers.google.com/safe-browsing/v4/advisory")
+          .advisoryName("Google Safe Browsing")
+          .enabled(BuildConfig.NIGHTLY_BUILD)
           .build();
 
   /** Protected constructor - this class shouldn't be instantiated. */
@@ -594,6 +606,41 @@ public class ContentBlocking {
         mSafeBrowsingProviders.put(provider.getName(), new SafeBrowsingProvider(this, provider));
       }
 
+      return this;
+    }
+
+    /**
+     * Get whether Safe Browsing V5 is enabled.
+     *
+     * @return Whether Safe Browsing V5 is enabled.
+     */
+    public @NonNull Boolean getSafeBrowsingV5Enabled() {
+      final SafeBrowsingProvider provider = mSafeBrowsingProviders.get("google5");
+      if (provider == null) {
+        return false;
+      }
+
+      final Boolean enabled = provider.getEnabled();
+      if (enabled == null) {
+        return false;
+      }
+
+      return enabled;
+    }
+
+    /**
+     * Set the value to control whether Safe Browsing V5 is enabled.
+     *
+     * @param enabled Whether we set the Safe Browsing V5 to enabled or disabled
+     * @return the {@link Settings} instance.
+     */
+    public @NonNull Settings setSafeBrowsingV5Enabled(final boolean enabled) {
+      final SafeBrowsingProvider provider = mSafeBrowsingProviders.get("google5");
+      if (provider == null) {
+        return this;
+      }
+
+      provider.mEnabled.commit(enabled);
       return this;
     }
 
@@ -1479,7 +1526,7 @@ public class ContentBlocking {
       mAdvisoryName = new Pref<>(ROOT + mName + ".advisoryName", null);
       mDataSharingUrl = new Pref<>(ROOT + mName + ".dataSharingURL", null);
       mDataSharingEnabled = new Pref<>(ROOT + mName + ".dataSharing.enabled", false);
-      mEnabled = new Pref<>(ROOT + mName + ".enabled", false);
+      mEnabled = new Pref<>(ROOT + mName + ".enabled", null);
 
       if (source != null) {
         updatePrefs(source);

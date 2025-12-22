@@ -17,13 +17,12 @@
 #include "mozilla/dom/XULMenuElement.h"
 #include "mozilla/dom/XULPopupElementBinding.h"
 #include "nsCOMPtr.h"
+#include "nsDOMCSSDeclaration.h"
 #include "nsGkAtoms.h"
-#include "nsICSSDeclaration.h"
 #include "nsIContent.h"
 #include "nsMenuPopupFrame.h"
 #include "nsNameSpaceManager.h"
 #include "nsStringFwd.h"
-#include "nsView.h"
 #ifdef MOZ_WAYLAND
 #  include "mozilla/WidgetUtilsGtk.h"
 #endif
@@ -223,7 +222,7 @@ void XULPopupElement::SizeTo(int32_t aWidth, int32_t aHeight) {
   height.AppendInt(aHeight);
   height.AppendLiteral("px");
 
-  nsCOMPtr<nsICSSDeclaration> style = Style();
+  nsCOMPtr<nsDOMCSSDeclaration> style = Style();
   style->SetProperty("width"_ns, width, ""_ns, IgnoreErrors());
   style->SetProperty("height"_ns, height, ""_ns, IgnoreErrors());
 
@@ -294,14 +293,10 @@ already_AddRefed<DOMRect> XULPopupElement::GetOuterScreenRect() {
     // instead, which at least has the position at which we were intending to
     // open the menu.
     screenRect = Some(CSSRect(menuPopupFrame->GetScreenAnchorRect()));
-  } else {
+  } else if (nsIWidget* widget = menuPopupFrame->GetWidget()) {
     // For non-native menus, query the bounds from the widget.
-    if (nsView* view = menuPopupFrame->GetView()) {
-      if (nsIWidget* widget = view->GetWidget()) {
-        screenRect = Some(widget->GetScreenBounds() /
-                          menuPopupFrame->PresContext()->CSSToDevPixelScale());
-      }
-    }
+    screenRect = Some(widget->GetScreenBounds() /
+                      menuPopupFrame->PresContext()->CSSToDevPixelScale());
   }
 
   if (screenRect) {

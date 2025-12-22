@@ -3,38 +3,29 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
 import { MozLitElement } from "chrome://global/content/lit-utils.mjs";
-import {
-  html,
-  classMap,
-  ifDefined,
-} from "chrome://global/content/vendor/lit.all.mjs";
+import { html, ifDefined } from "chrome://global/content/vendor/lit.all.mjs";
 import {
   LINKS,
   ERRORS,
 } from "chrome://browser/content/ipprotection/ipprotection-constants.mjs";
 
 // eslint-disable-next-line import/no-unassigned-import
-import "chrome://browser/content/ipprotection/ipprotection-header.mjs";
-// eslint-disable-next-line import/no-unassigned-import
-import "chrome://browser/content/ipprotection/ipprotection-flag.mjs";
-// eslint-disable-next-line import/no-unassigned-import
 import "chrome://browser/content/ipprotection/ipprotection-message-bar.mjs";
 // eslint-disable-next-line import/no-unassigned-import
 import "chrome://browser/content/ipprotection/ipprotection-signedout.mjs";
 // eslint-disable-next-line import/no-unassigned-import
+import "chrome://browser/content/ipprotection/ipprotection-status-card.mjs";
+// eslint-disable-next-line import/no-unassigned-import
 import "chrome://global/content/elements/moz-toggle.mjs";
 
-const TIMER_INTERVAL_MS = 1000;
-
+/**
+ * Custom element that implements a message bar and status card for IP protection.
+ */
 export default class IPProtectionContentElement extends MozLitElement {
   static queries = {
-    headerEl: "ipprotection-header",
     signedOutEl: "ipprotection-signedout",
     messagebarEl: "ipprotection-message-bar",
-    statusCardEl: "#status-card",
-    animationEl: "#status-card-animation",
-    connectionToggleEl: "#connection-toggle",
-    locationEl: "#location-wrapper",
+    statusCardEl: "ipprotection-status-card",
     upgradeEl: "#upgrade-vpn-content",
     activeSubscriptionEl: "#active-subscription-vpn-content",
     supportLinkEl: "#vpn-support-link",
@@ -42,16 +33,8 @@ export default class IPProtectionContentElement extends MozLitElement {
 
   static properties = {
     state: { type: Object, attribute: false },
-    showAnimation: { type: Boolean, state: true },
-    /**
-     * _timeString is the current value shown on the panel,
-     * and is separate from protectionEnabledSince. We will use
-     * protectionEnabledSince to calculate what _timeString should be.
-     */
-    _timeString: { type: String, state: true },
     _showMessageBar: { type: Boolean, state: true },
     _messageDismissed: { type: Boolean, state: true },
-    _enabled: { type: Boolean, state: true },
   };
 
   constructor() {
@@ -61,12 +44,9 @@ export default class IPProtectionContentElement extends MozLitElement {
 
     this.keyListener = this.#keyListener.bind(this);
     this.messageBarListener = this.#messageBarListener.bind(this);
+    this.statusCardListener = this.#statusCardListener.bind(this);
     this._showMessageBar = false;
     this._messageDismissed = false;
-    this.showAnimation = false;
-    this._timeString = "";
-    this._connectionTimeInterval = null;
-    this._enabled = null;
   }
 
   connectedCallback() {
@@ -74,16 +54,21 @@ export default class IPProtectionContentElement extends MozLitElement {
     this.dispatchEvent(new CustomEvent("IPProtection:Init", { bubbles: true }));
     this.addEventListener("keydown", this.keyListener, { capture: true });
     this.addEventListener(
+      "ipprotection-status-card:user-toggled-on",
+      this.#statusCardListener
+    );
+    this.addEventListener(
+      "ipprotection-status-card:user-toggled-off",
+      this.#statusCardListener
+    );
+    this.addEventListener(
+      "ipprotection-site-settings-control:click",
+      this.#statusCardListener
+    );
+    this.addEventListener(
       "ipprotection-message-bar:user-dismissed",
       this.#messageBarListener
     );
-
-    // If we're able to show the time string right away, do it.
-    if (this.canShowConnectionTime) {
-      this._timeString = this.#getFormattedTime(
-        this.state.protectionEnabledSince
-      );
-    }
   }
 
   disconnectedCallback() {
@@ -91,11 +76,21 @@ export default class IPProtectionContentElement extends MozLitElement {
 
     this.removeEventListener("keydown", this.keyListener, { capture: true });
     this.removeEventListener(
+      "ipprotection-status-card:user-toggled-on",
+      this.#statusCardListener
+    );
+    this.removeEventListener(
+      "ipprotection-status-card:user-toggled-off",
+      this.#statusCardListener
+    );
+    this.removeEventListener(
+      "ipprotection-site-settings-control:click",
+      this.#statusCardListener
+    );
+    this.removeEventListener(
       "ipprotection-message-bar:user-dismissed",
       this.#messageBarListener
     );
-
-    this.#stopTimer();
   }
 
   get canShowConnectionTime() {
@@ -107,47 +102,12 @@ export default class IPProtectionContentElement extends MozLitElement {
     );
   }
 
+  get canEnableConnection() {
+    return this.state && this.state.isProtectionEnabled && !this.state.error;
+  }
+
   get #hasErrors() {
     return !this.state || this.state.error !== "";
-  }
-
-  #startTimerIfUnset() {
-    if (this._connectionTimeInterval) {
-      return;
-    }
-
-    this._connectionTimeInterval = setInterval(() => {
-      this._timeString = this.#getFormattedTime(
-        this.state.protectionEnabledSince
-      );
-    }, TIMER_INTERVAL_MS);
-  }
-
-  #stopTimer() {
-    clearInterval(this._connectionTimeInterval);
-    this._connectionTimeInterval = null;
-    this._timeString = "";
-  }
-
-  /**
-   * Returns the formatted connection duration time string as HH:MM:SS (hours, minutes, seconds).
-   *
-   * @param {number} startMS
-   *  The timestamp in milliseconds since a connection to the proxy was made.
-   * @returns {string}
-   *  The formatted time in HH:MM:SS.
-   */
-  #getFormattedTime(startMS) {
-    let duration = window.Temporal.Duration.from({
-      milliseconds: Math.ceil(ChromeUtils.now() - startMS),
-    }).round({ smallestUnit: "seconds", largestUnit: "hours" });
-
-    let formatter = new Intl.DurationFormat("en-US", {
-      style: "digital",
-      hoursDisplay: "always",
-      hours: "2-digit",
-    });
-    return formatter.format(duration);
   }
 
   handleClickSupportLink(event) {
@@ -160,22 +120,6 @@ export default class IPProtectionContentElement extends MozLitElement {
         new CustomEvent("IPProtection:Close", { bubbles: true })
       );
     }
-  }
-
-  handleToggleConnect(event) {
-    let isEnabled = event.target.pressed;
-
-    if (isEnabled) {
-      this.dispatchEvent(
-        new CustomEvent("IPProtection:UserEnable", { bubbles: true })
-      );
-    } else {
-      this.dispatchEvent(
-        new CustomEvent("IPProtection:UserDisable", { bubbles: true })
-      );
-    }
-
-    this._enabled = isEnabled;
   }
 
   handleUpgrade(event) {
@@ -193,23 +137,25 @@ export default class IPProtectionContentElement extends MozLitElement {
     if (this.state.isSignedOut) {
       this.signedOutEl?.focus();
     } else {
-      this.connectionToggleEl?.focus();
+      this.statusCardEl?.focus();
     }
   }
 
   #keyListener(event) {
     let keyCode = event.code;
     switch (keyCode) {
+      case "Tab":
       case "ArrowUp":
       // Intentional fall-through
       case "ArrowDown": {
         event.stopPropagation();
         event.preventDefault();
 
-        let direction =
-          keyCode == "ArrowDown"
-            ? Services.focus.MOVEFOCUS_FORWARD
-            : Services.focus.MOVEFOCUS_BACKWARD;
+        let isForward =
+          (keyCode == "Tab" && !event.shiftKey) || keyCode == "ArrowDown";
+        let direction = isForward
+          ? Services.focus.MOVEFOCUS_FORWARD
+          : Services.focus.MOVEFOCUS_BACKWARD;
         Services.focus.moveFocus(
           window,
           null,
@@ -218,6 +164,22 @@ export default class IPProtectionContentElement extends MozLitElement {
         );
         break;
       }
+    }
+  }
+
+  #statusCardListener(event) {
+    if (event.type === "ipprotection-status-card:user-toggled-on") {
+      this.dispatchEvent(
+        new CustomEvent("IPProtection:UserEnable", { bubbles: true })
+      );
+    } else if (event.type === "ipprotection-status-card:user-toggled-off") {
+      this.dispatchEvent(
+        new CustomEvent("IPProtection:UserDisable", { bubbles: true })
+      );
+    } else if (event.type === "ipprotection-site-settings-control:click") {
+      this.dispatchEvent(
+        new CustomEvent("IPProtection:UserShowSiteSettings", { bubbles: true })
+      );
     }
   }
 
@@ -232,37 +194,9 @@ export default class IPProtectionContentElement extends MozLitElement {
   updated(changedProperties) {
     super.updated(changedProperties);
 
-    // If the only updates are time string changes, ignore them.
-    if (changedProperties.size == 1 && changedProperties.has("_timeString")) {
-      return;
-    }
-
-    // Set the toggle to the protection enabled state, if it hasn't just changed.
-    if (!changedProperties.has("_enabled")) {
-      this._enabled = this.state.isProtectionEnabled;
-    }
-
-    // Clear hiding messages and disable the toggle when if there is an error.
+    // Clear messages when there is an error.
     if (this.state.error) {
       this._messageDismissed = false;
-      this._enabled = false;
-    }
-
-    /**
-     * Don't show animations until all elements are connected and layout is fully drawn.
-     * This will allow us to best position our animation component with the globe icon
-     * based on the most up to date status card dimensions.
-     */
-    if (this.state.isProtectionEnabled) {
-      this.showAnimation = true;
-    } else {
-      this.showAnimation = false;
-    }
-
-    if (this.canShowConnectionTime && this.isConnected) {
-      this.#startTimerIfUnset(this.state.protectionEnabledSince);
-    } else {
-      this.#stopTimer();
     }
   }
 
@@ -276,69 +210,18 @@ export default class IPProtectionContentElement extends MozLitElement {
     `;
   }
 
-  descriptionTemplate() {
-    return this.state.location
-      ? html`
-          <ipprotection-flag
-            .location=${this.state.location}
-          ></ipprotection-flag>
-        `
-      : null;
-  }
-
-  animationRingsTemplate() {
-    return html` <div id="status-card-animation">
-      <div id="animation-rings"></div>
-    </div>`;
-  }
-
   statusCardTemplate() {
-    let protectionEnabled = this.state.isProtectionEnabled;
-    const statusCardL10nId = protectionEnabled
-      ? "ipprotection-connection-status-on"
-      : "ipprotection-connection-status-off";
-    const toggleL10nId = protectionEnabled
-      ? "ipprotection-toggle-active"
-      : "ipprotection-toggle-inactive";
-    const statusIcon = protectionEnabled
-      ? "chrome://browser/content/ipprotection/assets/ipprotection-connection-on.svg"
-      : "chrome://browser/content/ipprotection/assets/ipprotection-connection-off.svg";
-
-    // Time is rendered as blank until we have a value to show.
-    let time =
-      this.canShowConnectionTime && this._timeString ? this._timeString : "";
-
-    return html` <moz-box-group class="vpn-status-group">
-      ${this.showAnimation ? this.animationRingsTemplate() : null}
-      <moz-box-item
-        id="status-card"
-        class=${classMap({
-          "is-enabled": this.state.isProtectionEnabled,
-        })}
-        layout="large-icon"
-        iconsrc=${statusIcon}
-        data-l10n-id=${statusCardL10nId}
-        data-l10n-args=${JSON.stringify({ time })}
-      >
-        <moz-toggle
-          id="connection-toggle"
-          data-l10n-id=${toggleL10nId}
-          @click=${this.handleToggleConnect}
-          ?pressed=${ifDefined(this._enabled)}
-          slot="actions"
-        ></moz-toggle>
-      </moz-box-item>
-      <moz-box-item
-        id="location-wrapper"
-        class=${classMap({
-          "is-enabled": this.state.isProtectionEnabled,
-        })}
-        iconsrc="chrome://global/skin/icons/info.svg"
-        data-l10n-id="ipprotection-location-title"
-        .description=${this.descriptionTemplate()}
-      >
-      </moz-box-item>
-    </moz-box-group>`;
+    // TODO: Pass site information to status-card to conditionally
+    // render the site settings control. (Bug 1997412)
+    return html`
+      <ipprotection-status-card
+        .protectionEnabled=${this.canEnableConnection}
+        .canShowTime=${this.canShowConnectionTime}
+        .enabledSince=${this.state.protectionEnabledSince}
+        .location=${this.state.location}
+        .siteData=${ifDefined(this.state.siteData)}
+      ></ipprotection-status-card>
+    `;
   }
 
   beforeUpgradeTemplate() {
@@ -396,8 +279,6 @@ export default class IPProtectionContentElement extends MozLitElement {
         rel="stylesheet"
         href="chrome://browser/content/ipprotection/ipprotection-content.css"
       />
-      <ipprotection-header titleId="ipprotection-title"></ipprotection-header>
-      <hr />
       <div id="ipprotection-content-wrapper">${content}</div>
     `;
   }

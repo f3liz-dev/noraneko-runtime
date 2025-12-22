@@ -5,7 +5,6 @@
 
 #include "gfxFontEntry.h"
 
-#include "mozilla/DebugOnly.h"
 #include "mozilla/FontPropertyTypes.h"
 #include "mozilla/MathAlgorithms.h"
 
@@ -27,12 +26,10 @@
 #include "nsBidiUtils.h"
 #include "nsStyleConsts.h"
 #include "mozilla/AppUnits.h"
-#include "mozilla/FloatingPoint.h"
 #include "mozilla/Likely.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/ProfilerLabels.h"
-#include "mozilla/ScopeExit.h"
 #include "mozilla/Services.h"
 #include "mozilla/StaticPrefs_layout.h"
 #include "gfxSVGGlyphs.h"
@@ -222,7 +219,7 @@ nsresult gfxFontEntry::ReadCMAP(FontInfoData* aFontInfoData) {
   MOZ_ASSERT(false, "using default no-op implementation of ReadCMAP");
   RefPtr<gfxCharacterMap> cmap = new gfxCharacterMap();
   if (mCharacterMap.compareExchange(nullptr, cmap.get())) {
-    Unused << cmap.forget();  // mCharacterMap now owns the reference
+    cmap.forget().leak();  // mCharacterMap now owns the reference
   }
   return NS_OK;
 }

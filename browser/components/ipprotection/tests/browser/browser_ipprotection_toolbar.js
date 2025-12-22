@@ -9,6 +9,8 @@ const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   IPProtectionService:
     "resource:///modules/ipprotection/IPProtectionService.sys.mjs",
+  IPProtectionStates:
+    "resource:///modules/ipprotection/IPProtectionService.sys.mjs",
 });
 
 /**
@@ -24,9 +26,11 @@ add_task(async function toolbar_added_and_removed() {
   let position = CustomizableUI.getPlacementOfWidget(
     IPProtectionWidget.WIDGET_ID
   ).position;
+  // By default, the button for revamped sidebar is placed at the beginning of the navbar.
+  let expectedPosition = Services.prefs.getBoolPref("sidebar.revamp") ? 8 : 7;
   Assert.equal(
     position,
-    7,
+    expectedPosition,
     "IP Protection widget added in the correct position"
   );
   // Disable the feature
@@ -46,7 +50,6 @@ add_task(async function toolbar_added_and_removed() {
 /**
  * Tests that the toolbar icon state updates when the connection status changes
  */
-
 add_task(async function toolbar_icon_status() {
   let button = document.getElementById(IPProtectionWidget.WIDGET_ID);
   Assert.ok(
@@ -69,23 +72,24 @@ add_task(async function toolbar_icon_status() {
   let content = panelView.querySelector(IPProtectionPanel.CONTENT_TAGNAME);
   setupService({
     isSignedIn: true,
-    isEnrolled: true,
+    isEnrolledAndEntitled: true,
   });
-  IPProtectionService.isEnrolled = true;
-  IPProtectionService.isEntitled = true;
-  content.state.isSignedOut = false;
+  IPProtectionService.updateState();
   await putServerInRemoteSettings();
   content.requestUpdate();
   await content.updateComplete;
-  lazy.IPProtectionService.isSignedIn = true;
 
   Assert.ok(content, "Panel content should be present");
-  let toggle = content.connectionToggleEl;
+
+  let statusCard = content.statusCardEl;
+  let toggle = statusCard.connectionToggleEl;
   Assert.ok(toggle, "Status card connection toggle should be present");
 
   let vpnOnPromise = BrowserTestUtils.waitForEvent(
     lazy.IPProtectionService,
-    "IPProtectionService:Started"
+    "IPProtectionService:StateChanged",
+    false,
+    () => !!IPProtectionService.activatedAt
   );
   // Toggle the VPN on
   toggle.click();
@@ -96,7 +100,9 @@ add_task(async function toolbar_icon_status() {
   );
   let vpnOffPromise = BrowserTestUtils.waitForEvent(
     lazy.IPProtectionService,
-    "IPProtectionService:Stopped"
+    "IPProtectionService:StateChanged",
+    false,
+    () => lazy.IPProtectionService.state === lazy.IPProtectionStates.READY
   );
   // Toggle the VPN off
   toggle.click();
@@ -107,8 +113,6 @@ add_task(async function toolbar_icon_status() {
   );
 
   cleanupService();
-  IPProtectionService.isEnrolled = false;
-  IPProtectionService.isEntitled = false;
 
   // Close the panel
   let panelHiddenPromise = waitForPanelEvent(document, "popuphidden");
@@ -122,22 +126,21 @@ add_task(async function toolbar_icon_status() {
 add_task(async function toolbar_icon_status_new_window() {
   setupService({
     isSignedIn: true,
-    isEnrolled: true,
+    isEnrolledAndEntitled: true,
   });
-  // Mock signing in
-  IPProtectionService.isSignedIn = false;
-  await IPProtectionService.updateSignInStatus();
+  IPProtectionService.updateState();
 
-  let content = await openPanel({
-    isSignedIn: true,
-  });
+  let content = await openPanel();
 
   let vpnOnPromise = BrowserTestUtils.waitForEvent(
     lazy.IPProtectionService,
-    "IPProtectionService:Started"
+    "IPProtectionService:StateChanged",
+    false,
+    () => !!IPProtectionService.activatedAt
   );
   // Toggle the VPN on
-  content.connectionToggleEl.click();
+  let statusCard = content.statusCardEl;
+  statusCard.connectionToggleEl.click();
   await vpnOnPromise;
 
   let button = document.getElementById(IPProtectionWidget.WIDGET_ID);
@@ -160,6 +163,8 @@ add_task(async function toolbar_icon_status_new_window() {
   await BrowserTestUtils.closeWindow(newWindow);
 
   await setPanelState();
+  // Clear userEnabled pref to avoid breaking tests
+  Services.prefs.clearUserPref("browser.ipProtection.userEnabled");
   cleanupService();
 });
 
@@ -175,7 +180,9 @@ add_task(async function customize_toolbar_remove_widget() {
 
   let stoppedEventPromise = BrowserTestUtils.waitForEvent(
     lazy.IPProtectionService,
-    "IPProtectionService:Stopped"
+    "IPProtectionService:StateChanged",
+    false,
+    () => lazy.IPProtectionService.state === lazy.IPProtectionStates.READY
   );
   CustomizableUI.removeWidgetFromArea(IPProtectionWidget.WIDGET_ID);
   // VPN should disconect when the toolbaritem is removed
@@ -197,6 +204,11 @@ add_task(async function customize_toolbar_remove_widget() {
  * back to the initial area on re-init.
  */
 add_task(async function toolbar_placement_customized() {
+  setupService({
+    isSignedIn: true,
+    isEnrolledAndEntitled: true,
+  });
+
   let start = CustomizableUI.getPlacementOfWidget(IPProtectionWidget.WIDGET_ID);
   Assert.equal(
     start.area,
@@ -222,8 +234,17 @@ add_task(async function toolbar_placement_customized() {
   let widget = document.getElementById(IPProtectionWidget.WIDGET_ID);
   Assert.equal(widget, null, "IP Protection widget is removed");
 
+  const waitForStateChange = BrowserTestUtils.waitForEvent(
+    lazy.IPProtectionService,
+    "IPProtectionService:StateChanged",
+    false,
+    () => lazy.IPProtectionService.state === lazy.IPProtectionStates.READY
+  );
+
   // Reenable the feature
   await setupExperiment();
+
+  await waitForStateChange;
 
   let restored = CustomizableUI.getPlacementOfWidget(
     IPProtectionWidget.WIDGET_ID
@@ -233,6 +254,55 @@ add_task(async function toolbar_placement_customized() {
     CustomizableUI.AREA_FIXED_OVERFLOW_PANEL,
     "IP Protection widget is still in the overflow area"
   );
+
+  CustomizableUI.addWidgetToArea(
+    IPProtectionWidget.WIDGET_ID,
+    start.area,
+    start.position
+  );
+});
+
+/**
+ * Tests that toolbar widget can be removed and will not be re-added.
+ */
+add_task(async function toolbar_removed() {
+  setupService({
+    isSignedIn: true,
+    isEnrolled: true,
+  });
+
+  let start = CustomizableUI.getPlacementOfWidget(IPProtectionWidget.WIDGET_ID);
+  Assert.equal(
+    start.area,
+    CustomizableUI.AREA_NAVBAR,
+    "IP Protection widget is initially added to the nav bar"
+  );
+
+  // Remove from the toolbar
+  CustomizableUI.removeWidgetFromArea(IPProtectionWidget.WIDGET_ID);
+
+  let end = CustomizableUI.getPlacementOfWidget(IPProtectionWidget.WIDGET_ID);
+  Assert.equal(end, null, "IP Protection widget is removed");
+
+  // Disable the feature
+  await cleanupExperiment();
+
+  const waitForStateChange = BrowserTestUtils.waitForEvent(
+    lazy.IPProtectionService,
+    "IPProtectionService:StateChanged",
+    false,
+    () => lazy.IPProtectionService.state === lazy.IPProtectionStates.READY
+  );
+
+  // Reenable the feature
+  await setupExperiment();
+
+  await waitForStateChange;
+
+  let restored = CustomizableUI.getPlacementOfWidget(
+    IPProtectionWidget.WIDGET_ID
+  );
+  Assert.equal(restored, null, "IP Protection widget is still removed");
 
   CustomizableUI.addWidgetToArea(
     IPProtectionWidget.WIDGET_ID,

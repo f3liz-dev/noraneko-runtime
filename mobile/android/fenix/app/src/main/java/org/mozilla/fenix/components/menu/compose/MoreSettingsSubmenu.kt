@@ -7,6 +7,8 @@ package org.mozilla.fenix.components.menu.compose
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
@@ -25,13 +27,16 @@ import mozilla.components.ui.icons.R as iconsR
 internal fun MoreSettingsSubmenu(
     isPinned: Boolean,
     isInstallable: Boolean,
+    isAddToHomeScreenSupported: Boolean,
     hasExternalApp: Boolean,
     externalAppName: String,
     isReaderViewActive: Boolean,
     isWebCompatReporterSupported: Boolean,
     isWebCompatEnabled: Boolean,
+    isOpenInAppMenuHighlighted: Boolean,
     translationInfo: TranslationInfo,
     showShortcuts: Boolean,
+    isAndroidAutomotiveAvailable: Boolean,
     onWebCompatReporterClick: () -> Unit,
     onShortcutsMenuClick: () -> Unit,
     onAddToHomeScreenMenuClick: () -> Unit,
@@ -66,15 +71,17 @@ internal fun MoreSettingsSubmenu(
             )
         }
 
-        MenuItem(
-            label = if (isInstallable) {
-                stringResource(id = R.string.browser_menu_add_app_to_homescreen)
-            } else {
-                stringResource(id = R.string.browser_menu_add_to_homescreen)
-            },
-            beforeIconPainter = painterResource(id = iconsR.drawable.mozac_ic_add_to_homescreen_24),
-            onClick = onAddToHomeScreenMenuClick,
-        )
+        if (isAddToHomeScreenSupported) {
+            MenuItem(
+                label = if (isInstallable) {
+                    stringResource(id = R.string.browser_menu_add_app_to_homescreen)
+                } else {
+                    stringResource(id = R.string.browser_menu_add_to_homescreen)
+                },
+                beforeIconPainter = painterResource(id = iconsR.drawable.mozac_ic_add_to_homescreen_24),
+                onClick = onAddToHomeScreenMenuClick,
+            )
+        }
 
         MenuItem(
             label = stringResource(id = R.string.browser_menu_save_to_collection_2),
@@ -90,6 +97,7 @@ internal fun MoreSettingsSubmenu(
                     stringResource(id = R.string.browser_menu_open_app_link)
                 },
                 beforeIconPainter = painterResource(id = iconsR.drawable.mozac_ic_more_grid_24),
+                isBeforeIconHighlighted = isOpenInAppMenuHighlighted,
                 state = MenuItemState.ENABLED,
                 onClick = onOpenInAppMenuClick,
             )
@@ -106,12 +114,13 @@ internal fun MoreSettingsSubmenu(
             beforeIconPainter = painterResource(id = iconsR.drawable.mozac_ic_save_file_24),
             onClick = onSaveAsPDFMenuClick,
         )
-
-        MenuItem(
-            label = stringResource(id = R.string.browser_menu_print_2),
-            beforeIconPainter = painterResource(id = iconsR.drawable.mozac_ic_print_24),
-            onClick = onPrintMenuClick,
-        )
+        if (!isAndroidAutomotiveAvailable) {
+            MenuItem(
+                label = stringResource(id = R.string.browser_menu_print_2),
+                beforeIconPainter = painterResource(id = iconsR.drawable.mozac_ic_print_24),
+                onClick = onPrintMenuClick,
+            )
+        }
     }
 }
 
@@ -131,7 +140,7 @@ private fun TranslationMenuItem(
             Badge(
                 badgeText = translationInfo.translatedLanguage,
                 state = state,
-                badgeBackgroundColor = FirefoxTheme.colors.badgeActive,
+                badgeBackgroundColor = MaterialTheme.colorScheme.primaryContainer,
             )
         }
     } else {
@@ -174,17 +183,21 @@ private fun ShortcutsMenuItem(
 private fun MoreSettingsSubmenuPreview() {
     FirefoxTheme {
         Column(
-            modifier = Modifier.background(color = FirefoxTheme.colors.layer3),
+            modifier = Modifier
+                .background(color = MaterialTheme.colorScheme.surface)
+                .padding(all = FirefoxTheme.layout.space.static200),
         ) {
             MenuGroup {
                 MoreSettingsSubmenu(
                     isPinned = true,
                     isInstallable = true,
+                    isAddToHomeScreenSupported = true,
                     hasExternalApp = true,
                     externalAppName = "Pocket",
                     isReaderViewActive = false,
                     isWebCompatReporterSupported = true,
                     isWebCompatEnabled = true,
+                    isOpenInAppMenuHighlighted = false,
                     translationInfo = TranslationInfo(
                         isTranslationSupported = true,
                         isPdf = false,
@@ -193,6 +206,7 @@ private fun MoreSettingsSubmenuPreview() {
                         onTranslatePageMenuClick = {},
                     ),
                     showShortcuts = true,
+                    isAndroidAutomotiveAvailable = false,
                     onWebCompatReporterClick = {},
                     onShortcutsMenuClick = {},
                     onAddToHomeScreenMenuClick = {},
@@ -211,17 +225,21 @@ private fun MoreSettingsSubmenuPreview() {
 private fun MoreSettingsSubmenuPrivatePreview() {
     FirefoxTheme(theme = Theme.Private) {
         Column(
-            modifier = Modifier.background(color = FirefoxTheme.colors.layer3),
+            modifier = Modifier
+                .background(color = MaterialTheme.colorScheme.surface)
+                .padding(all = FirefoxTheme.layout.space.static200),
         ) {
             MenuGroup {
                 MoreSettingsSubmenu(
                     isPinned = false,
                     isInstallable = true,
+                    isAddToHomeScreenSupported = false,
                     hasExternalApp = false,
                     externalAppName = "Pocket",
                     isReaderViewActive = false,
                     isWebCompatReporterSupported = true,
                     isWebCompatEnabled = true,
+                    isOpenInAppMenuHighlighted = true,
                     translationInfo = TranslationInfo(
                         isTranslationSupported = true,
                         isPdf = false,
@@ -230,6 +248,7 @@ private fun MoreSettingsSubmenuPrivatePreview() {
                         onTranslatePageMenuClick = {},
                     ),
                     showShortcuts = true,
+                    isAndroidAutomotiveAvailable = false,
                     onWebCompatReporterClick = {},
                     onShortcutsMenuClick = {},
                     onAddToHomeScreenMenuClick = {},

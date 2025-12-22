@@ -13,7 +13,7 @@ use style_traits::{CssWriter, ToCss};
 
 /// This struct represents a combined color from a numeric color and
 /// the current foreground color (currentcolor keyword).
-#[derive(Clone, Debug, MallocSizeOf, PartialEq, ToAnimatedValue, ToShmem)]
+#[derive(Clone, Debug, MallocSizeOf, PartialEq, ToAnimatedValue, ToShmem, ToTyped)]
 #[repr(C)]
 pub enum GenericColor<Percentage> {
     /// The actual numeric color.
@@ -24,6 +24,8 @@ pub enum GenericColor<Percentage> {
     CurrentColor,
     /// The color-mix() function.
     ColorMix(Box<GenericColorMix<Self, Percentage>>),
+    /// The contrast-color() function.
+    ContrastColor(Box<Self>),
 }
 
 /// Flags used to modify the calculation of a color mix result.
@@ -171,6 +173,7 @@ impl<Percentage> Color<Percentage> {
     ToResolvedValue,
     ToCss,
     ToShmem,
+    ToTyped,
 )]
 #[repr(C, u8)]
 pub enum GenericColorOrAuto<C> {
@@ -198,6 +201,7 @@ pub use self::GenericColorOrAuto as ColorOrAuto;
     ToComputedValue,
     ToCss,
     ToShmem,
+    ToTyped,
 )]
 #[repr(transparent)]
 pub struct GenericCaretColor<C>(pub GenericColorOrAuto<C>);

@@ -18,7 +18,7 @@
 
   > h4 {
     margin-block: var(--space-large);
-    font-weight: var(--font-weight-bold);
+    font-weight: var(--heading-font-weight);
     font-size: 15px;
   }
 
@@ -146,7 +146,7 @@
   #viewButton {
     margin: 0;
     margin-inline-start: 4px;
-    border-radius: 2px;
+    border-radius: var(--border-radius-xsmall);
   }
 }
 

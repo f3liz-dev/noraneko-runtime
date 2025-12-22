@@ -124,6 +124,11 @@ extension-controlling-proxy-config = <img data-l10n-name ="icon"/> <strong>{ $na
 # <img data-l10n-name="menu-icon"/> will be replaced with Menu icon
 extension-controlled-enable = To enable the extension go to <img data-l10n-name="addons-icon"/> Add-ons in the <img data-l10n-name="menu-icon"/> menu.
 
+extension-controlled-enable-2 = To re-enable this extension visit <a data-l10n-name="addons-link">Extensions and themes</a>.
+# This string is shown to notify the user that their home page or new tab preferences
+# are being controlled by an extension.
+extension-controlling-homepage = { $name } controls some of your homepage settings.
+
 ## Preferences UI Search Results
 
 search-results-header = Search Results
@@ -142,8 +147,11 @@ always-check-default =
     .label = Always check if { -brand-short-name } is your default browser
     .accesskey = y
 
-is-default = { -brand-short-name } is currently your default browser
-is-not-default = { -brand-short-name } is not your default browser
+is-default-browser =
+    .message = { -brand-short-name } is currently your default browser
+
+is-not-default-browser =
+    .message = { -brand-short-name } is not your default browser
 
 set-as-my-default-browser =
     .label = Make Default…
@@ -152,12 +160,13 @@ set-as-my-default-browser =
 startup-restore-windows-and-tabs =
     .label = Open previous windows and tabs
     .accesskey = s
+startup-windows-launch-on-login-profile-disabled =
+    .message = Enable this preference by checking “{ profile-manager-use-selected.label }” in the “Choose User Profile” window.
 
 windows-launch-on-login =
     .label = Open { -brand-short-name } automatically when your computer starts up
     .accesskey = O
 windows-launch-on-login-disabled = This preference has been disabled in Windows. To change, visit <a data-l10n-name="startup-link">Startup Apps</a> in System settings.
-windows-launch-on-login-profile-disabled = Enable this preference by checking “{ profile-manager-use-selected.label }” in the “Choose User Profile” window.
 
 disable-extension =
     .label = Disable Extension
@@ -183,6 +192,9 @@ ctrl-tab-recently-used-order =
 open-new-link-as-tabs =
     .label = Open links in tabs instead of new windows
     .accesskey = w
+
+open-external-link-next-to-active-tab =
+    .label = Open links from apps next to your active tab
 
 ask-on-close-multiple-tabs =
     .label = Ask before closing multiple tabs
@@ -280,34 +292,26 @@ preferences-web-appearance-header = Website appearance
 
 preferences-web-appearance-description = Some websites adapt their color scheme based on your preferences. Choose which color scheme you’d like to use for those sites.
 
-preferences-web-appearance-choice-auto = Automatic
-preferences-web-appearance-choice-light = Light
-preferences-web-appearance-choice-dark = Dark
-
-preferences-web-appearance-choice-tooltip-auto =
+preferences-web-appearance-choice-auto2 =
+  .label = Automatic
   .title = Automatically change website backgrounds and content based on your system settings and { -brand-short-name } theme.
-preferences-web-appearance-choice-tooltip-light =
+preferences-web-appearance-choice-light2 =
+  .label = Light
   .title = Use a light appearance for website backgrounds and content.
-preferences-web-appearance-choice-tooltip-dark =
+preferences-web-appearance-choice-dark2 =
+  .label = Dark
   .title = Use a dark appearance for website backgrounds and content.
 
-preferences-web-appearance-choice-input-auto =
-  .aria-description = { preferences-web-appearance-choice-tooltip-auto.title }
-
-preferences-web-appearance-choice-input-light =
-  .aria-description = { preferences-web-appearance-choice-tooltip-light.title }
-
-preferences-web-appearance-choice-input-dark =
-  .aria-description = { preferences-web-appearance-choice-tooltip-dark.title }
+web-appearance-group =
+  .aria-label = Website appearance
 
 # This can appear when using windows HCM or "Override colors: always" without
 # system colors.
 preferences-web-appearance-override-warning3 =
     .message = Your contrast control settings are overriding website appearance.
 
-# This message contains one link. It can be moved within the sentence as needed
-# to adapt to your language, but should not be changed.
-preferences-web-appearance-footer = Manage { -brand-short-name } themes in <a data-l10n-name="themes-link">Extensions & Themes</a>
+preferences-web-appearance-link =
+    .label = Manage { -brand-short-name } themes in Extensions & Themes
 
 preferences-contrast-control-header = Contrast Control
 
@@ -392,22 +396,12 @@ check-user-spelling =
 
 files-and-applications-title = Files and Applications
 
-download-header = Downloads
+downloads-header-2 =
+    .label = Downloads
 
-download-save-where = Save files to
+download-save-where-2 =
+    .label = Save files to
     .accesskey = v
-
-download-choose-folder =
-    .label =
-        { PLATFORM() ->
-            [macos] Choose…
-           *[other] Browse…
-        }
-    .accesskey =
-        { PLATFORM() ->
-            [macos] e
-           *[other] o
-        }
 
 download-always-ask-where =
     .label = Always ask you where to save files
@@ -674,7 +668,11 @@ home-new-windows-tabs-description2 = Choose what you see when you open your home
 
 ## Home Section - Home Page Customization
 
+home-homepage-header = Homepage
+
 home-homepage-mode-label = Homepage and new windows
+
+home-homepage-mode-label2 = New windows
 
 home-newtabs-mode-label = New tabs
 
@@ -693,6 +691,40 @@ home-mode-choice-blank =
 
 home-homepage-custom-url =
     .placeholder = Paste a URL…
+
+# This button is shown when the homepage is managed by an extension and is placed below extension-controlling-homepage.
+home-homepage-manage-extension-button =
+    .label = Manage extension
+
+# This option leads to the "Custom Homepage" subpage
+home-homepage-custom-homepage-url = Choose a specific site
+
+## Custom Homepage subpage
+
+home-custom-homepage-header = Custom Homepage
+
+# Subheader on the Custom Homepage subpage. Followed by a form to enter URLs and a list of URLs already saved, if any.
+home-custom-homepage-subheader = Website address(es)
+
+home-custom-homepage-address =
+    .placeholder = Enter address
+home-custom-homepage-address-button =
+    .label = Add address
+
+# Shown when no custom websites/URLs to use as a homepage have been added yet
+home-custom-homepage-no-websites-yet = No websites added yet.
+
+# Further options to use when setting the home page. Two action buttons are placed in line with this prompt
+# to replace the current home page with a currently open page or bookmark.
+home-custom-homepage-replace-with = Replace with
+
+# Button that appears in-line after text "Replace with" (home-custom-homepage-replace-with)
+home-custom-homepage-current-pages-button =
+    .label = Current opened pages
+
+# Button that appears in-line after text "Replace with" (home-custom-homepage-replace-with)
+home-custom-homepage-bookmarks-button =
+    .label = Bookmarks…
 
 # This string has a special case for '1' and [other] (default). If necessary for
 # your language, you can add {$tabCount} to your translations and use the
@@ -713,10 +745,13 @@ choose-bookmark =
 ## Home Section - Firefox Home Content Customization
 
 home-prefs-content-header2 = { -firefox-home-brand-name } Content
+home-prefs-content-header3 = { -firefox-home-brand-name }
 home-prefs-content-description2 = Choose what content you want on your { -firefox-home-brand-name } screen.
 
 home-prefs-search-header =
     .label = Web Search
+home-prefs-search-header2 =
+    .label = Search
 home-prefs-shortcuts-header =
     .label = Shortcuts
 home-prefs-shortcuts-description = Sites you save or visit
@@ -726,6 +761,10 @@ home-prefs-shortcuts-by-option-sponsored =
 home-prefs-recommended-by-header-generic =
     .label = Recommended stories
 home-prefs-recommended-by-description-generic = Exceptional content curated by the { -brand-product-name } family
+
+home-prefs-stories-header =
+    .label = Stories
+home-prefs-stories-description = Personalized stories based on your activity
 
 ##
 
@@ -758,6 +797,9 @@ home-prefs-support-firefox-header =
 
 home-prefs-mission-message = Our sponsors support our mission to build a better web
 home-prefs-mission-message-learn-more-link = Find out how
+
+home-prefs-manage-topics-link = Manage topics
+home-prefs-choose-wallpaper-link = Choose a wallpaper
 
 # Variables:
 #   $num (number) - Number of rows displayed
@@ -855,6 +897,8 @@ remove-addon-engine-alert = To remove this search engine, remove the associated 
 containers-back-button2 =
     .aria-label = Back to Settings
 containers-header = Container Tabs
+containers-section-header =
+    .heading = Container Tabs
 containers-add-button =
     .label = Add New Container
     .accesskey = A
@@ -1015,6 +1059,16 @@ sync-engine-settings =
 
 sync-device-name-header = Device Name
 
+# Variables:
+#   $placeholder (string) - The placeholder text of the input
+sync-device-name-input =
+    .aria-label = Device Name
+    .placeholder = { $placeholder }
+
+sync-device-name-change-2 =
+    .label = Change Device Name
+    .accesskey = h
+
 sync-device-name-change =
     .label = Change Device Name…
     .accesskey = h
@@ -1117,21 +1171,29 @@ autofill-creditcard-os-auth-dialog-caption = { -brand-full-name }
 
 ## Privacy section - Autofill
 
-pane-privacy-autofill-header = Autofill
-autofill-addresses-checkbox = Save and fill addresses
-    .accesskey = a
-autofill-saved-addresses-button = Saved addresses
-    .accesskey = S
-autofill-payment-methods-checkbox-message = Save and fill payment methods
+autofill-payment-methods-title = Payment methods
+autofill-payment-methods-header =
+    .aria-label = Payment methods
+autofill-payment-methods-checkbox-message-2 =
+    .label = Save and autofill payment info
+    .accesskey = p
+autofill-payment-methods-manage-payments-button =
+    .label = Manage payment methods
     .accesskey = m
-autofill-payment-methods-checkbox-submessage = Includes credit and debit cards
-    .accesskey = I
-autofill-saved-payment-methods-button = Saved payment methods
-    .accesskey = v
-
 # This operation requires the user to authenticate with the operating system (device sign-in)
-autofill-reauth-payment-methods-checkbox = Require device sign in to fill and manage payment methods
+autofill-reauth-payment-methods-checkbox-2 =
+    .label = Require device sign in to autofill and manage payments methods
     .accesskey = o
+
+autofill-addresses-title = Addresses and more
+autofill-addresses-header =
+    .aria-label = Addresses and more
+autofill-addresses-checkbox-message =
+    .label = Save and autofill addresses
+    .accesskey = S
+autofill-addresses-manage-addresses-button =
+    .label = Manage addresses and more
+    .accesskey = M
 
 ## Privacy Section - History
 
@@ -1187,12 +1249,15 @@ history-clear-button =
 
 sitedata-header = Cookies and Site Data
 
+sitedata-label =
+     .aria-label = { sitedata-header }
+
 sitedata-total-size-calculating = Calculating site data and cache size…
 
 # Variables:
 #   $value (number) - Value of the unit (for example: 4.6, 500)
 #   $unit (string) - Name of the unit (for example: "bytes", "KB")
-sitedata-total-size = Your stored cookies, site data, and cache are currently using { $value } { $unit } of disk space.
+sitedata-total-size2 = Your stored cookies, history, site data, and cache are currently using <strong>{ $value } { $unit }</strong> of disk space.
 
 sitedata-learn-more = Learn more
 
@@ -1200,14 +1265,15 @@ sitedata-delete-on-close =
     .label = Delete cookies and site data when { -brand-short-name } is closed
     .accesskey = c
 
-sitedata-delete-on-close-private-browsing2 = Based on your history settings, { -brand-short-name } deletes cookies and site data from your session when you close the browser.
+sitedata-delete-on-close-private-browsing3 =
+    .message = Based on your history settings, { -brand-short-name } deletes cookies and site data from your session when you close the browser.
 
 sitedata-option-block-cross-site-trackers =
     .label = Cross-site trackers
 sitedata-option-block-cross-site-tracking-cookies =
     .label = Cross-site tracking cookies
-sitedata-option-block-cross-site-cookies =
-    .label = Cross-site tracking cookies, and isolate other cross-site cookies
+sitedata-option-block-cross-site-cookies2 =
+    .label = Isolate cross-site cookies
 sitedata-option-block-unvisited =
     .label = Cookies from unvisited websites
 sitedata-option-block-all-cross-site-cookies =
@@ -1215,17 +1281,22 @@ sitedata-option-block-all-cross-site-cookies =
 sitedata-option-block-all =
     .label = All cookies (will cause websites to break)
 
-sitedata-clear =
-    .label = Clear Data…
+sitedata-clear2 =
+    .label = Clear browsing data
     .accesskey = l
 
-sitedata-settings =
-    .label = Manage Data…
+sitedata-settings2 =
+    .label = Manage browsing data
     .accesskey = M
 
 sitedata-cookies-exceptions =
     .label = Manage Exceptions…
     .accesskey = x
+
+sitedata-cookies-exceptions2 =
+    .label = Manage exceptions
+    .accesskey = x
+    .description = You can specify which websites are always or never allowed to use cookies and site data.
 
 ## Privacy Section - Cookie Banner Blocking
 
@@ -1239,13 +1310,13 @@ cookie-banner-blocker-checkbox-label =
 
 addressbar-header = Address Bar
 
-addressbar-suggest = When using the address bar, suggest
+addressbar-suggest-1 = Choose which suggestions display in your address bar
 
 # When Firefox Suggest is enabled, this replaces `addressbar-header`.
-addressbar-header-firefox-suggest = Address Bar — { -firefox-suggest-brand-name }
+addressbar-header-firefox-suggest-1 = { -firefox-suggest-brand-name }
 
 # When Firefox Suggest is enabled, this replaces `addressbar-suggest`.
-addressbar-suggest-firefox-suggest = Choose the type of suggestions that appear in the address bar.
+addressbar-suggest-firefox-suggest-1 = Suggestions from { -brand-short-name } and our partners in your address bar.
 
 # When Firefox Suggest is enabled, a "Learn more" link appears at the end of
 # `addressbar-suggest-firefox-suggest`.
@@ -1270,8 +1341,8 @@ addressbar-locbar-shortcuts-option =
 addressbar-locbar-topsites-option =
     .label = Top sites
     .accesskey = T
-addressbar-locbar-engines-option =
-    .label = Search engines
+addressbar-locbar-engines-option-1 =
+    .label = Suggest search engines to use
     .accesskey = a
 addressbar-locbar-quickactions-option =
     .label = Quick actions
@@ -1283,14 +1354,23 @@ addressbar-locbar-showtrendingsuggestions-option =
     .label = Show trending search suggestions
     .accesskey = t
 
-# Nonsponsored suggestions refers to Firefox Suggest suggestions like Wikipedia.
-addressbar-locbar-suggest-nonsponsored-option =
+# Toggles whether suggestions are obtained from Firefox Suggest or not (local or online).
+addressbar-locbar-suggest-all-option =
   .label = Suggestions from { -brand-short-name }
-addressbar-locbar-suggest-nonsponsored-desc = Get suggestions from the web related to your search.
+addressbar-locbar-suggest-all-option-desc = Get suggestions from the web related to your search.
 
 addressbar-locbar-suggest-sponsored-option =
   .label = Suggestions from sponsors
 addressbar-locbar-suggest-sponsored-desc = Support { -brand-short-name } with occasional sponsored suggestions.
+
+# This string is used for a checkbox in the settings UI that opts the
+# user into "online" Firefox Suggest, allowing them to receive suggestions from
+# Mozilla's Merino server.
+# "Mozilla" is intentionally hardcoded to prevent forks from replacing it
+# with their own vendor name, since the online suggest is created and maintained
+# by Mozilla.
+addressbar-firefox-suggest-online =
+  .label = Retrieve suggestions from Mozilla as you type
 
 addressbar-quickactions-learn-more = Learn more
 
@@ -1339,7 +1419,7 @@ content-blocking-private-windows = Tracking content in Private Windows
 content-blocking-cross-site-cookies-in-all-windows2 = Cross-site cookies in all windows
 content-blocking-cross-site-tracking-cookies = Cross-site tracking cookies
 content-blocking-all-cross-site-cookies-private-windows = Cross-site cookies in Private Windows
-content-blocking-cross-site-tracking-cookies-plus-isolate = Cross-site tracking cookies, and isolate remaining cookies
+content-blocking-isolate-cross-site-cookies = Isolate cross-site cookies
 content-blocking-social-media-trackers = Social media trackers
 content-blocking-all-cookies = All cookies
 content-blocking-unvisited-cookies = Cookies from unvisited sites
@@ -1578,11 +1658,9 @@ security-block-uncommon-software =
 
 ## Privacy Section - Certificates
 
-certs-header = Certificates
-
-certs-enable-ocsp =
-    .label = Query OCSP responder servers to confirm the current validity of certificates
-    .accesskey = Q
+certs-description2 =
+    .label = Certificates
+    .description = Configure the certificates that { -brand-short-name } uses for authentication.
 
 certs-view =
     .label = View Certificates…
@@ -1596,6 +1674,8 @@ certs-thirdparty-toggle =
     .label = Allow { -brand-short-name } to automatically trust third-party root certificates you install
     .accesskey = t
 
+certs-devices-enable-fips = Enable FIPS
+
 space-alert-over-5gb-settings-button =
     .label = Open Settings
     .accesskey = O
@@ -1608,7 +1688,9 @@ space-alert-under-5gb-message2 = <strong>{ -brand-short-name } is running out of
 
 httpsonly-header = HTTPS-Only Mode
 
-httpsonly-description3 = Only allows secure connections to websites. { -brand-short-name } will ask before connecting insecurely.
+httpsonly-label =
+    .aria-label = { httpsonly-header }
+    .description = Only allows secure connections to websites. { -brand-short-name } will ask before connecting insecurely.
 
 httpsonly-learn-more2 = How HTTPS-Only works
 
@@ -1690,4 +1772,3 @@ preferences-doh-manage-exceptions =
 
 desktop-folder-name = Desktop
 downloads-folder-name = Downloads
-choose-download-folder-title = Choose Download Folder:

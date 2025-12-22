@@ -5,7 +5,7 @@ const { ObjectUtils } = ChromeUtils.importESModule(
   "resource://gre/modules/ObjectUtils.sys.mjs"
 );
 const { PrefUtils } = ChromeUtils.importESModule(
-  "resource://normandy/lib/PrefUtils.sys.mjs"
+  "moz-src:///toolkit/modules/PrefUtils.sys.mjs"
 );
 
 const { ProfilesDatastoreService } = ChromeUtils.importESModule(
@@ -1821,6 +1821,7 @@ add_task(async function test_prefChange() {
         value: slugs[enrollmentKind],
         extra: {
           reason: "changed-pref",
+          branch: "control",
           changedPref: pref,
         },
       }));
@@ -1828,15 +1829,13 @@ add_task(async function test_prefChange() {
     TelemetryTestUtils.assertEvents(expectedLegacyEvents, LEGACY_FILTER);
 
     if (expectedLegacyEvents.length) {
-      const processedGleanEvents = gleanEvents.map(event => ({
-        reason: event.extra.reason,
-        experiment: event.extra.experiment,
-        changed_pref: event.extra.changed_pref,
-      }));
+      const processedGleanEvents = gleanEvents.map(event => event.extra);
       const expectedGleanEvents = expectedLegacyEvents.map(event => ({
         experiment: event.value,
+        branch: event.extra.branch,
         reason: event.extra.reason,
         changed_pref: event.extra.changedPref,
+        about_config_change: "false",
       }));
 
       Assert.deepEqual(
@@ -2772,7 +2771,7 @@ async function test_restorePrefs_manifestChanged() {
     });
   }
 
-  /*
+  /**
    * Test that enrollments end when the manifest is sufficiently changed and
    * that the appropriate telemetry is submitted.
    *

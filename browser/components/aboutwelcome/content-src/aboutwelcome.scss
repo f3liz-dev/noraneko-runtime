@@ -97,6 +97,22 @@ html {
   }
 }
 
+.onboardingContainer:has(.embedded-backup-restore-container) {
+  .screen[pos='split'][fullscreen] {
+    .section-main {
+      .main-content {
+        .welcome-text {
+          margin-block: 15px 22px;
+
+          h1, h2 {
+            max-width: 300px;
+          }
+        }
+      }
+    }
+  }
+}
+
 .onboardingContainer {
   --grey-subtitle-1: light-dark(#696977, #FFF);
   --mr-welcome-background-color: light-dark(#F8F6F4, #333336);
@@ -112,11 +128,13 @@ html {
   --picker-background-color: color-mix(in srgb, transparent 98%, light-dark(black, white) 2%);
   --picker-hover-background-color: color-mix(in srgb, transparent 95%, light-dark(black, white) 5%);
   --picker-border-color: var(--in-content-border-color);
-  --picker-checked-border-color: var(--in-content-item-selected);
+  --picker-checked-border-color: var(--color-accent-primary-selected);
   --picker-hover-border-color: var(--picker-border-color);
-  --picker-focus-ring-color: var(--in-content-item-selected);
-  --picker-checkbox-color: var(--in-content-item-selected);
+  --picker-focus-ring-color: var(--color-accent-primary-selected);
+  --picker-checkbox-color: var(--color-accent-primary-selected);
   --picker-checkbox-hover-color: var(--picker-checkbox-color);
+  --picker-backup-flair-background: color-mix(in srgb, var(--color-accent-primary) 20%, transparent);
+  --picker-backup-flair-color: var(--color-accent-primary);
 
   @media (forced-colors: active) {
     --picker-background-color: ButtonFace;
@@ -175,6 +193,13 @@ html {
     transform: rotateY(180deg);
   }
 
+  &:has([pos='split'][fullscreen]) {
+    min-height: 100vh;
+    height: auto;
+    display: flex;
+    flex-direction: column;
+  }
+
   .section-main {
     display: flex;
     flex-direction: column;
@@ -189,7 +214,7 @@ html {
 
   .main-content {
     background-color: var(--background-color-canvas);
-    border-radius: 20px;
+    border-radius: var(--border-radius-large);
     box-shadow: 0 2px 14px 0 rgba(0, 0, 0, 20%);
     display: flex;
     flex-direction: column;
@@ -251,7 +276,7 @@ html {
     border: var(--button-border);
     line-height: 12px;
     font-size: 0.72em;
-    font-weight: 600;
+    font-weight: var(--font-weight-semibold);
     padding: 8px 16px;
     text-decoration: none;
     cursor: default;
@@ -347,7 +372,7 @@ html {
 
         .main-content {
           background-color: var(--mr-welcome-background-color);
-          border-radius: 8px;
+          border-radius: var(--border-radius-medium);
           box-shadow: 0 2px 14px rgba(58, 57, 68, 20%);
           padding: 44px 85px 20px;
 
@@ -400,7 +425,7 @@ html {
 
         .main-content {
           background-color: var(--background-color-canvas);
-          border-radius: 8px;
+          border-radius: var(--border-radius-medium);
           box-shadow: 0 2px 14px rgba(58, 57, 68, 20%);
           overflow: hidden;
 
@@ -467,7 +492,7 @@ html {
           display: flex;
           border: 1px solid var(--in-content-border-color);
           box-shadow: 0 1px 2px 0 var(--in-content-border-color);
-          border-radius: 4px;
+          border-radius: var(--border-radius-small);
           margin: 5px auto;
           text-align: start;
 
@@ -485,13 +510,13 @@ html {
           .addon-title {
             margin: 10px 0 3px;
             font-size: 16px;
-            font-weight: 600;
+            font-weight: var(--heading-font-weight);
           }
 
           .addon-description {
             margin: 2px 0 10px;
             font-size: 13px;
-            font-weight: 400;
+            font-weight: normal;
           }
 
           .install-button-wrapper {
@@ -509,7 +534,7 @@ html {
           height: 1em;
           border: 3px solid var(--button-text-color-primary);
           border-bottom-color: transparent;
-          border-radius: 50%;
+          border-radius: var(--border-radius-circle);
           box-sizing: border-box;
           animation: rotation 1s linear infinite;
           justify-self: center;
@@ -586,7 +611,7 @@ html {
           box-shadow: 0 2px 14px 0 rgba(0, 0, 0, 20%);
           width: $split-section-width + $split-section-width;
           height: $split-screen-height;
-          border-radius: 8px;
+          border-radius: var(--border-radius-medium);
           inset: 0;
           margin: auto;
           pointer-events: none;
@@ -651,7 +676,7 @@ html {
         }
 
         .main-content {
-          border-radius: 0 8px 8px 0;
+          border-radius: 0 var(--border-radius-medium) var(--border-radius-medium) 0;
           overflow: hidden;
           padding-inline: 35px 20px;
           padding-block: 120px 0;
@@ -662,7 +687,7 @@ html {
           }
 
           &:dir(rtl) {
-            border-radius: 8px 0 0 8px;
+            border-radius: var(--border-radius-medium) 0 0 var(--border-radius-medium);
           }
 
           .legal-paragraph {
@@ -773,7 +798,7 @@ html {
               height: 1em;
               border: 3px solid var(--button-text-color-primary);
               border-bottom-color: transparent;
-              border-radius: 50%;
+              border-radius: var(--border-radius-circle);
               box-sizing: border-box;
               animation: rotation 1s linear infinite;
               justify-self: center;
@@ -867,7 +892,7 @@ html {
       .section-secondary {
         --mr-secondary-position: center center / auto 350px;
 
-        border-radius: 8px 0 0 8px;
+        border-radius: var(--border-radius-medium) 0 0 var(--border-radius-medium);
         margin: auto 0 auto auto;
         display: flex;
         align-items: center;
@@ -876,14 +901,14 @@ html {
         position: relative;
 
         &:dir(rtl) {
-          border-radius: 0 8px 8px 0;
+          border-radius: 0 var(--border-radius-medium) var(--border-radius-medium) 0;
           margin: auto;
           margin-inline-end: 0;
         }
 
         h1 {
           color: var(--mr-screen-heading-color);
-          font-weight: 700;
+          font-weight: var(--font-weight-bold);
           font-size: 47px;
           line-height: 110%;
           max-width: 340px;
@@ -984,10 +1009,10 @@ html {
 
             margin: auto;
             margin-inline-end: 0;
-            border-radius: 8px 0 0 8px;
+            border-radius: var(--border-radius-medium) 0 0 var(--border-radius-medium);
 
             &:dir(rtl) {
-              border-radius: 0 8px 8px 0;
+              border-radius: 0 var(--border-radius-medium) var(--border-radius-medium) 0;
               margin: auto;
               margin-inline-end: 0;
             }
@@ -996,10 +1021,10 @@ html {
           .section-secondary {
             margin: auto;
             margin-inline-start: 0;
-            border-radius: 0 8px 8px 0;
+            border-radius: 0 var(--border-radius-medium) var(--border-radius-medium) 0;
 
             &:dir(rtl) {
-              border-radius: 8px 0 0 8px;
+              border-radius: var(--border-radius-medium) 0 0 var(--border-radius-medium);
               margin: auto;
               margin-inline-start: 0;
             }
@@ -1024,10 +1049,10 @@ html {
 
             margin: auto;
             margin-inline-end: 0;
-            border-radius: 8px 0 0 8px;
+            border-radius: var(--border-radius-medium) 0 0 var(--border-radius-medium);
 
             &:dir(rtl) {
-              border-radius: 0 8px 8px 0;
+              border-radius: 0 var(--border-radius-medium) var(--border-radius-medium) 0;
               margin: auto;
               margin-inline-end: 0;
             }
@@ -1036,10 +1061,10 @@ html {
           .section-secondary {
             margin: auto;
             margin-inline-start: 0;
-            border-radius: 0 8px 8px 0;
+            border-radius: 0 var(--border-radius-medium) var(--border-radius-medium) 0;
 
             &:dir(rtl) {
-              border-radius: 8px 0 0 8px;
+              border-radius: var(--border-radius-medium) 0 0 var(--border-radius-medium);
               margin: auto;
               margin-inline-start: 0;
             }
@@ -1051,15 +1076,24 @@ html {
         $split-section-width: 50%;
         $split-screen-height: 100%;
 
+        min-height:100vh;
+
         .section-secondary,
         .section-main {
           width: $split-section-width;
-          height: $split-screen-height;
+          height: auto;
+        }
+
+        .section-main {
+          margin: 0;
+          display: flex;
         }
 
         .section-main .main-content {
           border-radius: 0;
           padding: 0;
+          flex: 1;
+          height: auto;
 
           h1 {
             width: auto;
@@ -1070,6 +1104,7 @@ html {
             flex-grow: 0;
             padding-inline: 110px;
             margin-block: auto;
+            padding-block: 40px;
 
             @media only screen and (width <= 800px) {
               padding-block: 20px;
@@ -1117,7 +1152,7 @@ html {
             max-width: 450px;
 
             h1 {
-              font-weight: 510;
+              font-weight: var(--heading-font-weight);
               font-size: 80px;
               margin: 0;
               width: 100%;
@@ -1128,7 +1163,7 @@ html {
               font-size: 20px;
               margin: 0;
               margin-block-start: 24px;
-              font-weight: 510;
+              font-weight: var(--heading-font-weight);
               width: 100%;
             }
           }
@@ -1142,7 +1177,7 @@ html {
             flex-direction: row;
             border: 1px solid var(--in-content-border-color);
             box-shadow: 0 1px 2px 0 var(--in-content-border-color);
-            border-radius: 4px;
+            border-radius: var(--border-radius-small);
             margin-block: 0 16px;
             text-align: start;
             padding: 16px;
@@ -1199,7 +1234,7 @@ html {
 
                   .addon-title {
                     font-size: 16px;
-                    font-weight: 600;
+                    font-weight: var(--heading-font-weight);
                   }
 
                   .addon-author {
@@ -1236,7 +1271,7 @@ html {
             height: 1em;
             border: 3px solid var(--button-text-color-primary);
             border-bottom-color: transparent;
-            border-radius: 50%;
+            border-radius: var(--border-radius-circle);
             box-sizing: border-box;
             animation: rotation 1s linear infinite;
             justify-self: center;
@@ -1267,6 +1302,9 @@ html {
 
           .section-main {
             height: 75%;
+            flex-grow: 1;
+            margin: 0;
+            display: flex;
 
             &[hide-secondary-section='responsive'] {
               height: 100%;
@@ -1274,6 +1312,7 @@ html {
               .main-content {
                 border-radius: 0;
                 padding: 0;
+                height: auto;
               }
             }
           }
@@ -1293,6 +1332,8 @@ html {
           .section-secondary {
             --mr-secondary-position: center var(--mr-secondary-background-position-y) / 50%;
 
+            height: 250px;
+
             .hero-image {
               img {
                 width: 25%;
@@ -1303,6 +1344,8 @@ html {
         }
 
         @media only screen and (width <= 800px) {
+          height: 100%;
+
           @include narrow-split-fullscreen;
         }
 
@@ -1324,14 +1367,14 @@ html {
             flex-direction: column;
 
             .section-secondary {
-              border-radius: 8px 8px 0 0;
+              border-radius: var(--border-radius-medium) var(--border-radius-medium) 0 0;
               margin: auto;
               margin-bottom: 0;
 
               &:dir(rtl) {
                 margin: auto;
                 margin-bottom: 0;
-                border-radius: 8px 8px 0 0;
+                border-radius: var(--border-radius-medium) var(--border-radius-medium) 0 0;
               }
             }
 
@@ -1339,12 +1382,12 @@ html {
               height: auto;
               margin: auto;
               margin-top: 0;
-              border-radius: 0 0 8px 8px;
+              border-radius: 0 0 var(--border-radius-medium) var(--border-radius-medium);
 
               &:dir(rtl) {
                 margin: auto;
                 margin-top: 0;
-                border-radius: 0 0 8px 8px;
+                border-radius: 0 0 var(--border-radius-medium) var(--border-radius-medium);
               }
             }
           }
@@ -1358,7 +1401,7 @@ html {
             --mr-secondary-background-position-y: top;
             --mr-secondary-position: center var(--mr-secondary-background-position-y) / 75%;
 
-            border-radius: 8px 8px 0 0;
+            border-radius: var(--border-radius-medium) var(--border-radius-medium) 0 0;
             margin: auto;
             margin-bottom: 0;
             height: $small-secondary-section-height;
@@ -1382,7 +1425,7 @@ html {
             &:dir(rtl) {
               margin: auto;
               margin-bottom: 0;
-              border-radius: 8px 8px 0 0;
+              border-radius: var(--border-radius-medium) var(--border-radius-medium) 0 0;
             }
 
             &.with-secondary-section-hidden {
@@ -1417,16 +1460,16 @@ html {
 
               .main-content {
                 padding: 50px 0 0;
-                border-radius: 8px;
+                border-radius: var(--border-radius-medium);
 
                 &:dir(rtl) {
-                  border-radius: 8px;
+                  border-radius: var(--border-radius-medium);
                 }
               }
             }
 
             .main-content {
-              border-radius: 0 0 8px 8px;
+              border-radius: 0 0 var(--border-radius-medium) var(--border-radius-medium);
               padding: 30px 0 0;
 
               .main-content-inner {
@@ -1508,7 +1551,7 @@ html {
               margin-top: 0;
 
               .main-content {
-                border-radius: 0 0 8px 8px;
+                border-radius: 0 0 var(--border-radius-medium) var(--border-radius-medium);
               }
             }
           }
@@ -1527,10 +1570,10 @@ html {
 
               margin: auto;
               margin-inline-end: 0;
-              border-radius: 8px 0 0 8px;
+              border-radius: var(--border-radius-medium) 0 0 var(--border-radius-medium);
 
               &:dir(rtl) {
-                border-radius: 0 8px 8px 0;
+                border-radius: 0 var(--border-radius-medium) var(--border-radius-medium) 0;
                 margin: auto;
                 margin-inline-end: 0;
               }
@@ -1539,10 +1582,10 @@ html {
             .section-secondary {
               margin: auto;
               margin-inline-start: 0;
-              border-radius: 0 8px 8px 0;
+              border-radius: 0 var(--border-radius-medium) var(--border-radius-medium) 0;
 
               &:dir(rtl) {
-                border-radius: 8px 0 0 8px;
+                border-radius: var(--border-radius-medium) 0 0 var(--border-radius-medium);
                 margin: auto;
                 margin-inline-start: 0;
               }
@@ -1559,35 +1602,37 @@ html {
         @include narrow-split;
       }
 
-      @media only screen and (height <= 650px) {
-        // Hide the "Sign in" button on the welcome screen when it would
-        // otherwise overlap the screen. We'd reposition it, but then it would
-        // overlap the dismiss button. We may change the alignment so they don't
-        // overlap in a future revision.
-        @media (800px <= width <= 990px) {
-          .section-main .secondary-cta.top {
-            display: none;
+      &:where(:not([fullscreen])) {
+        @media only screen and (height <= 650px) {
+          // Hide the "Sign in" button on the welcome screen when it would
+          // otherwise overlap the screen. We'd reposition it, but then it would
+          // overlap the dismiss button. We may change the alignment so they don't
+          // overlap in a future revision.
+          @media (800px <= width <= 990px) {
+            .section-main .secondary-cta.top {
+              display: none;
+            }
           }
-        }
 
-        // Reposition the "Sign in" button on the welcome screen to move inside
-        // the screen when it would otherwise overlap the screen.
-        @mixin extra-narrow-secondary-cta {
-          .section-main .secondary-buttons-top-container {
-            position: absolute;
-            padding: 0;
-            top: 0;
-            inset-inline-end: 0;
+          // Reposition the "Sign in" button on the welcome screen to move inside
+          // the screen when it would otherwise overlap the screen.
+          @mixin extra-narrow-secondary-cta {
+            .section-main .secondary-buttons-top-container {
+              position: absolute;
+              padding: 0;
+              top: 0;
+              inset-inline-end: 0;
+            }
           }
-        }
 
-        @media (width <= 620px) {
-          @include extra-narrow-secondary-cta;
-        }
-
-        [narrow] & {
           @media (width <= 620px) {
             @include extra-narrow-secondary-cta;
+          }
+
+          [narrow] & {
+            @media (width <= 620px) {
+              @include extra-narrow-secondary-cta;
+            }
           }
         }
       }
@@ -1618,7 +1663,7 @@ html {
 
   .rtamo-theme-icon {
     max-height: 30px;
-    border-radius: 2px;
+    border-radius: var(--border-radius-xsmall);
     margin-bottom: 10px;
     margin-top: 24px;
   }
@@ -1659,7 +1704,7 @@ html {
 
     h1 {
       font-size: 24px;
-      font-weight: 600;
+      font-weight: var(--heading-font-weight);
       margin: 0 6px;
       letter-spacing: -0.02em;
       outline: none;
@@ -1793,6 +1838,7 @@ html {
 
   .tiles-single-select-section {
     border: 0;
+    outline: none;
     display: flex;
     flex-wrap: wrap;
     gap: 5px;
@@ -1804,7 +1850,7 @@ html {
     &:hover,
     &:active,
     &:focus-within {
-      border-radius: 8px;
+      border-radius: var(--border-radius-medium);
       outline: 2px solid var(--button-background-color-primary);
     }
 
@@ -1818,7 +1864,7 @@ html {
       .select-item {
         position: relative;
         padding-top: 5px;
-        border: 2px solid var(--single-select-border-color);
+        border: 1px solid var(--single-select-border-color);
         border-radius: var(--border-radius-large);
 
         &:has(.input:focus),
@@ -1832,7 +1878,7 @@ html {
         }
 
         &:has(.selected) {
-          border: 3px solid var(--button-background-color-primary);
+          border: 1px solid var(--button-background-color-primary);
           border-radius: var(--border-radius-large);
         }
 
@@ -1850,7 +1896,7 @@ html {
 
         .flair {
           height: 18px;
-          border-radius: 4px;
+          border-radius: var(--border-radius-small);
           background-color: #9059FF;
           color: #FFF;
           padding: 2px 8px;
@@ -1858,6 +1904,33 @@ html {
           right: 1px;
           top: -10px;
           line-height: 1;
+
+          &.centered {
+            /* stylelint-disable-next-line */
+            border-radius: 8px 8px 0 0;
+            background-color: var(--button-background-color-primary);
+            position: relative;
+            right: unset;
+            top: -6px;
+            line-height: 0.75;
+            width: 100%;
+            box-sizing: border-box;
+
+            &.backup {
+              /* stylelint-disable-next-line */
+              border-radius: 10px 10px 0 0;
+              background-color: var(--picker-backup-flair-background);
+              color: var(--picker-backup-flair-color);
+
+              &.spacer {
+                background-color: transparent;
+              }
+            }
+          }
+
+          &.spacer {
+            background-color: transparent;
+          }
         }
 
         .icon {
@@ -1867,11 +1940,32 @@ html {
         .text {
           margin-block: 8px;
         }
+
+        .tile-list-container {
+          display: flex;
+          flex-direction: column;
+          margin-inline-start: 20px;
+
+          .tile-list-item {
+            display: flex;
+
+            &:last-child {
+              margin-block-end: 8px;
+            }
+          }
+
+          .tile-list-icon-wrapper {
+            padding-block-start: 6px;
+          }
+
+          .tile-list-text {
+            margin-inline-start: 8px;
+            margin-inline-end: 20px;
+            text-align: start;
+          }
+        }
       }
-
     }
-
-
 
     // single select and theme specific styles
     &.single-select, &.theme {
@@ -1897,9 +1991,24 @@ html {
       padding: 0;
       min-width: 50px;
       box-shadow: none;
-      border-radius: 4px;
+      border-radius: var(--border-radius-small);
       cursor: pointer;
       z-index: 0;
+      transition: var(--transition);
+
+      &.backup {
+        cursor: default;
+        width: 225.5px;
+        padding-top: 0;
+
+        &:has(.selected) {
+          border: 1px solid var(--color-accent-primary);
+        }
+
+        &:hover {
+          background-color: transparent;
+        }
+      }
 
       &:focus,
       &:active {
@@ -1911,7 +2020,7 @@ html {
         background-size: cover;
         width: 40px;
         height: 40px;
-        border-radius: 5px;
+        border-radius: var(--border-radius-small);
         z-index: -1;
 
         &:dir(rtl) {
@@ -1961,7 +2070,7 @@ html {
       &:hover,
       &:focus {
         background-color: rgba(217, 217, 227, 30%);
-        border-radius: 4px;
+        border-radius: var(--border-radius-small);
       }
     }
   }
@@ -1979,7 +2088,7 @@ html {
     gap: 16px;
     margin-block: -1em 2em;
     margin-inline: 1em;
-    font-weight: 400;
+    font-weight: normal;
     font-size: 14px;
     text-align: initial;
     transition: var(--transition);
@@ -2026,6 +2135,45 @@ html {
     }
   }
 
+  .confirmation-checklist-section {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin: 10px auto;
+
+    .confirmation-checklist-container {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+
+      .confirmation-checklist-item {
+        display: flex;
+        flex-direction: column;
+        margin-inline-start: 20px;
+
+        &:last-child {
+          margin-block-end: 8px;
+        }
+      }
+
+      .confirmation-checklist-icon-wrapper {
+        display: flex;
+        align-items: center;
+      }
+
+      .confirmation-checklist-text {
+        margin-inline-start: 8px;
+        font-weight: var(--font-weight-semibold);
+      }
+
+      .confirmation-checklist-subtext {
+        margin-inline-start: 26px;
+        text-align: start;
+        font-size: 14px;
+      }
+    }
+  }
+
   .mobile-downloads {
     .qr-code-image {
       margin: 24px 0 10px;
@@ -2037,7 +2185,7 @@ html {
       @include text-link-styles;
 
       font-size: 16px;
-      font-weight: 400;
+      font-weight: normal;
 
       &:hover {
         background: none;
@@ -2123,7 +2271,7 @@ html {
   button.content-tiles-header {
     margin: 0.5em 0 0;
     font-size: 11px;
-    font-weight: 400;
+    font-weight: normal;
     justify-content: center;
     border-width: 1px 0;
 
@@ -2141,7 +2289,7 @@ html {
   }
 
   #content-tiles-container {
-    --tiles-container-border-radius: 8px;
+    --tiles-container-border-radius: var(--border-radius-medium);
 
     margin: 24px 48px;
 
@@ -2195,12 +2343,12 @@ html {
           flex-direction: column;
 
           .header-title {
-            font-weight: var(--font-weight-bold);
+            font-weight: var(--heading-font-weight);
             line-height: 1.5;
           }
 
           .header-subtitle {
-            font-weight: 400;
+            font-weight: normal;
             line-height: 1.5;
           }
         }
@@ -2229,7 +2377,7 @@ html {
             background-color: var(--picker-background-color);
             border: 1px solid var(--picker-border-color);
             padding: 8px 12px;
-            border-radius: 100px;
+            border-radius: var(--border-radius-circle);
             user-select: none;
 
             &:has(input:checked) {
@@ -2261,7 +2409,7 @@ html {
             }
 
             .picker-icon {
-              border-radius: 100%;
+              border-radius: var(--border-radius-circle);
               width: 27px;
               height: 27px;
               display: flex;
@@ -2306,7 +2454,7 @@ html {
 
   .tile-title {
     font-size: 24px;
-    font-weight: 600;
+    font-weight: var(--heading-font-weight);
     margin-block: 0;
 
     &:not(:last-child) {
@@ -2395,6 +2543,7 @@ html {
     inset-inline-end: 10px;
     width: auto;
     height: auto;
+    z-index: 2;
 
     .secondary-cta.top {
       position: relative;
@@ -2459,7 +2608,7 @@ html {
       margin-inline-end: 4px;
       margin-inline-start: 4px;
       background: var(--grey-subtitle-1);
-      border-radius: 5px;
+      border-radius: var(--border-radius-small);
       // using border will show up in Windows High Contrast Mode to improve accessibility.
       border: 3px solid var(--button-text-color);
       opacity: 0.35;
@@ -2535,6 +2684,10 @@ html {
 
     &.rtamo {
       margin-top: 24px;
+    }
+
+    &.slim {
+      padding: 0;
     }
   }
 
@@ -2653,7 +2806,7 @@ html {
     .yellow-circle {
       width: 165px;
       height: 165px;
-      border-radius: 50%;
+      border-radius: var(--border-radius-circle);
       transform: translate(230%, -5%);
       background: #952BB9;
       transition-delay: -0.2s;
@@ -2675,7 +2828,8 @@ html {
     .inline-image,
     .link-paragraph,
     .multi-select-container,
-    migration-wizard {
+    migration-wizard,
+    turn-on-scheduled-backups::part(form) {
       transition-delay: 0.9s;
     }
 
@@ -2748,7 +2902,7 @@ html {
     .yellow-circle {
       width: 165px;
       height: 165px;
-      border-radius: 50%;
+      border-radius: var(--border-radius-circle);
       transform: translate(160%, 130%);
       background: #E7258C;
     }
@@ -2787,6 +2941,7 @@ html {
       .cta-link,
       .legal-paragraph,
       migration-wizard,
+      turn-on-scheduled-backups::part(form),
       .tile-title-container,
       .steps[above-button]:not(.progress-bar) {
         opacity: 0;
@@ -2863,7 +3018,8 @@ html {
       .tiles-single-select-section,
       .inline-image,
       .link-paragraph,
-      migration-wizard {
+      migration-wizard,
+      turn-on-scheduled-backups::part(form) {
         opacity: 0;
         translate: 0 var(--translate);
         transition-delay: 0.2s;
@@ -2918,5 +3074,13 @@ html {
     &::part(deck) {
       font-size: 0.83em;
     }
+  }
+
+  turn-on-scheduled-backups::part(form) {
+    transition: var(--transition);
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius-medium);
+    padding: 24px 30px;
+    margin-block: 0 24px;
   }
 }

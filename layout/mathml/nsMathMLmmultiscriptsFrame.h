@@ -7,7 +7,6 @@
 #ifndef nsMathMLmmultiscriptsFrame_h___
 #define nsMathMLmmultiscriptsFrame_h___
 
-#include "mozilla/Attributes.h"
 #include "nsMathMLContainerFrame.h"
 
 namespace mozilla {
@@ -31,10 +30,10 @@ class nsMathMLmmultiscriptsFrame final : public nsMathMLContainerFrame {
   NS_IMETHOD
   TransmitAutomaticData() override;
 
-  nsresult Place(DrawTarget* aDrawTarget, const PlaceFlags& aFlags,
-                 ReflowOutput& aDesiredSize) override;
+  void Place(DrawTarget* aDrawTarget, const PlaceFlags& aFlags,
+             ReflowOutput& aDesiredSize) override;
 
-  static nsresult PlaceMultiScript(
+  static void PlaceMultiScript(
       nsPresContext* aPresContext, DrawTarget* aDrawTarget,
       const PlaceFlags& aFlags, ReflowOutput& aDesiredSize,
       nsMathMLContainerFrame* aFrame, nscoord aUserSubScriptShift,

@@ -35,12 +35,14 @@ import mozilla.components.concept.storage.BookmarkNodeType
 import mozilla.components.concept.storage.BookmarksStorage
 import mozilla.components.feature.accounts.push.CloseTabsUseCases
 import mozilla.components.feature.tabs.TabsUseCases
+import mozilla.components.service.fxa.manager.FxaAccountManager
 import mozilla.components.support.test.ext.joinBlocking
 import mozilla.components.support.test.libstate.ext.waitUntilIdle
 import mozilla.components.support.test.middleware.CaptureActionsMiddleware
 import mozilla.components.support.test.robolectric.testContext
 import mozilla.components.support.test.rule.MainCoroutineRule
 import mozilla.components.support.test.rule.runTestOnMain
+import mozilla.telemetry.glean.private.NoExtras
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
@@ -96,9 +98,6 @@ class DefaultTabManagerControllerTest {
     private lateinit var profiler: Profiler
 
     @MockK(relaxed = true)
-    private lateinit var navigationInteractor: NavigationInteractor
-
-    @MockK(relaxed = true)
     private lateinit var tabsUseCases: TabsUseCases
 
     @MockK(relaxed = true)
@@ -106,6 +105,9 @@ class DefaultTabManagerControllerTest {
 
     @MockK(relaxed = true)
     private lateinit var activity: HomeActivity
+
+    @MockK(relaxed = true)
+    private lateinit var accountManager: FxaAccountManager
 
     private val appStore: AppStore = mockk(relaxed = true)
     private val settings: Settings = mockk(relaxed = true)
@@ -143,7 +145,8 @@ class DefaultTabManagerControllerTest {
 
         assertNull(TabsTray.newPrivateTabTapped.testGetValue())
 
-        createController().handlePrivateTabsFabClick()
+        val target = createController()
+        target.handlePrivateTabsFabClick()
 
         assertNotNull(TabsTray.newPrivateTabTapped.testGetValue())
 
@@ -153,7 +156,7 @@ class DefaultTabManagerControllerTest {
             navController.navigate(
                 TabManagementFragmentDirections.actionGlobalHome(focusOnAddressBar = true),
             )
-            navigationInteractor.onTabManagerDismissed()
+            TabsTray.closed.record(NoExtras())
             profiler.addMarker(
                 "DefaultTabManagerController.onNewTabTapped",
                 Double.MAX_VALUE,
@@ -171,7 +174,8 @@ class DefaultTabManagerControllerTest {
 
         assertNull(TabsTray.newPrivateTabTapped.testGetValue())
 
-        createController().handlePrivateTabsFabClick()
+        val target = createController()
+        target.handlePrivateTabsFabClick()
 
         assertNotNull(TabsTray.newPrivateTabTapped.testGetValue())
 
@@ -180,7 +184,7 @@ class DefaultTabManagerControllerTest {
             fenixBrowserUseCases.addNewHomepageTab(
                 private = true,
             )
-            navigationInteractor.onTabManagerDismissed()
+            TabsTray.closed.record(NoExtras())
             profiler.addMarker(
                 "DefaultTabManagerController.onNewTabTapped",
                 Double.MAX_VALUE,
@@ -194,7 +198,8 @@ class DefaultTabManagerControllerTest {
             every { getProfilerTime() } returns Double.MAX_VALUE
         }
 
-        createController().handleNormalTabsFabClick()
+        val target = createController()
+        target.handleNormalTabsFabClick()
 
         verifyOrder {
             profiler.getProfilerTime()
@@ -202,7 +207,7 @@ class DefaultTabManagerControllerTest {
             navController.navigate(
                 TabManagementFragmentDirections.actionGlobalHome(focusOnAddressBar = true),
             )
-            navigationInteractor.onTabManagerDismissed()
+            TabsTray.closed.record(NoExtras())
             profiler.addMarker(
                 "DefaultTabManagerController.onNewTabTapped",
                 Double.MAX_VALUE,
@@ -218,14 +223,15 @@ class DefaultTabManagerControllerTest {
             every { getProfilerTime() } returns Double.MAX_VALUE
         }
 
-        createController().handleNormalTabsFabClick()
+        val target = createController()
+        target.handleNormalTabsFabClick()
 
         verifyOrder {
             profiler.getProfilerTime()
             fenixBrowserUseCases.addNewHomepageTab(
                 private = false,
             )
-            navigationInteractor.onTabManagerDismissed()
+            TabsTray.closed.record(NoExtras())
             profiler.addMarker(
                 "DefaultTabManagerController.onNewTabTapped",
                 Double.MAX_VALUE,
@@ -1199,8 +1205,8 @@ class DefaultTabManagerControllerTest {
     fun `GIVEN one tab selected and no bookmarks previously saved WHEN saving selected tabs to bookmarks THEN save bookmark in root, report telemetry, show snackbar`() = runTestOnMain {
         var showBookmarkSnackbarInvoked = false
 
-        coEvery { bookmarksStorage.getRecentBookmarks(1) } returns listOf()
-        coEvery { bookmarksStorage.getBookmark(BookmarkRoot.Mobile.id) } returns makeBookmarkFolder(guid = BookmarkRoot.Mobile.id)
+        coEvery { bookmarksStorage.getRecentBookmarks(eq(1), any(), any()) } returns Result.success(listOf())
+        coEvery { bookmarksStorage.getBookmark(BookmarkRoot.Mobile.id) } returns Result.success(makeBookmarkFolder(guid = BookmarkRoot.Mobile.id))
         every { trayStore.state.mode.selectedTabs } returns setOf(createTab(url = "https://mozilla.org"))
 
         createController(
@@ -1220,8 +1226,8 @@ class DefaultTabManagerControllerTest {
 
         val parentGuid = "parentGuid"
         val previousBookmark = makeBookmarkItem(parentGuid = parentGuid)
-        coEvery { bookmarksStorage.getRecentBookmarks(eq(1), any(), any()) } returns listOf(previousBookmark)
-        coEvery { bookmarksStorage.getBookmark(parentGuid) } returns makeBookmarkFolder(guid = parentGuid)
+        coEvery { bookmarksStorage.getRecentBookmarks(eq(1), any(), any()) } returns Result.success(listOf(previousBookmark))
+        coEvery { bookmarksStorage.getBookmark(parentGuid) } returns Result.success(makeBookmarkFolder(guid = parentGuid))
         every { trayStore.state.mode.selectedTabs } returns setOf(createTab(url = "https://mozilla.org"))
 
         createController(
@@ -1239,8 +1245,8 @@ class DefaultTabManagerControllerTest {
     fun `GIVEN multiple tabs selected and no bookmarks previously saved WHEN saving selected tabs to bookmarks THEN save bookmarks in root, report telemetry, show a snackbar`() = runTestOnMain {
         var showBookmarkSnackbarInvoked = false
 
-        coEvery { bookmarksStorage.getRecentBookmarks(1) } returns listOf()
-        coEvery { bookmarksStorage.getBookmark(BookmarkRoot.Mobile.id) } returns makeBookmarkFolder(guid = BookmarkRoot.Mobile.id)
+        coEvery { bookmarksStorage.getRecentBookmarks(eq(1), any(), any()) } returns Result.success(listOf())
+        coEvery { bookmarksStorage.getBookmark(BookmarkRoot.Mobile.id) } returns Result.success(makeBookmarkFolder(guid = BookmarkRoot.Mobile.id))
         every { trayStore.state.mode.selectedTabs } returns setOf(createTab(url = "https://mozilla.org"), createTab(url = "https://mozilla2.org"))
 
         createController(
@@ -1260,8 +1266,8 @@ class DefaultTabManagerControllerTest {
 
         val parentGuid = "parentGuid"
         val previousBookmark = makeBookmarkItem(parentGuid = parentGuid)
-        coEvery { bookmarksStorage.getRecentBookmarks(eq(1), any(), any()) } returns listOf(previousBookmark)
-        coEvery { bookmarksStorage.getBookmark(parentGuid) } returns makeBookmarkFolder(guid = parentGuid)
+        coEvery { bookmarksStorage.getRecentBookmarks(eq(1), any(), any()) } returns Result.success(listOf(previousBookmark))
+        coEvery { bookmarksStorage.getBookmark(parentGuid) } returns Result.success(makeBookmarkFolder(guid = parentGuid))
         every { trayStore.state.mode.selectedTabs } returns setOf(createTab(url = "https://mozilla.org"), createTab(url = "https://mozilla2.org"))
 
         createController(
@@ -1354,6 +1360,170 @@ class DefaultTabManagerControllerTest {
         }
     }
 
+    @Test
+    fun `GIVEN logged in state WHEN account settings is clicked THEN navigate to account settings`() {
+        every { accountManager.authenticatedAccount() }.answers { mockk(relaxed = true) }
+
+        createController().onAccountSettingsClicked()
+
+        verify(exactly = 1) { navController.navigate(TabManagementFragmentDirections.actionGlobalAccountSettingsFragment()) }
+    }
+
+    @Test
+    fun `GIVEN logged out state WHEN account settings is clicked THEN navigate to turn on sync`() {
+        every { accountManager.authenticatedAccount() }.answers { null }
+
+        createController().onAccountSettingsClicked()
+
+        verify(exactly = 1) {
+            navController.navigate(
+                TabManagementFragmentDirections.actionGlobalTurnOnSync(
+                    entrypoint = FenixFxAEntryPoint.NavigationInteraction,
+                ),
+            )
+        }
+    }
+
+    @Test
+    fun `WHEN tab settings is clicked THEN navigate to global tab settings`() {
+        createController().onTabSettingsClicked()
+        verify(exactly = 1) { navController.navigate(TabManagementFragmentDirections.actionGlobalTabSettingsFragment()) }
+    }
+
+    @Test
+    fun `GIVEN no open recently closed tabs WHEN open recently closed tabs clicked THEN navigate to recently closed tabs`() {
+        assertNull(Events.recentlyClosedTabsOpened.testGetValue())
+
+        createController().onOpenRecentlyClosedClicked()
+
+        verify(exactly = 1) { navController.navigate(TabManagementFragmentDirections.actionGlobalRecentlyClosed()) }
+        assertNotNull(Events.recentlyClosedTabsOpened.testGetValue())
+    }
+
+    @Test
+    fun `GIVEN public tabs and one download in progress WHEN close all tabs clicked THEN dismiss tab manager and navigate to home`() {
+        val tab: TabSessionState = mockk { every { content.private } returns false }
+        every { browserStore.state } returns mockk {
+            every { tabs } returns listOf(tab)
+        }
+        every { browserStore.state.downloads } returns mapOf(
+            "1" to DownloadState(
+                "https://mozilla.org/download",
+                private = false,
+                destinationDirectory = "Download",
+                status = DownloadState.Status.DOWNLOADING,
+            ),
+        )
+
+        val controller = spyk(createController())
+        controller.onCloseAllTabsClicked(private = false)
+
+        verify { controller.dismissTabManagerAndNavigateHome(any()) }
+    }
+
+    @Test
+    fun `GIVEN private tabs and 1 download in progress WHEN close all tabs clicked THEN dismiss tab manager and navigate to home`() {
+        val tab: TabSessionState = mockk { every { content.private } returns true }
+        every { browserStore.state } returns mockk {
+            every { tabs } returns listOf(tab)
+        }
+        every { browserStore.state.downloads } returns mapOf(
+            "1" to DownloadState(
+                "https://mozilla.org/download",
+                private = true,
+                destinationDirectory = "Download",
+                status = DownloadState.Status.DOWNLOADING,
+            ),
+        )
+
+        val controller = spyk(createController())
+        controller.onCloseAllTabsClicked(private = false)
+
+        verify { controller.dismissTabManagerAndNavigateHome(any()) }
+    }
+
+    @Test
+    fun `GIVEN active private download WHEN onCloseAllTabsClicked is called for private tabs THEN showCancelledDownloadWarning is called`() {
+        var showCancelledDownloadWarningInvoked = false
+        val tab: TabSessionState = mockk { every { content.private } returns true }
+        every { browserStore.state } returns mockk {
+            every { tabs } returns listOf(tab)
+        }
+        every { browserStore.state.downloads } returns mapOf(
+            "1" to DownloadState(
+                "https://mozilla.org/download",
+                private = true,
+                destinationDirectory = "Download",
+                status = DownloadState.Status.DOWNLOADING,
+            ),
+        )
+
+        createController(showCancelledDownloadWarning = { _, _, _ -> showCancelledDownloadWarningInvoked = true }).onCloseAllTabsClicked(true)
+
+        assertTrue(showCancelledDownloadWarningInvoked)
+    }
+
+    @Test
+    fun `GIVEN no active private download WHEN onCloseAllTabsClicked is called for private tabs THEN showCancelledDownloadWarning is not called`() {
+        var showCancelledDownloadWarningInvoked = false
+        val tab: TabSessionState = mockk { every { content.private } returns true }
+        every { browserStore.state } returns mockk {
+            every { tabs } returns listOf(tab)
+        }
+        every { browserStore.state.downloads } returns emptyMap()
+
+        createController(showCancelledDownloadWarning = { _, _, _ -> showCancelledDownloadWarningInvoked = true }).onCloseAllTabsClicked(true)
+
+        assertFalse(showCancelledDownloadWarningInvoked)
+    }
+
+    @Test
+    fun `GIVEN no active download WHEN onCloseAllTabsClicked is called for public tabs THEN showCancelledDownloadWarning is not called`() {
+        var showCancelledDownloadWarningInvoked = false
+        val tab: TabSessionState = mockk { every { content.private } returns false }
+        every { browserStore.state } returns mockk {
+            every { tabs } returns listOf(tab)
+        }
+        every { browserStore.state.downloads } returns mapOf(
+            "1" to DownloadState(
+                "https://mozilla.org/download",
+                private = false,
+                destinationDirectory = "Download",
+                status = DownloadState.Status.DOWNLOADING,
+            ),
+        )
+
+        createController(showCancelledDownloadWarning = { _, _, _ -> showCancelledDownloadWarningInvoked = true }).onCloseAllTabsClicked(true)
+
+        assertFalse(showCancelledDownloadWarningInvoked)
+    }
+
+    @Test
+    fun `GIVEN active download WHEN onCloseAllTabsClicked is called for public tabs THEN showCancelledDownloadWarning is not called`() {
+        var showCancelledDownloadWarningInvoked = false
+        val tab: TabSessionState = mockk { every { content.private } returns false }
+        every { browserStore.state } returns mockk {
+            every { tabs } returns listOf(tab)
+        }
+        every { browserStore.state.downloads } returns emptyMap()
+
+        createController(showCancelledDownloadWarning = { _, _, _ -> showCancelledDownloadWarningInvoked = true }).onCloseAllTabsClicked(true)
+
+        assertFalse(showCancelledDownloadWarningInvoked)
+    }
+
+    private fun makeBookmarkFolder(guid: String) = BookmarkNode(
+        type = BookmarkNodeType.FOLDER,
+        parentGuid = BookmarkRoot.Mobile.id,
+        guid = guid,
+        position = 42U,
+        title = "title",
+        url = "url",
+        dateAdded = 0L,
+        lastModified = 0L,
+        children = null,
+    )
+
     private fun createController(
         navigateToHomeAndDeleteSession: (String) -> Unit = { },
         showUndoSnackbarForTab: (Boolean) -> Unit = { _ -> },
@@ -1364,6 +1534,7 @@ class DefaultTabManagerControllerTest {
         showBookmarkSnackbar: (Int, String?) -> Unit = { _, _ -> },
     ): DefaultTabManagerController {
         return DefaultTabManagerController(
+            accountManager = accountManager,
             activity = activity,
             appStore = appStore,
             tabsTrayStore = trayStore,
@@ -1373,7 +1544,6 @@ class DefaultTabManagerControllerTest {
             navController = navController,
             navigateToHomeAndDeleteSession = navigateToHomeAndDeleteSession,
             profiler = profiler,
-            navigationInteractor = navigationInteractor,
             tabsUseCases = tabsUseCases,
             fenixBrowserUseCases = fenixBrowserUseCases,
             bookmarksStorage = bookmarksStorage,
@@ -1388,18 +1558,6 @@ class DefaultTabManagerControllerTest {
             showBookmarkSnackbar = showBookmarkSnackbar,
         )
     }
-
-    private fun makeBookmarkFolder(guid: String) = BookmarkNode(
-        type = BookmarkNodeType.FOLDER,
-        parentGuid = BookmarkRoot.Mobile.id,
-        guid = guid,
-        position = 42U,
-        title = "title",
-        url = "url",
-        dateAdded = 0L,
-        lastModified = 0L,
-        children = null,
-    )
 
     private fun makeBookmarkItem(parentGuid: String) = BookmarkNode(
         type = BookmarkNodeType.ITEM,

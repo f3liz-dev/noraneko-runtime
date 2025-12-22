@@ -9,10 +9,17 @@ const { WeatherFeed } = ChromeUtils.importESModule(
 );
 
 ChromeUtils.defineESModuleGetters(this, {
+  GeolocationTestUtils:
+    "resource://testing-common/GeolocationTestUtils.sys.mjs",
   MerinoTestUtils: "resource://testing-common/MerinoTestUtils.sys.mjs",
 });
 
 const { WEATHER_SUGGESTION } = MerinoTestUtils;
+
+add_setup(async function () {
+  GeolocationTestUtils.init(this);
+  GeolocationTestUtils.stubGeolocation(GeolocationTestUtils.SAN_FRANCISCO);
+});
 
 test_newtab({
   async before({ pushPrefs }) {
@@ -50,7 +57,7 @@ test_newtab({
     await ContentTaskUtils.waitForCondition(
       () =>
         content.getComputedStyle(
-          content.document.querySelector(".customize-menu")
+          content.document.querySelector(".customize-menu-animate-wrapper")
         ).transform === defaultPos,
       "Customize Menu should be visible on screen"
     );
@@ -143,7 +150,7 @@ test_newtab({
     await ContentTaskUtils.waitForCondition(
       () =>
         content.getComputedStyle(
-          content.document.querySelector(".customize-menu")
+          content.document.querySelector(".customize-menu-animate-wrapper")
         ).transform === defaultPos,
       "Customize Menu should be visible on screen"
     );
@@ -169,6 +176,7 @@ test_newtab({
     Assert.ok(getWeatherWidget(), "Weather widget is rendered");
   },
   async after() {
+    sinon.restore();
     Services.prefs.clearUserPref(
       "browser.newtabpage.activity-stream.showWeather"
     );
@@ -193,7 +201,7 @@ test_newtab({
     await ContentTaskUtils.waitForCondition(
       () =>
         content.getComputedStyle(
-          content.document.querySelector(".customize-menu")
+          content.document.querySelector(".customize-menu-animate-wrapper")
         ).transform === defaultPos,
       "Customize Menu should be visible on screen"
     );
@@ -217,7 +225,7 @@ test_newtab({
     await ContentTaskUtils.waitForCondition(
       () =>
         content.getComputedStyle(
-          content.document.querySelector(".customize-menu")
+          content.document.querySelector(".customize-menu-animate-wrapper")
         ).transform !== defaultPos,
       "Customize Menu should not be visible anymore"
     );
@@ -241,7 +249,7 @@ test_newtab({
     await ContentTaskUtils.waitForCondition(
       () =>
         content.getComputedStyle(
-          content.document.querySelector(".customize-menu")
+          content.document.querySelector(".customize-menu-animate-wrapper")
         ).transform === defaultPos,
       "Customize Menu should be visible on screen now"
     );
@@ -251,7 +259,7 @@ test_newtab({
     await ContentTaskUtils.waitForCondition(
       () =>
         content.getComputedStyle(
-          content.document.querySelector(".customize-menu")
+          content.document.querySelector(".customize-menu-animate-wrapper")
         ).transform !== defaultPos,
       "Customize Menu should not be visible anymore"
     );
@@ -261,7 +269,7 @@ test_newtab({
     await ContentTaskUtils.waitForCondition(
       () =>
         content.getComputedStyle(
-          content.document.querySelector(".customize-menu")
+          content.document.querySelector(".customize-menu-animate-wrapper")
         ).transform === defaultPos,
       "Customize Menu should be visible on screen now"
     );
@@ -272,7 +280,7 @@ test_newtab({
     await ContentTaskUtils.waitForCondition(
       () =>
         content.getComputedStyle(
-          content.document.querySelector(".customize-menu")
+          content.document.querySelector(".customize-menu-animate-wrapper")
         ).transform !== defaultPos,
       "Customize Menu should not be visible anymore"
     );

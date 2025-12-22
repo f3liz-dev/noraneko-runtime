@@ -1,5 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources xmlns:tools="http://schemas.android.com/tools">
+
+<!--
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this file,
+  You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
+<resources xmlns:tools="http://schemas.android.com/tools" xmlns:moz="http://mozac.org/tools">
   <!-- Description for giving an add-on access to users's data on one site. %1$s  will be replaced by the DNS host name for which a web extension is requesting access (e.g., www.mozilla.org). -->
   <string name="mozac_feature_addons_permissions_one_site_description">%1$s ئۈچۈن سانلىق مەلۇماتلىرىڭىزنى زىيارەت قىلىدۇ</string>
   <!-- Description for giving an add-on access to users's data in multiple sites in the domain %1$s. %1$s will be replaced by the DNS domain for which a web extension is requesting access (e.g., mozilla.org). -->
@@ -25,7 +32,12 @@
   -->
   <string name="mozac_feature_addons_permissions_extra_domains_description_plural_2">باشقا دائىرىدىكى سانلىق مەلۇماتلىرىڭىزنى زىيارەت قىلىدۇ</string>
   <!-- When an add-on requires access to domains, this entry is used to describe the total number of domains. Underneath it will be the list of all the domains. %1$d is the number of all the domains that will be shown to the user as required. -->
-  <string name="mozac_feature_addons_permissions_all_domain_count_description" tools:ignore="PluralsCandidate">بۇ %1$d دائىرىدىكى تور بېكەت ئۈچۈن سانلىق مەلۇماتلىرىڭىزنى زىيارەت قىلىدۇ</string>
+  <string name="mozac_feature_addons_permissions_all_domain_count_description" moz:removedIn="148" tools:ignore="PluralsCandidate">بۇ %1$d دائىرىدىكى تور بېكەت ئۈچۈن سانلىق مەلۇماتلىرىڭىزنى زىيارەت قىلىدۇ</string>
+  <plurals name="mozac_feature_addons_permissions_all_domain_count_description_2" tools:ignore="MissingQuantity">
+    <!-- When an add-on requires access to domains, this entry is used to describe the total number of domains. Underneath it will be the list of all the domains. %1$d is the number of all the domains that will be shown to the user as required. -->
+    <item quantity="one">سىزنىڭ %1$d تور دائىرىسىدىكى تور بېكەت سانلىق مەلۇماتىنى زىيارەت قىلىدۇ</item>
+    <item quantity="other">سىزنىڭ %1$d تور دائىرىسىدىكى تور بېكەت سانلىق مەلۇماتىنى زىيارەت قىلىدۇ</item>
+  </plurals>
   <!-- Content description for a permission item, for an installed add-on details page. %1$s will be replaced with the permission text name, %2$d will be replaced with the permission position in the list and %3$d will be replaced with the total number of permissions in the list.Taking as an example "Read and modify privacy settings" the whole text will read Read and modify privacy settings, 2 of 6. -->
   <string name="mozac_feature_addons_permissions_content_description_item">%1$s، %2$d / %3$d</string>
   <!-- Description for the "privacy" WebExtensions API permission. -->
@@ -235,7 +247,7 @@
   <!-- A link that points to the detail page of the extension. -->
   <string name="mozac_feature_addons_more_info_link_2">كېڭەيتمە ھەققىدىكى تەپسىلات</string>
   <!-- The settings of the add-on. -->
-  <string name="mozac_feature_addons_settings">تەڭشەكلەر</string>
+  <string name="mozac_feature_addons_settings">تەڭشەك</string>
   <!-- Indicates the add-on is enabled. -->
   <string name="mozac_feature_addons_settings_on">ئوچۇق</string>
   <!-- Indicates the add-on is allowed in private browsing mode. -->
@@ -259,9 +271,9 @@
   <!-- Displays a page with all the details of an add-on. -->
   <string name="mozac_feature_addons_details">تەپسىلاتى</string>
   <!-- Displays a page with all the permissions of an add-on. -->
-  <string name="mozac_feature_addons_permissions">ئىجازەتلەر</string>
+  <string name="mozac_feature_addons_permissions">ئىجازەت</string>
   <!-- This is a button to remove (i.e. uninstall) an add-on. -->
-  <string name="mozac_feature_addons_remove">چىقىرىۋىتىش</string>
+  <string name="mozac_feature_addons_remove">چىقىرىۋەت</string>
   <!-- This is a button to report an add-on. -->
   <string name="mozac_feature_addons_report">پاش قىلىش</string>
   <!-- This is the title of a dialog that asks the users if they to install or not an add-on. %1$s is the add-on name. -->
@@ -281,7 +293,7 @@
   <!-- Heading for the data collection permissions section in the optional permissions request dialog. -->
   <string name="mozac_feature_addons_permissions_dialog_heading_optional_data_collection">يېڭى سانلىق مەلۇمات توپلاش:</string>
   <!-- This is a button to add (install) an add-on . -->
-  <string name="mozac_feature_addons_permissions_dialog_add">قوشۇش</string>
+  <string name="mozac_feature_addons_permissions_dialog_add">قوش</string>
   <!-- This is a button to allow the optional permissions requested by an add-on . -->
   <string name="mozac_feature_addons_permissions_dialog_allow">يول قوي</string>
   <!-- This is a button to deny the optional permissions requested by an add-on . -->
@@ -301,7 +313,7 @@
   <!-- Accessibility content description for the amount of stars that add-on has, where %1$.02f will be the amount of stars. -->
   <string name="mozac_feature_addons_rating_content_description_2">باھالاش: %1$.02f (تولۇق 5 نومۇر)</string>
   <!-- This is the title of page where all the add-ons are listed -->
-  <string name="mozac_feature_addons_addons">قىستۇرمىلار</string>
+  <string name="mozac_feature_addons_addons">قىستۇرما</string>
   <!-- Label for add-ons sub menu item for add-ons manager -->
   <string name="mozac_feature_addons_addons_manager">قىستۇرما باشقۇرغۇچ</string>
   <!-- The title of the "crash" notification in the extensions manager -->
@@ -367,7 +379,9 @@
   <!-- Text shown when attempting to install an add-on that can only be install via Enterprise Policies, which is not supported on Android.  %1$s is the add-on name. -->
   <string name="mozac_feature_addons_admin_install_only">%1$s نى ئورنىتالمايدۇ چۈنكى ئۇنى پەقەت كارخانا تۈزۈمىنى قوللانغان ئورگانلارلا ئورنىتالايدۇ، بۇ سۇپىنى قوللىمايدۇ.</string>
   <!-- Text shown when attempting to install an add-on that is soft-blocked. %1$s is the add-on name. %2$s is the app name. -->
-  <string name="mozac_feature_addons_soft_blocked_1">%2$s دىكى Mozilla نىڭ %1$s تۈزۈمىگە خىلاپلىق قىلغاچقا ئورناتقىلى بولمايدۇ.</string>
+  <string name="mozac_feature_addons_soft_blocked_1" moz:removedIn="147" tools:ignore="UnusedResources">%2$s دىكى Mozilla نىڭ %1$s تۈزۈمىگە خىلاپلىق قىلغاچقا ئورناتقىلى بولمايدۇ.</string>
+  <!-- Text shown when attempting to install an add-on that is soft-blocked. %1$s is the add-on name. %2$s is the app name. -->
+  <string name="mozac_feature_addons_soft_blocked_2">%1$s چەكلەنگەن ۋە %2$s غا ئورناتقىلى بولمايدۇ.</string>
   <!-- Text shown after failed to enable an add-on. %1$s is the add-on name. -->
   <string name="mozac_feature_addons_failed_to_enable">%1$s نى قوزغىتىش مەغلۇپ بولدى</string>
   <!-- Text shown after failed to disable an add-on. %1$s is the add-on name. -->
@@ -413,9 +427,13 @@
   <!-- Status message below an add-on in the add-ons manager when this add-on has been blocklisted. %1$s is the add-on name. -->
   <string name="mozac_feature_addons_status_blocklisted_1">بۇ كېڭەيتىلمە Mozilla نىڭ تۈزۈمىگە خىلاپ بولغانلىقتىن توسۇلغان ۋە چەكلەنگەن.</string>
   <!-- Status message below an add-on in the add-ons manager when this add-on has been soft-blocked. -->
-  <string name="mozac_feature_addons_status_softblocked_1">بۇ كېڭەيتىلمە Mozilla نىڭ تۈزۈمىگە خىلاپلىق قىلغانلىقتىن چەكلەنگەن. ئۇنى قوزغىتالايسىز ئەمما بۇ خەتەرلىك بولۇشى مۇمكىن.</string>
+  <string name="mozac_feature_addons_status_softblocked_1" moz:removedIn="147" tools:ignore="UnusedResources">بۇ كېڭەيتىلمە Mozilla نىڭ تۈزۈمىگە خىلاپلىق قىلغانلىقتىن چەكلەنگەن. ئۇنى قوزغىتالايسىز ئەمما بۇ خەتەرلىك بولۇشى مۇمكىن.</string>
+  <!-- Status message below an add-on in the add-ons manager when this add-on has been soft-blocked. -->
+  <string name="mozac_feature_addons_status_softblocked_2">بۇ كېڭەيتىلمە چەكلەنگەن. ئۇنى قوزغىتالايسىز ئەمما بۇ خەتەرلىك بولۇشى مۇمكىن.</string>
   <!-- Status message below an add-on in the add-ons manager when this add-on has been soft-blocked but the user re-enabled it. -->
-  <string name="mozac_feature_addons_status_softblocked_re_enabled">بۇ كېڭەيتىلمە Mozilla نىڭ تۈزۈمىگە خىلاپلىق قىلىدۇ. ئۇنى ئىشلىتىش خەتەرلىك بولۇشى مۇمكىن.</string>
+  <string name="mozac_feature_addons_status_softblocked_re_enabled" moz:removedIn="147" tools:ignore="UnusedResources">بۇ كېڭەيتىلمە Mozilla نىڭ تۈزۈمىگە خىلاپلىق قىلىدۇ. ئۇنى ئىشلىتىش خەتەرلىك بولۇشى مۇمكىن.</string>
+  <!-- Status message below an add-on in the add-ons manager when this add-on has been soft-blocked but the user re-enabled it. -->
+  <string name="mozac_feature_addons_status_softblocked_re_enabled_2">بۇ كېڭەيتىلمە چەكلەنگەن. ئۇنى ئىشلىتىش خەتەرلىك بولۇشى مۇمكىن.</string>
   <!-- Status message below an add-on in the add-ons manager when this add-on hasn't been signed correctly. %1$s is the add-on name. -->
   <string name="mozac_feature_addons_status_unsigned">%1$s بىخەتەر دەپ دەلىللەنمىگەچكە چەكلەندى.</string>
   <!-- Status message below an add-on in the add-ons manager when this add-on isn't compatible with the application version. %1$s is the add-on name, %2$s is the app name and %3$s is the app version. -->

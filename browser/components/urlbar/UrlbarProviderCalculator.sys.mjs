@@ -7,14 +7,14 @@ import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 import {
   UrlbarProvider,
   UrlbarUtils,
-} from "resource:///modules/UrlbarUtils.sys.mjs";
+} from "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs";
 
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
-  UrlbarPrefs: "resource:///modules/UrlbarPrefs.sys.mjs",
-  UrlbarResult: "resource:///modules/UrlbarResult.sys.mjs",
-  UrlbarView: "resource:///modules/UrlbarView.sys.mjs",
+  UrlbarPrefs: "moz-src:///browser/components/urlbar/UrlbarPrefs.sys.mjs",
+  UrlbarResult: "moz-src:///browser/components/urlbar/UrlbarResult.sys.mjs",
+  UrlbarView: "moz-src:///browser/components/urlbar/UrlbarView.sys.mjs",
 });
 
 ChromeUtils.defineLazyGetter(lazy, "l10n", () => {
@@ -25,7 +25,7 @@ XPCOMUtils.defineLazyServiceGetter(
   lazy,
   "ClipboardHelper",
   "@mozilla.org/widget/clipboardhelper;1",
-  "nsIClipboardHelper"
+  Ci.nsIClipboardHelper
 );
 
 // This pref is relative to the `browser.urlbar` branch.
@@ -105,12 +105,11 @@ export class UrlbarProviderCalculator extends UrlbarProvider {
   }
 
   /**
-   * Starts querying. Extended classes should return a Promise resolved when the
-   * provider is done searching AND returning results.
+   * Starts querying.
    *
-   * @param {UrlbarQueryContext} queryContext The query context object
-   * @param {Function} addCallback Callback invoked by the provider to add a new
-   *        result. A UrlbarResult should be passed to it.
+   * @param {UrlbarQueryContext} queryContext
+   * @param {(provider: UrlbarProvider, result: UrlbarResult) => void} addCallback
+   *   Callback invoked by the provider to add a new result.
    */
   async startQuery(queryContext, addCallback) {
     try {
@@ -121,16 +120,16 @@ export class UrlbarProviderCalculator extends UrlbarProvider {
         return;
       }
       let value = Calculator.evaluatePostfix(postfix);
-      const result = new lazy.UrlbarResult(
-        UrlbarUtils.RESULT_TYPE.DYNAMIC,
-        UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
-        {
+      const result = new lazy.UrlbarResult({
+        type: UrlbarUtils.RESULT_TYPE.DYNAMIC,
+        source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+        suggestedIndex: 1,
+        payload: {
           value,
           input: queryContext.searchString,
           dynamicType: DYNAMIC_RESULT_TYPE,
-        }
-      );
-      result.suggestedIndex = 1;
+        },
+      });
       addCallback(this, result);
     } catch (e) {}
   }

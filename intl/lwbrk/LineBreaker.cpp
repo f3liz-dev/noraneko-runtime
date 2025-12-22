@@ -16,7 +16,6 @@
 #include "nsTArray.h"
 #include "nsUnicodeProperties.h"
 #include "nsThreadUtils.h"
-#include "mozilla/ArrayUtils.h"
 #include "mozilla/CheckedInt.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/intl/Segmenter.h"
@@ -1317,7 +1316,8 @@ void LineBreaker::ComputeBreakPositions(const uint8_t* aChars, uint32_t aLength,
     auto lineSegmenter =
         GetLineSegmenter(useDefault, aWordBreak, aLevel, aIsChineseOrJapanese);
     auto segmenter = icu4x::LineSegmenter::FromFFI(lineSegmenter);
-    auto iterator = segmenter->segment_latin1(diplomat::span{aChars, aLength});
+    auto iterator = segmenter->segment_latin1(
+        diplomat::span<const uint8_t>{aChars, aLength});
 
     while (true) {
       const int32_t nextPos = iterator->next();

@@ -144,7 +144,9 @@ impl glean::traits::Url for UrlMetric {
 }
 
 #[inherent]
-impl glean::TestGetValue<std::string::String> for UrlMetric {
+impl glean::TestGetValue for UrlMetric {
+    type Output = std::string::String;
+
     pub fn test_get_value(&self, ping_name: Option<String>) -> Option<std::string::String> {
         match self {
             UrlMetric::Parent { inner, .. } => inner.test_get_value(ping_name),
@@ -169,7 +171,9 @@ mod test {
 
         assert_eq!(
             "https://example.com",
-            metric.test_get_value(Some("test-ping".to_string())).unwrap()
+            metric
+                .test_get_value(Some("test-ping".to_string()))
+                .unwrap()
         );
     }
 
@@ -197,7 +201,10 @@ mod test {
         assert!(ipc::replay_from_buf(&ipc::take_buf().unwrap()).is_ok());
 
         assert!(
-            "https://example.com/parent" == parent_metric.test_get_value(Some("test-ping".to_string())).unwrap(),
+            "https://example.com/parent"
+                == parent_metric
+                    .test_get_value(Some("test-ping".to_string()))
+                    .unwrap(),
             "Url metrics should only work in the parent process"
         );
     }

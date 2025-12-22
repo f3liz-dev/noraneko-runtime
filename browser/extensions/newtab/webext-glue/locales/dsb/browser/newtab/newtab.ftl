@@ -409,7 +409,7 @@ newtab-wallpaper-abstract-purple-green = Wioletny a zeleny swětłowy pśeběg
 newtab-wallpaper-abstract-blue-purple-waves = Módre a wioletne žwałkate formy
 newtab-wallpaper-abstract-black-waves = Carne žwałkate formy
 
-## Celestial
+## Firefox
 
 newtab-wallpaper-category-title-photographs = Fota
 newtab-wallpaper-beach-at-sunrise = Pśibrjog pśi zejźenju słyńca
@@ -438,6 +438,10 @@ feature-highlight-dismiss-button =
 feature-highlight-wallpaper =
     .title = { -newtab-wallpaper-feature-highlight-header }
     .aria-label = { -newtab-wallpaper-feature-highlight-content }
+
+## Firefox
+
+newtab-wallpaper-category-title-firefox = { -brand-product-name }
 
 ## Celestial
 
@@ -480,8 +484,16 @@ newtab-weather-menu-change-temperature-units-fahrenheit = Fahrenheit wužywaś
 newtab-weather-menu-change-temperature-units-celsius = Celsius wužywaś
 newtab-weather-menu-hide-weather = Wjedro na nowem rejtariku schowaś
 newtab-weather-menu-learn-more = Dalšne informacije
+newtab-weather-menu-detect-my-location = Mójo stojnišćo namakaś
 # This message is shown if user is working offline
 newtab-weather-error-not-available = Wjedrowe daty njejsu tuchylu k dispoziciji
+newtab-weather-opt-in-see-weather = Cośo wjedro za swóje stojnišćo wiźeś?
+newtab-weather-opt-in-not-now =
+    .label = Nic něnto
+newtab-weather-opt-in-yes =
+    .label = Jo
+# We'll be showing static (fake) weather data if the user has not opted in to using their location
+newtab-weather-static-city = New York City
 
 ## Topic Labels
 
@@ -648,6 +660,9 @@ newtab-widget-lists-input-menu-move-up = Górjej
 newtab-widget-lists-input-menu-move-down = Dołoj
 newtab-widget-lists-input-menu-delete = Lašowaś
 newtab-widget-lists-input-menu-edit = Wobźěłaś
+# the + symbol emphasises the functionality of adding a new list
+newtab-widget-lists-dropdown-create =
+    .label = + Nowu lisćinu napóraś
 newtab-widget-lists-name-label-default =
     .label = Lisćiny nadawkow
 newtab-widget-lists-name-placeholder-default =
@@ -667,10 +682,6 @@ newtab-widget-timer-mode-focus =
     .label = Fokus
 newtab-widget-timer-mode-break =
     .label = Pawza
-newtab-widget-timer-play =
-    .title = Wótgraś
-newtab-widget-timer-pause =
-    .title = Pawza
 newtab-widget-timer-label-play =
     .label = Wótgraś
 newtab-widget-timer-label-pause =
