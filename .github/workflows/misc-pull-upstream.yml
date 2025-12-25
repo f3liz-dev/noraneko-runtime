@@ -100,17 +100,14 @@ jobs:
           IFS='.' read -r OLD_MAJOR OLD_MINOR OLD_PATCH <<< "$OLD_VERSION"
           IFS='.' read -r NEW_MAJOR NEW_MINOR NEW_PATCH <<< "$NEW_VERSION"
 
-          if [ "$OLD_VERSION" = "$NEW_VERSION" ]; then
-            echo "No version change detected"
-            echo "change_type=no_version_change" >> $GITHUB_OUTPUT
-          elif [ "$OLD_MAJOR" != "$NEW_MAJOR" ]; then
+          if [ "$OLD_MAJOR" != "$NEW_MAJOR" ]; then
             echo "change_type=MAJOR" >> $GITHUB_OUTPUT
           elif [ "$OLD_MINOR" != "$NEW_MINOR" ]; then
             echo "change_type=MINOR" >> $GITHUB_OUTPUT
           elif [ "$OLD_PATCH" != "$NEW_PATCH" ]; then
             echo "change_type=PATCH" >> $GITHUB_OUTPUT
           else
-            echo "change_type=unknown" >> $GITHUB_OUTPUT
+            echo "change_type=PATCH" >> $GITHUB_OUTPUT
           fi
 
       - name: Check for existing PR
@@ -127,7 +124,7 @@ jobs:
             });
 
             const syncPR = pulls.data.find(pr => 
-              pr.title.match(/^sync: (MAJOR|MINOR|PATCH|no_version_change) upstream/) &&
+              pr.title.match(/^sync: (MAJOR|MINOR|PATCH) upstream/) &&
               pr.user.login.includes('bot')
             );
 
@@ -220,17 +217,10 @@ jobs:
       - name: Commit to existing PR branch
         if: steps.check_changes.outputs.has_changes == 'true' && steps.check_pr.outputs.exists == 'true'
         run: |
-          CHANGE_TYPE="${{ steps.version_diff.outputs.change_type }}"
           VERSION="${{ steps.new_version.outputs.version }}"
           
           git add --force .
-          
-          if [ "$CHANGE_TYPE" = "no_version_change" ]; then
-            git commit -m "sync: upstream gecko-dev (file changes without version change)"
-          else
-            git commit -m "sync: upstream gecko-dev $VERSION"
-          fi
-          
+          git commit -m "sync: upstream gecko-dev $VERSION"
           git push origin "${{ steps.check_pr.outputs.branch }}"
           echo "BRANCH_NAME=${{ steps.check_pr.outputs.branch }}" >> $GITHUB_ENV
           echo "UPDATE_EXISTING=true" >> $GITHUB_ENV
@@ -243,26 +233,14 @@ jobs:
             exit 0
           fi
 
-          CHANGE_TYPE="${{ steps.version_diff.outputs.change_type }}"
           VERSION="${{ steps.new_version.outputs.version }}"
-          
-          if [ "$CHANGE_TYPE" = "no_version_change" ]; then
-            BRANCH_NAME="sync/upstream-no-version-$(date +%Y%m%d-%H%M%S)"
-          else
-            BRANCH_NAME="sync/upstream-$VERSION"
-          fi
+          BRANCH_NAME="sync/upstream-$VERSION"
           
           git config user.name "f3liz-bot[bot]"
           git config user.email "230694705+f3liz-bot@users.noreply.github.com"
           git checkout -b "$BRANCH_NAME"
           git add --force .
-          
-          if [ "$CHANGE_TYPE" = "no_version_change" ]; then
-            git commit -m "sync: upstream gecko-dev (file changes without version change)"
-          else
-            git commit -m "sync: upstream gecko-dev $VERSION"
-          fi
-          
+          git commit -m "sync: upstream gecko-dev $VERSION"
           git push origin "$BRANCH_NAME"
           echo "BRANCH_NAME=$BRANCH_NAME" >> $GITHUB_ENV
           echo "UPDATE_EXISTING=false" >> $GITHUB_ENV
@@ -286,29 +264,16 @@ jobs:
               pull_number: prNumber
             });
 
-            let newTitle = pr.data.title;
-            let changelogEntry = '';
+            const titleMatch = pr.data.title.match(/^sync: (MAJOR|MINOR|PATCH) upstream ([\d.]+) → ([\d.]+)$/);
+            const originalStartVersion = titleMatch ? titleMatch[2] : oldVersion;
+            const newTitle = `sync: ${changeType} upstream ${originalStartVersion} → ${newVersion}`;
 
-            if (changeType === 'no_version_change') {
-              changelogEntry = `\n### File changes without version change\n`;
-              changelogEntry += `- Synced at: ${new Date().toISOString()}\n`;
-              if (patchFailed) {
-                changelogEntry += `- ⚠️ Patch issues detected:\n${failedPatches}\n`;
-              } else {
-                changelogEntry += `- ✅ All patches applied successfully\n`;
-              }
+            let changelogEntry = `\n### ${newVersion}\n`;
+            changelogEntry += `- Synced at: ${new Date().toISOString()}\n`;
+            if (patchFailed) {
+              changelogEntry += `- ⚠️ Patch issues detected:\n${failedPatches}\n`;
             } else {
-              const titleMatch = pr.data.title.match(/^sync: (MAJOR|MINOR|PATCH|no_version_change) upstream ([\d.]+) → ([\d.]+)$/);
-              const originalStartVersion = titleMatch ? titleMatch[2] : oldVersion;
-              newTitle = `sync: ${changeType} upstream ${originalStartVersion} → ${newVersion}`;
-
-              changelogEntry = `\n### ${newVersion}\n`;
-              changelogEntry += `- Synced at: ${new Date().toISOString()}\n`;
-              if (patchFailed) {
-                changelogEntry += `- ⚠️ Patch issues detected:\n${failedPatches}\n`;
-              } else {
-                changelogEntry += `- ✅ All patches applied successfully\n`;
-              }
+              changelogEntry += `- ✅ All patches applied successfully\n`;
             }
 
             const newBody = pr.data.body + changelogEntry;
@@ -333,41 +298,21 @@ jobs:
             const patchFailed = '${{ steps.patch_check.outputs.patch_failed }}' === 'true';
             const failedPatches = process.env.FAILED_PATCHES || '';
 
-            let title, body;
-
-            if (changeType === 'no_version_change') {
-              title = `sync: no_version_change upstream ${oldVersion}`;
-              
-              body = `## Upstream Sync\n\n`;
-              body += `- **Current version**: ${oldVersion}\n`;
-              body += `- **Change type**: File changes without version change\n\n`;
-              
-              body += `## Version History\n\n`;
-              body += `### File changes without version change\n`;
-              body += `- Synced at: ${new Date().toISOString()}\n`;
-              
-              if (patchFailed) {
-                body += `- ⚠️ Patch issues detected:\n${failedPatches}\n`;
-              } else {
-                body += `- ✅ All patches applied successfully\n`;
-              }
+            const title = `sync: ${changeType} upstream ${oldVersion} → ${newVersion}`;
+            
+            let body = `## Upstream Sync\n\n`;
+            body += `- **Previous version**: ${oldVersion}\n`;
+            body += `- **New version**: ${newVersion}\n`;
+            body += `- **Change type**: ${changeType}\n\n`;
+            
+            body += `## Version History\n\n`;
+            body += `### ${newVersion}\n`;
+            body += `- Synced at: ${new Date().toISOString()}\n`;
+            
+            if (patchFailed) {
+              body += `- ⚠️ Patch issues detected:\n${failedPatches}\n`;
             } else {
-              title = `sync: ${changeType} upstream ${oldVersion} → ${newVersion}`;
-              
-              body = `## Upstream Sync\n\n`;
-              body += `- **Previous version**: ${oldVersion}\n`;
-              body += `- **New version**: ${newVersion}\n`;
-              body += `- **Change type**: ${changeType}\n\n`;
-              
-              body += `## Version History\n\n`;
-              body += `### ${newVersion}\n`;
-              body += `- Synced at: ${new Date().toISOString()}\n`;
-              
-              if (patchFailed) {
-                body += `- ⚠️ Patch issues detected:\n${failedPatches}\n`;
-              } else {
-                body += `- ✅ All patches applied successfully\n`;
-              }
+              body += `- ✅ All patches applied successfully\n`;
             }
 
             await github.rest.pulls.create({
