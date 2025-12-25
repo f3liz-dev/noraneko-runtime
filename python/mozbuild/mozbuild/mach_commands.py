@@ -1385,21 +1385,10 @@ def android_gtest(
     action="store_true",
     help="Verbose output for what commands the packaging process is running.",
 )
-@CommandArgument(
-    "--compress",
-    default=None,
-    choices=["zstd", "lz4", "deflate", "none"],
-    help="Compression method for omni.ja (jar) files. Options: zstd, lz4, deflate, none. Default is 'none' for non-Android builds.",
-)
-def package(command_context, verbose=False, compress=None):
+def package(command_context, verbose=False):
     """Package the built product for distribution."""
-    append_env = {}
-    if compress is not None:
-        append_env["JAR_COMPRESSION"] = compress
-    
     ret = command_context._run_make(
-        directory=".", target="package", silent=not verbose, ensure_exit_code=False,
-        append_env=append_env if append_env else None
+        directory=".", target="package", silent=not verbose, ensure_exit_code=False
     )
     if ret == 0:
         command_context.notify("Packaging complete")
@@ -3656,13 +3645,7 @@ def repackage_desktop_file(
 @CommandArgument(
     "--verbose", action="store_true", help="Log informative status messages."
 )
-@CommandArgument(
-    "--compress",
-    default=None,
-    choices=["zstd", "lz4", "deflate", "none"],
-    help="Compression method for omni.ja (jar) files. Options: zstd, lz4, deflate, none. Default is 'none' for non-Android builds.",
-)
-def package_l10n(command_context, verbose=False, locales=[], compress=None):
+def package_l10n(command_context, verbose=False, locales=[]):
     if "RecursiveMake" not in command_context.substs["BUILD_BACKENDS"]:
         print(
             "Artifact builds do not support localization. "
@@ -3681,9 +3664,6 @@ def package_l10n(command_context, verbose=False, locales=[], compress=None):
         "GRADLE_INVOKED_WITHIN_MACH_BUILD": "1",
         "MOZ_CHROME_MULTILOCALE": " ".join(locales),
     }
-    
-    if compress is not None:
-        append_env["JAR_COMPRESSION"] = compress
 
     ensure_l10n_central(command_context)
 

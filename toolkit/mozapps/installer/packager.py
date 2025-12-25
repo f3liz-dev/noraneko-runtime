@@ -22,7 +22,6 @@ from mozpack.copier import (
     FileCopier,
     Jarrer,
 )
-from mozpack.mozjar import JAR_DEFLATED, JAR_STORED, JAR_ZSTD, JAR_LZ4
 from mozpack.errors import errors
 from mozpack.files import ExecutableFile
 import mozpack.path as mozpath
@@ -164,7 +163,7 @@ def main():
     )
     parser.add_argument(
         "--compress",
-        choices=("none", "deflate", "zstd", "lz4"),
+        choices=("none", "deflate"),
         default="deflate",
         help="Use given jar compression (default: deflate)",
     )
@@ -189,10 +188,8 @@ def main():
             defines[name] = value
 
     compress = {
-        "none": JAR_STORED,
-        "deflate": JAR_DEFLATED,
-        "zstd": JAR_ZSTD,
-        "lz4": JAR_LZ4,
+        "none": False,
+        "deflate": True,
     }[args.compress]
 
     copier = FileCopier()
