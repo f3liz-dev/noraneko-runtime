@@ -9,8 +9,6 @@
 
 #define READTYPE int32_t
 #include "zlib.h"
-#include "lz4frame.h"
-#include "zstd/zstd.h"
 #include "nsISupportsUtils.h"
 #include "mozilla/MmapFaultHandler.h"
 #include "prio.h"
@@ -1143,29 +1141,15 @@ nsZipCursor::nsZipCursor(nsZipItem* item, nsZipArchive* aZip, uint8_t* aBuf,
       mBuf(aBuf),
       mBufSize(aBufSize),
       mZs(),
-      mZstdDStream(nullptr),
-      mLZ4Dctx(nullptr),
       mCRC(0),
       mDoCRC(doCRC) {
-  uint16_t compression = mItem->Compression();
-  
-  if (compression == DEFLATED) {
+  if (mItem->Compression() == DEFLATED) {
 #ifdef DEBUG
     nsresult status =
 #endif
         gZlibInit(&mZs);
     NS_ASSERTION(status == NS_OK, "Zlib failed to initialize");
     NS_ASSERTION(aBuf, "Must pass in a buffer for DEFLATED nsZipItem");
-  } else if (compression == ZSTD) {
-    mZstdDStream = ZSTD_createDStream();
-    NS_ASSERTION(mZstdDStream, "Failed to create ZSTD decompression stream");
-    NS_ASSERTION(aBuf, "Must pass in a buffer for ZSTD nsZipItem");
-    size_t const initResult = ZSTD_initDStream(mZstdDStream);
-    NS_ASSERTION(!ZSTD_isError(initResult), "ZSTD initialization failed");
-  } else if (compression == COMPRESSION_METHOD_LZ4) {
-    NS_ASSERTION(aBuf, "Must pass in a buffer for LZ4 nsZipItem");
-    LZ4F_errorCode_t err = LZ4F_createDecompressionContext(&mLZ4Dctx, LZ4F_VERSION);
-    NS_ASSERTION(!LZ4F_isError(err), "Failed to create LZ4 decompression context");
   }
 
   mZs.avail_in = item->Size();
@@ -1175,14 +1159,8 @@ nsZipCursor::nsZipCursor(nsZipItem* item, nsZipArchive* aZip, uint8_t* aBuf,
 }
 
 nsZipCursor::~nsZipCursor() {
-  uint16_t compression = mItem->Compression();
-  
-  if (compression == DEFLATED) {
+  if (mItem->Compression() == DEFLATED) {
     inflateEnd(&mZs);
-  } else if (compression == ZSTD && mZstdDStream) {
-    ZSTD_freeDStream(mZstdDStream);
-  } else if (compression == COMPRESSION_METHOD_LZ4 && mLZ4Dctx) {
-    LZ4F_freeDecompressionContext(mLZ4Dctx);
   }
 }
 
@@ -1218,35 +1196,6 @@ uint8_t* nsZipCursor::ReadOrCopy(uint32_t* aBytesRead, bool aCopy) {
       *aBytesRead = mZs.next_out - buf;
       verifyCRC = (zerr == Z_STREAM_END);
       break;
-    case COMPRESSION_METHOD_LZ4: {
-      buf = mBuf;
-      // LZ4 frame decompression - decompress using frame format
-      size_t srcSize = mZs.avail_in;
-      size_t dstSize = mBufSize;
-      size_t result = LZ4F_decompress(mLZ4Dctx, buf, &dstSize,
-                                      mZs.next_in, &srcSize, nullptr);
-      if (LZ4F_isError(result)) return nullptr;
-      *aBytesRead = dstSize;
-      mZs.next_in += srcSize;
-      mZs.avail_in -= srcSize;
-      // LZ4F_decompress returns 0 when frame is complete, otherwise bytes remaining
-      verifyCRC = (result == 0);
-      break;
-    }
-    case ZSTD: {
-      buf = mBuf;
-      ZSTD_inBuffer input = {mZs.next_in, mZs.avail_in, 0};
-      ZSTD_outBuffer output = {buf, mBufSize, 0};
-      
-      size_t const result = ZSTD_decompressStream(mZstdDStream, &output, &input);
-      if (ZSTD_isError(result)) return nullptr;
-      
-      *aBytesRead = output.pos;
-      mZs.next_in += input.pos;
-      mZs.avail_in -= input.pos;
-      verifyCRC = (result == 0);  // 0 means frame is complete
-      break;
-    }
     default:
       return nullptr;
   }
@@ -1269,8 +1218,7 @@ nsZipItemPtr_base::nsZipItemPtr_base(nsZipArchive* aZip,
   if (!item) return;
 
   uint32_t size = 0;
-  uint16_t compression = item->Compression();
-  bool compressed = (compression == DEFLATED || compression == COMPRESSION_METHOD_LZ4 || compression == ZSTD);
+  bool compressed = (item->Compression() == DEFLATED);
   if (compressed) {
     size = item->RealSize();
     mAutoBuf = MakeUniqueFallible<uint8_t[]>(size);

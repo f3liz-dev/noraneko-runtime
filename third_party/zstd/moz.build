@@ -65,10 +65,11 @@ CFLAGS += [
      '-Wc++-compat'
 ]
 
-# These defines must be in DEFINES, not CXXFLAGS, because ZSTD sources are C files (.c), not C++ files (.cpp)
-DEFINES['XXH_NAMESPACE'] = 'ZSTD_'
-DEFINES['DEBUGLEVEL'] = 0
-DEFINES['ZSTD_MULTITHREAD'] = 1
+CXXFLAGS += [
+  '-DXXH_NAMESPACE=ZSTD_',
+  '-DDEBUGLEVEL=0',
+  '-DZSTD_MULTITHREAD=1',
+]
 
 LOCAL_INCLUDES += [ 'lib/decompress' ]
 

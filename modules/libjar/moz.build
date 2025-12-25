@@ -45,9 +45,4 @@ XPCOM_MANIFESTS += [
 include("/ipc/chromium/chromium-config.mozbuild")
 include("/tools/fuzzing/libfuzzer-config.mozbuild")
 
-LOCAL_INCLUDES += [
-    "/mozglue/static/lz4",
-    "/third_party/zstd/lib",
-]
-
 FINAL_LIBRARY = "xul"
