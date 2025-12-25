@@ -80,14 +80,17 @@ jobs:
             PREVIOUS_VERSION="$CURRENT_VERSION"
           done
           
-          # If we didn't find a version change, use the last commit we checked
-          # (this handles the case where no version bump happened in recent history)
+          # If we didn't find a version change, use the last commit we checked.
+          # This happens when:
+          # 1. All commits in the history have the same version (no version bump in 200 commits)
+          # 2. We're already at a released commit and haven't seen a newer version yet
+          # In both cases, using the oldest commit we checked is the safest choice.
           if [ -z "$RELEASE_COMMIT" ]; then
             if [ -n "$LAST_COMMIT" ]; then
               RELEASE_COMMIT="$LAST_COMMIT"
               echo "No version bump found in history, using last commit: $RELEASE_COMMIT"
             else
-              # Fallback to HEAD if no commits were found (shouldn't happen)
+              # Fallback to HEAD if no commits were found (shouldn't happen with depth 200)
               RELEASE_COMMIT=$(git rev-parse HEAD)
               echo "No commits found in loop, using HEAD: $RELEASE_COMMIT"
             fi
