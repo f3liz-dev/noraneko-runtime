@@ -102,6 +102,111 @@ jobs:
           echo "commit=$RELEASE_COMMIT" >> $GITHUB_OUTPUT
           echo "Using upstream version: $NEW_VERSION at commit $RELEASE_COMMIT"
 
+      - name: Find latest release using tag parsing
+        id: tag_version
+        run: |
+          echo "Searching for latest release by parsing tags..."
+          
+          # Get all Firefox release tags, excluding beta versions and ESR
+          # Pattern: FIREFOX_<major>_<minor>_RELEASE or FIREFOX_<major>_<minor>_<patch>_RELEASE
+          ALL_TAGS=$(git ls-remote --tags https://github.com/mozilla-firefox/firefox.git | \
+            awk '{print $1 " " $2}' | \
+            grep "RELEASE$" | \
+            grep -E "FIREFOX_[0-9]+_[0-9]+(_[0-9]+)?_RELEASE$" | \
+            grep -v "b[0-9]_RELEASE" | \
+            grep -v "esr" | \
+            sed 's|refs/tags/||')
+          
+          # Function to parse version from tag name
+          parse_version() {
+            local tag="$1"
+            # FIREFOX_146_0_RELEASE -> 146.0.0
+            # FIREFOX_146_0_1_RELEASE -> 146.0.1
+            echo "$tag" | sed -E 's/FIREFOX_([0-9]+)_([0-9]+)(_([0-9]+))?_RELEASE/\1.\2.\4/' | sed 's/\.$/\.0/'
+          }
+          
+          # Function to compare two version strings
+          compare_versions() {
+            local ver1="$1"
+            local ver2="$2"
+            
+            IFS='.' read -r v1_major v1_minor v1_patch <<< "$ver1"
+            IFS='.' read -r v2_major v2_minor v2_patch <<< "$ver2"
+            
+            v1_patch=${v1_patch:-0}
+            v2_patch=${v2_patch:-0}
+            
+            if [ "$v1_major" -gt "$v2_major" ]; then echo "1"
+            elif [ "$v1_major" -lt "$v2_major" ]; then echo "-1"
+            elif [ "$v1_minor" -gt "$v2_minor" ]; then echo "1"
+            elif [ "$v1_minor" -lt "$v2_minor" ]; then echo "-1"
+            elif [ "$v1_patch" -gt "$v2_patch" ]; then echo "1"
+            elif [ "$v1_patch" -lt "$v2_patch" ]; then echo "-1"
+            else echo "0"
+            fi
+          }
+          
+          LATEST_TAG=""
+          LATEST_VERSION=""
+          LATEST_COMMIT=""
+          
+          # Find the latest version by comparing all tags
+          while IFS=' ' read -r commit tag; do
+            version=$(parse_version "$tag")
+            
+            if [ -z "$LATEST_VERSION" ]; then
+              LATEST_TAG="$tag"
+              LATEST_VERSION="$version"
+              LATEST_COMMIT="$commit"
+            else
+              cmp_result=$(compare_versions "$version" "$LATEST_VERSION")
+              if [ "$cmp_result" = "1" ]; then
+                LATEST_TAG="$tag"
+                LATEST_VERSION="$version"
+                LATEST_COMMIT="$commit"
+              fi
+            fi
+          done <<< "$ALL_TAGS"
+          
+          echo "tag=$LATEST_TAG" >> $GITHUB_OUTPUT
+          echo "version=$LATEST_VERSION" >> $GITHUB_OUTPUT
+          echo "commit=$LATEST_COMMIT" >> $GITHUB_OUTPUT
+          echo "Found tag: $LATEST_TAG (version: $LATEST_VERSION, commit: $LATEST_COMMIT)"
+
+      - name: Compare commit detection methods
+        run: |
+          COMMIT_METHOD_VERSION="${{ steps.new_version.outputs.version }}"
+          COMMIT_METHOD_HASH="${{ steps.new_version.outputs.commit }}"
+          TAG_METHOD_VERSION="${{ steps.tag_version.outputs.version }}"
+          TAG_METHOD_TAG="${{ steps.tag_version.outputs.tag }}"
+          TAG_METHOD_HASH="${{ steps.tag_version.outputs.commit }}"
+          
+          echo "================================"
+          echo "Comparing Release Detection Methods"
+          echo "================================"
+          echo ""
+          echo "Commit-walking method (current):"
+          echo "  Version: $COMMIT_METHOD_VERSION"
+          echo "  Commit:  $COMMIT_METHOD_HASH"
+          echo ""
+          echo "Tag-parsing method (new):"
+          echo "  Tag:     $TAG_METHOD_TAG"
+          echo "  Version: $TAG_METHOD_VERSION"
+          echo "  Commit:  $TAG_METHOD_HASH"
+          echo ""
+          
+          if [ "$COMMIT_METHOD_HASH" = "$TAG_METHOD_HASH" ]; then
+            echo "✅ SUCCESS: Both methods found the same commit!"
+            echo "Both methods agree on commit: $COMMIT_METHOD_HASH"
+          else
+            echo "⚠️  WARNING: Methods found different commits"
+            echo "This could indicate:"
+            echo "  - Release tag hasn't been created yet for the latest version"
+            echo "  - There's a delay between release branch update and tag creation"
+            echo ""
+            echo "Using commit from commit-walking method: $COMMIT_METHOD_HASH"
+          fi
+
       - name: Compare versions
         id: version_diff
         run: |
