@@ -15,7 +15,7 @@ Sync upstream Firefox changes daily, create/update PR.
 
 1. Get versions: Current vs upstream
 2. Check for existing sync PR
-3. Clone upstream (--depth 50)
+3. Clone upstream (--depth 200)
 4. Find latest released commit (before version bump)
 5. Sync files: `rsync --delete` (exclude .github, noraneko, branding)
 6. Normalize patches
@@ -28,7 +28,7 @@ Sync upstream Firefox changes daily, create/update PR.
 Firefox bumps the version immediately after release. For example, if 146.0.2 is released, the HEAD of the release branch is updated to 146.0.3.
 
 To get the actual release commit:
-- Clone with `--depth 50` to have history
+- Clone with `--depth 200` to have history
 - Walk through commits from newest to oldest
 - Find the first version change (where version differs from the previous commit)
 - The commit before the version bump is the release commit

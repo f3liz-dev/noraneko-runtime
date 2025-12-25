@@ -40,7 +40,7 @@ jobs:
         run: |
           git clone -b release --single-branch \
             https://github.com/mozilla-firefox/firefox \
-            --depth 50 ../upstream_release
+            --depth 200 ../upstream_release
 
       - name: Find latest released commit and get upstream version
         id: new_version
@@ -54,9 +54,11 @@ jobs:
           echo "Searching for the latest released commit..."
           PREVIOUS_VERSION=""
           RELEASE_COMMIT=""
+          LAST_COMMIT=""
           
           # Walk through commits from newest to oldest
-          for commit in $(git log --format="%H" -n 50); do
+          for commit in $(git log --format="%H" -n 200); do
+            LAST_COMMIT="$commit"
             git checkout -q "$commit"
             CURRENT_VERSION=$(cat browser/config/version.txt 2>/dev/null || echo "")
             
@@ -78,11 +80,17 @@ jobs:
             PREVIOUS_VERSION="$CURRENT_VERSION"
           done
           
-          # If we didn't find a version change, use the oldest commit we checked
+          # If we didn't find a version change, use the last commit we checked
           # (this handles the case where no version bump happened in recent history)
           if [ -z "$RELEASE_COMMIT" ]; then
-            RELEASE_COMMIT="$commit"
-            echo "No version bump found in history, using commit: $RELEASE_COMMIT"
+            if [ -n "$LAST_COMMIT" ]; then
+              RELEASE_COMMIT="$LAST_COMMIT"
+              echo "No version bump found in history, using last commit: $RELEASE_COMMIT"
+            else
+              # Fallback to HEAD if no commits were found (shouldn't happen)
+              RELEASE_COMMIT=$(git rev-parse HEAD)
+              echo "No commits found in loop, using HEAD: $RELEASE_COMMIT"
+            fi
           fi
           
           git checkout -q "$RELEASE_COMMIT"
