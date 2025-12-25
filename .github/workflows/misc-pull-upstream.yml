@@ -40,14 +40,56 @@ jobs:
         run: |
           git clone -b release --single-branch \
             https://github.com/mozilla-firefox/firefox \
-            --depth 1 ../upstream_release
+            --depth 50 ../upstream_release
 
-      - name: Get upstream version
+      - name: Find latest released commit and get upstream version
         id: new_version
         run: |
-          NEW_VERSION=$(cat ../upstream_release/browser/config/version.txt)
+          cd ../upstream_release
+          
+          # The strategy: Firefox bumps the version immediately after release.
+          # We want to find the last commit before a version bump occurred.
+          # This is the actual release commit.
+          
+          echo "Searching for the latest released commit..."
+          PREVIOUS_VERSION=""
+          RELEASE_COMMIT=""
+          
+          # Walk through commits from newest to oldest
+          for commit in $(git log --format="%H" -n 50); do
+            git checkout -q "$commit"
+            CURRENT_VERSION=$(cat browser/config/version.txt 2>/dev/null || echo "")
+            
+            if [ -z "$CURRENT_VERSION" ]; then
+              continue
+            fi
+            
+            echo "Commit $commit: version $CURRENT_VERSION"
+            
+            # If we have a previous version and it's different from current,
+            # it means the previous commit was right after a version bump
+            # So the current commit is the one we want (before the bump)
+            if [ -n "$PREVIOUS_VERSION" ] && [ "$PREVIOUS_VERSION" != "$CURRENT_VERSION" ]; then
+              RELEASE_COMMIT="$commit"
+              echo "Found release commit: $commit with version $CURRENT_VERSION"
+              break
+            fi
+            
+            PREVIOUS_VERSION="$CURRENT_VERSION"
+          done
+          
+          # If we didn't find a version change, use the oldest commit we checked
+          # (this handles the case where no version bump happened in recent history)
+          if [ -z "$RELEASE_COMMIT" ]; then
+            RELEASE_COMMIT="$commit"
+            echo "No version bump found in history, using commit: $RELEASE_COMMIT"
+          fi
+          
+          git checkout -q "$RELEASE_COMMIT"
+          NEW_VERSION=$(cat browser/config/version.txt)
           echo "version=$NEW_VERSION" >> $GITHUB_OUTPUT
-          echo "Upstream version: $NEW_VERSION"
+          echo "commit=$RELEASE_COMMIT" >> $GITHUB_OUTPUT
+          echo "Using upstream version: $NEW_VERSION at commit $RELEASE_COMMIT"
 
       - name: Compare versions
         id: version_diff
