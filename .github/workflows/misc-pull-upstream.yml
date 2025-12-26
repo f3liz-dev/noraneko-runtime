@@ -199,12 +199,18 @@ jobs:
             echo "✅ SUCCESS: Both methods found the same commit!"
             echo "Both methods agree on commit: $COMMIT_METHOD_HASH"
           else
-            echo "⚠️  WARNING: Methods found different commits"
-            echo "This could indicate:"
+            echo "❌ ERROR: Methods found different commits"
+            echo "This indicates a mismatch between the two detection methods:"
+            echo "  - Commit-walking method: $COMMIT_METHOD_HASH"
+            echo "  - Tag-parsing method:    $TAG_METHOD_HASH"
+            echo ""
+            echo "Possible causes:"
             echo "  - Release tag hasn't been created yet for the latest version"
             echo "  - There's a delay between release branch update and tag creation"
+            echo "  - One of the detection methods is incorrect"
             echo ""
-            echo "Using commit from commit-walking method: $COMMIT_METHOD_HASH"
+            echo "The workflow must be fixed before continuing."
+            exit 1
           fi
 
       - name: Compare versions
