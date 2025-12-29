@@ -62,7 +62,9 @@ This CI module uses Podman instead of Docker as the container runtime. Podman is
 
 **Root Cause**: The socket was being created by systemd with default permissions (0660, owned by root:root), and the directory `/run/podman/` was created with mode 0700 (accessible only by root). Attempting to chmod the socket file after creation didn't work reliably due to systemd socket management and SELinux/AppArmor restrictions, and even with correct socket permissions, the directory permissions prevented non-root access.
 
-**Solution**: Use a systemd drop-in file to configure both socket and directory permissions BEFORE they are created. The `prepare-host` command now creates `/etc/systemd/system/podman.socket.d/override.conf` to set `SocketMode=0666` and `DirectoryMode=0777`. Additionally, after socket creation, we explicitly chmod the directory to ensure it's accessible, as systemd may still create it with restrictive permissions in some cases.
+**Solution**: Use a systemd drop-in file to configure both socket and directory permissions BEFORE they are created. The `prepare-host` command now creates `/etc/systemd/system/podman.socket.d/override.conf` to set `SocketMode=0666` (world-readable/writable socket) and `DirectoryMode=0755` (world-readable directory with owner-only write). Additionally, after socket creation, we explicitly chmod the directory to 0755 to ensure it's accessible, as systemd may still create it with restrictive permissions in some cases.
+
+**Security Note**: The 0666 socket permissions are acceptable in GitHub Actions CI because the environment is single-user, ephemeral, and isolated. For production environments, group-based access control would be more appropriate.
 
 #### Podman Connection Scheme Issue
 
@@ -74,7 +76,9 @@ This CI module uses Podman instead of Docker as the container runtime. Podman is
 - Podman socket: `/run/podman/podman.sock`
 - Environment variable: `DOCKER_HOST=unix:///run/podman/podman.sock`
 - Mode: Rootful (required for Dagger operations)
-- Socket permissions: Configured via systemd drop-in to allow non-root access in CI
+- Socket permissions: 0666 (rw-rw-rw-) via systemd drop-in
+- Directory permissions: 0755 (rwxr-xr-x) via systemd drop-in + fallback chmod
+- Security: Permissive settings acceptable for ephemeral CI environments only
 
 ## Dagger-for-GitHub Action
 

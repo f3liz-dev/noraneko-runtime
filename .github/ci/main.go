@@ -169,12 +169,17 @@ func prepareHost() error {
 		# Configure Podman socket permissions BEFORE starting the service
 		# Create a systemd drop-in to override socket permissions for non-root access
 		# This allows the current user to interact with rootful Podman without sudo
-		# Using 0666 is acceptable in GitHub Actions (single-user, ephemeral environment)
+		# Security Note: Using 0666 for socket and 0755 for directory is acceptable
+		# in GitHub Actions CI environment which is:
+		# - Single-user (only the runner user)
+		# - Ephemeral (destroyed after each run)
+		# - Isolated (no other users or services)
+		# For production environments, use group-based access instead
 		sudo mkdir -p /etc/systemd/system/podman.socket.d
 		sudo tee /etc/systemd/system/podman.socket.d/override.conf > /dev/null <<EOF
 [Socket]
 SocketMode=0666
-DirectoryMode=0777
+DirectoryMode=0755
 EOF
 
 		# Reload systemd configuration to pick up the drop-in
