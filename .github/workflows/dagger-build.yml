@@ -80,7 +80,6 @@ jobs:
             -output=../../output
         env:
           DAGGER_LOG_FORMAT: plain
-          _EXPERIMENTAL_DAGGER_RUNNER_HOST: unix:///run/podman/podman.sock
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4

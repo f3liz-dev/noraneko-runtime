@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"dagger.io/dagger"
@@ -17,11 +18,10 @@ type Platform string
 type Arch string
 
 const (
-	Linux          Platform = "linux"
-	Windows        Platform = "windows"
-	X86_64         Arch     = "x86_64"
-	Aarch64        Arch     = "aarch64"
-	PodmanSocket   string   = "unix:///run/podman/podman.sock"
+	Linux   Platform = "linux"
+	Windows Platform = "windows"
+	X86_64  Arch     = "x86_64"
+	Aarch64 Arch     = "aarch64"
 )
 
 type Config struct {
@@ -80,6 +80,38 @@ Build Options:
 	}
 }
 
+// getPodmanSocketPath returns the appropriate Podman socket path.
+// It checks for rootless Podman socket first ($XDG_RUNTIME_DIR/podman/podman.sock),
+// then falls back to rootful Podman socket (/run/podman/podman.sock).
+func getPodmanSocketPath() string {
+	// Check for rootless Podman socket (most common in GitHub Actions)
+	if xdgDir := os.Getenv("XDG_RUNTIME_DIR"); xdgDir != "" {
+		rootlessSocket := filepath.Join(xdgDir, "podman", "podman.sock")
+		if _, err := os.Stat(rootlessSocket); err == nil {
+			return fmt.Sprintf("unix://%s", rootlessSocket)
+		}
+	}
+
+	// Check for rootless socket using UID
+	uid := os.Getuid()
+	rootlessSocket := fmt.Sprintf("/run/user/%d/podman/podman.sock", uid)
+	if _, err := os.Stat(rootlessSocket); err == nil {
+		return fmt.Sprintf("unix://%s", rootlessSocket)
+	}
+
+	// Fallback to rootful Podman socket
+	rootfulSocket := "/run/podman/podman.sock"
+	if _, err := os.Stat(rootfulSocket); err == nil {
+		return fmt.Sprintf("unix://%s", rootfulSocket)
+	}
+
+	// Default to rootless path (will be created when socket is started)
+	if xdgDir := os.Getenv("XDG_RUNTIME_DIR"); xdgDir != "" {
+		return fmt.Sprintf("unix://%s/podman/podman.sock", xdgDir)
+	}
+	return fmt.Sprintf("unix:///run/user/%d/podman/podman.sock", os.Getuid())
+}
+
 // prepareHost prepares a GitHub Actions host by allocating swap and freeing disk space.
 func prepareHost() error {
 	fmt.Println("Preparing GitHub Actions host...")
@@ -105,9 +137,20 @@ func prepareHost() error {
 		# Install and setup Podman
 		sudo apt install -y podman || true
 
-		# Enable and start Podman socket
+		# Enable and start Podman socket (rootless for non-root user)
+		# First try user socket (most common in GitHub Actions)
 		systemctl --user enable --now podman.socket 2>/dev/null || true
-		sudo systemctl enable --now podman.socket 2>/dev/null || true
+		
+		# If user socket didn't work, try system socket as fallback
+		if ! systemctl --user is-active --quiet podman.socket 2>/dev/null; then
+			sudo systemctl enable --now podman.socket 2>/dev/null || true
+		fi
+
+		# Wait for socket to be ready
+		sleep 2
+
+		# Verify Podman is working
+		podman info > /dev/null 2>&1 || echo "Warning: Podman might not be fully configured"
 
 		# Remove container images and containers to free space (use podman instead of docker)
 		podman system prune -af --volumes 2>/dev/null || true
@@ -159,8 +202,10 @@ func prepareHost() error {
 }
 
 func build(ctx context.Context, cfg Config) error {
-	// Configure Dagger to use Podman socket
-	os.Setenv("_EXPERIMENTAL_DAGGER_RUNNER_HOST", PodmanSocket)
+	// Detect and configure Dagger to use the correct Podman socket path
+	podmanSocket := getPodmanSocketPath()
+	fmt.Printf("Using Podman socket: %s\n", podmanSocket)
+	os.Setenv("_EXPERIMENTAL_DAGGER_RUNNER_HOST", podmanSocket)
 
 	client, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
 	if err != nil {
