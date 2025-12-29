@@ -52,4 +52,4 @@ go run . build -platform=linux -pgo -pgo-mode=generate
 
 ## Container Runtime
 
-This CI module uses Podman instead of Docker as the container runtime. Dagger is configured to connect to the Podman socket at `unix:///run/podman/podman.sock` via the `_EXPERIMENTAL_DAGGER_RUNNER_HOST` environment variable.
+This CI module uses Podman instead of Docker as the container runtime. Podman is configured to run in **rootful mode** as required by Dagger. The connection is made via the `_EXPERIMENTAL_DAGGER_RUNNER_HOST` environment variable using the `podman-container://` scheme.
