@@ -261,10 +261,13 @@ func build(ctx context.Context, cfg Config) error {
 		return fmt.Errorf("podman verification failed: %w", err)
 	}
 	
-	// Detect and configure Dagger to use the correct Podman socket path
-	podmanSocket := getPodmanSocketPath()
-	fmt.Printf("Using Podman socket: %s\n", podmanSocket)
-	os.Setenv("_EXPERIMENTAL_DAGGER_RUNNER_HOST", podmanSocket)
+	// Use podman-container:// format for Dagger connection
+	// This is more reliable than socket-based connections in CI environments
+	// as it runs the Dagger engine in its own Podman container
+	containerName := "dagger-engine-" + fmt.Sprint(os.Getpid())
+	runnerHost := fmt.Sprintf("podman-container://%s", containerName)
+	fmt.Printf("Using Dagger runner: %s\n", runnerHost)
+	os.Setenv("_EXPERIMENTAL_DAGGER_RUNNER_HOST", runnerHost)
 	
 	// Disable Dagger Cloud features to avoid connection delays
 	// This prevents timeouts related to telemetry and cloud service connections
