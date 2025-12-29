@@ -168,8 +168,8 @@ func prepareHost() error {
 
 		# Enable and start Podman socket in rootful mode (required for Dagger)
 		# Dagger SDK requires a Docker-compatible API, which Podman provides via socket
+		# The --now flag enables and starts the service
 		sudo systemctl enable --now podman.socket 2>/dev/null || true
-		sudo systemctl start podman.socket 2>/dev/null || true
 
 		# Configure socket permissions for non-root access to rootful Podman
 		# This allows the current user to interact with rootful Podman without sudo

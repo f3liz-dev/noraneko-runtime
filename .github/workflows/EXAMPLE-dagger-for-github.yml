@@ -33,7 +33,7 @@ jobs:
         with:
           version: "latest"
           shell: |
-            container | from alpine | with-exec echo,"Hello from Dagger!" | stdout
+            container | from alpine | with-exec echo "Hello from Dagger!" | stdout
       
       # Note: Our actual build workflows use the Dagger Go SDK directly
       # (see .github/ci/main.go) which provides more flexibility and control
