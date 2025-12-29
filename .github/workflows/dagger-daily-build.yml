@@ -58,6 +58,8 @@ jobs:
             -pgo-mode=${{ (inputs.pgo == true && github.event_name != 'push') && 'generate' || '' }} \
             -omnijar-compress=${{ inputs.omnijar_compress || 'deflate' }} \
             -output=../../output
+        env:
+          _EXPERIMENTAL_DAGGER_RUNNER_HOST: unix:///run/podman/podman.sock
 
       - uses: actions/upload-artifact@v4
         with:
@@ -93,6 +95,8 @@ jobs:
             -pgo-mode=${{ (inputs.pgo == true && github.event_name != 'push') && 'generate' || '' }} \
             -omnijar-compress=${{ inputs.omnijar_compress || 'deflate' }} \
             -output=../../output
+        env:
+          _EXPERIMENTAL_DAGGER_RUNNER_HOST: unix:///run/podman/podman.sock
 
       - uses: actions/upload-artifact@v4
         with:
@@ -126,6 +130,8 @@ jobs:
             -debug=${{ inputs.debug == true || github.event_name == 'push' }} \
             -omnijar-compress=${{ inputs.omnijar_compress || 'deflate' }} \
             -output=../../output
+        env:
+          _EXPERIMENTAL_DAGGER_RUNNER_HOST: unix:///run/podman/podman.sock
 
       - uses: actions/upload-artifact@v4
         with:
@@ -225,6 +231,8 @@ jobs:
             -pgo=true -pgo-mode=use \
             -omnijar-compress=${{ inputs.omnijar_compress || 'deflate' }} \
             -output=../../output
+        env:
+          _EXPERIMENTAL_DAGGER_RUNNER_HOST: unix:///run/podman/podman.sock
 
       - uses: geekyeggo/delete-artifact@v5
         with:
