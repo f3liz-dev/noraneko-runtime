@@ -172,6 +172,7 @@ func prepareHost() error {
 
 		# Configure socket permissions for non-root access to rootful Podman
 		# This allows the current user to interact with rootful Podman without sudo
+		# Using 666 is acceptable in GitHub Actions (single-user, ephemeral environment)
 		sudo chmod 666 /run/podman/podman.sock 2>/dev/null || true
 
 		# Wait for socket to be ready
