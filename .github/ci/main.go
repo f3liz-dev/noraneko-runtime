@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"dagger.io/dagger"
 )
@@ -22,6 +23,11 @@ const (
 	Windows Platform = "windows"
 	X86_64  Arch     = "x86_64"
 	Aarch64 Arch     = "aarch64"
+
+	// Connection retry and timeout constants
+	podmanRetryBackoffSeconds  = 2   // Base backoff seconds for Podman verification retries
+	daggerRetryBackoffSeconds  = 5   // Base backoff seconds for Dagger connection retries
+	ciSessionTimeoutSeconds    = 600 // Session timeout for Dagger in CI environments (10 minutes)
 )
 
 type Config struct {
@@ -78,6 +84,30 @@ Build Options:
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+// verifyPodmanResponsive checks if Podman is responsive by running a simple command.
+// This ensures the Podman daemon is ready before attempting Dagger connection.
+// Uses linear backoff: 2s, 4s, 6s, 8s between retries.
+func verifyPodmanResponsive() error {
+	fmt.Println("Verifying Podman is responsive...")
+	
+	maxRetries := 5
+	for i := 0; i < maxRetries; i++ {
+		cmd := exec.Command("podman", "info")
+		if err := cmd.Run(); err == nil {
+			fmt.Println("Podman is responsive.")
+			return nil
+		}
+		
+		if i < maxRetries-1 {
+			waitTime := time.Duration(i+1) * podmanRetryBackoffSeconds * time.Second
+			fmt.Printf("Podman not ready yet, waiting %v before retry %d/%d...\n", waitTime, i+2, maxRetries)
+			time.Sleep(waitTime)
+		}
+	}
+	
+	return fmt.Errorf("podman is not responsive after %d retries", maxRetries)
 }
 
 // getPodmanSocketPath returns the appropriate Podman socket path.
@@ -202,13 +232,60 @@ func prepareHost() error {
 	return cmd.Run()
 }
 
-func build(ctx context.Context, cfg Config) error {
-	// Detect and configure Dagger to use the correct Podman socket path
-	podmanSocket := getPodmanSocketPath()
-	fmt.Printf("Using Podman socket: %s\n", podmanSocket)
-	os.Setenv("_EXPERIMENTAL_DAGGER_RUNNER_HOST", podmanSocket)
+// connectDaggerWithRetry attempts to connect to Dagger with retry logic.
+// This handles transient connection issues common in CI environments.
+// Uses linear backoff: 0s, 5s, 10s between retries.
+func connectDaggerWithRetry(ctx context.Context) (*dagger.Client, error) {
+	maxRetries := 3
+	var lastErr error
+	
+	for i := 0; i < maxRetries; i++ {
+		if i > 0 {
+			waitTime := time.Duration(i) * daggerRetryBackoffSeconds * time.Second
+			fmt.Printf("Retrying Dagger connection in %v (attempt %d/%d)...\n", waitTime, i+1, maxRetries)
+			time.Sleep(waitTime)
+		}
+		
+		fmt.Println("Establishing connection to Dagger Engine...")
+		
+		// Use the parent context - timeout should be handled by DAGGER_SESSION_TIMEOUT env var
+		client, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
+		if err == nil {
+			fmt.Println("Successfully connected to Dagger Engine.")
+			return client, nil
+		}
+		
+		lastErr = err
+		fmt.Printf("Failed to connect to Dagger: %v\n", err)
+	}
+	
+	return nil, fmt.Errorf("failed to connect to Dagger after %d attempts: %w", maxRetries, lastErr)
+}
 
-	client, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
+func build(ctx context.Context, cfg Config) error {
+	// Verify Podman is responsive before attempting Dagger connection
+	if err := verifyPodmanResponsive(); err != nil {
+		return fmt.Errorf("podman verification failed: %w", err)
+	}
+	
+	// Use podman-container:// format for Dagger connection
+	// This is more reliable than socket-based connections in CI environments
+	// as it runs the Dagger engine in its own Podman container
+	containerName := "dagger-engine-" + fmt.Sprint(os.Getpid())
+	runnerHost := fmt.Sprintf("podman-container://%s", containerName)
+	fmt.Printf("Using Dagger runner: %s\n", runnerHost)
+	os.Setenv("_EXPERIMENTAL_DAGGER_RUNNER_HOST", runnerHost)
+	
+	// Disable Dagger Cloud features to avoid connection delays
+	// This prevents timeouts related to telemetry and cloud service connections
+	os.Setenv("DAGGER_CLOUD_TOKEN", "")
+	
+	// Set a more generous session timeout
+	// This helps in CI environments where container startup can be slow
+	os.Setenv("DAGGER_SESSION_TIMEOUT", fmt.Sprint(ciSessionTimeoutSeconds))
+
+	// Connect to Dagger with retry logic
+	client, err := connectDaggerWithRetry(ctx)
 	if err != nil {
 		return err
 	}
