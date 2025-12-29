@@ -60,9 +60,9 @@ This CI module uses Podman instead of Docker as the container runtime. Podman is
 
 **Problem**: Dagger was failing with: `permission denied while trying to connect to the Docker daemon socket at unix:///run/podman/podman.sock`
 
-**Root Cause**: The socket was being created by systemd with default permissions (0660, owned by root:root), and attempting to chmod the socket file after creation didn't work reliably due to systemd socket management and SELinux/AppArmor restrictions.
+**Root Cause**: The socket was being created by systemd with default permissions (0660, owned by root:root), and the directory `/run/podman/` was created with mode 0700 (accessible only by root). Attempting to chmod the socket file after creation didn't work reliably due to systemd socket management and SELinux/AppArmor restrictions, and even with correct socket permissions, the directory permissions prevented non-root access.
 
-**Solution**: Use a systemd drop-in file to configure the socket permissions BEFORE the socket is created. The `prepare-host` command now creates `/etc/systemd/system/podman.socket.d/override.conf` to set `SocketMode=0666`, allowing non-root users to access the rootful Podman socket in the ephemeral GitHub Actions environment.
+**Solution**: Use a systemd drop-in file to configure both socket and directory permissions BEFORE they are created. The `prepare-host` command now creates `/etc/systemd/system/podman.socket.d/override.conf` to set `SocketMode=0666` and `DirectoryMode=0777`. Additionally, after socket creation, we explicitly chmod the directory to ensure it's accessible, as systemd may still create it with restrictive permissions in some cases.
 
 #### Podman Connection Scheme Issue
 

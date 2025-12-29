@@ -174,6 +174,7 @@ func prepareHost() error {
 		sudo tee /etc/systemd/system/podman.socket.d/override.conf > /dev/null <<EOF
 [Socket]
 SocketMode=0666
+DirectoryMode=0777
 EOF
 
 		# Reload systemd configuration to pick up the drop-in
@@ -186,6 +187,10 @@ EOF
 
 		# Wait for socket to be ready
 		sleep 3
+
+		# Ensure the socket directory is accessible to non-root users
+		# This is necessary because systemd creates the directory with restrictive permissions
+		sudo chmod 755 /run/podman 2>/dev/null || true
 
 		# Verify Podman is working and accessible
 		podman info > /dev/null 2>&1 || echo "Warning: Podman might not be fully configured"
