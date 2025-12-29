@@ -104,11 +104,11 @@ func prepareHost() error {
 
 		# Install and setup Podman
 		sudo apt install -y podman || true
-		
+
 		# Enable and start Podman socket
 		systemctl --user enable --now podman.socket 2>/dev/null || true
 		sudo systemctl enable --now podman.socket 2>/dev/null || true
-		
+
 		# Remove container images and containers to free space (use podman instead of docker)
 		podman system prune -af --volumes 2>/dev/null || true
 
@@ -161,7 +161,7 @@ func prepareHost() error {
 func build(ctx context.Context, cfg Config) error {
 	// Configure Dagger to use Podman socket
 	os.Setenv("_EXPERIMENTAL_DAGGER_RUNNER_HOST", PodmanSocket)
-	
+
 	client, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
 	if err != nil {
 		return err
