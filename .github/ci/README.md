@@ -54,7 +54,17 @@ go run . build -platform=linux -pgo -pgo-mode=generate
 
 This CI module uses Podman instead of Docker as the container runtime. Podman is configured to run in **rootful mode** as required by Dagger. The connection is made via the Podman socket at `/run/podman/podman.sock` using the standard `DOCKER_HOST` environment variable.
 
-### Recent Fix: Podman Connection Issue
+### Recent Fixes
+
+#### Podman Socket Permission Issue (Latest)
+
+**Problem**: Dagger was failing with: `permission denied while trying to connect to the Docker daemon socket at unix:///run/podman/podman.sock`
+
+**Root Cause**: The socket was being created by systemd with default permissions (0660, owned by root:root), and attempting to chmod the socket file after creation didn't work reliably due to systemd socket management and SELinux/AppArmor restrictions.
+
+**Solution**: Use a systemd drop-in file to configure the socket permissions BEFORE the socket is created. The `prepare-host` command now creates `/etc/systemd/system/podman.socket.d/override.conf` to set `SocketMode=0666`, allowing non-root users to access the rootful Podman socket in the ephemeral GitHub Actions environment.
+
+#### Podman Connection Scheme Issue
 
 **Problem**: Dagger was failing with: `start engine: no driver for scheme "podman-container" found`
 
@@ -64,12 +74,19 @@ This CI module uses Podman instead of Docker as the container runtime. Podman is
 - Podman socket: `/run/podman/podman.sock`
 - Environment variable: `DOCKER_HOST=unix:///run/podman/podman.sock`
 - Mode: Rootful (required for Dagger operations)
+- Socket permissions: Configured via systemd drop-in to allow non-root access in CI
 
 ## Dagger-for-GitHub Action
 
 An example workflow (`EXAMPLE-dagger-for-github.yml`) demonstrates using the official `dagger/dagger-for-github@v8.2.0` action for simple Dagger operations. However, this CI module uses the Dagger Go SDK directly for better control over complex Firefox/Noraneko builds.
 
 ## Troubleshooting
+
+### "permission denied" errors on socket
+- Ensure `prepare-host` was run to configure socket permissions
+- The systemd drop-in should exist: `ls -la /etc/systemd/system/podman.socket.d/override.conf`
+- Verify socket permissions: `ls -la /run/podman/podman.sock` (should show 0666 or srw-rw-rw-)
+- Restart socket if needed: `sudo systemctl restart podman.socket`
 
 ### "no driver for scheme found" errors
 - Ensure `DOCKER_HOST` points to a valid Unix socket

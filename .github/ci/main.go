@@ -25,10 +25,10 @@ const (
 	Aarch64 Arch     = "aarch64"
 
 	// Connection retry and timeout constants
-	podmanRetryBackoffSeconds  = 2   // Base backoff seconds for Podman verification retries
-	daggerRetryBackoffSeconds  = 5   // Base backoff seconds for Dagger connection retries
-	ciSessionTimeoutSeconds    = 600 // Session timeout for Dagger in CI environments (10 minutes)
-	
+	podmanRetryBackoffSeconds = 2   // Base backoff seconds for Podman verification retries
+	daggerRetryBackoffSeconds = 5   // Base backoff seconds for Dagger connection retries
+	ciSessionTimeoutSeconds   = 600 // Session timeout for Dagger in CI environments (10 minutes)
+
 	// Podman socket paths
 	rootfulPodmanSocket = "/run/podman/podman.sock" // System-wide rootful Podman socket
 )
@@ -94,7 +94,7 @@ Build Options:
 // Uses linear backoff: 2s, 4s, 6s, 8s between retries.
 func verifyPodmanResponsive() error {
 	fmt.Println("Verifying Podman is responsive...")
-	
+
 	maxRetries := 5
 	for i := 0; i < maxRetries; i++ {
 		cmd := exec.Command("podman", "info")
@@ -102,14 +102,14 @@ func verifyPodmanResponsive() error {
 			fmt.Println("Podman is responsive.")
 			return nil
 		}
-		
+
 		if i < maxRetries-1 {
 			waitTime := time.Duration(i+1) * podmanRetryBackoffSeconds * time.Second
 			fmt.Printf("Podman not ready yet, waiting %v before retry %d/%d...\n", waitTime, i+2, maxRetries)
 			time.Sleep(waitTime)
 		}
 	}
-	
+
 	return fmt.Errorf("podman is not responsive after %d retries", maxRetries)
 }
 
@@ -166,15 +166,23 @@ func prepareHost() error {
 		# Install and setup Podman
 		sudo apt install -y podman || true
 
+		# Configure Podman socket permissions BEFORE starting the service
+		# Create a systemd drop-in to override socket permissions for non-root access
+		# This allows the current user to interact with rootful Podman without sudo
+		# Using 0666 is acceptable in GitHub Actions (single-user, ephemeral environment)
+		sudo mkdir -p /etc/systemd/system/podman.socket.d
+		sudo tee /etc/systemd/system/podman.socket.d/override.conf > /dev/null <<EOF
+[Socket]
+SocketMode=0666
+EOF
+
+		# Reload systemd configuration to pick up the drop-in
+		sudo systemctl daemon-reload
+
 		# Enable and start Podman socket in rootful mode (required for Dagger)
 		# Dagger SDK requires a Docker-compatible API, which Podman provides via socket
 		# The --now flag enables and starts the service
 		sudo systemctl enable --now podman.socket 2>/dev/null || true
-
-		# Configure socket permissions for non-root access to rootful Podman
-		# This allows the current user to interact with rootful Podman without sudo
-		# Using 666 is acceptable in GitHub Actions (single-user, ephemeral environment)
-		sudo chmod 666 /run/podman/podman.sock 2>/dev/null || true
 
 		# Wait for socket to be ready
 		sleep 3
@@ -243,27 +251,27 @@ func prepareHost() error {
 func connectDaggerWithRetry(ctx context.Context) (*dagger.Client, error) {
 	maxRetries := 3
 	var lastErr error
-	
+
 	for i := 0; i < maxRetries; i++ {
 		if i > 0 {
 			waitTime := time.Duration(i) * daggerRetryBackoffSeconds * time.Second
 			fmt.Printf("Retrying Dagger connection in %v (attempt %d/%d)...\n", waitTime, i+1, maxRetries)
 			time.Sleep(waitTime)
 		}
-		
+
 		fmt.Println("Establishing connection to Dagger Engine...")
-		
+
 		// Use the parent context - timeout should be handled by DAGGER_SESSION_TIMEOUT env var
 		client, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
 		if err == nil {
 			fmt.Println("Successfully connected to Dagger Engine.")
 			return client, nil
 		}
-		
+
 		lastErr = err
 		fmt.Printf("Failed to connect to Dagger: %v\n", err)
 	}
-	
+
 	return nil, fmt.Errorf("failed to connect to Dagger after %d attempts: %w", maxRetries, lastErr)
 }
 
@@ -272,21 +280,21 @@ func build(ctx context.Context, cfg Config) error {
 	if err := verifyPodmanResponsive(); err != nil {
 		return fmt.Errorf("podman verification failed: %w", err)
 	}
-	
+
 	// Set DOCKER_HOST to use rootful Podman socket for Dagger
 	// Dagger SDK uses DOCKER_HOST to connect to the container runtime
 	// This works with both Docker and Podman (Podman is Docker-compatible)
 	podmanSocket := getPodmanSocketPath()
 	fmt.Printf("Using Podman socket: %s\n", podmanSocket)
 	os.Setenv("DOCKER_HOST", podmanSocket)
-	
+
 	// Also set CONTAINER_HOST for Podman-specific tools
 	os.Setenv("CONTAINER_HOST", podmanSocket)
-	
+
 	// Disable Dagger Cloud features to avoid connection delays
 	// This prevents timeouts related to telemetry and cloud service connections
 	os.Setenv("DAGGER_CLOUD_TOKEN", "")
-	
+
 	// Set a more generous session timeout
 	// This helps in CI environments where container startup can be slow
 	os.Setenv("DAGGER_SESSION_TIMEOUT", fmt.Sprint(ciSessionTimeoutSeconds))
