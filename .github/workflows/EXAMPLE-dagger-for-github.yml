@@ -1,0 +1,40 @@
+---
+# SPDX-License-Identifier: MPL-2.0
+# EXAMPLE: This file demonstrates how to use dagger-for-github action
+# This is a reference example and not meant to be used directly in CI
+
+name: Example - Dagger for GitHub Action
+
+# This workflow is disabled by default (workflow_dispatch only)
+on:
+  workflow_dispatch:
+
+jobs:
+  example-dagger-action:
+    name: Example using dagger-for-github
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      # Example 1: Using dagger-for-github to run a simple command
+      - name: Hello World with Dagger
+        uses: dagger/dagger-for-github@v8.2.0
+        with:
+          version: "latest"
+          verb: call
+          module: github.com/shykes/daggerverse/hello
+          call: hello --greeting "Hello" --name "Noraneko"
+      
+      # Example 2: Using dagger shell
+      - name: Dagger Shell Example
+        uses: dagger/dagger-for-github@v8.2.0
+        with:
+          version: "latest"
+          shell: |
+            container | from alpine | with-exec echo "Hello from Dagger!" | stdout
+      
+      # Note: Our actual build workflows use the Dagger Go SDK directly
+      # (see .github/ci/main.go) which provides more flexibility and control
+      # for complex build scenarios like Firefox/Noraneko compilation
