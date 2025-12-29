@@ -28,6 +28,9 @@ const (
 	podmanRetryBackoffSeconds  = 2   // Base backoff seconds for Podman verification retries
 	daggerRetryBackoffSeconds  = 5   // Base backoff seconds for Dagger connection retries
 	ciSessionTimeoutSeconds    = 600 // Session timeout for Dagger in CI environments (10 minutes)
+	
+	// Podman socket paths
+	rootfulPodmanSocket = "/run/podman/podman.sock" // System-wide rootful Podman socket
 )
 
 type Config struct {
@@ -115,9 +118,8 @@ func verifyPodmanResponsive() error {
 // rootful container execution for proper operation.
 func getPodmanSocketPath() string {
 	// Check for rootful Podman socket first (required for Dagger)
-	rootfulSocket := "/run/podman/podman.sock"
-	if _, err := os.Stat(rootfulSocket); err == nil {
-		return fmt.Sprintf("unix://%s", rootfulSocket)
+	if _, err := os.Stat(rootfulPodmanSocket); err == nil {
+		return fmt.Sprintf("unix://%s", rootfulPodmanSocket)
 	}
 
 	// Fallback to rootless Podman socket if rootful is not available
@@ -136,7 +138,7 @@ func getPodmanSocketPath() string {
 	}
 
 	// Default to rootful path (will be created when socket is started)
-	return fmt.Sprintf("unix://%s", rootfulSocket)
+	return fmt.Sprintf("unix://%s", rootfulPodmanSocket)
 }
 
 // prepareHost prepares a GitHub Actions host by allocating swap and freeing disk space.
@@ -265,8 +267,7 @@ func build(ctx context.Context, cfg Config) error {
 	
 	// Set CONTAINER_HOST to use rootful Podman socket
 	// This ensures all Podman operations use rootful mode as required by Dagger
-	rootfulSocket := "/run/podman/podman.sock"
-	os.Setenv("CONTAINER_HOST", fmt.Sprintf("unix://%s", rootfulSocket))
+	os.Setenv("CONTAINER_HOST", fmt.Sprintf("unix://%s", rootfulPodmanSocket))
 	
 	// Use podman-container:// format for Dagger connection
 	// This is more reliable than socket-based connections in CI environments
