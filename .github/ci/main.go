@@ -23,6 +23,11 @@ const (
 	Windows Platform = "windows"
 	X86_64  Arch     = "x86_64"
 	Aarch64 Arch     = "aarch64"
+
+	// Connection retry and timeout constants
+	podmanRetryBackoffSeconds  = 2   // Base backoff seconds for Podman verification retries
+	daggerRetryBackoffSeconds  = 5   // Base backoff seconds for Dagger connection retries
+	ciSessionTimeoutSeconds    = 600 // Session timeout for Dagger in CI environments (10 minutes)
 )
 
 type Config struct {
@@ -95,7 +100,7 @@ func verifyPodmanResponsive() error {
 		}
 		
 		if i < maxRetries-1 {
-			waitTime := time.Duration(i+1) * 2 * time.Second
+			waitTime := time.Duration(i+1) * podmanRetryBackoffSeconds * time.Second
 			fmt.Printf("Podman not ready yet, waiting %v before retry %d/%d...\n", waitTime, i+2, maxRetries)
 			time.Sleep(waitTime)
 		}
@@ -234,7 +239,7 @@ func connectDaggerWithRetry(ctx context.Context) (*dagger.Client, error) {
 	
 	for i := 0; i < maxRetries; i++ {
 		if i > 0 {
-			waitTime := time.Duration(i) * 5 * time.Second
+			waitTime := time.Duration(i) * daggerRetryBackoffSeconds * time.Second
 			fmt.Printf("Retrying Dagger connection in %v (attempt %d/%d)...\n", waitTime, i+1, maxRetries)
 			time.Sleep(waitTime)
 		}
@@ -275,7 +280,7 @@ func build(ctx context.Context, cfg Config) error {
 	
 	// Set a more generous session timeout
 	// This helps in CI environments where container startup can be slow
-	os.Setenv("DAGGER_SESSION_TIMEOUT", "600")
+	os.Setenv("DAGGER_SESSION_TIMEOUT", fmt.Sprint(ciSessionTimeoutSeconds))
 
 	// Connect to Dagger with retry logic
 	client, err := connectDaggerWithRetry(ctx)
