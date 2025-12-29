@@ -88,6 +88,7 @@ Build Options:
 
 // verifyPodmanResponsive checks if Podman is responsive by running a simple command.
 // This ensures the Podman daemon is ready before attempting Dagger connection.
+// Uses linear backoff: 2s, 4s, 6s, 8s between retries.
 func verifyPodmanResponsive() error {
 	fmt.Println("Verifying Podman is responsive...")
 	
@@ -233,6 +234,7 @@ func prepareHost() error {
 
 // connectDaggerWithRetry attempts to connect to Dagger with retry logic.
 // This handles transient connection issues common in CI environments.
+// Uses linear backoff: 0s, 5s, 10s between retries.
 func connectDaggerWithRetry(ctx context.Context) (*dagger.Client, error) {
 	maxRetries := 3
 	var lastErr error
