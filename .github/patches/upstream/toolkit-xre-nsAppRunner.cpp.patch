@@ -33,7 +33,7 @@ index 62a5420abf..b86777affb 100644
 +  */
 +  {
 +    auto _NRReadString = [](nsIFile* aFile, nsACString& buildid) -> nsresult {
-+      MOZ_TRY_VAR(buildid, URLPreloader::ReadFile(aFile));
++      buildid = MOZ_TRY(URLPreloader::ReadFile(aFile));
 +      return NS_OK;
 +    };
 +  
