@@ -111,10 +111,16 @@ func verifyPodmanResponsive() error {
 }
 
 // getPodmanSocketPath returns the appropriate Podman socket path.
-// It checks for rootless Podman socket first ($XDG_RUNTIME_DIR/podman/podman.sock),
-// then falls back to rootful Podman socket (/run/podman/podman.sock).
+// For Dagger, we prioritize rootful Podman socket as Dagger requires
+// rootful container execution for proper operation.
 func getPodmanSocketPath() string {
-	// Check for rootless Podman socket (most common in GitHub Actions)
+	// Check for rootful Podman socket first (required for Dagger)
+	rootfulSocket := "/run/podman/podman.sock"
+	if _, err := os.Stat(rootfulSocket); err == nil {
+		return fmt.Sprintf("unix://%s", rootfulSocket)
+	}
+
+	// Fallback to rootless Podman socket if rootful is not available
 	if xdgDir := os.Getenv("XDG_RUNTIME_DIR"); xdgDir != "" {
 		rootlessSocket := filepath.Join(xdgDir, "podman", "podman.sock")
 		if _, err := os.Stat(rootlessSocket); err == nil {
@@ -129,18 +135,8 @@ func getPodmanSocketPath() string {
 		return fmt.Sprintf("unix://%s", rootlessSocket)
 	}
 
-	// Fallback to rootful Podman socket
-	rootfulSocket := "/run/podman/podman.sock"
-	if _, err := os.Stat(rootfulSocket); err == nil {
-		return fmt.Sprintf("unix://%s", rootfulSocket)
-	}
-
-	// Default to rootless path (will be created when socket is started)
-	if xdgDir := os.Getenv("XDG_RUNTIME_DIR"); xdgDir != "" {
-		return fmt.Sprintf("unix://%s/podman/podman.sock", xdgDir)
-	}
-	// Use the same UID-based path as checked earlier
-	return fmt.Sprintf("unix://%s", rootlessSocket)
+	// Default to rootful path (will be created when socket is started)
+	return fmt.Sprintf("unix://%s", rootfulSocket)
 }
 
 // prepareHost prepares a GitHub Actions host by allocating swap and freeing disk space.
@@ -168,14 +164,13 @@ func prepareHost() error {
 		# Install and setup Podman
 		sudo apt install -y podman || true
 
-		# Enable and start Podman socket (rootless for non-root user)
-		# First try user socket (most common in GitHub Actions)
-		systemctl --user enable --now podman.socket 2>/dev/null || true
-		
-		# If user socket didn't work, try system socket as fallback
-		if ! systemctl --user is-active --quiet podman.socket 2>/dev/null; then
-			sudo systemctl enable --now podman.socket 2>/dev/null || true
-		fi
+		# Enable and start Podman socket in rootful mode (required for Dagger)
+		# Dagger requires rootful container execution for proper operation
+		sudo systemctl enable --now podman.socket 2>/dev/null || true
+
+		# Configure socket permissions for non-root access to rootful Podman
+		# This allows the current user to interact with rootful Podman without sudo
+		sudo chmod 666 /run/podman/podman.sock 2>/dev/null || true
 
 		# Wait for socket to be ready
 		sleep 2
@@ -183,7 +178,7 @@ func prepareHost() error {
 		# Verify Podman is working
 		podman info > /dev/null 2>&1 || echo "Warning: Podman might not be fully configured"
 
-		# Remove container images and containers to free space (use podman instead of docker)
+		# Remove container images and containers to free space
 		podman system prune -af --volumes 2>/dev/null || true
 
 		# Free disk space - remove large pre-installed packages
@@ -267,6 +262,11 @@ func build(ctx context.Context, cfg Config) error {
 	if err := verifyPodmanResponsive(); err != nil {
 		return fmt.Errorf("podman verification failed: %w", err)
 	}
+	
+	// Set CONTAINER_HOST to use rootful Podman socket
+	// This ensures all Podman operations use rootful mode as required by Dagger
+	rootfulSocket := "/run/podman/podman.sock"
+	os.Setenv("CONTAINER_HOST", fmt.Sprintf("unix://%s", rootfulSocket))
 	
 	// Use podman-container:// format for Dagger connection
 	// This is more reliable than socket-based connections in CI environments
