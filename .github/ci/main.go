@@ -109,7 +109,8 @@ func getPodmanSocketPath() string {
 	if xdgDir := os.Getenv("XDG_RUNTIME_DIR"); xdgDir != "" {
 		return fmt.Sprintf("unix://%s/podman/podman.sock", xdgDir)
 	}
-	return fmt.Sprintf("unix:///run/user/%d/podman/podman.sock", os.Getuid())
+	// Use the same UID-based path as checked earlier
+	return fmt.Sprintf("unix://%s", rootlessSocket)
 }
 
 // prepareHost prepares a GitHub Actions host by allocating swap and freeing disk space.
