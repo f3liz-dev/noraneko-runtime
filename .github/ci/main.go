@@ -167,8 +167,9 @@ func prepareHost() error {
 		sudo apt install -y podman || true
 
 		# Enable and start Podman socket in rootful mode (required for Dagger)
-		# Dagger requires rootful container execution for proper operation
+		# Dagger SDK requires a Docker-compatible API, which Podman provides via socket
 		sudo systemctl enable --now podman.socket 2>/dev/null || true
+		sudo systemctl start podman.socket 2>/dev/null || true
 
 		# Configure socket permissions for non-root access to rootful Podman
 		# This allows the current user to interact with rootful Podman without sudo
@@ -176,10 +177,16 @@ func prepareHost() error {
 		sudo chmod 666 /run/podman/podman.sock 2>/dev/null || true
 
 		# Wait for socket to be ready
-		sleep 2
+		sleep 3
 
-		# Verify Podman is working
+		# Verify Podman is working and accessible
 		podman info > /dev/null 2>&1 || echo "Warning: Podman might not be fully configured"
+
+		# Verify socket is accessible
+		if [ -e /run/podman/podman.sock ]; then
+			echo "Podman socket is ready at /run/podman/podman.sock"
+			ls -la /run/podman/podman.sock
+		fi
 
 		# Remove container images and containers to free space
 		podman system prune -af --volumes 2>/dev/null || true
@@ -266,17 +273,15 @@ func build(ctx context.Context, cfg Config) error {
 		return fmt.Errorf("podman verification failed: %w", err)
 	}
 	
-	// Set CONTAINER_HOST to use rootful Podman socket
-	// This ensures all Podman operations use rootful mode as required by Dagger
-	os.Setenv("CONTAINER_HOST", fmt.Sprintf("unix://%s", rootfulPodmanSocket))
+	// Set DOCKER_HOST to use rootful Podman socket for Dagger
+	// Dagger SDK uses DOCKER_HOST to connect to the container runtime
+	// This works with both Docker and Podman (Podman is Docker-compatible)
+	podmanSocket := getPodmanSocketPath()
+	fmt.Printf("Using Podman socket: %s\n", podmanSocket)
+	os.Setenv("DOCKER_HOST", podmanSocket)
 	
-	// Use podman-container:// format for Dagger connection
-	// This is more reliable than socket-based connections in CI environments
-	// as it runs the Dagger engine in its own Podman container
-	containerName := "dagger-engine-" + fmt.Sprint(os.Getpid())
-	runnerHost := fmt.Sprintf("podman-container://%s", containerName)
-	fmt.Printf("Using Dagger runner: %s\n", runnerHost)
-	os.Setenv("_EXPERIMENTAL_DAGGER_RUNNER_HOST", runnerHost)
+	// Also set CONTAINER_HOST for Podman-specific tools
+	os.Setenv("CONTAINER_HOST", podmanSocket)
 	
 	// Disable Dagger Cloud features to avoid connection delays
 	// This prevents timeouts related to telemetry and cloud service connections
