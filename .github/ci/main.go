@@ -17,10 +17,11 @@ type Platform string
 type Arch string
 
 const (
-	Linux   Platform = "linux"
-	Windows Platform = "windows"
-	X86_64  Arch     = "x86_64"
-	Aarch64 Arch     = "aarch64"
+	Linux          Platform = "linux"
+	Windows        Platform = "windows"
+	X86_64         Arch     = "x86_64"
+	Aarch64        Arch     = "aarch64"
+	PodmanSocket   string   = "unix:///run/podman/podman.sock"
 )
 
 type Config struct {
@@ -102,7 +103,7 @@ func prepareHost() error {
 		sudo apt clean
 
 		# Install and setup Podman
-		sudo apt install -y podman
+		sudo apt install -y podman || true
 		
 		# Enable and start Podman socket
 		systemctl --user enable --now podman.socket 2>/dev/null || true
@@ -159,8 +160,7 @@ func prepareHost() error {
 
 func build(ctx context.Context, cfg Config) error {
 	// Configure Dagger to use Podman socket
-	podmanSocket := "unix:///run/podman/podman.sock"
-	os.Setenv("_EXPERIMENTAL_DAGGER_RUNNER_HOST", podmanSocket)
+	os.Setenv("_EXPERIMENTAL_DAGGER_RUNNER_HOST", PodmanSocket)
 	
 	client, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
 	if err != nil {
