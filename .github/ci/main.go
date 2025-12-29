@@ -17,10 +17,11 @@ type Platform string
 type Arch string
 
 const (
-	Linux   Platform = "linux"
-	Windows Platform = "windows"
-	X86_64  Arch     = "x86_64"
-	Aarch64 Arch     = "aarch64"
+	Linux          Platform = "linux"
+	Windows        Platform = "windows"
+	X86_64         Arch     = "x86_64"
+	Aarch64        Arch     = "aarch64"
+	PodmanSocket   string   = "unix:///run/podman/podman.sock"
 )
 
 type Config struct {
@@ -101,8 +102,15 @@ func prepareHost() error {
 		sudo apt autoremove -y -qq
 		sudo apt clean
 
-		# Remove Docker images and containers to free space
-		docker system prune -af --volumes 2>/dev/null || true
+		# Install and setup Podman
+		sudo apt install -y podman || true
+
+		# Enable and start Podman socket
+		systemctl --user enable --now podman.socket 2>/dev/null || true
+		sudo systemctl enable --now podman.socket 2>/dev/null || true
+
+		# Remove container images and containers to free space (use podman instead of docker)
+		podman system prune -af --volumes 2>/dev/null || true
 
 		# Free disk space - remove large pre-installed packages
 		mkdir -p /tmp/empty
@@ -151,6 +159,9 @@ func prepareHost() error {
 }
 
 func build(ctx context.Context, cfg Config) error {
+	// Configure Dagger to use Podman socket
+	os.Setenv("_EXPERIMENTAL_DAGGER_RUNNER_HOST", PodmanSocket)
+
 	client, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
 	if err != nil {
 		return err
