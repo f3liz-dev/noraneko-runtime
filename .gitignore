@@ -380,6 +380,3 @@ toolkit/crashreporter/minidump-analyzer/target/
 
 # Ignore mozperftest artifacts folder
 /artifacts/
-
-# Ignore compiled Go binaries in CI directory
-/.github/ci/ci
