@@ -1,0 +1,2 @@
+# Dagger Python SDK requirements
+dagger-io>=0.13.0
