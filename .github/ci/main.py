@@ -208,7 +208,8 @@ EOF
         # Clean up hostedtoolcache except for Python (needed for build)
         if [ -d "/opt/hostedtoolcache" ]; then
             for subdir in /opt/hostedtoolcache/*; do
-                if [ -d "$subdir" ] && [ "$(basename "$subdir")" != "Python" ]; then
+                subdir_name="$(basename "$subdir")"
+                if [ -d "$subdir" ] && [ "$subdir_name" != "Python" ] && [ "$subdir_name" != "python" ]; then
                     echo "Removing: $subdir"
                     sudo rsync -a --delete /tmp/empty/ "$subdir/" 2>/dev/null || true
                     sudo rmdir "$subdir" 2>/dev/null || true
