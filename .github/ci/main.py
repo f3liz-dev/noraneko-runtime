@@ -208,8 +208,8 @@ EOF
         # Clean up hostedtoolcache except for Python (needed for build)
         if [ -d "/opt/hostedtoolcache" ]; then
             for subdir in /opt/hostedtoolcache/*; do
-                subdir_name="$(basename "$subdir")"
-                if [ -d "$subdir" ] && [ "$subdir_name" != "Python" ] && [ "$subdir_name" != "python" ]; then
+                subdir_name="$(basename "$subdir" | tr '[:upper:]' '[:lower:]')"
+                if [ -d "$subdir" ] && [ "$subdir_name" != "python" ]; then
                     echo "Removing: $subdir"
                     sudo rsync -a --delete /tmp/empty/ "$subdir/" 2>/dev/null || true
                     sudo rmdir "$subdir" 2>/dev/null || true
@@ -439,6 +439,30 @@ async def build(cfg: Config) -> int:
         return 1
 
 
+def str_to_bool(value: str) -> bool:
+    """Convert string to boolean.
+    
+    Handles common boolean string representations used in shell scripts.
+    
+    Args:
+        value: String value to convert.
+    
+    Returns:
+        Boolean value.
+    
+    Raises:
+        argparse.ArgumentTypeError: If value cannot be parsed as boolean.
+    """
+    if isinstance(value, bool):
+        return value
+    if value.lower() in ('yes', 'true', 't', 'y', '1'):
+        return True
+    elif value.lower() in ('no', 'false', 'f', 'n', '0'):
+        return False
+    else:
+        raise argparse.ArgumentTypeError(f"Boolean value expected, got '{value}'")
+
+
 def main():
     """Main entry point."""
     parser = argparse.ArgumentParser(
@@ -455,8 +479,8 @@ def main():
     build_parser = subparsers.add_parser("build", help="Build the browser")
     build_parser.add_argument("-platform", default="linux", choices=["linux", "windows"], help="Target platform")
     build_parser.add_argument("-arch", default="x86_64", choices=["x86_64", "aarch64"], help="Target architecture")
-    build_parser.add_argument("-debug", type=bool, default=True, help="Enable debug build")
-    build_parser.add_argument("-pgo", type=bool, default=False, help="Enable PGO")
+    build_parser.add_argument("-debug", type=str_to_bool, default=True, help="Enable debug build")
+    build_parser.add_argument("-pgo", type=str_to_bool, default=False, help="Enable PGO")
     build_parser.add_argument("-pgo-mode", default="", choices=["", "generate", "use"], help="PGO mode")
     build_parser.add_argument("-omnijar-compress", default="deflate", choices=["deflate", "zstd", "lz4", "none"], help="Omni.ja compression")
     build_parser.add_argument("-output", default="./output", help="Output directory")
