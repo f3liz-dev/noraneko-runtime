@@ -2,16 +2,25 @@
 
 Dagger-based CI/CD module for building noraneko-runtime using Podman as the container runtime.
 
+## Requirements
+
+- Python 3.10 or later
+- Podman (or Docker)
+- Dagger Python SDK (installed automatically via requirements.txt)
+
 ## Usage
 
 ```bash
 cd .github/ci
 
+# Install dependencies
+pip install -r requirements.txt
+
 # Prepare GitHub Actions host (allocate swap, free disk space, setup Podman)
-go run . prepare-host
+python main.py prepare-host
 
 # Build the browser
-go run . build [options]
+python main.py build [options]
 ```
 
 ## Commands
@@ -38,21 +47,50 @@ go run . build [options]
 ```bash
 # Prepare host before building (important for GitHub Actions)
 # This installs and configures Podman
-go run . prepare-host
+python main.py prepare-host
 
 # Linux x86_64 debug build
-go run . build -platform=linux -arch=x86_64 -debug
+python main.py build -platform=linux -arch=x86_64 -debug
 
 # Linux aarch64 release build
-go run . build -platform=linux -arch=aarch64 -debug=false
+python main.py build -platform=linux -arch=aarch64 -debug=false
 
 # PGO profile generation
-go run . build -platform=linux -pgo -pgo-mode=generate
+python main.py build -platform=linux -pgo -pgo-mode=generate
 ```
 
 ## Container Runtime
 
 This CI module uses Podman instead of Docker as the container runtime. Podman is configured to run in **rootful mode** as required by Dagger. The connection is made via the Podman socket at `/run/podman/podman.sock` using the standard `DOCKER_HOST` environment variable.
+
+### Podman Integration in GitHub Actions
+
+The Dagger Python SDK connects to Podman using the Docker-compatible API. There is no special `podman-container://` scheme - instead, we use the standard Docker socket protocol with Podman:
+
+1. **Socket Configuration**: Podman provides a Docker-compatible socket at `/run/podman/podman.sock`
+2. **Environment Variable**: Set `DOCKER_HOST=unix:///run/podman/podman.sock`
+3. **Dagger Connection**: The Dagger SDK automatically uses the `DOCKER_HOST` to connect to the container runtime
+
+This approach works because:
+- Podman implements the Docker API specification
+- Dagger SDK is designed to work with any Docker-compatible runtime
+- No special configuration or custom schemes are needed
+
+### Container Runtime Usage
+
+The Python code automatically:
+1. Detects the Podman socket path (rootful or rootless)
+2. Sets `DOCKER_HOST` environment variable
+3. Sets `CONTAINER_HOST` for Podman-specific tools
+4. Connects Dagger to Podman transparently
+
+Example from the code:
+```python
+podman_socket = get_podman_socket_path()  # Returns "unix:///run/podman/podman.sock"
+os.environ["DOCKER_HOST"] = podman_socket
+os.environ["CONTAINER_HOST"] = podman_socket
+# Dagger SDK now uses Podman automatically
+```
 
 ### Recent Fixes
 
