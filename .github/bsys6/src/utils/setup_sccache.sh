@@ -67,12 +67,15 @@ fi
 rm -rf "/tmp/${SCCACHE_FILE}" "/tmp/sccache-v${SCCACHE_VERSION}-${SCCACHE_ARCH}-${SCCACHE_OS}"
 
 # Verify installation
-if command -v sccache &> /dev/null; then
+if command -v sccache >/dev/null 2>&1; then
   echo "   sccache installed successfully: $(sccache --version)"
 else
   echo "   ERROR: sccache installation failed"
   exit 1
 fi
+
+# Check if sccache should be enabled based on credentials
+USE_SCCACHE=false
 
 # Configure sccache with Cloudflare R2 if credentials are provided
 if [ -n "${SCCACHE_BUCKET:-}" ] && [ -n "${SCCACHE_ENDPOINT:-}" ]; then
@@ -80,30 +83,39 @@ if [ -n "${SCCACHE_BUCKET:-}" ] && [ -n "${SCCACHE_ENDPOINT:-}" ]; then
   
   # Validate R2 configuration
   if [ -z "${AWS_ACCESS_KEY_ID:-}" ] || [ -z "${AWS_SECRET_ACCESS_KEY:-}" ]; then
-    echo "   WARNING: AWS_ACCESS_KEY_ID or AWS_SECRET_ACCESS_KEY not set"
-    echo "   sccache will not be able to use R2 storage"
+    echo "   WARNING: SCCACHE_BUCKET and SCCACHE_ENDPOINT are set, but AWS_ACCESS_KEY_ID or AWS_SECRET_ACCESS_KEY is missing"
+    echo "   sccache will be disabled for this build"
+    USE_SCCACHE=false
   else
     echo "   R2 credentials configured (not shown for security)"
-  fi
-  
-  # Start sccache server
-  echo "-> Starting sccache server"
-  if sccache --show-stats &>/dev/null; then
-    echo "   sccache server is already running"
-  else
-    if sccache --start-server; then
-      echo "   sccache server started successfully"
+    USE_SCCACHE=true
+    
+    # Start sccache server
+    echo "-> Starting sccache server"
+    if sccache --show-stats >/dev/null 2>&1; then
+      echo "   sccache server is already running"
     else
-      echo "   WARNING: Failed to start sccache server"
-      echo "   sccache will start automatically on first use"
+      if sccache --start-server; then
+        echo "   sccache server started successfully"
+      else
+        echo "   WARNING: Failed to start sccache server"
+        echo "   sccache will start automatically on first use"
+      fi
     fi
+    
+    # Show sccache stats
+    echo "-> sccache statistics:"
+    sccache --show-stats || true
   fi
-  
-  # Show sccache stats
-  echo "-> sccache statistics:"
-  sccache --show-stats || true
 else
-  echo "-> sccache will use local disk cache (no R2 credentials provided)"
+  echo "-> No sccache credentials provided (both SCCACHE_BUCKET and SCCACHE_ENDPOINT are required)"
+  echo "   sccache will be disabled for this build"
+  USE_SCCACHE=false
 fi
 
-echo "-> sccache setup completed"
+# Save USE_SCCACHE flag to a file for use in source.sh
+BSYS6_STATE_DIR="${BSYS6_STATE_DIR:-/tmp/bsys6-state}"
+mkdir -p "$BSYS6_STATE_DIR"
+echo "$USE_SCCACHE" > "$BSYS6_STATE_DIR/USE_SCCACHE"
+
+echo "-> sccache setup completed (USE_SCCACHE=$USE_SCCACHE)"

@@ -81,6 +81,63 @@ EOF
     fi
   fi
 
+  # Add sccache configuration if enabled
+  BSYS6_STATE_DIR="${BSYS6_STATE_DIR:-/tmp/bsys6-state}"
+  USE_SCCACHE_FILE="$BSYS6_STATE_DIR/USE_SCCACHE"
+  
+  if [ -f "$USE_SCCACHE_FILE" ]; then
+    USE_SCCACHE=$(cat "$USE_SCCACHE_FILE")
+  else
+    USE_SCCACHE="${USE_SCCACHE:-false}"
+  fi
+  
+  if [ "$USE_SCCACHE" = "true" ]; then
+    echo "-> Configuring sccache in mozconfig" >&2
+    
+    # Configure sccache with R2 bucket
+    # Credentials already validated in setup_sccache.sh
+    mozconfig="$(cat <<EOF
+$mozconfig
+
+# sccache configuration
+ac_add_options --with-ccache=sccache
+mk_add_options "export SCCACHE_BUCKET=$SCCACHE_BUCKET"
+mk_add_options "export SCCACHE_ENDPOINT=$SCCACHE_ENDPOINT"
+EOF
+    )"
+    
+    # Add region if specified
+    if [ -n "${SCCACHE_REGION:-}" ]; then
+      mozconfig="$(cat <<EOF
+$mozconfig
+mk_add_options "export SCCACHE_REGION=$SCCACHE_REGION"
+EOF
+      )"
+    fi
+    
+    # Configure verbose stats and max frame length
+    mozconfig="$(cat <<EOF
+$mozconfig
+export CCACHE="sccache"
+export SCCACHE_VERBOSE_STATS=1
+# Workaround for https://github.com/mozilla/sccache/issues/459#issuecomment-618756635
+mk_add_options "export SCCACHE_MAX_FRAME_LENGTH=50000000"
+EOF
+    )"
+    
+    # Add daemon management if sccache binary is available
+    if command -v sccache >/dev/null 2>&1; then
+      SCCACHE_PATH="$(command -v sccache)"
+      mozconfig="$(cat <<EOF
+$mozconfig
+mk_add_options MOZBUILD_MANAGE_SCCACHE_DAEMON=$SCCACHE_PATH
+EOF
+      )"
+    fi
+  else
+    echo "-> sccache is disabled (credentials not available or not configured)" >&2
+  fi
+
   # Check if mozconfig changed
   mozconfig_new_hash=$(echo "$mozconfig" | sha256sum | cut -d' ' -f1)
   mozconfig_old_hash=$(cat "$SOURCEDIR/mozconfig.hash" 2>/dev/null || echo "")
