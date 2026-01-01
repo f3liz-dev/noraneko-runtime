@@ -14,7 +14,7 @@ OMNIJAR_COMPRESS="${OMNIJAR_COMPRESS:-deflate}"
 (cd $SOURCE && ./mach package --compress="$OMNIJAR_COMPRESS")
 
 if [ "$TARGET" == "windows" ]; then
-  source $BSYS6/exports/move_artifact.sh "PACKAGE" "$SOURCE/obj-$MOZ_TARGET/dist" "$PROJECT_NAME-.*\.zip"
+  source $BSYS6/exports/move_artifact.sh "PACKAGE" "$SOURCE/obj-$MOZ_TARGET/dist" "$PROJECT_NAME-*.zip"
 else
-  source $BSYS6/exports/move_artifact.sh "PACKAGE" "$SOURCE/obj-$MOZ_TARGET/dist" "$PROJECT_NAME-.*\.tar\.xz"
+  source $BSYS6/exports/move_artifact.sh "PACKAGE" "$SOURCE/obj-$MOZ_TARGET/dist" "$PROJECT_NAME-*.tar.xz"
 fi

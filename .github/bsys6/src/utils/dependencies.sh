@@ -10,11 +10,15 @@ if command -v apt-get &> /dev/null; then
   if [ -n "$apt_packages" ]; then
     echo "-> Installing apt packages: $apt_packages"
     sudo apt-get update -qq
+    # Note: Word splitting is intentional here as packages are space-separated
+    # shellcheck disable=SC2086
     sudo apt-get install -y --no-install-recommends $apt_packages
   fi
 elif command -v pacman &> /dev/null; then
   if [ -n "$pacman_packages" ]; then
     echo "-> Installing pacman packages: $pacman_packages"
+    # Note: Word splitting is intentional here as packages are space-separated
+    # shellcheck disable=SC2086
     sudo pacman -Sy --noconfirm $pacman_packages
   fi
 else

@@ -81,4 +81,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: noraneko-${{ inputs.platform }}-${{ inputs.arch }}-moz-artifact
-          path: .github/bsys6/*.tar.xz
+          path: |
+            .github/bsys6/*.tar.xz
+            .github/bsys6/*.zip
