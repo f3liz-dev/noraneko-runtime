@@ -44,13 +44,24 @@ SCCACHE_FILE="sccache-v${SCCACHE_VERSION}-${SCCACHE_ARCH}-${SCCACHE_OS}.${SCCACH
 SCCACHE_URL="https://github.com/mozilla/sccache/releases/download/v${SCCACHE_VERSION}/${SCCACHE_FILE}"
 
 echo "   Downloading from: $SCCACHE_URL"
-wget -q "$SCCACHE_URL" -O "/tmp/${SCCACHE_FILE}"
+if ! wget -q "$SCCACHE_URL" -O "/tmp/${SCCACHE_FILE}"; then
+  echo "   ERROR: Failed to download sccache from $SCCACHE_URL"
+  exit 1
+fi
 
 echo "   Extracting sccache"
-tar -xzf "/tmp/${SCCACHE_FILE}" -C /tmp
+if ! tar -xzf "/tmp/${SCCACHE_FILE}" -C /tmp; then
+  echo "   ERROR: Failed to extract sccache archive"
+  rm -f "/tmp/${SCCACHE_FILE}"
+  exit 1
+fi
 
 echo "   Installing to /usr/local/bin"
-sudo install -m 755 "/tmp/sccache-v${SCCACHE_VERSION}-${SCCACHE_ARCH}-${SCCACHE_OS}/sccache" /usr/local/bin/sccache
+if ! sudo install -m 755 "/tmp/sccache-v${SCCACHE_VERSION}-${SCCACHE_ARCH}-${SCCACHE_OS}/sccache" /usr/local/bin/sccache; then
+  echo "   ERROR: Failed to install sccache to /usr/local/bin"
+  rm -rf "/tmp/${SCCACHE_FILE}" "/tmp/sccache-v${SCCACHE_VERSION}-${SCCACHE_ARCH}-${SCCACHE_OS}"
+  exit 1
+fi
 
 # Clean up
 rm -rf "/tmp/${SCCACHE_FILE}" "/tmp/sccache-v${SCCACHE_VERSION}-${SCCACHE_ARCH}-${SCCACHE_OS}"
@@ -80,7 +91,16 @@ if [ -n "${SCCACHE_BUCKET:-}" ] && [ -n "${SCCACHE_ENDPOINT:-}" ]; then
   
   # Start sccache server
   echo "-> Starting sccache server"
-  sccache --start-server || echo "   sccache server already running or failed to start"
+  if sccache --show-stats &>/dev/null; then
+    echo "   sccache server is already running"
+  else
+    if sccache --start-server; then
+      echo "   sccache server started successfully"
+    else
+      echo "   WARNING: Failed to start sccache server"
+      echo "   sccache will start automatically on first use"
+    fi
+  fi
   
   # Show sccache stats
   echo "-> sccache statistics:"
