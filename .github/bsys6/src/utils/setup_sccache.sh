@@ -75,35 +75,61 @@ else
 fi
 
 # Configure sccache with Cloudflare R2 if credentials are provided
+SCCACHE_DISABLED_FLAG="/tmp/.sccache_disabled"
+
 if [ -n "${SCCACHE_BUCKET:-}" ] && [ -n "${SCCACHE_ENDPOINT:-}" ]; then
   echo "-> Configuring sccache with Cloudflare R2"
   
   # Validate R2 configuration
   if [ -z "${AWS_ACCESS_KEY_ID:-}" ] || [ -z "${AWS_SECRET_ACCESS_KEY:-}" ]; then
     echo "   WARNING: AWS_ACCESS_KEY_ID or AWS_SECRET_ACCESS_KEY not set"
-    echo "   sccache will not be able to use R2 storage"
+    echo "   Disabling sccache due to incomplete R2 configuration"
+    export SCCACHE_DISABLED=true
+    touch "$SCCACHE_DISABLED_FLAG"
+    # Persist to GITHUB_ENV if running in GitHub Actions
+    if [ -n "${GITHUB_ENV:-}" ]; then
+      echo "SCCACHE_DISABLED=true" >> "$GITHUB_ENV"
+    fi
   else
     echo "   R2 credentials configured (not shown for security)"
-  fi
-  
-  # Start sccache server
-  echo "-> Starting sccache server"
-  if sccache --show-stats &>/dev/null; then
-    echo "   sccache server is already running"
-  else
-    if sccache --start-server; then
-      echo "   sccache server started successfully"
+    
+    # Start sccache server
+    echo "-> Starting sccache server"
+    if sccache --show-stats &>/dev/null; then
+      echo "   sccache server is already running"
     else
-      echo "   WARNING: Failed to start sccache server"
-      echo "   sccache will start automatically on first use"
+      if sccache --start-server 2>&1 | tee /tmp/sccache-start.log; then
+        echo "   sccache server started successfully"
+      else
+        echo "   WARNING: Failed to start sccache server"
+        # Check if the failure is due to invalid endpoint
+        if grep -q "InvalidUri" /tmp/sccache-start.log 2>/dev/null || grep -q "invalid.*endpoint" /tmp/sccache-start.log 2>/dev/null; then
+          echo "   ERROR: Invalid R2 endpoint configuration detected"
+          echo "   Disabling sccache to allow build to proceed"
+          export SCCACHE_DISABLED=true
+          touch "$SCCACHE_DISABLED_FLAG"
+          # Persist to GITHUB_ENV if running in GitHub Actions
+          if [ -n "${GITHUB_ENV:-}" ]; then
+            echo "SCCACHE_DISABLED=true" >> "$GITHUB_ENV"
+          fi
+        fi
+        rm -f /tmp/sccache-start.log
+      fi
+    fi
+    
+    # Show sccache stats only if not disabled
+    if [ "${SCCACHE_DISABLED:-}" != "true" ]; then
+      echo "-> sccache statistics:"
+      sccache --show-stats || true
     fi
   fi
-  
-  # Show sccache stats
-  echo "-> sccache statistics:"
-  sccache --show-stats || true
 else
   echo "-> sccache will use local disk cache (no R2 credentials provided)"
 fi
 
-echo "-> sccache setup completed"
+if [ "${SCCACHE_DISABLED:-}" = "true" ]; then
+  echo "-> sccache has been disabled due to configuration errors"
+  echo "   Build will proceed without compiler caching"
+else
+  echo "-> sccache setup completed"
+fi

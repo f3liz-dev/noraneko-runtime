@@ -32,11 +32,27 @@ if [ -z "${SOURCE:-}" ]; then
   # Build mozconfig - start with the base
   mozconfig="$(cat "$SOURCEDIR/mozconfig.backup")"
 
+  # Check if sccache was disabled during setup
+  SCCACHE_DISABLED_FLAG="/tmp/.sccache_disabled"
+  if [ -f "$SCCACHE_DISABLED_FLAG" ] || [ "${SCCACHE_DISABLED:-}" = "true" ]; then
+    echo "-> sccache is disabled, will not add to mozconfig" >&2
+    SKIP_SCCACHE=true
+  else
+    SKIP_SCCACHE=false
+  fi
+
   # Add platform-specific config from bsys6 assets (additional options)
   if [ -f "$BSYS6/../assets/$TARGET.mozconfig" ]; then
+    platform_config="$(cat "$BSYS6/../assets/$TARGET.mozconfig")"
+    
+    # Filter out sccache line if sccache is disabled
+    if [ "$SKIP_SCCACHE" = "true" ]; then
+      platform_config="$(echo "$platform_config" | grep -v "with-ccache=sccache" || true)"
+    fi
+    
     mozconfig="$(cat <<EOF
 $mozconfig
-$(cat "$BSYS6/../assets/$TARGET.mozconfig")
+$platform_config
 EOF
     )"
   fi
