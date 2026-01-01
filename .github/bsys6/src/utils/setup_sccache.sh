@@ -108,7 +108,7 @@ if [ -n "${SCCACHE_BUCKET:-}" ] && [ -n "${SCCACHE_ENDPOINT:-}" ]; then
     sccache --show-stats || true
   fi
 else
-  echo "-> No sccache credentials provided (SCCACHE_BUCKET and/or SCCACHE_ENDPOINT not set)"
+  echo "-> No sccache credentials provided (both SCCACHE_BUCKET and SCCACHE_ENDPOINT are required)"
   echo "   sccache will be disabled for this build"
   USE_SCCACHE=false
 fi

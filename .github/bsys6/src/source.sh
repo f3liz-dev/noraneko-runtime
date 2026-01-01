@@ -95,7 +95,8 @@ EOF
     echo "-> Configuring sccache in mozconfig" >&2
     
     # Configure sccache with R2 bucket
-    if [ -n "${SCCACHE_BUCKET:-}" ]; then
+    # Both SCCACHE_BUCKET and SCCACHE_ENDPOINT are required (validated in setup_sccache.sh)
+    if [ -n "${SCCACHE_BUCKET:-}" ] && [ -n "${SCCACHE_ENDPOINT:-}" ]; then
       mozconfig="$(cat <<EOF
 $mozconfig
 
