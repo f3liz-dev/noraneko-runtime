@@ -35,16 +35,6 @@ permissions:
         required: false
         type: boolean
         default: false
-      omnijar_compress:
-        description: 'Omni.ja compression algorithm'
-        required: false
-        type: choice
-        options:
-          - deflate
-          - zstd
-          - lz4
-          - none
-        default: deflate
 
 run-name: >-
   [bsys6] ${{ inputs.platform }}-${{ inputs.arch }}
@@ -74,7 +64,6 @@ jobs:
           ARCH=${{ inputs.arch }} \
           DEBUG=${{ inputs.debug }} \
           PGO=${{ inputs.pgo }} \
-          OMNIJAR_COMPRESS=${{ inputs.omnijar_compress }} \
           ./bsys6 prepare build package
 
       - name: Upload build artifact

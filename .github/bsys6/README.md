@@ -46,7 +46,6 @@ prepare -> bootstrap -> source -> build -> package
 | `DEBUG` | false | Enable debug build |
 | `PGO` | false | Enable Profile-Guided Optimization |
 | `PGO_MODE` | - | PGO mode: generate, use |
-| `OMNIJAR_COMPRESS` | deflate | Compression: deflate, zstd, lz4, none |
 | `BUILD_JOBS` | 3/4 of CPUs | Number of parallel build jobs |
 | `VERBOSE` | false | Enable verbose output |
 

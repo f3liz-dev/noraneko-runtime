@@ -28,7 +28,6 @@ Environment Variables:
   DEBUG               Enable debug build: true, false
   PGO                 Enable PGO: true, false
   PGO_MODE            PGO mode: generate, use
-  OMNIJAR_COMPRESS    Compression: deflate (default), zstd, lz4, none
   BUILD_JOBS          Number of parallel build jobs (default: 3/4 of CPUs)
   VERBOSE             Verbose output: true, false
 

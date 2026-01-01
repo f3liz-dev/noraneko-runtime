@@ -20,11 +20,6 @@ permissions:
         description: 'Enable Profile-Guided Optimization'
         type: boolean
         default: true
-      omnijar_compress:
-        description: 'Omni.ja compression algorithm'
-        type: choice
-        options: [deflate, zstd, lz4, none]
-        default: deflate
 
 run-name: Daily Build (bsys6)${{ (inputs.debug || github.event_name == 'push') && ' (Debug)' || '' }}
 
@@ -51,7 +46,6 @@ jobs:
           DEBUG=${{ inputs.debug == true || github.event_name == 'push' }} \
           PGO=${{ inputs.pgo == true && github.event_name != 'push' }} \
           PGO_MODE=${{ (inputs.pgo == true && github.event_name != 'push') && 'generate' || '' }} \
-          OMNIJAR_COMPRESS=${{ inputs.omnijar_compress || 'deflate' }} \
           ./bsys6 prepare build package
 
       - uses: actions/upload-artifact@v4
@@ -81,7 +75,6 @@ jobs:
           DEBUG=${{ inputs.debug == true || github.event_name == 'push' }} \
           PGO=${{ inputs.pgo == true && github.event_name != 'push' }} \
           PGO_MODE=${{ (inputs.pgo == true && github.event_name != 'push') && 'generate' || '' }} \
-          OMNIJAR_COMPRESS=${{ inputs.omnijar_compress || 'deflate' }} \
           ./bsys6 prepare build package
 
       - uses: actions/upload-artifact@v4
@@ -109,7 +102,6 @@ jobs:
           TARGET=windows \
           ARCH=x86_64 \
           DEBUG=${{ inputs.debug == true || github.event_name == 'push' }} \
-          OMNIJAR_COMPRESS=${{ inputs.omnijar_compress || 'deflate' }} \
           ./bsys6 prepare build package
 
       - uses: actions/upload-artifact@v4
@@ -206,7 +198,6 @@ jobs:
           PGO_MODE=use \
           PGO_PROFILE_PATH=~/artifacts/merged.profdata \
           PGO_JARLOG_PATH=~/artifacts/en-US.log \
-          OMNIJAR_COMPRESS=${{ inputs.omnijar_compress || 'deflate' }} \
           ./bsys6 prepare build package
 
       - uses: geekyeggo/delete-artifact@v5
