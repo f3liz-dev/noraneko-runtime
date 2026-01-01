@@ -20,7 +20,7 @@ if [ -d "$PATCH_DIR" ]; then
 fi
 
 # Copy branding assets if they exist
-BRANDING_ASSETS="$BSYS6/../assets/branding"
+BRANDING_ASSETS="$SOURCEDIR/.github/assets/branding"
 if [ -d "$BRANDING_ASSETS" ]; then
   echo "-> Copying branding assets" >&2
   cp -r "$BRANDING_ASSETS"/* "$SOURCE/browser/branding/" 2>/dev/null || true
