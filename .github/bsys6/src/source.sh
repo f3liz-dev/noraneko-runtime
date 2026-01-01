@@ -46,8 +46,9 @@ if [ -z "${SOURCE:-}" ]; then
     platform_config="$(cat "$BSYS6/../assets/$TARGET.mozconfig")"
     
     # Filter out sccache line if sccache is disabled
+    # Matches: --with-ccache=sccache or --with-ccache = sccache (with optional spaces)
     if [ "$SKIP_SCCACHE" = "true" ]; then
-      platform_config="$(echo "$platform_config" | grep -vE "with-ccache.*sccache" || true)"
+      platform_config="$(echo "$platform_config" | grep -vE -- "--with-ccache\s*=\s*sccache" || true)"
     fi
     
     mozconfig="$(cat <<EOF
