@@ -1,4 +1,4 @@
-# .github Directory Documentation
+# nya!
 
 GitHub Actions workflows, build scripts, branding, and patches for Noraneko browser (Firefox-based).
 
