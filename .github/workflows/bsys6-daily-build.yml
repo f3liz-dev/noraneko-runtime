@@ -1,7 +1,7 @@
 ---
 # SPDX-License-Identifier: MPL-2.0
 
-name: Daily Build
+name: Daily Build (bsys6)
 
 permissions:
   contents: write
@@ -20,13 +20,8 @@ permissions:
         description: 'Enable Profile-Guided Optimization'
         type: boolean
         default: true
-      omnijar_compress:
-        description: 'Omni.ja compression algorithm'
-        type: choice
-        options: [deflate, zstd, lz4, none]
-        default: deflate
 
-run-name: Daily Build${{ (inputs.debug || github.event_name == 'push') && ' (Debug)' || '' }}
+run-name: Daily Build (bsys6)${{ (inputs.debug || github.event_name == 'push') && ' (Debug)' || '' }}
 
 jobs:
   build-linux-x86_64:
@@ -38,37 +33,25 @@ jobs:
         with:
           submodules: recursive
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-          cache: 'pip'
-          cache-dependency-path: .github/ci/requirements.txt
-
-      - name: Install Dagger Python SDK
-        run: |
-          cd .github/ci
-          pip install -r requirements.txt
-
       - name: Prepare host
         run: |
-          cd .github/ci
-          python main.py prepare-host
+          cd .github/bsys6
+          ./bsys6 prepare-host
 
       - name: Build
         run: |
-          cd .github/ci
-          python main.py build \
-            -platform=linux -arch=x86_64 \
-            -debug=${{ inputs.debug == true || github.event_name == 'push' }} \
-            -pgo=${{ inputs.pgo == true && github.event_name != 'push' }} \
-            -pgo-mode=${{ (inputs.pgo == true && github.event_name != 'push') && 'generate' || '' }} \
-            -omnijar-compress=${{ inputs.omnijar_compress || 'deflate' }} \
-            -output=../../output
+          cd .github/bsys6
+          TARGET=linux \
+          ARCH=x86_64 \
+          DEBUG=${{ inputs.debug == true || github.event_name == 'push' }} \
+          PGO=${{ inputs.pgo == true && github.event_name != 'push' }} \
+          PGO_MODE=${{ (inputs.pgo == true && github.event_name != 'push') && 'generate' || '' }} \
+          ./bsys6 prepare build package
 
       - uses: actions/upload-artifact@v4
         with:
           name: noraneko-linux-x86_64-moz-artifact
-          path: output/*
+          path: .github/bsys6/*.tar.xz
 
   build-linux-aarch64:
     name: Linux aarch64${{ inputs.pgo && ' (PGO Stage 1)' || '' }}
@@ -79,37 +62,25 @@ jobs:
         with:
           submodules: recursive
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-          cache: 'pip'
-          cache-dependency-path: .github/ci/requirements.txt
-
-      - name: Install Dagger Python SDK
-        run: |
-          cd .github/ci
-          pip install -r requirements.txt
-
       - name: Prepare host
         run: |
-          cd .github/ci
-          python main.py prepare-host
+          cd .github/bsys6
+          ./bsys6 prepare-host
 
       - name: Build
         run: |
-          cd .github/ci
-          python main.py build \
-            -platform=linux -arch=aarch64 \
-            -debug=${{ inputs.debug == true || github.event_name == 'push' }} \
-            -pgo=${{ inputs.pgo == true && github.event_name != 'push' }} \
-            -pgo-mode=${{ (inputs.pgo == true && github.event_name != 'push') && 'generate' || '' }} \
-            -omnijar-compress=${{ inputs.omnijar_compress || 'deflate' }} \
-            -output=../../output
+          cd .github/bsys6
+          TARGET=linux \
+          ARCH=aarch64 \
+          DEBUG=${{ inputs.debug == true || github.event_name == 'push' }} \
+          PGO=${{ inputs.pgo == true && github.event_name != 'push' }} \
+          PGO_MODE=${{ (inputs.pgo == true && github.event_name != 'push') && 'generate' || '' }} \
+          ./bsys6 prepare build package
 
       - uses: actions/upload-artifact@v4
         with:
           name: noraneko-linux-aarch64-moz-artifact
-          path: output/*
+          path: .github/bsys6/*.tar.xz
 
   build-windows-x86_64:
     name: Windows x86_64
@@ -120,35 +91,23 @@ jobs:
         with:
           submodules: recursive
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-          cache: 'pip'
-          cache-dependency-path: .github/ci/requirements.txt
-
-      - name: Install Dagger Python SDK
-        run: |
-          cd .github/ci
-          pip install -r requirements.txt
-
       - name: Prepare host
         run: |
-          cd .github/ci
-          python main.py prepare-host
+          cd .github/bsys6
+          ./bsys6 prepare-host
 
       - name: Build
         run: |
-          cd .github/ci
-          python main.py build \
-            -platform=windows -arch=x86_64 \
-            -debug=${{ inputs.debug == true || github.event_name == 'push' }} \
-            -omnijar-compress=${{ inputs.omnijar_compress || 'deflate' }} \
-            -output=../../output
+          cd .github/bsys6
+          TARGET=windows \
+          ARCH=x86_64 \
+          DEBUG=${{ inputs.debug == true || github.event_name == 'push' }} \
+          ./bsys6 prepare build package
 
       - uses: actions/upload-artifact@v4
         with:
           name: noraneko-windows-x86_64-moz-artifact
-          path: output/*
+          path: .github/bsys6/*.zip
 
   generate-pgo-profile:
     name: Linux x86_64 PGO Stage 2
@@ -219,17 +178,6 @@ jobs:
         with:
           submodules: recursive
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-          cache: 'pip'
-          cache-dependency-path: .github/ci/requirements.txt
-
-      - name: Install Dagger Python SDK
-        run: |
-          cd .github/ci
-          pip install -r requirements.txt
-
       - uses: actions/download-artifact@v4
         with:
           name: noraneko-linux-x86_64-profile-output
@@ -237,18 +185,20 @@ jobs:
 
       - name: Prepare host
         run: |
-          cd .github/ci
-          python main.py prepare-host
+          cd .github/bsys6
+          ./bsys6 prepare-host
 
       - name: Build with PGO
         run: |
-          cd .github/ci
-          python main.py build \
-            -platform=linux -arch=x86_64 \
-            -debug=${{ inputs.debug == true }} \
-            -pgo=true -pgo-mode=use \
-            -omnijar-compress=${{ inputs.omnijar_compress || 'deflate' }} \
-            -output=../../output
+          cd .github/bsys6
+          TARGET=linux \
+          ARCH=x86_64 \
+          DEBUG=${{ inputs.debug == true }} \
+          PGO=true \
+          PGO_MODE=use \
+          PGO_PROFILE_PATH=~/artifacts/merged.profdata \
+          PGO_JARLOG_PATH=~/artifacts/en-US.log \
+          ./bsys6 prepare build package
 
       - uses: geekyeggo/delete-artifact@v5
         with:
@@ -257,4 +207,4 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: noraneko-linux-x86_64-moz-artifact
-          path: output/*
+          path: .github/bsys6/*.tar.xz

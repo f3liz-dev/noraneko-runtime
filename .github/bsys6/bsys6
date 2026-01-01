@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: MPL-2.0
+# Noraneko Runtime Build System (based on bsys6 from LibreWolf)
+# https://gitlab.com/librewolf-community/browser/bsys6.git
+set -e
+
+export BSYS6="$(dirname $(readlink -f "$0"))/src"
+export ENTRY_PWD="$(pwd)"
+
+source $BSYS6/exports/vars.sh
+
+if [ "$#" -eq 0 ]; then
+  set -- "help"
+fi
+
+nargs="$#"
+args="$@"
+set --
+
+for command in $args; do
+  if [ "$command" == "--help" ] || [ "$command" == "-h" ]; then
+    command="help"
+  fi
+  if [ "$nargs" -gt 1 ]; then
+    echo "> $command"
+  fi
+  source $BSYS6/$command.sh
+done
+
+for artifact in $AVAILABLE_ARTIFACTS; do
+  if [ -n "${!artifact:-}" ]; then
+    if [ -z "${found_artifact:-}" ]; then
+      echo "-> The following artifacts are available:"
+      found_artifact=1
+    fi
+    echo "  $artifact: ${!artifact}"
+  fi
+done
