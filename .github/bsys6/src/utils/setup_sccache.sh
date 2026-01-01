@@ -100,10 +100,11 @@ if [ -n "${SCCACHE_BUCKET:-}" ] && [ -n "${SCCACHE_ENDPOINT:-}" ]; then
     else
       if sccache --start-server 2>&1 | tee /tmp/sccache-start.log; then
         echo "   sccache server started successfully"
+        rm -f /tmp/sccache-start.log
       else
         echo "   WARNING: Failed to start sccache server"
         # Check if the failure is due to invalid endpoint
-        if grep -q "InvalidUri" /tmp/sccache-start.log 2>/dev/null || grep -q "invalid.*endpoint" /tmp/sccache-start.log 2>/dev/null; then
+        if grep -qE "(InvalidUri|invalid.*endpoint)" /tmp/sccache-start.log 2>/dev/null; then
           echo "   ERROR: Invalid R2 endpoint configuration detected"
           echo "   Disabling sccache to allow build to proceed"
           export SCCACHE_DISABLED=true
