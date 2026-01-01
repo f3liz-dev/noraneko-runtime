@@ -95,16 +95,17 @@ if [ -n "${SCCACHE_BUCKET:-}" ] && [ -n "${SCCACHE_ENDPOINT:-}" ]; then
     
     # Start sccache server
     echo "-> Starting sccache server"
+    SCCACHE_LOG="/tmp/sccache-start.log"
     if sccache --show-stats &>/dev/null; then
       echo "   sccache server is already running"
     else
-      if sccache --start-server 2>&1 | tee /tmp/sccache-start.log; then
+      if sccache --start-server 2>&1 | tee "$SCCACHE_LOG"; then
         echo "   sccache server started successfully"
-        rm -f /tmp/sccache-start.log
+        rm -f "$SCCACHE_LOG"
       else
         echo "   WARNING: Failed to start sccache server"
         # Check if the failure is due to invalid endpoint (InvalidUri is the specific error type)
-        if grep -q "InvalidUri" /tmp/sccache-start.log 2>/dev/null; then
+        if grep -q "InvalidUri" "$SCCACHE_LOG" 2>/dev/null; then
           echo "   ERROR: Invalid R2 endpoint configuration detected"
           echo "   Disabling sccache to allow build to proceed"
           export SCCACHE_DISABLED=true
@@ -114,7 +115,7 @@ if [ -n "${SCCACHE_BUCKET:-}" ] && [ -n "${SCCACHE_ENDPOINT:-}" ]; then
             echo "SCCACHE_DISABLED=true" >> "$GITHUB_ENV"
           fi
         fi
-        rm -f /tmp/sccache-start.log
+        rm -f "$SCCACHE_LOG"
       fi
     fi
     

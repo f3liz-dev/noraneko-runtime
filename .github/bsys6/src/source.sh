@@ -48,7 +48,7 @@ if [ -z "${SOURCE:-}" ]; then
     # Filter out sccache line if sccache is disabled
     # Matches: --with-ccache=sccache or --with-ccache = sccache (with optional spaces)
     if [ "$SKIP_SCCACHE" = "true" ]; then
-      platform_config="$(echo "$platform_config" | grep -vE -- "--with-ccache\s*=\s*sccache" || true)"
+      platform_config="$(echo "$platform_config" | grep -vE -- "--with-ccache[[:space:]]*=[[:space:]]*sccache" || true)"
     fi
     
     mozconfig="$(cat <<EOF
