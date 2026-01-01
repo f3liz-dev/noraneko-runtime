@@ -125,15 +125,7 @@ mk_add_options "export SCCACHE_MAX_FRAME_LENGTH=50000000"
 EOF
     )"
     
-    # Add daemon management if sccache binary is available
-    if command -v sccache >/dev/null 2>&1; then
-      SCCACHE_PATH="$(command -v sccache)"
-      mozconfig="$(cat <<EOF
-$mozconfig
-mk_add_options MOZBUILD_MANAGE_SCCACHE_DAEMON=$SCCACHE_PATH
-EOF
-      )"
-    fi
+
   else
     echo "-> sccache is disabled (credentials not available or not configured)" >&2
   fi
