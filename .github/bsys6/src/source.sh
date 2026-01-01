@@ -95,54 +95,44 @@ EOF
     echo "-> Configuring sccache in mozconfig" >&2
     
     # Configure sccache with R2 bucket
-    # Both SCCACHE_BUCKET and SCCACHE_ENDPOINT are required (validated in setup_sccache.sh)
-    if [ -n "${SCCACHE_BUCKET:-}" ] && [ -n "${SCCACHE_ENDPOINT:-}" ]; then
-      mozconfig="$(cat <<EOF
+    # Credentials already validated in setup_sccache.sh
+    mozconfig="$(cat <<EOF
 $mozconfig
 
 # sccache configuration
 ac_add_options --with-ccache=sccache
 mk_add_options "export SCCACHE_BUCKET=$SCCACHE_BUCKET"
-EOF
-      )"
-      
-      # Add endpoint if using R2/S3
-      if [ -n "${SCCACHE_ENDPOINT:-}" ]; then
-        mozconfig="$(cat <<EOF
-$mozconfig
 mk_add_options "export SCCACHE_ENDPOINT=$SCCACHE_ENDPOINT"
 EOF
-        )"
-      fi
-      
-      # Add region if specified
-      if [ -n "${SCCACHE_REGION:-}" ]; then
-        mozconfig="$(cat <<EOF
+    )"
+    
+    # Add region if specified
+    if [ -n "${SCCACHE_REGION:-}" ]; then
+      mozconfig="$(cat <<EOF
 $mozconfig
 mk_add_options "export SCCACHE_REGION=$SCCACHE_REGION"
 EOF
-        )"
-      fi
-      
-      # Configure verbose stats and max frame length
-      mozconfig="$(cat <<EOF
+      )"
+    fi
+    
+    # Configure verbose stats and max frame length
+    mozconfig="$(cat <<EOF
 $mozconfig
 export CCACHE="sccache"
 export SCCACHE_VERBOSE_STATS=1
 # Workaround for https://github.com/mozilla/sccache/issues/459#issuecomment-618756635
 mk_add_options "export SCCACHE_MAX_FRAME_LENGTH=50000000"
 EOF
-      )"
-      
-      # Add daemon management if sccache binary is available
-      if command -v sccache >/dev/null 2>&1; then
-        SCCACHE_PATH="$(command -v sccache)"
-        mozconfig="$(cat <<EOF
+    )"
+    
+    # Add daemon management if sccache binary is available
+    if command -v sccache >/dev/null 2>&1; then
+      SCCACHE_PATH="$(command -v sccache)"
+      mozconfig="$(cat <<EOF
 $mozconfig
 mk_add_options MOZBUILD_MANAGE_SCCACHE_DAEMON=$SCCACHE_PATH
 EOF
-        )"
-      fi
+      )"
     fi
   else
     echo "-> sccache is disabled (credentials not available or not configured)" >&2
