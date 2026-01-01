@@ -14,5 +14,8 @@ $BSYS6/utils/allocate_swap.sh 30G
 # Free disk space
 $BSYS6/utils/free_disk_space.sh
 
+# Setup sccache for build caching
+$BSYS6/utils/setup_sccache.sh
+
 echo
 echo "-> Host preparation completed" >&2
