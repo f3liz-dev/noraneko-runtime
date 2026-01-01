@@ -83,10 +83,7 @@ if [ -n "${SCCACHE_BUCKET:-}" ] && [ -n "${SCCACHE_ENDPOINT:-}" ]; then
     echo "   WARNING: AWS_ACCESS_KEY_ID or AWS_SECRET_ACCESS_KEY not set"
     echo "   sccache will not be able to use R2 storage"
   else
-    echo "   R2 configuration:"
-    echo "   - Bucket: ${SCCACHE_BUCKET}"
-    echo "   - Endpoint: ${SCCACHE_ENDPOINT}"
-    echo "   - Region: ${SCCACHE_REGION:-auto}"
+    echo "   R2 credentials configured (not shown for security)"
   fi
   
   # Start sccache server

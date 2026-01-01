@@ -95,3 +95,7 @@ The following environment variables are configured in the workflows:
 - Always use GitHub Secrets for sensitive values
 - Consider using read-only tokens for pull request builds
 - R2 API tokens can be restricted to specific buckets for additional security
+- **All sensitive information is completely hidden in workflow logs:**
+  - Bucket name, endpoint URL, and access keys are never displayed
+  - Only a confirmation message is shown when credentials are configured
+  - Check your secrets in GitHub web console if you need to verify them

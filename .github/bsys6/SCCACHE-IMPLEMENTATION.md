@@ -11,6 +11,9 @@ Successfully implemented sccache with Cloudflare R2 support in the Noraneko buil
    - Configures sccache with Cloudflare R2 (when credentials are provided)
    - Falls back to local disk caching if R2 credentials are not available
    - Auto-detects architecture (x86_64, aarch64) and OS (Linux, macOS)
+   - **Security: Completely hides all sensitive information in logs**
+     - No credentials are displayed in console output
+     - Only shows confirmation when credentials are configured
 
 2. **`.github/bsys6/SCCACHE-R2-CONFIG.md`**
    - Complete documentation on how to configure R2
@@ -139,13 +142,13 @@ In the workflow logs, look for:
    Installing to /usr/local/bin
    sccache installed successfully: sccache 0.8.2
 -> Configuring sccache with Cloudflare R2
-   R2 configuration:
-   - Bucket: your-bucket-name
-   - Endpoint: https://your-account-id.r2.cloudflarestorage.com
-   - Region: auto
+   R2 credentials configured (not shown for security)
 -> Starting sccache server
+   sccache server started successfully
 -> sccache statistics:
 ```
+
+**Note**: All sensitive information is completely hidden in logs for security. You can verify your secrets in the GitHub repository web console if needed.
 
 ## Reference
 
