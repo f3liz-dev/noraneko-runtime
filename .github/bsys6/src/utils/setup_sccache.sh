@@ -67,7 +67,7 @@ fi
 rm -rf "/tmp/${SCCACHE_FILE}" "/tmp/sccache-v${SCCACHE_VERSION}-${SCCACHE_ARCH}-${SCCACHE_OS}"
 
 # Verify installation
-if command -v sccache &> /dev/null; then
+if command -v sccache >/dev/null 2>&1; then
   echo "   sccache installed successfully: $(sccache --version)"
 else
   echo "   ERROR: sccache installation failed"
@@ -92,7 +92,7 @@ if [ -n "${SCCACHE_BUCKET:-}" ] && [ -n "${SCCACHE_ENDPOINT:-}" ]; then
     
     # Start sccache server
     echo "-> Starting sccache server"
-    if sccache --show-stats &>/dev/null; then
+    if sccache --show-stats >/dev/null 2>&1; then
       echo "   sccache server is already running"
     else
       if sccache --start-server; then

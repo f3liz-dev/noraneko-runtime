@@ -91,7 +91,7 @@ EOF
     USE_SCCACHE="${USE_SCCACHE:-false}"
   fi
   
-  if [ "$USE_SCCACHE" == "true" ]; then
+  if [ "$USE_SCCACHE" = "true" ]; then
     echo "-> Configuring sccache in mozconfig" >&2
     
     # Configure sccache with R2 bucket
@@ -134,7 +134,7 @@ EOF
       )"
       
       # Add daemon management if sccache binary is available
-      if command -v sccache &> /dev/null; then
+      if command -v sccache >/dev/null 2>&1; then
         SCCACHE_PATH="$(command -v sccache)"
         mozconfig="$(cat <<EOF
 $mozconfig
