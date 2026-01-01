@@ -37,6 +37,12 @@ jobs:
         run: |
           cd .github/bsys6
           ./bsys6 prepare-host
+        env:
+          SCCACHE_BUCKET: ${{ secrets.SCCACHE_BUCKET }}
+          SCCACHE_ENDPOINT: ${{ secrets.SCCACHE_ENDPOINT }}
+          SCCACHE_REGION: auto
+          AWS_ACCESS_KEY_ID: ${{ secrets.SCCACHE_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.SCCACHE_AWS_SECRET_ACCESS_KEY }}
 
       - name: Build
         run: |
@@ -47,6 +53,12 @@ jobs:
           PGO=${{ inputs.pgo == true && github.event_name != 'push' }} \
           PGO_MODE=${{ (inputs.pgo == true && github.event_name != 'push') && 'generate' || '' }} \
           ./bsys6 prepare build package
+        env:
+          SCCACHE_BUCKET: ${{ secrets.SCCACHE_BUCKET }}
+          SCCACHE_ENDPOINT: ${{ secrets.SCCACHE_ENDPOINT }}
+          SCCACHE_REGION: auto
+          AWS_ACCESS_KEY_ID: ${{ secrets.SCCACHE_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.SCCACHE_AWS_SECRET_ACCESS_KEY }}
 
       - uses: actions/upload-artifact@v4
         with:
@@ -66,6 +78,12 @@ jobs:
         run: |
           cd .github/bsys6
           ./bsys6 prepare-host
+        env:
+          SCCACHE_BUCKET: ${{ secrets.SCCACHE_BUCKET }}
+          SCCACHE_ENDPOINT: ${{ secrets.SCCACHE_ENDPOINT }}
+          SCCACHE_REGION: auto
+          AWS_ACCESS_KEY_ID: ${{ secrets.SCCACHE_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.SCCACHE_AWS_SECRET_ACCESS_KEY }}
 
       - name: Build
         run: |
@@ -76,6 +94,12 @@ jobs:
           PGO=${{ inputs.pgo == true && github.event_name != 'push' }} \
           PGO_MODE=${{ (inputs.pgo == true && github.event_name != 'push') && 'generate' || '' }} \
           ./bsys6 prepare build package
+        env:
+          SCCACHE_BUCKET: ${{ secrets.SCCACHE_BUCKET }}
+          SCCACHE_ENDPOINT: ${{ secrets.SCCACHE_ENDPOINT }}
+          SCCACHE_REGION: auto
+          AWS_ACCESS_KEY_ID: ${{ secrets.SCCACHE_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.SCCACHE_AWS_SECRET_ACCESS_KEY }}
 
       - uses: actions/upload-artifact@v4
         with:
@@ -95,6 +119,12 @@ jobs:
         run: |
           cd .github/bsys6
           ./bsys6 prepare-host
+        env:
+          SCCACHE_BUCKET: ${{ secrets.SCCACHE_BUCKET }}
+          SCCACHE_ENDPOINT: ${{ secrets.SCCACHE_ENDPOINT }}
+          SCCACHE_REGION: auto
+          AWS_ACCESS_KEY_ID: ${{ secrets.SCCACHE_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.SCCACHE_AWS_SECRET_ACCESS_KEY }}
 
       - name: Build
         run: |
@@ -103,6 +133,12 @@ jobs:
           ARCH=x86_64 \
           DEBUG=${{ inputs.debug == true || github.event_name == 'push' }} \
           ./bsys6 prepare build package
+        env:
+          SCCACHE_BUCKET: ${{ secrets.SCCACHE_BUCKET }}
+          SCCACHE_ENDPOINT: ${{ secrets.SCCACHE_ENDPOINT }}
+          SCCACHE_REGION: auto
+          AWS_ACCESS_KEY_ID: ${{ secrets.SCCACHE_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.SCCACHE_AWS_SECRET_ACCESS_KEY }}
 
       - uses: actions/upload-artifact@v4
         with:
@@ -187,6 +223,12 @@ jobs:
         run: |
           cd .github/bsys6
           ./bsys6 prepare-host
+        env:
+          SCCACHE_BUCKET: ${{ secrets.SCCACHE_BUCKET }}
+          SCCACHE_ENDPOINT: ${{ secrets.SCCACHE_ENDPOINT }}
+          SCCACHE_REGION: auto
+          AWS_ACCESS_KEY_ID: ${{ secrets.SCCACHE_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.SCCACHE_AWS_SECRET_ACCESS_KEY }}
 
       - name: Build with PGO
         run: |
@@ -199,6 +241,12 @@ jobs:
           PGO_PROFILE_PATH=~/artifacts/merged.profdata \
           PGO_JARLOG_PATH=~/artifacts/en-US.log \
           ./bsys6 prepare build package
+        env:
+          SCCACHE_BUCKET: ${{ secrets.SCCACHE_BUCKET }}
+          SCCACHE_ENDPOINT: ${{ secrets.SCCACHE_ENDPOINT }}
+          SCCACHE_REGION: auto
+          AWS_ACCESS_KEY_ID: ${{ secrets.SCCACHE_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.SCCACHE_AWS_SECRET_ACCESS_KEY }}
 
       - uses: geekyeggo/delete-artifact@v5
         with:
