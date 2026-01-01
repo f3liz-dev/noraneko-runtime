@@ -1,0 +1,84 @@
+---
+# SPDX-License-Identifier: MPL-2.0
+
+name: Build (bsys6)
+
+permissions:
+  contents: write
+
+'on':
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: 'Target platform (linux, windows)'
+        type: choice
+        options:
+          - linux
+          - windows
+        default: linux
+        required: true
+      arch:
+        description: 'Target architecture'
+        type: choice
+        options:
+          - x86_64
+          - aarch64
+        default: x86_64
+        required: true
+      debug:
+        description: 'Enable debug build'
+        required: false
+        type: boolean
+        default: true
+      pgo:
+        description: 'Enable Profile-Guided Optimization'
+        required: false
+        type: boolean
+        default: false
+      omnijar_compress:
+        description: 'Omni.ja compression algorithm'
+        required: false
+        type: choice
+        options:
+          - deflate
+          - zstd
+          - lz4
+          - none
+        default: deflate
+
+run-name: >-
+  [bsys6] ${{ inputs.platform }}-${{ inputs.arch }}
+  ${{ inputs.pgo && '[PGO]' || '' }}
+  ${{ inputs.debug && 'Debug' || '' }}
+
+jobs:
+  build:
+    name: Build ${{ inputs.platform }}-${{ inputs.arch }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Prepare host
+        run: |
+          cd .github/bsys6
+          ./bsys6 prepare-host
+
+      - name: Build
+        run: |
+          cd .github/bsys6
+          TARGET=${{ inputs.platform }} \
+          ARCH=${{ inputs.arch }} \
+          DEBUG=${{ inputs.debug }} \
+          PGO=${{ inputs.pgo }} \
+          OMNIJAR_COMPRESS=${{ inputs.omnijar_compress }} \
+          ./bsys6 prepare build package
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: noraneko-${{ inputs.platform }}-${{ inputs.arch }}-moz-artifact
+          path: .github/bsys6/*.tar.xz
