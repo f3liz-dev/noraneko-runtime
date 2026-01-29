@@ -7,46 +7,32 @@ clone:
 steps:
   build:
     image: ubuntu:22.04
-    # Ensure this path exists on your host and is allowed in Woodpecker Agent settings
     volumes:
       - /tmp/woodpecker-artifacts:/woodpecker/artifacts
+    # CORRECTED SECTION: Use Map syntax (no dashes), just Key: Value
     environment:
-      # --- Secrets Removed as requested ---
-      
-      # Inject Manual Variables here.
-      # We don't set values here; we read them from the environment 
-      # or default inside the command.
-      - MANUAL_PLATFORM=${PLATFORM}
-      - MANUAL_ARCH=${ARCH}
-      - MANUAL_DEBUG=${DEBUG}
-      - MANUAL_PGO=${PGO}
+      MANUAL_PLATFORM: ${PLATFORM}
+      MANUAL_ARCH: ${ARCH}
+      MANUAL_DEBUG: ${DEBUG}
+      MANUAL_PGO: ${PGO}
 
     commands:
-      # 1. Install Dependencies
       - apt-get update && apt-get install -y curl git build-essential sudo
-
-      # 2. Set Defaults (Bash Parameter Expansion)
+      
+      # Set Defaults
       - export TARGET=${MANUAL_PLATFORM:-linux}
       - export ARCH=${MANUAL_ARCH:-x86_64}
       - export DEBUG=${MANUAL_DEBUG:-true}
       - export PGO=${MANUAL_PGO:-false}
       
-      # 3. Debug Output (Fixed Syntax Error)
-      # We wrap the entire command in single quotes '...' so YAML treats it as one string.
+      # Quotes are important here to prevent YAML parsing errors
       - 'echo "Target: $TARGET"'
       - 'echo "Arch:   $ARCH"'
-      - 'echo "Debug:  $DEBUG"'
-      - 'echo "PGO:    $PGO"'
-      - echo "---------------------"
-
-      # 4. Run your build scripts
-      - cd .github/bsys6
       
-      # Pass the calculated variables to your script
+      - cd .github/bsys6
       - ./bsys6 prepare-host
       - ./bsys6 prepare build package
 
-      # 5. Save Artifacts (to Host Volume)
       - mkdir -p /woodpecker/artifacts/${CI_BUILD_NUMBER}
       - cp *.tar.xz /woodpecker/artifacts/${CI_BUILD_NUMBER}/ || true
       - cp *.zip /woodpecker/artifacts/${CI_BUILD_NUMBER}/ || true
