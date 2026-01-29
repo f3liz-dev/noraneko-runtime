@@ -1,0 +1,66 @@
+# .woodpecker.yml
+
+# 1. Configure Git to handle submodules (like checkout@v4 with submodules: recursive)
+clone:
+  git:
+    image: woodpeckerci/plugin-git
+    settings:
+      recursive: true
+
+steps:
+  # 2. Main Build Step
+  build:
+    image: ubuntu:22.04
+    # Mount a folder from your host machine to save artifacts (See Step 2 below)
+    volumes:
+      - /tmp/woodpecker-artifacts:/woodpecker/artifacts
+    environment:
+      # Secrets (Must be added in Woodpecker UI)
+      - SCCACHE_BUCKET_NAME=from_secret:SCCACHE_BUCKET
+      - SCCACHE_ENDPOINT_URL=from_secret:SCCACHE_ENDPOINT
+      - AWS_ACCESS_KEY_ID=from_secret:SCCACHE_AWS_ACCESS_KEY_ID
+      - AWS_SECRET_ACCESS_KEY=from_secret:SCCACHE_AWS_SECRET_ACCESS_KEY
+      
+      # Inject Manual Variables here.
+      # We don't set values here; we read them from the environment 
+      # or default to 'linux/x86_64' inside the command.
+      - MANUAL_PLATFORM=${PLATFORM}
+      - MANUAL_ARCH=${ARCH}
+      - MANUAL_DEBUG=${DEBUG}
+      - MANUAL_PGO=${PGO}
+
+    commands:
+      # A. Install Dependencies
+      # Since we are in a raw Ubuntu container, we need to install basic tools first.
+      - apt-get update && apt-get install -y curl git build-essential sudo
+
+      # B. Set Defaults if variables are empty (Bash Parameter Expansion)
+      # This mimics the "default: linux" from GHA.
+      - export TARGET=${MANUAL_PLATFORM:-linux}
+      - export ARCH=${MANUAL_ARCH:-x86_64}
+      - export DEBUG=${MANUAL_DEBUG:-true}
+      - export PGO=${MANUAL_PGO:-false}
+      
+      - echo "--- CONFIGURATION ---"
+      - echo "Target: $TARGET"
+      - echo "Arch:   $ARCH"
+      - echo "Debug:  $DEBUG"
+      - echo "PGO:    $PGO"
+      - echo "---------------------"
+
+      # C. Run your build scripts
+      - cd .github/bsys6
+      
+      # Pass the calculated variables to your script
+      - ./bsys6 prepare-host
+      - ./bsys6 prepare build package
+
+      # D. Save Artifacts
+      # Copy the resulting files to the mounted volume so you can see them on your Host PC
+      - mkdir -p /woodpecker/artifacts/${CI_BUILD_NUMBER}
+      - cp *.tar.xz /woodpecker/artifacts/${CI_BUILD_NUMBER}/ || true
+      - cp *.zip /woodpecker/artifacts/${CI_BUILD_NUMBER}/ || true
+
+# 3. Events: Run on Push (default CI) AND Manual (custom releases)
+when:
+  event: [ push, manual ]
