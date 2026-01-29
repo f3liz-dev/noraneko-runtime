@@ -15,15 +15,6 @@ steps:
     volumes:
       - /tmp/woodpecker-artifacts:/woodpecker/artifacts
     environment:
-      # Secrets (Must be added in Woodpecker UI)
-      - SCCACHE_BUCKET_NAME=from_secret:SCCACHE_BUCKET
-      - SCCACHE_ENDPOINT_URL=from_secret:SCCACHE_ENDPOINT
-      - AWS_ACCESS_KEY_ID=from_secret:SCCACHE_AWS_ACCESS_KEY_ID
-      - AWS_SECRET_ACCESS_KEY=from_secret:SCCACHE_AWS_SECRET_ACCESS_KEY
-      
-      # Inject Manual Variables here.
-      # We don't set values here; we read them from the environment 
-      # or default to 'linux/x86_64' inside the command.
       - MANUAL_PLATFORM=${PLATFORM}
       - MANUAL_ARCH=${ARCH}
       - MANUAL_DEBUG=${DEBUG}
