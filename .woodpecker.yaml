@@ -19,7 +19,8 @@ steps:
     commands:
       - apt-get update && apt-get install -y curl git build-essential sudo python3-dev
       - curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- --default-toolchain 1.93.0 -y
-      - curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- target add x86_64-unknown-linux-gnu -y
+      - . "$HOME/.cargo/env"
+      - rustup target add x86_64-unknown-linux-gnu
       
       # Set Defaults
       - export TARGET=${MANUAL_PLATFORM:-linux}
