@@ -30,7 +30,6 @@ steps:
       - 'echo "Arch:   $ARCH"'
       
       - cd .github/bsys6
-      - ./bsys6 prepare-host
       - ./bsys6 prepare build package
 
       - mkdir -p /woodpecker/artifacts/${CI_BUILD_NUMBER}
