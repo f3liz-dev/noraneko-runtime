@@ -46,7 +46,7 @@ install_llvm() {
     wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/llvm.gpg || true
     echo "deb http://apt.llvm.org/$LLVM_CODENAME/ llvm-toolchain-$LLVM_CODENAME-$LLVM_VERSION main" | sudo tee /etc/apt/sources.list.d/llvm.list || true
     sudo apt-get update -qq
-    sudo apt-get install -y --no-install-recommends "llvm-$LLVM_VERSION" "clang-$LLVM_VERSION" "lld-$LLVM_VERSION" "libclang-$LLVM_VERSION-dev" || true
+    sudo apt-get install -y --no-install-recommends "llvm-$LLVM_VERSION" "clang-$LLVM_VERSION" "lld-$LLVM_VERSION" "libclang-$LLVM_VERSION-dev" "libclang-rt-$LLVM_VERSION-dev-wasm32" || true
 
     # Create symlinks for the specific LLVM version
     sudo ln -sf "/usr/bin/clang-$LLVM_VERSION" /usr/bin/clang
