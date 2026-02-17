@@ -3,6 +3,10 @@
 # Prepare GitHub Actions host for building
 set -eu
 
+echo "-> Installing LLVM-20 and dependencies" >&2
+sudo apt-get update
+sudo apt-get install -y clang-20 lld-20 libclang-rt-20-dev
+
 echo "-> Preparing GitHub Actions host" >&2
 echo "Before:"
 free -h
