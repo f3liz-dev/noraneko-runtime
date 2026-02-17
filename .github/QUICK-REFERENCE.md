@@ -108,8 +108,8 @@ gh pr list --label sync
 
 ## Dependencies
 
-- **Rust**: 1.86.0 (LLVM 19 compat)
-- **LLVM**: 19 (PGO)
+- **Rust**: 1.86.0 (LLVM 20 compat)
+- **LLVM**: 20 (PGO)
 - **Firefox**: release branch
 - **GitHub Actions**: checkout, upload/download-artifact, delete-artifact, setup-uv
 - **System**: GTK 3.0, X11/Xvfb

@@ -175,7 +175,7 @@ jobs:
           BASE=base_branch
 
           git diff --name-only $BASE | \
-            grep -vE '^(\.github|noraneko|browser/branding/noraneko)($|/)' \
+            grep -vE '^(\.github|noraneko|browser/branding/noraneko|\.woodpecker\.ya?ml)($|/)' \
             > changed_files.txt || true
 
           while read file; do
@@ -206,7 +206,7 @@ jobs:
           BASE=base_branch
 
           git diff --name-only $BASE | \
-            grep -vE '^(\.github|noraneko|browser/branding/noraneko)($|/)' \
+            grep -vE '^(\.github|noraneko|browser/branding/noraneko|\.woodpecker\.ya?ml)($|/)' \
             > files_to_revert.txt || true
 
           while read file; do

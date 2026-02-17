@@ -278,6 +278,7 @@ jobs:
             --exclude='/noraneko/' \
             --exclude='/.gitmodules' \
             --exclude='/README.md' \
+            --exclude='/.woodpecker.ya?ml' \
             ../upstream_release/ ./
 
       - name: Normalize patch files

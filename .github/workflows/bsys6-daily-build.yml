@@ -167,16 +167,16 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends wget gnupg software-properties-common
           wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/llvm.gpg
-          echo 'deb http://apt.llvm.org/jammy/ llvm-toolchain-jammy-19 main' | sudo tee -a /etc/apt/sources.list
+          echo 'deb http://apt.llvm.org/jammy/ llvm-toolchain-jammy-20 main' | sudo tee -a /etc/apt/sources.list
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends \
             libgtk-3-0 libdbus-glib-1-2 libxt6 libx11-xcb1 \
             libasound2 libpulse0 libgl1 libglib2.0-0 fonts-liberation \
             libdrm2 libgbm1 libxcomposite1 libxdamage1 libxrandr2 \
-            libxshmfence1 libxtst6 xvfb python3 python3-pip llvm-19
+            libxshmfence1 libxtst6 xvfb python3 python3-pip llvm-20
           
           mkdir -p /tmp/clang/bin obj-firefox/dist/firefox
-          cp /usr/bin/llvm-profdata-19 /tmp/clang/llvm-profdata
+          cp /usr/bin/llvm-profdata-20 /tmp/clang/llvm-profdata
           chmod +x /tmp/clang/llvm-profdata
           
           cd /tmp/artifact

@@ -54,7 +54,7 @@ GitHub Actions workflows, build scripts, branding, and patches for Noraneko brow
 
 - **Runners**: Ubuntu-latest (30GB swap), Windows-latest (Mozilla Build)
 - **Build time**: 2-4 hours (standard), 6-8 hours (PGO)
-- **Tools**: Rust 1.86.0, LLVM 19, sccache, Python 3.11+, Node.js
+- **Tools**: Rust 1.86.0, LLVM 20, sccache, Python 3.11+, Node.js
 
 ## Execution Order
 
