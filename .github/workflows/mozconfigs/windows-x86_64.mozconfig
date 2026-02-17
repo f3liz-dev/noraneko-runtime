@@ -18,8 +18,6 @@ ac_add_options --enable-rust-simd
 ac_add_options --target=x86_64-pc-windows-msvc
 
 # LLVM and Linker
-export CC=clang-19
-export CXX=clang++-19
 ac_add_options --enable-lto=thin
 
 # Optimization
