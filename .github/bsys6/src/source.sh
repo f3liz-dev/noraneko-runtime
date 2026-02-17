@@ -74,6 +74,7 @@ EOF
 
   # Add PGO options
   if [ "${PGO:-}" == "true" ]; then
+    export MOZ_PGO=1
     if [ "${PGO_MODE:-}" == "generate" ]; then
       mozconfig="$(cat <<EOF
 $mozconfig
@@ -81,12 +82,21 @@ ac_add_options --enable-profile-generate=cross
 EOF
       )"
     elif [ "${PGO_MODE:-}" == "use" ]; then
+      PGO_PROFILE_PATH="${PGO_PROFILE_PATH:-$WORKDIR/merged.profdata}"
+      PGO_JARLOG_PATH="${PGO_JARLOG_PATH:-$WORKDIR/en-US.log}"
+      
+      if [ -n "${PGO_PROFILE_URL:-}" ]; then
+        echo "-> Downloading PGO profile from $PGO_PROFILE_URL" >&2
+        mkdir -p "$(dirname "$PGO_PROFILE_PATH")"
+        curl -L "$PGO_PROFILE_URL" -o "$PGO_PROFILE_PATH"
+      fi
+
       mozconfig="$(cat <<EOF
 $mozconfig
 export MOZ_LTO=cross
 ac_add_options --enable-profile-use=cross
-ac_add_options --with-pgo-profile-path=${PGO_PROFILE_PATH:-/artifacts/merged.profdata}
-ac_add_options --with-pgo-jarlog=${PGO_JARLOG_PATH:-/artifacts/en-US.log}
+ac_add_options --with-pgo-profile-path=$PGO_PROFILE_PATH
+ac_add_options --with-pgo-jarlog=$PGO_JARLOG_PATH
 EOF
       )"
     fi

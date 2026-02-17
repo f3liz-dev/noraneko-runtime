@@ -181,20 +181,40 @@ jobs:
           
           cd /tmp/artifact
           tar -xf *.tar.* 2>/dev/null || unzip -q *.zip 2>/dev/null || true
-          cp -r noraneko*/* $GITHUB_WORKSPACE/obj-firefox/dist/firefox/ || \
-          cp -r firefox*/* $GITHUB_WORKSPACE/obj-firefox/dist/firefox/ || true
+          
+          # Find the browser binary more robustly
+          BROWSER=$(find . -maxdepth 3 -executable -type f -name "noraneko" -o -name "firefox" | head -1)
+          if [ -z "$BROWSER" ]; then
+            echo "Error: Could not find browser binary in artifact"
+            exit 1
+          fi
+          echo "Found browser at: $BROWSER"
+          chmod +x "$BROWSER"
+          
+          # Prepare directory for profileserver
+          mkdir -p $GITHUB_WORKSPACE/obj-firefox/dist/firefox/
+          cp -r $(dirname "$BROWSER")/* $GITHUB_WORKSPACE/obj-firefox/dist/firefox/
           
           cd $GITHUB_WORKSPACE
           Xvfb :99 -screen 0 1024x768x24 &
           sleep 3
           pip3 install requests
           
-          BROWSER=$(find obj-firefox/dist/firefox -name "noraneko" -o -name "firefox" | head -1)
-          chmod +x "$BROWSER"
+          NEW_BROWSER="$GITHUB_WORKSPACE/obj-firefox/dist/firefox/$(basename "$BROWSER")"
           
           DISPLAY=:99 LLVM_PROFDATA=/tmp/clang/llvm-profdata JARLOG_FILE=en-US.log \
             MOZ_DISABLE_CONTENT_SANDBOX=1 MOZ_DISABLE_GMP_SANDBOX=1 \
-            timeout 1200 python3 build/pgo/profileserver.py --binary "$BROWSER" || true
+            timeout 1200 python3 build/pgo/profileserver.py --binary "$NEW_BROWSER"
+          
+          # Verify profiles were generated
+          if [ ! -f "merged.profdata" ]; then
+            echo "Error: merged.profdata was not generated"
+            exit 1
+          fi
+          if [ ! -f "en-US.log" ]; then
+            echo "Error: en-US.log was not generated"
+            exit 1
+          fi
           
           pkill Xvfb || true
 

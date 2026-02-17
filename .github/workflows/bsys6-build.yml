@@ -36,6 +36,19 @@ permissions:
         required: false
         type: boolean
         default: false
+      pgo-mode:
+        description: 'PGO mode (generate, use)'
+        type: choice
+        options:
+          - ''
+          - generate
+          - use
+        default: ''
+        required: false
+      pgo-profile-url:
+        description: 'URL to PGO profile (merged.profdata)'
+        required: false
+        type: string
       skip-tests:
         description: 'Skip building tests for faster build'
         required: false
@@ -44,12 +57,12 @@ permissions:
 
 run-name: >-
   [bsys6] ${{ inputs.platform }}-${{ inputs.arch }}
-  ${{ inputs.pgo && '[PGO]' || '' }}
+  ${{ inputs.pgo && (inputs.pgo-mode && format('[PGO:{0}]', inputs.pgo-mode) || '[PGO]') || '' }}
   ${{ inputs.debug && 'Debug' || '' }}
 
 jobs:
   build:
-    name: Build ${{ inputs.platform }}-${{ inputs.arch }}
+    name: Build ${{ inputs.platform }}-${{ inputs.arch }}${{ inputs.pgo && (inputs.pgo-mode && format(' (PGO:{0})', inputs.pgo-mode) || ' (PGO)') || '' }}
     runs-on: ubuntu-latest
 
     steps:
@@ -76,6 +89,8 @@ jobs:
           ARCH=${{ inputs.arch }} \
           DEBUG=${{ inputs.debug }} \
           PGO=${{ inputs.pgo }} \
+          PGO_MODE=${{ inputs.pgo-mode }} \
+          PGO_PROFILE_URL=${{ inputs.pgo-profile-url }} \
           SKIP_TESTS=${{ inputs.skip-tests }} \
           ./bsys6 prepare build package
         env:
@@ -88,7 +103,8 @@ jobs:
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: noraneko-${{ inputs.platform }}-${{ inputs.arch }}-moz-artifact
+          name: noraneko-${{ inputs.platform }}-${{ inputs.arch }}${{ inputs.pgo && (inputs.pgo-mode && format('-pgo-{0}', inputs.pgo-mode) || '-pgo') || '' }}-moz-artifact
           path: |
             .github/bsys6/*.tar.xz
             .github/bsys6/*.zip
+            .github/bsys6/*.dmg
