@@ -61,6 +61,17 @@ EOF
     fi
   fi
 
+  # Add skip tests option if requested
+  if [ "${SKIP_TESTS:-}" == "true" ] && [ "${PGO:-}" != "true" ]; then
+    if ! echo "$mozconfig" | grep -q "disable-tests"; then
+      mozconfig="$(cat <<EOF
+$mozconfig
+ac_add_options --disable-tests
+EOF
+      )"
+    fi
+  fi
+
   # Add PGO options
   if [ "${PGO:-}" == "true" ]; then
     if [ "${PGO_MODE:-}" == "generate" ]; then

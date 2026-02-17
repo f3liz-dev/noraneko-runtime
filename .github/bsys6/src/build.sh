@@ -28,9 +28,9 @@ fi
 
 echo "-> Running 'mach build'" >&2
 
-# Calculate job count (3/4 of available CPUs)
+# Calculate job count (all available CPUs)
 if [ -z "${BUILD_JOBS:-}" ]; then
-  BUILD_JOBS="$(( $(nproc) * 3 / 4 ))"
+  BUILD_JOBS="$(nproc)"
 fi
 
 # Run build

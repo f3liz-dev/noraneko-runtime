@@ -12,6 +12,8 @@ echo "-> Running 'mach package'" >&2
 
 if [ "$TARGET" == "windows" ]; then
   source $BSYS6/exports/move_artifact.sh "PACKAGE" "$SOURCE/obj-$MOZ_TARGET/dist" "$PROJECT_NAME-*.zip"
+elif [ "$TARGET" == "macos" ]; then
+  source $BSYS6/exports/move_artifact.sh "PACKAGE" "$SOURCE/obj-$MOZ_TARGET/dist" "$PROJECT_NAME-*.dmg"
 else
   source $BSYS6/exports/move_artifact.sh "PACKAGE" "$SOURCE/obj-$MOZ_TARGET/dist" "$PROJECT_NAME-*.tar.xz"
 fi

@@ -1,0 +1,19 @@
+# SPDX-License-Identifier: MPL-2.0
+# macOS cross-compilation configuration
+
+# Packaging related
+export DMG_TOOL="$MOZBUILD/dmg/dmg"
+export HFS_TOOL="$MOZBUILD/dmg/hfsplus"
+
+# Build related
+CROSS=$MOZBUILD
+CCTOOLS=$CROSS/cctools
+mk_add_options "export PATH=$MOZBUILD/clang/bin:$CCTOOLS/bin:$CROSS/binutils/bin:$CROSS/dmg:$PATH"
+mk_add_options "export LD_LIBRARY_PATH=$MOZBUILD/clang/lib:$CCTOOLS/lib"
+export CC="$CROSS/clang/bin/clang"
+export CXX="$CROSS/clang/bin/clang++"
+export HOST_CC="$CROSS/clang/bin/clang"
+export HOST_CXX="$CROSS/clang/bin/clang++"
+
+# SDK
+ac_add_options --with-macos-sdk="$MOZBUILD/MacOSX26.2.sdk"

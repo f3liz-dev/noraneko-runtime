@@ -10,11 +10,12 @@ permissions:
   workflow_dispatch:
     inputs:
       platform:
-        description: 'Target platform (linux, windows)'
+        description: 'Target platform (linux, windows, macos)'
         type: choice
         options:
           - linux
           - windows
+          - macos
         default: linux
         required: true
       arch:
@@ -35,6 +36,11 @@ permissions:
         required: false
         type: boolean
         default: false
+      skip-tests:
+        description: 'Skip building tests for faster build'
+        required: false
+        type: boolean
+        default: true
 
 run-name: >-
   [bsys6] ${{ inputs.platform }}-${{ inputs.arch }}
@@ -70,6 +76,7 @@ jobs:
           ARCH=${{ inputs.arch }} \
           DEBUG=${{ inputs.debug }} \
           PGO=${{ inputs.pgo }} \
+          SKIP_TESTS=${{ inputs.skip-tests }} \
           ./bsys6 prepare build package
         env:
           SCCACHE_BUCKET: ${{ secrets.SCCACHE_BUCKET }}

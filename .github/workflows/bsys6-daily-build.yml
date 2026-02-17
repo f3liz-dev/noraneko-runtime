@@ -52,6 +52,7 @@ jobs:
           DEBUG=${{ inputs.debug == true || github.event_name == 'push' }} \
           PGO=${{ inputs.pgo == true && github.event_name != 'push' }} \
           PGO_MODE=${{ (inputs.pgo == true && github.event_name != 'push') && 'generate' || '' }} \
+          SKIP_TESTS=true \
           ./bsys6 prepare build package
         env:
           SCCACHE_BUCKET: ${{ secrets.SCCACHE_BUCKET }}
@@ -93,6 +94,7 @@ jobs:
           DEBUG=${{ inputs.debug == true || github.event_name == 'push' }} \
           PGO=${{ inputs.pgo == true && github.event_name != 'push' }} \
           PGO_MODE=${{ (inputs.pgo == true && github.event_name != 'push') && 'generate' || '' }} \
+          SKIP_TESTS=true \
           ./bsys6 prepare build package
         env:
           SCCACHE_BUCKET: ${{ secrets.SCCACHE_BUCKET }}
@@ -132,6 +134,7 @@ jobs:
           TARGET=windows \
           ARCH=x86_64 \
           DEBUG=${{ inputs.debug == true || github.event_name == 'push' }} \
+          SKIP_TESTS=true \
           ./bsys6 prepare build package
         env:
           SCCACHE_BUCKET: ${{ secrets.SCCACHE_BUCKET }}
@@ -240,6 +243,7 @@ jobs:
           PGO_MODE=use \
           PGO_PROFILE_PATH=~/artifacts/merged.profdata \
           PGO_JARLOG_PATH=~/artifacts/en-US.log \
+          SKIP_TESTS=true \
           ./bsys6 prepare build package
         env:
           SCCACHE_BUCKET: ${{ secrets.SCCACHE_BUCKET }}

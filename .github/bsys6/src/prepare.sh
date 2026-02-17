@@ -46,7 +46,13 @@ install_llvm() {
     wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/llvm.gpg || true
     echo "deb http://apt.llvm.org/$LLVM_CODENAME/ llvm-toolchain-$LLVM_CODENAME-$LLVM_VERSION main" | sudo tee /etc/apt/sources.list.d/llvm.list || true
     sudo apt-get update -qq
-    sudo apt-get install -y --no-install-recommends "llvm-$LLVM_VERSION" "clang-$LLVM_VERSION" || true
+    sudo apt-get install -y --no-install-recommends "llvm-$LLVM_VERSION" "clang-$LLVM_VERSION" "lld-$LLVM_VERSION" || true
+
+    # Create symlinks for the specific LLVM version
+    sudo ln -sf "/usr/bin/clang-$LLVM_VERSION" /usr/bin/clang
+    sudo ln -sf "/usr/bin/clang++-$LLVM_VERSION" /usr/bin/clang++
+    sudo ln -sf "/usr/bin/lld-$LLVM_VERSION" /usr/bin/lld
+    sudo ln -sf "/usr/bin/llvm-profdata-$LLVM_VERSION" /usr/bin/llvm-profdata
   fi
 }
 
@@ -87,6 +93,28 @@ windows)
 
   # Add Windows Rust targets
   $BSYS6/utils/rustup_target.sh "x86_64-pc-windows-msvc" "aarch64-pc-windows-msvc" "i686-pc-windows-msvc"
+  ;;
+
+macos)
+  echo "-> Preparing build environment for macOS cross-compilation (target: $TARGET)"
+
+  # Install base dependencies
+  $BSYS6/utils/dependencies.sh "python3-pip curl rsync zip unzip python3-testresources jq file nodejs wget lsb-release gnupg2 build-essential" "python-pip curl rsync zip unzip python-testresources jq nodejs wget base-devel"
+
+  # Install LLVM/Clang
+  install_llvm
+
+  source $BSYS6/exports/version.sh
+  $BSYS6/bootstrap.sh
+
+  # Add macOS Rust targets
+  $BSYS6/utils/rustup_target.sh "x86_64-apple-darwin" "aarch64-apple-darwin"
+
+  # Install macOS specific toolchain artifacts
+  $BSYS6/utils/install_toolchain_artifact.sh "sysroot-wasm32-wasi" "linux64-cbindgen" "linux64-clang" "linux64-libdmg" "linux64-cctools-port" "linux64-hfsplus" "linux64-binutils"
+
+  # Install macOS SDK
+  $BSYS6/utils/install_macos_sdk.sh
   ;;
 
 *)

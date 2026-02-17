@@ -24,7 +24,7 @@ if [ -z "${WORKDIR:-}" ]; then
 fi
 mkdir -p "$WORKDIR"
 
-export AVAILABLE_TARGETS="linux windows"
+export AVAILABLE_TARGETS="linux windows macos"
 export AVAILABLE_ARCHS="x86_64 aarch64"
 export AVAILABLE_ARTIFACTS="SOURCE PACKAGE"
 

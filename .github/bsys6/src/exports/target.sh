@@ -26,6 +26,13 @@ windows)
     export MOZ_TARGET="x86_64-pc-windows-msvc"
   fi
   ;;
+macos)
+  if [ "${ARCH:-}" == "aarch64" ] || [ "${ARCH:-}" == "arm64" ]; then
+    export MOZ_TARGET="aarch64-apple-darwin"
+  else
+    export MOZ_TARGET="x86_64-apple-darwin"
+  fi
+  ;;
 *)
   echo "Unsupported target $TARGET"
   exit 1

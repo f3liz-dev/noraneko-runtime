@@ -1,0 +1,23 @@
+# SPDX-License-Identifier: MPL-2.0
+
+ac_add_options --with-app-name=noraneko
+ac_add_options --with-app-basename=Noraneko
+ac_add_options --disable-crashreporter
+ac_add_options --enable-bootstrap
+ac_add_options --enable-rust-simd
+ac_add_options --target=x86_64-apple-darwin
+
+# LLVM and Linker
+export CC=clang-19
+export CXX=clang++-19
+ac_add_options --enable-linker=lld
+ac_add_options --enable-lto=thin
+
+# Optimization
+ac_add_options --enable-release
+ac_add_options --enable-optimize
+
+mk_add_options AUTOCLOBBER=1
+ac_add_options MOZ_TELEMETRY_REPORTING=
+ac_add_options --with-branding=browser/branding/noraneko-unofficial
+export MOZ_PACKAGE_JSSHELL=1

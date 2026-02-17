@@ -14,6 +14,17 @@ ac_add_options --enable-rust-simd
 #? https://bugzilla.mozilla.org/show_bug.cgi?id=1617793
 #? https://phabricator.services.mozilla.com/D170170
 ac_add_options --target=x86_64-pc-linux-gnu
+
+# LLVM and Linker
+export CC=clang-19
+export CXX=clang++-19
+ac_add_options --enable-linker=lld
+ac_add_options --enable-lto=thin
+
+# Optimization
+ac_add_options --enable-release
+ac_add_options --enable-optimize
+
 #sccache
 #mk_add_options 'export RUSTC_WRAPPER=sccache'
 #mk_add_options 'export CCACHE_CPP2=yes'
