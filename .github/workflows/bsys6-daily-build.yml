@@ -79,12 +79,6 @@ jobs:
         run: |
           cd .github/bsys6
           ./bsys6 prepare-host
-        env:
-          SCCACHE_BUCKET: ${{ secrets.SCCACHE_BUCKET }}
-          SCCACHE_ENDPOINT: ${{ secrets.SCCACHE_ENDPOINT }}
-          SCCACHE_REGION: auto
-          AWS_ACCESS_KEY_ID: ${{ secrets.SCCACHE_AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.SCCACHE_AWS_SECRET_ACCESS_KEY }}
 
       - name: Build
         run: |
@@ -96,12 +90,6 @@ jobs:
           PGO_MODE=${{ (inputs.pgo == true && github.event_name != 'push') && 'generate' || '' }} \
           SKIP_TESTS=true \
           ./bsys6 prepare build package
-        env:
-          SCCACHE_BUCKET: ${{ secrets.SCCACHE_BUCKET }}
-          SCCACHE_ENDPOINT: ${{ secrets.SCCACHE_ENDPOINT }}
-          SCCACHE_REGION: auto
-          AWS_ACCESS_KEY_ID: ${{ secrets.SCCACHE_AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.SCCACHE_AWS_SECRET_ACCESS_KEY }}
 
       - uses: actions/upload-artifact@v4
         with:
@@ -147,6 +135,46 @@ jobs:
         with:
           name: noraneko-windows-x86_64-moz-artifact
           path: .github/bsys6/*.zip
+
+  build-macos-aarch64:
+    name: macOS aarch64
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Prepare host
+        run: |
+          cd .github/bsys6
+          ./bsys6 prepare-host
+        env:
+          SCCACHE_BUCKET: ${{ secrets.SCCACHE_BUCKET }}
+          SCCACHE_ENDPOINT: ${{ secrets.SCCACHE_ENDPOINT }}
+          SCCACHE_REGION: auto
+          AWS_ACCESS_KEY_ID: ${{ secrets.SCCACHE_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.SCCACHE_AWS_SECRET_ACCESS_KEY }}
+
+      - name: Build
+        run: |
+          cd .github/bsys6
+          TARGET=macos \
+          ARCH=aarch64 \
+          DEBUG=${{ inputs.debug == true || github.event_name == 'push' }} \
+          SKIP_TESTS=true \
+          ./bsys6 prepare build package
+        env:
+          SCCACHE_BUCKET: ${{ secrets.SCCACHE_BUCKET }}
+          SCCACHE_ENDPOINT: ${{ secrets.SCCACHE_ENDPOINT }}
+          SCCACHE_REGION: auto
+          AWS_ACCESS_KEY_ID: ${{ secrets.SCCACHE_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.SCCACHE_AWS_SECRET_ACCESS_KEY }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: noraneko-macos-aarch64-moz-artifact
+          path: .github/bsys6/*.dmg
 
   generate-pgo-profile:
     name: Linux x86_64 PGO Stage 2
