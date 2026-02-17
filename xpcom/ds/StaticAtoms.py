@@ -37,6 +37,14 @@ STATIC_ATOMS = [
     Atom("_empty", ""),
     Atom("_0", "0"),
     Atom("_1", "1"),
+    Atom("_2", "2"),
+    Atom("_3", "3"),
+    Atom("_4", "4"),
+    Atom("_5", "5"),
+    Atom("_6", "6"),
+    Atom("_7", "7"),
+    Atom("_8", "8"),
+    Atom("_9", "9"),
     Atom("mozframetype", "mozframetype"),
     Atom("_moz_abspos", "_moz_abspos"),
     Atom("_moz_activated", "_moz_activated"),
@@ -51,6 +59,7 @@ STATIC_ATOMS = [
     Atom("mozgeneratedcontentafter", "_moz_generated_content_after"),
     Atom("mozgeneratedcontentmarker", "_moz_generated_content_marker"),
     Atom("mozgeneratedcontentimage", "_moz_generated_content_image"),
+    Atom("mozgeneratedcontentbackdrop", "_moz_generated_content_backdrop"),
     Atom("mozquote", "_moz_quote"),
     Atom("mozsignature", "moz-signature"),  # Used by MailNews.
     Atom("_moz_bullet_font", "-moz-bullet-font"),
@@ -244,6 +253,7 @@ STATIC_ATOMS = [
     Atom("circ", "circ"),
     Atom("circle", "circle"),
     Atom("cite", "cite"),
+    Atom("cke_wysiwyg_frame", "cke_wysiwyg_frame"),
     Atom("_class", "class"),
     Atom("classid", "classid"),
     Atom("clear", "clear"),
@@ -2210,6 +2220,7 @@ STATIC_ATOMS = [
     Atom("pseudoProperty", "PseudoProperty"),  # PseudoStyleType
     Atom("manualNACProperty", "ManualNACProperty"),  # ManualNAC*
     Atom("markerPseudoProperty", "markerPseudoProperty"),  # nsXMLElement*
+    Atom("backdropPseudoProperty", "backdropPseudoProperty"),  # nsXMLElement*
     # Languages for lang-specific transforms
     Atom("Japanese", "ja"),
     Atom("Chinese", "zh-CN"),

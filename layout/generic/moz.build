@@ -163,6 +163,7 @@ EXPORTS.mozilla += [
 
 EXPORTS.mozilla.layout += [
     "ScrollAnchorContainer.h",
+    "StickyScrollContainer.h",
 ]
 
 UNIFIED_SOURCES += [
@@ -176,7 +177,6 @@ UNIFIED_SOURCES += [
     "CSSOrderAwareFrameIterator.cpp",
     "MathMLTextRunFactory.cpp",
     "MiddleCroppingBlockFrame.cpp",
-    "nsBackdropFrame.cpp",
     "nsBlockFrame.cpp",
     "nsBlockReflowContext.cpp",
     "nsCanvasFrame.cpp",

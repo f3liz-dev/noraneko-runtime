@@ -676,14 +676,12 @@ nsresult EventStateManager::UpdateUserActivityTimer() {
   return NS_OK;
 }
 
-nsresult EventStateManager::Init() {
+void EventStateManager::Init() {
   nsCOMPtr<nsIObserverService> observerService =
       mozilla::services::GetObserverService();
-  if (!observerService) return NS_ERROR_FAILURE;
-
-  observerService->AddObserver(this, NS_XPCOM_SHUTDOWN_OBSERVER_ID, true);
-
-  return NS_OK;
+  if (observerService) {
+    observerService->AddObserver(this, NS_XPCOM_SHUTDOWN_OBSERVER_ID, true);
+  }
 }
 
 bool EventStateManager::ShouldAlwaysUseLineDeltas() {
@@ -751,10 +749,7 @@ EventStateManager::~EventStateManager() {
   }
 }
 
-nsresult EventStateManager::Shutdown() {
-  m_haveShutdown = true;
-  return NS_OK;
-}
+void EventStateManager::Shutdown() { m_haveShutdown = true; }
 
 NS_IMETHODIMP
 EventStateManager::Observe(nsISupports* aSubject, const char* aTopic,
@@ -3671,8 +3666,6 @@ void EventStateManager::DoScrollText(
     case WidgetWheelEvent::SCROLL_DEFAULT:
       if (isDeltaModePixel) {
         mode = ScrollMode::Normal;
-      } else if (aEvent->mFlags.mHandledByAPZ) {
-        mode = ScrollMode::SmoothMsd;
       } else {
         mode = ScrollMode::Smooth;
       }

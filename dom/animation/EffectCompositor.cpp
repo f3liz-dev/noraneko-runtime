@@ -566,7 +566,8 @@ EffectCompositor::GetAnimationElementAndPseudoForFrame(const nsIFrame* aFrame) {
   switch (request.mType) {
     case PseudoStyleType::before:
     case PseudoStyleType::after:
-    case PseudoStyleType::marker: {
+    case PseudoStyleType::marker:
+    case PseudoStyleType::backdrop: {
       nsIContent* parent = element->GetParent();
       if (!parent || !parent->IsElement()) {
         return result;
@@ -611,7 +612,8 @@ nsCSSPropertyIDSet EffectCompositor::GetOverriddenProperties(
 
   static constexpr size_t compositorAnimatableCount =
       nsCSSPropertyIDSet::CompositorAnimatableCount();
-  AutoTArray<nsCSSPropertyID, compositorAnimatableCount> propertiesToTrack;
+  AutoTArray<NonCustomCSSPropertyId, compositorAnimatableCount>
+      propertiesToTrack;
   {
     nsCSSPropertyIDSet propertiesToTrackAsSet;
     for (KeyframeEffect* effect : aEffectSet) {
@@ -621,11 +623,11 @@ nsCSSPropertyIDSet EffectCompositor::GetOverriddenProperties(
           continue;
         }
 
-        if (nsCSSProps::PropHasFlags(property.mProperty.mID,
+        if (nsCSSProps::PropHasFlags(property.mProperty.mId,
                                      CSSPropFlags::CanAnimateOnCompositor) &&
-            !propertiesToTrackAsSet.HasProperty(property.mProperty.mID)) {
-          propertiesToTrackAsSet.AddProperty(property.mProperty.mID);
-          propertiesToTrack.AppendElement(property.mProperty.mID);
+            !propertiesToTrackAsSet.HasProperty(property.mProperty.mId)) {
+          propertiesToTrackAsSet.AddProperty(property.mProperty.mId);
+          propertiesToTrack.AppendElement(property.mProperty.mId);
         }
       }
       // Skip iterating over the rest of the effects if we've already
@@ -698,7 +700,7 @@ void EffectCompositor::UpdateCascadeResults(
       // properties.
       // TODO: Bug 1869475. Support custom properties for compositor animations.
       if (overriddenProperties.HasProperty(prop.mProperty)) {
-        propertiesWithImportantRules.AddProperty(prop.mProperty.mID);
+        propertiesWithImportantRules.AddProperty(prop.mProperty.mId);
       }
 
       switch (cascadeLevel) {
@@ -789,6 +791,7 @@ bool EffectCompositor::PreTraverseInSubtree(ServoTraversalFlags aFlags,
   // element in mElementsToRestyle is the parent of the pseudo.
   if (aRoot && (aRoot->IsGeneratedContentContainerForBefore() ||
                 aRoot->IsGeneratedContentContainerForAfter() ||
+                aRoot->IsGeneratedContentContainerForBackdrop() ||
                 aRoot->IsGeneratedContentContainerForMarker())) {
     aRoot = aRoot->GetParentElement();
   }

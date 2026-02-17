@@ -31,9 +31,11 @@ SizeTrackingConfig::SizeTrackingConfig(sandbox::TargetConfig* aConfig,
   MOZ_ASSERT(mConfig);
 
   // The calculation uses the kPolMemPageCount constant in sandbox_policy.h.
-  // We reduce the allowable size by 1 to account for the PolicyGlobal.
+  // We reduce the allowable size by 2 to account for the PolicyGlobal and
+  // padding that occurs during LowLevelPolicy::Done. See bug 2009140.
   MOZ_ASSERT(aStoragePages > 0);
-  MOZ_ASSERT(static_cast<size_t>(aStoragePages) < sandbox::kPolMemPageCount);
+  MOZ_ASSERT(static_cast<size_t>(aStoragePages) <=
+             sandbox::kPolMemPageCount - 2);
 
   constexpr int32_t kOneMemPage = 4096;
   mRemainingSize = kOneMemPage * aStoragePages;
@@ -85,8 +87,11 @@ sandbox::ResultCode SizeTrackingConfig::AllowFileAccess(
 
 UserFontConfigHelper::UserFontConfigHelper(const wchar_t* aUserFontKeyPath,
                                            const nsString& aWinUserProfile,
-                                           const nsString& aLocalAppData)
-    : mWinUserProfile(aWinUserProfile), mLocalAppData(aLocalAppData) {
+                                           const nsString& aLocalAppData,
+                                           const nsString& aRoamingAppData)
+    : mWinUserProfile(aWinUserProfile),
+      mLocalAppData(aLocalAppData),
+      mRoamingAppData(aRoamingAppData) {
   LSTATUS lStatus =
       ::RegOpenKeyExW(HKEY_CURRENT_USER, aUserFontKeyPath, 0,
                       KEY_QUERY_VALUE | KEY_ENUMERATE_SUB_KEYS, &mUserFontKey);
@@ -224,6 +229,27 @@ void UserFontConfigHelper::AddRules(SizeTrackingConfig& aConfig) const {
     NS_ERROR("Failed to add Windows user font dir policy rule.");
     LOG_E("Failed (ResultCode %d) to add read access to: %S", result,
           windowsUserFontDir.getW());
+  }
+
+  // Add two hard coded rules for Adobe Creative Cloud fonts, as it uses
+  // AddFontResource to register its fonts so they don't appear in the registry.
+  nsAutoString adobeLiveTypeFonts(mRoamingAppData);
+  adobeLiveTypeFonts += uR"(\ADOBE\CORESYNC\PLUGINS\LIVETYPE\R\*)"_ns;
+  result = aConfig.AllowFileAccess(sandbox::FileSemantics::kAllowReadonly,
+                                   adobeLiveTypeFonts.getW());
+  if (result != sandbox::SBOX_ALL_OK) {
+    NS_ERROR("Failed to add Adobe LiveType font dir policy rule.");
+    LOG_E("Failed (ResultCode %d) to add read access to: %S", result,
+          adobeLiveTypeFonts.getW());
+  }
+  nsAutoString adobeUserOwnedFonts(mRoamingAppData);
+  adobeUserOwnedFonts += uR"(\ADOBE\USER OWNED FONTS\*)"_ns;
+  result = aConfig.AllowFileAccess(sandbox::FileSemantics::kAllowReadonly,
+                                   adobeUserOwnedFonts.getW());
+  if (result != sandbox::SBOX_ALL_OK) {
+    NS_ERROR("Failed to add Adobe user owned font dir policy rule.");
+    LOG_E("Failed (ResultCode %d) to add read access to: %S", result,
+          adobeUserOwnedFonts.getW());
   }
 
   // We failed to open the registry key, we can't do any more.

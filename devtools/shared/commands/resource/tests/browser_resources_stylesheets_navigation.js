@@ -111,7 +111,7 @@ add_task(async function () {
   availableResources = [];
 
   info("Check that styleSheetChangeEventsEnabled persist after reloading");
-  await reloadBrowser();
+  await reloadSelectedTab();
 
   const expectedStylesheetResources = 5;
   info(
@@ -140,8 +140,9 @@ add_task(async function () {
   await assertResource(availableResources[3], {
     styleText: `.frame-com-1{}`,
   });
+  // Ensures that the iframe's stylesheet resets to the original one
   await assertResource(availableResources[4], {
-    styleText: `.frame-com-new-bc{}`,
+    styleText: `.frame-com-2{}`,
   });
 
   is(
@@ -203,7 +204,7 @@ add_task(async function () {
  *
  * @param {Browser|BrowsingContext} browserOrBrowsingContext: The browser element or a
  *        browsing context.
- * @returns {Promise<Boolean>}
+ * @returns {Promise<boolean>}
  */
 function getDocumentStyleSheetChangeEventsEnabled(browserOrBrowsingContext) {
   return SpecialPowers.spawn(browserOrBrowsingContext, [], () => {
@@ -218,7 +219,7 @@ function getDocumentStyleSheetChangeEventsEnabled(browserOrBrowsingContext) {
  * have a "title" attribute that represent their expected order so we can sort them in
  * a way that makes it easier for us to assert.
  *
- * @param {Array<Object>} resources: Array of stylesheet resources
+ * @param {Array<object>} resources: Array of stylesheet resources
  */
 function sortResourcesByExpectedOrder(resources) {
   resources.sort((a, b) => {
@@ -229,10 +230,10 @@ function sortResourcesByExpectedOrder(resources) {
 /**
  * Check that the resources have the expected text
  *
- * @param {Array<Object>} resources: Array of stylesheet resources
- * @param {Array<Object>} expected: Array of object of the following shape:
- * @param {Object} expected[]
- * @param {Object} expected[].styleText: Expected text content of the stylesheet
+ * @param {Array<object>} resources: Array of stylesheet resources
+ * @param {Array<object>} expected: Array of object of the following shape:
+ * @param {object} expected[]
+ * @param {object} expected[].styleText: Expected text content of the stylesheet
  */
 async function assertResource(resource, expected) {
   const styleText = (await getStyleSheetResourceText(resource)).trim();

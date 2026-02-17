@@ -1264,7 +1264,7 @@ class AddonInstall {
    * @param {nsIURL} url
    *        The nsIURL to get the add-on from. If this is an nsIFileURL then
    *        the add-on will not need to be downloaded
-   * @param {Object} [options = {}]
+   * @param {object} [options = {}]
    *        Additional options for the install
    * @param {string} [options.hash]
    *        An optional hash for the add-on
@@ -1279,7 +1279,7 @@ class AddonInstall {
    * @param {string} [options.version]
    *        The expected version for the add-on.
    *        Required for updates, i.e. when existingAddon is set.
-   * @param {Object?} [options.telemetryInfo]
+   * @param {object?} [options.telemetryInfo]
    *        An optional object which provides details about the installation source
    *        included in the addon manager telemetry events.
    * @param {boolean} [options.isUserRequestedUpdate]
@@ -1468,9 +1468,18 @@ class AddonInstall {
         );
         this.removeTemporaryFile();
 
+        const stagedInstall = AppUpdate._stagedLangpacks.get(this.addon.id);
+        if (stagedInstall && stagedInstall !== this) {
+          // File path is owned by another AddonInstall (langpack). To avoid
+          // removing the wrong file or database entry, skip unstage.
+          logger.debug(`Skipping unstageInstall for obsolete AddonInstall`);
+          return;
+        }
+
         let stagingDir = this.location.installer.getStagingDir();
         let stagedAddon = stagingDir.clone();
 
+        // Note: unstageInstall is async!
         this.unstageInstall(stagedAddon);
         break;
       }
@@ -2114,6 +2123,73 @@ class AddonInstall {
   }
 
   /**
+   * Rename the staged XPI associated with this install, to prevent another
+   * installation from overwriting it (see bug 2006489).
+   *
+   * @see restoreStagedInstall
+   */
+  backupStagedInstall() {
+    if (this._backupStagedAddon) {
+      logger.warn(
+        `Unexpected double attempt to back up staged langpack ${this.addon.id}`
+      );
+      return;
+    }
+    const stagedAddon = this.location.installer.getStagingDir();
+    stagedAddon.append(`${this.addon.id}.xpi`);
+    try {
+      // Rename file. This will be restored when the install completes. If for
+      // some reason the application crashes or quits before we get there, this
+      // file will be left behind.
+      //
+      // "~" as separator because it is never a part of an addon ID.
+      stagedAddon.moveTo(null, `${this.addon.id}~bak.xpi`);
+      this._backupStagedAddon = stagedAddon;
+    } catch (e) {
+      logger.warn(`Failed to rename staged langpack ${this.addon.id}`, e);
+    }
+  }
+
+  /**
+   * Undo the rename of backupStagedInstall(). This should be called when there
+   * are no other uses of the original file name.
+   *
+   * @see backupStagedInstall
+   * @see stageInstall
+   */
+  restoreStagedInstall() {
+    if (this._backupStagedAddon) {
+      try {
+        // Restore file and metadata, matching the logic from stageInstall().
+        this._backupStagedAddon.moveTo(null, `${this.addon.id}.xpi`);
+        this._backupStagedAddon = null;
+        this.location.stageAddon(this.addon.id, this.addon.toJSON());
+      } catch (e) {
+        logger.warn(`Failed to restore staged langpack ${this.addon.id}`, e);
+        this._backupStagedAddon = null;
+      }
+    }
+  }
+
+  /**
+   * Remove the staged file without restoring it. This should be called when
+   * the file has become obsolete, e.g. due to a newer version of the XPI.
+   *
+   * @see backupStagedInstall
+   * @see restoreStagedInstall
+   */
+  deleteBackupStagedInstall() {
+    if (this._backupStagedAddon) {
+      try {
+        this._backupStagedAddon.remove(false);
+      } catch (e) {
+        logger.warn(`Failed to delete staged langpack ${this.addon.id}`, e);
+      }
+      this._backupStagedAddon = null;
+    }
+  }
+
+  /**
    * Postone a pending update, until restart or until the add-on resumes.
    *
    * @param {function} resumeFn
@@ -2345,7 +2421,7 @@ var DownloadAddonInstall = class extends AddonInstall {
    *        The XPIStateLocation the add-on will be installed into
    * @param {nsIURL} url
    *        The nsIURL to get the add-on from
-   * @param {Object} [options = {}]
+   * @param {object} [options = {}]
    *        Additional options for the install
    * @param {string} [options.hash]
    *        An optional hash for the add-on
@@ -2360,7 +2436,7 @@ var DownloadAddonInstall = class extends AddonInstall {
    *        An optional name for the add-on
    * @param {string} [options.type]
    *        An optional type for the add-on
-   * @param {Object} [options.icons]
+   * @param {object} [options.icons]
    *        Optional icons for the add-on
    * @param {string} [options.version]
    *        The expected version for the add-on.
@@ -2846,7 +2922,7 @@ var DownloadAddonInstall = class extends AddonInstall {
  *        The callback to pass the new AddonInstall to
  * @param {AddonInternal} aAddon
  *        The add-on being updated
- * @param {Object} aUpdate
+ * @param {object} aUpdate
  *        The metadata about the new version from the update manifest
  * @param {boolean} isUserRequested
  *        An optional boolean, true if the install object is related to a user triggered update.
@@ -3287,7 +3363,7 @@ UpdateChecker.prototype = {
  *        The file to install
  * @param {XPIStateLocation} location
  *        The location to install to
- * @param {Object?} [telemetryInfo]
+ * @param {object?} [telemetryInfo]
  *        An optional object which provides details about the installation source
  *        included in the addon manager telemetry events.
  * @returns {Promise<AddonInstall>}
@@ -3474,7 +3550,7 @@ class DirectoryInstaller {
   /**
    * Installs an add-on into the install location.
    *
-   * @param {Object} options
+   * @param {object} options
    *        Installation options.
    * @param {string} options.id
    *        The ID of the add-on to install
@@ -3627,7 +3703,7 @@ class SystemAddonInstaller extends DirectoryInstaller {
   /**
    * Saves the current set of system add-ons
    *
-   * @param {Object} aAddonSet - object containing schema, directory and set
+   * @param {object} aAddonSet - object containing schema, directory and set
    *                 of system add-on IDs and versions.
    */
   static _saveAddonSet(aAddonSet) {
@@ -4073,10 +4149,59 @@ var AppUpdate = {
     });
   },
 
-  stageInstall(installer) {
+  // Map from addon ID to AddonInstall of langpacks staged for next startup.
+  _stagedLangpacks: new Map(),
+  _conflictingInstalls: null,
+  _ensurePersistentStagedLangpack() {
+    // stageLangpacksForAppUpdate may stage a langpack for the next application
+    // update, because langpacks are compatible with specific major versions
+    // only. But if an update check finds another langpack compatible with the
+    // current version, the previously staged langpack would be overwritten,
+    // because AddonInstall instances with the same ID share the same file path.
+    // To avoid the loss of langpacks, temporarily rename the file, then restore
+    // it upon completion of the installation (bug 2006489).
+    if (this._conflictingInstalls) {
+      return;
+    }
+    this._conflictingInstalls = new Set();
+    const restoreStagedIfNeeded = install => {
+      if (this._conflictingInstalls.delete(install)) {
+        const stagedInstall = this._stagedLangpacks.get(install.addon.id);
+        stagedInstall.restoreStagedInstall();
+      }
+    };
+    const globalInstallListener = {
+      onInstallStarted: install => {
+        const stagedInstall = this._stagedLangpacks.get(install.addon.id);
+        if (stagedInstall && stagedInstall !== install) {
+          this._conflictingInstalls.add(install);
+          stagedInstall.backupStagedInstall();
+        }
+      },
+      onInstallCancelled: install => {
+        restoreStagedIfNeeded(install);
+      },
+      onInstallFailed: install => {
+        restoreStagedIfNeeded(install);
+      },
+      onInstallEnded: install => {
+        restoreStagedIfNeeded(install);
+      },
+    };
+    AddonManager.addInstallListener(globalInstallListener);
+  },
+
+  stageLangpackInstall(installer) {
     return new Promise((resolve, reject) => {
       let listener = {
         onDownloadEnded: install => {
+          const stagedInstall = this._stagedLangpacks.get(install.addon.id);
+          if (stagedInstall) {
+            // Found a new version of a previously staged langpack. We don't
+            // care about the previous one any more.
+            stagedInstall.deleteBackupStagedInstall();
+            this._stagedLangpacks.delete(install.addon.id);
+          }
           install.postpone();
         },
         onInstallFailed: install => {
@@ -4092,6 +4217,10 @@ var AppUpdate = {
         onInstallPostponed: install => {
           // At this point the addon is staged for restart.
           install.removeListener(listener);
+
+          this._stagedLangpacks.set(install.addon.id, installFor(install));
+          this._ensurePersistentStagedLangpack();
+
           resolve();
         },
       };
@@ -4112,7 +4241,7 @@ var AppUpdate = {
           nextVersion,
           nextPlatformVersion
         )
-          .then(update => update && this.stageInstall(update))
+          .then(update => update && this.stageLangpackInstall(update))
           .catch(e => {
             logger.debug(`addon.findUpdate error: ${e}`);
           })
@@ -4589,13 +4718,13 @@ export var XPIInstall = {
    *        A hash for the install
    * @param {string} [aOptions.name]
    *        A name for the install
-   * @param {Object} [aOptions.icons]
+   * @param {object} [aOptions.icons]
    *        Icon URLs for the install
    * @param {string} [aOptions.version]
    *        A version for the install
    * @param {XULElement} [aOptions.browser]
    *        The browser performing the install
-   * @param {Object} [aOptions.telemetryInfo]
+   * @param {object} [aOptions.telemetryInfo]
    *        An optional object which provides details about the installation source
    *        included in the addon manager telemetry events.
    * @param {boolean} [aOptions.sendCookies = false]
@@ -4633,7 +4762,7 @@ export var XPIInstall = {
    *
    * @param {nsIFile} aFile
    *        The file to be installed
-   * @param {Object?} [aInstallTelemetryInfo]
+   * @param {object?} [aInstallTelemetryInfo]
    *        An optional object which provides details about the installation source
    *        included in the addon manager telemetry events.
    * @param {boolean} [aUseSystemLocation = false]

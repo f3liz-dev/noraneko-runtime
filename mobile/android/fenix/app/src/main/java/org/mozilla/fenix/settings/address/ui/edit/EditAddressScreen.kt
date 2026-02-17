@@ -7,9 +7,14 @@ package org.mozilla.fenix.settings.address.ui.edit
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.exclude
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -25,7 +30,9 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import mozilla.components.browser.state.search.RegionState
 import mozilla.components.compose.base.Dropdown
 import mozilla.components.compose.base.annotation.FlexibleWindowLightDarkPreview
 import mozilla.components.compose.base.button.DestructiveButton
@@ -34,8 +41,8 @@ import mozilla.components.compose.base.button.OutlinedButton
 import mozilla.components.compose.base.menu.MenuItem
 import mozilla.components.compose.base.modifier.thenConditional
 import mozilla.components.compose.base.textfield.TextField
-import mozilla.components.compose.base.textfield.TextFieldColors
 import mozilla.components.concept.engine.autofill.AddressStructure
+import mozilla.components.concept.storage.Address
 import mozilla.components.concept.storage.UpdatableAddressFields
 import mozilla.components.lib.state.ext.observeAsState
 import org.mozilla.fenix.R
@@ -48,7 +55,9 @@ import org.mozilla.fenix.settings.address.store.FormChange
 import org.mozilla.fenix.settings.address.store.SaveTapped
 import org.mozilla.fenix.settings.address.store.ViewAppeared
 import org.mozilla.fenix.settings.address.store.isEditing
+import org.mozilla.fenix.settings.address.utils.generateAddress
 import org.mozilla.fenix.theme.FirefoxTheme
+import org.mozilla.fenix.theme.Theme
 import mozilla.components.compose.base.text.Text as DropdownText
 
 /**
@@ -62,7 +71,6 @@ fun EditAddressScreen(store: AddressStore) {
         topBar = {
             EditAddressTopBar(store)
         },
-        containerColor = FirefoxTheme.colors.layer1,
     ) { paddingValues ->
         val structureState by store.observeAsState(store.state.structureState) { it.structureState }
         var hasRequestedFocus by remember { mutableStateOf(false) }
@@ -86,11 +94,12 @@ fun EditAddressScreen(store: AddressStore) {
             state = rememberLazyListState(),
             modifier = Modifier
                 .padding(paddingValues)
+                .consumeWindowInsets(paddingValues)
                 .padding(
                     horizontal = FirefoxTheme.layout.space.static200,
                     vertical = FirefoxTheme.layout.space.static100,
                 )
-                .imePadding(),
+                .windowInsetsPadding(WindowInsets.ime.exclude(WindowInsets.navigationBars)),
         ) {
             val firstTextField = structureState.structure.fields.firstOrNull {
                 it is AddressStructure.Field.TextField
@@ -140,9 +149,6 @@ private fun TextField(
         errorText = "",
         modifier = modifier.testTag(field.id.testTag),
         label = field.localizationKey.localizedString(),
-        colors = TextFieldColors.default(
-            placeholderColor = FirefoxTheme.colors.textPrimary,
-        ),
     )
 }
 
@@ -285,11 +291,73 @@ private fun AddressStructure.Field.LocalizationKey.localizedString() = when (thi
     is AddressStructure.Field.LocalizationKey.Unknown -> key
 }
 
+private fun createStore(
+    region: RegionState? = null,
+    address: Address? = null,
+) = AddressStore(
+    initialState = AddressState.initial(region = region, address = address).copy(
+        structureState = AddressStructureState.Loaded(
+            structure = AddressStructure(
+                fields = listOf(
+                    AddressStructure.Field.TextField(
+                        AddressStructure.Field.ID.Name,
+                        AddressStructure.Field.LocalizationKey.Name,
+                    ),
+                    AddressStructure.Field.TextField(
+                        AddressStructure.Field.ID.Organization,
+                        AddressStructure.Field.LocalizationKey.Organization,
+                    ),
+                    AddressStructure.Field.TextField(
+                        AddressStructure.Field.ID.StreetAddress,
+                        AddressStructure.Field.LocalizationKey.StreetAddress,
+                    ),
+                ),
+            ),
+        ),
+    ),
+    listOf(),
+).also { it.dispatch(ViewAppeared) }
+
+@FlexibleWindowLightDarkPreview
+@Composable
+private fun AddAddressPreview() {
+    val store = createStore()
+
+    FirefoxTheme {
+        EditAddressScreen(store)
+    }
+}
+
+@Preview
+@Composable
+private fun AddAddressPrivatePreview() {
+    val store = createStore()
+
+    FirefoxTheme(theme = Theme.Private) {
+        EditAddressScreen(store)
+    }
+}
+
 @FlexibleWindowLightDarkPreview
 @Composable
 private fun EditAddressPreview() {
-    val store = AddressStore(AddressState.initial(), listOf()).also { it.dispatch(ViewAppeared) }
+    val store = createStore(
+        address = generateAddress(),
+    )
+
     FirefoxTheme {
+        EditAddressScreen(store)
+    }
+}
+
+@Preview
+@Composable
+private fun EditAddressPrivatePreview() {
+    val store = createStore(
+        address = generateAddress(),
+    )
+
+    FirefoxTheme(theme = Theme.Private) {
         EditAddressScreen(store)
     }
 }

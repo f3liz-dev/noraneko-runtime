@@ -1522,9 +1522,9 @@ extern "C" int wmain(int argc, wchar_t* argv[]) {
                              ApiSetQueryApiSetPresence, Equals, FALSE,
                              &gEmptyUnicodeString, &gIsPresent) &&
       TEST_HOOK("kernelbase.dll", QueryDosDeviceW, Equals, 0) &&
+#if !defined(_M_ARM64)
       TEST_HOOK("kernel32.dll", GetFileAttributesW, Equals,
                 INVALID_FILE_ATTRIBUTES) &&
-#if !defined(_M_ARM64)
 #  ifndef MOZ_ASAN
       // Bug 733892: toolkit/crashreporter/nsExceptionHandler.cpp
       // This fails on ASan because the ASan runtime already hooked this
@@ -1547,11 +1547,16 @@ extern "C" int wmain(int argc, wchar_t* argv[]) {
       TEST_HOOK("user32.dll", GetKeyState, Ignore, 0) &&  // see Bug 1316415
 #endif
       TEST_HOOK("user32.dll", GetWindowInfo, Equals, FALSE) &&
+#if defined(_M_IX86) || defined(_M_X64)
+      // Bug 1997530: TrackPopupMenu uses a PC-relative branch on ARM64.
       TEST_HOOK("user32.dll", TrackPopupMenu, Equals, FALSE) &&
+#endif
       TEST_DETOUR("user32.dll", CreateWindowExW, Equals, nullptr) &&
       TEST_HOOK("user32.dll", InSendMessageEx, Equals, ISMEX_NOSEND) &&
       TEST_HOOK("user32.dll", SendMessageTimeoutW, Equals, 0) &&
+#if !defined(_M_ARM64)
       TEST_HOOK("user32.dll", SetCursorPos, NotEquals, FALSE) &&
+#endif
       TEST_HOOK("bcrypt.dll", BCryptGenRandom, Equals,
                 static_cast<NTSTATUS>(STATUS_INVALID_HANDLE)) &&
       TEST_HOOK("advapi32.dll", RtlGenRandom, Equals, TRUE) &&

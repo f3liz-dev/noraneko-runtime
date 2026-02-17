@@ -10,6 +10,7 @@
 
 #include "mozilla/Assertions.h"
 #include "mozilla/ScopeExit.h"
+#include "nsDeviceContext.h"
 #include "nsGlobalWindowInner.h"
 
 // Local Includes
@@ -170,8 +171,6 @@
 #include "nsQueryObject.h"
 #include "nsServiceManagerUtils.h"
 #include "nsThreadUtils.h"
-#include "nsView.h"
-#include "nsViewManager.h"
 #include "xpcprivate.h"
 
 #ifdef NS_PRINTING
@@ -3429,24 +3428,25 @@ nsresult nsGlobalWindowOuter::GetInnerSize(CSSSize& aSize) {
 
   NS_ENSURE_STATE(mDocShell);
 
-  RefPtr<nsPresContext> presContext = mDocShell->GetPresContext();
-  PresShell* presShell = mDocShell->GetPresShell();
-
-  if (!presContext || !presShell) {
+  RefPtr<PresShell> presShell = mDocShell->GetPresShell();
+  if (!presShell) {
     aSize = {};
     return NS_OK;
   }
 
   // Whether or not the css viewport has been overridden, we can get the
   // correct value by looking at the visible area of the presContext.
-  if (RefPtr<nsViewManager> viewManager = presShell->GetViewManager()) {
-    viewManager->FlushDelayedResize();
+  presShell->FlushDelayedResize();
+
+  nsPresContext* pc = presShell->GetPresContext();
+  if (NS_WARN_IF(!pc)) {
+    aSize = {};
+    return NS_OK;
   }
 
   nsSize innerSize = presShell->GetInnerSize();
-  if (presContext->GetDynamicToolbarState() == DynamicToolbarState::Collapsed) {
-    innerSize =
-        nsLayoutUtils::ExpandHeightForViewportUnits(presContext, innerSize);
+  if (pc->GetDynamicToolbarState() == DynamicToolbarState::Collapsed) {
+    innerSize = nsLayoutUtils::ExpandHeightForViewportUnits(pc, innerSize);
   }
 
   aSize = CSSPixel::FromAppUnits(innerSize);
@@ -5148,10 +5148,11 @@ Nullable<WindowProxyHolder> nsGlobalWindowOuter::Print(
     // which case this is the second print with this static document clone that
     // we created the first time through, and we are responsible for cleaning it
     // up. There's also an exception if we're directly using the system print
-    // dialog rather than our preview panel, because in this case the preview
-    // will not take care of cleaning up the cloned doc.
-    closeWindowAfterPrint =
-        usingCachedBrowsingContext || StaticPrefs::print_prefer_system_dialog();
+    // dialog or silent printing, rather than our preview panel, because in this
+    // case the preview will not take care of cleaning up the cloned doc.
+    closeWindowAfterPrint = usingCachedBrowsingContext ||
+                            StaticPrefs::print_prefer_system_dialog() ||
+                            StaticPrefs::print_always_print_silent();
   } else {
     // In this case the document was not a static clone, so we made a static
     // clone for printing purposes and must clean it up after the print is done.

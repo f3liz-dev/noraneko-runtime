@@ -337,12 +337,31 @@ class HEVCChangeMonitor : public MediaChangeMonitor::CodecChangeMonitor {
         aSample->mKeyframe || !mSPS.IsEmpty()
             ? H265::ExtractHVCCExtraData(aSample)
             : nullptr;
+    if (!extraData || extraData->IsEmpty()) {
+      // No inband parameter set in sample bitstream. Try out-of-band extradata.
+      auto sampleConfig = HVCCConfig::Parse(aSample->mExtraData);
+      if (sampleConfig.isOk()) {
+        if (!mPreviousExtraData) {
+          // First sample w/ out-of-band extradata, store it so that we can
+          // check for future change.
+          mPreviousExtraData = aSample->mExtraData;
+          return NS_OK;
+        } else if (!H265::CompareExtraData(aSample->mExtraData,
+                                           mPreviousExtraData)) {
+          extraData = aSample->mExtraData;
+        }
+      }
+    }
     // Sample doesn't contain any SPS and we already have SPS, do nothing.
     auto curConfig = HVCCConfig::Parse(mCurrentConfig.mExtraData);
     if ((!extraData || extraData->IsEmpty()) && curConfig.unwrap().HasSPS()) {
+      LOG("No SPS in sample. Use existing config");
       return NS_OK;
     }
 
+    // Store the sample's extradata so we don't trigger a false positive
+    // with the out-of-band test on the next sample.
+    mPreviousExtraData = aSample->mExtraData;
     auto rv = HVCCConfig::Parse(extraData);
     // Ignore a corrupted extradata.
     if (rv.isErr()) {
@@ -508,6 +527,9 @@ class HEVCChangeMonitor : public MediaChangeMonitor::CodecChangeMonitor {
   // information for decoding, as some decoders, such as MediaEngine, require
   // SPS/PPS to be appended during the clearlead-to-encrypted transition.
   bool mReceivedFirstEncryptedSample = false;
+  // Hold the most recent out-of-band extradata to check for unneccesary
+  // config change.
+  RefPtr<MediaByteBuffer> mPreviousExtraData;
 };
 
 class VPXChangeMonitor : public MediaChangeMonitor::CodecChangeMonitor {
@@ -1200,7 +1222,7 @@ MediaResult MediaChangeMonitor::CreateDecoderAndInit(MediaRawData* aSample) {
                         return;
                       }
 
-                      mDecodePromise.Reject(
+                      mDecodePromise.RejectIfExists(
                           MediaResult(
                               aError.Code(),
                               RESULT_DETAIL("Unable to initialize decoder")),
@@ -1215,7 +1237,7 @@ MediaResult MediaChangeMonitor::CreateDecoderAndInit(MediaRawData* aSample) {
               mFlushPromise.Reject(aError, __func__);
               return;
             }
-            mDecodePromise.Reject(
+            mDecodePromise.RejectIfExists(
                 MediaResult(NS_ERROR_DOM_MEDIA_FATAL_ERR,
                             RESULT_DETAIL("Unable to create decoder")),
                 __func__);
@@ -1259,12 +1281,12 @@ void MediaChangeMonitor::DecodeFirstSample(MediaRawData* aSample) {
           [self, this](MediaDataDecoder::DecodedData&& aResults) {
             mDecodePromiseRequest.Complete();
             mPendingFrames.AppendElements(std::move(aResults));
-            mDecodePromise.Resolve(std::move(mPendingFrames), __func__);
+            mDecodePromise.ResolveIfExists(std::move(mPendingFrames), __func__);
             mPendingFrames = DecodedData();
           },
           [self, this](const MediaResult& aError) {
             mDecodePromiseRequest.Complete();
-            mDecodePromise.Reject(aError, __func__);
+            mDecodePromise.RejectIfExists(aError, __func__);
           })
       ->Track(mDecodePromiseRequest);
 }
@@ -1323,7 +1345,7 @@ void MediaChangeMonitor::DrainThenFlushDecoder(MediaRawData* aPendingSample) {
               mFlushPromise.Reject(aError, __func__);
               return;
             }
-            mDecodePromise.Reject(aError, __func__);
+            mDecodePromise.RejectIfExists(aError, __func__);
           })
       ->Track(mDrainRequest);
 }
@@ -1367,7 +1389,7 @@ void MediaChangeMonitor::FlushThenShutdownDecoder(
                         return;
                       }
                       MOZ_ASSERT(NS_FAILED(rv));
-                      mDecodePromise.Reject(rv, __func__);
+                      mDecodePromise.RejectIfExists(rv, __func__);
                       return;
                     },
                     [] { MOZ_CRASH("Can't reach here'"); })
@@ -1380,7 +1402,7 @@ void MediaChangeMonitor::FlushThenShutdownDecoder(
               mFlushPromise.Reject(aError, __func__);
               return;
             }
-            mDecodePromise.Reject(aError, __func__);
+            mDecodePromise.RejectIfExists(aError, __func__);
           })
       ->Track(mFlushRequest);
 }
