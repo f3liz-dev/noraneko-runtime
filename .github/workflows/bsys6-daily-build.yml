@@ -178,6 +178,16 @@ jobs:
           name: noraneko-macos-aarch64-moz-artifact
           path: .github/bsys6/*.dmg
 
+      - name: Copy update framework artifacts
+        run: |
+          cp ./obj-aarch64-apple-darwin/dist/noraneko*update_framework_artifacts.zip \
+             ./noraneko-macOS.update_framework_artifacts.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: noraneko-macos-aarch64-update-framework-artifacts
+          path: ./noraneko-macOS.update_framework_artifacts.zip
+
   generate-pgo-profile:
     name: Linux x86_64 PGO Stage 2
     if: ${{ inputs.pgo == true && github.event_name != 'push' }}

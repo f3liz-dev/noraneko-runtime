@@ -108,3 +108,16 @@ jobs:
             .github/bsys6/*.tar.xz
             .github/bsys6/*.zip
             .github/bsys6/*.dmg
+
+      - name: Copy update framework artifacts
+        if: ${{ inputs.platform == 'macos' && inputs.arch == 'aarch64' }}
+        run: |
+          cp ./obj-aarch64-apple-darwin/dist/noraneko*update_framework_artifacts.zip \
+             ./noraneko-macOS.update_framework_artifacts.zip
+
+      - name: Upload update framework artifacts
+        if: ${{ inputs.platform == 'macos' && inputs.arch == 'aarch64' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: noraneko-macos-aarch64-update-framework-artifacts
+          path: ./noraneko-macOS.update_framework_artifacts.zip
