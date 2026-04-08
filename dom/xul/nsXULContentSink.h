@@ -3,11 +3,10 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsXULContentSink_h__
-#define nsXULContentSink_h__
+#ifndef nsXULContentSink_h_
+#define nsXULContentSink_h_
 
 #include "mozilla/WeakPtr.h"
-#include "nsIDTD.h"
 #include "nsIExpatSink.h"
 #include "nsIWeakReferenceUtils.h"
 #include "nsIXMLContentSink.h"
@@ -140,4 +139,4 @@ class XULContentSinkImpl final : public nsIXMLContentSink, public nsIExpatSink {
   nsCOMPtr<nsIScriptSecurityManager> mSecMan;
 };
 
-#endif /* nsXULContentSink_h__ */
+#endif /* nsXULContentSink_h_ */

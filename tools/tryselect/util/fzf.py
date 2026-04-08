@@ -10,7 +10,6 @@ import subprocess
 import sys
 
 import mozfile
-from gecko_taskgraph.target_tasks import filter_by_uncommon_try_tasks
 from mach.util import get_state_dir
 from mozboot.util import http_download_and_save
 from mozbuild.base import MozbuildObject
@@ -317,9 +316,9 @@ def format_header():
 
 def run_fzf(cmd, tasks):
     env = dict(os.environ)
-    env.update(
-        {"PYTHONPATH": os.pathsep.join([p for p in sys.path if "requests" in p])}
-    )
+    env.update({
+        "PYTHONPATH": os.pathsep.join([p for p in sys.path if "requests" in p])
+    })
     # Make sure fzf uses Windows' shell rather than MozillaBuild bash or
     # whatever our caller uses, since it doesn't quote the arguments properly
     # and thus windows paths like: C:\moz\foo end up as C:mozfoo...
@@ -352,6 +351,8 @@ def setup_tasks_for_fzf(
     full=False,
     disable_target_task_filter=False,
 ):
+    from gecko_taskgraph.target_tasks import filter_by_uncommon_try_tasks
+
     check_working_directory(push)
     tg = generate_tasks(
         parameters, full=full, disable_target_task_filter=disable_target_task_filter

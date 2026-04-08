@@ -7,6 +7,7 @@
 //!
 //! [basic-shape]: https://drafts.csswg.org/css-shapes/#typedef-basic-shape
 
+use crate::derives::*;
 use crate::parser::{Parse, ParserContext};
 use crate::values::computed::basic_shape::InsetRect as ComputedInsetRect;
 use crate::values::computed::{
@@ -26,7 +27,7 @@ use crate::values::specified::PositionComponent;
 use crate::values::specified::{LengthPercentage, NonNegativeLengthPercentage, SVGPathData};
 use crate::values::CSSFloat;
 use crate::Zero;
-use cssparser::Parser;
+use cssparser::{match_ignore_ascii_case, Parser};
 use std::fmt::{self, Write};
 use style_traits::{CssWriter, ParseError, StyleParseErrorKind, ToCss};
 
@@ -193,6 +194,8 @@ bitflags! {
         /// For shape-outside.
         const SHAPE_OUTSIDE =
             Self::INSET.bits() |
+            Self::XYWH.bits() |
+            Self::RECT.bits() |
             Self::CIRCLE.bits() |
             Self::ELLIPSE.bits() |
             Self::POLYGON.bits();

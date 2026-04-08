@@ -14,7 +14,10 @@ use wgt::error::{ErrorType, WebGpuError};
 
 pub use crate::pipeline_cache::PipelineCacheValidationError;
 use crate::{
-    binding_model::{CreateBindGroupLayoutError, CreatePipelineLayoutError, PipelineLayout},
+    binding_model::{
+        BindGroupLayout, CreateBindGroupLayoutError, CreatePipelineLayoutError,
+        GetBindGroupLayoutError, PipelineLayout,
+    },
     command::ColorAttachmentError,
     device::{Device, DeviceError, MissingDownlevelFlags, MissingFeatures, RenderPassContext},
     id::{PipelineCacheId, PipelineLayoutId, ShaderModuleId},
@@ -89,11 +92,11 @@ impl ShaderModule {
 
     pub(crate) fn finalize_entry_point_name(
         &self,
-        stage_bit: wgt::ShaderStages,
+        stage: naga::ShaderStage,
         entry_point: Option<&str>,
     ) -> Result<String, validation::StageError> {
         match &self.interface {
-            Some(interface) => interface.finalize_entry_point_name(stage_bit, entry_point),
+            Some(interface) => interface.finalize_entry_point_name(stage, entry_point),
             None => entry_point
                 .map(|ep| ep.to_string())
                 .ok_or(validation::StageError::NoEntryPointFound),
@@ -300,6 +303,17 @@ crate::impl_trackable!(ComputePipeline);
 impl ComputePipeline {
     pub(crate) fn raw(&self) -> &dyn hal::DynComputePipeline {
         self.raw.as_ref()
+    }
+
+    pub fn get_bind_group_layout(
+        self: &Arc<Self>,
+        index: u32,
+    ) -> Result<Arc<BindGroupLayout>, GetBindGroupLayoutError> {
+        self.layout
+            .bind_group_layouts
+            .get(index as usize)
+            .cloned()
+            .ok_or(GetBindGroupLayoutError::InvalidGroupIndex(index))
     }
 }
 
@@ -617,6 +631,8 @@ pub enum ColorStateError {
 pub enum DepthStencilStateError {
     #[error("Format {0:?} is not renderable")]
     FormatNotRenderable(wgt::TextureFormat),
+    #[error("Format {0:?} is not a depth/stencil format")]
+    FormatNotDepthOrStencil(wgt::TextureFormat),
     #[error("Format {0:?} does not have a depth aspect, but depth test/write is enabled")]
     FormatNotDepth(wgt::TextureFormat),
     #[error("Format {0:?} does not have a stencil aspect, but stencil test/write is enabled")]
@@ -822,5 +838,16 @@ crate::impl_trackable!(RenderPipeline);
 impl RenderPipeline {
     pub(crate) fn raw(&self) -> &dyn hal::DynRenderPipeline {
         self.raw.as_ref()
+    }
+
+    pub fn get_bind_group_layout(
+        self: &Arc<Self>,
+        index: u32,
+    ) -> Result<Arc<BindGroupLayout>, GetBindGroupLayoutError> {
+        self.layout
+            .bind_group_layouts
+            .get(index as usize)
+            .cloned()
+            .ok_or(GetBindGroupLayoutError::InvalidGroupIndex(index))
     }
 }

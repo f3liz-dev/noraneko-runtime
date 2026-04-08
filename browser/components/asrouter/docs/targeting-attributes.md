@@ -48,6 +48,7 @@ Please note that some targeting attributes require stricter controls on the tele
 * [hasSelectableProfiles](#hasselectableprofiles)
 * [homePageSettings](#homepagesettings)
 * [isBackgroundTaskMode](#isbackgroundtaskmode)
+* [isAIWindow](#isaiwindow)
 * [isChinaRepack](#ischinarepack)
 * [isDefaultBrowser](#isdefaultbrowser)
 * [isDefaultBrowserUncached](#isdefaultbrowseruncached)
@@ -58,7 +59,9 @@ Please note that some targeting attributes require stricter controls on the tele
 * [isFxASignedIn](#isfxasignedin)
 * [isMajorUpgrade](#ismajorupgrade)
 * [isMSIX](#ismsix)
+* [isPrivateWindow](#isprivatewindow)
 * [isRTAMO](#isrtamo)
+* [isSmartWindowOnboarding](#issmartwindowonboarding)
 * [unhandledCampaignAction](#unhandledCampaignAction)
 * [launchOnLoginEnabled](#launchonloginenabled)
 * [locale](#locale)
@@ -85,6 +88,7 @@ Please note that some targeting attributes require stricter controls on the tele
 * [searchEngines](#searchengines)
 * [sync](#sync)
 * [systemArch](#systemarch)
+* [tabNotesCount](#tabnotescount)
 * [topFrecentSites](#topfrecentsites)
 * [totalBlockedCount](#totalblockedcount)
 * [totalBookmarksCount](#totalbookmarkscount)
@@ -855,6 +859,36 @@ actually emit from tabs, this is always true. For other triggers, like
 declare const browserIsSelected: boolean;
 ```
 
+### `isAIWindow`
+
+A context property included for all triggers that evaluates to `true` when the
+message comes from an AI Window, and `false` otherwise.
+
+#### Definition
+
+```ts
+declare const isAIWindow: boolean;
+```
+
+#### Examples
+
+* Target AI Windows only:
+```javascript
+isAIWindow
+```
+
+* Target Classic Windows only:
+```javascript
+!isAIWindow
+```
+
+* Target both AI Windows and Classic Windows:
+```javascript
+isAIWindow == isAIWindow
+or equivalently
+(isAIWindow || !isAIWindow)
+```
+
 ### `isChinaRepack`
 
 Does the user use [the partner repack distributed by Mozilla Online](https://github.com/mozilla-partners/mozillaonline),
@@ -1118,6 +1152,10 @@ A boolean. `true` if the user is configured to use the embedded Migration Wizard
 
 A boolean. `true` when [RTAMO](first-run.md#return-to-amo-rtamo) has been used to download Firefox, `false` otherwise.
 
+### `isPrivateWindow`
+
+A boolean. `true` when the current active content window is in Private Browsing Mode; `false` otherwise.
+
 ### `canCreateSelectableProfiles`
 
 A boolean. `true` when both the current install and current profile support creating additional profiles using the `SelectableProfileService`; `false` otherwise.
@@ -1156,6 +1194,17 @@ The architecture of this Firefox build: x86, x86-64 or aarch64.
 ```ts
 declare const systemArch: string | null;
 ```
+
+### `tabNotesCount`
+
+The total number of tab notes the user has stored in their current profile.
+
+#### Definition
+
+```ts
+declare const tabNotesCount: Promise<number>;
+```
+
 
 ### `totalSearches`
 
@@ -1205,3 +1254,7 @@ Indicates whether the restore function is enabled by BackupService.
 ### `isEncryptedBackup`
 
 Indicates whether a user has selected an encrypted or non-encrypted backup method during the spotlight onboarding flow. (Refers to the `messaging-system-action.backupChooser` pref.)
+
+### `isSmartWindowOnboarding`
+
+A boolean. `true` when a user downloads Firefox from a Smart Window marketing campaign (ie. `attributionData.campaign == "smart_window"`), `false` otherwise.

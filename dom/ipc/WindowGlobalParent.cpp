@@ -34,6 +34,8 @@
 #include "mozilla/dom/ContentParent.h"
 #include "mozilla/dom/DOMException.h"
 #include "mozilla/dom/DOMExceptionBinding.h"
+#include "mozilla/dom/DigitalCredential.h"
+#include "mozilla/dom/DigitalCredentialParent.h"
 #include "mozilla/dom/IdentityCredential.h"
 #include "mozilla/dom/InProcessParent.h"
 #include "mozilla/dom/JSActorService.h"
@@ -100,6 +102,7 @@ WindowGlobalParent::WindowGlobalParent(
     uint64_t aOuterWindowId, FieldValues&& aInit)
     : WindowContext(aBrowsingContext, aInnerWindowId, aOuterWindowId,
                     std::move(aInit)),
+      mIsUncommittedInitialDocument(false),
       mSandboxFlags(0),
       mDocumentHasLoaded(false),
       mDocumentHasUserInteracted(false),
@@ -127,6 +130,7 @@ already_AddRefed<WindowGlobalParent> WindowGlobalParent::CreateDisconnected(
   wgp->mDocumentPrincipal = aInit.principal();
   wgp->mDocumentURI = aInit.documentURI();
   wgp->mIsInitialDocument = Some(aInit.isInitialDocument());
+  wgp->mIsUncommittedInitialDocument = aInit.isUncommittedInitialDocument();
   wgp->mBlockAllMixedContent = aInit.blockAllMixedContent();
   wgp->mUpgradeInsecureRequests = aInit.upgradeInsecureRequests();
   wgp->mSandboxFlags = aInit.sandboxFlags();
@@ -415,7 +419,7 @@ IPCResult WindowGlobalParent::RecvUpdateDocumentURI(NotNull<nsIURI*> aURI) {
                     "principal URI");
   }
 
-  mDocumentURI = aURI;
+  mDocumentURI = std::move(aURI);
   return IPC_OK();
 }
 
@@ -551,15 +555,10 @@ IPCResult WindowGlobalParent::RecvDestroy() {
   return IPC_OK();
 }
 
-IPCResult WindowGlobalParent::RecvRawMessage(
-    const JSActorMessageMeta& aMeta, JSIPCValue&& aData,
-    const UniquePtr<ClonedMessageData>& aStack) {
-  UniquePtr<StructuredCloneData> stack;
-  if (aStack) {
-    stack = MakeUnique<StructuredCloneData>();
-    stack->BorrowFromClonedMessageData(*aStack);
-  }
-  ReceiveRawMessage(aMeta, std::move(aData), std::move(stack));
+IPCResult WindowGlobalParent::RecvRawMessage(const JSActorMessageMeta& aMeta,
+                                             JSIPCValue&& aData,
+                                             StructuredCloneData* aStack) {
+  ReceiveRawMessage(aMeta, std::move(aData), aStack);
   return IPC_OK();
 }
 
@@ -577,9 +576,7 @@ void WindowGlobalParent::NotifyContentBlockingEvent(
     const nsTArray<nsCString>& aTrackingFullHashes,
     const Maybe<ContentBlockingNotifier::StorageAccessPermissionGrantedReason>&
         aReason,
-    const Maybe<ContentBlockingNotifier::CanvasFingerprinter>&
-        aCanvasFingerprinter,
-    const Maybe<bool> aCanvasFingerprinterKnownText) {
+    const Maybe<CanvasFingerprintingEvent>& aCanvasFingerprintingEvent) {
   MOZ_ASSERT(NS_IsMainThread());
   DebugOnly<bool> isCookiesBlocked =
       aEvent == nsIWebProgressListener::STATE_COOKIES_BLOCKED_TRACKER ||
@@ -598,7 +595,7 @@ void WindowGlobalParent::NotifyContentBlockingEvent(
 
   Maybe<uint32_t> event = GetContentBlockingLog()->RecordLogParent(
       aTrackingOrigin, aEvent, aBlocked, aReason, aTrackingFullHashes,
-      aCanvasFingerprinter, aCanvasFingerprinterKnownText);
+      aCanvasFingerprintingEvent);
 
   // Notify the OnContentBlockingEvent if necessary.
   if (event) {
@@ -1656,12 +1653,8 @@ void WindowGlobalParent::ActorDestroy(ActorDestroyReason aWhy) {
         GetContentBlockingLog()->ReportLog();
 
         if (mDocumentURI && net::SchemeIsHttpOrHttps(mDocumentURI)) {
-          bool incrementedTopLevelContentDocumentsDestroyed =
-              pageUseCounterResult.contains(
-                  PageUseCounterResultBits::DATA_RECEIVED);
           GetContentBlockingLog()->ReportCanvasFingerprintingLog(
-              DocumentPrincipal(),
-              incrementedTopLevelContentDocumentsDestroyed);
+              DocumentPrincipal());
           GetContentBlockingLog()->ReportFontFingerprintingLog(
               DocumentPrincipal());
           GetContentBlockingLog()->ReportEmailTrackingLog(DocumentPrincipal());
@@ -1845,6 +1838,11 @@ WindowGlobalParent::AllocPWebAuthnTransactionParent() {
 already_AddRefed<PWebIdentityParent>
 WindowGlobalParent::AllocPWebIdentityParent() {
   return MakeAndAddRef<WebIdentityParent>();
+}
+
+already_AddRefed<PDigitalCredentialParent>
+WindowGlobalParent::AllocPDigitalCredentialParent() {
+  return MakeAndAddRef<DigitalCredentialParent>();
 }
 
 NS_IMPL_CYCLE_COLLECTION_CLASS(WindowGlobalParent)

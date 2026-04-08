@@ -144,11 +144,11 @@ using namespace dom;
 using namespace widget;
 
 using EmptyCheckOption = HTMLEditUtils::EmptyCheckOption;
-using LeafNodeType = HTMLEditUtils::LeafNodeType;
-using LeafNodeTypes = HTMLEditUtils::LeafNodeTypes;
-using WalkTreeOption = HTMLEditUtils::WalkTreeOption;
+using LeafNodeOption = HTMLEditUtils::LeafNodeOption;
 
 static LazyLogModule gEventLog("EditorEvent");
+static LazyLogModule gHTMLEditorEditActionStartLog("HTMLEditorEditActionStart");
+
 LazyLogModule gTextInputLog("EditorTextInput");
 
 /*****************************************************************************
@@ -1928,7 +1928,6 @@ nsresult EditorBase::PasteAsAction(nsIClipboard::ClipboardType aClipboardType,
       // This method is not set up to pass back the new aDataTransfer
       // if it changes. If we need this in the future, we can change
       // aDataTransfer to be a RefPtr<DataTransfer>*.
-      MOZ_ASSERT(!aDataTransfer);
       AutoTrackDataTransferForPaste trackDataTransfer(*this, dataTransfer);
 
       ret = DispatchClipboardEventAndUpdateClipboard(
@@ -2894,13 +2893,26 @@ void EditorBase::DispatchInputEvent() {
     return;
   }
   RefPtr<DataTransfer> dataTransfer = GetInputEventDataTransfer();
+  const EditAction editAction = GetEditAction();
+  if (editAction == EditAction::eCancelComposition ||
+      editAction == EditAction::eCommitComposition) {
+    MOZ_ASSERT(!mComposition);
+    if (MOZ_UNLIKELY(!CanDispatchInputEventAfterCompositionEnd())) {
+      MOZ_LOG(gEventLog, LogLevel::Info,
+              ("%p %s: Blocked to dispatch \"input\" event immediately after "
+               "eCompositionEnd",
+               this, mIsHTMLEditorClass ? "HTMLEditor" : "TextEditor"));
+      return;
+    }
+  }
+  const EditorInputType inputType = ToInputType(editAction);
   mEditActionData->WillDispatchInputEvent();
   MOZ_LOG(gEventLog, LogLevel::Info,
           ("%p %s: Dispatching \"input\" event: { inputType=\"%s\" }...", this,
            mIsHTMLEditorClass ? "HTMLEditor" : "TextEditor",
-           ToString(ToInputType(GetEditAction())).c_str()));
+           ToString(inputType).c_str()));
   DebugOnly<nsresult> rvIgnored = nsContentUtils::DispatchInputEvent(
-      targetElement, eEditorInput, ToInputType(GetEditAction()), this,
+      targetElement, eEditorInput, inputType, this,
       dataTransfer ? InputEventOptions(dataTransfer,
                                        InputEventOptions::NeverCancelable::No)
                    : InputEventOptions(GetInputEventData(),
@@ -2908,7 +2920,7 @@ void EditorBase::DispatchInputEvent() {
   MOZ_LOG(gEventLog, LogLevel::Debug,
           ("%p %s: Dispatched \"input\" event: { inputType=\"%s\" }", this,
            mIsHTMLEditorClass ? "HTMLEditor" : "TextEditor",
-           ToString(ToInputType(GetEditAction())).c_str()));
+           ToString(inputType).c_str()));
   mEditActionData->DidDispatchInputEvent();
   NS_WARNING_ASSERTION(
       NS_SUCCEEDED(rvIgnored),
@@ -4153,8 +4165,10 @@ nsresult EditorBase::OnCompositionChange(
   // NOTE: When the pref is enabled, the last `input` event which will be fired
   // after `compositionend` won't be paired with corresponding `beforeinput`
   // event.
-  else if (StaticPrefs::dom_input_events_dispatch_before_compositionend() &&
-           mDispatchInputEvent && !IsEditActionAborted()) {
+  else if (MOZ_LIKELY(
+               StaticPrefs::dom_input_events_dispatch_before_compositionend() &&
+               mDispatchInputEvent && !IsEditActionAborted() &&
+               CanDispatchInputEventBeforeCompositionEnd())) {
     DispatchInputEvent();
   }
 
@@ -4260,6 +4274,56 @@ void EditorBase::OnCompositionEnd(
   //      change and does not make sense.  See spec issue:
   //      https://github.com/w3c/uievents/issues/202
   NotifyEditorObservers(eNotifyEditorObserversOfEnd);
+}
+
+bool EditorBase::CanDispatchInputEventBeforeCompositionEnd() const {
+  Document* const doc = GetDocument();
+  if (NS_WARN_IF(!doc)) {
+    return false;
+  }
+  nsIPrincipal* const principal = doc->GetPrincipalForPrefBasedHacks();
+  if (!principal) {
+    return true;
+  }
+  constexpr static auto* kTextEditorPref =
+      "editor.texteditor.inputevent.hack.no_dispatch_before_compositionend";
+  constexpr static auto* kTextEditorAddlPref =
+      "editor.texteditor.inputevent.hack.no_dispatch_before_compositionend."
+      "addl";
+  constexpr static auto* kHTMLEditorPref =
+      "editor.htmleditor.inputevent.hack.no_dispatch_before_compositionend";
+  constexpr static auto* kHTMLEditorAddlPref =
+      "editor.htmleditor.inputevent.hack.no_dispatch_before_compositionend."
+      "addl";
+  return !principal->IsURIInPrefList(IsTextEditor() ? kTextEditorPref
+                                                    : kHTMLEditorPref) &&
+         !principal->IsURIInPrefList(IsTextEditor() ? kTextEditorAddlPref
+                                                    : kHTMLEditorAddlPref);
+}
+
+bool EditorBase::CanDispatchInputEventAfterCompositionEnd() const {
+  Document* const doc = GetDocument();
+  if (NS_WARN_IF(!doc)) {
+    return false;
+  }
+  nsIPrincipal* const principal = doc->GetPrincipalForPrefBasedHacks();
+  if (!principal) {
+    return true;
+  }
+  constexpr static auto* kTextEditorPref =
+      "editor.texteditor.inputevent.hack.no_dispatch_after_compositionend";
+  constexpr static auto* kTextEditorAddlPref =
+      "editor.texteditor.inputevent.hack.no_dispatch_after_compositionend."
+      "addl";
+  constexpr static auto* kHTMLEditorPref =
+      "editor.htmleditor.inputevent.hack.no_dispatch_after_compositionend";
+  constexpr static auto* kHTMLEditorAddlPref =
+      "editor.htmleditor.inputevent.hack.no_dispatch_after_compositionend."
+      "addl";
+  return !principal->IsURIInPrefList(IsTextEditor() ? kTextEditorPref
+                                                    : kHTMLEditorPref) &&
+         !principal->IsURIInPrefList(IsTextEditor() ? kTextEditorAddlPref
+                                                    : kHTMLEditorAddlPref);
 }
 
 bool EditorBase::WillHandleMouseButtonEvent(WidgetMouseEvent& aMouseEvent) {
@@ -4418,14 +4482,19 @@ EditorBase::CreateTransactionForCollapsedRange(
   if (aHowToHandleCollapsedRange == HowToHandleCollapsedRange::ExtendBackward &&
       point.IsStartOfContainer()) {
     MOZ_ASSERT(IsHTMLEditor());
+    if (MOZ_UNLIKELY(!point.IsInContentNode())) {
+      NS_WARNING("There was no editable content before the collapsed range");
+      return nullptr;
+    }
     // We're backspacing from the beginning of a node.  Delete the last thing
     // of previous editable content.
-    nsIContent* previousEditableContent = HTMLEditUtils::GetPreviousContent(
-        *point.GetContainer(), {WalkTreeOption::IgnoreNonEditableNode},
+    nsIContent* previousEditableContent = HTMLEditUtils::GetPreviousLeafContent(
+        *point.ContainerAs<nsIContent>(),
+        {LeafNodeOption::IgnoreNonEditableNode},
         IsTextEditor() ? BlockInlineCheck::UseHTMLDefaultStyle
                        : BlockInlineCheck::UseComputedDisplayOutsideStyle,
         anonymousDivOrEditingHost);
-    if (!previousEditableContent) {
+    if (MOZ_UNLIKELY(!previousEditableContent)) {
       NS_WARNING("There was no editable content before the collapsed range");
       return nullptr;
     }
@@ -4468,14 +4537,19 @@ EditorBase::CreateTransactionForCollapsedRange(
   if (aHowToHandleCollapsedRange == HowToHandleCollapsedRange::ExtendForward &&
       point.IsEndOfContainer()) {
     MOZ_ASSERT(IsHTMLEditor());
+    if (MOZ_UNLIKELY(!point.IsInContentNode())) {
+      NS_WARNING("There was no editable content after the collapsed range");
+      return nullptr;
+    }
     // We're deleting from the end of a node.  Delete the first thing of
     // next editable content.
-    nsIContent* nextEditableContent = HTMLEditUtils::GetNextContent(
-        *point.GetContainer(), {WalkTreeOption::IgnoreNonEditableNode},
+    nsIContent* nextEditableContent = HTMLEditUtils::GetNextLeafContent(
+        *point.ContainerAs<nsIContent>(),
+        {LeafNodeOption::IgnoreNonEditableNode},
         IsTextEditor() ? BlockInlineCheck::UseHTMLDefaultStyle
                        : BlockInlineCheck::UseComputedDisplayOutsideStyle,
         anonymousDivOrEditingHost);
-    if (!nextEditableContent) {
+    if (MOZ_UNLIKELY(!nextEditableContent)) {
       NS_WARNING("There was no editable content after the collapsed range");
       return nullptr;
     }
@@ -4539,12 +4613,12 @@ EditorBase::CreateTransactionForCollapsedRange(
   if (IsHTMLEditor()) {
     editableContent =
         aHowToHandleCollapsedRange == HowToHandleCollapsedRange::ExtendBackward
-            ? HTMLEditUtils::GetPreviousContent(
-                  point, {WalkTreeOption::IgnoreNonEditableNode},
+            ? HTMLEditUtils::GetPreviousLeafContent(
+                  point, {LeafNodeOption::IgnoreNonEditableNode},
                   BlockInlineCheck::UseComputedDisplayOutsideStyle,
                   anonymousDivOrEditingHost)
-            : HTMLEditUtils::GetNextContent(
-                  point, {WalkTreeOption::IgnoreNonEditableNode},
+            : HTMLEditUtils::GetNextLeafContent(
+                  point, {LeafNodeOption::IgnoreNonEditableNode},
                   BlockInlineCheck::UseComputedDisplayOutsideStyle,
                   anonymousDivOrEditingHost);
     if (!editableContent) {
@@ -4557,12 +4631,12 @@ EditorBase::CreateTransactionForCollapsedRange(
       editableContent =
           aHowToHandleCollapsedRange ==
                   HowToHandleCollapsedRange::ExtendBackward
-              ? HTMLEditUtils::GetPreviousContent(
-                    *editableContent, {WalkTreeOption::IgnoreNonEditableNode},
+              ? HTMLEditUtils::GetPreviousLeafContent(
+                    *editableContent, {LeafNodeOption::IgnoreNonEditableNode},
                     BlockInlineCheck::UseComputedDisplayOutsideStyle,
                     anonymousDivOrEditingHost)
-              : HTMLEditUtils::GetNextContent(
-                    *editableContent, {WalkTreeOption::IgnoreNonEditableNode},
+              : HTMLEditUtils::GetNextLeafContent(
+                    *editableContent, {LeafNodeOption::IgnoreNonEditableNode},
                     BlockInlineCheck::UseComputedDisplayOutsideStyle,
                     anonymousDivOrEditingHost);
     }
@@ -4799,7 +4873,17 @@ nsresult EditorBase::DeleteSelectionAsSubAction(
     Result<EditActionResult, nsresult> result =
         HandleDeleteSelection(aDirectionAndAmount, aStripWrappers);
     if (MOZ_UNLIKELY(result.isErr())) {
-      NS_WARNING("TextEditor::HandleDeleteSelection() failed");
+      // If HTMLEditor::HandleDeleteSelection() returns "no editable range"
+      // error and the range is collapsed and the deletion is a preparation for
+      // inserting something, we wan't to keep handling the insertion without
+      // error.
+      if (result.inspectErr() == NS_ERROR_EDITOR_NO_DELETABLE_RANGE &&
+          GetTopLevelEditSubAction() != EditSubAction::eDeleteSelectedContent) {
+        return NS_OK;
+      }
+      NS_WARNING(nsPrintfCString("%s::HandleDeleteSelection() failed",
+                                 IsTextEditor() ? "TextEditor" : "HTMLEditor")
+                     .get());
       return result.unwrapErr();
     }
     if (result.inspect().Canceled()) {
@@ -6583,6 +6667,7 @@ EditorBase::AutoEditActionDataSetter::AutoEditActionDataSetter(
     mSelection = mParentData->mSelection;
     MOZ_ASSERT(!mSelection ||
                (mSelection->GetType() == SelectionType::eNormal));
+    mTextNode = mParentData->mTextNode;
 
     // If we're not editing something, we should inherit the parent's edit
     // action. This may occur if creator or its callee use public methods which
@@ -6614,6 +6699,16 @@ EditorBase::AutoEditActionDataSetter::AutoEditActionDataSetter(
     if (NS_WARN_IF(!mSelection)) {
       return;
     }
+    // Although we shouldn't have had the cached Text yet because we're the
+    // topmost instance of AutoEditActionDataSetter and we'll register this to
+    // aEditorBase below.  However, for clarifying, let's explicitly ignore the
+    // cached Text.  Additionally, this may be called for initializing
+    // aEditorBase too.  Therefore, we need to avoid the assertions in
+    // GetTextNode() so that we need to check whether the editor is initialized.
+    mTextNode = mEditorBase.IsTextEditor() && mEditorBase.mInitSucceeded
+                    ? mEditorBase.AsTextEditor()->GetTextNode(
+                          TextEditor::IgnoreTextNodeCache::Yes)
+                    : nullptr;
 
     MOZ_ASSERT(mSelection->GetType() == SelectionType::eNormal);
 
@@ -6629,6 +6724,39 @@ EditorBase::AutoEditActionDataSetter::AutoEditActionDataSetter(
     }
   }
   mEditorBase.mEditActionData = this;
+
+  if (aEditorBase.IsHTMLEditor() &&
+      MOZ_LOG_TEST(gHTMLEditorEditActionStartLog, LogLevel::Info) &&
+      aEditAction != EditAction::eNone &&
+      aEditAction != EditAction::eNotEditing &&
+      aEditAction != EditAction::eInitializing) {
+    const HTMLEditor& htmlEditor = *aEditorBase.AsHTMLEditor();
+    Element* const editingHost =
+        htmlEditor.ComputeEditingHost(HTMLEditor::LimitInBodyElement::No);
+    nsAutoString innerHTML;
+    if (editingHost) {
+      editingHost->GetInnerHTML(innerHTML, IgnoreErrors());
+      innerHTML.ReplaceSubstring(u"\n", u"\\n");
+      innerHTML.ReplaceSubstring(u"\r", u"\\r");
+      innerHTML.ReplaceSubstring(u"\t", u"\\t");
+      innerHTML.ReplaceSubstring(u"\f", u"\\f");
+      innerHTML.ReplaceSubstring(u"\u00A0", u"&nbsp;");
+    }
+    MOZ_ASSERT(mSelection);
+    MOZ_LOG(
+        gHTMLEditorEditActionStartLog, LogLevel::Info,
+        ("%s\nediting host: %s\ninnerHTML: \"%s\"\nselection range "
+         "count: %u",
+         ToString(aEditAction).c_str(), ToString(RefPtr{editingHost}).c_str(),
+         NS_ConvertUTF16toUTF8(innerHTML).get(), mSelection->RangeCount()));
+    for (const uint32_t index : IntegerRange(mSelection->RangeCount())) {
+      nsRange* const range = mSelection->GetRangeAt(index);
+      MOZ_ASSERT(range);
+      EditorRawDOMRange editorRange(*range);
+      MOZ_LOG(gHTMLEditorEditActionStartLog, LogLevel::Info,
+              ("getRangeAt(%u): %s", index, ToString(editorRange).c_str()));
+    }
+  }
 }
 
 EditorBase::AutoEditActionDataSetter::~AutoEditActionDataSetter() {
@@ -6644,6 +6772,19 @@ EditorBase::AutoEditActionDataSetter::~AutoEditActionDataSetter() {
           (!mTopLevelEditSubActionData.mSelectedRange->mStartContainer &&
            !mTopLevelEditSubActionData.mSelectedRange->mEndContainer),
       "mTopLevelEditSubActionData.mSelectedRange should've been cleared");
+}
+
+void EditorBase::AutoEditActionDataSetter::OnEditorInitialized() {
+  if (mEditorWasDestroyedDuringHandlingEditAction) {
+    mEditorWasReinitialized = true;
+  }
+  if (mEditorBase.IsTextEditor()) {
+    mTextNode = mEditorBase.AsTextEditor()->GetTextNode(
+        TextEditor::IgnoreTextNodeCache::Yes);
+  }
+  if (mParentData) {
+    mParentData->OnEditorInitialized();
+  }
 }
 
 void EditorBase::AutoEditActionDataSetter::UpdateSelectionCache(

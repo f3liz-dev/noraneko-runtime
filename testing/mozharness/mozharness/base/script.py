@@ -38,8 +38,6 @@ from pathlib import Path
 from queue import Empty, Queue
 
 import mozinfo
-import six
-from six import binary_type
 
 from mozharness.base.config import BaseConfig
 from mozharness.base.log import (
@@ -390,7 +388,7 @@ class ScriptMixin(PlatformMixin):
         for ffrec in win32api.FindFiles("\\\\?\\" + path + "\\*.*"):
             file_attr = ffrec[0]
             name = ffrec[8]
-            if name == "." or name == "..":
+            if name in {".", ".."}:
                 continue
             full_name = os.path.join(path, name)
 
@@ -671,8 +669,7 @@ class ScriptMixin(PlatformMixin):
         filter_partial = functools.partial(fnmatch.filter, namelist)
         entries = itertools.chain(*map(filter_partial, extract_dirs or ["*"]))
 
-        for entry in entries:
-            yield entry
+        yield from entries
 
     def unzip(self, compressed_file, extract_to, extract_dirs="*", verbose=False):
         """This method allows to extract a zip file without writing to disk first.
@@ -1040,7 +1037,7 @@ class ScriptMixin(PlatformMixin):
             if overwrite == "clobber" or not os.path.exists(dest):
                 self.rmtree(dest)
                 shutil.copytree(src, dest)
-            elif overwrite == "no_overwrite" or overwrite == "overwrite_if_exists":
+            elif overwrite in {"no_overwrite", "overwrite_if_exists"}:
                 files = os.listdir(src)
                 for f in files:
                     abs_src_f = os.path.join(src, f)
@@ -1338,8 +1335,7 @@ class ScriptMixin(PlatformMixin):
                     )
                     time.sleep(sleeptime)
                     sleeptime = sleeptime * 2
-                    if sleeptime > max_sleeptime:
-                        sleeptime = max_sleeptime
+                    sleeptime = min(sleeptime, max_sleeptime)
 
     def query_env(
         self,
@@ -1408,7 +1404,10 @@ class ScriptMixin(PlatformMixin):
             for k, v in env.items():
                 # When run locally on Windows machines, some environment
                 # variables may be unicode.
-                env[k] = six.ensure_str(v, pref_encoding)
+                if isinstance(v, bytes):
+                    env[k] = v.decode(pref_encoding)
+                else:
+                    env[k] = str(v)
         if set_self_env:
             self.env = env
         return env
@@ -1595,12 +1594,11 @@ class ScriptMixin(PlatformMixin):
             if partial_env:
                 self.info("Using partial env: %s" % pprint.pformat(partial_env))
                 env = self.query_env(partial_env=partial_env)
+        elif hasattr(self, "previous_env") and env == self.previous_env:
+            self.info("Using env: (same as previous command)")
         else:
-            if hasattr(self, "previous_env") and env == self.previous_env:
-                self.info("Using env: (same as previous command)")
-            else:
-                self.info("Using env: %s" % pprint.pformat(env))
-                self.previous_env = env
+            self.info("Using env: %s" % pprint.pformat(env))
+            self.previous_env = env
 
         if output_parser is None:
             parser = OutputParser(
@@ -1855,7 +1853,7 @@ class ScriptMixin(PlatformMixin):
                     for line in output_lines:
                         if not line or line.isspace():
                             continue
-                        if isinstance(line, binary_type):
+                        if isinstance(line, bytes):
                             line = line.decode("utf-8")
                         self.log(" %s" % line, level=log_level)
                     output = "\n".join(output_lines)
@@ -1870,7 +1868,7 @@ class ScriptMixin(PlatformMixin):
                 for line in errors.rstrip().splitlines():
                     if not line or line.isspace():
                         continue
-                    if isinstance(line, binary_type):
+                    if isinstance(line, bytes):
                         line = line.decode("utf-8")
                     self.log(" %s" % line, level=return_level)
         elif p.returncode not in success_codes and not ignore_errors:
@@ -2092,7 +2090,7 @@ class BaseScript(ScriptMixin, LogMixin):
         **kwargs,
     ):
         self._return_code = 0
-        super(BaseScript, self).__init__()
+        super().__init__()
 
         self.log_obj = None
         self.abs_dirs = None
@@ -2188,24 +2186,15 @@ class BaseScript(ScriptMixin, LogMixin):
         # access. If the property depends upon a module which has not
         # been imported at the time the BaseScript initializer is
         # executed, this property access will result in an
-        # Exception. Until Python 3's `inspect.getattr_static` is
-        # available, the simplest approach is to ignore the specific
-        # properties which are known to cause issues. Currently
-        # adb_path and device are ignored since they require the
-        # availablity of the mozdevice package which is not guaranteed
-        # when BaseScript is called.
-        property_list = set(["adb_path", "device"])
-        if six.PY2:
-            if name in property_list:
-                item = None
-            else:
-                item = getattr(self, name)
+        # Exception. With Python 3's `inspect.getattr_static`,
+        # we can check if something is a property without accessing it,
+        # avoiding issues with properties that depend on packages that
+        # may not be available when BaseScript is initialized.
+        item = inspect.getattr_static(self, name)
+        if type(item) is property:
+            item = None
         else:
-            item = inspect.getattr_static(self, name)
-            if type(item) is property:
-                item = None
-            else:
-                item = getattr(self, name)
+            item = getattr(self, name)
         return item
 
     def _dump_config_hierarchy(self, cfg_files):
@@ -2251,7 +2240,7 @@ class BaseScript(ScriptMixin, LogMixin):
         )
         cfg_files_dump_config["not_from_cfg_file"] = not_from_file_dict
         self.action_message(
-            "Not from any config file (default_config, " "cmd line options, etc)"
+            "Not from any config file (default_config, cmd line options, etc)"
         )
         self.info(pprint.pformat(not_from_file_dict))
 
@@ -2399,16 +2388,14 @@ class BaseScript(ScriptMixin, LogMixin):
                 start = time.monotonic()
                 self.run_action(action)
                 end = time.monotonic()
-                perfherder_data["suites"].append(
-                    {
-                        "name": action,
-                        "value": end - start,
-                        "lowerIsBetter": True,
-                        "unit": "s",
-                        "shouldAlert": False,
-                        "subtests": [],
-                    }
-                )
+                perfherder_data["suites"].append({
+                    "name": action,
+                    "value": end - start,
+                    "lowerIsBetter": True,
+                    "unit": "s",
+                    "shouldAlert": False,
+                    "subtests": [],
+                })
         except Exception:
             self.fatal("Uncaught exception: %s" % traceback.format_exc())
         finally:

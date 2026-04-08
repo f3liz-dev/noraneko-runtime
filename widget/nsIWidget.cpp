@@ -313,7 +313,7 @@ nsIWidget::nsIWidget(BorderStyle aBorderStyle)
       mIsFullyOccluded(false),
       mNeedFastSnaphot(false),
       mCurrentPanGestureBelongsToSwipe(false),
-      mIsPIPWindow(false) {
+      mPiPType(PiPType::NoPiP) {
 #ifdef NOISY_WIDGET_LEAKS
   gNumWidgets++;
   printf("WIDGETS+ = %d\n", gNumWidgets);
@@ -458,7 +458,7 @@ void nsIWidget::BaseCreate(nsIWidget* aParent,
   mPopupLevel = aInitData.mPopupLevel;
   mPopupType = aInitData.mPopupHint;
   mHasRemoteContent = aInitData.mHasRemoteContent;
-  mIsPIPWindow = aInitData.mPIPWindow;
+  mPiPType = aInitData.mPiPType;
 
   mParent = aParent;
   if (mParent) {
@@ -1185,6 +1185,10 @@ class DispatchEventOnMainThread : public Runnable {
   NS_IMETHOD Run() override {
     EventType event = mInput.ToWidgetEvent(mWidget);
     mWidget->ProcessUntransformedAPZEvent(&event, mAPZResult);
+    if (event.mCallbackId.isSome()) {
+      mozilla::widget::AutoSynthesizedEventCallbackNotifier::
+          NotifySavedCallback(event.mCallbackId.ref());
+    }
     return NS_OK;
   }
 
@@ -1201,6 +1205,10 @@ NS_IMETHODIMP DispatchEventOnMainThread<MouseInput, WidgetMouseEvent>::Run() {
       "Please use DispatchEventOnMainThread<MouseInput, WidgetPointerEvent>");
   WidgetMouseEvent event = mInput.ToWidgetEvent<WidgetMouseEvent>(mWidget);
   mWidget->ProcessUntransformedAPZEvent(&event, mAPZResult);
+  if (event.mCallbackId.isSome()) {
+    mozilla::widget::AutoSynthesizedEventCallbackNotifier::NotifySavedCallback(
+        event.mCallbackId.ref());
+  }
   return NS_OK;
 }
 
@@ -1211,6 +1219,10 @@ NS_IMETHODIMP DispatchEventOnMainThread<MouseInput, WidgetPointerEvent>::Run() {
       "Please use DispatchEventOnMainThread<MouseInput, WidgetMouseEvent>");
   WidgetPointerEvent event = mInput.ToWidgetEvent<WidgetPointerEvent>(mWidget);
   mWidget->ProcessUntransformedAPZEvent(&event, mAPZResult);
+  if (event.mCallbackId.isSome()) {
+    mozilla::widget::AutoSynthesizedEventCallbackNotifier::NotifySavedCallback(
+        event.mCallbackId.ref());
+  }
   return NS_OK;
 }
 
@@ -1232,6 +1244,10 @@ class DispatchInputOnControllerThread : public Runnable {
     APZEventResult result = mAPZC->InputBridge()->ReceiveInputEvent(mInput);
     if (mAPZOnly == APZOnly::Yes ||
         result.GetStatus() == nsEventStatus_eConsumeNoDefault) {
+      if (mInput.mCallbackId.isSome()) {
+        mozilla::widget::AutoSynthesizedEventCallbackNotifier::
+            NotifySavedCallback(mInput.mCallbackId.ref());
+      }
       return NS_OK;
     }
     RefPtr<Runnable> r = new DispatchEventOnMainThread<InputType, EventType>(
@@ -1331,6 +1347,7 @@ nsIWidget::ContentAndAPZEventStatus nsIWidget::DispatchInputEvent(
             new DispatchInputOnControllerThread<ScrollWheelInput,
                                                 WidgetWheelEvent>(*wheelEvent,
                                                                   mAPZC, this);
+        wheelEvent->mCallbackId.reset();
         APZThreadUtils::RunOnControllerThread(std::move(r));
         status.mContentStatus = nsEventStatus_eConsumeDoDefault;
         return status;
@@ -1340,6 +1357,7 @@ nsIWidget::ContentAndAPZEventStatus nsIWidget::DispatchInputEvent(
         RefPtr<Runnable> r =
             new DispatchInputOnControllerThread<MouseInput, WidgetPointerEvent>(
                 *pointerEvent, mAPZC, this);
+        pointerEvent->mCallbackId.reset();
         APZThreadUtils::RunOnControllerThread(std::move(r));
         status.mContentStatus = nsEventStatus_eConsumeDoDefault;
         return status;
@@ -1348,6 +1366,7 @@ nsIWidget::ContentAndAPZEventStatus nsIWidget::DispatchInputEvent(
         RefPtr<Runnable> r =
             new DispatchInputOnControllerThread<MouseInput, WidgetMouseEvent>(
                 *mouseEvent, mAPZC, this);
+        mouseEvent->mCallbackId.reset();
         APZThreadUtils::RunOnControllerThread(std::move(r));
         status.mContentStatus = nsEventStatus_eConsumeDoDefault;
         return status;
@@ -1357,6 +1376,7 @@ nsIWidget::ContentAndAPZEventStatus nsIWidget::DispatchInputEvent(
             new DispatchInputOnControllerThread<MultiTouchInput,
                                                 WidgetTouchEvent>(*touchEvent,
                                                                   mAPZC, this);
+        touchEvent->mCallbackId.reset();
         APZThreadUtils::RunOnControllerThread(std::move(r));
         status.mContentStatus = nsEventStatus_eConsumeDoDefault;
         return status;
@@ -1896,15 +1916,21 @@ void nsIWidget::NotifyWindowDestroyed() {
   }
 }
 
-void nsIWidget::NotifyWindowMoved(int32_t aX, int32_t aY,
+void nsIWidget::NotifyWindowMoved(const LayoutDeviceIntPoint& aPoint,
                                   ByMoveToRect aByMoveToRect) {
   if (mWidgetListener) {
-    mWidgetListener->WindowMoved(this, aX, aY, aByMoveToRect);
+    mWidgetListener->WindowMoved(this, aPoint, aByMoveToRect);
   }
 
   if (mIMEHasFocus && IMENotificationRequestsRef().WantPositionChanged()) {
     NotifyIME(IMENotification(IMEMessage::NOTIFY_IME_OF_POSITION_CHANGE));
   }
+}
+
+void nsIWidget::NotifyWindowMoved(const DesktopIntPoint& aPoint,
+                                  ByMoveToRect aByMoveToRect) {
+  return NotifyWindowMoved(
+      LayoutDeviceIntPoint::Round(aPoint * GetDesktopToDeviceScale()));
 }
 
 void nsIWidget::NotifySizeMoveDone() {
@@ -2311,7 +2337,7 @@ WidgetWheelEvent nsIWidget::MayStartSwipeForAPZ(
   WidgetWheelEvent event = aPanInput.ToWidgetEvent(this);
 
   // Ignore swipe-to-navigation in PiP window.
-  if (mIsPIPWindow) {
+  if (mPiPType != PiPType::NoPiP) {
     return event;
   }
 
@@ -2357,7 +2383,7 @@ WidgetWheelEvent nsIWidget::MayStartSwipeForAPZ(
 
 bool nsIWidget::MayStartSwipeForNonAPZ(const PanGestureInput& aPanInput) {
   // Ignore swipe-to-navigation in PiP window.
-  if (mIsPIPWindow) {
+  if (mPiPType != PiPType::NoPiP) {
     return false;
   }
 

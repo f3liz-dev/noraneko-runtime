@@ -17,6 +17,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
   FormAutofillNameUtils:
     "resource://gre/modules/shared/FormAutofillNameUtils.sys.mjs",
   LabelUtils: "resource://gre/modules/shared/LabelUtils.sys.mjs",
+  PhoneNumber: "resource://gre/modules/shared/PhoneNumber.sys.mjs",
   clearTimeout: "resource://gre/modules/Timer.sys.mjs",
   setTimeout: "resource://gre/modules/Timer.sys.mjs",
 });
@@ -166,6 +167,30 @@ export class FormAutofillHandler {
   }
 
   /**
+   * Replaces a field detail with a different element.
+   *
+   * @param {FieldDetail} fieldDetail
+   *        Field detail to replace.
+   * @param {Element} element
+   *        Element to replace.
+   * @returns {FieldDetail} the new field detail object.
+   */
+  #replaceFieldDetail(fieldDetail, element) {
+    let idx = this.#fieldDetails.indexOf(fieldDetail);
+    if (idx < 0) {
+      return null;
+    }
+
+    let newfd = lazy.FieldDetail.create(
+      element,
+      element.form,
+      fieldDetail.fieldName
+    );
+    this.#fieldDetails[idx] = newfd;
+    return newfd;
+  }
+
+  /**
    * Determines whether 'setIdentifiedFieldDetails' has been called and the
    * `fieldDetails` have been initialized.
    *
@@ -291,8 +316,6 @@ export class FormAutofillHandler {
    *
    * @param {formLike} formLike
    *        The form that we collect information from.
-   * @param {boolean} includeIframe
-   *        True to add <iframe> to the returned FieldDetails array.
    * @param {boolean} ignoreInvisibleInput
    *        True to NOT run heuristics on invisible <input> fields.
    *
@@ -300,22 +323,13 @@ export class FormAutofillHandler {
    *        An array containing eligible fields for autofill, also
    *        including iframe.
    */
-  static collectFormFieldDetails(
-    formLike,
-    includeIframe,
-    ignoreInvisibleInput = true
-  ) {
+  static collectFormFieldDetails(formLike, ignoreInvisibleInput = true) {
     const fieldDetails =
       lazy.FormAutofillHeuristics.getFormInfo(formLike, ignoreInvisibleInput) ??
       [];
 
     // 'FormLike' only contains <input> & <select>, so in order to include <iframe>
     // in the list of 'FieldDetails', we need to search for <iframe> in the form.
-    if (!includeIframe) {
-      return fieldDetails;
-    }
-
-    // Insert <iframe> elements into the fieldDetails array, maintaining the element order.
     const elements = formLike.rootElement.querySelectorAll("iframe");
 
     let startIndex = 0;
@@ -325,6 +339,7 @@ export class FormAutofillHandler {
       if (FormAutofillUtils.isFieldVisible(element)) {
         const iframeFd = lazy.FieldDetail.create(element, formLike, "iframe");
 
+        // Insert <iframe> elements into the fieldDetails array, maintaining the element order.
         for (let index = startIndex; index < fieldDetails.length; index++) {
           let position = element.compareDocumentPosition(
             fieldDetails[index]?.element
@@ -436,7 +451,10 @@ export class FormAutofillHandler {
         // Unlike text input, select element is always previewed even if
         // the option is already selected.
         const option = this.matchSelectOptions(fieldDetail, profile);
-        value = option?.text ?? "";
+        if (!option) {
+          continue;
+        }
+        value = option.text ?? "";
       } else {
         continue;
       }
@@ -456,26 +474,37 @@ export class FormAutofillHandler {
    *        An array of IDs for the elements that should be autofilled.
    * @param {object} profile
    *        The data profile containing the values to be autofilled into the form fields.
+   * @param {boolean} isFormChange
+   *        True if this a fill caused by a form change.
    */
-  fillFields(focusedId, elementIds, profile) {
+  fillFields(focusedId, elementIds, profile, isFormChange) {
     this.cancelRefillOnSiteClearingFieldsAction();
 
     this.#isAutofillInProgress = true;
     this.getAdaptedProfiles([profile]);
 
     const filledValuesByElement = new Map();
-    for (const fieldDetail of this.fieldDetails) {
-      const { element, elementId } = fieldDetail;
+    for (let fieldDetail of this.fieldDetails) {
+      let { element, elementId } = fieldDetail;
 
       if (
         !elementIds.includes(elementId) ||
         !FormAutofillUtils.isFieldAutofillable(element)
       ) {
-        continue;
+        if (element.isConnected) {
+          continue;
+        }
+
+        element = this.getReplacedFormElement(element);
+        if (!element) {
+          continue;
+        }
+        fieldDetail = this.#replaceFieldDetail(fieldDetail, element);
       }
 
       element.previewValue = "";
 
+      let filledValue;
       if (FormAutofillUtils.isTextControl(element)) {
         // Bug 1687679: Since profile appears to be presentation ready data, we need to utilize the "x-formatted" field
         // that is generated when presentation ready data doesn't fit into the autofilling element.
@@ -499,8 +528,16 @@ export class FormAutofillHandler {
           element.autofillState == FIELD_STATES.AUTO_FILLED
         ) {
           FormAutofillHandler.fillFieldValue(element, value);
-          this.changeFieldState(fieldDetail, FIELD_STATES.AUTO_FILLED);
-          filledValuesByElement.set(element, value);
+          filledValue = this.verifyFilledValue(
+            fieldDetail,
+            element,
+            value,
+            profile
+          );
+        } else if (isFormChange && element.value == value) {
+          // If this was a fill caused by a form change, and the value is
+          // identical to the expected filled value, highlight it anyway.
+          filledValue = value;
         }
       } else if (HTMLSelectElement.isInstance(element)) {
         const option = this.matchSelectOptions(fieldDetail, profile);
@@ -523,10 +560,12 @@ export class FormAutofillHandler {
           FormAutofillHandler.fillFieldValue(element, option.value);
         }
         // Autofill highlight appears regardless if value is changed or not
+        filledValue = option.value;
+      }
+
+      if (filledValue) {
         this.changeFieldState(fieldDetail, FIELD_STATES.AUTO_FILLED);
-        filledValuesByElement.set(element, option.value);
-      } else {
-        continue;
+        filledValuesByElement.set(element, filledValue);
       }
     }
 
@@ -591,6 +630,52 @@ export class FormAutofillHandler {
     });
   }
 
+  verifyFilledValue(fieldDetail, element, value, profile) {
+    if (fieldDetail?.fieldName != "cc-exp" || element.value == value) {
+      return value;
+    }
+
+    // Handle a case where the form uses manual input verification to limit
+    // the expiry field and takes the first two characters of the year rather
+    // than the last two.
+    const month = profile["cc-exp-month"].toString().padStart(2, "0");
+    const year = profile["cc-exp-year"].toString().padStart(4, "0");
+
+    let str = element.value;
+    let match = str.match(
+      new RegExp(`^(${month}\\s*[\\-\\/]?\\s*)${year.substring(0, 2)}\\b`)
+    );
+    if (match) {
+      element.value = match[1] + year.substring(2);
+    } else {
+      match = str.match(
+        new RegExp(`^${year.substring(0, 2)}(\\s*[\\-\\/]?\\s*${month})\\b`)
+      );
+      if (match) {
+        element.value = year.substring(2) + match[1];
+      }
+    }
+
+    return element.value;
+  }
+
+  // If an element is in a form that has been removed, check if there is an
+  // element with the same id and consider that to be a replacement element.
+  // This is done rather than using a mutation observer as an ancestor
+  // element from the form can often be the one removed, and we don't want to
+  // listen to the entire document for changes.
+  getReplacedFormElement(element) {
+    let form = element.form;
+    if (form && !form.isConnected) {
+      let newElement = element.ownerDocument.getElementById(element.id);
+      if (newElement && newElement != element) {
+        return newElement;
+      }
+    }
+
+    return null;
+  }
+
   /**
    * After a refill or clear action, the website might adjust the value of an
    * element immediately afterwards. If this happens, fill or clear the value
@@ -607,7 +692,14 @@ export class FormAutofillHandler {
 
     this.#refillTimeoutId = lazy.setTimeout(() => {
       for (let [e, v] of filledValuesByElement) {
-        if (onClear) {
+        // If the element is no longer in the document and its form was just removed, check if there
+        // is another element with the same id, as the entire form may have been replaced.
+        if (!e.isConnected && e.id && !e.form?.isConnected) {
+          e = this.getReplacedFormElement(e);
+          if (!e) {
+            continue;
+          }
+        } else if (onClear) {
           if (e.autofillState != FIELD_STATES.NORMAL || e.value !== v) {
             // Only reclear if the value was changed back to the original value.
             continue;
@@ -946,12 +1038,31 @@ export class FormAutofillHandler {
     }
 
     const cache = this.#matchingSelectOption.get(element) || {};
-    const value = profile[fieldName];
+
+    let value;
+    if (fieldName == "tel-country-code") {
+      // Since some telephone country codes are for multiple countries, search
+      // the options by the country name instead.
+      let countries = lazy.PhoneNumber.FindCountriesForCountryCode(
+        profile[fieldName]
+      );
+      if (countries.length > 1 && countries.includes(profile.country)) {
+        value = profile.country;
+      } else {
+        value = countries[0];
+      }
+    } else {
+      value = profile[fieldName];
+    }
 
     let option = cache[value]?.deref();
-
     if (!option || !option.isConnected) {
-      option = FormAutofillUtils.findSelectOption(element, profile, fieldName);
+      option = FormAutofillUtils.findSelectOption(
+        element,
+        profile,
+        fieldName,
+        value
+      );
 
       if (option) {
         cache[value] = new WeakRef(option);
@@ -1497,15 +1608,27 @@ class ProfileTransformer {
     // If a house number field exists, split the address up into house number
     // and street name.
     if (this.getFieldDetailByName("address-housenumber")) {
-      let address = lazy.AddressParser.parseStreetAddress(
-        this.getField("street-address")
-      );
-      if (address) {
-        this.setField("address-housenumber", address.street_number);
+      streetAddress = this.getField("street-address");
+      let parsedAddress = lazy.AddressParser.parseStreetAddress(streetAddress);
+      if (parsedAddress) {
         let field = this.getFieldDetailByName("address-line1")
           ? "address-line1"
           : "street-address";
-        this.setField(field, address.street_name);
+        this.setField(field, parsedAddress.street_name);
+
+        // If there is a suffix field, fill the house number prefix into the
+        // house number field and the suffix into the suffix field.
+        if (this.getFieldDetailByName("address-extra-housesuffix")) {
+          let houseNumber = this.getField("address-housenumber");
+          let suffix = this.getField("address-extra-housesuffix");
+          if (houseNumber.endsWith(suffix)) {
+            houseNumber = houseNumber.substring(
+              0,
+              houseNumber.length - suffix.length
+            );
+            this.setField("address-housenumber", houseNumber);
+          }
+        }
       }
     }
   }

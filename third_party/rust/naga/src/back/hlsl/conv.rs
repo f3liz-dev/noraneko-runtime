@@ -161,7 +161,7 @@ impl crate::BuiltIn {
             Self::FragDepth => "SV_Depth",
             Self::FrontFacing => "SV_IsFrontFace",
             Self::PrimitiveIndex => "SV_PrimitiveID",
-            Self::Barycentric => "SV_Barycentrics",
+            Self::Barycentric { .. } => "SV_Barycentrics",
             Self::SampleIndex => "SV_SampleIndex",
             Self::SampleMask => "SV_Coverage",
             // compute
@@ -187,7 +187,11 @@ impl crate::BuiltIn {
             }
             Self::CullPrimitive => "SV_CullPrimitive",
             Self::PointIndex | Self::LineIndices | Self::TriangleIndices => unimplemented!(),
-            Self::MeshTaskSize => unreachable!(),
+            Self::MeshTaskSize
+            | Self::VertexCount
+            | Self::PrimitiveCount
+            | Self::Vertices
+            | Self::Primitives => unreachable!(),
         })
     }
 }
@@ -201,6 +205,7 @@ impl crate::Interpolation {
             Self::Perspective => None,
             Self::Linear => Some("noperspective"),
             Self::Flat => Some("nointerpolation"),
+            Self::PerVertex => unreachable!(),
         }
     }
 }

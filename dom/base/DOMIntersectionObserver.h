@@ -149,14 +149,14 @@ class DOMIntersectionObserver final : public nsISupports,
   void GetThresholds(nsTArray<double>& aRetVal);
   void Observe(Element& aTarget);
   void Unobserve(Element& aTarget);
+  [[nodiscard]] bool Observes(Element& aTarget) const;
 
   void UnlinkTarget(Element& aTarget);
   void Disconnect();
 
   void TakeRecords(nsTArray<RefPtr<DOMIntersectionObserverEntry>>& aRetVal);
 
-  static StyleRect<LengthPercentage> LazyLoadingRootMargin();
-
+  static IntersectionInput ComputeInputForIframeThrottling(const Document&);
   static IntersectionInput ComputeInput(
       const Document& aDocument, const nsINode* aRoot,
       const StyleRect<LengthPercentage>* aRootMargin,

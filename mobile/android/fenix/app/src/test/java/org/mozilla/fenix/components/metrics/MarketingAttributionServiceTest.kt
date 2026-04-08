@@ -5,6 +5,7 @@
 package org.mozilla.fenix.components.metrics
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import kotlinx.coroutines.runBlocking
 import mozilla.components.support.test.robolectric.testContext
 import mozilla.components.support.utils.ext.packageManagerWrapper
 import org.junit.Assert.assertFalse
@@ -25,7 +26,7 @@ internal class MarketingAttributionServiceTest {
     private var savedId: String = ""
 
     private val testDistributionProviderChecker = object : DistributionProviderChecker {
-        override fun queryProvider(): String? = providerValue
+        override suspend fun queryProvider(): String? = providerValue
     }
 
     private val testBrowserStoreProvider = object : DistributionBrowserStoreProvider {
@@ -56,52 +57,89 @@ internal class MarketingAttributionServiceTest {
     )
 
     @Test
-    fun `WHEN installReferrerResponse is empty or null THEN we should not show marketing onboarding`() {
-        assertFalse(MarketingAttributionService.shouldShowMarketingOnboarding(null, distributionIdManager))
-        assertFalse(MarketingAttributionService.shouldShowMarketingOnboarding("", distributionIdManager))
-        assertFalse(MarketingAttributionService.shouldShowMarketingOnboarding(" ", distributionIdManager))
+    fun `WHEN installReferrerResponse is empty or null THEN we should not show marketing onboarding`() =
+        runBlocking {
+            assertFalse(MarketingAttributionService.shouldShowMarketingOnboarding(null, distributionIdManager))
+            assertFalse(MarketingAttributionService.shouldShowMarketingOnboarding("", distributionIdManager))
+            assertFalse(MarketingAttributionService.shouldShowMarketingOnboarding(" ", distributionIdManager))
+        }
+
+    @Test
+    fun `WHEN installReferrerResponse is in the marketing prefixes THEN we should show marketing onboarding`() =
+        runBlocking {
+            assertTrue(MarketingAttributionService.shouldShowMarketingOnboarding("gclid=", distributionIdManager))
+            assertTrue(MarketingAttributionService.shouldShowMarketingOnboarding("gclid=12345", distributionIdManager))
+            assertTrue(MarketingAttributionService.shouldShowMarketingOnboarding("adjust_reftag=", distributionIdManager))
+            assertTrue(MarketingAttributionService.shouldShowMarketingOnboarding("adjust_reftag=test", distributionIdManager))
+        }
+
+    @Test
+    fun `WHEN installReferrerResponse is not in the marketing prefixes THEN we should show marketing onboarding`() =
+        runBlocking {
+            assertFalse(MarketingAttributionService.shouldShowMarketingOnboarding(" gclid=12345", distributionIdManager))
+            assertFalse(MarketingAttributionService.shouldShowMarketingOnboarding("utm_source=google-play&utm_medium=organic", distributionIdManager))
+            assertFalse(MarketingAttributionService.shouldShowMarketingOnboarding("utm_source=(not%20set)&utm_medium=(not%20set)", distributionIdManager))
+            assertFalse(MarketingAttributionService.shouldShowMarketingOnboarding("utm_source=eea-browser-choice&utm_medium=preload", distributionIdManager))
+            assertFalse(MarketingAttributionService.shouldShowMarketingOnboarding("gclida=", distributionIdManager))
+            assertFalse(MarketingAttributionService.shouldShowMarketingOnboarding("adjust_reftag_test", distributionIdManager))
+            assertFalse(MarketingAttributionService.shouldShowMarketingOnboarding("test", distributionIdManager))
+        }
+
+    @Test
+    fun `GIVEN a partnership distribution WHEN we should skip the marketing screen THEN we skip it`() =
+        runBlocking {
+            distributionIdManager.setDistribution(DistributionIdManager.Distribution.VIVO_001)
+            assertFalse(MarketingAttributionService.shouldShowMarketingOnboarding(null, distributionIdManager))
+
+            distributionIdManager.setDistribution(DistributionIdManager.Distribution.DT_001)
+            assertFalse(MarketingAttributionService.shouldShowMarketingOnboarding(null, distributionIdManager))
+
+            distributionIdManager.setDistribution(DistributionIdManager.Distribution.DT_002)
+            assertFalse(MarketingAttributionService.shouldShowMarketingOnboarding(null, distributionIdManager))
+
+            distributionIdManager.setDistribution(DistributionIdManager.Distribution.DT_003)
+            assertFalse(MarketingAttributionService.shouldShowMarketingOnboarding(null, distributionIdManager))
+
+            distributionIdManager.setDistribution(DistributionIdManager.Distribution.XIAOMI_001)
+            assertFalse(MarketingAttributionService.shouldShowMarketingOnboarding(null, distributionIdManager))
+        }
+
+    @Test
+    fun `GIVEN a partnership distribution WHEN we should not skip the marketing screen THEN we do not skip it`() =
+        runBlocking {
+            distributionIdManager.setDistribution(DistributionIdManager.Distribution.AURA_001)
+            assertTrue(MarketingAttributionService.shouldShowMarketingOnboarding(null, distributionIdManager))
+        }
+
+    @Test
+    fun `WHEN installReferrerResponse is null or blank or malformed THEN isMetaAttribution returns false`() {
+        assertFalse(MarketingAttributionService.isMetaAttribution(null))
+        assertFalse(MarketingAttributionService.isMetaAttribution(""))
+        assertFalse(MarketingAttributionService.isMetaAttribution(" "))
+
+        val malformedReferrer = """utm_content={"app":12345,"t":1234567890,"source":{"data":"DATA","nonce":"NONCE"}"""
+        assertFalse(MarketingAttributionService.isMetaAttribution(malformedReferrer))
     }
 
     @Test
-    fun `WHEN installReferrerResponse is in the marketing prefixes THEN we should show marketing onboarding`() {
-        assertTrue(MarketingAttributionService.shouldShowMarketingOnboarding("gclid=", distributionIdManager))
-        assertTrue(MarketingAttributionService.shouldShowMarketingOnboarding("gclid=12345", distributionIdManager))
-        assertTrue(MarketingAttributionService.shouldShowMarketingOnboarding("adjust_reftag=", distributionIdManager))
-        assertTrue(MarketingAttributionService.shouldShowMarketingOnboarding("adjust_reftag=test", distributionIdManager))
+    fun `WHEN installReferrerResponse contains Meta utm_content params THEN isMetaAttribution returns true`() {
+        val metaReferrer = """utm_content={"app":12345,"t":1234567890,"source":{"data":"DATA","nonce":"NONCE"}}"""
+        assertTrue(MarketingAttributionService.isMetaAttribution(metaReferrer))
     }
 
     @Test
-    fun `WHEN installReferrerResponse is not in the marketing prefixes THEN we should show marketing onboarding`() {
-        assertFalse(MarketingAttributionService.shouldShowMarketingOnboarding(" gclid=12345", distributionIdManager))
-        assertFalse(MarketingAttributionService.shouldShowMarketingOnboarding("utm_source=google-play&utm_medium=organic", distributionIdManager))
-        assertFalse(MarketingAttributionService.shouldShowMarketingOnboarding("utm_source=(not%20set)&utm_medium=(not%20set)", distributionIdManager))
-        assertFalse(MarketingAttributionService.shouldShowMarketingOnboarding("utm_source=eea-browser-choice&utm_medium=preload", distributionIdManager))
-        assertFalse(MarketingAttributionService.shouldShowMarketingOnboarding("gclida=", distributionIdManager))
-        assertFalse(MarketingAttributionService.shouldShowMarketingOnboarding("adjust_reftag_test", distributionIdManager))
-        assertFalse(MarketingAttributionService.shouldShowMarketingOnboarding("test", distributionIdManager))
+    fun `WHEN installReferrerResponse missing Meta data or nonce THEN isMetaAttribution returns false`() {
+        var metaReferrer = """utm_content={"app":12345,"t":1234567890,"source":{"nonce":"NONCE"}}"""
+        assertFalse(MarketingAttributionService.isMetaAttribution(metaReferrer))
+
+        metaReferrer = """utm_content={"app":12345,"t":1234567890,"source":{"data":"DATA"}}"""
+        assertFalse(MarketingAttributionService.isMetaAttribution(metaReferrer))
     }
 
     @Test
-    fun `GIVEN a partnership distribution WHEN we should skip the marketing screen THEN we skip it`() {
-        distributionIdManager.setDistribution(DistributionIdManager.Distribution.VIVO_001)
-        assertFalse(MarketingAttributionService.shouldShowMarketingOnboarding(null, distributionIdManager))
-
-        distributionIdManager.setDistribution(DistributionIdManager.Distribution.DT_001)
-        assertFalse(MarketingAttributionService.shouldShowMarketingOnboarding(null, distributionIdManager))
-
-        distributionIdManager.setDistribution(DistributionIdManager.Distribution.DT_002)
-        assertFalse(MarketingAttributionService.shouldShowMarketingOnboarding(null, distributionIdManager))
-
-        distributionIdManager.setDistribution(DistributionIdManager.Distribution.DT_003)
-        assertFalse(MarketingAttributionService.shouldShowMarketingOnboarding(null, distributionIdManager))
-    }
-
-    @Test
-    fun `GIVEN a partnership distribution WHEN we should not skip the marketing screen THEN we do not skip it`() {
-        distributionIdManager.setDistribution(DistributionIdManager.Distribution.AURA_001)
-        assertTrue(MarketingAttributionService.shouldShowMarketingOnboarding(null, distributionIdManager))
-
-        distributionIdManager.setDistribution(DistributionIdManager.Distribution.XIAOMI_001)
-        assertTrue(MarketingAttributionService.shouldShowMarketingOnboarding(null, distributionIdManager))
+    fun `WHEN installReferrerResponse does not contain Meta params THEN isMetaAttribution returns false`() {
+        assertFalse(MarketingAttributionService.isMetaAttribution("utm_source=google&utm_medium=cpc"))
+        assertFalse(MarketingAttributionService.isMetaAttribution("gclid=12345"))
+        assertFalse(MarketingAttributionService.isMetaAttribution("adjust_reftag=test"))
     }
 }

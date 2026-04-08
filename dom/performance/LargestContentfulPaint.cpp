@@ -5,6 +5,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 #include "LargestContentfulPaint.h"
 
+#include "GeckoProfiler.h"
 #include "Performance.h"
 #include "PerformanceMainThread.h"
 #include "imgRequest.h"
@@ -13,6 +14,7 @@
 #include "mozilla/dom/BrowsingContext.h"
 #include "mozilla/dom/DOMIntersectionObserver.h"
 #include "mozilla/dom/Document.h"
+#include "mozilla/dom/DocumentInlines.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/nsVideoFrame.h"
 #include "nsContentUtils.h"
@@ -151,9 +153,8 @@ void LargestContentfulPaint::MaybeProcessImageForElementTiming(
     return;
   }
 
-  nsPresContext* pc =
-      aElement->GetPresContext(Element::PresContextFor::eForComposedDoc);
-  if (!pc) {
+  nsPresContext* pc = document->GetPresContext();
+  if (!pc || pc->HasStoppedGeneratingLCP()) {
     return;
   }
 
@@ -529,7 +530,26 @@ void LargestContentfulPaint::ReportLCPToNavigationTimings() {
   if (!document->IsTopLevelContentDocument()) {
     return;
   }
+
+  // These values are going to be used for the LCP profiler markers. Don't
+  // compute them if the profiler is not running.
+  nsAutoString elementStr;
+  nsCString imageURL;
+  if (profiler_is_active_and_unpaused()) {
+    element->NodeInfo()->NameAtom()->ToString(elementStr);
+    if (mId) {
+      elementStr.Append(u'#');
+      nsAutoString idStr;
+      mId->ToString(idStr);
+      elementStr.Append(idStr);
+    }
+
+    imageURL = mURI ? nsContentUtils::TruncatedURLForDisplay(mURI, 1024)
+                    : EmptyCString();
+  }
+
   timing->NotifyLargestContentfulRenderForRootContentDocument(
-      GetReducedTimePrecisionDOMHighRes(mPerformance, mRenderTime));
+      GetReducedTimePrecisionDOMHighRes(mPerformance, mRenderTime), elementStr,
+      imageURL);
 }
 }  // namespace mozilla::dom

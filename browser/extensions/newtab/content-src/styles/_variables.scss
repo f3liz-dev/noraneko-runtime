@@ -5,6 +5,7 @@
   --newtab-card-height: 282px;
   --newtab-card-width-medium: 300px;
   --newtab-card-grid-layout-width: 296px; // Matches widget used in Base.jsx
+  --newtab-card-height-small: 133px; // Card height for small-sized widgets in the widgets pane
 }
 
 $primary-blue: var(--color-accent-primary);
@@ -163,8 +164,6 @@ $context-menu-font-size: inherit;
 $context-menu-outer-padding: 5px;
 $context-menu-item-padding: 3px 12px;
 
-$error-fallback-font-size: var(--font-size-small);
-
 $image-path: 'chrome://newtab/content/data/content/assets/';
 
 $textbox-shadow-size: 4px;
@@ -195,7 +194,7 @@ $customize-menu-border-tint: 1px solid rgba(0, 0, 0, 15%);
     background-image: url('chrome://global/skin/icons/more.svg');
     background-position: 50.1%;
     border: 0;
-    outline: $border-primary;
+    outline: 1px solid var(--border-color);
     outline-width: 0;
     border-radius: var(--border-radius-circle);
     cursor: pointer;

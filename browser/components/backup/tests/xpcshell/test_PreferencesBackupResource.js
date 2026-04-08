@@ -17,7 +17,7 @@ const { SearchUtils } = ChromeUtils.importESModule(
 add_task(async function test_measure() {
   Services.fog.testResetFOG();
 
-  const EXPECTED_PREFERENCES_KILOBYTES_SIZE = 415;
+  const EXPECTED_PREFERENCES_KILOBYTES_SIZE = 56;
   const tempDir = await IOUtils.createUniqueDirectory(
     PathUtils.tempDir,
     "PreferencesBackupResource-measure-test"
@@ -25,9 +25,8 @@ add_task(async function test_measure() {
   const mockFiles = [
     { path: "prefs.js", sizeInKB: 20 },
     { path: "xulstore.json", sizeInKB: 1 },
-    { path: "permissions.sqlite", sizeInKB: 100 },
-    { path: "content-prefs.sqlite", sizeInKB: 260 },
     { path: "containers.json", sizeInKB: 1 },
+    { path: "customKeys.json", sizeInKB: 1 },
     { path: "handlers.json", sizeInKB: 1 },
     { path: "search.json.mozlz4", sizeInKB: 1 },
     { path: "user.js", sizeInKB: 2 },
@@ -80,6 +79,7 @@ add_task(async function test_backup() {
   const simpleCopyFiles = [
     { path: "xulstore.json" },
     { path: "containers.json" },
+    { path: "customKeys.json" },
     { path: "handlers.json" },
     { path: "search.json.mozlz4" },
     { path: "user.js" },
@@ -88,14 +88,6 @@ add_task(async function test_backup() {
     { path: ["chrome", "childFolder", "someOtherStylesheet.css"] },
   ];
   await createTestFiles(sourcePath, simpleCopyFiles);
-
-  // Create our fake database files. We don't expect these to be copied to the
-  // staging directory in this test due to our stubbing of the backup method, so
-  // we don't include it in `simpleCopyFiles`.
-  await createTestFiles(sourcePath, [
-    { path: "permissions.sqlite" },
-    { path: "content-prefs.sqlite" },
-  ]);
 
   // We have no need to test that Sqlite.sys.mjs's backup method is working -
   // this is something that is tested in Sqlite's own tests. We can just make
@@ -120,148 +112,15 @@ add_task(async function test_backup() {
 
   await assertFilesExist(stagingPath, simpleCopyFiles);
 
-  // Next, we'll make sure that the Sqlite connection had `backup` called on it
-  // with the right arguments.
   Assert.ok(
-    fakeConnection.backup.calledTwice,
-    "Called backup the expected number of times for all connections"
-  );
-  Assert.ok(
-    fakeConnection.backup.firstCall.calledWith(
-      PathUtils.join(stagingPath, "permissions.sqlite")
-    ),
-    "Called backup on the permissions.sqlite Sqlite connection"
-  );
-  Assert.ok(
-    fakeConnection.backup.secondCall.calledWith(
-      PathUtils.join(stagingPath, "content-prefs.sqlite")
-    ),
-    "Called backup on the content-prefs.sqlite Sqlite connection"
+    fakeConnection.backup.notCalled,
+    "No sqlite connections should have been made"
   );
 
   // And we'll make sure that preferences were properly written out.
   Assert.ok(
     await IOUtils.exists(PathUtils.join(stagingPath, "prefs.js")),
     "prefs.js should exist in the staging folder"
-  );
-
-  await maybeRemovePath(stagingPath);
-  await maybeRemovePath(sourcePath);
-
-  sandbox.restore();
-});
-
-/**
- * Tests that the backup method does not copy the permissions or content prefs
- * databases if the browser is configured to not save history - either while
- * running, or to clear it at shutdown.
- */
-add_task(async function test_backup_no_saved_history() {
-  let preferencesBackupResource = new PreferencesBackupResource();
-  let sourcePath = await IOUtils.createUniqueDirectory(
-    PathUtils.tempDir,
-    "PreferencesBackupResource-source-test"
-  );
-  let stagingPath = await IOUtils.createUniqueDirectory(
-    PathUtils.tempDir,
-    "PreferencesBackupResource-staging-test"
-  );
-
-  let sandbox = sinon.createSandbox();
-  let fakeConnection = {
-    backup: sandbox.stub().resolves(true),
-    close: sandbox.stub().resolves(true),
-  };
-  sandbox.stub(Sqlite, "openConnection").returns(fakeConnection);
-
-  // First, we'll try with browsing history in general being disabled.
-  Services.prefs.setBoolPref(HISTORY_ENABLED_PREF, false);
-  Services.prefs.setBoolPref(SANITIZE_ON_SHUTDOWN_PREF, false);
-
-  let manifestEntry = await preferencesBackupResource.backup(
-    stagingPath,
-    sourcePath
-  );
-  Assert.deepEqual(
-    manifestEntry,
-    { profilePath: sourcePath },
-    "PreferencesBackupResource.backup should return the original profile path " +
-      "in its ManifestEntry"
-  );
-
-  Assert.ok(
-    fakeConnection.backup.notCalled,
-    "No sqlite connections should have been made with remember history disabled"
-  );
-
-  // Now verify that the sanitize shutdown pref also prevents us from backing
-  // up site permissions and preferences
-  Services.prefs.setBoolPref(HISTORY_ENABLED_PREF, true);
-  Services.prefs.setBoolPref(SANITIZE_ON_SHUTDOWN_PREF, true);
-
-  fakeConnection.backup.resetHistory();
-  manifestEntry = await preferencesBackupResource.backup(
-    stagingPath,
-    sourcePath
-  );
-  Assert.deepEqual(
-    manifestEntry,
-    { profilePath: sourcePath },
-    "PreferencesBackupResource.backup should return the original profile path " +
-      "in its ManifestEntry"
-  );
-
-  Assert.ok(
-    fakeConnection.backup.notCalled,
-    "No sqlite connections should have been made with sanitize shutdown enabled"
-  );
-
-  await maybeRemovePath(stagingPath);
-  await maybeRemovePath(sourcePath);
-
-  sandbox.restore();
-  Services.prefs.clearUserPref(HISTORY_ENABLED_PREF);
-  Services.prefs.clearUserPref(SANITIZE_ON_SHUTDOWN_PREF);
-});
-
-/**
- * Tests that the backup method correctly skips backing up the permissions and
- * content prefs databases if permanent private browsing mode is enabled.
- */
-add_task(async function test_backup_private_browsing() {
-  let sandbox = sinon.createSandbox();
-
-  let preferencesBackupResource = new PreferencesBackupResource();
-  let sourcePath = await IOUtils.createUniqueDirectory(
-    PathUtils.tempDir,
-    "PreferencesBackupResource-source-test"
-  );
-  let stagingPath = await IOUtils.createUniqueDirectory(
-    PathUtils.tempDir,
-    "PreferencesBackupResource-staging-test"
-  );
-
-  let fakeConnection = {
-    backup: sandbox.stub().resolves(true),
-    close: sandbox.stub().resolves(true),
-  };
-  sandbox.stub(Sqlite, "openConnection").returns(fakeConnection);
-  sandbox.stub(PrivateBrowsingUtils, "permanentPrivateBrowsing").value(true);
-
-  let manifestEntry = await preferencesBackupResource.backup(
-    stagingPath,
-    sourcePath
-  );
-  Assert.deepEqual(
-    manifestEntry,
-    { profilePath: sourcePath },
-    "PreferencesBackupResource.backup should return the original profile path " +
-      "in its ManifestEntry"
-  );
-
-  Assert.ok(
-    fakeConnection.backup.notCalled,
-    "No sqlite connections should have been made with permanent private browsing enabled"
   );
 
   await maybeRemovePath(stagingPath);
@@ -322,9 +181,8 @@ add_task(async function test_recover() {
   const simpleCopyFiles = [
     { path: "prefs.js" },
     { path: "xulstore.json" },
-    { path: "permissions.sqlite" },
-    { path: "content-prefs.sqlite" },
     { path: "containers.json" },
+    { path: "customKeys.json" },
     { path: "handlers.json" },
     { path: "user.js" },
     { path: ["chrome", "userChrome.css"] },
@@ -484,4 +342,81 @@ add_task(async function test_recover() {
   await maybeRemovePath(recoveryPath);
   await maybeRemovePath(destProfilePath);
   sandbox.restore();
+});
+
+/**
+ * Test that getPrefsFromBuffer correctly parses pref values from
+ * prefs.js file content.
+ */
+add_task(async function test_getPrefsFromBuffer() {
+  const mockPrefsContent = `// Mozilla User Preferences
+user_pref("test.boolean.enabled", true);
+user_pref("test.boolean.disabled", false);
+user_pref("test.string.value", "hello world");
+user_pref("test.number.value", 42);
+`;
+  const encoder = new TextEncoder();
+  const mockPrefsBuffer = encoder.encode(mockPrefsContent);
+
+  const allPrefs =
+    PreferencesBackupResource.getPrefsFromBuffer(mockPrefsBuffer);
+
+  Assert.strictEqual(
+    allPrefs.get("test.boolean.enabled"),
+    true,
+    "Should correctly parse boolean true"
+  );
+
+  Assert.strictEqual(
+    allPrefs.get("test.boolean.disabled"),
+    false,
+    "Should correctly parse boolean false"
+  );
+
+  Assert.strictEqual(
+    allPrefs.get("test.string.value"),
+    "hello world",
+    "Should correctly parse string value"
+  );
+
+  Assert.strictEqual(
+    allPrefs.get("test.number.value"),
+    42,
+    "Should correctly parse number value"
+  );
+
+  Assert.strictEqual(
+    allPrefs.has("nonexistent.pref"),
+    false,
+    "Should not have nonexistent pref in map"
+  );
+
+  const filteredPrefs = PreferencesBackupResource.getPrefsFromBuffer(
+    mockPrefsBuffer,
+    ["test.boolean.enabled", "test.number.value"]
+  );
+
+  Assert.strictEqual(
+    filteredPrefs.size,
+    2,
+    "Should only have 2 prefs when filtering"
+  );
+
+  Assert.strictEqual(
+    filteredPrefs.get("test.boolean.enabled"),
+    true,
+    "Should have filtered pref"
+  );
+
+  Assert.strictEqual(
+    filteredPrefs.get("test.number.value"),
+    42,
+    "Should have filtered pref"
+  );
+
+  Assert.strictEqual(
+    filteredPrefs.has("test.string.value"),
+    false,
+    "Should not have non-filtered pref"
+  );
 });

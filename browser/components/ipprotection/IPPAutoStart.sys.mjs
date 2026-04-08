@@ -2,19 +2,22 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+import { PrivateBrowsingUtils } from "resource://gre/modules/PrivateBrowsingUtils.sys.mjs";
 import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   IPProtectionServerlist:
-    "resource:///modules/ipprotection/IPProtectionServerlist.sys.mjs",
-  IPPProxyManager: "resource:///modules/ipprotection/IPPProxyManager.sys.mjs",
-  IPPProxyStates: "resource:///modules/ipprotection/IPPProxyManager.sys.mjs",
+    "moz-src:///browser/components/ipprotection/IPProtectionServerlist.sys.mjs",
+  IPPProxyManager:
+    "moz-src:///browser/components/ipprotection/IPPProxyManager.sys.mjs",
+  IPPProxyStates:
+    "moz-src:///browser/components/ipprotection/IPPProxyManager.sys.mjs",
   IPProtectionService:
-    "resource:///modules/ipprotection/IPProtectionService.sys.mjs",
+    "moz-src:///browser/components/ipprotection/IPProtectionService.sys.mjs",
   IPProtectionStates:
-    "resource:///modules/ipprotection/IPProtectionService.sys.mjs",
+    "moz-src:///browser/components/ipprotection/IPProtectionService.sys.mjs",
 });
 
 const AUTOSTART_FEATURE_ENABLE_PREF = "browser.ipProtection.features.autoStart";
@@ -98,7 +101,10 @@ class IPPAutoStartSingleton {
       case lazy.IPProtectionStates.READY:
         if (this.#shouldStartWhenReady) {
           this.#shouldStartWhenReady = false;
-          lazy.IPPProxyManager.start(/* user action: */ false);
+          lazy.IPPProxyManager.start(
+            false,
+            PrivateBrowsingUtils.permanentPrivateBrowsing
+          );
         }
         break;
 
@@ -113,7 +119,7 @@ const IPPAutoStart = new IPPAutoStartSingleton();
 /**
  * This class monitors the startup phases and registers/unregisters the channel
  * filter to avoid data leak. The activation of the VPN is done by the
- * IPPAutoStart object above.
+ * IPPAutoStart and IPPAutoRestore objects above.
  */
 class IPPEarlyStartupFilter {
   #autoStartAndAtStartup = false;
@@ -141,7 +147,7 @@ class IPPEarlyStartupFilter {
   initOnStartupCompleted() {}
 
   uninit() {
-    if (this.autoStartAndAtStartup) {
+    if (this.#autoStartAndAtStartup) {
       this.#autoStartAndAtStartup = false;
 
       lazy.IPPProxyManager.removeEventListener(

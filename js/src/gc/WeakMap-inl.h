@@ -28,6 +28,18 @@
 
 namespace js {
 
+template <typename F>
+void ForAllWeakMapsInZone(Zone* zone, F&& func) {
+  for (WeakMapBase* map : zone->gcSystemWeakMaps()) {
+    MOZ_ASSERT(map->isSystem());
+    func(map);
+  }
+  for (WeakMapBase* map : zone->gcUserWeakMaps()) {
+    MOZ_ASSERT(!map->isSystem());
+    func(map);
+  }
+}
+
 namespace gc::detail {
 
 static inline bool IsObject(JSObject* obj) { return true; }
@@ -110,11 +122,25 @@ static constexpr size_t InitialWeakMapLength = 0;
 
 template <class K, class V, class AP>
 WeakMap<K, V, AP>::WeakMap(JSContext* cx, JSObject* memOf)
-    : WeakMap(cx->zone(), memOf) {}
+    : WeakMapBase(memOf, cx->zone()),
+      map_(AP(cx->zone()), InitialWeakMapLength),
+      nurseryKeys(AP(cx->zone())) {
+  staticAssertions();
+  MOZ_ASSERT(memOf);
+}
 
 template <class K, class V, class AP>
-WeakMap<K, V, AP>::WeakMap(JS::Zone* zone, JSObject* memOf)
-    : WeakMapBase(memOf, zone), map_(zone, InitialWeakMapLength) {
+WeakMap<K, V, AP>::WeakMap(JS::Zone* zone)
+    : WeakMapBase(nullptr, zone),
+      map_(AP(zone), InitialWeakMapLength),
+      nurseryKeys(AP(zone)) {
+  mayHaveKeyDelegates = true;  // Assume true for system maps.
+  staticAssertions();
+}
+
+template <class K, class V, class AP>
+/* static */
+MOZ_ALWAYS_INLINE void WeakMap<K, V, AP>::staticAssertions() {
   static_assert(std::is_same_v<typename RemoveBarrier<K>::Type, K>);
   static_assert(std::is_same_v<typename RemoveBarrier<V>::Type, V>);
 
@@ -126,11 +152,6 @@ WeakMap<K, V, AP>::WeakMap(JS::Zone* zone, JSObject* memOf)
     using NonPtrType = std::remove_pointer_t<K>;
     static_assert(JS::IsCCTraceKind(NonPtrType::TraceKind),
                   "Object's TraceKind should be added to CC graph.");
-  }
-
-  zone->gcWeakMapList().insertFront(this);
-  if (zone->gcState() > Zone::Prepare) {
-    setMapColor(CellColor::Black);
   }
 }
 
@@ -184,24 +205,24 @@ bool WeakMap<K, V, AP>::markEntry(GCMarker* marker, gc::CellColor mapColor,
   gc::Cell* keyCell = gc::ToMarkable(key);
   MOZ_ASSERT(keyCell);
 
+  bool marked = false;
+  CellColor markColor = AsCellColor(marker->markColor());
+  CellColor keyColor = gc::detail::GetEffectiveColor(marker, key.get());
+
   bool keyIsSymbol = gc::detail::IsSymbol(key.get());
   MOZ_ASSERT(keyIsSymbol == (keyCell->getTraceKind() == JS::TraceKind::Symbol));
-  if (keyIsSymbol) {
+  if (keyIsSymbol && keyColor < markColor) {
     // For symbols, also check whether it it is referenced by an uncollected
     // zone, and if so mark it now. There's no need to set |marked| as this
     // would have been marked later anyway.
     auto* sym = static_cast<JS::Symbol*>(keyCell);
-    if (marker->runtime()->gc.isSymbolReferencedByUncollectedZone(
-            sym, marker->markColor())) {
+    gc::GCRuntime* gc = &marker->runtime()->gc;
+    if (gc->isSymbolReferencedByUncollectedZone(sym, marker->markColor())) {
       TraceEdge(trc, &key, "WeakMap symbol key");
     }
   }
 
-  bool marked = false;
-  CellColor markColor = AsCellColor(marker->markColor());
-  CellColor keyColor = gc::detail::GetEffectiveColor(marker, key.get());
   JSObject* delegate = gc::detail::GetDelegate(key.get());
-
   if (delegate) {
     CellColor delegateColor = gc::detail::GetEffectiveColor(marker, delegate);
     // The key needs to stay alive while both the delegate and map are live.
@@ -272,6 +293,10 @@ void WeakMap<K, V, AP>::trace(JSTracer* trc) {
   MOZ_ASSERT(isInList());
 
   TraceNullableEdge(trc, &memberOf, "WeakMap owner");
+
+  // Trace memory owned by our containers but not their contents.
+  TraceOwnedAllocs(trc, memberOf, map_, "WeakMap storage");
+  TraceOwnedAllocs(trc, memberOf, nurseryKeys, "WeakMap nursery keys");
 
   if (trc->isMarkingTracer()) {
     MOZ_ASSERT(trc->weakMapAction() == JS::WeakMapTraceAction::Expand);
@@ -348,27 +373,45 @@ bool WeakMap<K, V, AP>::markEntries(GCMarker* marker) {
 }
 
 template <class K, class V, class AP>
-void WeakMap<K, V, AP>::traceWeakEdges(JSTracer* trc) {
-  // This is used for sweeping but not for anything that can move GC things.
-  MOZ_ASSERT(!trc->isTenuringTracer() && trc->kind() != JS::TracerKind::Moving);
+void WeakMap<K, V, AP>::traceWeakEdgesDuringSweeping(JSTracer* trc) {
+  // This is only used for sweeping but. This cannot move GC things.
+  MOZ_ASSERT(trc->kind() == JS::TracerKind::Sweeping);
+  MOZ_ASSERT(zone()->isGCSweeping());
 
   // Scan the map, removing all entries whose keys remain unmarked. Rebuild
   // cached key state at the same time.
   mayHaveSymbolKeys = false;
-  mayHaveKeyDelegates = false;
-  for (Enum e(*this); !e.empty(); e.popFront()) {
+  if (!isSystem()) {
+    mayHaveKeyDelegates = false;
+  }
+
+  mozilla::Maybe<Enum> e;
+  e.emplace(*this);
+  bool removedEntries = false;
+  for (; !e->empty(); e->popFront()) {
 #ifdef DEBUG
-    K prior = e.front().key();
+    K prior = e->front().key();
 #endif
-    if (TraceWeakEdge(trc, &e.front().mutableKey(), "WeakMap key")) {
-      MOZ_ASSERT(e.front().key() == prior);
-      keyKindBarrier(e.front().key());
+    if (TraceWeakEdge(trc, &e->front().mutableKey(), "WeakMap key")) {
+      MOZ_ASSERT(e->front().key() == prior);
+      keyKindBarrier(e->front().key());
     } else {
-      e.removeFront();
+      e->removeFront();
+      removedEntries = true;
     }
   }
 
   // TODO: Shrink nurseryKeys storage?
+
+  {
+    // Destroy the iterator, taking the lock if we removed any entries as this
+    // may result in shrinking the table.
+    mozilla::Maybe<gc::AutoLockSweepingLock> lock;
+    if (removedEntries) {
+      lock.emplace(trc->runtime());
+    }
+    e.reset();
+  }
 
 #if DEBUG
   // Once we've swept, all remaining edges should stay within the known-live
@@ -393,6 +436,21 @@ void WeakMap<K, V, AP>::addNurseryKey(const K& key) {
     nurseryKeys.clear();
     nurseryKeysValid = false;
   }
+}
+
+template <class K, class V, class AP>
+void WeakMap<K, V, AP>::setMayHaveSymbolKeys() {
+  MOZ_ASSERT(!mayHaveSymbolKeys);
+  mayHaveSymbolKeys = true;
+  zone()->setGCWeakMapsMayHaveSymbolKeys();
+}
+
+template <class K, class V, class AP>
+void WeakMap<K, V, AP>::setMayHaveKeyDelegates() {
+  MOZ_ASSERT(!mayHaveKeyDelegates);
+  MOZ_ASSERT(!isSystem());  // This flag is always set for system maps.
+  mayHaveKeyDelegates = true;
+  zone()->setGCWeakMapsMayHaveKeyDelegates();
 }
 
 template <class K, class V, class AP>
@@ -525,7 +583,7 @@ bool WeakMap<K, V, AP>::sweepAfterMinorGC() {
 
   if (nurseryKeysValid) {
     nurseryKeys.mutableEraseIf([&](K& key) {
-      auto ptr = lookupUnbarriered(key);
+      auto ptr = lookupMutableUnbarriered(key);
       if (!ptr) {
         if (!gc::IsForwarded(key)) {
           return true;
@@ -536,7 +594,7 @@ bool WeakMap<K, V, AP>::sweepAfterMinorGC() {
         //
         // TODO: Try to update cached nursery information there instead.
         key = gc::Forwarded(key);
-        ptr = lookupUnbarriered(key);
+        ptr = lookupMutableUnbarriered(key);
         if (!ptr) {
           return true;
         }
@@ -611,29 +669,30 @@ void WeakMap<K, V, AP>::traceMappings(WeakMapTracer* tracer) {
   }
 }
 
-template <class K, class V, class AP>
-bool WeakMap<K, V, AP>::findSweepGroupEdges(Zone* atomsZone) {
-  // For weakmap keys with delegates in a different zone, add a zone edge to
-  // ensure that the delegate zone finishes marking before the key zone.
-
 #ifdef DEBUG
+template <class K, class V, class AP>
+void WeakMap<K, V, AP>::checkCachedFlags() const {
+  MOZ_ASSERT_IF(!zone()->gcUserWeakMapsMayHaveKeyDelegates() && !isSystem(),
+                !mayHaveKeyDelegates);
+  MOZ_ASSERT_IF(!zone()->gcWeakMapsMayHaveSymbolKeys(), !mayHaveSymbolKeys);
+
   if (!mayHaveSymbolKeys || !mayHaveKeyDelegates) {
-    for (Range r = all(); !r.empty(); r.popFront()) {
+    for (auto r = all(); !r.empty(); r.popFront()) {
       const K& key = r.front().key();
       MOZ_ASSERT_IF(!mayHaveKeyDelegates, !gc::detail::GetDelegate(key));
       MOZ_ASSERT_IF(!mayHaveSymbolKeys, !gc::detail::IsSymbol(key));
     }
   }
+}
 #endif
 
-  if (mayHaveSymbolKeys) {
-    MOZ_ASSERT(JS::Prefs::experimental_symbols_as_weakmap_keys());
-    if (atomsZone->isGCMarking()) {
-      if (!atomsZone->addSweepGroupEdgeTo(zone())) {
-        return false;
-      }
-    }
-  }
+template <class K, class V, class AP>
+bool WeakMap<K, V, AP>::findSweepGroupEdges(Zone* atomsZone) {
+  // For weakmap keys with delegates in a different zone, add a zone edge to
+  // ensure that the delegate zone finishes marking before the key zone.
+
+  // We keep this set for system maps.
+  MOZ_ASSERT_IF(isSystem(), mayHaveKeyDelegates);
 
   if (mayHaveKeyDelegates) {
     for (Range r = all(); !r.empty(); r.popFront()) {
@@ -661,9 +720,10 @@ bool WeakMap<K, V, AP>::findSweepGroupEdges(Zone* atomsZone) {
 }
 
 template <class K, class V, class AP>
-size_t WeakMap<K, V, AP>::sizeOfIncludingThis(
+size_t WeakMap<K, V, AP>::shallowSizeOfExcludingThis(
     mozilla::MallocSizeOf mallocSizeOf) {
-  return mallocSizeOf(this) + shallowSizeOfExcludingThis(mallocSizeOf);
+  return SizeOfOwnedAllocs(map(), mallocSizeOf) +
+         SizeOfOwnedAllocs(nurseryKeys, mallocSizeOf);
 }
 
 #if DEBUG

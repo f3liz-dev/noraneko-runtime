@@ -43,7 +43,6 @@
 #include "mozilla/dom/PerformanceService.h"
 #include "mozilla/dom/RemoteWorkerChild.h"
 #include "mozilla/dom/ScriptSettings.h"
-#include "mozilla/dom/ShadowRealmGlobalScope.h"
 #include "mozilla/dom/TimeoutHandler.h"
 #include "mozilla/dom/TrustedTypeUtils.h"
 #include "mozilla/dom/WorkerBinding.h"
@@ -345,9 +344,11 @@ void LoadJSGCMemoryOptions(const char* aPrefName, void* /* aClosure */) {
     JSGCParamKey key;
   };
 
-#define PREF(suffix_, key_)   \
-  {nsLiteralCString(suffix_), \
-   PREF_JS_OPTIONS_PREFIX PREF_MEM_OPTIONS_PREFIX suffix_, key_}
+#define PREF(suffix_, key_)                                          \
+  {                                                                  \
+    nsLiteralCString(suffix_),                                       \
+        PREF_JS_OPTIONS_PREFIX PREF_MEM_OPTIONS_PREFIX suffix_, key_ \
+  }
   constexpr WorkerGCPref kWorkerPrefs[] = {
       PREF("max", JSGC_MAX_BYTES),
       PREF("gc_high_frequency_time_limit_ms", JSGC_HIGH_FREQUENCY_TIME_LIMIT),
@@ -374,6 +375,10 @@ void LoadJSGCMemoryOptions(const char* aPrefName, void* /* aClosure */) {
       PREF("gc_parallel_marking_threshold_mb",
            JSGC_PARALLEL_MARKING_THRESHOLD_MB),
       PREF("gc_max_parallel_marking_threads", JSGC_MAX_MARKING_THREADS),
+#ifdef JS_GC_CONCURRENT_MARKING
+      PREF("gc_experimental_concurrent_marking",
+           JSGC_CONCURRENT_MARKING_ENABLED),
+#endif
 #ifdef NIGHTLY_BUILD
       PREF("gc_experimental_semispace_nursery", JSGC_SEMISPACE_NURSERY_ENABLED),
 #endif
@@ -432,6 +437,9 @@ void LoadJSGCMemoryOptions(const char* aPrefName, void* /* aClosure */) {
       }
       case JSGC_COMPACTING_ENABLED:
       case JSGC_PARALLEL_MARKING_ENABLED:
+#ifdef JS_GC_CONCURRENT_MARKING
+      case JSGC_CONCURRENT_MARKING_ENABLED:
+#endif
 #ifdef NIGHTLY_BUILD
       case JSGC_SEMISPACE_NURSERY_ENABLED:
 #endif
@@ -725,6 +733,22 @@ static bool DelayedDispatchToEventLoop(
   return true;
 }
 
+static void AsyncTaskStarted(void* aClosure, JS::Dispatchable* aDispatchable) {
+  // See comment at JS::InitDispatchsToEventLoop() below for how we know the
+  // WorkerPrivate is alive.
+  WorkerPrivate* workerPrivate = reinterpret_cast<WorkerPrivate*>(aClosure);
+  workerPrivate->AssertIsOnWorkerThread();
+  workerPrivate->JSAsyncTaskStarted(aDispatchable);
+}
+
+static void AsyncTaskFinished(void* aClosure, JS::Dispatchable* aDispatchable) {
+  // See comment at JS::InitDispatchsToEventLoop() below for how we know the
+  // WorkerPrivate is alive.
+  WorkerPrivate* workerPrivate = reinterpret_cast<WorkerPrivate*>(aClosure);
+  workerPrivate->AssertIsOnWorkerThread();
+  workerPrivate->JSAsyncTaskFinished(aDispatchable);
+}
+
 static bool ConsumeStream(JSContext* aCx, JS::Handle<JSObject*> aObj,
                           JS::MimeType aMimeType,
                           JS::StreamConsumer* aConsumer) {
@@ -766,9 +790,9 @@ bool InitJSContextForWorker(WorkerPrivate* aWorkerPrivate,
 
   // A WorkerPrivate lives strictly longer than its JSRuntime so we can safely
   // store a raw pointer as the callback's closure argument on the JSRuntime.
-  JS::InitDispatchsToEventLoop(aWorkerCx, DispatchToEventLoop,
-                               DelayedDispatchToEventLoop,
-                               (void*)aWorkerPrivate);
+  JS::InitAsyncTaskCallbacks(aWorkerCx, DispatchToEventLoop,
+                             DelayedDispatchToEventLoop, AsyncTaskStarted,
+                             AsyncTaskFinished, (void*)aWorkerPrivate);
 
   JS::InitConsumeStreamCallback(aWorkerCx, ConsumeStream,
                                 FetchUtil::ReportJSStreamError);
@@ -984,7 +1008,7 @@ class WorkerJSContext final : public mozilla::CycleCollectedJSContext {
   virtual bool useDebugQueue(JS::Handle<JSObject*> global) const override {
     MOZ_ASSERT(!NS_IsMainThread());
 
-    return !(IsWorkerGlobal(global) || IsShadowRealmGlobal(global));
+    return !IsWorkerGlobal(global);
   }
 
   virtual void DispatchToMicroTask(
@@ -1001,53 +1025,27 @@ class WorkerJSContext final : public mozilla::CycleCollectedJSContext {
     NS_ASSERTION(global, "This should never be null!");
 
     JS::JobQueueMayNotBeEmpty(cx);
-    if (StaticPrefs::javascript_options_use_js_microtask_queue()) {
-      PROFILER_MARKER_FLOW_ONLY("WorkerJSContext::DispatchToMicroTask", OTHER,
-                                {}, FlowMarker,
-                                Flow::FromPointer(runnable.get()));
+    PROFILER_MARKER_FLOW_ONLY("WorkerJSContext::DispatchToMicroTask", OTHER, {},
+                              FlowMarker, Flow::FromPointer(runnable.get()));
 
-      // On worker threads, if the current global is the worker global or
-      // ShadowRealm global, we use the main micro task queue. Otherwise, the
-      // current global must be either the debugger global or a debugger
-      // sandbox, and we use the debugger micro task queue instead.
-      if (IsWorkerGlobal(global) || IsShadowRealmGlobal(global)) {
-        if (!EnqueueMicroTask(cx, runnable.forget())) {
-          // This should never fail, but if it does, we have no choice but to
-          // crash. This is always an OOM.
-          NS_ABORT_OOM(0);
-        }
-      } else {
-        MOZ_ASSERT(IsWorkerDebuggerGlobal(global) ||
-                   IsWorkerDebuggerSandbox(global));
-        if (!EnqueueDebugMicroTask(cx, runnable.forget())) {
-          // This should never fail, but if it does, we have no choice but to
-          // crash. This is always an OOM.
-          NS_ABORT_OOM(0);
-        }
+    // On worker threads, if the current global is the worker global, we use
+    // the main micro task queue. Otherwise, the current global must be either
+    // the debugger global or a debugger sandbox, and we use the debugger micro
+    // task queue instead.
+    if (IsWorkerGlobal(global)) {
+      if (!EnqueueMicroTask(cx, runnable.forget())) {
+        // This should never fail, but if it does, we have no choice but to
+        // crash. This is always an OOM.
+        NS_ABORT_OOM(0);
       }
     } else {
-      std::deque<RefPtr<MicroTaskRunnable>>* microTaskQueue = nullptr;
-      // On worker threads, if the current global is the worker global or
-      // ShadowRealm global, we use the main micro task queue. Otherwise, the
-      // current global must be either the debugger global or a debugger
-      // sandbox, and we use the debugger micro task queue instead.
-      if (IsWorkerGlobal(global) || IsShadowRealmGlobal(global)) {
-        microTaskQueue = &GetMicroTaskQueue();
-      } else {
-        MOZ_ASSERT(IsWorkerDebuggerGlobal(global) ||
-                   IsWorkerDebuggerSandbox(global));
-
-        microTaskQueue = &GetDebuggerMicroTaskQueue();
+      MOZ_ASSERT(IsWorkerDebuggerGlobal(global) ||
+                 IsWorkerDebuggerSandbox(global));
+      if (!EnqueueDebugMicroTask(cx, runnable.forget())) {
+        // This should never fail, but if it does, we have no choice but to
+        // crash. This is always an OOM.
+        NS_ABORT_OOM(0);
       }
-
-      if (!runnable->isInList()) {
-        // A recycled object may be in the list already.
-        mMicrotasksToTrace.insertBack(runnable);
-      }
-      PROFILER_MARKER_FLOW_ONLY("WorkerJSContext::DispatchToMicroTask", OTHER,
-                                {}, FlowMarker,
-                                Flow::FromPointer(runnable.get()));
-      microTaskQueue->push_back(std::move(runnable));
     }
   }
 

@@ -566,6 +566,10 @@ class AsyncPanZoomController {
   // direction.
   bool CanScroll(const ParentLayerPoint& aDelta) const;
 
+  // Return whether or not a scroll delta will be able to scroll or overscroll
+  // in either direction
+  bool CanScrollOrOverscroll(const ParentLayerPoint& aDelta) const;
+
   // Return whether or not a scroll delta will be able to scroll in either
   // direction with wheel.
   bool CanScrollWithWheel(const ParentLayerPoint& aDelta) const;
@@ -1937,6 +1941,8 @@ class AsyncPanZoomController {
     return mState == PINCHING || mState == ANIMATING_ZOOM;
   }
 
+  void SetFixedLayerMargins(const ScreenMargin& aMargins);
+
  private:
   // The timestamp of the latest touch start event.
   TimeStamp mTouchStartTime;
@@ -1958,6 +1964,8 @@ class AsyncPanZoomController {
   Maybe<ParentLayerCoord> mMinimumVelocityDuringPan;
   // This variable needs to be protected by |mRecursiveMutex|.
   ScrollSnapTargetIds mLastSnapTargetIds;
+  // This variable needs to be protected by |mRecursiveMutex|.
+  ScreenMargin mCompositorFixedLayerMargins;
   // Extra offset to add to the async scroll position for testing
   CSSPoint mTestAsyncScrollOffset;
   // Extra zoom to include in the aync zoom for testing
@@ -2053,6 +2061,9 @@ class AsyncPanZoomController {
   // position change delta if filling out happened, CSSPoint() otherwise.
   CSSPoint MaybeFillOutOverscrollGutter(
       const RecursiveMutexAutoLock& aProofOfLock);
+
+  ScreenMargin GetFixedLayerMargins(
+      const RecursiveMutexAutoLock& aProofOfLock) const;
 
   friend std::ostream& operator<<(
       std::ostream& aOut, const AsyncPanZoomController::PanZoomState& aState);

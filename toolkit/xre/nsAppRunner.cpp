@@ -10,8 +10,10 @@
 #include "mozilla/AppShutdown.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/Attributes.h"
+#include "mozilla/BaseProfiler.h"
 #include "mozilla/Components.h"
 #include "mozilla/FilePreferences.h"
+#include "mozilla/FOG.h"
 #include "mozilla/ChaosMode.h"
 #include "mozilla/HelperMacros.h"
 #include "mozilla/CmdLineAndEnvUtils.h"
@@ -39,7 +41,6 @@
 #include "mozilla/glean/ToolkitXreMetrics.h"
 #include "mozilla/glean/GleanPings.h"
 #include "mozilla/widget/TextRecognition.h"
-#include "BaseProfiler.h"
 #include "mozJSModuleLoader.h"
 
 #include "nsAppRunner.h"
@@ -310,8 +311,8 @@ extern const char gToolkitBuildID[];
 
 static nsIProfileLock* gProfileLock;
 #if defined(MOZ_HAS_REMOTE)
-MOZ_CONSTINIT static RefPtr<nsRemoteService> gRemoteService;
-MOZ_CONSTINIT static RefPtr<nsStartupLock> gStartupLock;
+constinit static RefPtr<nsRemoteService> gRemoteService;
+constinit static RefPtr<nsStartupLock> gStartupLock;
 #endif
 
 int gRestartArgc;
@@ -327,10 +328,10 @@ int gKioskMonitor = -1;
 
 bool gAllowContentAnalysisArgPresent = false;
 
-MOZ_CONSTINIT nsString gAbsoluteArgv0Path;
+constinit nsString gAbsoluteArgv0Path;
 
 #if defined(XP_WIN)
-MOZ_CONSTINIT nsString gProcessStartupShortcut;
+constinit nsString gProcessStartupShortcut;
 #endif
 
 #if defined(MOZ_WIDGET_GTK)
@@ -348,7 +349,7 @@ MOZ_CONSTINIT nsString gProcessStartupShortcut;
 #endif
 
 #if defined(MOZ_WAYLAND)
-MOZ_CONSTINIT std::unique_ptr<WaylandProxy> gWaylandProxy;
+constinit std::unique_ptr<WaylandProxy> gWaylandProxy;
 #endif
 
 #include "BinaryPath.h"
@@ -371,7 +372,7 @@ void XRE_LibFuzzerSetDriver(LibFuzzerDriver aDriver) {
 #undef None
 
 namespace mozilla {
-int (*RunGTest)(int*, char**) = 0;
+int (*RunGTest)(int*, char**) = nullptr;
 
 bool RunningGTest() { return RunGTest; }
 }  // namespace mozilla
@@ -1269,8 +1270,8 @@ nsXULAppInfo::GetRemoteType(nsACString& aRemoteType) {
   return NS_OK;
 }
 
-MOZ_CONSTINIT static nsCString gLastAppVersion;
-MOZ_CONSTINIT static nsCString gLastAppBuildID;
+constinit static nsCString gLastAppVersion;
+constinit static nsCString gLastAppBuildID;
 
 NS_IMETHODIMP
 nsXULAppInfo::GetLastAppVersion(nsACString& aResult) {
@@ -3026,7 +3027,7 @@ static ReturnAbortOnError ShowProfileSelector(
 
 static bool gDoMigration = false;
 static bool gDoProfileReset = false;
-MOZ_CONSTINIT static nsCOMPtr<nsIToolkitProfile> gResetOldProfile;
+constinit static nsCOMPtr<nsIToolkitProfile> gResetOldProfile;
 
 static nsresult LockProfile(nsINativeAppSupport* aNative, nsIFile* aRootDir,
                             nsIFile* aLocalDir, nsIToolkitProfile* aProfile,
@@ -4243,6 +4244,14 @@ int XREMain::XRE_mainInit(bool* aExitFlag) {
     mAppData->flags |= NS_XRE_ENABLE_CRASH_REPORTER;
   }
 
+#ifdef MOZ_THUNDERBIRD
+  // Set an explicit application name for Thunderbird.
+  // We do NOT set one for `firefox`.
+  // FOG uses a default one,
+  // background tasks overwrite it using `initializeFOG`.
+  FOG::SetApplicationID("thunderbird.desktop"_ns);
+#endif  // MOZ_THUNDERBIRD
+
   nsCOMPtr<nsIFile> xreBinDirectory;
   xreBinDirectory = mDirProvider.GetGREBinDir();
 
@@ -4794,7 +4803,7 @@ int XREMain::XRE_mainStartup(bool* aExitFlag) {
     if (const char* currentDesktop = PR_GetEnv("XDG_CURRENT_DESKTOP")) {
       useXI2 |= (nsDependentCString(currentDesktop) == "gamescope"_ns);
     }
-#    ifdef NIGHTLY_BUILD
+#    ifdef EARLY_BETA_OR_EARLIER
     // We tried 3.24.0+ but had problems, let's retry with newer versions. See
     // bug 1660212.
     useXI2 |= !gtk_check_version(3, 24, 49);
@@ -5500,8 +5509,8 @@ nsresult XREMain::XRE_mainRun() {
     CrashReporter::SetIncludeContextHeap(includeContextHeap);
 
 #if defined(XP_LINUX) && !defined(ANDROID)
-    PR_CreateThread(PR_USER_THREAD, AnnotateLSBRelease, 0, PR_PRIORITY_LOW,
-                    PR_GLOBAL_THREAD, PR_UNJOINABLE_THREAD, 0);
+    PR_CreateThread(PR_USER_THREAD, AnnotateLSBRelease, nullptr,
+                    PR_PRIORITY_LOW, PR_GLOBAL_THREAD, PR_UNJOINABLE_THREAD, 0);
 #endif
 
     if (mStartOffline) {
@@ -5913,6 +5922,10 @@ nsresult XREMain::XRE_mainRun() {
     NS_ENSURE_SUCCESS(rv, rv);
   }
 #endif
+
+  // We're entering the main run loop now, so we don't need to keep holding onto
+  // the `nsICommandLineRunner` anymore.
+  cmdLine = nullptr;
 
   {
     rv = appStartup->Run();
@@ -6426,7 +6439,7 @@ void SetupErrorHandling(const char* progname) {
   InstallSignalHandlers(progname);
 
   // Unbuffer stdout, needed for tinderbox tests.
-  setbuf(stdout, 0);
+  setbuf(stdout, nullptr);
 }
 
 static bool gRunSelfAsContentProc = false;
@@ -6446,6 +6459,12 @@ mozilla::BinPathType XRE_GetChildProcBinPathType(
   }
 
 #ifdef XP_WIN
+  // Removing this pref and always using the parent binary, along with other
+  // related clean up work, is tracked in Bug 2014843.
+  if (StaticPrefs::dom_ipc_alwaysUseParentBinary()) {
+    return BinPathType::Self;
+  }
+
   // On Windows, plugin-container may or may not be used depending on
   // the process type (e.g., actual plugins vs. content processes)
   switch (aProcessType) {

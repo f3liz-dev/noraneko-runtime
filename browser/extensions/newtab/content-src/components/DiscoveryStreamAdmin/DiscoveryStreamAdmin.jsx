@@ -19,6 +19,11 @@ const PREF_CONTEXTUAL_BANNER_PLACEMENTS =
   "discoverystream.placements.contextualBanners";
 const PREF_CONTEXTUAL_BANNER_COUNTS =
   "discoverystream.placements.contextualBanners.counts";
+const PREF_UNIFIED_ADS_ENABLED = "unifiedAds.spocs.enabled";
+const PREF_UNIFIED_ADS_ENDPOINT = "unifiedAds.endpoint";
+const PREF_ALLOWED_ENDPOINTS = "discoverystream.endpoints";
+const PREF_OHTTP_CONFIG = "discoverystream.ohttp.configURL";
+const PREF_OHTTP_RELAY = "discoverystream.ohttp.relayURL";
 
 const Row = props => (
   <tr className="message-item" {...props}>
@@ -84,50 +89,6 @@ export class TogglePrefCheckbox extends React.PureComponent {
   }
 }
 
-export class Personalization extends React.PureComponent {
-  constructor(props) {
-    super(props);
-    this.togglePersonalization = this.togglePersonalization.bind(this);
-  }
-
-  togglePersonalization() {
-    this.props.dispatch(
-      ac.OnlyToMain({
-        type: at.DISCOVERY_STREAM_PERSONALIZATION_TOGGLE,
-      })
-    );
-  }
-
-  render() {
-    const { lastUpdated, initialized } = this.props.state.Personalization;
-    return (
-      <React.Fragment>
-        <table>
-          <tbody>
-            <Row>
-              <td colSpan="2">
-                <TogglePrefCheckbox
-                  checked={this.props.personalized}
-                  pref="personalized"
-                  onChange={this.togglePersonalization}
-                />
-              </td>
-            </Row>
-            <Row>
-              <td className="min">Personalization Last Updated</td>
-              <td>{relativeTime(lastUpdated) || "(no data)"}</td>
-            </Row>
-            <Row>
-              <td className="min">Personalization Initialized</td>
-              <td>{initialized ? "true" : "false"}</td>
-            </Row>
-          </tbody>
-        </table>
-      </React.Fragment>
-    );
-  }
-}
-
 export class DiscoveryStreamAdminUI extends React.PureComponent {
   constructor(props) {
     super(props);
@@ -149,6 +110,7 @@ export class DiscoveryStreamAdminUI extends React.PureComponent {
       this.refreshTopicSelectionCache.bind(this);
     this.handleSectionsToggle = this.handleSectionsToggle.bind(this);
     this.toggleIABBanners = this.toggleIABBanners.bind(this);
+    this.handleAllizomToggle = this.handleAllizomToggle.bind(this);
     this.sendConversionEvent = this.sendConversionEvent.bind(this);
     this.state = {
       toggledStories: {},
@@ -353,14 +315,11 @@ export class DiscoveryStreamAdminUI extends React.PureComponent {
     this.props.dispatch(
       ac.SetPref("discoverystream.sections.cards.enabled", pressed)
     );
-    this.props.dispatch(
-      ac.SetPref("discoverystream.sections.cards.thumbsUpDown.enabled", pressed)
-    );
   }
 
   sendConversionEvent() {
     const detail = {
-      partnerId: "demo-partner",
+      partnerId: "295BEEF7-1E3B-4128-B8F8-858E12AA660B",
       lookbackDays: 7,
       impressionType: "default",
     };
@@ -517,20 +476,68 @@ export class DiscoveryStreamAdminUI extends React.PureComponent {
     );
   }
 
+  handleAllizomToggle(e) {
+    const prefs = this.props.otherPrefs;
+    const unifiedAdsSpocsEnabled = prefs[PREF_UNIFIED_ADS_ENABLED];
+    if (!unifiedAdsSpocsEnabled) {
+      return;
+    }
+    const { pressed } = e.target;
+    const { dispatch } = this.props;
+    const allowedEndpoints = prefs[PREF_ALLOWED_ENDPOINTS];
+    const setPref = (pref = "", value = "") => {
+      dispatch(ac.SetPref(pref, value));
+    };
+    const clearPref = (pref = "") => {
+      dispatch(
+        ac.OnlyToMain({
+          type: at.CLEAR_PREF,
+          data: {
+            name: pref,
+          },
+        })
+      );
+    };
+    if (pressed) {
+      setPref(PREF_UNIFIED_ADS_ENDPOINT, "https://ads.allizom.org/");
+      setPref(
+        PREF_ALLOWED_ENDPOINTS,
+        `${allowedEndpoints},https://ads.allizom.org/`
+      );
+      setPref(
+        PREF_OHTTP_CONFIG,
+        "https://stage.ohttp-gateway.nonprod.webservices.mozgcp.net/ohttp-configs"
+      );
+      setPref(
+        PREF_OHTTP_RELAY,
+        "https://mozilla-ohttp-relay-test.edgecompute.app/"
+      );
+    } else {
+      clearPref(PREF_UNIFIED_ADS_ENDPOINT);
+      clearPref(PREF_ALLOWED_ENDPOINTS);
+      clearPref(PREF_OHTTP_CONFIG);
+      clearPref(PREF_OHTTP_RELAY);
+    }
+  }
+
   renderSpocs() {
     const { spocs } = this.props.state.DiscoveryStream;
 
     const unifiedAdsSpocsEnabled =
-      this.props.otherPrefs["unifiedAds.spocs.enabled"];
+      this.props.otherPrefs[PREF_UNIFIED_ADS_ENABLED];
 
     // Determine which mechanism is querying the UAPI ads server
     const PREF_UNIFIED_ADS_ADSFEED_ENABLED = "unifiedAds.adsFeed.enabled";
     const adsFeedEnabled =
       this.props.otherPrefs[PREF_UNIFIED_ADS_ADSFEED_ENABLED];
 
-    const unifiedAdsEndpoint = this.props.otherPrefs["unifiedAds.endpoint"];
+    const unifiedAdsEndpoint = this.props.otherPrefs[PREF_UNIFIED_ADS_ENDPOINT];
+    const spocsEndpoint = unifiedAdsSpocsEnabled
+      ? unifiedAdsEndpoint
+      : spocs.spocs_endpoint;
 
     let spocsData = [];
+    let allizomEnabled = spocsEndpoint?.includes("allizom");
 
     if (
       spocs.data &&
@@ -545,16 +552,23 @@ export class DiscoveryStreamAdminUI extends React.PureComponent {
         <table>
           <tbody>
             <Row>
+              <td colSpan="2">
+                <moz-toggle
+                  id="sections-toggle"
+                  disabled={!unifiedAdsSpocsEnabled || null}
+                  pressed={allizomEnabled || null}
+                  onToggle={this.handleAllizomToggle}
+                  label="Toggle allizom"
+                />
+              </td>
+            </Row>
+            <Row>
               <td className="min">adsfeed enabled</td>
               <td>{adsFeedEnabled ? "true" : "false"}</td>
             </Row>
             <Row>
-              <td className="min">spocs_endpoint</td>
-              <td>
-                {unifiedAdsSpocsEnabled
-                  ? unifiedAdsEndpoint
-                  : spocs.spocs_endpoint}
-              </td>
+              <td className="min">spocs endpoint</td>
+              <td>{spocsEndpoint}</td>
             </Row>
             <Row>
               <td className="min">Data last fetched</td>
@@ -632,8 +646,6 @@ export class DiscoveryStreamAdminUI extends React.PureComponent {
   render() {
     const prefToggles = "enabled collapsible".split(" ");
     const { config, layout } = this.props.state.DiscoveryStream;
-    const personalized =
-      this.props.otherPrefs["discoverystream.personalization.enabled"];
     const sectionsEnabled = this.props.otherPrefs[PREF_SECTIONS_ENABLED];
 
     // Prefs for IAB Banners
@@ -749,14 +761,6 @@ export class DiscoveryStreamAdminUI extends React.PureComponent {
             ))}
           </div>
         ))}
-        <h3>Personalization</h3>
-        <Personalization
-          personalized={personalized}
-          dispatch={this.props.dispatch}
-          state={{
-            Personalization: this.props.state.Personalization,
-          }}
-        />
         <h3>Spocs</h3>
         {this.renderSpocs()}
         <h3>Feeds Data</h3>
@@ -806,7 +810,6 @@ export class DiscoveryStreamAdminInner extends React.PureComponent {
             <DiscoveryStreamAdminUI
               state={{
                 DiscoveryStream: this.props.DiscoveryStream,
-                Personalization: this.props.Personalization,
                 Weather: this.props.Weather,
                 InferredPersonalization: this.props.InferredPersonalization,
               }}
@@ -862,7 +865,6 @@ const _DiscoveryStreamAdmin = props => <CollapseToggle {...props} />;
 export const DiscoveryStreamAdmin = connect(state => ({
   Sections: state.Sections,
   DiscoveryStream: state.DiscoveryStream,
-  Personalization: state.Personalization,
   InferredPersonalization: state.InferredPersonalization,
   Prefs: state.Prefs,
   Weather: state.Weather,

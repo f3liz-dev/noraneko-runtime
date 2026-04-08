@@ -46,11 +46,11 @@ const CLOSE_DELAY = 750;
  * The EyeDropper allows the user to select a color of a pixel within the content page,
  * showing a magnified circle and color preview while the user hover the page.
  */
-class EyeDropper {
+class EyeDropper extends EventEmitter {
   #pageEventListenersAbortController;
   #debouncedUpdateScreenshot;
   constructor(highlighterEnv) {
-    EventEmitter.decorate(this);
+    super();
 
     this.highlighterEnv = highlighterEnv;
     this.markup = new CanvasFrameAnonymousContentHelper(
@@ -241,9 +241,10 @@ class EyeDropper {
    * Create an image bitmap from the page screenshot, draw the eyedropper and set the
    * "drawn" attribute on the "root" element once it's done.
    *
-   * @params {string | null} screenshot: a dataURL representation of the page screenshot.
-   *                       If null, we'll use `drawWindow` to get the the page screenshot
-   *                       (⚠️ but it won't handle remote frames).
+   * @param {string | null} screenshot
+   *   A dataURL representation of the page screenshot.
+   *   If null, we'll use `drawWindow` to get the the page screenshot
+   *   (⚠️ but it won't handle remote frames).
    */
   async updateScreenshot(screenshot) {
     const rootElement = this.getElement("eye-dropper-root");

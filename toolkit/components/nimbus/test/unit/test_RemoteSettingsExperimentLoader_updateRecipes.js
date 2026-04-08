@@ -406,8 +406,10 @@ add_task(async function test_updateRecipes_simpleFeatureInvalidAfterUpdate() {
     additionalProperties: true,
   };
 
-  const { sandbox, loader, manager, initExperimentAPI, cleanup } =
-    await setupTest({ init: false, experiments: [recipe] });
+  const { sandbox, loader, manager, cleanup } = await setupTest({
+    init: false,
+    experiments: [recipe],
+  });
 
   sandbox.spy(loader, "updateRecipes");
   sandbox.spy(EnrollmentsContext.prototype, "_generateVariablesOnlySchema");
@@ -416,7 +418,7 @@ add_task(async function test_updateRecipes_simpleFeatureInvalidAfterUpdate() {
   sandbox.spy(manager, "enroll");
   sandbox.spy(manager, "_unenroll");
 
-  await initExperimentAPI();
+  await ExperimentAPI.init();
 
   Assert.ok(
     manager.onRecipe.calledOnceWith(recipe, "rs-loader", {
@@ -589,14 +591,14 @@ add_task(async function test_updateRecipes_validationTelemetry() {
   for (const { recipe, reason, events, callCount } of TEST_CASES) {
     info(`Testing validation failed telemetry for reason = "${reason}" ...`);
 
-    const { sandbox, initExperimentAPI, cleanup } = await setupTest({
+    const { sandbox, cleanup } = await setupTest({
       init: false,
       experiments: [recipe],
     });
 
     sandbox.spy(NimbusTelemetry, "recordValidationFailure");
 
-    await initExperimentAPI();
+    await ExperimentAPI.init();
 
     Assert.equal(
       NimbusTelemetry.recordValidationFailure.callCount,
@@ -667,7 +669,7 @@ add_task(async function test_updateRecipes_validationDisabled() {
   });
 
   for (const recipe of [invalidRecipe, invalidBranch, invalidFeature]) {
-    const { sandbox, manager, initExperimentAPI, cleanup } = await setupTest({
+    const { sandbox, manager, cleanup } = await setupTest({
       init: false,
       experiments: [recipe],
     });
@@ -676,7 +678,7 @@ add_task(async function test_updateRecipes_validationDisabled() {
     sandbox.spy(manager, "onRecipe");
     sandbox.spy(NimbusTelemetry, "recordValidationFailure");
 
-    await initExperimentAPI();
+    await ExperimentAPI.init();
 
     Assert.ok(
       NimbusTelemetry.recordValidationFailure.notCalled,
@@ -1455,9 +1457,7 @@ add_task(async function test_update_experiments_ordered_by_published_date() {
 
 add_task(
   async function test_record_is_ready_no_value_for_nimbus_is_ready_feature() {
-    const { loader, cleanup } = await NimbusTestUtils.setupTest({
-      clearTelemetry: true,
-    });
+    const { loader, cleanup } = await setupTest();
 
     await Services.fog.testFlushAllChildren();
     Services.fog.testResetFOG();
@@ -1478,7 +1478,7 @@ add_task(
       value: { eventCount: 3 },
     });
 
-    const { loader, manager, cleanup } = await NimbusTestUtils.setupTest();
+    const { loader, manager, cleanup } = await setupTest();
 
     await Services.fog.testFlushAllChildren();
     Services.fog.testResetFOG();
@@ -1551,7 +1551,7 @@ add_task(async function test_updateRecipes_secure() {
   ] of TEST_CASES.entries()) {
     info(`Running test ${idx}`);
 
-    const { sandbox, manager, initExperimentAPI, cleanup } = await setupTest({
+    const { sandbox, manager, cleanup } = await setupTest({
       init: false,
       experiments,
       secureExperiments,
@@ -1559,7 +1559,7 @@ add_task(async function test_updateRecipes_secure() {
 
     sandbox.stub(manager, "onRecipe");
 
-    await initExperimentAPI();
+    await ExperimentAPI.init();
 
     const enrolledSlugs = manager.onRecipe
       .getCalls()
@@ -1878,118 +1878,124 @@ add_task(async function test_updateRecipes_enrollmentStatus_telemetry() {
 
   loader.remoteSettingsClients.experiments.get.resolves(recipes);
 
-  await loader.updateRecipes("test");
-
-  const events = Glean.nimbusEvents.enrollmentStatus.testGetValue("events");
-
-  Assert.deepEqual(events?.map(ev => ev.extra) ?? [], [
-    {
-      reason: "Qualified",
-      branch: "control",
-      slug: "was-enrolled",
-      status: "Enrolled",
+  await GleanPings.nimbusTargetingContext.testSubmission(
+    () => {
+      Assert.deepEqual(
+        Glean.nimbusEvents.enrollmentStatus
+          .testGetValue("nimbus-targeting-context")
+          ?.map(ev => ev.extra),
+        [
+          {
+            reason: "Qualified",
+            branch: "control",
+            slug: "was-enrolled",
+            status: "Enrolled",
+          },
+          {
+            branch: "control",
+            reason: "Qualified",
+            status: "Enrolled",
+            slug: "stays-enrolled",
+          },
+          {
+            branch: "control",
+            slug: "recipe-mismatch",
+            status: "Enrolled",
+            reason: "Qualified",
+          },
+          {
+            branch: "control",
+            slug: "invalid-recipe",
+            reason: "Qualified",
+            status: "Enrolled",
+          },
+          {
+            slug: "invalid-branch",
+            reason: "Qualified",
+            status: "Enrolled",
+            branch: "control",
+          },
+          {
+            status: "Enrolled",
+            reason: "Qualified",
+            slug: "invalid-feature",
+            branch: "control",
+          },
+          {
+            slug: "l10n-missing-locale",
+            status: "Enrolled",
+            branch: "control",
+            reason: "Qualified",
+          },
+          {
+            status: "Enrolled",
+            slug: "l10n-missing-entry",
+            reason: "Qualified",
+            branch: "control",
+          },
+          {
+            branch: "control",
+            slug: "was-enrolled",
+            status: "WasEnrolled",
+          },
+          {
+            reason: "Qualified",
+            slug: "stays-enrolled",
+            branch: "control",
+            status: "Enrolled",
+          },
+          {
+            status: "Disqualified",
+            branch: "control",
+            slug: "recipe-mismatch",
+            reason: "NotTargeted",
+          },
+          {
+            slug: "invalid-recipe",
+            error_string: "invalid-recipe",
+            status: "Disqualified",
+            reason: "Error",
+            branch: "control",
+          },
+          {
+            branch: "control",
+            status: "Disqualified",
+            slug: "invalid-branch",
+            error_string: "invalid-branch",
+            reason: "Error",
+          },
+          {
+            slug: "invalid-feature",
+            status: "Disqualified",
+            branch: "control",
+            reason: "Error",
+            error_string: "invalid-feature",
+          },
+          {
+            reason: "Error",
+            status: "Disqualified",
+            branch: "control",
+            slug: "l10n-missing-locale",
+            error_string: "l10n-missing-locale",
+          },
+          {
+            slug: "l10n-missing-entry",
+            reason: "Error",
+            branch: "control",
+            status: "Disqualified",
+            error_string: "l10n-missing-entry",
+          },
+          {
+            slug: "enrolls",
+            reason: "Qualified",
+            branch: "control",
+            status: "Enrolled",
+          },
+        ]
+      );
     },
-    {
-      branch: "control",
-      reason: "Qualified",
-      status: "Enrolled",
-      slug: "stays-enrolled",
-    },
-    {
-      branch: "control",
-      slug: "recipe-mismatch",
-      status: "Enrolled",
-      reason: "Qualified",
-    },
-    {
-      branch: "control",
-      slug: "invalid-recipe",
-      reason: "Qualified",
-      status: "Enrolled",
-    },
-    {
-      slug: "invalid-branch",
-      reason: "Qualified",
-      status: "Enrolled",
-      branch: "control",
-    },
-    {
-      status: "Enrolled",
-      reason: "Qualified",
-      slug: "invalid-feature",
-      branch: "control",
-    },
-    {
-      slug: "l10n-missing-locale",
-      status: "Enrolled",
-      branch: "control",
-      reason: "Qualified",
-    },
-    {
-      status: "Enrolled",
-      slug: "l10n-missing-entry",
-      reason: "Qualified",
-      branch: "control",
-    },
-    {
-      branch: "control",
-      slug: "was-enrolled",
-      status: "WasEnrolled",
-    },
-    {
-      reason: "Qualified",
-      slug: "stays-enrolled",
-      branch: "control",
-      status: "Enrolled",
-    },
-    {
-      status: "Disqualified",
-      branch: "control",
-      slug: "recipe-mismatch",
-      reason: "NotTargeted",
-    },
-    {
-      slug: "invalid-recipe",
-      error_string: "invalid-recipe",
-      status: "Disqualified",
-      reason: "Error",
-      branch: "control",
-    },
-    {
-      branch: "control",
-      status: "Disqualified",
-      slug: "invalid-branch",
-      error_string: "invalid-branch",
-      reason: "Error",
-    },
-    {
-      slug: "invalid-feature",
-      status: "Disqualified",
-      branch: "control",
-      reason: "Error",
-      error_string: "invalid-feature",
-    },
-    {
-      reason: "Error",
-      status: "Disqualified",
-      branch: "control",
-      slug: "l10n-missing-locale",
-      error_string: "l10n-missing-locale",
-    },
-    {
-      slug: "l10n-missing-entry",
-      reason: "Error",
-      branch: "control",
-      status: "Disqualified",
-      error_string: "l10n-missing-entry",
-    },
-    {
-      slug: "enrolls",
-      reason: "Qualified",
-      branch: "control",
-      status: "Enrolled",
-    },
-  ]);
+    async () => await loader.updateRecipes("test")
+  );
 
   manager.unenroll("stays-enrolled");
   manager.unenroll("enrolls");
@@ -2063,53 +2069,56 @@ add_task(async function test_updateRecipes_enrollmentStatus_notEnrolled() {
 
   loader.remoteSettingsClients.experiments.get.resolves(recipes);
 
-  await loader.updateRecipes("timer");
-
-  Assert.deepEqual(
-    Glean.nimbusEvents.enrollmentStatus
-      .testGetValue("events")
-      ?.map(ev => ev.extra),
-    [
-      {
-        reason: "OptIn",
-        status: "Enrolled",
-        branch: "control",
-        slug: "enrolled-rollout",
-      },
-      {
-        branch: "control",
-        reason: "OptIn",
-        status: "Enrolled",
-        slug: "enrolled-experiment",
-      },
-      {
-        slug: "enrollment-paused",
-        status: "NotEnrolled",
-        reason: "EnrollmentsPaused",
-      },
-      {
-        slug: "no-match",
-        status: "NotEnrolled",
-        reason: "NotTargeted",
-      },
-      {
-        slug: "targeting-only",
-        reason: "NotSelected",
-        status: "NotEnrolled",
-      },
-      {
-        conflict_slug: "enrolled-rollout",
-        slug: "already-enrolled-rollout",
-        reason: "FeatureConflict",
-        status: "NotEnrolled",
-      },
-      {
-        slug: "already-enrolled-experiment",
-        status: "NotEnrolled",
-        conflict_slug: "enrolled-experiment",
-        reason: "FeatureConflict",
-      },
-    ]
+  await GleanPings.nimbusTargetingContext.testSubmission(
+    () => {
+      Assert.deepEqual(
+        Glean.nimbusEvents.enrollmentStatus
+          .testGetValue("nimbus-targeting-context")
+          ?.map(ev => ev.extra),
+        [
+          {
+            reason: "OptIn",
+            status: "Enrolled",
+            branch: "control",
+            slug: "enrolled-rollout",
+          },
+          {
+            branch: "control",
+            reason: "OptIn",
+            status: "Enrolled",
+            slug: "enrolled-experiment",
+          },
+          {
+            slug: "enrollment-paused",
+            status: "NotEnrolled",
+            reason: "EnrollmentsPaused",
+          },
+          {
+            slug: "no-match",
+            status: "NotEnrolled",
+            reason: "NotTargeted",
+          },
+          {
+            slug: "targeting-only",
+            reason: "NotSelected",
+            status: "NotEnrolled",
+          },
+          {
+            conflict_slug: "enrolled-rollout",
+            slug: "already-enrolled-rollout",
+            reason: "FeatureConflict",
+            status: "NotEnrolled",
+          },
+          {
+            slug: "already-enrolled-experiment",
+            status: "NotEnrolled",
+            conflict_slug: "enrolled-experiment",
+            reason: "FeatureConflict",
+          },
+        ]
+      );
+    },
+    async () => await loader.updateRecipes("timer")
   );
 
   manager.unenroll("enrolled-experiment");
@@ -2117,6 +2126,150 @@ add_task(async function test_updateRecipes_enrollmentStatus_notEnrolled() {
 
   cleanupFeatures();
   await cleanup();
+});
+
+async function doEnrollmentStatusOptOutTest(
+  expectedEvents,
+  expectedEnrollments
+) {
+  Services.fog.applyServerKnobsConfig(
+    JSON.stringify({
+      metrics_enabled: {
+        "nimbus_events.enrollment_status": true,
+      },
+    })
+  );
+
+  const recipes = [
+    NimbusTestUtils.factories.recipe.withFeatureConfig("previous-experiment", {
+      featureId: "no-feature-firefox-desktop",
+    }),
+    NimbusTestUtils.factories.recipe.withFeatureConfig(
+      "previous-rollout",
+      { featureId: "no-feature-firefox-desktop" },
+      { isRollout: true }
+    ),
+    NimbusTestUtils.factories.recipe.withFeatureConfig("experiment", {
+      featureId: "no-feature-firefox-desktop",
+    }),
+    NimbusTestUtils.factories.recipe.withFeatureConfig(
+      "rollout",
+      { featureId: "no-feature-firefox-desktop" },
+      { isRollout: true }
+    ),
+    NimbusTestUtils.factories.recipe.withFeatureConfig(
+      "labs",
+      { featureId: "no-feature-firefox-desktop" },
+      {
+        isRollout: true,
+        isFirefoxLabsOptIn: true,
+        firefoxLabsTitle: "title",
+        firefoxLabsDescription: "description",
+        firefoxLabsDescriptionLinks: null,
+        firefoxLabsGroup: "group",
+        requiresRestart: false,
+      }
+    ),
+  ];
+
+  const { cleanup } = await setupTest({
+    storePath: await NimbusTestUtils.createStoreWith(store => {
+      NimbusTestUtils.addEnrollmentForRecipe(recipes[0], {
+        store,
+        extra: {
+          active: false,
+          unenrollReason: NimbusTelemetry.UnenrollReason.STUDIES_OPT_OUT,
+        },
+      });
+
+      NimbusTestUtils.addEnrollmentForRecipe(recipes[1], {
+        store,
+        extra: {
+          active: false,
+          unenrollReason: NimbusTelemetry.UnenrollReason.ROLLOUTS_OPT_OUT,
+        },
+      });
+    }),
+    migrationState: NimbusTestUtils.migrationState.LATEST,
+    experiments: recipes,
+    init: false,
+  });
+
+  await GleanPings.nimbusTargetingContext.testSubmission(
+    () => {
+      Assert.deepEqual(
+        Glean.nimbusEvents.enrollmentStatus
+          .testGetValue("nimbus-targeting-context")
+          ?.map(ev => ev.extra),
+        expectedEvents
+      );
+    },
+    () => ExperimentAPI.init()
+  );
+
+  await ExperimentAPI._rsLoader.finishedUpdating();
+
+  await NimbusTestUtils.cleanupManager(expectedEnrollments);
+  await cleanup();
+}
+
+add_task(async function testUpdateRecipesEnrollmentStatusStudiesOptOut() {
+  Services.prefs.setBoolPref("app.shield.optoutstudies.enabled", false);
+  await doEnrollmentStatusOptOutTest(
+    [
+      {
+        slug: "previous-experiment",
+        status: "NotEnrolled",
+        reason: "OptOut",
+      },
+      {
+        slug: "previous-rollout",
+        status: "Enrolled",
+        reason: "Qualified",
+        branch: "control",
+      },
+      {
+        slug: "experiment",
+        status: "NotEnrolled",
+        reason: "OptOut",
+      },
+      {
+        slug: "rollout",
+        status: "Enrolled",
+        reason: "Qualified",
+        branch: "control",
+      },
+    ],
+    ["previous-rollout", "rollout"]
+  );
+  Services.prefs.setBoolPref("app.shield.optoutstudies.enabled", true);
+});
+
+add_task(async function testUpdateRecipesEnrollmentStatusRolloutsOptOut() {
+  Services.prefs.setBoolPref("nimbus.rollouts.enabled", false);
+
+  await doEnrollmentStatusOptOutTest(
+    [
+      {
+        slug: "previous-rollout",
+        status: "NotEnrolled",
+        reason: "OptOut",
+      },
+      {
+        slug: "experiment",
+        status: "Enrolled",
+        reason: "Qualified",
+        branch: "control",
+      },
+      {
+        slug: "rollout",
+        status: "NotEnrolled",
+        reason: "OptOut",
+      },
+    ],
+    ["experiment"]
+  );
+  Services.prefs.setBoolPref("nimbus.rollouts.enabled", true);
 });
 
 add_task(async function test_updateRecipesWithPausedEnrollment() {
@@ -2412,9 +2565,51 @@ add_task(async function testUnenrolledInAnotherProfileBeforeUpdate() {
     read: true,
     sync: true,
   });
-  const { cleanup, store } = await setupTest({
-    experiments: [e1, e2, e3, r1, r2],
-  });
+
+  let cleanup, store;
+  await GleanPings.nimbusTargetingContext.testSubmission(
+    () => {
+      Assert.deepEqual(
+        Glean.nimbusEvents.enrollmentStatus
+          .testGetValue("nimbus-targeting-context")
+          ?.map(ev => ev.extra),
+        [
+          {
+            slug: "experiment-1",
+            status: "NotEnrolled",
+            reason: "UnenrolledInAnotherProfile",
+          },
+          {
+            slug: "experiment-2",
+            status: "NotEnrolled",
+            reason: "UnenrolledInAnotherProfile",
+          },
+          {
+            slug: "experiment-3",
+            branch: "control",
+            status: "Enrolled",
+            reason: "Qualified",
+          },
+          {
+            slug: "rollout-1",
+            branch: "control",
+            status: "Enrolled",
+            reason: "Qualified",
+          },
+          {
+            slug: "rollout-2",
+            branch: "control",
+            status: "Enrolled",
+            reason: "Qualified",
+          },
+        ]
+      );
+    },
+    async () =>
+      ({ cleanup, store } = await setupTest({
+        experiments: [e1, e2, e3, r1, r2],
+      }))
+  );
 
   Assert.ok(
     !store.has("experiment-1"),
@@ -2440,42 +2635,6 @@ add_task(async function testUnenrolledInAnotherProfileBeforeUpdate() {
     await NimbusTestUtils.queryEnrollment("experiment-2"),
     null,
     "Enrollment for experiment-1 does not exist in the database"
-  );
-
-  Assert.deepEqual(
-    Glean.nimbusEvents.enrollmentStatus
-      .testGetValue("events")
-      ?.map(ev => ev.extra),
-    [
-      {
-        slug: "experiment-1",
-        status: "NotEnrolled",
-        reason: "UnenrolledInAnotherProfile",
-      },
-      {
-        slug: "experiment-2",
-        status: "NotEnrolled",
-        reason: "UnenrolledInAnotherProfile",
-      },
-      {
-        slug: "experiment-3",
-        branch: "control",
-        status: "Enrolled",
-        reason: "Qualified",
-      },
-      {
-        slug: "rollout-1",
-        branch: "control",
-        status: "Enrolled",
-        reason: "Qualified",
-      },
-      {
-        slug: "rollout-2",
-        branch: "control",
-        status: "Enrolled",
-        reason: "Qualified",
-      },
-    ]
   );
 
   await NimbusTestUtils.cleanupManager([
@@ -2565,7 +2724,48 @@ add_task(async function testUnenrolledInAnotherProfileBetweenUpdates() {
     })
   );
 
-  await loader.updateRecipes("timer");
+  await GleanPings.nimbusTargetingContext.testSubmission(
+    () => {
+      Assert.deepEqual(
+        Glean.nimbusEvents.enrollmentStatus
+          .testGetValue("nimbus-targeting-context")
+          ?.map(ev => ev.extra),
+        [
+          {
+            slug: "rollout-1",
+            branch: "control",
+            status: "Enrolled",
+            reason: "Qualified",
+          },
+          {
+            slug: "rollout-2",
+            branch: "control",
+            status: "Enrolled",
+            reason: "Qualified",
+          },
+          {
+            slug: "experiment-1",
+            branch: "control",
+            status: "Disqualified",
+            reason: "UnenrolledInAnotherProfile",
+          },
+          {
+            slug: "experiment-2",
+            branch: "control",
+            status: "Disqualified",
+            reason: "UnenrolledInAnotherProfile",
+          },
+          {
+            slug: "experiment-3",
+            branch: "control",
+            status: "Enrolled",
+            reason: "Qualified",
+          },
+        ]
+      );
+    },
+    async () => await loader.updateRecipes("timer")
+  );
 
   {
     const enrollment = store.get("experiment-1");
@@ -2612,44 +2812,6 @@ add_task(async function testUnenrolledInAnotherProfileBetweenUpdates() {
     );
   }
 
-  Assert.deepEqual(
-    Glean.nimbusEvents.enrollmentStatus
-      .testGetValue("events")
-      ?.map(ev => ev.extra),
-    [
-      {
-        slug: "rollout-1",
-        branch: "control",
-        status: "Enrolled",
-        reason: "Qualified",
-      },
-      {
-        slug: "rollout-2",
-        branch: "control",
-        status: "Enrolled",
-        reason: "Qualified",
-      },
-      {
-        slug: "experiment-1",
-        branch: "control",
-        status: "Disqualified",
-        reason: "UnenrolledInAnotherProfile",
-      },
-      {
-        slug: "experiment-2",
-        branch: "control",
-        status: "Disqualified",
-        reason: "UnenrolledInAnotherProfile",
-      },
-      {
-        slug: "experiment-3",
-        branch: "control",
-        status: "Enrolled",
-        reason: "Qualified",
-      },
-    ]
-  );
-
   await NimbusTestUtils.cleanupManager([
     "experiment-3",
     "rollout-1",
@@ -2678,9 +2840,7 @@ add_task(async function test_remoteSettingsSyncError_backwardsSync() {
 
   await assertSyncTimestamps({}, "No timestamps");
 
-  const { manager, loader, cleanup } = await NimbusTestUtils.setupTest({
-    clearTelemetry: true,
-  });
+  const { manager, loader, cleanup } = await setupTest();
   Services.fog.testResetFOG(); // Clear the empty events that were triggered during initialization.
 
   await assertSyncTimestamps(
@@ -2976,9 +3136,7 @@ add_task(async function test_remoteSettingsSyncError_empty() {
   );
 
   Services.fog.testResetFOG();
-  const { manager, loader, cleanup } = await NimbusTestUtils.setupTest({
-    clearTelemetry: true,
-  });
+  const { manager, loader, cleanup } = await setupTest();
 
   // If both collections are empty we will see telemetry for both. There is a
   // migration event and an enabled event during startup.
@@ -3116,9 +3274,7 @@ add_task(async function test_remoteSettingsSyncError_empty() {
 });
 
 add_task(async function test_remoteSettingsSyncError_getException() {
-  const { loader, cleanup } = await NimbusTestUtils.setupTest({
-    clearTelemetry: true,
-  });
+  const { loader, cleanup } = await setupTest();
   Services.fog.testResetFOG(); // Clear the empty events that were triggered during initialization.
 
   loader.remoteSettingsClients.experiments.get.rejects(new Error("ruh roh"));
@@ -3143,9 +3299,7 @@ add_task(async function test_remoteSettingsSyncError_getException() {
 });
 
 add_task(async function test_remoteSettingsSyncError_invalidLastModified() {
-  const { loader, cleanup } = await NimbusTestUtils.setupTest({
-    clearTelemetry: true,
-  });
+  const { loader, cleanup } = await setupTest();
   Services.fog.testResetFOG(); // Clear the empty events that were triggered during initialization.
 
   loader.remoteSettingsClients.experiments.db.getLastModified.resolves("never");
@@ -3179,9 +3333,7 @@ add_task(async function test_remoteSettingsSyncError_invalidLastModified() {
 });
 
 add_task(async function test_remoteSettingsSyncError_lastModifiedException() {
-  const { loader, cleanup } = await NimbusTestUtils.setupTest({
-    clearTelemetry: true,
-  });
+  const { loader, cleanup } = await setupTest();
   Services.fog.testResetFOG(); // Clear the empty events that were triggered during initialization.
 
   loader.remoteSettingsClients.experiments.db.getLastModified.rejects(
@@ -3223,9 +3375,7 @@ add_task(async function test_remoteSettingsSyncError_nullLastModified() {
     }
   );
 
-  const { manager, loader, cleanup } = await NimbusTestUtils.setupTest({
-    clearTelemetry: true,
-  });
+  const { manager, loader, cleanup } = await setupTest();
   Services.fog.testResetFOG(); // Clear the empty events that were triggered during initialization.
 
   // If the experiments collection contains an experiment but the

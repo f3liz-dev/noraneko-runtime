@@ -222,9 +222,11 @@ class Inspector extends EventEmitter {
     this.#fluentL10n = new FluentL10n();
     await this.#fluentL10n.init(["devtools/client/compatibility.ftl"]);
 
-    // Display the main inspector panel with: search input, markup view and breadcrumbs.
-    this.panelDoc.getElementById("inspector-main-content").style.visibility =
-      "visible";
+    // Add the class that will display the main inspector panel with: search input,
+    // markup view and breadcrumbs.
+    this.panelDoc
+      .getElementById("inspector-main-content")
+      .classList.add("initialized");
 
     // Setup the splitter before watching targets & resources.
     // The markup view will be initialized after we get the first root-node
@@ -1809,10 +1811,6 @@ class Inspector extends EventEmitter {
 
     this.#teardownToolbar();
 
-    this.prefObserver.on(
-      DEFAULT_COLOR_UNIT_PREF,
-      this.#handleDefaultColorUnitPrefChange
-    );
     this.prefObserver.destroy();
 
     this.breadcrumbs.destroy();
@@ -2108,20 +2106,22 @@ class Inspector extends EventEmitter {
   }
 
   /**
-   * Called by toolbox.js on `Esc` keydown.
+   * Called by toolbox.js on `Esc` keydown to check if the inspector panel
+   * should prevent the split console from being toggled.
    *
-   * @param {AbortController} abortController
+   * @returns {boolean} true if the split console toggle should be prevented.
    */
-  onToolboxChromeEventHandlerEscapeKeyDown(abortController) {
-    // If the event tooltip is displayed, hide it and prevent the Esc event listener
-    // of the toolbox to occur (e.g. don't toggle split console)
+  shouldPreventSplitConsoleToggle() {
+    // If the event tooltip is displayed, hide it and prevent the split console
+    // from being toggled.
     if (
       this.markup.hasEventDetailsTooltip() &&
       this.markup.eventDetailsTooltip.isVisible()
     ) {
       this.markup.eventDetailsTooltip.hide();
-      abortController.abort();
+      return true;
     }
+    return false;
   }
 }
 

@@ -86,6 +86,16 @@ class BrowsingContextGroup final : public nsWrapperCache {
   // BrowsingContextGroup, if possible.
   ContentParent* GetHostProcess(const nsACString& aRemoteType);
 
+  // Check if the process which sent the message being read from aReader is
+  // aware of this BrowsingContextGroup's existence.
+  // If this returns false, it will first set a fatal error on aReader with more
+  // details.
+  bool IsKnownForMessageReader(IPC::MessageReader* aReader);
+
+  // Check if the process with the given ChildID is aware of this
+  // BrowsingContextGroup's existence.
+  bool IsKnownForChildID(GeckoChildID aChildID);
+
   // When a BrowsingContext is being discarded, we may want to keep the
   // corresponding BrowsingContextGroup alive until the other process
   // acknowledges that the BrowsingContext has been discarded. A `KeepAlive`
@@ -259,9 +269,7 @@ class BrowsingContextGroup final : public nsWrapperCache {
 
   uint32_t mKeepAliveCount = 0;
 
-#ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
   bool mDestroyed = false;
-#endif
 
   // A BrowsingContextGroup contains a series of {Browsing,Window}Context
   // objects. They are addressed using a hashtable to avoid linear lookup when

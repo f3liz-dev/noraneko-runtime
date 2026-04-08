@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsINode_h___
-#define nsINode_h___
+#ifndef nsINode_h_
+#define nsINode_h_
 
 #include <iosfwd>
 
@@ -118,6 +118,7 @@ struct DOMPointInit;
 struct GetRootNodeOptions;
 enum class AllowRangeCrossShadowBoundary : bool;  // defined in AbstractRange.h
 enum class CallerType : uint32_t;
+struct AriaNotificationOptions;
 }  // namespace dom
 }  // namespace mozilla
 
@@ -251,6 +252,9 @@ enum class BatchRemovalOrder {
 };
 
 struct BatchRemovalState {
+  // Whether we're the fist kid getting removed in the batch. Note that that's
+  // different to whether we're the first _child_, if we're removing
+  // back-to-front.
   bool mIsFirst = true;
 };
 
@@ -283,7 +287,7 @@ class nsMutationGuard {
    * years for sGeneration to fully wrap around so we can ignore a guard living
    * through a full wrap around.
    */
-  bool Mutated(uint8_t aIgnoreCount) {
+  bool Mutated(uint8_t aIgnoreCount) const {
     return (sGeneration - mStartingGeneration) > aIgnoreCount;
   }
 
@@ -798,6 +802,11 @@ class nsINode : public mozilla::dom::EventTarget {
     return mNodeInfo->GetDocument();
   }
 
+  // Returns our owning NodeInfo manager.
+  nsNodeInfoManager* NodeInfoManager() const {
+    return mNodeInfo->NodeInfoManager();
+  }
+
   /**
    * Return the "owner document" of this node as an nsINode*.  Implemented
    * in Document.h.
@@ -1047,18 +1056,15 @@ class nsINode : public mozilla::dom::EventTarget {
 
   template <BatchRemovalOrder aOrder = BatchRemovalOrder::FrontToBack>
   void RemoveAllChildren(bool aNotify) {
-    if (!HasChildren()) {
-      return;
-    }
     BatchRemovalState state{};
-    do {
+    while (HasChildren()) {
       nsIContent* nodeToRemove = aOrder == BatchRemovalOrder::FrontToBack
                                      ? GetFirstChild()
                                      : GetLastChild();
       RemoveChildNode(nodeToRemove, aNotify, &state, nullptr,
                       MutationEffectOnScript::KeepTrustWorthiness);
       state.mIsFirst = false;
-    } while (HasChildren());
+    }
   }
 
   /**
@@ -1528,6 +1534,13 @@ class nsINode : public mozilla::dom::EventTarget {
     mozilla::UniquePtr<mozilla::LinkedList<mozilla::dom::AbstractRange>>
         mClosestCommonInclusiveAncestorRanges;
   };
+
+  /**
+   * Helper to allocate slot memory from the appropriate arena,
+   * or from the heap if no arena is available.
+   * Always returns allocated memory.
+   */
+  void* AllocateSlots(size_t aSize);
 
   /**
    * Functions for managing flags and slots
@@ -2279,7 +2292,7 @@ class nsINode : public mozilla::dom::EventTarget {
     ClearBoolFlag(ElementCreatedFromPrototypeAndHasUnmodifiedL10n);
   }
 
-  mozilla::dom::ShadowRoot* GetShadowRoot() const;
+  inline mozilla::dom::ShadowRoot* GetShadowRoot() const;
 
   // Return the shadow root of the node if it is a shadow host and
   // it meets the requirements for being a shadow host of a selection.
@@ -2631,7 +2644,7 @@ class nsINode : public mozilla::dom::EventTarget {
   }
 #define TOUCH_EVENT EVENT
 #define DOCUMENT_ONLY_EVENT EVENT
-#include "mozilla/EventNameList.h"
+#include "mozilla/EventNameList.inc"
 #undef DOCUMENT_ONLY_EVENT
 #undef TOUCH_EVENT
 #undef EVENT
@@ -2639,6 +2652,9 @@ class nsINode : public mozilla::dom::EventTarget {
   NodeSelectorFlags GetSelectorFlags() const {
     return static_cast<NodeSelectorFlags>(mSelectorFlags.Get());
   }
+
+  void AriaNotify(const nsAString& aAnnouncement,
+                  const mozilla::dom::AriaNotificationOptions& aOptions);
 
  protected:
   static bool Traverse(nsINode* tmp, nsCycleCollectionTraversalCallback& cb);
@@ -2790,4 +2806,4 @@ inline nsISupports* ToSupports(nsINode* aPointer) { return aPointer; }
 #define NS_IMPL_FROMNODE_HTML_WITH_TAG(_class, _tag) \
   NS_IMPL_FROMNODE_WITH_TAG(_class, kNameSpaceID_XHTML, _tag)
 
-#endif /* nsINode_h___ */
+#endif /* nsINode_h_ */

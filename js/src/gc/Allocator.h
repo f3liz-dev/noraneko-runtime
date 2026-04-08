@@ -9,8 +9,6 @@
 #ifndef gc_Allocator_h
 #define gc_Allocator_h
 
-#include <stdint.h>
-
 #include "gc/AllocKind.h"
 #include "gc/GCEnum.h"
 #include "js/HeapAPI.h"
@@ -20,7 +18,7 @@ namespace js {
 namespace gc {
 
 class AllocSite;
-struct Cell;
+class Cell;
 class BufferAllocator;
 class TenuredCell;
 class TenuringTracer;
@@ -126,17 +124,6 @@ void* ReallocBuffer(JS::Zone* zone, void* alloc, size_t bytes,
                     bool nurseryOwned);
 void FreeBuffer(JS::Zone* zone, void* alloc);
 
-template <typename T, typename... Args>
-T* NewBuffer(JS::Zone* zone, size_t bytes, bool nurseryOwned, Args&&... args) {
-  MOZ_ASSERT(sizeof(T) <= bytes);
-  void* ptr = AllocBuffer(zone, bytes, nurseryOwned);
-  if (!ptr) {
-    return nullptr;
-  }
-
-  return new (ptr) T(std::forward<Args>(args)...);
-}
-
 // Indicate whether |alloc| is a buffer allocation as opposed to a fixed size GC
 // cell. Does not work for malloced memory.
 bool IsBufferAlloc(void* alloc);
@@ -154,10 +141,8 @@ size_t GetAllocSize(JS::Zone* zone, const void* alloc);
 
 void* AllocBufferInGC(JS::Zone* zone, size_t bytes, bool nurseryOwned);
 bool IsBufferAllocMarkedBlack(JS::Zone* zone, void* alloc);
-void TraceBufferEdgeInternal(JSTracer* trc, Cell* owner, void** bufferp,
-                             const char* name);
-void TraceBufferEdgeInternal(JSTracer* trc, JS::Zone* zone, void** bufferp,
-                             const char* name);
+void TraceBufferEdgeInternal(JSTracer* trc, JS::Zone* zone, Cell* maybeOwner,
+                             void** bufferp, const char* name);
 void MarkTenuredBuffer(JS::Zone* zone, void* alloc);
 
 }  // namespace gc
@@ -193,7 +178,7 @@ class RootedBuffer : public JS::Rooted<BufferHolder<T>> {
   using Base = JS::Rooted<BufferHolder<T>>;
 
  public:
-  RootedBuffer(JSContext* cx, T* buffer)
+  explicit RootedBuffer(JSContext* cx, T* buffer = nullptr)
       : Base(cx, BufferHolder<T>(cx, buffer)) {}
   T* get() const { return Base::get().get(); }
   operator T*() const { return get(); }

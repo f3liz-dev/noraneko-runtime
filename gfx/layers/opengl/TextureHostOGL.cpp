@@ -15,6 +15,7 @@
 #include "mozilla/gfx/BaseSize.h"  // for BaseSize
 #include "mozilla/gfx/gfxVars.h"
 #include "mozilla/gfx/Logging.h"  // for gfxCriticalError
+#include "mozilla/layers/Fence.h"
 #include "mozilla/layers/ISurfaceAllocator.h"
 #include "mozilla/webrender/RenderEGLImageTextureHost.h"
 #include "mozilla/webrender/WebRenderAPI.h"
@@ -81,6 +82,11 @@ already_AddRefed<TextureHost> CreateTextureHostOGL(
 #endif
 
     case SurfaceDescriptor::TEGLImageDescriptor: {
+      if (aDeallocator && !aDeallocator->IsSameProcess()) {
+        gfxCriticalError()
+            << "EGLImageDescriptor must only be used in same process";
+        return nullptr;
+      }
       const EGLImageDescriptor& desc = aDesc.get_EGLImageDescriptor();
       result = new EGLImageTextureHost(aFlags, (EGLImage)desc.image(),
                                        (EGLSync)desc.fence(), desc.size(),
@@ -109,6 +115,11 @@ already_AddRefed<TextureHost> CreateTextureHostOGL(
 #endif
 
     case SurfaceDescriptor::TSurfaceDescriptorSharedGLTexture: {
+      if (aDeallocator && !aDeallocator->IsSameProcess()) {
+        gfxCriticalError() << "SurfaceDescriptorSharedGLTexture must only be "
+                              "used in same process";
+        return nullptr;
+      }
       const auto& desc = aDesc.get_SurfaceDescriptorSharedGLTexture();
       result =
           new GLTextureHost(aFlags, desc.texture(), desc.target(),
@@ -818,27 +829,19 @@ void AndroidHardwareBufferTextureHost::DeallocateDeviceData() {
   mAndroidHardwareBuffer = nullptr;
 }
 
-void AndroidHardwareBufferTextureHost::SetAcquireFence(
-    UniqueFileHandle&& aFenceFd) {
-  if (!mAndroidHardwareBuffer) {
+void AndroidHardwareBufferTextureHost::SetReadFence(Fence* aReadFence) {
+  MOZ_ASSERT(aReadFence);
+  MOZ_ASSERT(aReadFence->AsFenceFileHandle());
+  MOZ_ASSERT(mAndroidHardwareBuffer);
+
+  if (!aReadFence || !aReadFence->AsFenceFileHandle() ||
+      !mAndroidHardwareBuffer) {
     return;
   }
-  mAndroidHardwareBuffer->SetAcquireFence(std::move(aFenceFd));
-}
 
-void AndroidHardwareBufferTextureHost::SetReleaseFence(
-    UniqueFileHandle&& aFenceFd) {
-  if (!mAndroidHardwareBuffer) {
-    return;
-  }
-  mAndroidHardwareBuffer->SetReleaseFence(std::move(aFenceFd));
-}
-
-UniqueFileHandle AndroidHardwareBufferTextureHost::GetAndResetReleaseFence() {
-  if (!mAndroidHardwareBuffer) {
-    return UniqueFileHandle();
-  }
-  return mAndroidHardwareBuffer->GetAndResetReleaseFence();
+  UniqueFileHandle handle =
+      aReadFence->AsFenceFileHandle()->DuplicateFileHandle();
+  mAndroidHardwareBuffer->SetReleaseFence(std::move(handle));
 }
 
 void AndroidHardwareBufferTextureHost::CreateRenderTexture(

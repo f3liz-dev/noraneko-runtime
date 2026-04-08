@@ -128,23 +128,6 @@
       }
     ]
   },
-  "1458885": {
-    "label": "ipstack.com",
-    "bugs": {
-      "1458885": {
-        "issue": "broken-layout",
-        "matches": ["*://ipstack.com/*"]
-      }
-    },
-    "interventions": [
-      {
-        "platforms": ["desktop"],
-        "content_scripts": {
-          "css": ["bug1458885-ipstack.com-fix-line-break-on-button.css"]
-        }
-      }
-    ]
-  },
   "1457335": {
     "label": "histography.io",
     "bugs": {
@@ -502,10 +485,7 @@
         "platforms": ["linux", "android"],
         "content_scripts": {
           "all_frames": true,
-          "js": [
-            "lib/ua_helpers.js",
-            "bug1724868-news.yahoo.co.jp-ua-override.js"
-          ]
+          "js": ["bug1724868-news.yahoo.co.jp-ua-override.js"]
         }
       }
     ]
@@ -1115,6 +1095,7 @@
         "matches": [
           "*://cdk.fairgocasinowins.com/*",
           "*://cdk.fairgo-pokies.com/*",
+          "*://cdk.fgwinners.com/*",
           "*://cdk.play-fg.com/*"
         ]
       },
@@ -1603,21 +1584,6 @@
       }
     ]
   },
-  "1864999": {
-    "label": "autotrader.ca",
-    "bugs": {
-      "1864999": {
-        "issue": "broken-interactive-elements",
-        "matches": ["*://*.autotrader.ca/*"]
-      }
-    },
-    "interventions": [
-      {
-        "platforms": ["android"],
-        "ua_string": ["Chrome"]
-      }
-    ]
-  },
   "1865000": {
     "label": "bmo.com",
     "bugs": {
@@ -1849,7 +1815,7 @@
     "interventions": [
       {
         "platforms": ["desktop"],
-        "only_channels": ["nightly"],
+        "only_channels": ["nightly", "beta"],
         "ua_string": ["Chrome"]
       }
     ]
@@ -2178,21 +2144,6 @@
       }
     ]
   },
-  "1898928": {
-    "label": "cleanfeed.net",
-    "bugs": {
-      "1898928": {
-        "issue": "firefox-blocked-completely",
-        "matches": ["*://cleanfeed.net/*"]
-      }
-    },
-    "interventions": [
-      {
-        "platforms": ["all"],
-        "ua_string": ["add_Chrome"]
-      }
-    ]
-  },
   "1898929": {
     "label": "app.sessionlinkpro.com",
     "bugs": {
@@ -2205,10 +2156,7 @@
       {
         "platforms": ["all"],
         "content_scripts": {
-          "js": [
-            "lib/ua_helpers.js",
-            "bug1898929-app.sessionlinkpro.com-spoof-user-agent.js"
-          ]
+          "js": ["bug1898929-app.sessionlinkpro.com-spoof-user-agent.js"]
         }
       }
     ]
@@ -2270,6 +2218,21 @@
       {
         "platforms": ["all"],
         "ua_string": ["add_Chrome"]
+      }
+    ]
+  },
+  "1898937": {
+    "label": "goodyearfiaetrc.com",
+    "bugs": {
+      "1898937": {
+        "issue": "firefox-blocked-completely",
+        "matches": ["*://www.goodyearfiaetrc.com/standings*"]
+      }
+    },
+    "interventions": [
+      {
+        "platforms": ["all"],
+        "ua_string": ["Chrome_with_FxQuantum"]
       }
     ]
   },
@@ -2463,21 +2426,6 @@
       }
     ]
   },
-  "1898994": {
-    "label": "eportal.uestc.edu.cn",
-    "bugs": {
-      "1898994": {
-        "issue": "firefox-blocked-completely",
-        "matches": ["*://eportal.uestc.edu.cn/*"]
-      }
-    },
-    "interventions": [
-      {
-        "platforms": ["all"],
-        "ua_string": ["add_Chrome"]
-      }
-    ]
-  },
   "1898996": {
     "label": "oculus.com and meta.com",
     "bugs": {
@@ -2557,27 +2505,6 @@
         "platforms": ["all"],
         "content_scripts": {
           "css": ["bug1899063-onlinestep.pgc.edu-hide-unsupported-message.css"]
-        }
-      }
-    ]
-  },
-  "1899065": {
-    "label": "CenterParcs UK and Ireland",
-    "bugs": {
-      "1899065": {
-        "issue": "unsupported-warning",
-        "matches": ["*://*.centerparcs.co.uk/*"]
-      },
-      "1902410": {
-        "issue": "unsupported-warning",
-        "matches": ["*://*.centerparcs.ie/*"]
-      }
-    },
-    "interventions": [
-      {
-        "platforms": ["all"],
-        "content_scripts": {
-          "css": ["bug1899065-centerparcs-hide-unsupported-warning.css"]
         }
       }
     ]
@@ -2725,44 +2652,12 @@
       }
     ]
   },
-  "1901780": {
-    "label": "vanbreda-health.be",
-    "bugs": {
-      "1901780": {
-        "issue": "frozen-tab",
-        "matches": ["*://www.vanbreda-health.be/*"]
-      }
-    },
-    "interventions": [
-      {
-        "platforms": ["all"],
-        "content_scripts": {
-          "js": ["bug1901780-disable-legacy-mutation-events.js"]
-        }
-      }
-    ]
-  },
   "1902367": {
     "label": "seller.kuajingmaihuo.com",
     "bugs": {
       "1902367": {
         "issue": "unsupported-warning",
         "matches": ["*://seller.kuajingmaihuo.com/*"]
-      }
-    },
-    "interventions": [
-      {
-        "platforms": ["all"],
-        "ua_string": ["add_Chrome"]
-      }
-    ]
-  },
-  "1902378": {
-    "label": "acesso.processo.rio",
-    "bugs": {
-      "1902378": {
-        "issue": "unsupported-warning",
-        "matches": ["*://acesso.processo.rio/*"]
       }
     },
     "interventions": [
@@ -2784,10 +2679,7 @@
       {
         "platforms": ["all"],
         "content_scripts": {
-          "js": [
-            "lib/ua_helpers.js",
-            "bug1902379-adl.edu.tw-hide-unsupported-popup.js"
-          ]
+          "js": ["bug1902379-adl.edu.tw-hide-unsupported-popup.js"]
         }
       }
     ]
@@ -2804,23 +2696,6 @@
       {
         "platforms": ["all"],
         "ua_string": ["add_Chrome"]
-      }
-    ]
-  },
-  "1902383": {
-    "label": "wpartner.wemakeprice.com",
-    "bugs": {
-      "1902383": {
-        "issue": "unsupported-warning",
-        "matches": ["*://wpartner.wemakeprice.com/*"]
-      }
-    },
-    "interventions": [
-      {
-        "platforms": ["all"],
-        "content_scripts": {
-          "css": ["bug1902383-wpartner.wemakeprice.com-hide-recommendation.css"]
-        }
       }
     ]
   },
@@ -2968,6 +2843,7 @@
       {
         "platforms": ["all"],
         "content_scripts": {
+          "isolated": true,
           "js": ["bug1902399-recochoku.jp-hide-unsupported-browser-warning.js"]
         }
       }
@@ -3064,10 +2940,7 @@
       {
         "platforms": ["all"],
         "content_scripts": {
-          "js": [
-            "lib/ua_helpers.js",
-            "bug1902407-www.sigadoc.mt.gov.br-user-agent-spoof.js"
-          ]
+          "js": ["bug1902407-www.sigadoc.mt.gov.br-user-agent-spoof.js"]
         }
       }
     ]
@@ -3455,7 +3328,6 @@
         "platforms": ["android"],
         "content_scripts": {
           "js": [
-            "lib/ua_helpers.js",
             "bug1904952-idserver.servizicie.interno.gov.it-spoof-as-chrome.js"
           ]
         }
@@ -3613,7 +3485,11 @@
     "bugs": {
       "1913720": {
         "issue": "firefox-blocked-completely",
-        "matches": ["*://cotota.app/*", "https://is-sets.com/*"]
+        "matches": [
+          "https://cotota.app/*",
+          "https://h2breeze.com/*",
+          "https://is-sets.com/*"
+        ]
       }
     },
     "interventions": [
@@ -3664,7 +3540,7 @@
     "interventions": [
       {
         "platforms": ["all"],
-        "ua_string": ["Chrome_with_FxQuantum"]
+        "ua_string": ["Chrome"]
       }
     ]
   },
@@ -3786,7 +3662,7 @@
     "bugs": {
       "1923656": {
         "issue": "page-fails-to-load",
-        "matches": ["*://*.ipmph.com/#/bookPreview*"]
+        "matches": ["*://*.ipmph.com/*"]
       }
     },
     "interventions": [
@@ -4211,23 +4087,6 @@
         "platforms": ["android"],
         "content_scripts": {
           "css": ["bug1943987-andisearch.com-fix-offscreen-elements.css"]
-        }
-      }
-    ]
-  },
-  "1943920": {
-    "label": "add.org",
-    "bugs": {
-      "1943920": {
-        "issue": "broken-layout",
-        "matches": ["*://add.org/adhd-facts*"]
-      }
-    },
-    "interventions": [
-      {
-        "platforms": ["android"],
-        "content_scripts": {
-          "css": ["bug1943920-add.org-fix-overlapping-menu.css"]
         }
       }
     ]
@@ -5035,21 +4894,6 @@
       }
     ]
   },
-  "1967694": {
-    "label": "onlyfaucet.com",
-    "bugs": {
-      "1967694": {
-        "issue": "firefox-blocked-completely",
-        "matches": ["*://*.onlyfaucet.com/*"]
-      }
-    },
-    "interventions": [
-      {
-        "platforms": ["all"],
-        "ua_string": ["Chrome", "add_Firefox_as_Gecko"]
-      }
-    ]
-  },
   "1968187": {
     "label": "authface.liquid-auth.com",
     "bugs": {
@@ -5100,29 +4944,6 @@
       }
     ]
   },
-  "1969245": {
-    "label": "www.wills-vegan-store.com",
-    "bugs": {
-      "1969245": {
-        "issue": "broken-images",
-        "matches": ["*://www.wills-vegan-store.com/*"]
-      },
-      "1998101": {
-        "issue": "broken-images",
-        "matches": ["*://*.wills-vegan-shop.de/*", "*://*.vegan-store.eu/*"]
-      }
-    },
-    "interventions": [
-      {
-        "platforms": ["all"],
-        "content_scripts": {
-          "css": [
-            "bug1969245-www.wills-vegan-store.com-unhide-product-images.css"
-          ]
-        }
-      }
-    ]
-  },
   "1970810": {
     "label": "camper-van-week-end.fr",
     "bugs": {
@@ -5169,10 +4990,7 @@
       {
         "platforms": ["android"],
         "content_scripts": {
-          "js": [
-            "lib/ua_helpers.js",
-            "bug1975651-comic.k-manga.jp-ua-override.js"
-          ]
+          "js": ["bug1975651-comic.k-manga.jp-ua-override.js"]
         }
       }
     ]
@@ -5286,10 +5104,7 @@
         "platforms": ["android"],
         "content_scripts": {
           "all_frames": true,
-          "js": [
-            "lib/ua_helpers.js",
-            "bug1934908-www.cbsnews.com-ua-override.js"
-          ]
+          "js": ["bug1934908-www.cbsnews.com-ua-override.js"]
         }
       }
     ]
@@ -5749,26 +5564,24 @@
       {
         "platforms": ["desktop"],
         "content_scripts": {
+          "isolated": true,
           "js": ["1986438-gamma.app-hide-unsupported.js"]
         }
       }
     ]
   },
-  "1987351": {
-    "label": "mirage.decart.ai",
+  "1988133": {
+    "label": "labs-aws.popcap.com/facebook/bj2",
     "bugs": {
-      "1987351": {
-        "issue": "firefox-blocked-completely",
-        "matches": ["*://mirage.decart.ai/*"]
+      "1988133": {
+        "issue": "page-fails-to-load",
+        "matches": ["*://labs-aws.popcap.com/facebook/bj2/*"]
       }
     },
     "interventions": [
       {
-        "platforms": ["all"],
-        "content_scripts": {
-          "js": ["bug1928941-oasis.decart.ai-window-chrome-shim.js"]
-        },
-        "ua_string": ["Chrome", "add_Firefox_as_Gecko"]
+        "platforms": ["desktop"],
+        "ua_string": ["add_Chrome"]
       }
     ]
   },
@@ -5817,21 +5630,6 @@
       }
     ]
   },
-  "1992121": {
-    "label": "tutor-uksouth.classroom.cloud",
-    "bugs": {
-      "1992121": {
-        "issue": "firefox-blocked-completely",
-        "matches": ["*://tutor-uksouth.classroom.cloud/*"]
-      }
-    },
-    "interventions": [
-      {
-        "platforms": ["all"],
-        "ua_string": ["Chrome_with_FxQuantum"]
-      }
-    ]
-  },
   "1992402": {
     "label": "ehssrisk.sai360.net",
     "bugs": {
@@ -5844,23 +5642,6 @@
       {
         "platforms": ["all"],
         "ua_string": ["add_Chrome"]
-      }
-    ]
-  },
-  "1992923": {
-    "label": "godotfest.com",
-    "bugs": {
-      "1992923": {
-        "issue": "broken-images",
-        "matches": ["*://godotfest.com/*"]
-      }
-    },
-    "interventions": [
-      {
-        "platforms": ["android"],
-        "content_scripts": {
-          "css": ["1992923-godotfest.com-fix-blur-effects.css"]
-        }
       }
     ]
   },
@@ -5926,23 +5707,6 @@
         "platforms": ["desktop"],
         "content_scripts": {
           "css": ["1993454-www.wrangler.in-fix-product-image-hovering.css"]
-        }
-      }
-    ]
-  },
-  "1993517": {
-    "label": "onlinebank.resursbank.se",
-    "bugs": {
-      "1993517": {
-        "issue": "page-fails-to-load",
-        "matches": ["*://onlinebank.resursbank.se/*"]
-      }
-    },
-    "interventions": [
-      {
-        "platforms": ["desktop"],
-        "content_scripts": {
-          "js": ["bug1993517-onlinebank.resursbank.se-autoclose-bankid-tabs.js"]
         }
       }
     ]
@@ -6253,6 +6017,196 @@
         "platforms": ["all"],
         "content_scripts": {
           "css": ["bug2003019-www.jw.org-fix-ruby-text-linebreaks.css"]
+        }
+      }
+    ]
+  },
+  "2003815": {
+    "label": "crea-tv.jp",
+    "bugs": {
+      "2003815": {
+        "issue": "firefox-blocked-completely",
+        "matches": ["*://crea-tv.jp/*"]
+      }
+    },
+    "interventions": [
+      {
+        "platforms": ["android"],
+        "ua_string": [
+          { "change": "Chrome_with_FxQuantum", "version": "142.0.0.0" }
+        ]
+      }
+    ]
+  },
+  "2003826": {
+    "label": "tjoy.jp",
+    "bugs": {
+      "2003826": {
+        "issue": "broken-zooming",
+        "matches": ["*://tjoy.jp/shinjuku_wald9/reservation/choice_seat"]
+      }
+    },
+    "interventions": [
+      {
+        "platforms": ["android"],
+        "content_scripts": {
+          "css": ["bug2003826-tjoy.jp-fix-broken-zoom.css"]
+        }
+      }
+    ]
+  },
+  "2004025": {
+    "label": "chatbot.weixin.qq.com",
+    "bugs": {
+      "2004025": {
+        "issue": "firefox-blocked-completely",
+        "matches": ["*://chatbot.weixin.qq.com/webapp/*"]
+      }
+    },
+    "interventions": [
+      {
+        "platforms": ["all"],
+        "ua_string": ["Chrome_with_FxQuantum"]
+      }
+    ]
+  },
+  "2004610": {
+    "label": "character.ai",
+    "bugs": {
+      "2004610": {
+        "issue": "broken-font",
+        "matches": ["*://character.ai/*"]
+      }
+    },
+    "interventions": [
+      {
+        "platforms": ["all"],
+        "content_scripts": {
+          "css": ["bug2004610-character.ai-fix-broken-italics.css"]
+        }
+      }
+    ]
+  },
+  "2004679": {
+    "label": "paybill.com",
+    "bugs": {
+      "2004679": {
+        "issue": "firefox-blocked-completely",
+        "matches": ["*://paybill.com/occourts/*"]
+      }
+    },
+    "interventions": [
+      {
+        "platforms": ["all"],
+        "ua_string": ["replace_colon_in_rv_with_space"]
+      }
+    ]
+  },
+  "2005520": {
+    "label": "portal.adtpulse.com",
+    "bugs": {
+      "2005520": {
+        "issue": "unsupported-warning",
+        "matches": ["*://portal.adtpulse.com/*"]
+      }
+    },
+    "interventions": [
+      {
+        "platforms": ["all"],
+        "content_scripts": {
+          "css": ["bug2005520-portal.adtpulse.com-hide-unsupported.css"]
+        }
+      }
+    ]
+  },
+  "2006036": {
+    "label": "fbo.fubon.com",
+    "bugs": {
+      "2006036": {
+        "issue": "firefox-blocked-completely",
+        "matches": ["*://fbo.fubon.com/*"]
+      }
+    },
+    "interventions": [
+      {
+        "platforms": ["all"],
+        "content_scripts": {
+          "all_frames": true,
+          "js": ["bug2006036-fbo.fubon.com-unblock-firefox.js"]
+        },
+        "ua_string": ["Chrome_with_FxQuantum"]
+      }
+    ]
+  },
+  "2007641": {
+    "label": "papajohns.com",
+    "bugs": {
+      "2007641": {
+        "issue": "page-fails-to-load",
+        "matches": ["*://www.papajohns.com/*"]
+      }
+    },
+    "interventions": [
+      {
+        "platforms": ["all"],
+        "content_scripts": {
+          "js": ["bug2007641-www.papajohns.com-DateTimeFormat-CST-fix.js"]
+        }
+      }
+    ]
+  },
+  "2010794": {
+    "label": "ipn2.paymentus.com",
+    "bugs": {
+      "2005520": {
+        "issue": "page-fails-to-load",
+        "blocks": [
+          { "url": "*://ipn2.paymentus.com/rotp/vatx", "types": ["image"] }
+        ]
+      }
+    },
+    "interventions": [
+      {
+        "platforms": ["all"]
+      }
+    ]
+  },
+  "2011862": {
+    "label": "copilot.zenwork.com",
+    "bugs": {
+      "2007641": {
+        "issue": "broken-interactive-elements",
+        "matches": ["*://copilot.zenwork.com/*"]
+      }
+    },
+    "interventions": [
+      {
+        "platforms": ["all"],
+        "content_scripts": {
+          "all_frames": true,
+          "js": ["bug2011862-copilot.zenwork.com-fix-chatbot.js"]
+        }
+      }
+    ]
+  },
+  "2020285": {
+    "label": "Eurocontrol Network Operations Portal",
+    "bugs": {
+      "2020285": {
+        "issue": "page-fails-to-load",
+        "matches": [
+          "*://www.public.nm.eurocontrol.int/PUBPORTAL/gateway/spec/*"
+        ]
+      }
+    },
+    "interventions": [
+      {
+        "platforms": ["all"],
+        "content_scripts": {
+          "js": ["bug2020285-eurocontrol-ua-override.js"],
+          "all_frames": true,
+          "match_origin_as_fallback": true,
+          "run_at": "document_start"
         }
       }
     ]

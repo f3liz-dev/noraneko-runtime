@@ -54,11 +54,14 @@ function updateTabContextMenu(tab = gBrowser.selectedTab) {
 
 add_setup(async function () {
   await SpecialPowers.pushPrefEnv({
-    set: [["test.wait300msAfterTabSwitch", true]],
+    set: [
+      ["browser.urlbar.trustPanel.featureGate", false],
+      ["test.wait300msAfterTabSwitch", true],
+    ],
   });
 
   await promiseSyncReady();
-  await Services.search.init();
+  await SearchService.init();
   // gSync.init() is called in a requestIdleCallback. Force its initialization.
   gSync.init();
   sinon
@@ -164,9 +167,12 @@ add_task(async function test_tab_contextmenu() {
     .expects("sendTabToDevice")
     .once()
     .withExactArgs(
-      "about:mozilla",
-      [fxaDevices[1]],
-      "The Book of Mozilla, 6:27"
+      {
+        url: "about:mozilla",
+        title: "The Book of Mozilla, 6:27",
+        private: false,
+      },
+      [fxaDevices[1]]
     )
     .returns(true);
 

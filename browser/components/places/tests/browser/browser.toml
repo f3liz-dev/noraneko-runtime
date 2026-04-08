@@ -11,6 +11,11 @@ support-files = [
   "sidebarpanels_click_test_page.html",
   "keyword_form.html",
 ]
+prefs = [
+  # Disable tab previews as some tests click on the toolbar.
+  "browser.tabs.hoverPreview.enabled=false",
+  "browser.tabs.groups.hoverPreview.enabled=false",
+]
 
 ["browser_addBookmarkForFrame.js"]
 skip-if = [
@@ -70,6 +75,8 @@ skip-if = [
 tags = "os_integration"
 
 ["browser_bookmark_current_tabs.js"]
+
+["browser_bookmark_drag_splitview.js"]
 
 ["browser_bookmark_folder_moveability.js"]
 
@@ -245,6 +252,8 @@ https_first_disabled = true
 ["browser_stayopenmenu.js"]
 
 ["browser_toolbar_drop_bookmarklet.js"]
+
+["browser_toolbar_drop_indicator_empty.js"]
 
 ["browser_toolbar_drop_multiple_flavors.js"]
 

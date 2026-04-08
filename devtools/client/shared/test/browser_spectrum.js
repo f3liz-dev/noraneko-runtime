@@ -65,17 +65,9 @@ function extractRgbaOverlayString(linearGradientStr) {
   return linearGradientStr.substring(start + 1, end + 1);
 }
 
-function testColorPreviewDisplay(
-  spectrum,
-  expectedRgbCssString,
-  expectedBorderColor
-) {
+function testColorPreviewDisplay(spectrum, expectedRgbCssString) {
   const { colorPreview } = spectrum;
   const colorPreviewStyle = window.getComputedStyle(colorPreview);
-  expectedBorderColor =
-    expectedBorderColor === "transparent"
-      ? "rgba(0, 0, 0, 0)"
-      : expectedBorderColor;
 
   spectrum.updateUI();
 
@@ -97,7 +89,7 @@ function testColorPreviewDisplay(
   const borderColorTop = colorPreviewStyle.getPropertyValue("border-top-color");
   is(
     borderColorTop,
-    expectedBorderColor,
+    "color(srgb 0.5 0.5 0.5 / 0.5)",
     "Color preview border color is correct."
   );
 }
@@ -192,8 +184,8 @@ async function testChangingColorShouldEmitEvents(container, doc) {
   );
   testChangingColorShouldEmitEventsHelper(s, sendDownKey, [125, 62, 62, 1]);
   testChangingColorShouldEmitEventsHelper(s, sendLeftKey, [125, 63, 63, 1]);
-  testChangingColorShouldEmitEventsHelper(s, sendUpKey, [128, 64, 64, 1]);
-  testChangingColorShouldEmitEventsHelper(s, sendRightKey, [127, 63, 63, 1]);
+  testChangingColorShouldEmitEventsHelper(s, sendUpKey, [127, 64, 64, 1]);
+  testChangingColorShouldEmitEventsHelper(s, sendRightKey, [128, 63, 63, 1]);
 
   info(
     "Test that moving the hue slider with arrow keys emits color changed event."
@@ -211,8 +203,8 @@ async function testChangingColorShouldEmitEvents(container, doc) {
     "spectrum-hue-input",
     "Hue slider has successfully received focus."
   );
-  testChangingColorShouldEmitEventsHelper(s, sendRightKey, [127, 66, 63, 1]);
-  testChangingColorShouldEmitEventsHelper(s, sendLeftKey, [127, 63, 63, 1]);
+  testChangingColorShouldEmitEventsHelper(s, sendRightKey, [128, 66, 63, 1]);
+  testChangingColorShouldEmitEventsHelper(s, sendLeftKey, [128, 63, 63, 1]);
 
   info(
     "Test that moving the hue slider with arrow keys emits color changed event."
@@ -224,8 +216,8 @@ async function testChangingColorShouldEmitEvents(container, doc) {
     "spectrum-alpha-input",
     "Alpha slider has successfully received focus."
   );
-  testChangingColorShouldEmitEventsHelper(s, sendLeftKey, [127, 63, 63, 0.99]);
-  testChangingColorShouldEmitEventsHelper(s, sendRightKey, [127, 63, 63, 1]);
+  testChangingColorShouldEmitEventsHelper(s, sendLeftKey, [128, 63, 63, 0.99]);
+  testChangingColorShouldEmitEventsHelper(s, sendRightKey, [128, 63, 63, 1]);
 
   s.destroy();
 }
@@ -322,19 +314,19 @@ async function testChangingColorShouldUpdateColorPreview(container) {
   const s = await createSpectrum(container, [0, 0, 1, 1]);
 
   info("Test that color preview is black.");
-  testColorPreviewDisplay(s, "rgb(0, 0, 1)", "transparent");
+  testColorPreviewDisplay(s, "rgb(0, 0, 1)");
 
   info("Test that color preview is blue.");
   s.rgb = [0, 0, 255, 1];
-  testColorPreviewDisplay(s, "rgb(0, 0, 255)", "transparent");
+  testColorPreviewDisplay(s, "rgb(0, 0, 255)");
 
   info("Test that color preview is red.");
   s.rgb = [255, 0, 0, 1];
-  testColorPreviewDisplay(s, "rgb(255, 0, 0)", "transparent");
+  testColorPreviewDisplay(s, "rgb(255, 0, 0)");
 
   info("Test that color preview is white and also has a light grey border.");
   s.rgb = cssColors.white;
-  testColorPreviewDisplay(s, "rgb(255, 255, 255)", "rgb(204, 204, 204)");
+  testColorPreviewDisplay(s, "rgb(255, 255, 255)");
 
   s.destroy();
 }

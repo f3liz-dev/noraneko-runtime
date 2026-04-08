@@ -240,7 +240,6 @@ tasks:
             symbol: WR(wrench)
         when:
             files-changed:
-                - 'build/win64/mozconfig.vs2022'
                 - 'gfx/wr/**'
                 - 'taskcluster/scripts/misc/wrench-windows-tests.sh'
 
@@ -280,6 +279,8 @@ tasks:
                 - android-gradle-dependencies
                 - android-ndk-linux
                 - android-sdk-linux
+                - linux64-embedded-uniffi-bindgen
+                - linux64-nimbus-fml
                 - android34-avd-x86_64-linux
                 - linux64-cargo-apk
                 - linux64-jdk
@@ -330,6 +331,8 @@ tasks:
                 - android-gradle-dependencies
                 - android-ndk-linux
                 - android-sdk-linux
+                - linux64-embedded-uniffi-bindgen
+                - linux64-nimbus-fml
                 - android34-avd-x86_64-linux
                 - linux64-cargo-apk
                 - linux64-jdk
@@ -370,6 +373,8 @@ tasks:
                   extract: false
             toolchain:
                 - android-sdk-linux
+                - linux64-embedded-uniffi-bindgen
+                - linux64-nimbus-fml
                 - android34-system-image-x86_64-linux
                 - android34-avd-x86_64-linux
                 - linux64-jdk
@@ -416,6 +421,8 @@ tasks:
                   extract: false
             toolchain:
                 - android-sdk-linux
+                - linux64-embedded-uniffi-bindgen
+                - linux64-nimbus-fml
                 - android34-system-image-x86_64-linux
                 - android34-avd-x86_64-linux
                 - linux64-jdk

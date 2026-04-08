@@ -146,6 +146,7 @@ async function expectRegeneration(taskFn, msg) {
   // Creating a new backup will only occur if scheduled backups are enabled,
   // so let's set the pref...
   Services.prefs.setBoolPref("browser.backup.scheduled.enabled", true);
+  Services.prefs.setBoolPref("browser.backup.archive.enabled", true);
   // But also stub out `onIdle` so that we don't get any interference during
   // our test by the idle service.
   sandbox.stub(bs, "onIdle").returns();
@@ -370,7 +371,7 @@ add_task(async function test_password_removed() {
   await Services.logins.addLoginAsync(login);
 
   await expectRegeneration(async () => {
-    Services.logins.removeLogin(login);
+    await Services.logins.removeLoginAsync(login);
   }, "Saw regeneration on password removed.");
 });
 
@@ -401,7 +402,7 @@ add_task(async function test_all_passwords_removed() {
   await Services.logins.addLoginAsync(login2);
 
   await expectRegeneration(async () => {
-    Services.logins.removeAllLogins();
+    await Services.logins.removeAllLoginsAsync();
   }, "Saw regeneration on all passwords removed.");
 });
 
@@ -623,6 +624,22 @@ add_task(async function test_newtab_link_blocked() {
   await expectRegeneration(async () => {
     NewTabUtils.activityStreamLinks.blockURL("https://example.com");
   }, "Saw regeneration on the blocking of a newtab link");
+});
+
+/**
+ * Tests that backup regeneration occurs when sanitizeOnShutdown is enabled
+ * or disabled
+ */
+add_task(async function test_sanitizeOnShutdown_regeneration() {
+  await expectRegeneration(() => {
+    Services.prefs.setBoolPref("privacy.sanitize.sanitizeOnShutdown", true);
+  }, "Saw a regeneration when sanitizeOnShutdown was enabled");
+
+  await expectRegeneration(() => {
+    Services.prefs.setBoolPref("privacy.sanitize.sanitizeOnShutdown", false);
+  }, "Saw a regeneration when sanitizeOnShutdown was disabled");
+
+  Services.prefs.clearUserPref("privacy.sanitize.sanitizeOnShutdown");
 });
 
 /**

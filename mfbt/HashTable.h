@@ -426,11 +426,33 @@ class MOZ_STANDALONE_DEBUG HashMap {
   using Enum = typename Impl::Enum;
   Range all() const { return mImpl.all(); }
 
+  // -- Alloc policy ---------------------------------------------------------
+
+  // Get the alloc policy.
+  const AllocPolicy& allocPolicy() const { return mImpl.allocPolicy(); }
+  AllocPolicy& allocPolicy() { return mImpl.allocPolicy(); }
+
+  // For internal use by allocation policies that provide garbage collected
+  // memory.
+  //
+  // Trace any allocations owned by this object that were made with AllocPolicy.
+  // Call the supplied closure |aTraceFunc| for each of them, passing a double
+  // pointer to the memory held (e.g. a void** pointer).
+  template <typename F>
+  void traceOwnedAllocs(F&& aTraceFunc) {
+    mImpl.traceOwnedAllocs(std::forward<F>(aTraceFunc));
+  }
+
+  // -- Layout information for JIT access ------------------------------------
+
   static size_t offsetOfHashShift() {
     return offsetof(HashMap, mImpl) + Impl::offsetOfHashShift();
   }
   static size_t offsetOfTable() {
     return offsetof(HashMap, mImpl) + Impl::offsetOfTable();
+  }
+  static size_t offsetOfEntryCount() {
+    return offsetof(HashMap, mImpl) + Impl::offsetOfEntryCount();
   }
 };
 
@@ -729,6 +751,23 @@ class HashSet {
   using Range = typename Impl::Range;
   using Enum = typename Impl::Enum;
   Range all() const { return mImpl.all(); }
+
+  // -- Alloc policy ---------------------------------------------------------
+
+  // Get the alloc policy.
+  const AllocPolicy& allocPolicy() const { return mImpl.allocPolicy(); }
+  AllocPolicy& allocPolicy() { return mImpl.allocPolicy(); }
+
+  // For internal use by allocation policies that provide garbage collected
+  // memory.
+  //
+  // Trace any allocations owned by this object that were made with AllocPolicy.
+  // Call the supplied closure |aTraceFunc| for each of them, passing a double
+  // pointer to the memory held (e.g. a void** pointer).
+  template <typename F>
+  void traceOwnedAllocs(F&& aTraceFunc) {
+    mImpl.traceOwnedAllocs(std::forward<F>(aTraceFunc));
+  }
 };
 
 //---------------------------------------------------------------------------
@@ -1110,7 +1149,7 @@ class HashTableEntry {
 
   void destroy() { destroyStoredT(); }
 
-  void swap(HashTableEntry* aOther, bool aIsLive) {
+  void swap(HashTableEntry* aOther, bool aOtherIsLive) {
     // This allows types to use Argument-Dependent-Lookup, and thus use a custom
     // std::swap, which is needed by types like JS::Heap and such.
     using std::swap;
@@ -1118,10 +1157,10 @@ class HashTableEntry {
     if (this == aOther) {
       return;
     }
-    if (aIsLive) {
+    if (aOtherIsLive) {
       swap(*valuePtr(), *aOther->valuePtr());
     } else {
-      *aOther->valuePtr() = std::move(*valuePtr());
+      new (KnownNotNull, aOther->valuePtr()) NonConstT(std::move(*valuePtr()));
       destroy();
     }
   }
@@ -1601,6 +1640,16 @@ class MOZ_STANDALONE_DEBUG HashTable : private AllocPolicy {
     std::swap(mMutationCount, aOther.mMutationCount);
     std::swap(mEntered, aOther.mEntered);
 #endif
+  }
+
+  AllocPolicy& allocPolicy() { return *this; }
+  const AllocPolicy& allocPolicy() const { return *this; }
+
+  template <typename F>
+  void traceOwnedAllocs(F&& aTraceFunc) {
+    if (mTable) {
+      aTraceFunc(&mTable);
+    }
   }
 
  private:
@@ -2359,6 +2408,9 @@ class MOZ_STANDALONE_DEBUG HashTable : private AllocPolicy {
 #endif
   }
   static size_t offsetOfTable() { return offsetof(HashTable, mTable); }
+  static size_t offsetOfEntryCount() {
+    return offsetof(HashTable, mEntryCount);
+  }
 };
 
 }  // namespace detail

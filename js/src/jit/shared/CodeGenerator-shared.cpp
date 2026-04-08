@@ -599,9 +599,14 @@ void CodeGeneratorShared::encodeAllocation(LSnapshot* snapshot,
       if (payload->isGeneralReg()) {
         alloc = RValueAllocation::Int64(ToRegister(payload));
       } else if (payload->isStackSlot()) {
-        MOZ_ASSERT(payload->toStackSlot()->width() ==
-                   LStackSlot::width(LDefinition::GENERAL));
-        alloc = RValueAllocation::Int64(ToStackIndex(payload));
+        LStackSlot::Width width = payload->toStackSlot()->width();
+        MOZ_ASSERT(width == LStackSlot::width(LDefinition::GENERAL) ||
+                   width == LStackSlot::width(LDefinition::INT32));
+        if (width == LStackSlot::width(LDefinition::GENERAL)) {
+          alloc = RValueAllocation::Int64(ToStackIndex(payload));
+        } else {
+          alloc = RValueAllocation::Int64Int32(ToStackIndex(payload));
+        }
       } else {
         MOZ_CRASH("Unexpected payload type.");
       }
@@ -755,7 +760,7 @@ bool CodeGeneratorShared::createNativeToBytecodeScriptList(
     // Add script from current tree.
     bool found = false;
     for (uint32_t i = 0; i < scripts.length(); i++) {
-      if (scripts[i].sourceAndExtent.matches(tree->script())) {
+      if (scripts[i].scriptData.sourceAndExtent.matches(tree->script())) {
         found = true;
         break;
       }

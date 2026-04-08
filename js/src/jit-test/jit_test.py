@@ -11,6 +11,7 @@ import shlex
 import subprocess
 import sys
 import traceback
+from copy import deepcopy
 
 read_input = input
 
@@ -107,13 +108,13 @@ def main(argv):
         "--failed-only",
         dest="failed_only",
         action="store_true",
-        help="if --show-output is given, only print output for" " failed tests",
+        help="if --show-output is given, only print output for failed tests",
     )
     op.add_argument(
         "--no-show-failed",
         dest="no_show_failed",
         action="store_true",
-        help="don't print output for failed tests" " (no-op with --show-output)",
+        help="don't print output for failed tests (no-op with --show-output)",
     )
     op.add_argument(
         "-x",
@@ -327,14 +328,14 @@ def main(argv):
         action="store",
         type=str,
         default="/data/local/tmp/test_root",
-        help="The remote directory to use as test root" " (e.g.  %(default)s)",
+        help="The remote directory to use as test root (e.g.  %(default)s)",
     )
     op.add_argument(
         "--localLib",
         dest="local_lib",
         action="store",
         type=str,
-        help="The location of libraries to push -- preferably" " stripped",
+        help="The location of libraries to push -- preferably stripped",
     )
     op.add_argument(
         "--repeat", type=int, default=1, help="Repeat tests the given number of times."
@@ -485,17 +486,7 @@ def main(argv):
     job_count = len(test_list)
 
     if options.repeat:
-
-        def repeat_copy(job_list_generator, repeat):
-            job_list = list(job_list_generator)
-            for i in range(repeat):
-                for test in job_list:
-                    if i == 0:
-                        yield test
-                    else:
-                        yield test.copy()
-
-        job_list = repeat_copy(job_list, options.repeat)
+        job_list = (deepcopy(test) for test in job_list for _ in range(options.repeat))
         job_count *= options.repeat
 
     if options.ignore_timeouts:
@@ -536,8 +527,7 @@ def main(argv):
     elif options.debugger:
         if job_count > 1:
             print(
-                "Multiple tests match command line"
-                " arguments, debugger can only run one"
+                "Multiple tests match command line arguments, debugger can only run one"
             )
             jobs = list(job_list)
 
@@ -589,7 +579,7 @@ def main(argv):
     except OSError:
         if not os.path.exists(prefix[0]):
             print(
-                "JS shell argument: file does not exist:" f" '{prefix[0]}'",
+                f"JS shell argument: file does not exist: '{prefix[0]}'",
                 file=sys.stderr,
             )
             sys.exit(1)

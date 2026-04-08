@@ -46,8 +46,15 @@ static dom::Nullable<TimeDuration> CalculateElapsedTimeForScrollTimeline(
       aOptions.axis() == layers::ScrollDirection::eHorizontal;
   double range =
       isHorizontal ? aScrollMeta->mRange.width : aScrollMeta->mRange.height;
+  // The APZ sampler may give us a zero range (e.g. if the user resizes the
+  // element).
+  if (range == 0.0) {
+    // If the range is zero, we cannot calculate the progress, so just return
+    // nullptr.
+    return nullptr;
+  }
   MOZ_ASSERT(
-      range > 0,
+      range > 0.0,
       "We don't expect to get a zero or negative range on the compositor");
 
   // The offset may be negative if the writing mode is from right to left.
@@ -239,8 +246,12 @@ static AnimationHelper::SampleResult SampleAnimationForProperty(
 #endif
     }
 
-    uint32_t segmentIndex = 0;
     size_t segmentSize = animation.mSegments.Length();
+    if (segmentSize == 0) {
+      return AnimationHelper::SampleResult();
+    }
+
+    uint32_t segmentIndex = 0;
     PropertyAnimation::SegmentData* segment = animation.mSegments.Elements();
     while (segment->mEndPortion < computedTiming.mProgress.Value() &&
            segmentIndex < segmentSize - 1) {

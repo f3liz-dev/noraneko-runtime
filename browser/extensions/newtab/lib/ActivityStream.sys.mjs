@@ -30,6 +30,8 @@ ChromeUtils.defineESModuleGetters(lazy, {
   DEFAULT_SITES: "resource://newtab/lib/DefaultSites.sys.mjs",
   DefaultPrefs: "resource://newtab/lib/ActivityStreamPrefs.sys.mjs",
   DiscoveryStreamFeed: "resource://newtab/lib/DiscoveryStreamFeed.sys.mjs",
+  ExternalComponentsFeed:
+    "resource://newtab/lib/ExternalComponentsFeed.sys.mjs",
   FaviconFeed: "resource://newtab/lib/FaviconFeed.sys.mjs",
   HighlightsFeed: "resource://newtab/lib/HighlightsFeed.sys.mjs",
   ListsFeed: "resource://newtab/lib/Widgets/ListsFeed.sys.mjs",
@@ -40,8 +42,6 @@ ChromeUtils.defineESModuleGetters(lazy, {
   NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
   PrefsFeed: "resource://newtab/lib/PrefsFeed.sys.mjs",
   PlacesFeed: "resource://newtab/lib/PlacesFeed.sys.mjs",
-  RecommendationProvider:
-    "resource://newtab/lib/RecommendationProvider.sys.mjs",
   Region: "resource://gre/modules/Region.sys.mjs",
   SectionsFeed: "resource://newtab/lib/SectionsManager.sys.mjs",
   StartupCacheInit: "resource://newtab/lib/StartupCacheInit.sys.mjs",
@@ -95,11 +95,6 @@ const LOCALE_TOPIC_LABEL_CONFIG =
 const REGION_BASIC_CONFIG =
   "browser.newtabpage.activity-stream.discoverystream.region-basic-config";
 
-const REGION_THUMBS_CONFIG =
-  "browser.newtabpage.activity-stream.discoverystream.thumbsUpDown.region-thumbs-config";
-const LOCALE_THUMBS_CONFIG =
-  "browser.newtabpage.activity-stream.discoverystream.thumbsUpDown.locale-thumbs-config";
-
 const REGION_CONTEXTUAL_AD_CONFIG =
   "browser.newtabpage.activity-stream.discoverystream.sections.contextualAds.region-config";
 const LOCALE_CONTEXTUAL_AD_CONFIG =
@@ -120,6 +115,12 @@ const PREF_IMAGE_PROXY_ENABLED =
   "browser.newtabpage.activity-stream.discoverystream.imageProxy.enabled";
 
 const PREF_IMAGE_PROXY_ENABLED_STORE = "discoverystream.imageProxy.enabled";
+
+const PREF_SHOULD_ENABLE_EXTERNAL_COMPONENTS_FEED =
+  "browser.newtabpage.activity-stream.externalComponents.enabled";
+
+export const PREF_DEFAULT_VALUE_TOPSITES_ENABLED = true;
+export const PREF_DEFAULT_VALUE_TOPSTORIES_ENABLED = true;
 
 export const WEATHER_OPTIN_REGIONS = [
   "AT", // Austria
@@ -235,13 +236,6 @@ function showTopicLabels({ geo, locale }) {
   );
 }
 
-function showThumbsUpDown({ geo, locale }) {
-  return (
-    csvPrefHasValue(REGION_THUMBS_CONFIG, geo) &&
-    csvPrefHasValue(LOCALE_THUMBS_CONFIG, locale)
-  );
-}
-
 function showSectionLayout({ geo, locale }) {
   return (
     csvPrefHasValue(REGION_SECTIONS_CONFIG, geo) &&
@@ -265,7 +259,7 @@ export const PREFS_CONFIG = new Map([
     "feeds.topsites",
     {
       title: "Displays Top Sites on the New Tab Page",
-      value: true,
+      value: PREF_DEFAULT_VALUE_TOPSITES_ENABLED,
     },
   ],
   [
@@ -326,14 +320,6 @@ export const PREFS_CONFIG = new Map([
     {
       title:
         "Boolean flag to turn download Firefox for mobile promo variant C on and off",
-      value: false,
-    },
-  ],
-  [
-    "discoverystream.refinedCardsLayout.enabled",
-    {
-      title:
-        "Boolean flag enable layout and styling refinements for content and ad cards across different card sizes",
       value: false,
     },
   ],
@@ -474,14 +460,6 @@ export const PREFS_CONFIG = new Map([
     },
   ],
   [
-    "weather.placement",
-    {
-      title:
-        "weather widget can be rendered in a variety of positions. Either in `header` or `sections`",
-      value: "header",
-    },
-  ],
-  [
     "images.smart",
     {
       title: "Smart crop images on newtab",
@@ -601,6 +579,13 @@ export const PREFS_CONFIG = new Map([
     {
       title: "Number of rows of Highlights to display",
       value: 1,
+    },
+  ],
+  [
+    "feeds.section.topstories",
+    {
+      title: "Whether top stories are enabled by default.",
+      value: PREF_DEFAULT_VALUE_TOPSTORIES_ENABLED,
     },
   ],
   [
@@ -738,7 +723,7 @@ export const PREFS_CONFIG = new Map([
     {
       title:
         "Boolean flag to enable personalized sections layout. Allows users to follow/unfollow topic sections.",
-      value: false,
+      value: true,
     },
   ],
   [
@@ -746,7 +731,7 @@ export const PREFS_CONFIG = new Map([
     {
       title:
         "Boolean flag to enable the setions management panel in Customize menu",
-      value: false,
+      value: true,
     },
   ],
   [
@@ -780,17 +765,24 @@ export const PREFS_CONFIG = new Map([
     },
   ],
   [
-    "discoverystream.dailyBrief.enabled",
-    {
-      title: "Boolean flag to enable the daily brief section",
-      value: false,
-    },
-  ],
-  [
     "discoverystream.dailyBrief.sectionId",
     {
       title: "sectionId for the Daily brief section",
       value: "top_stories_section",
+    },
+  ],
+  [
+    "discoverystream.dailyBrief.enabled",
+    {
+      title: "Boolean flag to enable daily briefing",
+      value: false,
+    },
+  ],
+  [
+    "discoverystream.sections.layout",
+    {
+      title: "CSV string of section layouts configs",
+      value: "7-double-row-2-ad",
     },
   ],
   [
@@ -827,14 +819,6 @@ export const PREFS_CONFIG = new Map([
     {
       title:
         "Override inferred personalization model JSON string that typically comes from rec API. Or 'TEST' for a test model",
-    },
-  ],
-  [
-    "discoverystream.sections.cards.thumbsUpDown.enabled",
-    {
-      title:
-        "Boolean flag to enable thumbs up/down buttons in the new card UI in recommended stories",
-      value: true,
     },
   ],
   [
@@ -1140,6 +1124,28 @@ export const PREFS_CONFIG = new Map([
     },
   ],
   [
+    "widgets.weatherForecast.enabled",
+    {
+      title: "Enables the weather forecast widget",
+      value: true,
+    },
+  ],
+  [
+    "widgets.system.weatherForecast.enabled",
+    {
+      title: "Enables the weather forecast widget experiment in Nimbus",
+      value: false,
+    },
+  ],
+  [
+    "widgets.weatherForecast.interaction",
+    {
+      title:
+        "Boolean flag for determining if a user has interacted with the weather forecast widget",
+      value: false,
+    },
+  ],
+  [
     "improvesearch.noDefaultSearchTile",
     {
       title: "Remove tiles that are the same as the default search",
@@ -1213,22 +1219,6 @@ export const PREFS_CONFIG = new Map([
         "Endpoint prefixes (comma-separated) that are allowed to be requested",
       value:
         "https://getpocket.cdn.mozilla.net/,https://firefox-api-proxy.cdn.mozilla.net/,https://spocs.getpocket.com/,https://merino.services.mozilla.com/,https://ads.mozilla.org/",
-    },
-  ],
-  [
-    "discoverystream.thumbsUpDown.enabled",
-    {
-      title: "Allow users to give thumbs up/down on recommended stories",
-      // pref is dynamic
-      getValue: showThumbsUpDown,
-    },
-  ],
-  [
-    "discoverystream.thumbsUpDown.searchTopsitesCompact",
-    {
-      title:
-        "A compact layout of the search/topsites/stories sections to account for new height from thumbs up/down icons ",
-      value: false,
     },
   ],
   [
@@ -1383,7 +1373,7 @@ export const PREFS_CONFIG = new Map([
     "discoverystream.publisherFavicon.enabled",
     {
       title: "Enables publisher favicons on recommended stories",
-      value: false,
+      value: true,
     },
   ],
   [
@@ -1404,6 +1394,20 @@ export const PREFS_CONFIG = new Map([
           "app.support.baseURL"
         );
         return `${baseUrl}new-tab`;
+      },
+    },
+  ],
+  [
+    "privacyInfo.url",
+    {
+      title: "Link to HNT's sponsor privacy page",
+      getValue: () => {
+        // Services.urlFormatter completes the in-product SUMO page URL:
+        // https://support.mozilla.org/1/firefox/%VERSION%/%OS%/%LOCALE%/sponsor-privacy
+        const baseUrl = Services.urlFormatter.formatURLPref(
+          "app.support.baseURL"
+        );
+        return `${baseUrl}sponsor-privacy`;
       },
     },
   ],
@@ -1433,6 +1437,22 @@ export const PREFS_CONFIG = new Map([
       title:
         "'Support Firefox' pref on 'about:settings#home' page. Toggles all sponsored results on and off at the same time",
       value: true,
+    },
+  ],
+  [
+    "activationWindow.variant",
+    {
+      title:
+        "Set to the activation window variant if in activation window mode, otherwise the empty string.",
+      value: "",
+    },
+  ],
+  [
+    "selfLoading.enabled",
+    {
+      title:
+        "Communicates to AboutNewTabChild whether or not it should load the classic scripts or do nothing.",
+      value: false,
     },
   ],
 ]);
@@ -1561,12 +1581,6 @@ const FEEDS_DATA = [
     value: true,
   },
   {
-    name: "recommendationprovider",
-    factory: () => new lazy.RecommendationProvider(),
-    title: "Handles setup and interaction for the personality provider",
-    value: true,
-  },
-  {
     name: "discoverystreamfeed",
     factory: () => new lazy.DiscoveryStreamFeed(),
     title: "Handles new pocket ui for the new tab page",
@@ -1627,6 +1641,20 @@ const FEEDS_DATA = [
     factory: () => new lazy.TimerFeed(),
     title: "Handles the data for the Timer widget",
     value: true,
+  },
+  {
+    name: "externalcomponentsfeed",
+    factory: () => new lazy.ExternalComponentsFeed(),
+    title: "Handles updating the registry of external components",
+    getValue() {
+      // This feed should only be enabled on versions of the app that have the
+      // AboutNewTabComponents module. Those versions of the app have this
+      // preference set to true.
+      return Services.prefs.getBoolPref(
+        PREF_SHOULD_ENABLE_EXTERNAL_COMPONENTS_FEED,
+        false
+      );
+    },
   },
 ];
 

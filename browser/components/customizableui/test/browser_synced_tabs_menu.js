@@ -164,12 +164,6 @@ async function openPrefsFromMenuPanel(expectedPanelId, entryPoint) {
   }
 }
 
-function hideOverflow() {
-  let panelHidePromise = promiseOverflowHidden(window);
-  PanelUI.overflowPanel.hidePopup();
-  return panelHidePromise;
-}
-
 async function asyncCleanup() {
   // reset the panel UI to the default state
   await resetCustomization();
@@ -336,6 +330,7 @@ add_task(async function () {
         tabs: [
           {
             title: "http://example.com/6",
+            icon: "http://example.com/favicon.ico",
             lastUsed: 6,
           },
         ],
@@ -398,6 +393,13 @@ add_task(async function () {
   childNode = node.firstElementChild;
   is(childNode.getAttribute("itemtype"), "tab", "node is a tab");
   is(childNode.getAttribute("label"), "http://example.com/6");
+  // In the browser the URL will have been re-written to a "moz-remote-image:" URL - however, the way we
+  // mock the remote tabs bypasses that. Tests for that functionality are in sync's test_syncedtabs.js test.
+  is(
+    childNode.getAttribute("image"),
+    "http://example.com/favicon.ico",
+    "image url is correct"
+  );
   node = node.nextElementSibling;
   is(node, null, "no more siblings");
 
@@ -451,6 +453,8 @@ add_task(async function () {
   ok(didSync, "clicking the button called the correct function");
 
   await hideOverflow();
+
+  await SpecialPowers.popPrefEnv();
 });
 
 // Test the pagination capabilities (Show More/All tabs)

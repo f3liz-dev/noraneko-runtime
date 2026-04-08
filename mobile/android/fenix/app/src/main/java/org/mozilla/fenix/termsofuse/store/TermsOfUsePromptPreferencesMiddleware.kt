@@ -5,7 +5,7 @@
 package org.mozilla.fenix.termsofuse.store
 
 import mozilla.components.lib.state.Middleware
-import mozilla.components.lib.state.MiddlewareContext
+import mozilla.components.lib.state.Store
 
 /**
  * [Middleware] that reacts to various [TermsOfUsePromptAction]s
@@ -16,7 +16,7 @@ class TermsOfUsePromptPreferencesMiddleware(
     private val repository: TermsOfUsePromptRepository,
 ) : Middleware<TermsOfUsePromptState, TermsOfUsePromptAction> {
     override fun invoke(
-        context: MiddlewareContext<TermsOfUsePromptState, TermsOfUsePromptAction>,
+        store: Store<TermsOfUsePromptState, TermsOfUsePromptAction>,
         next: (TermsOfUsePromptAction) -> Unit,
         action: TermsOfUsePromptAction,
     ) {
@@ -31,11 +31,18 @@ class TermsOfUsePromptPreferencesMiddleware(
             is TermsOfUsePromptAction.OnPromptManuallyDismissed ->
                 repository.updateHasPostponedAcceptingTermsOfUsePreference()
 
-            is TermsOfUsePromptAction.OnPromptDismissed ->
+            is TermsOfUsePromptAction.OnPromptDismissed -> {
                 repository.updateLastTermsOfUsePromptTimeInMillis()
+                repository.isShowingPrompt = false
+            }
 
-            is TermsOfUsePromptAction.OnImpression ->
+            is TermsOfUsePromptAction.OnImpression -> {
                 repository.incrementTermsOfUsePromptDisplayedCount()
+            }
+
+            is TermsOfUsePromptAction.OnPromptCreated -> {
+                repository.isShowingPrompt = true
+            }
 
             // no-ops
             is TermsOfUsePromptAction.OnLearnMoreClicked,

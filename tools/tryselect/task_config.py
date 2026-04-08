@@ -19,13 +19,15 @@ from textwrap import dedent
 import mozpack.path as mozpath
 import requests
 from mozbuild.base import BuildEnvironmentNotFoundException, MozbuildObject
-from taskgraph.util import taskcluster
 
 from .tasks import resolve_tests_by_suite
 from .util.ssh import get_ssh_user
 
 here = pathlib.Path(__file__).parent
 build = MozbuildObject.from_environment(cwd=str(here))
+
+# Set from mach settings in mach_commands.init()
+SKIP_ARTIFACT_BUILD_CHECK = False
 
 
 class ParameterConfig:
@@ -108,6 +110,11 @@ class Artifact(TryConfig):
             return {"use-artifact-builds": True, "disable-pgo": True}
 
         if no_artifact:
+            return
+
+        # If 'try.noartifact' is set in mach settings, default to non-artifact
+        # try instead of checking current build environment.
+        if SKIP_ARTIFACT_BUILD_CHECK:
             return
 
         if self.is_artifact_build():
@@ -339,6 +346,8 @@ class ExistingTasks(ParameterConfig):
     ]
 
     def find_decision_task(self, use_existing_tasks):
+        from taskgraph.util import taskcluster
+
         branch = "try"
         if use_existing_tasks == "last_try_push":
             # Use existing tasks from user's previous try push.
@@ -365,6 +374,8 @@ class ExistingTasks(ParameterConfig):
     def get_parameters(self, use_existing_tasks, **kwargs):
         if not use_existing_tasks:
             return
+
+        from taskgraph.util import taskcluster
 
         if use_existing_tasks.startswith("task-id="):
             tid = use_existing_tasks[len("task-id=") :]
@@ -397,7 +408,7 @@ class Rebuild(TryConfig):
             ["--rebuild"],
             {
                 "action": RangeAction,
-                "min": 2,
+                "min": 1,
                 "max": 20,
                 "default": None,
                 "type": int,
@@ -410,16 +421,17 @@ class Rebuild(TryConfig):
         if not rebuild:
             return
 
-        if (
-            not kwargs.get("new_test_config", False)
-            and kwargs.get("full")
-            and rebuild > 3
-        ):
-            print(
-                "warning: limiting --rebuild to 3 when using --full. "
-                "Use custom push actions to add more."
-            )
-            rebuild = 3
+        if not kwargs.get("new_test_config", False):
+            if rebuild == 1:
+                print(
+                    "warning: setting --rebuild to 1 is the same as not specifying it."
+                )
+            elif kwargs.get("full") and rebuild > 3:
+                print(
+                    "warning: limiting --rebuild to 3 when using --full. "
+                    "Use custom push actions to add more."
+                )
+                rebuild = 3
 
         return {
             "rebuild": rebuild,
@@ -612,6 +624,51 @@ class NewConfig(TryConfig):
             }
 
 
+class DoNotOptimize(ParameterConfig):
+    arguments = [
+        [
+            ["--do-not-optimize"],
+            {
+                "action": "append",
+                "dest": "do_not_optimize",
+                "default": None,
+                "help": (
+                    "Task labels to not optimize. These tasks will always be built "
+                    "instead of being replaced by indexed tasks. Can be specified multiple times."
+                ),
+            },
+        ],
+    ]
+
+    def get_parameters(self, do_not_optimize, **kwargs):
+        if do_not_optimize:
+            return {"do_not_optimize": do_not_optimize}
+
+
+class BuildCar(ParameterConfig):
+    arguments = [
+        [
+            ["--build-car"],
+            {
+                "action": "store_true",
+                "help": "Force rebuild of custom-car toolchains instead of reusing mozilla-central artifacts.",
+            },
+        ],
+    ]
+
+    CUSTOM_CAR_LABELS = [
+        "toolchain-linux64-custom-car",
+        "toolchain-win64-custom-car",
+        "toolchain-macosx-custom-car",
+        "toolchain-macosx-arm64-custom-car",
+        "toolchain-android-custom-car",
+    ]
+
+    def get_parameters(self, build_car, **kwargs):
+        if build_car:
+            return {"do_not_optimize": self.CUSTOM_CAR_LABELS}
+
+
 class WorkerOverrides(TryConfig):
     arguments = [
         [
@@ -726,8 +783,10 @@ class WorkerOverrides(TryConfig):
 all_task_configs = {
     "artifact": Artifact,
     "browsertime": Browsertime,
+    "build-car": BuildCar,
     "chemspill-prio": ChemspillPrio,
     "disable-pgo": DisablePgo,
+    "do-not-optimize": DoNotOptimize,
     "env": Environment,
     "existing-tasks": ExistingTasks,
     "gecko-profile": GeckoProfile,

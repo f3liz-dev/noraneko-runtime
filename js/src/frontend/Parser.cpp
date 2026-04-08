@@ -32,9 +32,9 @@
 #include <new>
 #include <type_traits>
 
-#include "jsnum.h"
 #include "jstypes.h"
 
+#include "builtin/Number.h"
 #include "frontend/FoldConstants.h"
 #include "frontend/FunctionSyntaxKind.h"  // FunctionSyntaxKind
 #include "frontend/ModuleSharedContext.h"
@@ -49,8 +49,9 @@
 #include "js/ErrorReport.h"           // JSErrorBase
 #include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
 #include "js/HashTable.h"
-#include "js/RegExpFlags.h"      // JS::RegExpFlags
-#include "js/Stack.h"            // JS::NativeStackLimit
+#include "js/RegExpFlags.h"  // JS::RegExpFlags
+#include "js/Stack.h"        // JS::NativeStackLimit
+#include "util/DifferentialTesting.h"
 #include "util/StringBuilder.h"  // StringBuilder
 #include "vm/BytecodeUtil.h"
 #include "vm/FunctionFlags.h"          // js::FunctionFlags
@@ -3834,7 +3835,8 @@ static inline bool IsUseAsmDirective(const TokenPos& pos,
 }
 
 template <typename Unit>
-bool Parser<SyntaxParseHandler, Unit>::asmJS(ListNodeType list) {
+bool Parser<SyntaxParseHandler, Unit>::asmJS(TokenPos directivePos,
+                                             ListNodeType list) {
   // While asm.js could technically be validated and compiled during syntax
   // parsing, we have no guarantee that some later JS wouldn't abort the
   // syntax parse and cause us to re-parse (and re-compile) the asm.js module.
@@ -3846,7 +3848,8 @@ bool Parser<SyntaxParseHandler, Unit>::asmJS(ListNodeType list) {
 }
 
 template <typename Unit>
-bool Parser<FullParseHandler, Unit>::asmJS(ListNodeType list) {
+bool Parser<FullParseHandler, Unit>::asmJS(TokenPos directivePos,
+                                           ListNodeType list) {
   // Disable syntax parsing in anything nested inside the asm.js module.
   disableSyntaxParser();
 
@@ -3878,6 +3881,18 @@ bool Parser<FullParseHandler, Unit>::asmJS(ListNodeType list) {
   if (!CompileAsmJS(this->fc_, this->parserAtoms(), *this, list, &validated)) {
     return false;
   }
+
+  // Warn about asm.js deprecation even if we failed validation. Do this after
+  // compilation so that this warning is the last one we emit. This makes
+  // testing in asm.js/disabled-warning.js easier.
+  if (!js::SupportDifferentialTesting() &&
+      JS::Prefs::warn_asmjs_deprecation()) {
+    if (!warningAt(directivePos.begin, JSMSG_USE_ASM_DEPRECATED)) {
+      return false;
+    }
+  }
+
+  // If we failed validation, trigger a reparse. See above.
   if (!validated) {
     pc_->newDirectives->setAsmJS();
     return false;
@@ -3887,8 +3902,9 @@ bool Parser<FullParseHandler, Unit>::asmJS(ListNodeType list) {
 }
 
 template <class ParseHandler, typename Unit>
-inline bool GeneralParser<ParseHandler, Unit>::asmJS(ListNodeType list) {
-  return asFinalParser()->asmJS(list);
+inline bool GeneralParser<ParseHandler, Unit>::asmJS(TokenPos directivePos,
+                                                     ListNodeType list) {
+  return asFinalParser()->asmJS(directivePos, list);
 }
 
 /*
@@ -4003,7 +4019,7 @@ bool GeneralParser<ParseHandler, Unit>::maybeParseDirective(
     }
   } else if (IsUseAsmDirective(directivePos, directive)) {
     if (pc_->isFunctionBox()) {
-      return asmJS(list);
+      return asmJS(directivePos, list);
     }
     return warningAt(directivePos.begin, JSMSG_USE_ASM_DIRECTIVE_FAIL);
   }
@@ -5223,6 +5239,10 @@ GeneralParser<ParseHandler, Unit>::importDeclaration() {
   ListNodeType importSpecSet =
       MOZ_TRY(handler_.newList(ParseNodeKind::ImportSpecList, pos()));
 
+#ifdef ENABLE_SOURCE_PHASE_IMPORTS
+  bool isSourcePhaseImport = false;
+  NameNodeType importSourceBinding;
+#endif
   if (tt == TokenKind::String) {
     // Handle the form |import 'a'| by leaving the list empty. This is
     // equivalent to |import {} from 'a'|.
@@ -5241,46 +5261,94 @@ GeneralParser<ParseHandler, Unit>::importDeclaration() {
       // specifier to the list, with 'default' as the import name and
       // 'a' as the binding name. This is equivalent to
       // |import { default as a } from 'b'|.
-      NameNodeType importName =
-          MOZ_TRY(newName(TaggedParserAtomIndex::WellKnown::default_()));
-
-      TaggedParserAtomIndex bindingAtom = importedBinding();
-      if (!bindingAtom) {
-        return errorResult();
-      }
-
-      NameNodeType bindingName = MOZ_TRY(newName(bindingAtom));
-
-      if (!noteDeclaredName(bindingAtom, DeclarationKind::Import, pos())) {
-        return errorResult();
-      }
-
-      BinaryNodeType importSpec =
-          MOZ_TRY(handler_.newImportSpec(importName, bindingName));
-
-      handler_.addList(importSpecSet, importSpec);
-
-      if (!tokenStream.peekToken(&tt)) {
-        return errorResult();
-      }
-
-      if (tt == TokenKind::Comma) {
-        tokenStream.consumeKnownToken(tt);
-        if (!tokenStream.getToken(&tt)) {
+#ifdef ENABLE_SOURCE_PHASE_IMPORTS
+      if (options().sourcePhaseImports() && tt == TokenKind::Source) {
+        isSourcePhaseImport = true;
+        // Handle the form |import source a from 'b'|
+        if (!tokenStream.peekToken(&tt)) {
           return errorResult();
         }
 
-        if (tt == TokenKind::LeftCurly) {
-          if (!namedImports(importSpecSet)) {
+        // Detect "import source from from ..."
+        if (tt == TokenKind::From) {
+          tokenStream.consumeKnownToken(tt);
+          if (!tokenStream.peekToken(&tt)) {
             return errorResult();
           }
-        } else if (tt == TokenKind::Mul) {
-          if (!namespaceImport(importSpecSet)) {
+          if (tt != TokenKind::From) {
+            isSourcePhaseImport = false;
+          }
+          anyChars.ungetToken();
+        } else if (tt == TokenKind::Comma) {
+          isSourcePhaseImport = false;
+        }
+
+        if (isSourcePhaseImport) {
+          if (!tokenStream.getToken(&tt)) {
             return errorResult();
           }
-        } else {
-          error(JSMSG_NAMED_IMPORTS_OR_NAMESPACE_IMPORT);
+
+          if (!TokenKindIsPossibleIdentifierName(tt)) {
+            error(JSMSG_DECLARATION_AFTER_IMPORT_SOURCE);
+            return errorResult();
+          }
+
+          TaggedParserAtomIndex bindingAtom = importedBinding();
+          if (!bindingAtom) {
+            return errorResult();
+          }
+
+          importSourceBinding = MOZ_TRY(newName(bindingAtom));
+
+          if (!noteDeclaredName(bindingAtom, DeclarationKind::Import, pos())) {
+            return errorResult();
+          }
+        }
+      }
+      if (!isSourcePhaseImport)
+#endif
+      {
+        NameNodeType importName =
+            MOZ_TRY(newName(TaggedParserAtomIndex::WellKnown::default_()));
+
+        TaggedParserAtomIndex bindingAtom = importedBinding();
+        if (!bindingAtom) {
           return errorResult();
+        }
+
+        NameNodeType bindingName = MOZ_TRY(newName(bindingAtom));
+
+        if (!noteDeclaredName(bindingAtom, DeclarationKind::Import, pos())) {
+          return errorResult();
+        }
+
+        BinaryNodeType importSpec =
+            MOZ_TRY(handler_.newImportSpec(importName, bindingName));
+
+        handler_.addList(importSpecSet, importSpec);
+
+        if (!tokenStream.peekToken(&tt)) {
+          return errorResult();
+        }
+
+        if (tt == TokenKind::Comma) {
+          tokenStream.consumeKnownToken(tt);
+          if (!tokenStream.getToken(&tt)) {
+            return errorResult();
+          }
+
+          if (tt == TokenKind::LeftCurly) {
+            if (!namedImports(importSpecSet)) {
+              return errorResult();
+            }
+          } else if (tt == TokenKind::Mul) {
+            if (!namespaceImport(importSpecSet)) {
+              return errorResult();
+            }
+          } else {
+            error(JSMSG_NAMED_IMPORTS_OR_NAMESPACE_IMPORT);
+            return errorResult();
+          }
         }
       }
     } else {
@@ -5303,15 +5371,26 @@ GeneralParser<ParseHandler, Unit>::importDeclaration() {
     return errorResult();
   }
 
-  ListNodeType importAttributeList =
-      MOZ_TRY(handler_.newList(ParseNodeKind::ImportAttributeList, pos()));
+  Node importAttributeList;
+#ifdef ENABLE_SOURCE_PHASE_IMPORTS
+  if (isSourcePhaseImport) {
+    // Source phase imports do not support import attributes
+    importAttributeList = MOZ_TRY(handler_.newPosHolder(pos()));
+  } else
+#endif
+  {
+    ListNodeType attributeList =
+        MOZ_TRY(handler_.newList(ParseNodeKind::ImportAttributeList, pos()));
 
-  if (tt == TokenKind::With) {
-    tokenStream.consumeKnownToken(tt, TokenStream::SlashIsRegExp);
+    if (tt == TokenKind::With) {
+      tokenStream.consumeKnownToken(tt, TokenStream::SlashIsRegExp);
 
-    if (!withClause(importAttributeList)) {
-      return errorResult();
+      if (!withClause(attributeList)) {
+        return errorResult();
+      }
     }
+
+    importAttributeList = attributeList;
   }
 
   if (!matchOrInsertSemicolon(TokenStream::SlashIsRegExp)) {
@@ -5320,6 +5399,18 @@ GeneralParser<ParseHandler, Unit>::importDeclaration() {
 
   BinaryNodeType moduleRequest = MOZ_TRY(handler_.newModuleRequest(
       moduleSpec, importAttributeList, TokenPos(begin, pos().end)));
+
+#ifdef ENABLE_SOURCE_PHASE_IMPORTS
+  if (isSourcePhaseImport) {
+    BinaryNodeType node = MOZ_TRY(handler_.newImportSourceDeclaration(
+        importSourceBinding, moduleRequest, TokenPos(begin, pos().end)));
+    if (!processImportSource(node)) {
+      return errorResult();
+    }
+
+    return node;
+  }
+#endif
 
   BinaryNodeType node = MOZ_TRY(handler_.newImportDeclaration(
       importSpecSet, moduleRequest, TokenPos(begin, pos().end)));
@@ -5633,6 +5724,21 @@ inline bool PerHandlerParser<SyntaxParseHandler>::processImport(
   MOZ_ALWAYS_FALSE(abortIfSyntaxParser());
   return false;
 }
+
+#ifdef ENABLE_SOURCE_PHASE_IMPORTS
+template <>
+inline bool PerHandlerParser<FullParseHandler>::processImportSource(
+    BinaryNodeType node) {
+  return pc_->sc()->asModuleContext()->builder.processImportSource(node);
+}
+
+template <>
+inline bool PerHandlerParser<SyntaxParseHandler>::processImportSource(
+    BinaryNodeType node) {
+  MOZ_ALWAYS_FALSE(abortIfSyntaxParser());
+  return false;
+}
+#endif
 
 template <class ParseHandler, typename Unit>
 typename ParseHandler::BinaryNodeResult
@@ -12402,23 +12508,43 @@ GeneralParser<ParseHandler, Unit>::importExpr(YieldHandling yieldHandling,
     return errorResult();
   }
 
+#ifdef ENABLE_SOURCE_PHASE_IMPORTS
+  bool isSourcePhaseImport = false;
+#endif
+
   if (next == TokenKind::Dot) {
     if (!tokenStream.getToken(&next)) {
       return errorResult();
     }
-    if (next != TokenKind::Meta) {
+    if (next == TokenKind::Meta) {
+      if (parseGoal() != ParseGoal::Module) {
+        errorAt(pos().begin, JSMSG_IMPORT_META_OUTSIDE_MODULE);
+        return errorResult();
+      }
+
+      NullaryNodeType metaHolder = MOZ_TRY(handler_.newPosHolder(pos()));
+
+      return handler_.newImportMeta(importHolder, metaHolder);
+    }
+
+#ifdef ENABLE_SOURCE_PHASE_IMPORTS
+    if (options().sourcePhaseImports()) {
+      if (next != TokenKind::Source) {
+        error(JSMSG_UNEXPECTED_TOKEN, "meta or source", TokenKindToDesc(next));
+        return errorResult();
+      }
+      isSourcePhaseImport = true;
+      if (!tokenStream.getToken(&next)) {
+        return errorResult();
+      }
+    } else {
       error(JSMSG_UNEXPECTED_TOKEN, "meta", TokenKindToDesc(next));
       return errorResult();
     }
-
-    if (parseGoal() != ParseGoal::Module) {
-      errorAt(pos().begin, JSMSG_IMPORT_META_OUTSIDE_MODULE);
-      return errorResult();
-    }
-
-    NullaryNodeType metaHolder = MOZ_TRY(handler_.newPosHolder(pos()));
-
-    return handler_.newImportMeta(importHolder, metaHolder);
+#else
+    error(JSMSG_UNEXPECTED_TOKEN, "meta", TokenKindToDesc(next));
+    return errorResult();
+#endif
   }
 
   if (next == TokenKind::LeftParen && allowCallSyntax) {
@@ -12430,7 +12556,12 @@ GeneralParser<ParseHandler, Unit>::importExpr(YieldHandling yieldHandling,
     }
 
     Node optionalArg;
-    if (next == TokenKind::Comma) {
+    if (next == TokenKind::Comma
+#ifdef ENABLE_SOURCE_PHASE_IMPORTS
+        // Unlike `import`, `import.source` does not have an optional parameter.
+        && !isSourcePhaseImport
+#endif
+    ) {
       tokenStream.consumeKnownToken(TokenKind::Comma,
                                     TokenStream::SlashIsRegExp);
 
@@ -12465,6 +12596,11 @@ GeneralParser<ParseHandler, Unit>::importExpr(YieldHandling yieldHandling,
 
     Node spec = MOZ_TRY(handler_.newCallImportSpec(arg, optionalArg));
 
+#ifdef ENABLE_SOURCE_PHASE_IMPORTS
+    if (isSourcePhaseImport) {
+      return handler_.newCallImportSource(importHolder, spec);
+    }
+#endif
     return handler_.newCallImport(importHolder, spec);
   }
 

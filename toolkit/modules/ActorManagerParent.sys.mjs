@@ -103,6 +103,7 @@ let JSWINDOWACTORS = {
     },
 
     matches: ["about:certificate"],
+    remoteTypes: ["privilegedabout"],
   },
 
   AboutHttpsOnlyError: {
@@ -472,9 +473,6 @@ let JSWINDOWACTORS = {
     },
     child: {
       esModuleURI: "resource://gre/actors/PageExtractorChild.sys.mjs",
-      events: {
-        DOMContentLoaded: { createActor: false },
-      },
     },
     matches: [
       "http://*/*",
@@ -484,7 +482,7 @@ let JSWINDOWACTORS = {
       "data:text/html,*",
       "about:reader?*",
     ],
-    messageManagerGroups: ["browsers"],
+    messageManagerGroups: ["browsers", "headless-browsers"],
   },
 
   PopupAndRedirectBlocking: {
@@ -621,6 +619,12 @@ let JSWINDOWACTORS = {
     matches: ["http://*/*", "https://*/*", "file:///*", "moz-extension://*"],
     messageManagerGroups: ["browsers"],
     enablePreference: "browser.translations.enable",
+    onPreferenceChanged(isEnabled) {
+      const { TranslationsParent } = ChromeUtils.importESModule(
+        "resource://gre/actors/TranslationsParent.sys.mjs"
+      );
+      TranslationsParent.onIsEnabledChanged(isEnabled);
+    },
   },
 
   UAWidgets: {
@@ -697,14 +701,13 @@ if (AppConstants.platform != "android") {
   // Note that GeckoView handles MozOpenDateTimePicker in GeckoViewPrompt.
   JSWINDOWACTORS.DateTimePicker = {
     parent: {
-      esModuleURI: "resource://gre/actors/DateTimePickerParent.sys.mjs",
+      esModuleURI: "moz-src:///toolkit/actors/DateTimePickerParent.sys.mjs",
     },
 
     child: {
-      esModuleURI: "resource://gre/actors/DateTimePickerChild.sys.mjs",
+      esModuleURI: "moz-src:///toolkit/actors/DateTimePickerChild.sys.mjs",
       events: {
         MozOpenDateTimePicker: {},
-        MozUpdateDateTimePicker: {},
         MozCloseDateTimePicker: {},
       },
     },
@@ -770,7 +773,23 @@ if (AppConstants.platform != "android") {
     },
     matches: ["about:translations"],
     remoteTypes: ["privilegedabout"],
-    enablePreference: "browser.translations.enable",
+  };
+
+  JSWINDOWACTORS.ColorPicker = {
+    parent: {
+      esModuleURI: "moz-src:///toolkit/actors/ColorPickerParent.sys.mjs",
+    },
+
+    child: {
+      esModuleURI: "moz-src:///toolkit/actors/ColorPickerChild.sys.mjs",
+      events: {
+        MozOpenColorPicker: {},
+        MozCloseColorPicker: {},
+      },
+    },
+
+    includeChrome: true,
+    allFrames: true,
   };
 }
 

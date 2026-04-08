@@ -45,7 +45,9 @@ add_task(async function test_default_telemetry() {
   const engineInstance = await createEngine(RAW_PIPELINE_OPTIONS);
 
   info("Run the inference");
-  const inferencePromise = engineInstance.run({ data: "This gets echoed." });
+  const inferencePromise = engineInstance.run({
+    data: "This gets echoed.",
+  });
 
   info("Wait for the pending downloads.");
   await remoteClients["ml-onnx-runtime"].resolvePendingDownloads(1);
@@ -58,11 +60,51 @@ add_task(async function test_default_telemetry() {
   );
 
   {
+    info("Test the run_inference_success_flow event");
+    const inferenceFlowEvents =
+      Glean.firefoxAiRuntime.runInferenceSuccessFlow.testGetValue();
+    Assert.ok(
+      inferenceFlowEvents && !!inferenceFlowEvents.length,
+      "At least one run_inference_success_flow event was recorded"
+    );
+    const lastInferenceEvent = inferenceFlowEvents.at(-1);
+    const { extra: inferenceExtra } = lastInferenceEvent;
+
+    // Helper to check that a number field is present and >= 0
+    const checkNumber = (key, isOptional = false) => {
+      const value = inferenceExtra[key];
+      if (isOptional && (value === null || value === undefined)) {
+        return; // Optional field not present is OK
+      }
+      Assert.notEqual(value, null, `${key} should be present`);
+      const number = Number(value); // Quantities are stored as strings
+      Assert.ok(!Number.isNaN(number), `${key} should be a number`);
+      Assert.greaterOrEqual(number, 0, `${key} should be >= 0`);
+    };
+
+    // Check flow_id is present
+    Assert.ok(inferenceExtra.flow_id, "flow_id should be present");
+
+    // Check all required timing/token metrics
+    checkNumber("tokenizing_time", true);
+    checkNumber("inference_time", true);
+    checkNumber("decoding_time", true);
+    checkNumber("input_tokens", true);
+    checkNumber("output_tokens", true);
+    checkNumber("time_to_first_token", true);
+    checkNumber("tokens_per_second", true);
+    checkNumber("time_per_output_token", true);
+  }
+
+  {
     info("Test the engine_run event");
-    await engineInstance.lastResourceRequest;
     const value = Glean.firefoxAiRuntime.engineRun.testGetValue();
-    Assert.equal(value?.length, 1, "One engine_run event was recorded");
-    const [{ extra }] = value;
+    Assert.ok(
+      value && !!value.length,
+      "At least one engine_run event was recorded"
+    );
+    const lastEngineRunEvent = value.at(-1);
+    const { extra } = lastEngineRunEvent;
     const checkNumber = key => {
       const value = extra[key];
       Assert.notEqual(value, null, `${key} should be present`);
@@ -685,4 +727,69 @@ add_task(async function test_ml_telemetry_flow_id_persistent_on_instance() {
     "my-instance-flow-id-789",
     "The instance's flowId property remained unchanged"
   );
+});
+
+add_task(async function test_run_with_generator_telemetry() {
+  const { cleanup } = await setup();
+  const { server: mockServer, port } = startMockOpenAI({
+    echo: "Streaming response.",
+  });
+
+  info("Create the engine with OpenAI backend");
+  const engineInstance = await createEngine({
+    taskName: "text-generation",
+    featureId: "about-inference",
+    backend: "openai",
+    modelId: "test-model",
+    apiKey: "test-key",
+    baseURL: `http://localhost:${port}/v1`,
+  });
+
+  info("Call runWithGenerator");
+  const generator = engineInstance.runWithGenerator({
+    args: [{ role: "user", content: "test streaming" }],
+    streamOptions: { enabled: true },
+  });
+
+  info("Manually iterate to capture both chunks and return value");
+  let iterResult;
+  while (true) {
+    iterResult = await generator.next();
+    if (iterResult.done) {
+      break;
+    }
+  }
+
+  {
+    info("Test the engine_run event for runWithGenerator");
+    const value = Glean.firefoxAiRuntime.engineRun.testGetValue();
+    Assert.ok(
+      value && !!value.length,
+      "At least one engine_run event was recorded"
+    );
+    const lastEngineRunEvent = value.at(-1);
+    const { extra } = lastEngineRunEvent;
+    info("Recorded Glean engine_run event: " + JSON.stringify(extra, null, 2));
+    const checkNumber = key => {
+      const value = extra[key];
+      Assert.notEqual(value, null, `${key} should be present`);
+      const number = Number(value);
+      Assert.ok(!Number.isNaN(number), `${key} should be a number`);
+      Assert.greater(number, 0, `${key} should be greater than 0`);
+    };
+    checkNumber("cpu_milliseconds");
+    checkNumber("wall_milliseconds");
+    checkNumber("cores");
+    checkNumber("cpu_utilization");
+    checkNumber("memory_bytes");
+    checkNumber("character_count");
+    Assert.ok(!extra.token_count, "Token count is not implemented yet.");
+
+    Assert.equal(extra.feature_id, "about-inference");
+    Assert.equal(extra.backend, "openai");
+  }
+
+  await EngineProcess.destroyMLEngine();
+  await cleanup();
+  await stopMockOpenAI(mockServer);
 });

@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsGlobalWindowOuter_h___
-#define nsGlobalWindowOuter_h___
+#ifndef nsGlobalWindowOuter_h_
+#define nsGlobalWindowOuter_h_
 
 #include "nsHashKeys.h"
 #include "nsInterfaceHashtable.h"
@@ -284,10 +284,7 @@ class nsGlobalWindowOuter final : public mozilla::dom::EventTarget,
       mozilla::dom::EventTarget* aChromeEventHandler) override;
 
   // Outer windows only.
-  virtual void SetInitialPrincipal(
-      nsIPrincipal* aNewWindowPrincipal, nsIPolicyContainer* aPolicyContainer,
-      const mozilla::Maybe<nsILoadInfo::CrossOriginEmbedderPolicy>& aCoep)
-      override;
+  virtual void SetInitialPrincipal(nsIPrincipal* aNewWindowPrincipal) override;
 
   virtual already_AddRefed<nsISupports> SaveWindowState() override;
   MOZ_CAN_RUN_SCRIPT_BOUNDARY virtual nsresult RestoreWindowState(
@@ -499,7 +496,7 @@ class nsGlobalWindowOuter final : public mozilla::dom::EventTarget,
   }
 #define WINDOW_ONLY_EVENT EVENT
 #define TOUCH_EVENT EVENT
-#include "mozilla/EventNameList.h"
+#include "mozilla/EventNameList.inc"
 #undef TOUCH_EVENT
 #undef WINDOW_ONLY_EVENT
 #undef BEFOREUNLOAD_EVENT
@@ -600,6 +597,9 @@ class nsGlobalWindowOuter final : public mozilla::dom::EventTarget,
   void ResizeByOuter(int32_t aWidthDif, int32_t aHeightDif,
                      mozilla::dom::CallerType aCallerType,
                      mozilla::ErrorResult& aError);
+  void MoveResizeOuter(int32_t aX, int32_t aY, int32_t aWidth, int32_t aHeight,
+                       mozilla::dom::CallerType aCallerType,
+                       mozilla::ErrorResult& aError);
   double GetScrollXOuter();
   double GetScrollYOuter();
 
@@ -784,7 +784,8 @@ class nsGlobalWindowOuter final : public mozilla::dom::EventTarget,
 
   // Outer windows only.
   MOZ_CAN_RUN_SCRIPT_BOUNDARY
-  bool CanMoveResizeWindows(mozilla::dom::CallerType aCallerType);
+  bool CanMoveResizeWindows(mozilla::dom::CallerType aCallerType, bool aIsMove,
+                            mozilla::ErrorResult& aError);
 
   // If aDoFlush is true, we'll flush our own layout; otherwise we'll try to
   // just flush our parent and only flush ourselves if we think we need to.
@@ -1135,4 +1136,4 @@ inline void nsGlobalWindowOuter::MaybeClearInnerWindow(
   }
 }
 
-#endif /* nsGlobalWindowOuter_h___ */
+#endif /* nsGlobalWindowOuter_h_ */

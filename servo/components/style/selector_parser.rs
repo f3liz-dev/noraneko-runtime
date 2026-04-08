@@ -6,10 +6,11 @@
 
 #![deny(missing_docs)]
 
+use crate::derives::*;
 use crate::stylesheets::{Namespaces, Origin, UrlExtraData};
 use crate::values::serialize_atom_identifier;
 use crate::Atom;
-use cssparser::{Parser as CssParser, ParserInput};
+use cssparser::{match_ignore_ascii_case, Parser as CssParser, ParserInput};
 use dom::ElementState;
 use selectors::parser::{ParseRelative, SelectorList};
 use std::fmt::{self, Debug, Write};
@@ -277,16 +278,16 @@ mod tests {
         map.set(&PseudoElement::After, 3);
         assert_eq!(map.get(&PseudoElement::After), Some(3).as_ref());
 
-        assert_eq!(map.get(&PseudoElement::RubyText), None);
-        map.set(&PseudoElement::RubyText, 8);
-        assert_eq!(map.get(&PseudoElement::RubyText), Some(8).as_ref());
+        assert_eq!(map.get(&PseudoElement::MozRubyText), None);
+        map.set(&PseudoElement::MozRubyText, 8);
+        assert_eq!(map.get(&PseudoElement::MozRubyText), Some(8).as_ref());
 
         assert_eq!(
-            map.get_or_insert_with(&PseudoElement::RubyText, || { 10 }),
+            map.get_or_insert_with(&PseudoElement::MozRubyText, || { 10 }),
             &8
         );
-        map.set(&PseudoElement::RubyText, 9);
-        assert_eq!(map.get(&PseudoElement::RubyText), Some(9).as_ref());
+        map.set(&PseudoElement::MozRubyText, 9);
+        assert_eq!(map.get(&PseudoElement::MozRubyText), Some(9).as_ref());
 
         assert_eq!(
             map.get_or_insert_with(&PseudoElement::FirstLine, || { 10 }),
@@ -299,7 +300,7 @@ mod tests {
     fn can_iter() {
         let mut map = <PerPseudoElementMap<i32>>::default();
         map.set(&PseudoElement::After, 3);
-        map.set(&PseudoElement::RubyText, 8);
+        map.set(&PseudoElement::MozRubyText, 8);
         assert_eq!(map.iter().cloned().collect::<Vec<_>>(), vec![3, 8]);
     }
 }

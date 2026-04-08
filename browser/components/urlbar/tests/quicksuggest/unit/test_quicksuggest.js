@@ -209,10 +209,7 @@ add_setup(async function init() {
 
   // Install a default test engine.
   let engine = await addTestSuggestionsEngine();
-  await Services.search.setDefault(
-    engine,
-    Ci.nsISearchService.CHANGE_REASON_UNKNOWN
-  );
+  await SearchService.setDefault(engine, SearchService.CHANGE_REASON.UNKNOWN);
 
   UrlbarPrefs.set("quicksuggest.ampTopPickCharThreshold", 0);
 
@@ -275,20 +272,6 @@ add_task(async function allEnabled_sponsoredEnabled_sponsoredSearch() {
     context,
     matches: [QuickSuggestTestUtils.ampResult({ suggestedIndex: -1 })],
   });
-
-  // The title should include the full keyword and em dash, and the part of the
-  // title that the search string does not match should be highlighted.
-  let result = context.results[0];
-  Assert.equal(
-    result.title,
-    `${SPONSORED_SEARCH_STRING} — Amp Suggestion`,
-    "result.title should be correct"
-  );
-  Assert.deepEqual(
-    result.titleHighlights,
-    [],
-    "result.titleHighlights should be correct"
-  );
 });
 
 // Tests with both `all` and sponsored enabled with a non-sponsored search
@@ -306,20 +289,6 @@ add_task(async function allEnabled_sponsoredEnabled_nonsponsoredSearch() {
     context,
     matches: [QuickSuggestTestUtils.wikipediaResult()],
   });
-
-  // The title should include the full keyword and em dash, and the part of the
-  // title that the search string does not match should be highlighted.
-  let result = context.results[0];
-  Assert.equal(
-    result.title,
-    `${NONSPONSORED_SEARCH_STRING} — Wikipedia Suggestion`,
-    "result.title should be correct"
-  );
-  Assert.deepEqual(
-    result.titleHighlights,
-    [],
-    "result.titleHighlights should be correct"
-  );
 });
 
 // Tests with both `all` and sponsored enabled with a search string that doesn't
@@ -461,10 +430,11 @@ add_task(async function emptySearchStringsAndSpaces() {
       context,
       matches: [],
     });
+    let providersManager = ProvidersManager.getInstanceForSap("urlbar");
     Assert.ok(
-      !(await UrlbarProvidersManager.getProvider(
-        UrlbarProviderQuickSuggest.name
-      ).isActive(context)),
+      !(await providersManager
+        .getProvider(UrlbarProviderQuickSuggest.name)
+        .isActive(context)),
       "Provider should not be active for search string: " + msg
     );
   }
@@ -552,17 +522,17 @@ add_task(async function suggestionsBeforeGeneral_only() {
       makeSearchResult(context, {
         heuristic: true,
         query: SPONSORED_SEARCH_STRING,
-        engineName: Services.search.defaultEngine.name,
+        engineName: SearchService.defaultEngine.name,
       }),
       makeSearchResult(context, {
         query: SPONSORED_SEARCH_STRING,
         suggestion: SPONSORED_SEARCH_STRING + " foo",
-        engineName: Services.search.defaultEngine.name,
+        engineName: SearchService.defaultEngine.name,
       }),
       makeSearchResult(context, {
         query: SPONSORED_SEARCH_STRING,
         suggestion: SPONSORED_SEARCH_STRING + " bar",
-        engineName: Services.search.defaultEngine.name,
+        engineName: SearchService.defaultEngine.name,
       }),
       QuickSuggestTestUtils.ampResult(),
     ],
@@ -607,17 +577,17 @@ add_task(async function suggestionsBeforeGeneral_others() {
       makeSearchResult(context, {
         heuristic: true,
         query: SPONSORED_SEARCH_STRING,
-        engineName: Services.search.defaultEngine.name,
+        engineName: SearchService.defaultEngine.name,
       }),
       makeSearchResult(context, {
         query: SPONSORED_SEARCH_STRING,
         suggestion: SPONSORED_SEARCH_STRING + " foo",
-        engineName: Services.search.defaultEngine.name,
+        engineName: SearchService.defaultEngine.name,
       }),
       makeSearchResult(context, {
         query: SPONSORED_SEARCH_STRING,
         suggestion: SPONSORED_SEARCH_STRING + " bar",
-        engineName: Services.search.defaultEngine.name,
+        engineName: SearchService.defaultEngine.name,
       }),
       QuickSuggestTestUtils.ampResult(),
       ...historyResults,
@@ -647,18 +617,18 @@ add_task(async function generalBeforeSuggestions_only() {
       makeSearchResult(context, {
         heuristic: true,
         query: SPONSORED_SEARCH_STRING,
-        engineName: Services.search.defaultEngine.name,
+        engineName: SearchService.defaultEngine.name,
       }),
       QuickSuggestTestUtils.ampResult({ suggestedIndex: -1 }),
       makeSearchResult(context, {
         query: SPONSORED_SEARCH_STRING,
         suggestion: SPONSORED_SEARCH_STRING + " foo",
-        engineName: Services.search.defaultEngine.name,
+        engineName: SearchService.defaultEngine.name,
       }),
       makeSearchResult(context, {
         query: SPONSORED_SEARCH_STRING,
         suggestion: SPONSORED_SEARCH_STRING + " bar",
-        engineName: Services.search.defaultEngine.name,
+        engineName: SearchService.defaultEngine.name,
       }),
     ],
   });
@@ -702,19 +672,19 @@ add_task(async function generalBeforeSuggestions_others() {
       makeSearchResult(context, {
         heuristic: true,
         query: SPONSORED_SEARCH_STRING,
-        engineName: Services.search.defaultEngine.name,
+        engineName: SearchService.defaultEngine.name,
       }),
       ...historyResults,
       QuickSuggestTestUtils.ampResult({ suggestedIndex: -1 }),
       makeSearchResult(context, {
         query: SPONSORED_SEARCH_STRING,
         suggestion: SPONSORED_SEARCH_STRING + " foo",
-        engineName: Services.search.defaultEngine.name,
+        engineName: SearchService.defaultEngine.name,
       }),
       makeSearchResult(context, {
         query: SPONSORED_SEARCH_STRING,
         suggestion: SPONSORED_SEARCH_STRING + " bar",
-        engineName: Services.search.defaultEngine.name,
+        engineName: SearchService.defaultEngine.name,
       }),
     ],
   });
@@ -746,7 +716,8 @@ add_task(async function maxResults() {
   // Spy on `muxer.sort()` so we can verify the provider limited the number of
   // results it added to the query.
   let muxerName = context.muxer || "UnifiedComplete";
-  let muxer = UrlbarProvidersManager.muxers.get(muxerName);
+  let providersManager = ProvidersManager.getInstanceForSap("urlbar");
+  let muxer = providersManager.muxers.get(muxerName);
   Assert.ok(!!muxer, "Muxer should exist");
 
   let sandbox = sinon.createSandbox();
@@ -872,7 +843,8 @@ async function doManySuggestResultsTest({
   }
 
   let provider = new UrlbarTestUtils.TestProvider({ results: otherResults });
-  UrlbarProvidersManager.registerProvider(provider);
+  let providersManager = ProvidersManager.getInstanceForSap("urlbar");
+  providersManager.registerProvider(provider);
 
   // Do a search that matches all the Suggest suggestions and the test
   // provider's results. The Suggest suggestion(s) should be first since its
@@ -888,7 +860,7 @@ async function doManySuggestResultsTest({
     ],
   });
 
-  UrlbarProvidersManager.unregisterProvider(provider);
+  providersManager.unregisterProvider(provider);
 }
 
 add_task(async function dedupeAgainstURL_samePrefix() {
@@ -970,7 +942,7 @@ async function doDedupeAgainstURLTest({
       makeSearchResult(context, {
         heuristic: true,
         query: searchString,
-        engineName: Services.search.defaultEngine.name,
+        engineName: SearchService.defaultEngine.name,
       }),
       makeVisitResult(context, {
         uri: otherURL,
@@ -990,7 +962,7 @@ async function doDedupeAgainstURLTest({
     makeSearchResult(context, {
       heuristic: true,
       query: searchString,
-      engineName: Services.search.defaultEngine.name,
+      engineName: SearchService.defaultEngine.name,
     }),
   ];
 
@@ -1077,6 +1049,7 @@ add_task(async function dedupeAgainstURL_timestamps() {
     [dupeURL, ...badTimestampURLs].map(uri => ({
       uri,
       title: TIMESTAMP_SEARCH_STRING,
+      transition: PlacesUtils.history.TRANSITION_TYPED,
     }))
   );
 
@@ -1090,7 +1063,7 @@ add_task(async function dedupeAgainstURL_timestamps() {
   let expectedHeuristic = makeSearchResult(context, {
     heuristic: true,
     query: TIMESTAMP_SEARCH_STRING,
-    engineName: Services.search.defaultEngine.name,
+    engineName: SearchService.defaultEngine.name,
   });
   let expectedDupeResult = makeVisitResult(context, {
     uri: dupeURL,
@@ -1197,7 +1170,7 @@ add_task(async function dedupeAgainstURL_timestamps() {
   // Check the quick suggest's payload excluding the timestamp-related
   // properties.
   let actualQuickSuggest = context.results[QUICK_SUGGEST_INDEX];
-  let ignore = ["displayUrl", "sponsoredClickUrl", "url", "urlTimestampIndex"];
+  let ignore = ["sponsoredClickUrl", "url", "urlTimestampIndex"];
   Assert.deepEqual(
     getPayload(actualQuickSuggest, { ignore }),
     getPayload(expectedQuickSuggest, { ignore }),
@@ -1217,6 +1190,118 @@ add_task(async function dedupeAgainstURL_timestamps() {
 
   UrlbarPrefs.clear("suggest.searches");
   await PlacesUtils.history.clear();
+});
+
+add_task(async function show_less_frequently() {
+  UrlbarPrefs.set("suggest.quicksuggest.all", true);
+  UrlbarPrefs.set("suggest.quicksuggest.sponsored", true);
+  UrlbarPrefs.set("amp.showLessFrequentlyCount", 0);
+  UrlbarPrefs.set("amp.minKeywordLength", 0);
+
+  await QuickSuggestTestUtils.setConfig({
+    show_less_frequently_cap: 3,
+  });
+
+  let remoteSetting = REMOTE_SETTINGS_RESULTS[6];
+  let result = QuickSuggestTestUtils.ampResult({
+    title: remoteSetting.title,
+    url: remoteSetting.url,
+    fullKeyword: remoteSetting.full_keywords[0][0],
+    suggestedIndex: -1,
+  });
+
+  const testData = [
+    {
+      input: "amp full key",
+      before: {
+        canShowLessFrequently: true,
+        showLessFrequentlyCount: 0,
+        minKeywordLength: 0,
+      },
+      after: {
+        canShowLessFrequently: true,
+        showLessFrequentlyCount: 1,
+        minKeywordLength: 13,
+      },
+    },
+    {
+      input: "amp full keywor",
+      before: {
+        canShowLessFrequently: true,
+        showLessFrequentlyCount: 1,
+        minKeywordLength: 13,
+      },
+      after: {
+        canShowLessFrequently: true,
+        showLessFrequentlyCount: 2,
+        minKeywordLength: 16,
+      },
+    },
+    {
+      input: "amp full keyword",
+      before: {
+        canShowLessFrequently: true,
+        showLessFrequentlyCount: 2,
+        minKeywordLength: 16,
+      },
+      after: {
+        canShowLessFrequently: false,
+        showLessFrequentlyCount: 3,
+        minKeywordLength: 17,
+      },
+    },
+  ];
+
+  for (let { input, before, after } of testData) {
+    let feature = QuickSuggest.getFeature("AmpSuggestions");
+
+    await check_results({
+      context: createContext(input, {
+        providers: [UrlbarProviderQuickSuggest.name],
+        isPrivate: false,
+      }),
+      matches: [result],
+    });
+
+    Assert.equal(
+      UrlbarPrefs.get("amp.minKeywordLength"),
+      before.minKeywordLength
+    );
+    Assert.equal(feature.canShowLessFrequently, before.canShowLessFrequently);
+    Assert.equal(
+      feature.showLessFrequentlyCount,
+      before.showLessFrequentlyCount
+    );
+
+    triggerCommand({
+      result,
+      feature,
+      command: "show_less_frequently",
+      searchString: input,
+    });
+
+    Assert.equal(
+      UrlbarPrefs.get("amp.minKeywordLength"),
+      after.minKeywordLength
+    );
+    Assert.equal(feature.canShowLessFrequently, after.canShowLessFrequently);
+    Assert.equal(
+      feature.showLessFrequentlyCount,
+      after.showLessFrequentlyCount
+    );
+
+    await check_results({
+      context: createContext(input, {
+        providers: [UrlbarProviderQuickSuggest.name],
+        isPrivate: false,
+      }),
+      matches: [],
+    });
+  }
+
+  UrlbarPrefs.clear("amp.showLessFrequentlyCount");
+  UrlbarPrefs.clear("amp.minKeywordLength");
+  await QuickSuggestTestUtils.setConfig(QuickSuggestTestUtils.DEFAULT_CONFIG);
 });
 
 // Tests `UrlbarResult` dismissal.
@@ -1433,10 +1518,13 @@ add_task(async function tabToSearch() {
     },
     { skipUnload: true }
   );
-  let engine = Services.search.getEngineByName("Test");
+  let engine = SearchService.getEngineByName("Test");
 
   // Also need to add a visit to trigger TTS.
-  await PlacesTestUtils.addVisits(engineURL);
+  await PlacesTestUtils.addVisits({
+    url: engineURL,
+    transition: PlacesUtils.history.TRANSITION_TYPED,
+  });
 
   let context = createContext(SPONSORED_SEARCH_STRING, {
     isPrivate: false,
@@ -1446,8 +1534,8 @@ add_task(async function tabToSearch() {
     matches: [
       // search heuristic
       makeSearchResult(context, {
-        engineName: Services.search.defaultEngine.name,
-        engineIconUri: await Services.search.defaultEngine.getIconURL(),
+        engineName: SearchService.defaultEngine.name,
+        engineIconUri: await SearchService.defaultEngine.getIconURL(),
         heuristic: true,
       }),
       // tab to search
@@ -1511,7 +1599,6 @@ add_task(async function globalAction() {
     },
     { skipUnload: true }
   );
-  let engine = Services.search.getEngineByName("Amp");
 
   await PlacesTestUtils.addVisits(engineURL);
 
@@ -1524,8 +1611,8 @@ add_task(async function globalAction() {
     matches: [
       // search heuristic
       makeSearchResult(context, {
-        engineName: Services.search.defaultEngine.name,
-        engineIconUri: await Services.search.defaultEngine.getIconURL(),
+        engineName: SearchService.defaultEngine.name,
+        engineIconUri: await SearchService.defaultEngine.getIconURL(),
         heuristic: true,
       }),
 
@@ -1536,8 +1623,6 @@ add_task(async function globalAction() {
             providerName: "ActionsProviderContextualSearch",
           },
         ],
-        providesSearchMode: true,
-        engine: engine.name,
         query: "",
         input: "",
         inputLength: context.searchString.length,
@@ -1735,7 +1820,6 @@ add_task(async function ampTopPickCharThreshold() {
           suggestedIndex: 1,
           isSuggestedIndexRelativeToGroup: false,
           isBestMatch: true,
-          descriptionL10n: null,
         });
       } else {
         expectedResult = QuickSuggestTestUtils.ampResult({

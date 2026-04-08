@@ -21,7 +21,7 @@
 #include "api/audio_codecs/builtin_audio_encoder_factory.h"
 #include "api/audio_options.h"
 #include "api/data_channel_interface.h"
-#include "api/field_trials.h"
+#include "api/environment/environment.h"
 #include "api/make_ref_counted.h"
 #include "api/media_stream_interface.h"
 #include "api/media_types.h"
@@ -44,6 +44,7 @@
 #include "rtc_base/thread.h"
 #include "rtc_base/trace_event.h"
 #include "rtc_base/virtual_socket_server.h"
+#include "test/create_test_environment.h"
 #include "test/create_test_field_trials.h"
 #include "test/gmock.h"
 #include "test/gtest.h"
@@ -62,16 +63,17 @@ constexpr int64_t kGetStatsTimeoutMs = 10000;
 class RTCStatsIntegrationTest : public ::testing::Test {
  public:
   RTCStatsIntegrationTest()
-      : network_thread_(new Thread(&virtual_socket_server_)),
+      : env_(CreateTestEnvironment()),
+        network_thread_(new Thread(&virtual_socket_server_)),
         worker_thread_(Thread::Create()) {
     RTC_CHECK(network_thread_->Start());
     RTC_CHECK(worker_thread_->Start());
 
     caller_ = make_ref_counted<PeerConnectionTestWrapper>(
-        "caller", &virtual_socket_server_, network_thread_.get(),
+        "caller", env_, &virtual_socket_server_, network_thread_.get(),
         worker_thread_.get());
     callee_ = make_ref_counted<PeerConnectionTestWrapper>(
-        "callee", &virtual_socket_server_, network_thread_.get(),
+        "callee", env_, &virtual_socket_server_, network_thread_.get(),
         worker_thread_.get());
   }
 
@@ -159,6 +161,7 @@ class RTCStatsIntegrationTest : public ::testing::Test {
 
   // `network_thread_` uses `virtual_socket_server_` so they must be
   // constructed/destructed in the correct order.
+  const Environment env_;
   VirtualSocketServer virtual_socket_server_;
   std::unique_ptr<Thread> network_thread_;
   std::unique_ptr<Thread> worker_thread_;
@@ -575,6 +578,12 @@ class RTCStatsReportVerifier {
         inbound_stream.packets_received_with_ect1);
     verifier.TestAttributeIsNonNegative<int64_t>(
         inbound_stream.packets_received_with_ce);
+    // TODO: bugs.webrtc.org/437303401 - test two attributes below are defined
+    // when RFC8888 CongestionControlFeedback is negotiated.
+    verifier.TestAttributeIsUndefined<int64_t>(
+        inbound_stream.packets_reported_as_lost);
+    verifier.TestAttributeIsUndefined<int64_t>(
+        inbound_stream.packets_reported_as_lost_but_recovered);
     if (inbound_stream.kind.has_value() && *inbound_stream.kind == "video") {
       verifier.TestAttributeIsNonNegative<uint64_t>(inbound_stream.qp_sum);
       verifier.TestAttributeIsDefined(inbound_stream.decoder_implementation);
@@ -926,6 +935,11 @@ class RTCStatsReportVerifier {
         remote_inbound_stream.packets_received_with_ect1);
     verifier.TestAttributeIsUndefined<int64_t>(
         remote_inbound_stream.packets_received_with_ce);
+    verifier.TestAttributeIsUndefined<int64_t>(
+        remote_inbound_stream.packets_reported_as_lost);
+    verifier.TestAttributeIsUndefined<int64_t>(
+        remote_inbound_stream.packets_reported_as_lost_but_recovered);
+
     return verifier.ExpectAllAttributesSuccessfullyTested();
   }
 
@@ -1219,7 +1233,7 @@ TEST_F(RTCStatsIntegrationTest, GetStatsContainsNoDuplicateAttributes) {
 }
 
 TEST_F(RTCStatsIntegrationTest, ExperimentalPsnrStats) {
-  StartCall("WebRTC-Video-CalculatePsnr/Enabled/");
+  StartCall("WebRTC-Video-CalculatePsnr/Enabled,sampling_interval:1000ms/");
 
   // This assumes all other stats are ok and tests the stats which should be
   // different under the field trial.
@@ -1242,7 +1256,7 @@ TEST_F(RTCStatsIntegrationTest, ExperimentalPsnrStats) {
 }
 
 TEST_F(RTCStatsIntegrationTest, ExperimentalTransportCcfbStats) {
-  StartCall("WebRTC-RFC8888CongestionControlFeedback/Enabled/");
+  StartCall("WebRTC-RFC8888CongestionControlFeedback/Enabled,offer:true/");
 
   // This assumes all other stats are ok and tests the stats which should be
   // different under the field trial.
@@ -1260,7 +1274,6 @@ TEST_F(RTCStatsIntegrationTest, ExperimentalTransportCcfbStats) {
 class RTCStatsRtpLifetimeTest : public RTCStatsIntegrationTest {
  public:
   RTCStatsRtpLifetimeTest() : RTCStatsIntegrationTest() {
-    // Field trial "WebRTC-RTP-Lifetime" is enabled-by-default.
     EXPECT_TRUE(caller_->CreatePc({}, CreateBuiltinAudioEncoderFactory(),
                                   CreateBuiltinAudioDecoderFactory()));
     EXPECT_TRUE(callee_->CreatePc({}, CreateBuiltinAudioEncoderFactory(),

@@ -4,11 +4,10 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef __IPC_GLUE_IPCMESSAGEUTILSSPECIALIZATIONS_H__
-#define __IPC_GLUE_IPCMESSAGEUTILSSPECIALIZATIONS_H__
+#ifndef IPC_GLUE_IPCMESSAGEUTILSSPECIALIZATIONS_H_
+#define IPC_GLUE_IPCMESSAGEUTILSSPECIALIZATIONS_H_
 
 #include <cstdint>
-#include <cstdlib>
 #include <limits>
 #include <set>
 #include <type_traits>
@@ -431,19 +430,6 @@ struct ParamTraits<mozilla::TimeStamp> {
   };
 };
 
-template <>
-struct ParamTraits<mozilla::dom::ipc::StructuredCloneData> {
-  typedef mozilla::dom::ipc::StructuredCloneData paramType;
-
-  static void Write(MessageWriter* aWriter, const paramType& aParam) {
-    aParam.WriteIPCParams(aWriter);
-  }
-
-  static bool Read(MessageReader* aReader, paramType* aResult) {
-    return aResult->ReadIPCParams(aReader);
-  }
-};
-
 template <class T>
 struct ParamTraits<mozilla::Maybe<T>> {
   typedef mozilla::Maybe<T> paramType;
@@ -787,8 +773,6 @@ struct ParamTraits<mozilla::net::LinkHeader> {
   static void Write(MessageWriter* aWriter, const paramType& aParam) {
     static_assert(sizeof(paramType) == kExpectedSizeOfParamType,
                   "All members of should be written below.");
-    // Bug 1860565: `aParam.mAnchor` is not written.
-
     WriteParam(aWriter, aParam.mHref);
     WriteParam(aWriter, aParam.mRel);
     WriteParam(aWriter, aParam.mTitle);
@@ -807,8 +791,6 @@ struct ParamTraits<mozilla::net::LinkHeader> {
   static bool Read(MessageReader* aReader, paramType* aResult) {
     static_assert(sizeof(paramType) == kExpectedSizeOfParamType,
                   "All members of should be handled below.");
-    // Bug 1860565: `aParam.mAnchor` is not handled.
-
     if (!ReadParam(aReader, &aResult->mHref)) {
       return false;
     }
@@ -906,4 +888,4 @@ struct ParamTraits<PromptResult>
 
 } /* namespace IPC */
 
-#endif /* __IPC_GLUE_IPCMESSAGEUTILSSPECIALIZATIONS_H__ */
+#endif /* IPC_GLUE_IPCMESSAGEUTILSSPECIALIZATIONS_H_ */

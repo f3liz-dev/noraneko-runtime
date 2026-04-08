@@ -155,7 +155,7 @@ pub struct EntryPointResources {
     )]
     pub resources: BindingMap,
 
-    pub push_constant_buffer: Option<Slot>,
+    pub immediates_buffer: Option<Slot>,
 
     /// The slot of a buffer that contains an array of `u32`,
     /// one for the size of each bound buffer that contains a runtime array,
@@ -227,8 +227,10 @@ pub enum Error {
     UnsupportedArrayOf(String),
     #[error("array of type '{0:?}' is not supported")]
     UnsupportedArrayOfType(Handle<crate::Type>),
-    #[error("ray tracing is not supported prior to MSL 2.3")]
+    #[error("ray tracing is not supported prior to MSL 2.4")]
     UnsupportedRayTracing,
+    #[error("cooperative matrix is not supported prior to MSL 2.3")]
+    UnsupportedCooperativeMatrix,
     #[error("overrides should not be present at this stage")]
     Override,
     #[error("bitcasting to {0:?} is not supported")]
@@ -247,8 +249,8 @@ pub enum EntryPointError {
     MissingBinding(String),
     #[error("mapping of {0:?} is missing")]
     MissingBindTarget(crate::ResourceBinding),
-    #[error("mapping for push constants is missing")]
-    MissingPushConstants,
+    #[error("mapping for immediates is missing")]
+    MissingImmediateData,
     #[error("mapping for sizes buffer is missing")]
     MissingSizesBuffer,
 }
@@ -538,7 +540,7 @@ impl Options {
                     }
                     // macOS: Since Metal 2.2
                     // iOS: Since Metal 2.3 (check depends on https://github.com/gfx-rs/wgpu/issues/4414)
-                    crate::BuiltIn::Barycentric if self.lang_version < (2, 3) => {
+                    crate::BuiltIn::Barycentric { .. } if self.lang_version < (2, 3) => {
                         return Err(Error::UnsupportedAttribute("barycentric_coord".to_string()));
                     }
                     _ => {}
@@ -618,13 +620,13 @@ impl Options {
         }
     }
 
-    fn resolve_push_constants(
+    fn resolve_immediates(
         &self,
         ep: &crate::EntryPoint,
     ) -> Result<ResolvedBinding, EntryPointError> {
         let slot = self
             .get_entry_point_resources(ep)
-            .and_then(|res| res.push_constant_buffer);
+            .and_then(|res| res.immediates_buffer);
         match slot {
             Some(slot) => Ok(ResolvedBinding::Resource(BindTarget {
                 buffer: Some(slot),
@@ -635,7 +637,7 @@ impl Options {
                 index: 0,
                 interpolation: None,
             }),
-            None => Err(EntryPointError::MissingPushConstants),
+            None => Err(EntryPointError::MissingImmediateData),
         }
     }
 
@@ -693,7 +695,10 @@ impl ResolvedBinding {
                     Bi::PointCoord => "point_coord",
                     Bi::FrontFacing => "front_facing",
                     Bi::PrimitiveIndex => "primitive_id",
-                    Bi::Barycentric => "barycentric_coord",
+                    Bi::Barycentric { perspective: true } => "barycentric_coord",
+                    Bi::Barycentric { perspective: false } => {
+                        "barycentric_coord, center_no_perspective"
+                    }
                     Bi::SampleIndex => "sample_id",
                     Bi::SampleMask => "sample_mask",
                     // compute
@@ -714,7 +719,11 @@ impl ResolvedBinding {
                     Bi::CullPrimitive => "primitive_culled",
                     // TODO: figure out how to make this written as a function call
                     Bi::PointIndex | Bi::LineIndices | Bi::TriangleIndices => unimplemented!(),
-                    Bi::MeshTaskSize => unreachable!(),
+                    Bi::MeshTaskSize
+                    | Bi::VertexCount
+                    | Bi::PrimitiveCount
+                    | Bi::Vertices
+                    | Bi::Primitives => unreachable!(),
                 };
                 write!(out, "{name}")?;
             }

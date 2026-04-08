@@ -2,7 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-import { CryptoUtils } from "moz-src:///services/crypto/modules/utils.sys.mjs";
 import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 
 import { FxAccountsStorageManager } from "resource://gre/modules/FxAccountsStorage.sys.mjs";
@@ -28,7 +27,8 @@ import {
   ON_DEVICE_DISCONNECTED_NOTIFICATION,
   POLL_SESSION,
   PREF_ACCOUNT_ROOT,
-  PREF_LAST_FXA_USER,
+  PREF_LAST_FXA_USER_EMAIL,
+  PREF_LAST_FXA_USER_UID,
   SERVER_ERRNO_TO_ERROR,
   log,
   logPII,
@@ -38,6 +38,7 @@ import {
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
+  CryptoUtils: "moz-src:///services/crypto/modules/utils.sys.mjs",
   FxAccountsClient: "resource://gre/modules/FxAccountsClient.sys.mjs",
   FxAccountsCommands: "resource://gre/modules/FxAccountsCommands.sys.mjs",
   FxAccountsConfig: "resource://gre/modules/FxAccountsConfig.sys.mjs",
@@ -66,6 +67,10 @@ XPCOMUtils.defineLazyPreferenceGetter(
 );
 
 export const ERROR_INVALID_ACCOUNT_STATE = "ERROR_INVALID_ACCOUNT_STATE";
+
+// Cached tokens with less than this many seconds remaining are considered
+// expired and will trigger a new token fetch.
+const OAUTH_MIN_TIME_LEFT_SECS = 60;
 
 // An AccountState object holds all state related to one specific account.
 // It is considered "private" to the FxAccounts modules.
@@ -235,8 +240,14 @@ AccountState.prototype = {
     let key = getScopeKey(scopeArray);
     let result = this.oauthTokens[key];
     if (result) {
-      // later we might want to check an expiry date - but we currently
-      // have no such concept, so just return it.
+      // Check expiry if present (old tokens without expiresAt never expire)
+      if (result.expiresAt != null) {
+        const nowSecs = Math.floor(Date.now() / 1000);
+        if (result.expiresAt <= nowSecs + OAUTH_MIN_TIME_LEFT_SECS) {
+          log.debug("getCachedToken returning null for expired token");
+          return null;
+        }
+      }
       log.trace("getCachedToken returning cached token");
       return result;
     }
@@ -525,6 +536,10 @@ export class FxAccounts {
       const token = await this.getOAuthToken(options);
       return { token, key };
     });
+  }
+
+  resetFxAccountsClient() {
+    this._internal.resetFxAccountsClient();
   }
 
   /**
@@ -852,6 +867,11 @@ FxAccountsInternal.prototype = {
     }
   },
 
+  resetFxAccountsClient() {
+    this._fxAccountsClient = null;
+    this._oauth = null;
+  },
+
   get fxAccountsClient() {
     if (!this._fxAccountsClient) {
       this._fxAccountsClient = new lazy.FxAccountsClient();
@@ -1111,6 +1131,19 @@ FxAccountsInternal.prototype = {
     return Promise.all(promises);
   },
 
+  // We need to do a one-off migration of a preference to protect against
+  // accidentally merging sync data.
+  // We replace a previously hashed email with a hashed uid.
+  _migratePreviousAccountNameHashPref(uid) {
+    if (Services.prefs.prefHasUserValue(PREF_LAST_FXA_USER_EMAIL)) {
+      Services.prefs.setStringPref(
+        PREF_LAST_FXA_USER_UID,
+        lazy.CryptoUtils.sha256Base64(uid)
+      );
+      Services.prefs.clearUserPref(PREF_LAST_FXA_USER_EMAIL);
+    }
+  },
+
   async signOut(localOnly) {
     let sessionToken;
     let tokensToRevoke;
@@ -1119,6 +1152,7 @@ FxAccountsInternal.prototype = {
     if (data) {
       sessionToken = data.sessionToken;
       tokensToRevoke = data.oauthTokens;
+      this._migratePreviousAccountNameHashPref(data.uid);
     }
     await this.notifyObservers(ON_PRELOGOUT_NOTIFICATION);
     await this._signOutLocal();
@@ -1195,9 +1229,10 @@ FxAccountsInternal.prototype = {
    * It's split out into a separate method so that we can easily
    * stash in-flight calls in a cache.
    *
+   * @param {string} sessionToken
    * @param {string} scopeString
    * @param {number} ttl
-   * @returns {Promise<string>}
+   * @returns {Promise<{token: string, expiresAt: number|null}>}
    * @private
    */
   async _doTokenFetchWithSessionToken(sessionToken, scopeString, ttl) {
@@ -1207,7 +1242,12 @@ FxAccountsInternal.prototype = {
       scopeString,
       ttl
     );
-    return result.access_token;
+    return {
+      token: result.access_token,
+      expiresAt: result.expires_in
+        ? Math.floor(Date.now() / 1000) + result.expires_in
+        : null,
+    };
   },
 
   getOAuthToken(options = {}) {
@@ -1253,7 +1293,7 @@ FxAccountsInternal.prototype = {
         scopeString,
         options.ttl
       )
-        .then(token => {
+        .then(tokenInfo => {
           // As a sanity check, ensure something else hasn't raced getting a token
           // of the same scope. If something has we just make noise rather than
           // taking any concrete action because it should never actually happen.
@@ -1261,11 +1301,14 @@ FxAccountsInternal.prototype = {
             log.error(`detected a race for oauth token with scope ${scope}`);
           }
           // If we got one, cache it.
-          if (token) {
-            let entry = { token };
+          if (tokenInfo.token) {
+            let entry = { token: tokenInfo.token };
+            if (tokenInfo.expiresAt != null) {
+              entry.expiresAt = tokenInfo.expiresAt;
+            }
             currentState.setCachedToken(scope, entry);
           }
-          return token;
+          return tokenInfo.token;
         })
         .finally(() => {
           // Remove ourself from the in-flight map. There's no need to check the
@@ -1361,15 +1404,7 @@ FxAccountsInternal.prototype = {
     await this.notifyObservers(ON_DEVICE_DISCONNECTED_NOTIFICATION, data);
   },
 
-  _setLastUserPref(newEmail) {
-    Services.prefs.setStringPref(
-      PREF_LAST_FXA_USER,
-      CryptoUtils.sha256Base64(newEmail)
-    );
-  },
-
   async _handleEmailUpdated(newEmail) {
-    this._setLastUserPref(newEmail);
     await this.currentAccountState.updateUserAccountData({ email: newEmail });
   },
 

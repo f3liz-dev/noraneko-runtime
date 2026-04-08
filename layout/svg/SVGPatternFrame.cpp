@@ -239,7 +239,8 @@ void SVGPatternFrame::PaintChildren(DrawTarget* aDrawTarget,
       // The CTM of each frame referencing us can be different
       ISVGDisplayableFrame* SVGFrame = do_QueryFrame(kid);
       if (SVGFrame) {
-        SVGFrame->NotifySVGChanged(ISVGDisplayableFrame::TRANSFORM_CHANGED);
+        SVGFrame->NotifySVGChanged(
+            ISVGDisplayableFrame::ChangeFlag::TransformChanged);
         tm = SVGUtils::GetTransformMatrixInUserSpace(kid) * tm;
       }
 
@@ -318,7 +319,7 @@ already_AddRefed<SourceSurface> SVGPatternFrame::PaintPattern(
   if (patternWithChildren->mCTM) {
     *patternWithChildren->mCTM = ctm;
   } else {
-    patternWithChildren->mCTM = MakeUnique<gfxMatrix>(ctm);
+    patternWithChildren->mCTM = std::make_unique<gfxMatrix>(ctm);
   }
 
   // Get the bounding box of the pattern.  This will be used to determine

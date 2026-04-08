@@ -13,13 +13,11 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import mozilla.components.lib.state.Action
 import mozilla.components.lib.state.Middleware
-import mozilla.components.lib.state.MiddlewareContext
 import mozilla.components.lib.state.Store
 import mozilla.components.service.pocket.PocketStoriesService
 import mozilla.components.service.pocket.PocketStory
 import mozilla.components.service.pocket.PocketStory.ContentRecommendation
 import mozilla.components.service.pocket.PocketStory.PocketRecommendedStory
-import mozilla.components.service.pocket.PocketStory.PocketSponsoredStory
 import mozilla.components.service.pocket.PocketStory.SponsoredContent
 import mozilla.components.support.utils.RunWhenReadyQueue
 import org.mozilla.fenix.components.AppStore
@@ -37,7 +35,6 @@ import org.mozilla.fenix.utils.Settings
  */
 interface PocketSettings {
     val showPocketRecommendationsFeature: Boolean
-    var hasPocketSponsoredStoriesProfileMigrated: Boolean
     val showPocketSponsoredStories: Boolean
 }
 
@@ -48,9 +45,6 @@ interface PocketSettings {
  */
 class SettingsBackedPocketSettings(private val settings: Settings) : PocketSettings {
     override val showPocketRecommendationsFeature get() = settings.showPocketRecommendationsFeature
-    override var hasPocketSponsoredStoriesProfileMigrated
-        get() = settings.hasPocketSponsoredStoriesProfileMigrated
-        set(value) { settings.hasPocketSponsoredStoriesProfileMigrated = value }
     override val showPocketSponsoredStories get() = settings.showPocketSponsoredStories
 }
 
@@ -73,7 +67,7 @@ class PocketMiddleware(
     private val coroutineScope: CoroutineScope = CoroutineScope(Dispatchers.IO),
 ) : Middleware<AppState, AppAction> {
     override fun invoke(
-        context: MiddlewareContext<AppState, AppAction>,
+        store: Store<AppState, AppAction>,
         next: (AppAction) -> Unit,
         action: AppAction,
     ) {
@@ -84,10 +78,6 @@ class PocketMiddleware(
                     coroutineScope.launch(IO) {
                         if (settings.showPocketRecommendationsFeature) {
                             pocketStoriesService.value.startPeriodicContentRecommendationsRefresh()
-                        }
-
-                        if (!settings.hasPocketSponsoredStoriesProfileMigrated) {
-                            migratePocketSponsoredStoriesProfile(pocketStoriesService.value)
                         }
 
                         if (settings.showPocketSponsoredStories) {
@@ -103,7 +93,7 @@ class PocketMiddleware(
                 restoreSelectedCategories(
                     coroutineScope = coroutineScope,
                     currentCategories = action.storiesCategories,
-                    store = context.store,
+                    store = store,
                     selectedPocketCategoriesDataStore = selectedPocketCategoriesDataStore,
                 )
             }
@@ -128,7 +118,10 @@ class PocketMiddleware(
             -> {
                 persistSelectedCategories(
                     coroutineScope = coroutineScope,
-                    currentCategoriesSelections = context.state.recommendationState.pocketStoriesCategoriesSelections,
+                    currentCategoriesSelections = store
+                        .state
+                        .recommendationState
+                        .pocketStoriesCategoriesSelections,
                     selectedPocketCategoriesDataStore = selectedPocketCategoriesDataStore,
                 )
             }
@@ -136,15 +129,6 @@ class PocketMiddleware(
                 // no-op
             }
         }
-    }
-
-    /**
-     * Deletes the user's existing sponsored stories profile as part of the migration to the
-     * MARS API.
-     */
-    private fun migratePocketSponsoredStoriesProfile(pocketStoriesService: PocketStoriesService) {
-        pocketStoriesService.deleteProfile()
-        settings.hasPocketSponsoredStoriesProfileMigrated = true
     }
 }
 
@@ -173,11 +157,6 @@ internal fun persistStoriesImpressions(
             recommendationsShown = updatedStories.filterIsInstance<ContentRecommendation>().map {
                 it.copy(impressions = it.impressions.inc())
             },
-        )
-
-        pocketStoriesService.recordStoriesImpressions(
-            updatedStories.filterIsInstance<PocketSponsoredStory>()
-                .map { it.id },
         )
 
         pocketStoriesService.recordSponsoredContentImpressions(

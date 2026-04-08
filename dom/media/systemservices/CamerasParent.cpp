@@ -39,9 +39,6 @@
 #  define getpid() _getpid()
 #endif
 
-#undef LOG
-#undef LOG_VERBOSE
-#undef LOG_ENABLED
 mozilla::LazyLogModule gCamerasParentLog("CamerasParent");
 #define LOG(...) \
   MOZ_LOG(gCamerasParentLog, mozilla::LogLevel::Debug, (__VA_ARGS__))
@@ -260,8 +257,9 @@ class DeliverFrameRunnable : public mozilla::Runnable {
  public:
   // Constructor for when no ShmemBuffer (of the right size) was available, so
   // keep the frame around until we can allocate one on PBackground (in Run).
-  DeliverFrameRunnable(CamerasParent* aParent, CaptureEngine aEngine,
-                       int aCaptureId, nsTArray<int>&& aStreamIds,
+  DeliverFrameRunnable(already_AddRefed<CamerasParent> aParent,
+                       CaptureEngine aEngine, int aCaptureId,
+                       nsTArray<int>&& aStreamIds,
                        const TrackingId& aTrackingId,
                        const webrtc::VideoFrame& aFrame,
                        const VideoFrameProperties& aProperties)
@@ -274,8 +272,9 @@ class DeliverFrameRunnable : public mozilla::Runnable {
         mBuffer(aFrame),
         mProperties(aProperties) {}
 
-  DeliverFrameRunnable(CamerasParent* aParent, CaptureEngine aEngine,
-                       int aCaptureId, nsTArray<int>&& aStreamIds,
+  DeliverFrameRunnable(already_AddRefed<CamerasParent> aParent,
+                       CaptureEngine aEngine, int aCaptureId,
+                       nsTArray<int>&& aStreamIds,
                        const TrackingId& aTrackingId, ShmemBuffer aBuffer,
                        VideoFrameProperties& aProperties)
       : Runnable("camera::DeliverFrameRunnable"),
@@ -517,7 +516,7 @@ void AggregateCapturer::SetConfigurationFor(
   }
 }
 
-webrtc::VideoCaptureCapability AggregateCapturer::CombinedCapability() {
+Maybe<webrtc::VideoCaptureCapability> AggregateCapturer::CombinedCapability() {
   Maybe<webrtc::VideoCaptureCapability> combinedCap;
   CamerasParent* someParent{};
   const auto streamsGuard = mStreams.ConstLock();
@@ -544,6 +543,11 @@ webrtc::VideoCaptureCapability AggregateCapturer::CombinedCapability() {
       combinedCap->height = std::max(combinedCap->height, cap.height);
     }
   }
+
+  if (!combinedCap) {
+    return Nothing();
+  }
+
   if (mCapEngine == CameraEngine) {
     const webrtc::VideoCaptureCapability* minDistanceCapability{};
     uint64_t minDistance = UINT64_MAX;
@@ -570,7 +574,7 @@ webrtc::VideoCaptureCapability AggregateCapturer::CombinedCapability() {
       combinedCap = Some(*minDistanceCapability);
     }
   }
-  return combinedCap.extract();
+  return combinedCap;
 }
 
 void AggregateCapturer::OnCaptureEnded() {
@@ -601,7 +605,7 @@ void AggregateCapturer::OnCaptureEnded() {
 }
 
 void AggregateCapturer::OnFrame(const webrtc::VideoFrame& aVideoFrame) {
-  std::multimap<CamerasParent*, int> parentsAndIds;
+  std::multimap<RefPtr<CamerasParent>, int> parentsAndIds;
   {
     // Proactively drop frames that would not get processed anyway.
     auto streamsGuard = mStreams.Lock();
@@ -657,7 +661,7 @@ void AggregateCapturer::OnFrame(const webrtc::VideoFrame& aVideoFrame) {
       ++it;
     }
 
-    LOG_VERBOSE("CamerasParent(%p)::%s", parent, __func__);
+    LOG_VERBOSE("CamerasParent(%p)::%s", parent.get(), __func__);
     RefPtr<DeliverFrameRunnable> runnable = nullptr;
     // Get a shared memory buffer to copy the frame data into
     ShmemBuffer shMemBuffer =
@@ -676,14 +680,14 @@ void AggregateCapturer::OnFrame(const webrtc::VideoFrame& aVideoFrame) {
       VideoFrameUtils::CopyVideoFrameBuffers(
           shMemBuffer.GetBytes(), properties.bufferSize(), aVideoFrame);
       rec.Record();
-      runnable = new DeliverFrameRunnable(parent, mCapEngine, mCaptureId,
-                                          std::move(ids), mTrackingId,
-                                          std::move(shMemBuffer), properties);
+      runnable = new DeliverFrameRunnable(
+          do_AddRef(parent), mCapEngine, mCaptureId, std::move(ids),
+          mTrackingId, std::move(shMemBuffer), properties);
     }
     if (!runnable) {
-      runnable = new DeliverFrameRunnable(parent, mCapEngine, mCaptureId,
-                                          std::move(ids), mTrackingId,
-                                          aVideoFrame, properties);
+      runnable = new DeliverFrameRunnable(do_AddRef(parent), mCapEngine,
+                                          mCaptureId, std::move(ids),
+                                          mTrackingId, aVideoFrame, properties);
     }
     nsIEventTarget* target = parent->GetBackgroundEventTarget();
     target->Dispatch(runnable, NS_DISPATCH_NORMAL);
@@ -1243,8 +1247,8 @@ ipc::IPCResult CamerasParent::RecvStartCapture(
               if (cbh) {
                 cbh->SetConfigurationFor(aStreamId, capability, aConstraints,
                                          aResizeMode, /*aStarted=*/true);
-                error =
-                    cap.VideoCapture()->StartCapture(cbh->CombinedCapability());
+                error = cap.VideoCapture()->StartCapture(
+                    *cbh->CombinedCapability());
                 if (error) {
                   cbh->SetConfigurationFor(aStreamId, capability, aConstraints,
                                            aResizeMode, /*aStarted=*/false);
@@ -1430,6 +1434,14 @@ ipc::IPCResult CamerasParent::RecvStopCapture(const CaptureEngine& aCapEngine,
               aStreamId, webrtc::VideoCaptureCapability{},
               NormalizedConstraints{}, dom::VideoResizeModeEnum::None,
               /*aStarted=*/false);
+          if (!capturer->CombinedCapability()) {
+            if (auto* engine = EnsureInitialized(aCapEngine)) {
+              engine->WithEntry(capturer->mCaptureId,
+                                [&](VideoEngine::CaptureEntry& aEntry) {
+                                  aEntry.VideoCapture()->StopCapture();
+                                });
+            }
+          }
         }
       }));
 
@@ -1646,3 +1658,8 @@ already_AddRefed<CamerasParent> CamerasParent::Create() {
 
 }  // namespace camera
 }  // namespace mozilla
+
+#undef LOG
+#undef LOG_FUNCTION
+#undef LOG_VERBOSE
+#undef LOG_ENABLED

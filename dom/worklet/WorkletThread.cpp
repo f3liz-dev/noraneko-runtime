@@ -165,22 +165,12 @@ class WorkletJSContext final : public CycleCollectedJSContext {
 #endif
 
     JS::JobQueueMayNotBeEmpty(cx);
-    if (StaticPrefs::javascript_options_use_js_microtask_queue()) {
-      PROFILER_MARKER_FLOW_ONLY("WorkletJSContext::DispatchToMicroTask", OTHER,
-                                {}, FlowMarker,
-                                Flow::FromPointer(runnable.get()));
-      bool ret = mozilla::EnqueueMicroTask(cx, std::move(aRunnable));
-      MOZ_RELEASE_ASSERT(ret);
-    } else {
-      if (!runnable->isInList()) {
-        // A recycled object may be in the list already.
-        mMicrotasksToTrace.insertBack(runnable);
-      }
-      PROFILER_MARKER_FLOW_ONLY("WorkletJSContext::DispatchToMicroTask", OTHER,
-                                {}, FlowMarker,
-                                Flow::FromPointer(runnable.get()));
-      GetMicroTaskQueue().push_back(std::move(runnable));
-    }
+
+    PROFILER_MARKER_FLOW_ONLY("WorkletJSContext::DispatchToMicroTask", OTHER,
+                              {}, FlowMarker,
+                              Flow::FromPointer(runnable.get()));
+    bool ret = mozilla::EnqueueMicroTask(cx, std::move(aRunnable));
+    MOZ_RELEASE_ASSERT(ret);
   }
 
   bool IsSystemCaller() const override {
@@ -387,9 +377,9 @@ void WorkletThread::EnsureCycleCollectedJSContext(
 
   // A thread lives strictly longer than its JSRuntime so we can safely
   // store a raw pointer as the callback's closure argument on the JSRuntime.
-  JS::InitDispatchsToEventLoop(context->Context(), DispatchToEventLoop,
-                               DelayedDispatchToEventLoop,
-                               NS_GetCurrentThread());
+  JS::InitAsyncTaskCallbacks(context->Context(), DispatchToEventLoop,
+                             DelayedDispatchToEventLoop, nullptr, nullptr,
+                             NS_GetCurrentThread());
 
   JS_SetNativeStackQuota(context->Context(),
                          WORKLET_CONTEXT_NATIVE_STACK_LIMIT);

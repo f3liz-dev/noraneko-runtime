@@ -131,10 +131,18 @@ class WeakMapBase : public mozilla::LinkedListElement<WeakMapBase> {
 
   JS::Zone* zone() const { return zone_; }
 
+  // Whether this is a 'system' weakmap as opposed to a 'user' one. System
+  // weakmaps are used internally by the engine and |memberOf| is null. User
+  // ones are part of a JS WeakMap object pointed to by |memberOf|.
+  bool isSystem() const { return !memberOf; }
+
   // Garbage collector entry points.
 
   // Unmark all weak maps in a zone.
   static void unmarkZone(JS::Zone* zone);
+#ifdef DEBUG
+  static void checkZoneUnmarked(JS::Zone* zone);
+#endif
 
   // Check all weak maps in a zone that have been marked as live in this garbage
   // collection, and mark the values of all entries that have become strong
@@ -151,12 +159,14 @@ class WeakMapBase : public mozilla::LinkedListElement<WeakMapBase> {
   // Trace all weak map bindings. Used by the cycle collector.
   static void traceAllMappings(WeakMapTracer* tracer);
 
+#if defined(JS_GC_ZEAL)
   // Save information about which weak maps are marked for a zone.
   static bool saveZoneMarkedWeakMaps(JS::Zone* zone,
                                      WeakMapColors& markedWeakMaps);
 
   // Restore information about which weak maps are marked for many zones.
   static void restoreMarkedWeakMaps(WeakMapColors& markedWeakMaps);
+#endif
 
 #if defined(JS_GC_ZEAL) || defined(DEBUG)
   static bool checkMarkingForZone(JS::Zone* zone);
@@ -169,9 +179,10 @@ class WeakMapBase : public mozilla::LinkedListElement<WeakMapBase> {
  protected:
   // Instance member functions called by the above. Instantiations of WeakMap
   // override these with definitions appropriate for their Key and Value types.
+  virtual bool empty() const = 0;
   virtual void trace(JSTracer* tracer) = 0;
   virtual bool findSweepGroupEdges(Zone* atomsZone) = 0;
-  virtual void traceWeakEdges(JSTracer* trc) = 0;
+  virtual void traceWeakEdgesDuringSweeping(JSTracer* trc) = 0;
   virtual void traceMappings(WeakMapTracer* tracer) = 0;
   virtual void clearAndCompact() = 0;
 
@@ -197,6 +208,10 @@ class WeakMapBase : public mozilla::LinkedListElement<WeakMapBase> {
   bool markMap(gc::MarkColor markColor);
 
   void setHasNurseryEntries();
+
+#ifdef DEBUG
+  virtual void checkCachedFlags() const = 0;
+#endif
 
 #ifdef JS_GC_ZEAL
   virtual bool checkMarking() const = 0;
@@ -321,40 +336,64 @@ class WeakMap : public WeakMapBase {
 
   // The keys of entries where either the key or value is allocated in the
   // nursery.
-  GCVector<Key, 0, SystemAllocPolicy> nurseryKeys;
+  GCVector<Key, 0, AllocPolicy> nurseryKeys;
 
  public:
   using Lookup = typename Map::Lookup;
   using Entry = typename Map::Entry;
   using Range = typename Map::Range;
-  using Ptr = typename Map::Ptr;
-  using AddPtr = typename Map::AddPtr;
+
+  // Restrict the interface of HashMap::Ptr and AddPtr to remove mutable access
+  // to the hash table entry which could otherwise bypass our barriers.
+
+  using MutablePtr = typename Map::Ptr;
+  class Ptr {
+    MutablePtr ptr;
+    friend class WeakMap;
+
+   public:
+    explicit Ptr(const MutablePtr& ptr) : ptr(ptr) {}
+    bool found() const { return ptr.found(); }
+    explicit operator bool() const { return found(); }
+    const Entry& operator*() const { return *ptr; }
+    const Entry* operator->() const { return &*ptr; }
+  };
+
+  using MutableAddPtr = typename Map::AddPtr;
+  class AddPtr {
+    MutableAddPtr ptr;
+    friend class WeakMap;
+
+   public:
+    explicit AddPtr(const MutableAddPtr& ptr) : ptr(ptr) {}
+    bool found() const { return ptr.found(); }
+    explicit operator bool() const { return found(); }
+    const Entry& operator*() const { return *ptr; }
+    const Entry* operator->() const { return &*ptr; }
+  };
 
   struct Enum : public Map::Enum {
     explicit Enum(WeakMap& map) : Map::Enum(map.map()) {}
   };
 
-  explicit WeakMap(JSContext* cx, JSObject* memOf = nullptr);
-  explicit WeakMap(JS::Zone* zone, JSObject* memOf = nullptr);
+  // Create a weak map owned by a JS object. Used for script-facing objects.
+  explicit WeakMap(JSContext* cx, JSObject* memOf);
+
+  // Create a weak map associated with a zone. For internal use by the engine.
+  explicit WeakMap(JS::Zone* zone);
+
   ~WeakMap() override;
 
   Range all() const { return map().all(); }
   uint32_t count() const { return map().count(); }
-  bool empty() const { return map().empty(); }
+  bool empty() const override { return map().empty(); }
   bool has(const Lookup& lookup) const { return map().has(lookup); }
   void remove(const Lookup& lookup) { return map().remove(lookup); }
-  void remove(Ptr ptr) { return map().remove(ptr); }
-
-  size_t shallowSizeOfExcludingThis(mozilla::MallocSizeOf aMallocSizeOf) const {
-    return map().shallowSizeOfExcludingThis(aMallocSizeOf);
-  }
-  size_t shallowSizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf) const {
-    return aMallocSizeOf(this) + shallowSizeOfExcludingThis(aMallocSizeOf);
-  }
+  void remove(Ptr ptr) { return map().remove(ptr.ptr); }
 
   // Get the value associated with a key, or a default constructed Value if the
   // key is not present in the map.
-  Value get(const Lookup& l) {
+  Value get(const Lookup& l) const {
     Ptr ptr = lookup(l);
     if (!ptr) {
       return Value();
@@ -365,17 +404,17 @@ class WeakMap : public WeakMapBase {
   // Add a read barrier to prevent a gray value from escaping the weak map. This
   // is necessary because we don't unmark gray through weak maps.
   Ptr lookup(const Lookup& l) const {
-    Ptr p = map().lookup(l);
+    Ptr p = lookupUnbarriered(l);
     if (p) {
       valueReadBarrier(p->value());
     }
     return p;
   }
 
-  Ptr lookupUnbarriered(const Lookup& l) const { return map().lookup(l); }
+  Ptr lookupUnbarriered(const Lookup& l) const { return Ptr(map().lookup(l)); }
 
   AddPtr lookupForAdd(const Lookup& l) {
-    AddPtr p = map().lookupForAdd(l);
+    AddPtr p(map().lookupForAdd(l));
     if (p) {
       valueReadBarrier(p->value());
     }
@@ -385,13 +424,13 @@ class WeakMap : public WeakMapBase {
   [[nodiscard]] bool add(AddPtr& p, const Key& k, const Value& v) {
     MOZ_ASSERT(gc::ToMarkable(k));
     writeBarrier(k, v);
-    return map().add(p, k, v);
+    return map().add(p.ptr, k, v);
   }
 
   [[nodiscard]] bool relookupOrAdd(AddPtr& p, const Key& k, const Value& v) {
     MOZ_ASSERT(gc::ToMarkable(k));
     writeBarrier(k, v);
-    return map().relookupOrAdd(p, k, v);
+    return map().relookupOrAdd(p.ptr, k, v);
   }
 
   [[nodiscard]] bool put(const Key& k, const Value& v) {
@@ -411,12 +450,14 @@ class WeakMap : public WeakMapBase {
     nurseryKeys.clear();
     nurseryKeysValid = true;
     mayHaveSymbolKeys = false;
-    mayHaveKeyDelegates = false;
+    if (!isSystem()) {
+      mayHaveKeyDelegates = false;
+    }
   }
 
 #ifdef DEBUG
-  bool hasEntry(const Key& key, const Value& value) {
-    Ptr p = map().lookup(key);
+  bool hasEntry(const Key& key, const Value& value) const {
+    Ptr p = lookupUnbarriered(key);
     return p && p->value() == value;
   }
 #endif
@@ -430,13 +471,16 @@ class WeakMap : public WeakMapBase {
   void traceKeys(JSTracer* trc);
   void traceKey(JSTracer* trc, Enum& iter);
 
-  size_t sizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf);
+  size_t shallowSizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf);
 
   static size_t offsetOfHashShift() {
     return offsetof(WeakMap, map_) + UnbarrieredMap::offsetOfHashShift();
   }
   static size_t offsetOfTable() {
     return offsetof(WeakMap, map_) + UnbarrieredMap::offsetOfTable();
+  }
+  static size_t offsetOfEntryCount() {
+    return offsetof(WeakMap, map_) + UnbarrieredMap::offsetOfEntryCount();
   }
 
  protected:
@@ -450,6 +494,7 @@ class WeakMap : public WeakMapBase {
 
 #if DEBUG
   void assertEntriesNotAboutToBeFinalized();
+  void checkCachedFlags() const override;
 #endif
 
 #ifdef JS_GC_ZEAL
@@ -461,9 +506,15 @@ class WeakMap : public WeakMapBase {
 #endif
 
  private:
+  static void staticAssertions();
+
   // Map accessor uses a cast to add barriers.
   Map& map() { return reinterpret_cast<Map&>(map_); }
   const Map& map() const { return reinterpret_cast<const Map&>(map_); }
+
+  MutablePtr lookupMutableUnbarriered(const Lookup& l) {
+    return map().lookup(l);
+  }
 
   static void valueReadBarrier(const JS::Value& v) {
     JS::ExposeValueToActiveJS(v);
@@ -478,17 +529,19 @@ class WeakMap : public WeakMapBase {
   }
 
   void keyKindBarrier(const JS::Value& key) {
-    if (key.isSymbol()) {
-      mayHaveSymbolKeys = true;
+    if (key.isSymbol() && !mayHaveSymbolKeys) {
+      setMayHaveSymbolKeys();
     }
     if (key.isObject()) {
       keyKindBarrier(&key.toObject());
     }
   }
   void keyKindBarrier(JSObject* key) {
-    JSObject* delegate = UncheckedUnwrapWithoutExpose(key);
-    if (delegate != key || ObjectMayBeSwapped(key)) {
-      mayHaveKeyDelegates = true;
+    if (!mayHaveKeyDelegates) {
+      JSObject* delegate = UncheckedUnwrapWithoutExpose(key);
+      if (delegate != key || ObjectMayBeSwapped(key)) {
+        setMayHaveKeyDelegates();
+      }
     }
   }
   void keyKindBarrier(BaseScript* key) {}
@@ -507,8 +560,10 @@ class WeakMap : public WeakMapBase {
   }
 
   void addNurseryKey(const Key& key);
+  void setMayHaveSymbolKeys();
+  void setMayHaveKeyDelegates();
 
-  void traceWeakEdges(JSTracer* trc) override;
+  void traceWeakEdgesDuringSweeping(JSTracer* trc) override;
 
   void clearAndCompact() override {
     clear();

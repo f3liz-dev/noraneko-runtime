@@ -47,8 +47,6 @@ import mozprocess
 import mozrunner
 from manifestparser import TestManifest
 from manifestparser.filters import (
-    chunk_by_dir,
-    chunk_by_runtime,
     chunk_by_slice,
     failures,
     pathprefix,
@@ -146,25 +144,22 @@ TBPL_RETRY = 4  # Defined in mozharness
 class MessageLogger:
     """File-like object for logging messages (structured logs)"""
 
-    BUFFERING_THRESHOLD = 100
     # This is a delimiter used by the JS side to avoid logs interleaving
     DELIMITER = "\ue175\uee31\u2c32\uacbf"
     BUFFERED_ACTIONS = set(["test_status", "log"])
-    VALID_ACTIONS = set(
-        [
-            "suite_start",
-            "suite_end",
-            "group_start",
-            "group_end",
-            "test_start",
-            "test_end",
-            "test_status",
-            "log",
-            "assertion_count",
-            "buffering_on",
-            "buffering_off",
-        ]
-    )
+    VALID_ACTIONS = set([
+        "suite_start",
+        "suite_end",
+        "group_start",
+        "group_end",
+        "test_start",
+        "test_end",
+        "test_status",
+        "log",
+        "assertion_count",
+        "buffering_on",
+        "buffering_off",
+    ])
     # Regexes that will be replaced with an empty string if found in a test
     # name. We do this to normalize test names which may contain URLs and test
     # package prefixes.
@@ -207,8 +202,10 @@ class MessageLogger:
             raise ValueError
 
     def _fix_subtest_name(self, message):
-        """Make sure subtest name is a string"""
-        if "subtest" in message and not isinstance(message["subtest"], str):
+        """Ensure test_status messages have a subtest field and convert it to a string"""
+        if message.get("action") == "test_status" and "subtest" not in message:
+            message["subtest"] = None
+        elif message.get("subtest") is not None:
             message["subtest"] = str(message["subtest"])
 
     def _fix_test_name(self, message):
@@ -297,15 +294,7 @@ class MessageLogger:
             self.restore_buffering = self.restore_buffering or self.buffering
             self.buffering = False
             if self.buffered_messages:
-                snipped = len(self.buffered_messages) - self.BUFFERING_THRESHOLD
-                if snipped > 0:
-                    self.logger.info(
-                        f"<snipped {snipped} output lines - "
-                        "if you need more context, please use "
-                        "SimpleTest.requestCompleteLog() in your test>"
-                    )
-                # Dumping previously buffered messages
-                self.dump_buffered(limit=True)
+                self.dump_buffered()
 
             # Logging the error message
             self.logger.log_raw(message)
@@ -342,14 +331,9 @@ class MessageLogger:
     def flush(self):
         sys.stdout.flush()
 
-    def dump_buffered(self, limit=False):
-        if limit:
-            dumped_messages = self.buffered_messages[-self.BUFFERING_THRESHOLD :]
-        else:
-            dumped_messages = self.buffered_messages
-
+    def dump_buffered(self):
         last_timestamp = None
-        for buf in dumped_messages:
+        for buf in self.buffered_messages:
             # pylint --py3k W1619
             timestamp = datetime.fromtimestamp(buf["time"] / 1000).strftime("%H:%M:%S")
             if timestamp != last_timestamp:
@@ -534,9 +518,10 @@ class MochitestServer:
             env["LD_LIBRARY_PATH"] = ":".join([self._xrePath, env["LD_LIBRARY_PATH"]])
 
         if self._trainHop:
-            env["LD_LIBRARY_PATH"] = ":".join(
-                [os.path.join(os.path.dirname(here), "bin"), env["LD_LIBRARY_PATH"]]
-            )
+            env["LD_LIBRARY_PATH"] = ":".join([
+                os.path.join(os.path.dirname(here), "bin"),
+                env["LD_LIBRARY_PATH"],
+            ])
 
         # When running with an ASan build, our xpcshell server will also be ASan-enabled,
         # thus consuming too much resources when running together with the browser on
@@ -714,7 +699,7 @@ class SSLTunnel:
         self.webServer = options.webServer
         self.webSocketPort = options.webSocketPort
 
-        self.customCertRE = re.compile("^cert=(?P<nickname>[0-9a-zA-Z_ ]+)")
+        self.customCertRE = re.compile("^cert=(?P<nickname>[0-9a-zA-Z_ -]+)")
         self.clientAuthRE = re.compile("^clientauth=(?P<clientauth>[a-z]+)")
         self.redirRE = re.compile("^redir=(?P<redirhost>[0-9a-zA-Z_ .]+)")
 
@@ -910,18 +895,16 @@ def findTestMediaDevices(log):
         gst = gst010
     else:
         gst = gst10
-    process = subprocess.Popen(
-        [
-            gst,
-            "--no-fault",
-            "videotestsrc",
-            "pattern=green",
-            "num-buffers=1",
-            "!",
-            "v4l2sink",
-            "device=%s" % device,
-        ]
-    )
+    process = subprocess.Popen([
+        gst,
+        "--no-fault",
+        "videotestsrc",
+        "pattern=green",
+        "num-buffers=1",
+        "!",
+        "v4l2sink",
+        "device=%s" % device,
+    ])
     info["video"] = {"name": name, "process": process}
     info["speaker"] = {"name": "44100Hz Null Output"}
     info["audio"] = {"name": "Monitor of {}".format(info["speaker"]["name"])}
@@ -1012,7 +995,7 @@ class MochitestDesktop:
             self.log = logger_options["log"]
         else:
             self.log = commandline.setup_logging(
-                "mochitest", logger_options, {"tbpl": sys.stdout}
+                "mochitest", logger_options, {"raw": sys.stdout}
             )
 
         self.message_logger = MessageLogger(
@@ -1734,52 +1717,14 @@ toolbar#nav-bar {
             if options.test_tags:
                 filters.append(tags(options.test_tags))
 
+            path_filter = None
             if options.test_paths:
                 options.test_paths = self.normalize_paths(options.test_paths)
-                filters.append(pathprefix(options.test_paths))
+                path_filter = pathprefix(options.test_paths)
+                filters.append(path_filter)
 
-            # Add chunking filters if specified
             if options.totalChunks:
-                if options.chunkByDir:
-                    filters.append(
-                        chunk_by_dir(
-                            options.thisChunk, options.totalChunks, options.chunkByDir
-                        )
-                    )
-                elif options.chunkByRuntime:
-                    if mozinfo.info["os"] == "android":
-                        platkey = "android"
-                    elif mozinfo.isWin:
-                        platkey = "windows"
-                    else:
-                        platkey = "unix"
-
-                    runtime_file = os.path.join(
-                        SCRIPT_DIR,
-                        "runtimes",
-                        f"manifest-runtimes-{platkey}.json",
-                    )
-                    if not os.path.exists(runtime_file):
-                        self.log.error("runtime file %s not found!" % runtime_file)
-                        sys.exit(1)
-
-                    # Given the mochitest flavor, load the runtimes information
-                    # for only that flavor due to manifest runtime format change in Bug 1637463.
-                    with open(runtime_file) as f:
-                        if "suite_name" in options:
-                            runtimes = json.load(f).get(options.suite_name, {})
-                        else:
-                            runtimes = {}
-
-                    filters.append(
-                        chunk_by_runtime(
-                            options.thisChunk, options.totalChunks, runtimes
-                        )
-                    )
-                else:
-                    filters.append(
-                        chunk_by_slice(options.thisChunk, options.totalChunks)
-                    )
+                filters.append(chunk_by_slice(options.thisChunk, options.totalChunks))
 
             noDefaultFilters = False
             if options.runFailures:
@@ -1798,6 +1743,16 @@ toolbar#nav-bar {
                 strictExpressions=True,
                 **info,
             )
+
+            # Store missing manifests for later use in structured logging
+            self.missing_manifests = set()
+            if path_filter and path_filter.missing:
+                self.missing_manifests = path_filter.missing
+                self.log.warning(
+                    "The following path(s) didn't resolve any tests:\n  {}".format(
+                        "  \n".join(sorted(path_filter.missing))
+                    )
+                )
 
             if len(tests) == 0:
                 self.log.error(
@@ -1931,6 +1886,11 @@ toolbar#nav-bar {
 
             self.log.info("Dumping active_tests to %s file." % options.dump_tests)
             sys.exit()
+
+        # Add missing manifests with empty test lists so they appear in
+        # group_result output with SKIP status
+        for missing_path in self.missing_manifests:
+            self.tests_by_manifest[missing_path] = []
 
         # Upload a list of test manifests that were executed in this run.
         if "MOZ_UPLOAD_DIR" in os.environ:
@@ -2507,21 +2467,20 @@ toolbar#nav-bar {
         if options.flavor == "browser":
             if options.timeout:
                 test_timeout = options.timeout
+            elif mozinfo.info["asan"] or mozinfo.info["debug"]:
+                # browser-chrome tests use a fairly short default timeout of 45 seconds;
+                # this is sometimes too short on asan and debug, where we expect reduced
+                # performance.
+                self.log.info(
+                    "Increasing default timeout to 90 seconds (asan or debug)"
+                )
+                test_timeout = 90
+            elif mozinfo.info["tsan"]:
+                # tsan builds need even more time
+                self.log.info("Increasing default timeout to 120 seconds (tsan)")
+                test_timeout = 120
             else:
-                if mozinfo.info["asan"] or mozinfo.info["debug"]:
-                    # browser-chrome tests use a fairly short default timeout of 45 seconds;
-                    # this is sometimes too short on asan and debug, where we expect reduced
-                    # performance.
-                    self.log.info(
-                        "Increasing default timeout to 90 seconds (asan or debug)"
-                    )
-                    test_timeout = 90
-                elif mozinfo.info["tsan"]:
-                    # tsan builds need even more time
-                    self.log.info("Increasing default timeout to 120 seconds (tsan)")
-                    test_timeout = 120
-                else:
-                    test_timeout = 45
+                test_timeout = 45
         elif options.flavor in ("a11y", "chrome"):
             test_timeout = 45
 
@@ -3145,13 +3104,11 @@ toolbar#nav-bar {
         input_devices = []
         for i in range(1, INPUT_DEVICES_COUNT + 1):
             freq = i * DEVICES_BASE_FREQUENCY
-            input_devices.append(
-                {
-                    "name": f"sine-{freq}",
-                    "description": f"{freq}Hz Sine Source",
-                    "frequency": freq,
-                }
-            )
+            input_devices.append({
+                "name": f"sine-{freq}",
+                "description": f"{freq}Hz Sine Source",
+                "frequency": freq,
+            })
 
         # Determine if this is running PulseAudio or PipeWire
         # `pactl info` works on both systems, but when running on PipeWire it says
@@ -3293,8 +3250,9 @@ toolbar#nav-bar {
 
             except subprocess.CalledProcessError:
                 self.log.error(
-                    "Could not create device with module-sine-source"
-                    " (freq={})".format(device["frequency"])
+                    "Could not create device with module-sine-source (freq={})".format(
+                        device["frequency"]
+                    )
                 )
 
         self.virtualDeviceIdList = idList
@@ -3345,8 +3303,7 @@ toolbar#nav-bar {
                     for key in self.expectedError:
                         full_key = [x for x in testsToRun if key in x]
                         if full_key:
-                            if testsToRun.index(full_key[0]) < firstFail:
-                                firstFail = testsToRun.index(full_key[0])
+                            firstFail = min(firstFail, testsToRun.index(full_key[0]))
                     testsToRun = testsToRun[firstFail + 1 :]
                     if testsToRun == []:
                         status = -1
@@ -3529,53 +3486,49 @@ toolbar#nav-bar {
         self.extraPrefs["fission.autostart"] = not options.disable_fission
 
         # for test manifest parsing.
-        mozinfo.update(
-            {
-                "a11y_checks": options.a11y_checks,
-                "e10s": options.e10s,
-                "fission": not options.disable_fission,
-                "headless": options.headless,
-                "http3": options.useHttp3Server,
-                "http2": options.useHttp2Server,
-                "inc_origin_init": os.environ.get("MOZ_ENABLE_INC_ORIGIN_INIT") == "1",
-                # Until the test harness can understand default pref values,
-                # (https://bugzilla.mozilla.org/show_bug.cgi?id=1577912) this value
-                # should by synchronized with the default pref value indicated in
-                # StaticPrefList.yaml.
-                #
-                # Currently for automation, the pref defaults to true (but can be
-                # overridden with --setpref).
-                "sessionHistoryInParent": not options.disable_fission
-                or not self.extraPrefs.get("fission.disableSessionHistoryInParent"),
-                "socketprocess_e10s": self.extraPrefs.get(
-                    "network.process.enabled", False
-                ),
-                "socketprocess_networking": self.extraPrefs.get(
-                    "network.http.network_access_on_socket_process.enabled", False
-                ),
-                "swgl": self.extraPrefs.get("gfx.webrender.software", False),
-                "verify": options.verify,
-                "verify_fission": options.verify_fission,
-                "vertical_tab": self.extraPrefs.get("sidebar.verticalTabs", False),
-                "webgl_ipc": self.extraPrefs.get("webgl.out-of-process", False),
-                "wmfme": (
-                    self.extraPrefs.get("media.wmf.media-engine.enabled", 0)
-                    and self.extraPrefs.get(
-                        "media.wmf.media-engine.channel-decoder.enabled", False
-                    )
-                ),
-                "mda_gpu": self.extraPrefs.get(
-                    "media.hardware-video-decoding.force-enabled", False
-                ),
-                "xorigin": options.xOriginTests,
-                "condprof": options.conditionedProfile,
-                "msix": "WindowsApps" in options.app,
-                "android": mozinfo.info.get("android", False),
-                "is_emulator": mozinfo.info.get("is_emulator", False),
-                "coverage": mozinfo.info.get("coverage", False),
-                "nogpu": mozinfo.info.get("nogpu", False),
-            }
-        )
+        mozinfo.update({
+            "a11y_checks": options.a11y_checks,
+            "e10s": options.e10s,
+            "fission": not options.disable_fission,
+            "headless": options.headless,
+            "http3": options.useHttp3Server,
+            "http2": options.useHttp2Server,
+            "inc_origin_init": os.environ.get("MOZ_ENABLE_INC_ORIGIN_INIT") == "1",
+            # Until the test harness can understand default pref values,
+            # (https://bugzilla.mozilla.org/show_bug.cgi?id=1577912) this value
+            # should by synchronized with the default pref value indicated in
+            # StaticPrefList.yaml.
+            #
+            # Currently for automation, the pref defaults to true (but can be
+            # overridden with --setpref).
+            "sessionHistoryInParent": not options.disable_fission
+            or not self.extraPrefs.get("fission.disableSessionHistoryInParent"),
+            "socketprocess_e10s": self.extraPrefs.get("network.process.enabled", False),
+            "socketprocess_networking": self.extraPrefs.get(
+                "network.http.network_access_on_socket_process.enabled", False
+            ),
+            "swgl": self.extraPrefs.get("gfx.webrender.software", False),
+            "verify": options.verify,
+            "verify_fission": options.verify_fission,
+            "vertical_tab": self.extraPrefs.get("sidebar.verticalTabs", False),
+            "webgl_ipc": self.extraPrefs.get("webgl.out-of-process", False),
+            "wmfme": (
+                self.extraPrefs.get("media.wmf.media-engine.enabled", 0)
+                and self.extraPrefs.get(
+                    "media.wmf.media-engine.channel-decoder.enabled", False
+                )
+            ),
+            "mda_gpu": self.extraPrefs.get(
+                "media.hardware-video-decoding.force-enabled", False
+            ),
+            "xorigin": options.xOriginTests,
+            "condprof": options.conditionedProfile,
+            "msix": "WindowsApps" in options.app,
+            "android": mozinfo.info.get("android", False),
+            "is_emulator": mozinfo.info.get("is_emulator", False),
+            "coverage": mozinfo.info.get("coverage", False),
+            "nogpu": mozinfo.info.get("nogpu", False),
+        })
 
         if not self.mozinfo_variables_shown:
             self.mozinfo_variables_shown = True
@@ -3803,8 +3756,7 @@ toolbar#nav-bar {
 
         if (valgrindArgs or valgrindSuppFiles) and not valgrindPath:
             self.log.error(
-                "Specified --valgrind-args or --valgrind-supp-files,"
-                " but not --valgrind"
+                "Specified --valgrind-args or --valgrind-supp-files, but not --valgrind"
             )
             return 1
 
@@ -4247,13 +4199,14 @@ toolbar#nav-bar {
                 self.harness.countfail += numFailures
                 for message in errorMessages:
                     msg = {
-                        "action": "test_end",
+                        "action": "test_status",
+                        "subtest": "Shutdown",
                         "status": "FAIL",
                         "expected": "PASS",
                         "thread": None,
                         "pid": None,
                         "source": "mochitest",
-                        "time": int(time.time() * 1000),
+                        "time": message.get("time") or int(time.time() * 1000),
                         "test": message["test"],
                         "message": message["msg"],
                     }
@@ -4287,9 +4240,8 @@ toolbar#nav-bar {
             ):
                 key = message["test"].split("/")[-1].strip()
                 if key not in self.harness.expectedError:
-                    self.harness.expectedError[key] = message.get(
-                        "message", message["subtest"]
-                    ).strip()
+                    error_msg = message.get("message") or message.get("subtest") or ""
+                    self.harness.expectedError[key] = error_msg.strip()
             return message
 
         def countline(self, message):
@@ -4335,6 +4287,7 @@ toolbar#nav-bar {
                 and self.dump_screen_on_timeout
                 and message["action"] == "test_status"
                 and "expected" in message
+                and message["subtest"] is not None
                 and "Test timed out" in message["subtest"]
             ):
                 self.harness.dumpScreen(self.utilityPath)

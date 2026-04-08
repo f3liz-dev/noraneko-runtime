@@ -12,6 +12,8 @@ ChromeUtils.defineESModuleGetters(lazy, {
   ThemeContentPropertyList: "resource:///modules/ThemeVariableMap.sys.mjs",
   ThemeVariableMap: "resource:///modules/ThemeVariableMap.sys.mjs",
   BuiltInThemeConfig: "resource:///modules/BuiltInThemeConfig.sys.mjs",
+  LightweightThemeManager:
+    "resource://gre/modules/LightweightThemeManager.sys.mjs",
 });
 
 // Whether the content and chrome areas should always use the same color
@@ -221,6 +223,7 @@ export function LightweightThemeConsumer(aDocument) {
   this._doc = aDocument;
   this._win = aDocument.defaultView;
   this._winId = this._win.docShell.outerWindowID;
+  this._isAIWindow = this._doc.documentElement.hasAttribute("ai-window");
 
   XPCOMUtils.defineLazyPreferenceGetter(
     this,
@@ -228,6 +231,18 @@ export function LightweightThemeConsumer(aDocument) {
     "browser.theme.forced-colors-override.enabled",
     true,
     () => this._update(this._lastData)
+  );
+
+  XPCOMUtils.defineLazyPreferenceGetter(
+    this,
+    "_toolbarTheme",
+    "browser.theme.toolbar-theme",
+    2,
+    () => {
+      if (this._isAIWindow) {
+        this._update(this._lastData);
+      }
+    }
   );
 
   Services.obs.addObserver(this, "lightweight-theme-styling-update");
@@ -238,10 +253,14 @@ export function LightweightThemeConsumer(aDocument) {
   this.forcedColorsMediaQuery = this._win.matchMedia("(forced-colors)");
   this.forcedColorsMediaQuery.addListener(this);
 
-  const { LightweightThemeManager } = ChromeUtils.importESModule(
-    "resource://gre/modules/LightweightThemeManager.sys.mjs"
-  );
-  this._update(LightweightThemeManager.themeData);
+  this._aiWindowObserver = new this._win.MutationObserver(() => {
+    this.toggleAIWindowMode(this._win);
+  });
+  this._aiWindowObserver.observe(this._doc.documentElement, {
+    attributeFilter: ["ai-window"],
+  });
+
+  this._update(lazy.LightweightThemeManager.themeData);
 
   this._win.addEventListener("unload", this, { once: true });
 }
@@ -275,6 +294,8 @@ LightweightThemeConsumer.prototype = {
       case "unload":
         Services.obs.removeObserver(this, "lightweight-theme-styling-update");
         Services.ppmm.sharedData.delete(`theme/${this._winId}`);
+        this._aiWindowObserver?.disconnect();
+        this._aiWindowObserver = null;
         this._win = this._doc = null;
         this.darkThemeMediaQuery?.removeListener(this);
         this.darkThemeMediaQuery = null;
@@ -285,16 +306,48 @@ LightweightThemeConsumer.prototype = {
   },
 
   _update(themeData) {
+    const manager = lazy.LightweightThemeManager;
+
+    // Store user's theme before replacing with aiThemeData.
     this._lastData = themeData;
 
-    let supportsDarkTheme =
-      !!themeData.darkTheme ||
-      !themeData.theme ||
-      themeData.theme.id == DEFAULT_THEME_ID;
+    // Capture original theme's color scheme before replacing with aiThemeData.
+    let originalThemeColorScheme = themeData?.theme?.color_scheme;
+
+    if (this._isAIWindow) {
+      if (manager.aiThemeData) {
+        themeData = manager.aiThemeData;
+      } else {
+        manager.promiseAIThemeData().then(() => {
+          if (this._isAIWindow && this._win && !this._win.closed) {
+            this._update(this._lastData);
+          }
+        });
+        return;
+      }
+    }
+
     let updateGlobalThemeData = true;
     const useDarkTheme = (() => {
+      let supportsDarkTheme =
+        !!themeData.darkTheme ||
+        !themeData.theme ||
+        themeData.theme.id == DEFAULT_THEME_ID;
+
       if (!supportsDarkTheme) {
         return false;
+      }
+
+      // AI windows: use color scheme from original user's theme
+      if (this._isAIWindow) {
+        switch (originalThemeColorScheme) {
+          case "dark":
+            return true;
+          case "system":
+            break;
+          default:
+            return false;
+        }
       }
 
       if (this.darkThemeMediaQuery?.matches) {
@@ -315,6 +368,10 @@ LightweightThemeConsumer.prototype = {
       updateGlobalThemeData = false;
       return true;
     })();
+
+    if (this._isAIWindow) {
+      updateGlobalThemeData = false;
+    }
 
     let theme = useDarkTheme ? themeData.darkTheme : themeData.theme;
     let forcedColorsThemeOverride =
@@ -472,15 +529,18 @@ LightweightThemeConsumer.prototype = {
     this._lastExperimentData.usedVariables = usedVariables;
 
     if (experiment.stylesheet) {
-      /* Stylesheet URLs are validated using WebExtension schemas */
-      let stylesheetAttr = `href="${experiment.stylesheet}" type="text/css"`;
-      let stylesheet = this._doc.createProcessingInstruction(
-        "xml-stylesheet",
-        stylesheetAttr
-      );
-      this._doc.insertBefore(stylesheet, root);
+      let stylesheet = this._doc.createElement("link");
+      stylesheet.rel = "stylesheet";
+      // Stylesheet URLs are validated using WebExtension schemas
+      stylesheet.href = experiment.stylesheet;
+      this._doc.head.appendChild(stylesheet);
       this._lastExperimentData.stylesheet = stylesheet;
     }
+  },
+
+  toggleAIWindowMode(win) {
+    this._isAIWindow = win.document.documentElement.hasAttribute("ai-window");
+    this._update(lazy.LightweightThemeManager.themeData);
   },
 };
 

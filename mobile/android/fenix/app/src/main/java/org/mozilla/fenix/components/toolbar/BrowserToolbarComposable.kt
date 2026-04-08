@@ -143,6 +143,8 @@ class BrowserToolbarComposable(
                         BrowserToolbar(
                             store = toolbarStore,
                             cfr = toolbarCFR,
+                            useMinimalBottomToolbarWhenEnteringText =
+                                settings.shouldUseMinimalBottomToolbarWhenEnteringText,
                         )
                         if (customTabSession == null) {
                             searchSuggestionsContent(Modifier.weight(1f))
@@ -161,12 +163,16 @@ class BrowserToolbarComposable(
                             BrowserToolbar(
                                 store = toolbarStore,
                                 cfr = toolbarCFR,
+                                useMinimalBottomToolbarWhenEnteringText =
+                                    settings.shouldUseMinimalBottomToolbarWhenEnteringText,
                             )
                             navigationBarContent?.invoke()
                         } else {
                             BrowserToolbar(
                                 store = toolbarStore,
                                 cfr = toolbarCFR,
+                                useMinimalBottomToolbarWhenEnteringText =
+                                    settings.shouldUseMinimalBottomToolbarWhenEnteringText,
                             )
                             if (customTabSession == null) {
                                 searchSuggestionsContent(Modifier.weight(1f))
@@ -227,9 +233,11 @@ private fun toolbarCFRData(
                 enabled = shouldShowCFR,
                 title = title,
                 description = description,
-                onShown = { Toolbar.cfrShown.record(NoExtras()) },
-                onDismiss = {
+                onShown = {
                     settings.hasSeenBrowserToolbarCFR = true
+                    Toolbar.cfrShown.record(NoExtras())
+                },
+                onDismiss = {
                     settings.lastCfrShownTimeInMillis = System.currentTimeMillis()
                     Toolbar.cfrDismissed.record(NoExtras())
                 },

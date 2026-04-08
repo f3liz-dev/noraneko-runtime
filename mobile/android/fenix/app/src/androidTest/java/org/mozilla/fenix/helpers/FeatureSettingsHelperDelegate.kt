@@ -40,15 +40,13 @@ class FeatureSettingsHelperDelegate : FeatureSettingsHelper {
         etpPolicy = getETPPolicy(settings),
         isLocationPermissionEnabled = getFeaturePermission(PhoneFeature.LOCATION, settings),
         isComposableToolbarEnabled = settings.shouldUseComposableToolbar,
-        isMenuRedesignEnabled = settings.enableMenuRedesign,
         isMenuRedesignCFREnabled = settings.shouldShowMenuCFR,
         isMicrosurveyEnabled = settings.microsurveyFeatureEnabled,
         shouldUseBottomToolbar = settings.shouldUseBottomToolbar,
         onboardingFeatureEnabled = settings.onboardingFeatureEnabled,
-        isUseNewCrashReporterDialog = settings.useNewCrashReporterDialog,
+        isUseNewCrashReporterFlow = settings.useNewCrashReporterFlow,
         isTabSwipeCFREnabled = settings.hasShownTabSwipeCFR,
         isTermsOfServiceAccepted = settings.hasAcceptedTermsOfService,
-        isComposeLoginsEnabled = settings.enableComposeLogins,
         openLinksInApp = getOpenLinksInApp(settings),
         tabManagerOpeningAnimationEnabled = settings.tabManagerOpeningAnimationEnabled,
         hasSeenBrowserToolbarCFR = settings.hasSeenBrowserToolbarCFR,
@@ -70,15 +68,13 @@ class FeatureSettingsHelperDelegate : FeatureSettingsHelper {
     override var etpPolicy: ETPPolicy by updatedFeatureFlags::etpPolicy
     override var isLocationPermissionEnabled: SitePermissionsRules.Action by updatedFeatureFlags::isLocationPermissionEnabled
     override var isComposableToolbarEnabled: Boolean by updatedFeatureFlags::isComposableToolbarEnabled
-    override var isMenuRedesignEnabled: Boolean by updatedFeatureFlags::isMenuRedesignEnabled
     override var isMenuRedesignCFREnabled: Boolean by updatedFeatureFlags::isMenuRedesignCFREnabled
     override var isMicrosurveyEnabled: Boolean by updatedFeatureFlags::isMicrosurveyEnabled
     override var shouldUseBottomToolbar: Boolean by updatedFeatureFlags::shouldUseBottomToolbar
     override var onboardingFeatureEnabled: Boolean by updatedFeatureFlags::onboardingFeatureEnabled
-    override var isUseNewCrashReporterDialog: Boolean by updatedFeatureFlags::isUseNewCrashReporterDialog
+    override var isUseNewCrashReporterFlow: Boolean by updatedFeatureFlags::isUseNewCrashReporterFlow
     override var isTabSwipeCFREnabled: Boolean by updatedFeatureFlags::isTabSwipeCFREnabled
     override var isTermsOfServiceAccepted: Boolean by updatedFeatureFlags::isTermsOfServiceAccepted
-    override var isComposeLoginsEnabled: Boolean by updatedFeatureFlags::isComposeLoginsEnabled
     override var openLinksInExternalApp: OpenLinksInApp by updatedFeatureFlags::openLinksInApp
     override var tabManagerOpeningAnimationEnabled: Boolean by updatedFeatureFlags::tabManagerOpeningAnimationEnabled
     override var hasSeenBrowserToolbarCFR: Boolean by updatedFeatureFlags::hasSeenBrowserToolbarCFR
@@ -107,7 +103,6 @@ class FeatureSettingsHelperDelegate : FeatureSettingsHelper {
         settings.deleteSitePermissions = featureFlags.isDeleteSitePermissionsEnabled
         settings.shouldShowOpenInAppBanner = featureFlags.isOpenInAppBannerEnabled
         settings.shouldUseComposableToolbar = featureFlags.isComposableToolbarEnabled
-        settings.enableMenuRedesign = featureFlags.isMenuRedesignEnabled
         settings.shouldShowMenuCFR = featureFlags.isMenuRedesignCFREnabled
         settings.microsurveyFeatureEnabled = featureFlags.isMicrosurveyEnabled
         settings.shouldUseBottomToolbar = featureFlags.shouldUseBottomToolbar
@@ -115,10 +110,9 @@ class FeatureSettingsHelperDelegate : FeatureSettingsHelper {
         setETPPolicy(featureFlags.etpPolicy)
         setPermissions(PhoneFeature.LOCATION, featureFlags.isLocationPermissionEnabled)
         settings.onboardingFeatureEnabled = featureFlags.onboardingFeatureEnabled
-        settings.useNewCrashReporterDialog = featureFlags.isUseNewCrashReporterDialog
+        settings.useNewCrashReporterFlow = featureFlags.isUseNewCrashReporterFlow
         settings.hasShownTabSwipeCFR = !featureFlags.isTabSwipeCFREnabled
         settings.hasAcceptedTermsOfService = featureFlags.isTermsOfServiceAccepted
-        settings.enableComposeLogins = featureFlags.isComposeLoginsEnabled
         setOpenLinksInApp(featureFlags.openLinksInApp)
         settings.tabManagerOpeningAnimationEnabled = featureFlags.tabManagerOpeningAnimationEnabled
         settings.hasSeenBrowserToolbarCFR = featureFlags.hasSeenBrowserToolbarCFR
@@ -138,15 +132,13 @@ private data class FeatureFlags(
     var etpPolicy: ETPPolicy,
     var isLocationPermissionEnabled: SitePermissionsRules.Action,
     var isComposableToolbarEnabled: Boolean,
-    var isMenuRedesignEnabled: Boolean,
     var isMenuRedesignCFREnabled: Boolean,
     var isMicrosurveyEnabled: Boolean,
     var shouldUseBottomToolbar: Boolean,
     var onboardingFeatureEnabled: Boolean,
-    var isUseNewCrashReporterDialog: Boolean,
+    var isUseNewCrashReporterFlow: Boolean,
     var isTabSwipeCFREnabled: Boolean,
     var isTermsOfServiceAccepted: Boolean,
-    var isComposeLoginsEnabled: Boolean,
     var openLinksInApp: OpenLinksInApp,
     var tabManagerOpeningAnimationEnabled: Boolean,
     var hasSeenBrowserToolbarCFR: Boolean,

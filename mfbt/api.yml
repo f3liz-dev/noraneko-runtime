@@ -57,7 +57,6 @@ Assertions.h:
     - MOZ_DIAGNOSTIC_ASSERT
     - MOZ_ASSERT
     - MOZ_RELEASE_ASSERT
-    - MOZ_CRASH_UNSAFE_FMT
     - MOZ_CRASH_UNSAFE_PRINTF
     - MOZ_DIAGNOSTIC_CRASH
     - MOZ_CRASH
@@ -77,6 +76,7 @@ Atomics.h:
 Attributes.h:
   macros:
     - MOZ_ALWAYS_INLINE_EVEN_DEBUG
+    - MOZ_TRIVIAL_ABI
     - MOZ_NO_UNIQUE_ADDRESS
     - MOZ_ALWAYS_INLINE
     - MOZ_NEVER_INLINE
@@ -150,7 +150,6 @@ Attributes.h:
     - MOZ_FORMAT_WPRINTF
     - MOZ_XPCOM_ABI
     - MOZ_EMPTY_BASES
-    - MOZ_CONSTINIT
     - MOZ_CAN_RUN_SCRIPT_BOUNDARY_LAMBDA
 
 BinarySearch.h:
@@ -499,7 +498,6 @@ MacroForEach.h:
 
 MathAlgorithms.h:
   functions:
-    - DeprecatedAbs
     - Abs
     - CountLeadingZeroes32
     - CountTrailingZeroes32
@@ -718,6 +716,7 @@ RollingMean.h:
 
 Saturate.h:
   types:
+    - Saturate
     - SaturateInt8
     - SaturateInt16
     - SaturateInt32

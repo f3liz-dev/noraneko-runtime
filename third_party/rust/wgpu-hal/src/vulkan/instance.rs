@@ -81,8 +81,10 @@ unsafe extern "system" fn debug_utils_messenger_callback(
     }
 
     let level = match message_severity {
-        vk::DebugUtilsMessageSeverityFlagsEXT::VERBOSE => log::Level::Debug,
-        vk::DebugUtilsMessageSeverityFlagsEXT::INFO => log::Level::Info,
+        // We intentionally suppress info messages down to debug
+        // so that users are not innundated with info messages from the runtime.
+        vk::DebugUtilsMessageSeverityFlagsEXT::VERBOSE => log::Level::Trace,
+        vk::DebugUtilsMessageSeverityFlagsEXT::INFO => log::Level::Debug,
         vk::DebugUtilsMessageSeverityFlagsEXT::WARNING => log::Level::Warn,
         vk::DebugUtilsMessageSeverityFlagsEXT::ERROR => log::Level::Error,
         _ => log::Level::Warn,
@@ -271,8 +273,7 @@ impl super::Instance {
             extensions.push(ext::acquire_drm_display::NAME);
             extensions.push(ext::direct_mode_display::NAME);
             extensions.push(khr::display::NAME);
-            //  VK_EXT_physical_device_drm -> VK_KHR_get_physical_device_properties2
-            extensions.push(ext::physical_device_drm::NAME);
+            extensions.push(khr::get_physical_device_properties2::NAME);
             extensions.push(khr::get_display_properties2::NAME);
         }
 
@@ -298,7 +299,7 @@ impl super::Instance {
             {
                 true
             } else {
-                log::warn!("Unable to find extension: {}", ext.to_string_lossy());
+                log::debug!("Unable to find extension: {}", ext.to_string_lossy());
                 false
             }
         });
@@ -334,7 +335,7 @@ impl super::Instance {
 
         let debug_utils = if let Some(debug_utils_create_info) = debug_utils_create_info {
             if extensions.contains(&ext::debug_utils::NAME) {
-                log::info!("Enabling debug utils");
+                log::debug!("Enabling debug utils");
 
                 let extension = ext::debug_utils::Instance::new(&entry, &raw_instance);
                 let vk_info = debug_utils_create_info.to_vk_create_info();
@@ -515,10 +516,10 @@ impl super::Instance {
         Ok(self.create_surface_from_vk_surface_khr(surface))
     }
 
-    #[cfg(metal)]
-    fn create_surface_from_view(
+    #[cfg(target_vendor = "apple")]
+    fn create_surface_from_layer(
         &self,
-        view: core::ptr::NonNull<c_void>,
+        layer: raw_window_metal::Layer,
     ) -> Result<super::Surface, crate::InstanceError> {
         if !self.shared.extensions.contains(&ext::metal_surface::NAME) {
             return Err(crate::InstanceError::new(String::from(
@@ -526,17 +527,14 @@ impl super::Instance {
             )));
         }
 
-        let layer = unsafe { crate::metal::Surface::get_metal_layer(view.cast()) };
         // NOTE: The layer is retained by Vulkan's `vkCreateMetalSurfaceEXT`,
         // so no need to retain it beyond the scope of this function.
-        let layer_ptr = (*layer).cast();
-
         let surface = {
             let metal_loader =
                 ext::metal_surface::Instance::new(&self.shared.entry, &self.shared.raw);
             let vk_info = vk::MetalSurfaceCreateInfoEXT::default()
                 .flags(vk::MetalSurfaceCreateFlagsEXT::empty())
-                .layer(layer_ptr);
+                .layer(layer.as_ptr().as_ptr());
 
             unsafe { metal_loader.create_metal_surface(&vk_info, None).unwrap() }
         };
@@ -566,7 +564,7 @@ impl super::Instance {
     /// - Callback must not remove features.
     /// - Callback must not change anything to what the instance does not support.
     pub unsafe fn init_with_callback(
-        desc: &crate::InstanceDescriptor,
+        desc: &crate::InstanceDescriptor<'_>,
         callback: Option<Box<super::CreateInstanceCallback>>,
     ) -> Result<Self, crate::InstanceError> {
         profiling::scope!("Init Vulkan Backend");
@@ -708,7 +706,7 @@ impl super::Instance {
                         });
                 }
             } else {
-                log::warn!(
+                log::debug!(
                     "InstanceFlags::VALIDATION requested, but unable to find layer: {}",
                     validation_layer_name.to_string_lossy()
                 );
@@ -869,7 +867,7 @@ impl Drop for super::InstanceShared {
 impl crate::Instance for super::Instance {
     type A = super::Api;
 
-    unsafe fn init(desc: &crate::InstanceDescriptor) -> Result<Self, crate::InstanceError> {
+    unsafe fn init(desc: &crate::InstanceDescriptor<'_>) -> Result<Self, crate::InstanceError> {
         unsafe { Self::init_with_callback(desc, None) }
     }
 
@@ -905,17 +903,19 @@ impl crate::Instance for super::Instance {
                 })?;
                 self.create_surface_from_hwnd(hinstance.get(), handle.hwnd.get())
             }
-            #[cfg(all(target_os = "macos", feature = "metal"))]
+            #[cfg(target_vendor = "apple")]
             (Rwh::AppKit(handle), _)
                 if self.shared.extensions.contains(&ext::metal_surface::NAME) =>
             {
-                self.create_surface_from_view(handle.ns_view)
+                let layer = unsafe { raw_window_metal::Layer::from_ns_view(handle.ns_view) };
+                self.create_surface_from_layer(layer)
             }
-            #[cfg(all(any(target_os = "ios", target_os = "visionos"), feature = "metal"))]
+            #[cfg(target_vendor = "apple")]
             (Rwh::UiKit(handle), _)
                 if self.shared.extensions.contains(&ext::metal_surface::NAME) =>
             {
-                self.create_surface_from_view(handle.ui_view)
+                let layer = unsafe { raw_window_metal::Layer::from_ui_view(handle.ui_view) };
+                self.create_surface_from_layer(layer)
             }
             (_, _) => Err(crate::InstanceError::new(format!(
                 "window handle {window_handle:?} is not a Vulkan-compatible handle"
@@ -965,7 +965,7 @@ impl crate::Instance for super::Instance {
                     }) {
                         if version < (21, 2) {
                             // See https://gitlab.freedesktop.org/mesa/mesa/-/issues/4688
-                            log::warn!(
+                            log::debug!(
                                 concat!(
                                     "Disabling presentation on '{}' (id {:?}) ",
                                     "due to NV Optimus and Intel Mesa < v21.2"

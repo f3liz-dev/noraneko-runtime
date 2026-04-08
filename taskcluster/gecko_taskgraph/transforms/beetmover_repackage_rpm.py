@@ -7,7 +7,7 @@ Transform the beetmover-repackage-rpm task into an actual task description.
 
 from taskgraph.transforms.base import TransformSequence
 from taskgraph.util.dependencies import get_primary_dependency
-from taskgraph.util.schema import Schema
+from taskgraph.util.schema import LegacySchema
 from taskgraph.util.treeherder import inherit_treeherder_from_dep, replace_group
 from voluptuous import Required
 
@@ -22,16 +22,14 @@ from gecko_taskgraph.util.scriptworker import (
 
 transforms = TransformSequence()
 
-beetmover_description_schema = Schema(
-    {
-        Required("attributes"): task_description_schema["attributes"],
-        Required("dependencies"): task_description_schema["dependencies"],
-        Required("label"): str,
-        Required("name"): str,
-        Required("shipping-phase"): task_description_schema["shipping-phase"],
-        Required("task-from"): task_description_schema["task-from"],
-    }
-)
+beetmover_description_schema = LegacySchema({
+    Required("attributes"): task_description_schema["attributes"],
+    Required("dependencies"): task_description_schema["dependencies"],
+    Required("label"): str,
+    Required("name"): str,
+    Required("shipping-phase"): task_description_schema["shipping-phase"],
+    Required("task-from"): task_description_schema["task-from"],
+})
 
 transforms.add_validate(beetmover_description_schema)
 
@@ -48,7 +46,7 @@ def make_beetmover_rpm_task(config, jobs):
         bucket_scope = get_beetmover_bucket_scope(config)
         action_scope = get_beetmover_action_scope(config)
 
-        dependencies = {"repackage-rpm": dep_job.label}
+        dependencies = {"repackage-rpm-signing": dep_job.label}
         treeherder = inherit_treeherder_from_dep(job, dep_job)
         upstream_symbol = dep_job.task["extra"]["treeherder"]["symbol"]
         treeherder.setdefault("symbol", replace_group(upstream_symbol, "BMR"))

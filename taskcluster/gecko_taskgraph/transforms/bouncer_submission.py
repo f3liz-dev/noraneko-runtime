@@ -5,7 +5,6 @@
 Add from parameters.yml into bouncer submission tasks.
 """
 
-
 import copy
 import logging
 
@@ -30,8 +29,6 @@ FTP_PLATFORMS_PER_BOUNCER_PLATFORM = {
 }
 
 # :lang is interpolated by bouncer at runtime
-CANDIDATES_PATH_TEMPLATE = "/{ftp_product}/candidates/{version}-candidates/build{build_number}/\
-{update_folder}{ftp_platform}/:lang/{file}"
 RELEASES_PATH_TEMPLATE = "/{ftp_product}/releases/{version}/\
 {update_folder}{ftp_platform}/:lang/{file}"
 
@@ -40,13 +37,6 @@ CONFIG_PER_BOUNCER_PRODUCT = {
     "complete-mar": {
         "name_postfix": "-Complete",
         "path_template": RELEASES_PATH_TEMPLATE,
-        "file_names": {
-            "default": "{product}-{version}.complete.mar",
-        },
-    },
-    "complete-mar-candidates": {
-        "name_postfix": "build{build_number}-Complete",
-        "path_template": CANDIDATES_PATH_TEMPLATE,
         "file_names": {
             "default": "{product}-{version}.complete.mar",
         },
@@ -65,13 +55,6 @@ CONFIG_PER_BOUNCER_PRODUCT = {
     "partial-mar": {
         "name_postfix": "-Partial-{previous_version}",
         "path_template": RELEASES_PATH_TEMPLATE,
-        "file_names": {
-            "default": "{product}-{previous_version}-{version}.partial.mar",
-        },
-    },
-    "partial-mar-candidates": {
-        "name_postfix": "build{build_number}-Partial-{previous_version}build{previous_build}",
-        "path_template": CANDIDATES_PATH_TEMPLATE,
         "file_names": {
             "default": "{product}-{previous_version}-{version}.partial.mar",
         },
@@ -132,13 +115,13 @@ def make_task_worker(config, jobs):
             job,
             "worker-type",
             item_name=job["name"],
-            **{"release-level": release_level(config.params["project"])},
+            **{"release-level": release_level(config.params)},
         )
         resolve_keyed_by(
             job,
             "scopes",
             item_name=job["name"],
-            **{"release-level": release_level(config.params["project"])},
+            **{"release-level": release_level(config.params)},
         )
         resolve_keyed_by(
             job,
@@ -167,9 +150,7 @@ def make_task_worker(config, jobs):
         else:
             logger.warning(
                 'No bouncer entries defined in bouncer submission task for "{}". \
-Job deleted.'.format(
-                    job["name"]
-                )
+Job deleted.'.format(job["name"])
             )
 
 
@@ -189,9 +170,7 @@ def craft_bouncer_entries(config, job):
     else:
         logger.warning(
             'No partials defined! Bouncer submission task won\'t send any \
-partial-related entry for "{}"'.format(
-                job["name"]
-            )
+partial-related entry for "{}"'.format(job["name"])
         )
         bouncer_products = [
             bouncer_product
@@ -321,10 +300,8 @@ def craft_ssl_only(bouncer_product, project):
 
     return bouncer_product not in (
         "complete-mar",
-        "complete-mar-candidates",
         "installer",
         "partial-mar",
-        "partial-mar-candidates",
     )
 
 

@@ -8,8 +8,8 @@
 // nsMenuPopupFrame
 //
 
-#ifndef nsMenuPopupFrame_h__
-#define nsMenuPopupFrame_h__
+#ifndef nsMenuPopupFrame_h_
+#define nsMenuPopupFrame_h_
 
 #include "Units.h"
 #include "mozilla/Attributes.h"
@@ -200,8 +200,9 @@ class nsMenuPopupFrame final : public nsBlockFrame, public nsIWidgetListener {
   // nsIWidgetListener
   mozilla::PresShell* GetPresShell() override { return PresShell(); }
   nsMenuPopupFrame* GetAsMenuPopupFrame() override { return this; }
-  bool WindowMoved(nsIWidget*, int32_t aX, int32_t aY, ByMoveToRect) override;
-  bool WindowResized(nsIWidget*, int32_t aWidth, int32_t aHeight) override;
+  void WindowMoved(nsIWidget*, const mozilla::LayoutDeviceIntPoint&,
+                   ByMoveToRect) override;
+  void WindowResized(nsIWidget*, const mozilla::LayoutDeviceIntSize&) override;
   bool RequestWindowClose(nsIWidget*) override;
   MOZ_CAN_RUN_SCRIPT_BOUNDARY
   nsEventStatus HandleEvent(mozilla::WidgetGUIEvent* aEvent) override;
@@ -312,6 +313,12 @@ class nsMenuPopupFrame final : public nsBlockFrame, public nsIWidgetListener {
   // a chrome shell
   bool IsInContentShell() const { return mInContentShell; }
 
+  void InitializePopupProperties(nsIContent* aAnchorContent,
+                                 nsIContent* aTriggerContent,
+                                 const nsAString& aPosition, int32_t aXPos,
+                                 int32_t aYPos, MenuPopupAnchorType aAnchorType,
+                                 bool aAttributesOverride);
+
   // the Initialize methods are used to set the anchor position for
   // each way of opening a popup.
   void InitializePopup(nsIContent* aAnchorContent, nsIContent* aTriggerContent,
@@ -334,6 +341,13 @@ class nsMenuPopupFrame final : public nsBlockFrame, public nsIWidgetListener {
   // Called if this popup should be displayed as an OS-native context menu.
   void InitializePopupAsNativeContextMenu(nsIContent* aTriggerContent,
                                           int32_t aXPos, int32_t aYPos);
+
+  // Called if this popup should be displayed as an OS-native anchored menu.
+  void InitializePopupAsNativeAnchoredMenu(nsIContent* aAnchorContent,
+                                           nsIContent* aTriggerContent,
+                                           const nsAString& aPosition,
+                                           const mozilla::CSSIntRect& aRect,
+                                           bool aIsContextMenu);
 
   // indicate that the popup should be opened
   void ShowPopup(bool aIsContextMenu);
@@ -391,8 +405,6 @@ class nsMenuPopupFrame final : public nsBlockFrame, public nsIWidgetListener {
     bool mHFlip = false;
     bool mVFlip = false;
     bool mConstrainedByLayout = false;
-    // The client offset of our widget.
-    mozilla::LayoutDeviceIntPoint mClientOffset;
     nsPoint mViewPoint;
   };
 
@@ -415,15 +427,12 @@ class nsMenuPopupFrame final : public nsBlockFrame, public nsIWidgetListener {
 
   // Return the anchor if there is one.
   nsIContent* GetAnchor() const { return mAnchorContent; }
+  void ClearAnchorContent() { mAnchorContent = nullptr; }
 
   // Return the screen coordinates in CSS pixels of the popup,
   // or (-1, -1, 0, 0) if anchored.
   mozilla::CSSIntRect GetScreenAnchorRect() const {
     return mozilla::CSSRect::FromAppUnitsRounded(mScreenRect);
-  }
-
-  mozilla::LayoutDeviceIntPoint GetLastClientOffset() const {
-    return mLastClientOffset;
   }
 
   mozilla::LayoutDeviceIntRect CalcWidgetBounds() const;
@@ -619,11 +628,6 @@ class nsMenuPopupFrame final : public nsBlockFrame, public nsIWidgetListener {
   // mPosition)
   nscoord mAlignmentOffset = 0;
 
-  // The value of the client offset of our widget the last time we positioned
-  // ourselves. We store this so that we can detect when it changes but the
-  // position of our widget didn't change.
-  mozilla::LayoutDeviceIntPoint mLastClientOffset;
-
   // The focus sequence number of the last processed input event
   uint64_t mAPZFocusSequenceNumber = 0;
 
@@ -659,7 +663,7 @@ class nsMenuPopupFrame final : public nsBlockFrame, public nsIWidgetListener {
   bool mConstrainedByLayout = false;
 
   // Whether the most recent initialization of this menupopup happened via
-  // InitializePopupAsNativeContextMenu.
+  // InitializePopupAsNativeContextMenu or InitializePopupAsNativeAnchoredMenu.
   bool mIsNativeMenu = false;
 
   // Whether we have a pending `popuppositioned` event.

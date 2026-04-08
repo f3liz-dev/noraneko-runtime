@@ -24,6 +24,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -33,33 +34,37 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTag
+import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.tooling.preview.Preview
-import androidx.compose.ui.tooling.preview.PreviewLightDark
+import androidx.compose.ui.tooling.preview.PreviewParameter
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
-import mozilla.components.compose.base.annotation.FlexibleWindowLightDarkPreview
+import mozilla.components.compose.base.annotation.FlexibleWindowPreview
 import mozilla.components.compose.base.button.IconButton
 import mozilla.components.compose.base.button.TextButton
 import mozilla.components.compose.base.menu.DropdownMenu
 import mozilla.components.compose.base.menu.MenuItem
 import mozilla.components.compose.base.snackbar.Snackbar
 import mozilla.components.compose.base.snackbar.displaySnackbar
+import mozilla.components.compose.base.text.Text
 import mozilla.components.compose.base.textfield.TextField
-import mozilla.components.lib.state.ext.observeAsState
 import org.mozilla.fenix.R
+import org.mozilla.fenix.ext.simplifiedUrl
 import org.mozilla.fenix.theme.FirefoxTheme
+import org.mozilla.fenix.theme.PreviewThemeProvider
 import org.mozilla.fenix.theme.Theme
 import mozilla.components.ui.icons.R as iconsR
 
 @Composable
 internal fun LoginDetailsScreen(store: LoginsStore) {
-    val state by store.observeAsState(store.state) { it }
+    val state by store.stateFlow.collectAsState()
     val detailState = state.loginsLoginDetailState ?: return
     val snackbarHostState = remember { SnackbarHostState() }
-
     val deletionDialogState = state.loginDeletionDialogState
     if (deletionDialogState is LoginDeletionDialogState.Presenting) {
         LoginDeletionDialog(
@@ -125,7 +130,7 @@ private fun LoginDetailTopBar(
         ),
         title = {
             Text(
-                text = loginItem.getDomainName(),
+                text = loginItem.url.simplifiedUrl(),
                 style = FirefoxTheme.typography.headline5,
             )
         },
@@ -177,15 +182,11 @@ private fun LoginDetailMenu(
     DropdownMenu(
         menuItems = listOf(
             MenuItem.TextItem(
-                text = mozilla.components.compose.base.text.Text.Resource(
-                    R.string.login_detail_menu_edit_button,
-                ),
+                text = Text.Resource(R.string.login_detail_menu_edit_button),
                 onClick = { store.dispatch(DetailLoginMenuAction.EditLoginMenuItemClicked(loginItem)) },
             ),
             MenuItem.TextItem(
-                text = mozilla.components.compose.base.text.Text.Resource(
-                    R.string.login_detail_menu_delete_button,
-                ),
+                text = Text.Resource(R.string.login_detail_menu_delete_button),
                 onClick = {
                     store.dispatch(
                         DetailLoginMenuAction.DeleteLoginMenuItemClicked(
@@ -298,11 +299,23 @@ private fun LoginDetailsPassword(
         modifier = Modifier
             .padding(horizontal = FirefoxTheme.layout.space.static200)
             .wrapContentHeight()
-            .width(FirefoxTheme.layout.size.containerMaxWidth),
+            .width(FirefoxTheme.layout.size.containerMaxWidth)
+            .semantics {
+                testTagsAsResourceId = true
+                testTag = LoginsTestingTags.LOGIN_DETAILS_PASSWORD_TEXT_FIELD
+            },
         trailingIcon = {
             EyePasswordIconButton(
+                contentDescription = if (isPasswordVisible) {
+                    Text.Resource(R.string.saved_login_hide_password)
+                } else {
+                    Text.Resource(R.string.saved_login_reveal_password)
+                },
                 isPasswordVisible = isPasswordVisible,
-                onTrailingIconClick = { isPasswordVisible = !isPasswordVisible },
+                onTrailingIconClick = {
+                    isPasswordVisible = !isPasswordVisible
+                    store.dispatch(DetailLoginAction.PasswordVisibilityChanged(isPasswordVisible))
+                },
             )
 
             IconButton(
@@ -385,37 +398,22 @@ private fun createStore() = LoginsStore(
     ),
 )
 
+@FlexibleWindowPreview
 @Composable
-@FlexibleWindowLightDarkPreview
-private fun LoginDetailsScreenPreview() {
-    FirefoxTheme {
+private fun LoginDetailsScreenPreview(
+    @PreviewParameter(PreviewThemeProvider::class) theme: Theme,
+) {
+    FirefoxTheme(theme) {
         LoginDetailsScreen(store = createStore())
     }
 }
 
-@Composable
 @Preview
-private fun LoginDetailsScreenPrivatePreview() {
-    FirefoxTheme(theme = Theme.Private) {
-        LoginDetailsScreen(store = createStore())
-    }
-}
-
 @Composable
-@PreviewLightDark
-private fun LoginDeletionDialogPreview() {
-    FirefoxTheme {
-        LoginDeletionDialog(
-            onCancelTapped = {},
-            onDeleteTapped = {},
-        )
-    }
-}
-
-@Composable
-@Preview
-private fun LoginDeletionDialogPrivatePreview() {
-    FirefoxTheme(theme = Theme.Private) {
+private fun LoginDeletionDialogPreview(
+    @PreviewParameter(PreviewThemeProvider::class) theme: Theme,
+) {
+    FirefoxTheme(theme) {
         LoginDeletionDialog(
             onCancelTapped = {},
             onDeleteTapped = {},

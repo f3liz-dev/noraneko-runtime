@@ -47,7 +47,7 @@ WasmValueBox* WasmValueBox::create(JSContext* cx, HandleValue value) {
   if (!obj) {
     return nullptr;
   }
-  obj->setFixedSlot(VALUE_SLOT, value);
+  obj->initFixedSlot(VALUE_SLOT, value);
   return obj;
 }
 
@@ -86,7 +86,7 @@ bool AnyRef::fromJSValue(JSContext* cx, HandleValue value,
   if (value.isDouble()) {
     double doubleValue = value.toDouble();
     int32_t intValue;
-    if (mozilla::NumberEqualsInt32(doubleValue, &intValue) &&
+    if (mozilla::NumberIsInt32(doubleValue, &intValue) &&
         !int32NeedsBoxing(intValue)) {
       result.set(AnyRef::fromInt32(intValue));
       return true;

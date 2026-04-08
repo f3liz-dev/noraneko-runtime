@@ -4,14 +4,15 @@
 
 package org.mozilla.fenix.settings.settingssearch
 
-import androidx.core.os.bundleOf
+import android.os.Bundle
 import androidx.navigation.NavController
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import mozilla.components.lib.state.Middleware
-import mozilla.components.lib.state.MiddlewareContext
+import mozilla.components.lib.state.Store
 
 /**
  * [Middleware] for the settings search screen.
@@ -29,21 +30,24 @@ class SettingsSearchMiddleware(
     private val scope: CoroutineScope,
     private val dispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : Middleware<SettingsSearchState, SettingsSearchAction> {
+    private var currentSearchJob: Job? = null
     override fun invoke(
-        context: MiddlewareContext<SettingsSearchState, SettingsSearchAction>,
+        store: Store<SettingsSearchState, SettingsSearchAction>,
         next: (SettingsSearchAction) -> Unit,
         action: SettingsSearchAction,
     ) {
-        val store = context.store as SettingsSearchStore
         when (action) {
             is SettingsSearchAction.Init -> {
                 next(action)
-                fenixSettingsIndexer.indexAllSettings()
+                scope.launch(dispatcher) {
+                    fenixSettingsIndexer.indexAllSettings()
+                }
                 scope.launch { observeRecentSearches(store) }
             }
             is SettingsSearchAction.SearchQueryUpdated -> {
                 next(action)
-                CoroutineScope(dispatcher).launch {
+                currentSearchJob?.cancel()
+                currentSearchJob = scope.launch(dispatcher) {
                     val results = fenixSettingsIndexer.getSettingsWithQuery(action.query)
                     if (results.isEmpty()) {
                         store.dispatch(SettingsSearchAction.NoResultsFound(action.query))
@@ -59,22 +63,22 @@ class SettingsSearchMiddleware(
             }
             is SettingsSearchAction.ResultItemClicked -> {
                 val searchItem = action.item
-                val bundle = bundleOf(
-                    "preference_to_scroll_to" to searchItem.preferenceKey,
-                    "search_in_progress" to true,
-                )
+                val bundle = Bundle().apply {
+                    putString("preference_to_scroll_to", searchItem.preferenceKey)
+                    putBoolean("search_in_progress", true)
+                }
                 val fragmentId = searchItem.preferenceFileInformation.fragmentId
-                CoroutineScope(dispatcher).launch {
+                scope.launch(dispatcher) {
                     recentSettingsSearchesRepository.addRecentSearchItem(searchItem)
                 }
-                CoroutineScope(Dispatchers.Main).launch {
+                scope.launch {
                     navController.navigate(fragmentId, bundle)
                 }
                 next(action)
             }
             is SettingsSearchAction.ClearRecentSearchesClicked -> {
                 next(action)
-                CoroutineScope(Dispatchers.IO).launch {
+                scope.launch(dispatcher) {
                     recentSettingsSearchesRepository.clearRecentSearches()
                 }
             }
@@ -90,7 +94,7 @@ class SettingsSearchMiddleware(
      *
      * @param store The [SettingsSearchStore] to dispatch the updates to.
      */
-    private fun observeRecentSearches(store: SettingsSearchStore) {
+    private fun observeRecentSearches(store: Store<SettingsSearchState, SettingsSearchAction>) {
         scope.launch {
             recentSettingsSearchesRepository.recentSearches.collect { recents ->
                 store.dispatch(SettingsSearchAction.RecentSearchesUpdated(recents))

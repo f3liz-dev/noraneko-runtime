@@ -26,15 +26,20 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.util.trace
 import kotlinx.coroutines.launch
 import mozilla.components.browser.state.state.TabSessionState
 import mozilla.components.browser.state.state.createTab
 import mozilla.components.compose.base.theme.information
 import mozilla.components.compose.base.utils.inComposePreview
 import mozilla.components.concept.base.images.ImageLoadRequest
+import mozilla.components.concept.engine.utils.ABOUT_HOME_URL
+import org.mozilla.fenix.R
 import org.mozilla.fenix.components.components
+import org.mozilla.fenix.tabstray.TabsTrayTraceTag
 import org.mozilla.fenix.theme.FirefoxTheme
 
 private val FallbackIconSize = 36.dp
@@ -97,45 +102,47 @@ fun ThumbnailImage(
     if (inComposePreview) {
         Box(modifier = modifier)
     } else {
-        var state by remember { mutableStateOf(ThumbnailImageState(null, false)) }
-        val scope = rememberCoroutineScope()
-        val storage = components.core.thumbnailStorage
+        trace(TabsTrayTraceTag.TRACE_THUMBNAIL_IMAGE_CREATION) {
+            var state by remember { mutableStateOf(ThumbnailImageState(null, false)) }
+            val scope = rememberCoroutineScope()
+            val storage = components.core.thumbnailStorage
 
-        DisposableEffect(Unit) {
-            if (!state.hasLoaded) {
-                scope.launch {
-                    val thumbnailBitmap = storage.loadThumbnail(request).await()
-                    thumbnailBitmap?.prepareToDraw()
+            DisposableEffect(Unit) {
+                if (!state.hasLoaded) {
+                    scope.launch {
+                        val thumbnailBitmap = storage.loadThumbnail(request).await()
+                        thumbnailBitmap?.prepareToDraw()
+                        state = ThumbnailImageState(
+                            bitmap = thumbnailBitmap,
+                            hasLoaded = true,
+                        )
+                    }
+                }
+
+                onDispose {
+                    // Recycle the bitmap to liberate the RAM. Without this, a list of [ThumbnailImage]
+                    // will bloat the memory. This is a trade-off, however, as the bitmap
+                    // will be re-fetched if this Composable is disposed and re-loaded.
+                    state.bitmap?.recycle()
                     state = ThumbnailImageState(
-                        bitmap = thumbnailBitmap,
-                        hasLoaded = true,
+                        bitmap = null,
+                        hasLoaded = false,
                     )
                 }
             }
 
-            onDispose {
-                // Recycle the bitmap to liberate the RAM. Without this, a list of [ThumbnailImage]
-                // will bloat the memory. This is a trade-off, however, as the bitmap
-                // will be re-fetched if this Composable is disposed and re-loaded.
-                state.bitmap?.recycle()
-                state = ThumbnailImageState(
-                    bitmap = null,
-                    hasLoaded = false,
-                )
-            }
-        }
-
-        if (state.bitmap == null && state.hasLoaded) {
-            fallbackContent()
-        } else {
-            state.bitmap?.let { bitmap ->
-                Image(
-                    bitmap = bitmap.asImageBitmap(),
-                    contentDescription = null,
-                    modifier = modifier,
-                    contentScale = contentScale,
-                    alignment = alignment,
-                )
+            if (state.bitmap == null && state.hasLoaded) {
+                fallbackContent()
+            } else {
+                state.bitmap?.let { bitmap ->
+                    Image(
+                        bitmap = bitmap.asImageBitmap(),
+                        contentDescription = null,
+                        modifier = modifier,
+                        contentScale = contentScale,
+                        alignment = alignment,
+                    )
+                }
             }
         }
     }
@@ -177,6 +184,14 @@ private fun FallbackContent(
                     .clip(RoundedCornerShape(8.dp)),
                 contentScale = ContentScale.FillWidth,
             )
+        } else if (tab.content.url == ABOUT_HOME_URL) {
+            Image(
+                painter = painterResource(id = R.drawable.ic_firefox),
+                contentDescription = null,
+                modifier = Modifier
+                    .size(FallbackIconSize)
+                    .clip(RoundedCornerShape(8.dp)),
+            )
         } else {
             Favicon(
                 url = tab.content.url,
@@ -217,6 +232,11 @@ private fun ThumbnailImagePreview() {
                 modifier = Modifier
                     .size(50.dp)
                     .background(color = MaterialTheme.colorScheme.information),
+            )
+
+            FallbackContent(
+                tab = createTab(url = ABOUT_HOME_URL, title = "Mozilla"),
+                modifier = Modifier.size(50.dp),
             )
         }
     }

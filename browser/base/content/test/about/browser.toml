@@ -32,6 +32,8 @@ support-files = [
 
 ["browser_aboutCertError_noSubjectAltName.js"]
 
+["browser_aboutCertError_notYetValid.js"]
+
 ["browser_aboutCertError_offlineSupport.js"]
 
 ["browser_aboutCertError_offlineSupport_feltPrivacyV1.js"]
@@ -39,6 +41,8 @@ support-files = [
 ["browser_aboutCertError_revoked.js"]
 
 ["browser_aboutCertError_telemetry.js"]
+
+["browser_aboutCertError_untrustedIssuer.js"]
 
 ["browser_aboutDialog_distribution.js"]
 skip-if = [
@@ -64,7 +68,13 @@ support-files = [
   "csp_iframe.sjs",
 ]
 
+["browser_aboutNetError_emptyResponse.js"]
+
+["browser_aboutNetError_httpAuthDisabled.js"]
+
 ["browser_aboutNetError_internet_connection_offline.js"]
+
+["browser_aboutNetError_invalid_cert_noUserFix.js"]
 
 ["browser_aboutNetError_invalid_header.js"]
 support-files = [
@@ -73,6 +83,7 @@ support-files = [
 
 ["browser_aboutNetError_server_error.js"]
 support-files = [
+  "http_error.sjs",
   "server_error.sjs",
 ]
 
@@ -81,6 +92,8 @@ skip-if = [
   "os == 'win' && os_version == '11.26100' && arch == 'x86_64' && asan", # Bug 1831977
   "socketprocess_networking",
 ]
+
+["browser_aboutNetError_neterror_telemetry.js"]
 
 ["browser_aboutNetError_xfo_iframe.js"]
 https_first_disabled = true

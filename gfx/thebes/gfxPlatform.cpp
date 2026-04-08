@@ -539,7 +539,6 @@ static void WebRenderDebugPrefChangeCallback(const char* aPrefName, void*) {
   GFX_WEBRENDER_DEBUG(".echo-driver-messages",
                       wr::DebugFlags::ECHO_DRIVER_MESSAGES)
   GFX_WEBRENDER_DEBUG(".show-overdraw", wr::DebugFlags::SHOW_OVERDRAW)
-  GFX_WEBRENDER_DEBUG(".gpu-cache", wr::DebugFlags::GPU_CACHE_DBG)
   GFX_WEBRENDER_DEBUG(".texture-cache.clear-evicted",
                       wr::DebugFlags::TEXTURE_CACHE_DBG_CLEAR_EVICTED)
   GFX_WEBRENDER_DEBUG(".picture-caching", wr::DebugFlags::PICTURE_CACHING_DBG)
@@ -732,8 +731,6 @@ WebRenderMemoryReporter::CollectReports(nsIHandleReportCallback* aHandleReport,
       [=](wr::MemoryReport aReport) {
         // CPU Memory.
         helper.Report(aReport.clip_stores, "clip-stores");
-        helper.Report(aReport.gpu_cache_metadata, "gpu-cache/metadata");
-        helper.Report(aReport.gpu_cache_cpu_mirror, "gpu-cache/cpu-mirror");
         helper.Report(aReport.hit_testers, "hit-testers");
         helper.Report(aReport.fonts, "resource-cache/fonts");
         helper.Report(aReport.weak_fonts, "resource-cache/weak-fonts");
@@ -753,7 +750,6 @@ WebRenderMemoryReporter::CollectReports(nsIHandleReportCallback* aHandleReport,
         WEBRENDER_FOR_EACH_INTERNER(REPORT_DATA_STORE, );
 
         // GPU Memory.
-        helper.ReportTexture(aReport.gpu_cache_textures, "gpu-cache");
         helper.ReportTexture(aReport.vertex_data_textures, "vertex-data");
         helper.ReportTexture(aReport.render_target_textures, "render-targets");
         helper.ReportTexture(aReport.depth_target_textures, "depth-targets");
@@ -2307,6 +2303,7 @@ mozilla::LogModule* gfxPlatform::GetLog(eGfxLog aWhichLog) {
   static LazyLogModule sTextrunuiLog("textrunui");
   static LazyLogModule sCmapDataLog("cmapdata");
   static LazyLogModule sTextPerfLog("textperf");
+  static LazyLogModule sFontQueryLog("fontquery");
 
   switch (aWhichLog) {
     case eGfxLog_fontlist:
@@ -2321,6 +2318,8 @@ mozilla::LogModule* gfxPlatform::GetLog(eGfxLog aWhichLog) {
       return sCmapDataLog;
     case eGfxLog_textperf:
       return sTextPerfLog;
+    case eGfxLog_fontquery:
+      return sFontQueryLog;
   }
 
   MOZ_ASSERT_UNREACHABLE("Unexpected log type");
@@ -2618,6 +2617,23 @@ void gfxPlatform::InitWebRenderConfig() {
 
   if (gfxConfig::IsEnabled(Feature::WEBRENDER_SHADER_CACHE)) {
     gfxVars::SetUseWebRenderProgramBinaryDisk(true);
+    bool warmUp = true;
+#ifdef MOZ_WIDGET_ANDROID
+    // Loading cached program binaries on the Samsung Xclipse driver on Android
+    // 14 is slightly faster than compiling shaders from source, so we still
+    // want to keep the disk cache enabled. However, it is slow enough that
+    // eagerly warming up the cache with shaders which may not be required can
+    // negatively impact performance. See bug 2007127.
+    if (jni::GetAPIVersion() == 34) {
+      const nsCOMPtr<nsIGfxInfo> gfxInfo = components::GfxInfo::Service();
+      nsAutoString renderer;
+      gfxInfo->GetAdapterDeviceID(renderer);
+      if (renderer.Find(u"Samsung Xclipse") != -1) {
+        warmUp = false;
+      }
+    }
+#endif
+    gfxVars::SetShouldWarmUpWebRenderProgramBinaries(warmUp);
   }
 
   gfxVars::SetUseWebRenderOptimizedShaders(
@@ -2862,13 +2878,16 @@ void gfxPlatform::InitWebRenderConfig() {
     }
   }
 
-#  ifdef XP_WIN
   if (StaticPrefs::
           gfx_webrender_layer_compositor_use_dcomp_texture_AtStartup() &&
       IsWin1122H2OrLater() && gfxVars::UseWebRenderDCompWin()) {
     gfxVars::SetWebRenderLayerCompositorDCompTexture(true);
   }
-#  endif
+
+  if (StaticPrefs::gfx_webrender_dcomp_texture_overlay_win_AtStartup() &&
+      IsWin1122H2OrLater() && gfxVars::UseWebRenderDCompWin()) {
+    gfxVars::SetUseWebRenderDCompositionTextureOverlayWin(true);
+  }
 #endif
 
   bool allowOverlayVpAutoHDR = false;
@@ -2890,6 +2909,10 @@ void gfxPlatform::InitWebRenderConfig() {
 
   if (allowOverlayVpAutoHDR) {
     gfxVars::SetWebRenderOverlayVpAutoHDR(true);
+  }
+
+  if (StaticPrefs::gfx_webrender_overlay_hdr_AtStartup()) {
+    gfxVars::SetWebRenderOverlayHDR(true);
   }
 
   bool allowOverlayVpSuperResolution = false;
@@ -3041,12 +3064,23 @@ void gfxPlatform::InitHardwareVideoConfig() {
   gfxVars::SetCanUseHardwareVideoDecoding(featureDec.IsEnabled());
   gfxVars::SetCanUseHardwareVideoEncoding(featureEnc.IsEnabled());
 
+#ifdef MOZ_WIDGET_ANDROID
+#  define CODEC_HW_FEATURE_SETUP_PLATFORM(name, type, encoder)             \
+    feature##type##name.SetDefault(gfxAndroidPlatform::IsHwCodecSupported( \
+                                       media::MediaCodec::name, encoder),  \
+                                   FeatureStatus::Unavailable,             \
+                                   "Hardware codec not available");
+#else
+#  define CODEC_HW_FEATURE_SETUP_PLATFORM(name, type, encoder) \
+    feature##type##name.EnableByDefault();
+#endif
+
 #define CODEC_HW_FEATURE_SETUP(name)                                           \
   FeatureState& featureDec##name =                                             \
       gfxConfig::GetFeature(Feature::name##_HW_DECODE);                        \
   featureDec##name.Reset();                                                    \
   if (featureDec.IsEnabled()) {                                                \
-    featureDec##name.EnableByDefault();                                        \
+    CODEC_HW_FEATURE_SETUP_PLATFORM(name, Dec, false)                          \
     if (!IsGfxInfoStatusOkay(nsIGfxInfo::FEATURE_##name##_HW_DECODE, &message, \
                              failureId)) {                                     \
       featureDec##name.Disable(FeatureStatus::Blocklisted, message.get(),      \
@@ -3058,7 +3092,7 @@ void gfxPlatform::InitHardwareVideoConfig() {
       gfxConfig::GetFeature(Feature::name##_HW_ENCODE);                        \
   featureEnc##name.Reset();                                                    \
   if (featureEnc.IsEnabled()) {                                                \
-    featureEnc##name.EnableByDefault();                                        \
+    CODEC_HW_FEATURE_SETUP_PLATFORM(name, Enc, true)                           \
     if (!IsGfxInfoStatusOkay(nsIGfxInfo::FEATURE_##name##_HW_ENCODE, &message, \
                              failureId)) {                                     \
       featureEnc##name.Disable(FeatureStatus::Blocklisted, message.get(),      \
@@ -3077,11 +3111,7 @@ void gfxPlatform::InitHardwareVideoConfig() {
   CODEC_HW_FEATURE_SETUP(HEVC)
 #endif
 
-#ifdef MOZ_WIDGET_ANDROID
-  gfxVars::SetVP9HwDecodeIsAccelerated(
-      java::HardwareCodecCapabilityUtils::HasHWVP9(false /* aIsEncoder */));
-#endif
-
+#undef CODEC_HW_FEATURE_SETUP_PLATFORM
 #undef CODEC_HW_FEATURE_SETUP
 }
 
@@ -3656,8 +3686,7 @@ void gfxPlatform::GetFrameStats(mozilla::widget::InfoObject& aObj) {
         "Frame %" PRIu64
         "(%s) CONTENT_FRAME_TIME %d - Transaction start %f, main-thread time "
         "%f, full paint time %f, Skipped composites %u, Composite start %f, "
-        "Resource upload time %f, GPU cache upload time %f, Render time %f, "
-        "Composite time %f",
+        "Resource upload time %f, Render time %f, Composite time %f",
         f.id().mId, f.url().get(), f.contentFrameTime(),
         (f.transactionStart() - f.refreshStart()).ToMilliseconds(),
         (f.fwdTime() - f.transactionStart()).ToMilliseconds(),
@@ -3666,7 +3695,7 @@ void gfxPlatform::GetFrameStats(mozilla::widget::InfoObject& aObj) {
             : 0.0,
         f.skippedComposites(),
         (f.compositeStart() - f.refreshStart()).ToMilliseconds(),
-        f.resourceUploadTime(), f.gpuCacheUploadTime(),
+        f.resourceUploadTime(),
         (f.compositeEnd() - f.renderStart()).ToMilliseconds(),
         (f.compositeEnd() - f.compositeStart()).ToMilliseconds());
     aObj.DefineProperty(name.get(), value.get());
@@ -3757,13 +3786,16 @@ void gfxPlatform::GetOverlayInfo(mozilla::widget::InfoObject& aObj) {
   };
 
   nsPrintfCString value(
-      "NV12=%s YUV2=%s BGRA8=%s RGB10A2=%s VpSR=%s VpAutoHDR=%s",
+      "NV12=%s YUV2=%s BGRA8=%s RGB10A2=%s RGBA16F=%s VpSR=%s VpAutoHDR=%s "
+      "HDR=%s",
       toString(mOverlayInfo.ref().mNv12Overlay),
       toString(mOverlayInfo.ref().mYuy2Overlay),
       toString(mOverlayInfo.ref().mBgra8Overlay),
       toString(mOverlayInfo.ref().mRgb10a2Overlay),
+      toString(mOverlayInfo.ref().mRgba16fOverlay),
       toStringBool(mOverlayInfo.ref().mSupportsVpSuperResolution),
-      toStringBool(mOverlayInfo.ref().mSupportsVpAutoHDR));
+      toStringBool(mOverlayInfo.ref().mSupportsVpAutoHDR),
+      toStringBool(mOverlayInfo.ref().mSupportsHDR));
 
   aObj.DefineProperty("OverlaySupport", NS_ConvertUTF8toUTF16(value));
 }

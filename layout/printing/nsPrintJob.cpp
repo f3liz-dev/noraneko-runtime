@@ -15,6 +15,7 @@
 #include "mozilla/PresShellInlines.h"
 #include "mozilla/StaticPrefs_print.h"
 #include "mozilla/Try.h"
+#include "mozilla/dom/AnimationTimelinesController.h"
 #include "mozilla/dom/BrowsingContext.h"
 #include "mozilla/dom/ContentChild.h"
 #include "mozilla/dom/CustomEvent.h"
@@ -1374,9 +1375,7 @@ nsresult nsPrintJob::ReflowPrintObject(const UniquePtr<nsPrintObject>& aPO) {
     }
   }
   // Make sure animations are active.
-  for (DocumentTimeline* tl : aPO->mDocument->Timelines()) {
-    tl->TriggerAllPendingAnimationsNow();
-  }
+  aPO->mDocument->TimelinesController().TriggerAllPendingAnimationsNow();
   // Process the reflow event Initialize posted
   presShell->FlushPendingNotifications(FlushType::Layout);
   aPO->mDocument->UpdateRemoteFrameEffects();
@@ -1924,8 +1923,6 @@ nsresult nsPrintJob::EnablePOsForPrinting() {
 nsresult nsPrintJob::FinishPrintPreview() {
   nsresult rv = NS_OK;
 
-#ifdef NS_PRINT_PREVIEW
-
   // If mPrt is null we've already finished with print preview. If mPrt is not
   // null but mIsCreatingPrintPreview is false FinishPrintPreview must have
   // already failed due to DocumentReadyForPrinting failing.
@@ -1978,9 +1975,6 @@ nsresult nsPrintJob::FinishPrintPreview() {
   // before it is to be created
 
   printData->OnEndPrinting();
-
-#endif  // NS_PRINT_PREVIEW
-
   return NS_OK;
 }
 
@@ -2172,11 +2166,9 @@ void DumpLayoutData(const char* aTitleStr, const char* aURLStr,
     return;
   }
 
-#  ifdef NS_PRINT_PREVIEW
   if (aPresContext->Type() == nsPresContext::eContext_PrintPreview) {
     return;
   }
-#  endif
 
   NS_ASSERTION(aRootFrame, "Pointer is null!");
   NS_ASSERTION(aDocShell, "Pointer is null!");

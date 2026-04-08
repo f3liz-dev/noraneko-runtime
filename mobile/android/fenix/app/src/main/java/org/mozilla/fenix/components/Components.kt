@@ -18,7 +18,14 @@ import mozilla.components.feature.addons.update.DefaultAddonUpdater
 import mozilla.components.feature.autofill.AutofillConfiguration
 import mozilla.components.lib.crash.store.CrashAction
 import mozilla.components.lib.crash.store.CrashMiddleware
+import mozilla.components.lib.integrity.googleplay.GooglePlayIntegrityClient
+import mozilla.components.lib.integrity.googleplay.GoogleProjectNumber
+import mozilla.components.lib.integrity.googleplay.IntegrityManagerProvider
+import mozilla.components.lib.integrity.googleplay.RequestHashProvider
+import mozilla.components.lib.integrity.googleplay.TokenProviderFactory
 import mozilla.components.lib.publicsuffixlist.PublicSuffixList
+import mozilla.components.service.fxrelay.eligibility.RelayEligibilityStore
+import mozilla.components.service.fxrelay.eligibility.middlewares.ClearLastUsedMiddleware
 import mozilla.components.support.base.android.DefaultProcessInfoProvider
 import mozilla.components.support.base.android.NotificationsDelegate
 import mozilla.components.support.base.worker.Frequency
@@ -36,6 +43,8 @@ import org.mozilla.fenix.R
 import org.mozilla.fenix.autofill.AutofillConfirmActivity
 import org.mozilla.fenix.autofill.AutofillSearchActivity
 import org.mozilla.fenix.autofill.AutofillUnlockActivity
+import org.mozilla.fenix.browser.relay.ErrorMessages
+import org.mozilla.fenix.browser.relay.RelayFeatureIntegration
 import org.mozilla.fenix.components.appstate.AppAction
 import org.mozilla.fenix.components.appstate.AppState
 import org.mozilla.fenix.components.appstate.setup.checklist.SetupChecklistState
@@ -110,17 +119,19 @@ class Components(private val context: Context) {
 
     val useCases by lazyMonitored {
         UseCases(
-            context,
-            lazyMonitored { core.engine },
-            lazyMonitored { core.store },
-            lazyMonitored { core.webAppShortcutManager },
-            lazyMonitored { core.topSitesStorage },
-            lazyMonitored { core.bookmarksStorage },
-            lazyMonitored { core.historyStorage },
-            lazyMonitored { backgroundServices.syncedTabsCommands },
-            lazyMonitored { appStore },
-            lazyMonitored { core.client },
-            lazyMonitored { strictMode },
+            context = context,
+            crashReporter = lazyMonitored { analytics.crashReporter },
+            engine = lazyMonitored { core.engine },
+            store = lazyMonitored { core.store },
+            shortcutManager = lazyMonitored { core.webAppShortcutManager },
+            topSitesStorage = lazyMonitored { core.topSitesStorage },
+            bookmarksStorage = lazyMonitored { core.bookmarksStorage },
+            historyStorage = lazyMonitored { core.historyStorage },
+            syncedTabsCommands = lazyMonitored { backgroundServices.syncedTabsCommands },
+            adsClientProvider = ads.lazyAdsClientProvider,
+            appStore = lazyMonitored { appStore },
+            client = lazyMonitored { core.client },
+            strictMode = lazyMonitored { strictMode },
         )
     }
 
@@ -313,8 +324,8 @@ class Components(private val context: Context) {
                 SetupChecklistPreferencesMiddleware(DefaultSetupChecklistRepository(context)),
                 SetupChecklistTelemetryMiddleware(),
                 ReviewPromptMiddleware(
-                    isReviewPromptFeatureEnabled = { settings.customReviewPromptFeatureEnabled },
-                    isTelemetryEnabled = { settings.isTelemetryEnabled },
+                    shouldUseNewTriggerCriteria = { settings.newReviewPromptTriggerCriteriaEnabled },
+                    shouldShowCustomPrompt = { settings.customReviewPromptUiEnabled && settings.isTelemetryEnabled },
                     createJexlHelper = nimbus::createJexlHelper,
                     nimbusEventStore = nimbus.events,
                 ).also {
@@ -353,13 +364,50 @@ class Components(private val context: Context) {
         )
     }
 
+    val integrityClient by lazyMonitored {
+        GooglePlayIntegrityClient(
+            TokenProviderFactory.create(
+                IntegrityManagerProvider.create(context),
+                GoogleProjectNumber.create(BuildConfig.GPS_INTEGRITY_TOKEN),
+            ),
+            RequestHashProvider.randomHashProvider(),
+        )
+    }
+
+    val termsOfUsePromptRepository by lazyMonitored {
+        DefaultTermsOfUsePromptRepository(settings)
+    }
+
     val termsOfUseManager by lazyMonitored {
-        TermsOfUseManager(DefaultTermsOfUsePromptRepository(settings))
+        TermsOfUseManager(termsOfUsePromptRepository)
     }
 
     val settingsIndexer by lazyMonitored {
         DefaultFenixSettingsIndexer(context)
     }
+
+    val ads by lazyMonitored {
+        Ads(context = context)
+    }
+
+    val relayEligibilityStore by lazyMonitored {
+        RelayEligibilityStore(middleware = listOf(ClearLastUsedMiddleware()))
+    }
+
+    val relayFeatureIntegration by lazyMonitored {
+        RelayFeatureIntegration(
+            engine = core.engine,
+            accountManager = backgroundServices.accountManager,
+            store = relayEligibilityStore,
+            appStore = appStore,
+            errorMessages = ErrorMessages(
+                maxMasksReached = context.getString(R.string.email_masks_max_free_tier_reached),
+                errorRetrievingMasks = context.getString(R.string.email_masks_error_retrieving_masks),
+            ),
+        )
+    }
+
+    val llm: Llm by lazyMonitored { Llm(core.client) }
 }
 
 /**

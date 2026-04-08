@@ -6,8 +6,8 @@
 
 /* interface for all rendering objects */
 
-#ifndef nsIFrame_h___
-#define nsIFrame_h___
+#ifndef nsIFrame_h_
+#define nsIFrame_h_
 
 #ifndef MOZILLA_INTERNAL_API
 #error This header/class should only be used within Mozilla code. It should not be used by extensions.
@@ -1011,25 +1011,6 @@ class nsIFrame : public nsQueryFrame {
   nscolor GetVisitedDependentColor(T S::* aField) {
     return mComputedStyle->GetVisitedDependentColor(aField);
   }
-
-  /**
-   * These methods are to access any additional ComputedStyles that
-   * the frame may be holding.
-   *
-   * These are styles that are children of the frame's primary style and are NOT
-   * used as styles for any child frames.
-   *
-   * These contexts also MUST NOT have any child styles whatsoever. If you need
-   * to insert styles into the style tree, then you should create pseudo element
-   * frames to own them.
-   *
-   * The indicies must be consecutive and implementations MUST return null if
-   * asked for an index that is out of range.
-   */
-  virtual ComputedStyle* GetAdditionalComputedStyle(int32_t aIndex) const;
-
-  virtual void SetAdditionalComputedStyle(int32_t aIndex,
-                                          ComputedStyle* aComputedStyle);
 
   /**
    * @param aSelectionStatus nsISelectionController::getDisplaySelection.
@@ -3224,8 +3205,12 @@ class nsIFrame : public nsQueryFrame {
       const mozilla::PhysicalAxes aClipAxes, nsRect& aOutRect,
       nsRectCornerRadii& aOutRadii) const;
 
-  // Returns the applicable overflow-clip-margin values.
-  nsSize OverflowClipMargin(mozilla::PhysicalAxes aClipAxes) const;
+  // Returns the applicable overflow-clip-margin values relative to our
+  // border-box. If aAllowNegative is false, prevents us from returning margins
+  // that are less than zero. This is useful for overflow computation (where you
+  // don't want the box to shrink).
+  nsMargin OverflowClipMargin(mozilla::PhysicalAxes aClipAxes,
+                              bool aAllowNegative = true) const;
 
   // Returns the axes on which this frame should apply overflow clipping.
   mozilla::PhysicalAxes ShouldApplyOverflowClipping(
@@ -4651,11 +4636,6 @@ class nsIFrame : public nsQueryFrame {
   mozilla::AbsoluteContainingBlock* GetAbsoluteContainingBlock() const;
   void MarkAsAbsoluteContainingBlock();
   void MarkAsNotAbsoluteContainingBlock();
-  // Child frame types override this function to select their own child list
-  // name
-  virtual mozilla::FrameChildListID GetAbsoluteListID() const {
-    return mozilla::FrameChildListID::Absolute;
-  }
 
   // Checks if we (or any of our descendants) have NS_FRAME_PAINTED_THEBES set,
   // and clears this bit if so.
@@ -4776,13 +4756,18 @@ class nsIFrame : public nsQueryFrame {
   inline bool HasAnchorPosReference() const;
 
   /**
-   * Returns the vertical-align value to be used for layout, if it is one
-   * of the enumerated values.  If this is an SVG text frame, it returns a value
-   * that corresponds to the value of dominant-baseline.  If the
-   * vertical-align property has length or percentage value, this returns
-   * Nothing().
+   * Returns the dominant baseline choice for this frame. If the choice is
+   * auto, it resolves to the appropriate baseline choice given the frame's
+   * writing mode and text orientation.
    */
-  Maybe<mozilla::StyleVerticalAlignKeyword> VerticalAlignEnum() const;
+  mozilla::StyleDominantBaseline DominantBaseline() const;
+
+  /**
+   * Returns the alignment baseline to be used for layout. If this is an
+   * SVG text frame, it returns a value that corresponds to the value of
+   * dominant-baseline.
+   */
+  mozilla::StyleAlignmentBaseline AlignmentBaseline() const;
 
   /**
    * Adds the NS_FRAME_IN_POPUP state bit to aFrame, and
@@ -5911,4 +5896,4 @@ inline AnchorPosResolutionParams AnchorPosResolutionParams::From(
           AutoResolutionOverrideParams{aFrame, aAnchorPosResolutionCache}};
 }
 
-#endif /* nsIFrame_h___ */
+#endif /* nsIFrame_h_ */

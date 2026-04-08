@@ -19,9 +19,8 @@ ChromeUtils.defineESModuleGetters(lazy, {
  */
 export default class IPProtectionMessageBarElement extends MozLitElement {
   #MESSAGE_TYPE_MAP = new Map([
-    ["generic-error", () => this.genericErrorTemplate()],
-
     ["info", () => this.infoMessageTemplate()],
+    ["warning", () => this.warningMessageTemplate()],
   ]);
   DISMISS_EVENT = "ipprotection-message-bar:user-dismissed";
 
@@ -34,13 +33,15 @@ export default class IPProtectionMessageBarElement extends MozLitElement {
     messageId: { type: String },
     messageLink: { type: String },
     messageLinkl10nId: { type: String },
+    messageLinkL10nArgs: { type: String },
+    bandwidthUsage: { type: Object },
   };
 
   constructor() {
     super();
 
     this.handleDismiss = this.handleDismiss.bind(this);
-    this.handleClickSetingsLink = this.handleClickSettingsLink.bind(this);
+    this.handleClickSettingsLink = this.handleClickSettingsLink.bind(this);
   }
 
   connectedCallback() {
@@ -49,6 +50,13 @@ export default class IPProtectionMessageBarElement extends MozLitElement {
 
   disconnectedCallback() {
     super.disconnectedCallback();
+
+    if (this.mozMessageBarEl) {
+      this.mozMessageBarEl.removeEventListener(
+        "message-bar:user-dismissed",
+        this.handleDismiss
+      );
+    }
   }
 
   handleDismiss() {
@@ -57,17 +65,6 @@ export default class IPProtectionMessageBarElement extends MozLitElement {
     this.dispatchEvent(
       new CustomEvent(this.DISMISS_EVENT, { bubbles: true, composed: true })
     );
-  }
-
-  genericErrorTemplate() {
-    return html`
-      <moz-message-bar
-        type="error"
-        data-l10n-id=${ifDefined(this.messageId)}
-        dismissable
-      >
-      </moz-message-bar>
-    `;
   }
 
   infoMessageTemplate() {
@@ -83,6 +80,18 @@ export default class IPProtectionMessageBarElement extends MozLitElement {
             href=${ifDefined(this.messageLink)}
           ></a>
         </span>
+      </moz-message-bar>
+    `;
+  }
+
+  warningMessageTemplate() {
+    return html`
+      <moz-message-bar
+        type="warning"
+        data-l10n-id=${ifDefined(this.messageId)}
+        data-l10n-args=${ifDefined(this.messageLinkL10nArgs)}
+        dismissable
+      >
       </moz-message-bar>
     `;
   }
@@ -109,13 +118,12 @@ export default class IPProtectionMessageBarElement extends MozLitElement {
   }
 
   render() {
-    let messageBarTemplate = this.#MESSAGE_TYPE_MAP.get(this.type)();
-
-    if (!messageBarTemplate) {
+    let templateFn = this.#MESSAGE_TYPE_MAP.get(this.type);
+    if (!templateFn) {
       return null;
     }
 
-    return html` ${messageBarTemplate} `;
+    return html` ${templateFn()} `;
   }
 }
 

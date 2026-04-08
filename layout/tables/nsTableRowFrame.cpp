@@ -443,7 +443,7 @@ void nsTableRowFrame::UpdateBSize(nscoord aBSize, nsTableFrame* aTableFrame,
     SetContentBSize(aBSize);
   }
 
-  if (aCellFrame->HasVerticalAlignBaseline()) {
+  if (aCellFrame->HasTableCellAlignmentBaseline()) {
     if (auto ascent = aCellFrame->GetCellBaseline()) {
       // see if this is a long ascender
       if (mMaxCellAscent < *ascent) {
@@ -565,7 +565,7 @@ nscoord nsTableRowFrame::CalcCellActualBSize(nsTableCellFrame* aCellFrame,
     // https://quirks.spec.whatwg.org/#the-table-cell-height-box-sizing-quirk
     specifiedBSize = bsizeStyleCoord->ToLength();
     if (PresContext()->CompatibilityMode() != eCompatibility_NavQuirks &&
-        position->mBoxSizing == StyleBoxSizing::Content) {
+        position->mBoxSizing == StyleBoxSizing::ContentBox) {
       specifiedBSize +=
           aCellFrame->GetLogicalUsedBorderAndPadding(aWM).BStartEnd(aWM);
     }

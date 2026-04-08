@@ -253,6 +253,8 @@ struct EmbedderColorSchemes {
   FIELD(TimezoneOverride, nsString)                                           \
   /* DevTools override for forced-colors */                                   \
   FIELD(ForcedColorsOverride, dom::ForcedColorsOverride)                      \
+  /* DevTools multiplier for animations playback rate */                      \
+  FIELD(AnimationsPlayBackRateMultiplier, double)                             \
   /* prefers-color-scheme override based on the color-scheme style of our     \
    * <browser> embedder element. */                                           \
   FIELD(EmbedderColorSchemes, EmbedderColorSchemes)                           \
@@ -288,12 +290,15 @@ struct EmbedderColorSchemes {
   FIELD(ForceOffline, bool)                                                   \
   /* Used to propagate window.top's inner size for RFPTarget::Window*         \
    * protections */                                                           \
-  FIELD(TopInnerSizeForRFP, CSSIntSize)                                       \
+  FIELD(InnerSizeSpoofedForRFP, CSSIntSize)                                   \
   /* Used to propagate document's IPAddressSpace  */                          \
   FIELD(IPAddressSpace, nsILoadInfo::IPAddressSpace)                          \
   /* This is true if we should redirect to an error page when inserting *     \
    * meta tags flagging adult content into our documents */                   \
-  FIELD(ParentalControlsEnabled, bool)
+  FIELD(ParentalControlsEnabled, bool)                                        \
+  /* If true, this traversable is a Document Picture-in-Picture and           \
+     is subject to certain restrictions */                                    \
+  FIELD(IsDocumentPiP, bool)
 
 // BrowsingContext, in this context, is the cross process replicated
 // environment in which information about documents is stored. In
@@ -715,6 +720,10 @@ class BrowsingContext : public nsILoadContext, public nsWrapperCache {
     return false;
   }
 
+  CSSIntSize TopInnerSizeSpoofedForRFP() const {
+    return Top()->GetInnerSizeSpoofedForRFP();
+  }
+
   [[nodiscard]] nsresult SetScreenAreaOverride(uint64_t aScreenWidth,
                                                uint64_t aScreenHeight) {
     if (GetHasScreenAreaOverride() &&
@@ -1097,6 +1106,10 @@ class BrowsingContext : public nsILoadContext, public nsWrapperCache {
     return GetForcedColorsOverride();
   }
 
+  double AnimationsPlayBackRateMultiplier() const {
+    return Top()->GetAnimationsPlayBackRateMultiplier();
+  }
+
   bool IsInBFCache() const;
 
   bool AllowJavascript() const { return GetAllowJavascript(); }
@@ -1283,6 +1296,12 @@ class BrowsingContext : public nsILoadContext, public nsWrapperCache {
     return IsTop();
   }
 
+  bool CanSet(FieldIndex<IDX_AnimationsPlayBackRateMultiplier>, double&,
+              ContentParent*) {
+    return IsTop();
+  }
+
+  bool CanSet(FieldIndex<IDX_InRDMPane>, const bool&, ContentParent* aSource);
   void DidSet(FieldIndex<IDX_InRDMPane>, bool aOldValue);
   void DidSet(FieldIndex<IDX_HasOrientationOverride>, bool aOldValue);
   MOZ_CAN_RUN_SCRIPT_BOUNDARY void DidSet(FieldIndex<IDX_ForceDesktopViewport>,
@@ -1296,6 +1315,9 @@ class BrowsingContext : public nsILoadContext, public nsWrapperCache {
 
   void DidSet(FieldIndex<IDX_ForcedColorsOverride>,
               dom::ForcedColorsOverride aOldValue);
+
+  void DidSet(FieldIndex<IDX_AnimationsPlayBackRateMultiplier>,
+              double aOldValue);
 
   template <typename Callback>
   void WalkPresContexts(Callback&&);
@@ -1462,7 +1484,7 @@ class BrowsingContext : public nsILoadContext, public nsWrapperCache {
   bool CanSet(FieldIndex<IDX_ForceOffline>, bool aNewValue,
               ContentParent* aSource);
 
-  bool CanSet(FieldIndex<IDX_TopInnerSizeForRFP>, bool, ContentParent*) {
+  bool CanSet(FieldIndex<IDX_InnerSizeSpoofedForRFP>, bool, ContentParent*) {
     return IsTop();
   }
 
@@ -1485,6 +1507,10 @@ class BrowsingContext : public nsILoadContext, public nsWrapperCache {
     return XRE_IsParentProcess();
   }
 
+  bool CanSet(FieldIndex<IDX_IsDocumentPiP>, bool, ContentParent*) {
+    return IsTop();
+  }
+
   // Overload `DidSet` to get notifications for a particular field being set.
   //
   // You can also overload the variant that gets the old value if you need it.
@@ -1505,6 +1531,14 @@ class BrowsingContext : public nsILoadContext, public nsWrapperCache {
   void DidSet(FieldIndex<IDX_IsUnderHiddenEmbedderElement>, bool aOldValue);
 
   void DidSet(FieldIndex<IDX_ForceOffline>, bool aOldValue);
+
+  void DidSet(FieldIndex<IDX_IsDocumentPiP>, bool aWasPiP) {
+    if (GetIsDocumentPiP() && !aWasPiP) {
+      SetDisplayMode(DisplayMode::Picture_in_picture, IgnoreErrors());
+    } else if (!GetIsDocumentPiP() && aWasPiP) {
+      MOZ_ASSERT_UNREACHABLE("BrowsingContext should never leave PiP mode");
+    }
+  }
 
   // Allow if the process attemping to set field is the same as the owning
   // process. Deprecated. New code that might use this should generally be moved

@@ -4,12 +4,16 @@
 
 package org.mozilla.fenix.home.topsites.controller
 
+import android.app.Activity
 import androidx.navigation.NavController
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.spyk
 import io.mockk.verify
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.test.runTest
 import mozilla.components.browser.state.action.SearchAction
 import mozilla.components.browser.state.search.RegionState
 import mozilla.components.browser.state.search.SearchEngine
@@ -20,14 +24,14 @@ import mozilla.components.browser.state.store.BrowserStore
 import mozilla.components.feature.tabs.TabsUseCases
 import mozilla.components.feature.top.sites.TopSite
 import mozilla.components.feature.top.sites.TopSitesUseCases
-import mozilla.components.support.test.ext.joinBlocking
+import mozilla.components.service.mars.MozAdsUseCases
 import mozilla.components.support.test.robolectric.testContext
-import mozilla.components.support.test.rule.MainCoroutineRule
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
+import org.junit.Ignore
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -35,7 +39,6 @@ import org.mozilla.fenix.GleanMetrics.Events
 import org.mozilla.fenix.GleanMetrics.Pings
 import org.mozilla.fenix.GleanMetrics.ShortcutsLibrary
 import org.mozilla.fenix.GleanMetrics.TopSites
-import org.mozilla.fenix.HomeActivity
 import org.mozilla.fenix.R
 import org.mozilla.fenix.components.Analytics
 import org.mozilla.fenix.components.usecases.FenixBrowserUseCases
@@ -51,22 +54,18 @@ import java.lang.ref.WeakReference
 class DefaultTopSiteControllerTest {
 
     @get:Rule
-    val coroutinesTestRule = MainCoroutineRule()
-
-    @get:Rule
     val gleanTestRule = FenixGleanTestRule(testContext)
 
-    private val activity: HomeActivity = mockk(relaxed = true)
+    private val activity: Activity = mockk(relaxed = true)
     private val navController: NavController = mockk(relaxed = true)
     private val tabsUseCases: TabsUseCases = mockk(relaxed = true)
     private val selectTabUseCase: TabsUseCases = mockk(relaxed = true)
     private val topSitesUseCases: TopSitesUseCases = mockk(relaxed = true)
     private val fenixBrowserUseCases: FenixBrowserUseCases = mockk(relaxed = true)
     private val marsUseCases: MARSUseCases = mockk(relaxed = true)
+    private val mozAdsUseCases: MozAdsUseCases = mockk(relaxed = true)
     private val settings: Settings = mockk(relaxed = true)
     private val analytics: Analytics = mockk(relaxed = true)
-
-    private val scope = coroutinesTestRule.scope
 
     private val searchEngine = SearchEngine(
         id = "test",
@@ -97,7 +96,7 @@ class DefaultTopSiteControllerTest {
     private lateinit var store: BrowserStore
 
     @Before
-    fun setup() {
+    fun setup() = runTest {
         store = BrowserStore(
             BrowserState(
                 search = SearchState(
@@ -113,14 +112,14 @@ class DefaultTopSiteControllerTest {
     }
 
     @Test
-    fun handleSelectDefaultTopSite() {
+    fun handleSelectDefaultTopSite() = runTest {
         val topSite = TopSite.Default(
             id = 1L,
             title = "Mozilla",
             url = "mozilla.org",
             createdAt = 0,
         )
-        val controller = spyk(createController())
+        val controller = spyk(createController(this))
 
         every { controller.getAvailableSearchEngines() } returns listOf(searchEngine)
 
@@ -145,14 +144,14 @@ class DefaultTopSiteControllerTest {
     }
 
     @Test
-    fun handleSelectNonDefaultTopSite() {
+    fun handleSelectNonDefaultTopSite() = runTest {
         val topSite = TopSite.Frecent(
             id = 1L,
             title = "Mozilla",
             url = "mozilla.org",
             createdAt = 0,
         )
-        val controller = spyk(createController())
+        val controller = spyk(createController(this))
 
         every { controller.getAvailableSearchEngines() } returns listOf(searchEngine)
 
@@ -173,14 +172,14 @@ class DefaultTopSiteControllerTest {
     }
 
     @Test
-    fun `GIVEN homepage as a new tab is enabled WHEN Default TopSite is selected THEN open top site in existing tab`() {
+    fun `GIVEN homepage as a new tab is enabled WHEN Default TopSite is selected THEN open top site in existing tab`() = runTest {
         val topSite = TopSite.Default(
             id = 1L,
             title = "Mozilla",
             url = "mozilla.org",
             createdAt = 0,
         )
-        val controller = spyk(createController())
+        val controller = spyk(createController(this))
 
         every { controller.getAvailableSearchEngines() } returns listOf(searchEngine)
         every { settings.enableHomepageAsNewTab } returns true
@@ -198,7 +197,7 @@ class DefaultTopSiteControllerTest {
     }
 
     @Test
-    fun `GIVEN current destination is the shortcuts fragment WHEN a top site is selected THEN open top site in a new tab`() {
+    fun `GIVEN current destination is the shortcuts fragment WHEN a top site is selected THEN open top site in a new tab`() = runTest {
         every { navController.currentDestination } returns mockk {
             every { id } returns R.id.shortcutsFragment
         }
@@ -209,7 +208,7 @@ class DefaultTopSiteControllerTest {
             url = "mozilla.org",
             createdAt = 0,
         )
-        val controller = spyk(createController())
+        val controller = spyk(createController(this))
 
         every { controller.getAvailableSearchEngines() } returns listOf(searchEngine)
 
@@ -226,7 +225,7 @@ class DefaultTopSiteControllerTest {
     }
 
     @Test
-    fun `GIVEN existing tab for url WHEN Default TopSite selected THEN open new tab`() {
+    fun `GIVEN existing tab for url WHEN Default TopSite selected THEN open new tab`() = runTest {
         val url = "mozilla.org"
         val existingTabForUrl = createTab(url = url)
 
@@ -245,7 +244,7 @@ class DefaultTopSiteControllerTest {
             url = url,
             createdAt = 0,
         )
-        val controller = spyk(createController())
+        val controller = spyk(createController(this))
 
         every { controller.getAvailableSearchEngines() } returns listOf(searchEngine)
 
@@ -270,7 +269,7 @@ class DefaultTopSiteControllerTest {
     }
 
     @Test
-    fun `GIVEN existing tab for url WHEN Provided TopSite selected THEN open new tab`() {
+    fun `GIVEN existing tab for url WHEN Provided TopSite selected THEN open new tab`() = runTest {
         val url = "mozilla.org"
         val existingTabForUrl = createTab(url = url)
 
@@ -293,7 +292,7 @@ class DefaultTopSiteControllerTest {
             createdAt = 0,
         )
         val position = 0
-        val controller = spyk(createController())
+        val controller = spyk(createController(this))
 
         every { controller.getAvailableSearchEngines() } returns listOf(searchEngine)
 
@@ -319,7 +318,7 @@ class DefaultTopSiteControllerTest {
     }
 
     @Test
-    fun `GIVEN existing tab for url WHEN Frecent TopSite selected THEN navigate to tab`() {
+    fun `GIVEN existing tab for url WHEN Frecent TopSite selected THEN navigate to tab`() = runTest {
         val url = "mozilla.org"
         val existingTabForUrl = createTab(url = url)
 
@@ -338,7 +337,7 @@ class DefaultTopSiteControllerTest {
             url = url,
             createdAt = 0,
         )
-        val controller = spyk(createController())
+        val controller = spyk(createController(this))
 
         every { controller.getAvailableSearchEngines() } returns listOf(searchEngine)
 
@@ -357,7 +356,7 @@ class DefaultTopSiteControllerTest {
     }
 
     @Test
-    fun `GIVEN existing tab for url WHEN Pinned TopSite selected THEN navigate to tab`() {
+    fun `GIVEN existing tab for url WHEN Pinned TopSite selected THEN navigate to tab`() = runTest {
         val url = "mozilla.org"
         val existingTabForUrl = createTab(url = url)
 
@@ -376,7 +375,7 @@ class DefaultTopSiteControllerTest {
             url = url,
             createdAt = 0,
         )
-        val controller = spyk(createController())
+        val controller = spyk(createController(this))
 
         every { controller.getAvailableSearchEngines() } returns listOf(searchEngine)
 
@@ -395,14 +394,14 @@ class DefaultTopSiteControllerTest {
     }
 
     @Test
-    fun handleSelectGoogleDefaultTopSiteUS() {
+    fun handleSelectGoogleDefaultTopSiteUS() = runTest {
         val topSite = TopSite.Default(
             id = 1L,
             title = "Google",
             url = SupportUtils.GOOGLE_URL,
             createdAt = 0,
         )
-        val controller = spyk(createController())
+        val controller = spyk(createController(this))
 
         every { controller.getAvailableSearchEngines() } returns listOf(searchEngine)
 
@@ -433,14 +432,14 @@ class DefaultTopSiteControllerTest {
     }
 
     @Test
-    fun handleSelectGoogleDefaultTopSiteXX() {
+    fun handleSelectGoogleDefaultTopSiteXX() = runTest {
         val topSite = TopSite.Default(
             id = 1L,
             title = "Google",
             url = SupportUtils.GOOGLE_URL,
             createdAt = 0,
         )
-        val controller = spyk(createController())
+        val controller = spyk(createController(this))
 
         every { controller.getAvailableSearchEngines() } returns listOf(searchEngine)
 
@@ -471,7 +470,7 @@ class DefaultTopSiteControllerTest {
     }
 
     @Test
-    fun handleSelectGoogleDefaultTopSite_EventPerformedSearchTopSite() {
+    fun handleSelectGoogleDefaultTopSite_EventPerformedSearchTopSite() = runTest {
         assertNull(Events.performedSearch.testGetValue())
 
         val topSite = TopSite.Default(
@@ -480,7 +479,7 @@ class DefaultTopSiteControllerTest {
             url = SupportUtils.GOOGLE_URL,
             createdAt = 0,
         )
-        val controller = spyk(createController())
+        val controller = spyk(createController(this))
 
         every { controller.getAvailableSearchEngines() } returns listOf(googleSearchEngine)
 
@@ -498,7 +497,7 @@ class DefaultTopSiteControllerTest {
     }
 
     @Test
-    fun handleSelectDuckDuckGoTopSite_EventPerformedSearchTopSite() {
+    fun handleSelectDuckDuckGoTopSite_EventPerformedSearchTopSite() = runTest {
         assertNull(Events.performedSearch.testGetValue())
 
         val topSite = TopSite.Pinned(
@@ -507,7 +506,7 @@ class DefaultTopSiteControllerTest {
             url = "https://duckduckgo.com",
             createdAt = 0,
         )
-        val controller = spyk(createController())
+        val controller = spyk(createController(this))
 
         every { controller.getAvailableSearchEngines() } returns listOf(
             googleSearchEngine,
@@ -520,14 +519,14 @@ class DefaultTopSiteControllerTest {
     }
 
     @Test
-    fun handleSelectGooglePinnedTopSiteUS() {
+    fun handleSelectGooglePinnedTopSiteUS() = runTest {
         val topSite = TopSite.Pinned(
             id = 1L,
             title = "Google",
             url = SupportUtils.GOOGLE_URL,
             createdAt = 0,
         )
-        val controller = spyk(createController())
+        val controller = spyk(createController(this))
 
         every { controller.getAvailableSearchEngines() } returns listOf(searchEngine)
 
@@ -558,14 +557,14 @@ class DefaultTopSiteControllerTest {
     }
 
     @Test
-    fun handleSelectGooglePinnedTopSiteXX() {
+    fun handleSelectGooglePinnedTopSiteXX() = runTest {
         val topSite = TopSite.Pinned(
             id = 1L,
             title = "Google",
             url = SupportUtils.GOOGLE_URL,
             createdAt = 0,
         )
-        val controller = spyk(createController())
+        val controller = spyk(createController(this))
 
         every { controller.getAvailableSearchEngines() } returns listOf(searchEngine)
 
@@ -596,14 +595,14 @@ class DefaultTopSiteControllerTest {
     }
 
     @Test
-    fun handleSelectGoogleFrecentTopSiteUS() {
+    fun handleSelectGoogleFrecentTopSiteUS() = runTest {
         val topSite = TopSite.Frecent(
             id = 1L,
             title = "Google",
             url = SupportUtils.GOOGLE_URL,
             createdAt = 0,
         )
-        val controller = spyk(createController())
+        val controller = spyk(createController(this))
 
         every { controller.getAvailableSearchEngines() } returns listOf(searchEngine)
 
@@ -634,14 +633,14 @@ class DefaultTopSiteControllerTest {
     }
 
     @Test
-    fun handleSelectGoogleFrecentTopSiteXX() {
+    fun handleSelectGoogleFrecentTopSiteXX() = runTest {
         val topSite = TopSite.Frecent(
             id = 1L,
             title = "Google",
             url = SupportUtils.GOOGLE_URL,
             createdAt = 0,
         )
-        val controller = spyk(createController())
+        val controller = spyk(createController(this))
 
         every { controller.getAvailableSearchEngines() } returns listOf(searchEngine)
 
@@ -672,7 +671,7 @@ class DefaultTopSiteControllerTest {
     }
 
     @Test
-    fun handleSelectProvidedTopSite() {
+    fun handleSelectProvidedTopSite() = runTest {
         val topSite = TopSite.Provided(
             id = 1L,
             title = "Mozilla",
@@ -683,7 +682,7 @@ class DefaultTopSiteControllerTest {
             createdAt = 0,
         )
         val position = 0
-        val controller = spyk(createController())
+        val controller = spyk(createController(this))
 
         every { controller.getAvailableSearchEngines() } returns listOf(searchEngine)
 
@@ -708,9 +707,10 @@ class DefaultTopSiteControllerTest {
         verify { navController.navigate(R.id.browserFragment) }
     }
 
+    @Ignore("Bug 2016888 - passes on individual test run, fails when running entire app test suite.")
     @Test
-    fun `WHEN the provided top site is clicked THEN send a click callback request`() {
-        val controller = spyk(createController())
+    fun `WHEN the provided top site is clicked THEN send a click callback request`() = runTest {
+        val controller = spyk(createController(this))
         val topSite = TopSite.Provided(
             id = 3,
             title = "Mozilla",
@@ -751,9 +751,56 @@ class DefaultTopSiteControllerTest {
         assertTrue(topSiteImpressionPinged)
     }
 
+    @Ignore("Bug 2016888 - passes on individual test run, fails when running entire app test suite.")
     @Test
-    fun `WHEN the provided top site is seen THEN send a impression callback request`() {
-        val controller = spyk(createController())
+    fun `GIVEN Ads client is enabled WHEN the provided top site is clicked THEN send a click callback request`() = runTest {
+        every { settings.enableMozillaAdsClient } returns true
+
+        val controller = spyk(createController(this))
+        val topSite = TopSite.Provided(
+            id = 3,
+            title = "Mozilla",
+            url = "https://mozilla.com",
+            clickUrl = "https://mozilla.com/click",
+            imageUrl = "https://test.com/image2.jpg",
+            impressionUrl = "https://mozilla.com/impression",
+            createdAt = 3,
+        )
+        val position = 0
+
+        every { controller.getAvailableSearchEngines() } returns listOf(searchEngine)
+
+        assertNull(TopSites.contileClick.testGetValue())
+
+        var topSiteImpressionPinged = false
+        val job = Pings.topsitesImpression.testBeforeNextSubmit {
+            assertEquals(3L, TopSites.contileTileId.testGetValue())
+            assertEquals("mozilla", TopSites.contileAdvertiser.testGetValue())
+            assertNull(TopSites.contileReportingUrl.testGetValue())
+
+            topSiteImpressionPinged = true
+        }
+
+        controller.handleSelectTopSite(topSite, position)
+
+        coVerify { mozAdsUseCases.recordClickInteraction(clickUrl = topSite.clickUrl) }
+
+        val event = TopSites.contileClick.testGetValue()!!
+
+        assertEquals(1, event.size)
+        assertEquals("top_sites", event[0].category)
+        assertEquals("contile_click", event[0].name)
+        assertEquals("1", event[0].extra!!["position"])
+        assertEquals("newtab", event[0].extra!!["source"])
+
+        job.join()
+        assertTrue(topSiteImpressionPinged)
+    }
+
+    @Ignore("Bug 2016888 - passes on individual test run, fails when running entire app test suite.")
+    @Test
+    fun `WHEN the provided top site is seen THEN send a impression callback request`() = runTest {
+        val controller = spyk(createController(this))
         val topSite = TopSite.Provided(
             id = 3,
             title = "Mozilla",
@@ -794,9 +841,55 @@ class DefaultTopSiteControllerTest {
         assertTrue(topSiteImpressionSubmitted)
     }
 
+    @Ignore("Bug 2016888 - passes on individual test run, fails when running entire app test suite.")
     @Test
-    fun `WHEN the default Google top site is removed THEN the correct metric is recorded`() {
-        val controller = spyk(createController())
+    fun `GIVEN Ads client is enabled WHEN the provided top site is seen THEN send a impression callback request`() = runTest {
+        every { settings.enableMozillaAdsClient } returns true
+
+        val controller = spyk(createController(this))
+        val topSite = TopSite.Provided(
+            id = 3,
+            title = "Mozilla",
+            url = "https://mozilla.com",
+            clickUrl = "https://mozilla.com/click",
+            imageUrl = "https://test.com/image2.jpg",
+            impressionUrl = "https://mozilla.com/impression",
+            createdAt = 3,
+        )
+        val position = 0
+
+        every { controller.getAvailableSearchEngines() } returns listOf(searchEngine)
+
+        assertNull(TopSites.contileImpression.testGetValue())
+
+        var topSiteImpressionSubmitted = false
+        val job = Pings.topsitesImpression.testBeforeNextSubmit {
+            assertEquals(3L, TopSites.contileTileId.testGetValue())
+            assertEquals("mozilla", TopSites.contileAdvertiser.testGetValue())
+            assertNull(TopSites.contileReportingUrl.testGetValue())
+
+            topSiteImpressionSubmitted = true
+        }
+
+        controller.handleTopSiteImpression(topSite, position)
+
+        coVerify { mozAdsUseCases.recordImpressionInteraction(impressionUrl = topSite.impressionUrl) }
+
+        val event = TopSites.contileImpression.testGetValue()!!
+
+        assertEquals(1, event.size)
+        assertEquals("top_sites", event[0].category)
+        assertEquals("contile_impression", event[0].name)
+        assertEquals("1", event[0].extra!!["position"])
+        assertEquals("newtab", event[0].extra!!["source"])
+
+        job.join()
+        assertTrue(topSiteImpressionSubmitted)
+    }
+
+    @Test
+    fun `WHEN the default Google top site is removed THEN the correct metric is recorded`() = runTest {
+        val controller = spyk(createController(this))
         val topSite = TopSite.Default(
             id = 1L,
             title = "Google",
@@ -818,7 +911,7 @@ class DefaultTopSiteControllerTest {
     }
 
     @Test
-    fun `WHEN the frecent top site is updated THEN add the frecent top site as a pinned top site`() {
+    fun `WHEN the frecent top site is updated THEN add the frecent top site as a pinned top site`() = runTest {
         val topSite = TopSite.Frecent(
             id = 1L,
             title = "Mozilla",
@@ -826,7 +919,7 @@ class DefaultTopSiteControllerTest {
             createdAt = 0,
         )
 
-        val controller = spyk(createController())
+        val controller = spyk(createController(this))
         val title = "Firefox"
         val url = "firefox.com"
 
@@ -838,7 +931,7 @@ class DefaultTopSiteControllerTest {
     }
 
     @Test
-    fun `WHEN the pinned top site is updated THEN update the pinned top site in storage`() {
+    fun `WHEN the pinned top site is updated THEN update the pinned top site in storage`() = runTest {
         val topSite = TopSite.Pinned(
             id = 1L,
             title = "Mozilla",
@@ -846,7 +939,7 @@ class DefaultTopSiteControllerTest {
             createdAt = 0,
         )
 
-        val controller = spyk(createController())
+        val controller = spyk(createController(this))
         val title = "Firefox"
         val url = "firefox.com"
 
@@ -858,8 +951,8 @@ class DefaultTopSiteControllerTest {
     }
 
     @Test
-    fun `WHEN handleTopSiteSettingsClicked is called THEN navigate to the HomeSettingsFragment AND report the interaction`() {
-        createController().handleTopSiteSettingsClicked()
+    fun `WHEN handleTopSiteSettingsClicked is called THEN navigate to the HomeSettingsFragment AND report the interaction`() = runTest {
+        createController(this).handleTopSiteSettingsClicked()
 
         assertNotNull(TopSites.contileSettings.testGetValue())
         assertEquals(1, TopSites.contileSettings.testGetValue()!!.size)
@@ -869,8 +962,8 @@ class DefaultTopSiteControllerTest {
     }
 
     @Test
-    fun `WHEN handleSponsorPrivacyClicked is called THEN navigate to the privacy webpage AND report the interaction`() {
-        createController().handleSponsorPrivacyClicked()
+    fun `WHEN handleSponsorPrivacyClicked is called THEN navigate to the privacy webpage AND report the interaction`() = runTest {
+        createController(this).handleSponsorPrivacyClicked()
 
         assertNotNull(TopSites.contileSponsorsAndPrivacy.testGetValue())
         assertEquals(1, TopSites.contileSponsorsAndPrivacy.testGetValue()!!.size)
@@ -887,12 +980,12 @@ class DefaultTopSiteControllerTest {
     }
 
     @Test
-    fun `GIVEN current destination is the shortcuts fragmentWHEN handleSponsorPrivacyClicked is called THEN navigate to the privacy webpage AND report the interaction`() {
+    fun `GIVEN current destination is the shortcuts fragmentWHEN handleSponsorPrivacyClicked is called THEN navigate to the privacy webpage AND report the interaction`() = runTest {
         every { navController.currentDestination } returns mockk {
             every { id } returns R.id.shortcutsFragment
         }
 
-        createController().handleSponsorPrivacyClicked()
+        createController(this).handleSponsorPrivacyClicked()
 
         assertNotNull(TopSites.contileSponsorsAndPrivacy.testGetValue())
         assertEquals(1, TopSites.contileSponsorsAndPrivacy.testGetValue()!!.size)
@@ -909,7 +1002,7 @@ class DefaultTopSiteControllerTest {
     }
 
     @Test
-    fun `WHEN top site long clicked is called THEN report the top site long click telemetry`() {
+    fun `WHEN top site long clicked is called THEN report the top site long click telemetry`() = runTest {
         assertNull(TopSites.longPress.testGetValue())
 
         val topSite = TopSite.Provided(
@@ -922,13 +1015,13 @@ class DefaultTopSiteControllerTest {
             createdAt = 0,
         )
 
-        createController().handleTopSiteLongClicked(topSite)
+        createController(this).handleTopSiteLongClicked(topSite)
 
         assertEquals(topSite.type, TopSites.longPress.testGetValue()!!.single().extra!!["type"])
     }
 
     @Test
-    fun `WHEN handleOpenInPrivateTabClicked is called with a TopSite#Provided site THEN navigate to the top site and record telemetry`() {
+    fun `WHEN handleOpenInPrivateTabClicked is called with a TopSite#Provided site THEN navigate to the top site and record telemetry`() = runTest {
         val topSite = TopSite.Provided(
             id = 1L,
             title = "Mozilla",
@@ -938,7 +1031,7 @@ class DefaultTopSiteControllerTest {
             impressionUrl = "",
             createdAt = 0,
         )
-        createController().handleOpenInPrivateTabClicked(topSite)
+        createController(this).handleOpenInPrivateTabClicked(topSite)
 
         assertNotNull(TopSites.openContileInPrivateTab.testGetValue())
         assertEquals(1, TopSites.openContileInPrivateTab.testGetValue()!!.size)
@@ -955,7 +1048,7 @@ class DefaultTopSiteControllerTest {
     }
 
     @Test
-    fun `GIVEN current destination is the shortcuts fragment WHEN handleOpenInPrivateTabClicked is called with a TopSite#Provided site THEN navigate to the top site and record telemetry`() {
+    fun `GIVEN current destination is the shortcuts fragment WHEN handleOpenInPrivateTabClicked is called with a TopSite#Provided site THEN navigate to the top site and record telemetry`() = runTest {
         every { navController.currentDestination } returns mockk {
             every { id } returns R.id.shortcutsFragment
         }
@@ -969,7 +1062,7 @@ class DefaultTopSiteControllerTest {
             impressionUrl = "",
             createdAt = 0,
         )
-        createController().handleOpenInPrivateTabClicked(topSite)
+        createController(this).handleOpenInPrivateTabClicked(topSite)
 
         assertNotNull(TopSites.openContileInPrivateTab.testGetValue())
         assertEquals(1, TopSites.openContileInPrivateTab.testGetValue()!!.size)
@@ -986,7 +1079,7 @@ class DefaultTopSiteControllerTest {
     }
 
     @Test
-    fun `GIVEN homepage as a new tab is enabled WHEN handleOpenInPrivateTabClicked is called with a TopSite#Provided site THEN navigate to the top site and record telemetry`() {
+    fun `GIVEN homepage as a new tab is enabled WHEN handleOpenInPrivateTabClicked is called with a TopSite#Provided site THEN navigate to the top site and record telemetry`() = runTest {
         every { settings.enableHomepageAsNewTab } returns true
 
         val topSite = TopSite.Provided(
@@ -998,7 +1091,7 @@ class DefaultTopSiteControllerTest {
             impressionUrl = "",
             createdAt = 0,
         )
-        createController().handleOpenInPrivateTabClicked(topSite)
+        createController(this).handleOpenInPrivateTabClicked(topSite)
 
         assertNotNull(TopSites.openContileInPrivateTab.testGetValue())
         assertEquals(1, TopSites.openContileInPrivateTab.testGetValue()!!.size)
@@ -1015,8 +1108,8 @@ class DefaultTopSiteControllerTest {
     }
 
     @Test
-    fun `WHEN handleOpenInPrivateTabClicked is called with a Default, Pinned, or Frecent top site THEN openInPrivateTab event is recorded`() {
-        val controller = createController()
+    fun `WHEN handleOpenInPrivateTabClicked is called with a Default, Pinned, or Frecent top site THEN openInPrivateTab event is recorded`() = runTest {
+        val controller = createController(this)
         val topSite1 = TopSite.Default(
             id = 1L,
             title = "Mozilla",
@@ -1048,14 +1141,14 @@ class DefaultTopSiteControllerTest {
         }
     }
 
-    fun `WHEN screen is shown THEN impression is logged`() {
+    fun `WHEN screen is shown THEN impression is logged`() = runTest {
         assertNull(ShortcutsLibrary.viewed.testGetValue())
-        val controller = createController()
+        val controller = createController(this)
         controller.handleShortcutsLibraryViewed()
         assertNotNull(ShortcutsLibrary.viewed.testGetValue())
     }
 
-    private fun createController(): DefaultTopSiteController =
+    private fun createController(scope: CoroutineScope): DefaultTopSiteController =
         DefaultTopSiteController(
             activityRef = WeakReference(activity),
             navControllerRef = WeakReference(navController),
@@ -1066,6 +1159,7 @@ class DefaultTopSiteControllerTest {
             fenixBrowserUseCases = fenixBrowserUseCases,
             topSitesUseCases = topSitesUseCases,
             marsUseCases = marsUseCases,
+            mozAdsUseCases = mozAdsUseCases,
             viewLifecycleScope = scope,
         )
 }

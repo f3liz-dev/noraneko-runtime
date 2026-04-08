@@ -184,32 +184,15 @@ export class UrlbarProviderTopSites extends UrlbarProvider {
 
     let tabUrlsToContextIds = new Map();
     if (lazy.UrlbarPrefs.get("suggest.openpage")) {
-      if (lazy.UrlbarPrefs.get("switchTabs.searchAllContainers")) {
-        lazy.UrlbarProviderOpenTabs.getOpenTabUrls(
-          queryContext.isPrivate
-        ).forEach((userContextAndGroupIds, url) => {
-          let userContextIds = new Set();
-          for (let [userContextId] of userContextAndGroupIds) {
-            userContextIds.add(userContextId);
-          }
-          tabUrlsToContextIds.set(url, userContextIds);
-        });
-      } else {
-        for (let [
-          url,
-          userContextId,
-        ] of lazy.UrlbarProviderOpenTabs.getOpenTabUrlsForUserContextId(
-          queryContext.userContextId,
-          queryContext.isPrivate
-        )) {
-          let userContextIds = tabUrlsToContextIds.get(url);
-          if (!userContextIds) {
-            userContextIds = new Set();
-          }
+      lazy.UrlbarProviderOpenTabs.getOpenTabUrls(
+        queryContext.isPrivate
+      ).forEach((userContextAndGroupIds, url) => {
+        let userContextIds = new Set();
+        for (let [userContextId] of userContextAndGroupIds) {
           userContextIds.add(userContextId);
-          tabUrlsToContextIds.set(url, userContextIds);
         }
-      }
+        tabUrlsToContextIds.set(url, userContextIds);
+      });
     }
 
     for (let site of sites) {
@@ -233,13 +216,9 @@ export class UrlbarProviderTopSites extends UrlbarProvider {
             if (tabUserContextIds.size) {
               let switchToTabResultAdded = false;
               for (let userContextId of tabUserContextIds) {
-                // Normally we could skip the whole for loop, but if searchAllContainers
-                // is set then the current page userContextId may differ, then we should
-                // allow switching to other ones.
                 if (
                   sameUrlIgnoringRef(queryContext.currentPage, site.url) &&
-                  (!lazy.UrlbarPrefs.get("switchTabs.searchAllContainers") ||
-                    queryContext.userContextId == userContextId)
+                  queryContext.userContextId == userContextId
                 ) {
                   // Don't suggest switching to the current tab.
                   continue;
@@ -248,10 +227,7 @@ export class UrlbarProviderTopSites extends UrlbarProvider {
                 let result = new lazy.UrlbarResult({
                   type: UrlbarUtils.RESULT_TYPE.TAB_SWITCH,
                   source: UrlbarUtils.RESULT_SOURCE.TABS,
-                  ...lazy.UrlbarResult.payloadAndSimpleHighlights(
-                    queryContext.tokens,
-                    payload
-                  ),
+                  payload,
                 });
                 addCallback(this, result);
                 switchToTabResultAdded = true;
@@ -287,10 +263,7 @@ export class UrlbarProviderTopSites extends UrlbarProvider {
           let result = new lazy.UrlbarResult({
             type: UrlbarUtils.RESULT_TYPE.URL,
             source: resultSource,
-            ...lazy.UrlbarResult.payloadAndSimpleHighlights(
-              queryContext.tokens,
-              payload
-            ),
+            payload,
           });
           addCallback(this, result);
           break;
@@ -320,17 +293,14 @@ export class UrlbarProviderTopSites extends UrlbarProvider {
           let result = new lazy.UrlbarResult({
             type: UrlbarUtils.RESULT_TYPE.SEARCH,
             source: UrlbarUtils.RESULT_SOURCE.SEARCH,
-            ...lazy.UrlbarResult.payloadAndSimpleHighlights(
-              queryContext.tokens,
-              {
-                keyword: site.title,
-                providesSearchMode: true,
-                engine: engine.name,
-                query: "",
-                icon: site.favicon,
-                isPinned: site.isPinned,
-              }
-            ),
+            payload: {
+              keyword: site.title,
+              providesSearchMode: true,
+              engine: engine.name,
+              query: "",
+              icon: site.favicon,
+              isPinned: site.isPinned,
+            },
           });
           addCallback(this, result);
           break;

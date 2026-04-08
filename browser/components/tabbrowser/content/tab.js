@@ -63,6 +63,7 @@
 
       this._hover = false;
       this._selectedOnFirstMouseDown = false;
+      this._noteIconHover = false;
 
       /**
        * Describes how the tab ended up in this mute state. May be any of:
@@ -383,6 +384,14 @@
       return this.querySelector(".tab-close-button");
     }
 
+    get noteIcon() {
+      return this.querySelector(".tab-note-icon");
+    }
+
+    get noteIconOverlay() {
+      return this.querySelector(".tab-note-icon-overlay");
+    }
+
     get group() {
       return this.closest("tab-group");
     }
@@ -444,6 +453,28 @@
         : this;
       gBrowser.warmupTab(tabToWarm);
 
+      if (this.hasTabNote) {
+        const noteIcon = this.noteIcon;
+        const noteIconOverlay = this.noteIconOverlay;
+        const isOverNoteIcon =
+          (noteIcon && noteIcon.contains(event.target)) ||
+          (noteIconOverlay && noteIconOverlay.contains(event.target));
+
+        if (isOverNoteIcon && !this._noteIconHover) {
+          this._noteIconHover = true;
+          this.dispatchEvent(
+            new CustomEvent("TabNoteIconHoverStart", {
+              bubbles: true,
+              detail: {
+                noteIconElement: noteIcon?.contains(event.target)
+                  ? noteIcon
+                  : noteIconOverlay,
+              },
+            })
+          );
+        }
+      }
+
       // If the previous target wasn't part of this tab then this is a mouseenter event.
       if (!this.contains(event.relatedTarget)) {
         this._mouseenter();
@@ -451,6 +482,24 @@
     }
 
     on_mouseout(event) {
+      if (this._noteIconHover) {
+        const noteIcon = this.noteIcon;
+        const noteIconOverlay = this.noteIconOverlay;
+        const stillOverNoteIcon =
+          (noteIcon && noteIcon.contains(event.relatedTarget)) ||
+          (noteIconOverlay && noteIconOverlay.contains(event.relatedTarget));
+
+        if (!stillOverNoteIcon) {
+          this._noteIconHover = false;
+          this.dispatchEvent(
+            new CustomEvent("TabNoteIconHoverEnd", {
+              bubbles: true,
+              detail: { returningToTab: this.contains(event.relatedTarget) },
+            })
+          );
+        }
+      }
+
       // If the new target is not part of this tab then this is a mouseleave event.
       if (!this.contains(event.relatedTarget)) {
         this._mouseleave();
@@ -791,20 +840,11 @@
     #updateOnTabSplit() {
       if (this.splitview) {
         this.setAttribute("aria-level", 2);
-
-        // Add "Split view" to label if tab is within a split view
-        let splitViewLabel = gBrowser.tabLocalization.formatValueSync(
-          "tabbrowser-tab-label-tab-split-view"
-        );
-        this.setAttribute(
-          "aria-label",
-          `${this.getAttribute("label")}, ${splitViewLabel}`
-        );
       }
     }
 
     #updateOnTabUnsplit() {
-      if (this.splitview) {
+      if (!this.splitview) {
         this.setAttribute("aria-level", 1);
         // `posinset` and `setsize` only need to be set explicitly
         // on split view tabs so that a11y tools can tell users that a
@@ -812,6 +852,35 @@
         this.removeAttribute("aria-posinset");
         this.removeAttribute("aria-setsize");
         this.removeAttribute("aria-label");
+      }
+    }
+
+    /**
+     * Set `aria-label` for this tab to indicate that it's in a Split View,
+     * along with its position within the Split View.
+     *
+     * @param {number} index
+     *   The index of this tab in the Split View.
+     */
+    updateSplitViewAriaLabel(index) {
+      let l10nId = "";
+      switch (index) {
+        case 0:
+          l10nId = window.RTL_UI
+            ? "tabbrowser-tab-label-tab-split-view-right"
+            : "tabbrowser-tab-label-tab-split-view-left";
+          break;
+        case 1:
+          l10nId = window.RTL_UI
+            ? "tabbrowser-tab-label-tab-split-view-left"
+            : "tabbrowser-tab-label-tab-split-view-right";
+          break;
+      }
+      if (l10nId) {
+        const ariaLabel = gBrowser.tabLocalization.formatValueSync(l10nId, {
+          label: this.getAttribute("label"),
+        });
+        this.setAttribute("aria-label", ariaLabel);
       }
     }
   }

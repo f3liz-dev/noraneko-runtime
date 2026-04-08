@@ -11,6 +11,7 @@
 #include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
 #include "js/loader/ModuleLoadRequest.h"
 #include "mozilla/ScopeExit.h"
+#include "mozilla/StaticPrefs_javascript.h"
 #include "mozilla/dom/StructuredCloneHolder.h"
 #include "mozilla/dom/Worklet.h"
 #include "mozilla/dom/WorkletFetchHandler.h"
@@ -109,8 +110,9 @@ nsresult WorkletModuleLoader::CompileFetchedModule(
     case JS::ModuleType::Unknown:
     case JS::ModuleType::Bytes:
       MOZ_CRASH("Unexpected module type");
-    case JS::ModuleType::JavaScript:
-      return CompileJavaScriptModule(aCx, aOptions, aRequest, aModuleScript);
+    case JS::ModuleType::JavaScriptOrWasm:
+      return CompileJavaScriptOrWasmModule(aCx, aOptions, aRequest,
+                                           aModuleScript);
     case JS::ModuleType::JSON:
       return CompileJsonModule(aCx, aOptions, aRequest, aModuleScript);
     case JS::ModuleType::CSS:
@@ -120,9 +122,22 @@ nsresult WorkletModuleLoader::CompileFetchedModule(
   MOZ_CRASH("Unhandled module type");
 }
 
-nsresult WorkletModuleLoader::CompileJavaScriptModule(
+nsresult WorkletModuleLoader::CompileJavaScriptOrWasmModule(
     JSContext* aCx, JS::CompileOptions& aOptions, ModuleLoadRequest* aRequest,
     JS::MutableHandle<JSObject*> aModuleScript) {
+#ifdef NIGHTLY_BUILD
+  if (aRequest->HasWasmMimeTypeEssence()) {
+    MOZ_ASSERT(aRequest->IsWasmBytes());
+    auto* wasmModule =
+        JS::CompileWasmModule(aCx, aOptions, aRequest->WasmBytes());
+    if (!wasmModule) {
+      return NS_ERROR_FAILURE;
+    }
+
+    aModuleScript.set(wasmModule);
+    return NS_OK;
+  }
+#endif
   MOZ_ASSERT(aRequest->IsTextSource());
 
   MaybeSourceText maybeSource;
@@ -242,8 +257,8 @@ AddModuleThrowErrorRunnable::Run() {
 
   JSContext* cx = jsapi.cx();
   JS::Rooted<JS::Value> error(cx);
-  ErrorResult result;
-  Read(global, cx, &error, result);
+  IgnoredErrorResult result;
+  Read(cx, &error, result);
   (void)NS_WARN_IF(result.Failed());
   mHandlerRef->ExecutionFailed(error);
 
@@ -297,12 +312,18 @@ void WorkletModuleLoader::OnModuleLoadComplete(ModuleLoadRequest* aRequest) {
     } else {
       error = aRequest->mModuleScript->ErrorToRethrow();
     }
-    JS_SetPendingException(cx, error);
+
     RefPtr<AddModuleThrowErrorRunnable> runnable =
         new AddModuleThrowErrorRunnable(handlerRef);
-    ErrorResult result;
-    runnable->Write(cx, error, result);
-    if (NS_WARN_IF(result.Failed())) {
+
+    bool writeOk = [&] {
+      IgnoredErrorResult result;
+      runnable->Write(cx, error, result);
+      return !result.Failed();
+    }();
+
+    JS_SetPendingException(cx, error);
+    if (!writeOk) {
       return;
     }
 
@@ -322,13 +343,12 @@ nsresult WorkletModuleLoader::GetResolveFailureMessage(
     ResolveError aError, const nsAString& aSpecifier, nsAString& aResult) {
   uint8_t index = static_cast<uint8_t>(aError);
   MOZ_ASSERT(index < static_cast<uint8_t>(ResolveError::Length));
-  MOZ_ASSERT(mLocalizedStrs);
-  MOZ_ASSERT(!mLocalizedStrs->IsEmpty());
-  if (!mLocalizedStrs || NS_WARN_IF(mLocalizedStrs->IsEmpty())) {
+  MOZ_ASSERT(HasSetLocalizedStrings());
+  if (NS_WARN_IF(mLocalizedStrs.IsEmpty())) {
     return NS_ERROR_FAILURE;
   }
 
-  const nsString& localizedStr = mLocalizedStrs->ElementAt(index);
+  const nsString& localizedStr = mLocalizedStrs.ElementAt(index);
 
   AutoTArray<nsString, 1> params;
   params.AppendElement(aSpecifier);

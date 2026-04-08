@@ -2833,7 +2833,7 @@ using PrivateDatastoreHashtable =
 // event of an (unlikely) race where the private browsing windows are still
 // being torn down, will cause the Datastore to be discarded when the last
 // window actually goes away.
-MOZ_CONSTINIT UniquePtr<PrivateDatastoreHashtable> gPrivateDatastores;
+constinit UniquePtr<PrivateDatastoreHashtable> gPrivateDatastores;
 
 using DatabaseArray = nsTArray<Database*>;
 
@@ -6597,6 +6597,12 @@ mozilla::ipc::IPCResult LSRequestBase::RecvCancel() {
 
 mozilla::ipc::IPCResult LSRequestBase::RecvFinish() {
   AssertIsOnOwningThread();
+
+  // A well-behaved content process only sends Finish() after receiving Ready(),
+  // which transitions us to WaitingForFinish.
+  if (NS_WARN_IF(mState != State::WaitingForFinish)) {
+    return IPC_FAIL(this, "Finish received in unexpected state");
+  }
 
   Finish();
 

@@ -106,6 +106,7 @@ const lazy = XPCOMUtils.declareLazy({
     "moz-src:///browser/components/urlbar/UrlbarProviderOpenTabs.sys.mjs",
   ProvidersManager:
     "moz-src:///browser/components/urlbar/UrlbarProvidersManager.sys.mjs",
+  SearchService: "moz-src:///toolkit/components/search/SearchService.sys.mjs",
   UrlbarResult: "moz-src:///browser/components/urlbar/UrlbarResult.sys.mjs",
   UrlbarSearchUtils:
     "moz-src:///browser/components/urlbar/UrlbarSearchUtils.sys.mjs",
@@ -165,7 +166,6 @@ function makeMapKeyForResult(url, match) {
   return UrlbarUtils.tupleString(
     url,
     action?.type == "switchtab" &&
-      lazy.UrlbarPrefs.get("switchTabs.searchAllContainers") &&
       lazy.UrlbarProviderOpenTabs.isNonPrivateUserContextId(match.userContextId)
       ? match.userContextId
       : undefined
@@ -274,7 +274,7 @@ function convertLegacyMatches(context, matches, urls) {
       continue;
     }
     urls.add(makeMapKeyForResult(url, match));
-    let result = makeUrlbarResult(context.tokens, {
+    let result = makeUrlbarResult(context, {
       url,
       // `match.icon` is an empty string if there is no icon. Use undefined
       // instead so that tests can be simplified by not including `icon: ""` in
@@ -300,8 +300,7 @@ function convertLegacyMatches(context, matches, urls) {
 /**
  * Creates a new UrlbarResult from the provided data.
  *
- * @param {UrlbarSearchStringTokenData[]} tokens
- *   The search tokens.
+ * @param {UrlbarQueryContext} queryContext
  * @param {object} info
  * @param {string} info.url
  * @param {string} info.title
@@ -312,7 +311,7 @@ function convertLegacyMatches(context, matches, urls) {
  * @param {number} info.frecency
  * @param {string} info.style
  */
-function makeUrlbarResult(tokens, info) {
+function makeUrlbarResult(queryContext, info) {
   let action = lazy.PlacesUtils.parseActionUrl(info.url);
   if (action) {
     switch (action.type) {
@@ -321,42 +320,42 @@ function makeUrlbarResult(tokens, info) {
         return new lazy.UrlbarResult({
           type: UrlbarUtils.RESULT_TYPE.SEARCH,
           source: UrlbarUtils.RESULT_SOURCE.HISTORY,
-          ...lazy.UrlbarResult.payloadAndSimpleHighlights(tokens, {
+          payload: {
             engine: action.params.engineName,
             isBlockable: true,
             blockL10n: { id: "urlbar-result-menu-remove-from-history" },
             helpUrl:
               Services.urlFormatter.formatURLPref("app.support.baseURL") +
               "awesome-bar-result-menu",
-            suggestion: [
-              action.params.searchSuggestion,
-              UrlbarUtils.HIGHLIGHT.SUGGESTED,
-            ],
+            suggestion: action.params.searchSuggestion,
+            title: action.params.searchSuggestion,
             lowerCaseSuggestion:
               action.params.searchSuggestion.toLocaleLowerCase(),
-          }),
+          },
+          highlights: {
+            suggestion: UrlbarUtils.HIGHLIGHT.SUGGESTED,
+          },
         });
       case "switchtab": {
-        let payloadAndHighlights = lazy.UrlbarResult.payloadAndSimpleHighlights(
-          tokens,
-          {
-            url: [action.params.url, UrlbarUtils.HIGHLIGHT.TYPED],
-            title: [info.title, UrlbarUtils.HIGHLIGHT.TYPED],
+        return new lazy.UrlbarResult({
+          type: UrlbarUtils.RESULT_TYPE.TAB_SWITCH,
+          source: UrlbarUtils.RESULT_SOURCE.TABS,
+          payload: {
+            url: action.params.url,
+            title: info.title,
             icon: info.icon,
             userContextId: info.userContextId,
             lastVisit: info.lastVisit,
             tabGroup: info.tabGroup,
             frecency: info.frecency,
-          }
-        );
-        if (lazy.UrlbarPrefs.get("secondaryActions.switchToTab")) {
-          payloadAndHighlights.payload.action =
-            UrlbarUtils.createTabSwitchSecondaryAction(info.userContextId);
-        }
-        return new lazy.UrlbarResult({
-          type: UrlbarUtils.RESULT_TYPE.TAB_SWITCH,
-          source: UrlbarUtils.RESULT_SOURCE.TABS,
-          ...payloadAndHighlights,
+            action: lazy.UrlbarPrefs.get("secondaryActions.switchToTab")
+              ? UrlbarUtils.createTabSwitchSecondaryAction(info.userContextId)
+              : undefined,
+          },
+          highlights: {
+            url: UrlbarUtils.HIGHLIGHT.TYPED,
+            title: UrlbarUtils.HIGHLIGHT.TYPED,
+          },
         });
       }
       default:
@@ -404,24 +403,31 @@ function makeUrlbarResult(tokens, info) {
     // We should also just include tags that match the searchString.
     tags = titleTags.split(",").filter(tag => {
       let lowerCaseTag = tag.toLocaleLowerCase();
-      return tokens.some(token => lowerCaseTag.includes(token.lowerCaseValue));
+      return queryContext.tokens.some(token =>
+        lowerCaseTag.includes(token.lowerCaseValue)
+      );
     });
   }
 
   return new lazy.UrlbarResult({
     type: UrlbarUtils.RESULT_TYPE.URL,
     source,
-    ...lazy.UrlbarResult.payloadAndSimpleHighlights(tokens, {
-      url: [info.url, UrlbarUtils.HIGHLIGHT.TYPED],
+    payload: {
+      url: info.url,
       icon: info.icon,
-      title: [title, UrlbarUtils.HIGHLIGHT.TYPED],
-      tags: [tags, UrlbarUtils.HIGHLIGHT.TYPED],
+      title,
+      tags,
       isBlockable,
       blockL10n,
       helpUrl,
       lastVisit: info.lastVisit,
       frecency: info.frecency,
-    }),
+    },
+    highlights: {
+      url: UrlbarUtils.HIGHLIGHT.TYPED,
+      title: UrlbarUtils.HIGHLIGHT.TYPED,
+      tags: UrlbarUtils.HIGHLIGHT.TYPED,
+    },
   });
 }
 
@@ -478,7 +484,7 @@ class Search {
     this.#searchModeEngine = queryContext.searchMode?.engineName;
     if (this.#searchModeEngine) {
       // Filter Places results on host.
-      let engine = Services.search.getEngineByName(this.#searchModeEngine);
+      let engine = lazy.SearchService.getEngineByName(this.#searchModeEngine);
       this.#filterOnHost = engine.searchUrlDomain;
     }
 
@@ -559,6 +565,7 @@ class Search {
 
     this.#listener = listener;
     this.#provider = provider;
+    this.#queryContext = queryContext;
   }
 
   /**
@@ -712,6 +719,13 @@ class Search {
     // "openpage" behavior is supported by the default query.
     // #switchToTabQuery instead returns only pages not supported by history.
     if (this.hasBehavior("openpage")) {
+      // Wait for open tabs to be fully populated in moz_openpages_temp.
+      // The table is populated asynchronously when the connection is first
+      // created, and querying before it's ready returns incomplete results.
+      await lazy.UrlbarProviderOpenTabs.promiseDBPopulated;
+      if (!this.pending) {
+        return;
+      }
       queries.push(this.#switchToTabQuery);
     }
     queries.push(this.#searchQuery);
@@ -783,6 +797,7 @@ class Search {
   #searchModeEngine;
   #searchTokens;
   #userContextId;
+  #queryContext;
 
   /**
    * Used to avoid adding duplicate entries to the results.
@@ -855,7 +870,7 @@ class Search {
   #maybeRestyleSearchMatch(match) {
     // Return if the URL does not represent a search result.
     let historyUrl = match.value;
-    let parseResult = Services.search.parseSubmissionURL(historyUrl);
+    let parseResult = lazy.SearchService.parseSubmissionURL(historyUrl);
     if (!parseResult?.engine) {
       return false;
     }
@@ -1070,7 +1085,10 @@ class Search {
     let index = 0;
     if (!this.#groups) {
       this.#groups = [];
-      this.#makeGroups(lazy.UrlbarPrefs.resultGroups, this.#maxResults);
+      this.#makeGroups(
+        lazy.UrlbarPrefs.getResultGroups({ context: this.#queryContext }),
+        this.#maxResults
+      );
     }
 
     let replace = false;
@@ -1190,8 +1208,7 @@ class Search {
     if (openPageCount > 0 && this.hasBehavior("openpage")) {
       if (
         this.#currentPage == match.value &&
-        (!lazy.UrlbarPrefs.get("switchTabs.searchAllContainers") ||
-          this.#userContextId == match.userContextId)
+        this.#userContextId == match.userContextId
       ) {
         // Don't suggest switching to the current tab.
         return;
@@ -1347,14 +1364,11 @@ class Search {
       maxResults: this.#maxResults,
       switchTabsEnabled: this.hasBehavior("openpage"),
     };
-    params.userContextId = lazy.UrlbarPrefs.get(
-      "switchTabs.searchAllContainers"
-    )
-      ? lazy.UrlbarProviderOpenTabs.getUserContextIdForOpenPagesTable(
-          null,
-          this.#inPrivateWindow
-        )
-      : this.#userContextId;
+    params.userContextId =
+      lazy.UrlbarProviderOpenTabs.getUserContextIdForOpenPagesTable(
+        null,
+        this.#inPrivateWindow
+      );
 
     if (this.#filterOnHost) {
       params.host = this.#filterOnHost;
@@ -1378,12 +1392,11 @@ class Search {
         // We only want to search the tokens that we are left with - not the
         // original search string.
         searchString: this.#keywordFilteredSearchString,
-        userContextId: lazy.UrlbarPrefs.get("switchTabs.searchAllContainers")
-          ? lazy.UrlbarProviderOpenTabs.getUserContextIdForOpenPagesTable(
-              null,
-              this.#inPrivateWindow
-            )
-          : this.#userContextId,
+        userContextId:
+          lazy.UrlbarProviderOpenTabs.getUserContextIdForOpenPagesTable(
+            null,
+            this.#inPrivateWindow
+          ),
         maxResults: this.#maxResults,
       },
     ];

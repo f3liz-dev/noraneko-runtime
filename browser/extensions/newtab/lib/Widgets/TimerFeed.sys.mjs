@@ -3,6 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 const lazy = {};
+
 ChromeUtils.defineESModuleGetters(lazy, {
   PersistentCache: "resource://newtab/lib/PersistentCache.sys.mjs",
 });
@@ -57,7 +58,6 @@ export class TimerFeed {
 
       alertsService.showAlert(
         new AlertNotification({
-          imageURL: "chrome://branding/content/icon64.png",
           title,
           text: body,
         })

@@ -550,7 +550,7 @@ uint32_t ADTSTrackDemuxer::Read(uint8_t* aBuffer, int64_t aOffset,
   if (mInfo && streamLen > 0) {
     int64_t max = streamLen > aOffset ? streamLen - aOffset : 0;
     // Prevent blocking reads after successful initialization.
-    aSize = std::min<int32_t>(aSize, AssertedCast<int32_t>(max));
+    aSize = static_cast<int32_t>(std::min(static_cast<int64_t>(aSize), max));
   }
 
   uint32_t read = 0;
@@ -597,3 +597,7 @@ bool ADTSDemuxer::ADTSSniffer(const uint8_t* aData, const uint32_t aLength) {
 }
 
 }  // namespace mozilla
+
+#undef LOG
+#undef ADTSLOG
+#undef ADTSLOGV

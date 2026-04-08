@@ -526,18 +526,18 @@ static ZonedDateTimeObject* CreateTemporalZonedDateTime(
 
   // Step 4.
   auto epochNs = ToEpochNanoseconds(epochNanoseconds);
-  object->setFixedSlot(ZonedDateTimeObject::SECONDS_SLOT,
-                       NumberValue(epochNs.seconds));
-  object->setFixedSlot(ZonedDateTimeObject::NANOSECONDS_SLOT,
-                       Int32Value(epochNs.nanoseconds));
+  object->initFixedSlot(ZonedDateTimeObject::SECONDS_SLOT,
+                        NumberValue(epochNs.seconds));
+  object->initFixedSlot(ZonedDateTimeObject::NANOSECONDS_SLOT,
+                        Int32Value(epochNs.nanoseconds));
 
   // Step 5.
-  object->setFixedSlot(ZonedDateTimeObject::TIMEZONE_SLOT,
-                       timeZone.toSlotValue());
+  object->initFixedSlot(ZonedDateTimeObject::TIMEZONE_SLOT,
+                        timeZone.toSlotValue());
 
   // Step 6.
-  object->setFixedSlot(ZonedDateTimeObject::CALENDAR_SLOT,
-                       calendar.toSlotValue());
+  object->initFixedSlot(ZonedDateTimeObject::CALENDAR_SLOT,
+                        calendar.toSlotValue());
 
   // Step 7.
   return object;
@@ -560,18 +560,18 @@ ZonedDateTimeObject* js::temporal::CreateTemporalZonedDateTime(
   }
 
   // Step 4.
-  object->setFixedSlot(ZonedDateTimeObject::SECONDS_SLOT,
-                       NumberValue(epochNanoseconds.seconds));
-  object->setFixedSlot(ZonedDateTimeObject::NANOSECONDS_SLOT,
-                       Int32Value(epochNanoseconds.nanoseconds));
+  object->initFixedSlot(ZonedDateTimeObject::SECONDS_SLOT,
+                        NumberValue(epochNanoseconds.seconds));
+  object->initFixedSlot(ZonedDateTimeObject::NANOSECONDS_SLOT,
+                        Int32Value(epochNanoseconds.nanoseconds));
 
   // Step 5.
-  object->setFixedSlot(ZonedDateTimeObject::TIMEZONE_SLOT,
-                       timeZone.toSlotValue());
+  object->initFixedSlot(ZonedDateTimeObject::TIMEZONE_SLOT,
+                        timeZone.toSlotValue());
 
   // Step 6.
-  object->setFixedSlot(ZonedDateTimeObject::CALENDAR_SLOT,
-                       calendar.toSlotValue());
+  object->initFixedSlot(ZonedDateTimeObject::CALENDAR_SLOT,
+                        calendar.toSlotValue());
 
   // Step 7.
   return object;
@@ -682,7 +682,7 @@ static bool DifferenceZonedDateTime(JSContext* cx, const EpochNanoseconds& ns1,
   }
 
   // Step 4.
-  if (CompareISODate(startDateTime.date, endDateTime.date) == 0) {
+  if (startDateTime.date == endDateTime.date) {
     // Step 4.a.
     auto timeDuration = TimeDurationFromEpochNanosecondsDifference(ns2, ns1);
 
@@ -2784,8 +2784,7 @@ static bool ZonedDateTime_toLocaleString(JSContext* cx, const CallArgs& args) {
       cx, ZonedDateTime{&args.thisv().toObject().as<ZonedDateTimeObject>()});
 
   // Steps 3-6.
-  Rooted<Value> timeZone(cx,
-                         StringValue(zonedDateTime.timeZone().identifier()));
+  Rooted<JSLinearString*> timeZone(cx, zonedDateTime.timeZone().identifier());
   return intl::TemporalObjectToLocaleString(
       cx, args, intl::DateTimeFormatKind::All, timeZone);
 }

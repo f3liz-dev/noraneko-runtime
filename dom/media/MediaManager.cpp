@@ -243,7 +243,7 @@ struct DeviceState {
   bool mOperationInProgress = false;
 
   // true if we are allowed to turn off the underlying source while all tracks
-  // are disabled. Only affects disabling; always turns off on user-agent mute.
+  // are disabled or muted.
   // MainThread only.
   bool mOffWhileDisabled = false;
 
@@ -4367,10 +4367,12 @@ DeviceListener::InitializeAsync() {
              MediaManager::Get()->mMediaThread, __func__,
              [this, self = RefPtr(this), principal = GetPrincipalHandle(),
               device = mDeviceState->mDevice,
-              track = mDeviceState->mTrackSource->mTrack,
-              deviceMuted = mDeviceState->mDeviceMuted] {
-               nsresult rv = Initialize(principal, device, track,
-                                        /*aStartDevice=*/!deviceMuted);
+              track = mDeviceState->mTrackSource->mTrack] {
+               // Start the device if not muted, or if mOffWhileDisabled is
+               // false (the device should remain on even when muted).
+               bool startDevice = !mDeviceState->mDeviceMuted ||
+                                  !mDeviceState->mOffWhileDisabled;
+               nsresult rv = Initialize(principal, device, track, startDevice);
                if (NS_SUCCEEDED(rv)) {
                  return GenericPromise::CreateAndResolve(
                      true, "DeviceListener::InitializeAsync success");
@@ -4538,30 +4540,30 @@ already_AddRefed<DeviceListener> DeviceListener::Clone() const {
         return GenericPromise::CreateAndReject(
             rv, "DeviceListener::Clone failure #2");
       })
-      ->Then(GetMainThreadSerialEventTarget(), __func__,
-             [listener, device,
-              trackSource](GenericPromise::ResolveOrRejectValue&& aValue) {
-               if (aValue.IsReject()) {
-                 // Allocating/initializing failed. Stopping the device listener
-                 // will destroy the MediaStreamTrackSource's MediaTrack, which
-                 // will make the MediaStreamTrack's mTrack MediaTrack auto-end
-                 // due to lack of inputs. This makes the MediaStreamTrack's
-                 // readyState transition to "ended" as expected.
-                 LOG("Allocating clone device %p failed. Stopping.",
-                     device.get());
-                 listener->Stop();
-                 return;
-               }
-               listener->mDeviceState->mAllocated = true;
-               if (listener->mDeviceState->mStopped) {
-                 MediaManager::Dispatch(NS_NewRunnableFunction(
-                     "DeviceListener::Clone::Stop",
-                     [device = listener->mDeviceState->mDevice]() {
-                       device->Stop();
-                       device->Deallocate();
-                     }));
-               }
-             });
+      ->Then(
+          GetMainThreadSerialEventTarget(), __func__,
+          [listener, device,
+           trackSource](GenericPromise::ResolveOrRejectValue&& aValue) {
+            if (aValue.IsReject()) {
+              // Allocating/initializing failed. Stopping the device listener
+              // will destroy the MediaStreamTrackSource's MediaTrack, which
+              // will make the MediaStreamTrack's mTrack MediaTrack auto-end
+              // due to lack of inputs. This makes the MediaStreamTrack's
+              // readyState transition to "ended" as expected.
+              LOG("Allocating clone device %p failed. Stopping.", device.get());
+              listener->Stop();
+              return;
+            }
+            listener->mDeviceState->mAllocated = true;
+            if (listener->mDeviceState->mStopped && !sHasMainThreadShutdown) {
+              MediaManager::Dispatch(NS_NewRunnableFunction(
+                  "DeviceListener::Clone::Stop",
+                  [device = listener->mDeviceState->mDevice]() {
+                    device->Stop();
+                    device->Deallocate();
+                  }));
+            }
+          });
 
   return listener.forget();
 }

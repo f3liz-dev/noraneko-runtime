@@ -223,7 +223,7 @@ add_task(
 
         await waitForAutofill(
           browser,
-          selectorToTriggerAutocompletion,
+          selectorToTriggerAutocompletion + "-after-form-change",
           elementValueToVerifyAutofill
         );
         info(
@@ -235,7 +235,6 @@ add_task(
         const expectedAdditionalFieldsNotFilled = {
           fields: [
             { fieldName: "name", autofill: "John R. Smith" },
-            { fieldName: "email", autofill: TEST_ADDRESS_1.email },
             { fieldName: "tel", autofill: TEST_ADDRESS_1.tel },
             { fieldName: "country", autofill: TEST_ADDRESS_1.country },
             {
@@ -257,6 +256,7 @@ add_task(
               fieldName: "postal-code",
               autofill: TEST_ADDRESS_1["postal-code"],
             },
+            { fieldName: "email", autofill: TEST_ADDRESS_1.email },
           ],
         };
         const actor =
@@ -517,3 +517,37 @@ add_task(
     );
   }
 );
+
+// This test verifies what happens when a form is removed when a field is modified.
+// Typically, this will be a change to a country field that changes the form to
+// have different fields for the selected country.
+add_task(async function address_fields_filled_in_during_form_replacement() {
+  // The address-level2 field is not present in the replaced form.
+  let expectedResult = structuredClone(expectedFilledAddressFields);
+  expectedResult.fields.splice(6, 1);
+
+  // The test runs in two ways, with and without a timeout.
+  for (let mode of ["direct", "timeout"]) {
+    const url = FORMS_REPLACING_FORM_ON_INPUT + "?mode=" + mode;
+    await BrowserTestUtils.withNewTab(url, async browser => {
+      await openPopupOn(browser, "#country-node-addition");
+      await BrowserTestUtils.synthesizeKey("VK_DOWN", {}, browser);
+      await BrowserTestUtils.synthesizeKey("VK_RETURN", {}, browser);
+
+      await waitForAutofill(
+        browser,
+        "#phone-node-addition",
+        TEST_ADDRESS_1.tel
+      );
+
+      info("Verifying that all fields are filled correctly.");
+      const actor =
+        browser.browsingContext.currentWindowGlobal.getActor("FormAutofill");
+      // Items are never removed from sectionsByRootId so get the second item,
+      // which will be for the newly added form.
+      let section = Array.from(actor.sectionsByRootId.values()).flat()[1];
+
+      await verifyAutofillResult(browser, section, expectedResult);
+    });
+  }
+});

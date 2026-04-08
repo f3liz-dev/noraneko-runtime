@@ -22,10 +22,11 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
-import androidx.compose.ui.tooling.preview.PreviewLightDark
+import androidx.compose.ui.tooling.preview.PreviewParameter
 import androidx.compose.ui.unit.dp
 import org.mozilla.fenix.R
 import org.mozilla.fenix.theme.FirefoxTheme
+import org.mozilla.fenix.theme.PreviewThemeProvider
 import org.mozilla.fenix.theme.Theme
 import mozilla.components.ui.icons.R as iconsR
 
@@ -92,20 +93,12 @@ fun TranslationToolbar(
     }
 }
 
-@PreviewLightDark
-@Composable
-private fun TranslationToolbarPreview() {
-    FirefoxTheme {
-        TranslationToolbar(
-            label = "Translated from French to English",
-        )
-    }
-}
-
 @Preview
 @Composable
-private fun TranslationToolbarPrivatePreview() {
-    FirefoxTheme(theme = Theme.Private) {
+private fun TranslationToolbarPreview(
+    @PreviewParameter(PreviewThemeProvider::class) theme: Theme,
+) {
+    FirefoxTheme(theme) {
         TranslationToolbar(
             label = "Translated from French to English",
         )

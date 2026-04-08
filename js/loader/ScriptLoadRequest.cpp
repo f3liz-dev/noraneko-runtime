@@ -29,8 +29,6 @@ namespace JS::loader {
 // ScriptFetchOptions
 //////////////////////////////////////////////////////////////
 
-NS_IMPL_CYCLE_COLLECTION(ScriptFetchOptions, mTriggeringPrincipal)
-
 ScriptFetchOptions::ScriptFetchOptions(
     mozilla::CORSMode aCORSMode, const nsAString& aNonce,
     mozilla::dom::RequestPriority aFetchPriority,
@@ -94,6 +92,7 @@ ScriptLoadRequest::ScriptLoadRequest(ScriptKind aKind,
       mFetchSourceOnly(false),
       mHasSourceMapURL_(false),
       mHasDirtyCache_(false),
+      mHadPostponed_(false),
       mDiskCachingPlan(CachingPlan::Uninitialized),
       mMemoryCachingPlan(CachingPlan::Uninitialized),
       mIntegrity(aIntegrity),
