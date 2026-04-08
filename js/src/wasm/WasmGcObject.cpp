@@ -6,6 +6,8 @@
 
 #include "wasm/WasmGcObject-inl.h"
 
+#include "mozilla/DebugOnly.h"
+
 #include "gc/Tracer.h"
 #include "js/CharacterEncoding.h"
 #include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
@@ -127,12 +129,14 @@ bool WasmGcObject::lookUpProperty(JSContext* cx, Handle<WasmGcObject*> obj,
       if (!IdIsIndex(id, &index)) {
         return false;
       }
+      MOZ_ASSERT(structType.fields_.length() ==
+                 structType.fieldAccessPaths_.length());
       if (index >= structType.fields_.length()) {
         JS_ReportErrorNumberUTF8(cx, GetErrorMessage, nullptr,
                                  JSMSG_WASM_OUT_OF_BOUNDS);
         return false;
       }
-      offset->set(structType.fieldOffset(index));
+      offset->set(index);
       *type = structType.fields_[index].type;
       return true;
     }
@@ -190,15 +194,13 @@ bool WasmGcObject::loadValue(JSContext* cx, Handle<WasmGcObject*> obj, jsid id,
   }
 
   if (obj->is<WasmStructObject>()) {
-    // `offset` is the field offset, without regard to the in/out-line split.
-    // That is handled by the call to `fieldOffsetToAddress`.
+    // `offset` is the field index.
     WasmStructObject& structObj = obj->as<WasmStructObject>();
-    // Ensure no out-of-range access possible
     MOZ_RELEASE_ASSERT(structObj.kind() == TypeDefKind::Struct);
-    MOZ_RELEASE_ASSERT(offset.get() + type.size() <=
-                       structObj.typeDef().structType().size_);
-    return ToJSValue(cx, structObj.fieldOffsetToAddress(type, offset.get()),
-                     type, vp);
+    // The above call to `lookUpProperty` will reject a request for a struct
+    // field whose index is out of range.  Hence the following will be safe
+    // providing the FieldAccessPaths are correct.
+    return ToJSValue(cx, structObj.fieldIndexToAddress(offset.get()), type, vp);
   }
 
   MOZ_ASSERT(obj->is<WasmArrayObject>());
@@ -217,7 +219,8 @@ bool WasmGcObject::obj_newEnumerate(JSContext* cx, HandleObject obj,
   return true;
 }
 
-static void WriteValTo(const Val& val, StorageType ty, void* dest) {
+static void WriteValTo(WasmGcObject* owner, const Val& val, StorageType ty,
+                       void* dest) {
   switch (ty.kind()) {
     case StorageType::I8:
       *((uint8_t*)dest) = val.i32();
@@ -241,7 +244,7 @@ static void WriteValTo(const Val& val, StorageType ty, void* dest) {
       *((V128*)dest) = val.v128();
       break;
     case StorageType::Ref:
-      *((GCPtr<AnyRef>*)dest) = val.ref();
+      BarrieredSet(owner, dest, val.ref());
       break;
   }
 }
@@ -251,11 +254,15 @@ static void WriteValTo(const Val& val, StorageType ty, void* dest) {
 
 /* static */
 size_t js::WasmArrayObject::sizeOfExcludingThis() const {
-  if (!isDataInline() || !gc::IsBufferAlloc(dataHeader())) {
+  if (isDataInline()) {
+    return 0;
+  }
+  OOLDataHeader* oolHeader = oolDataHeaderFromDataPointer(data_);
+  if (!gc::IsBufferAlloc(oolHeader)) {
     return 0;
   }
 
-  return gc::GetAllocSize(zone(), dataHeader());
+  return gc::GetAllocSize(zone(), oolHeader);
 }
 
 /* static */
@@ -264,11 +271,11 @@ void WasmArrayObject::obj_trace(JSTracer* trc, JSObject* object) {
   uint8_t* data = arrayObj.data_;
 
   if (!arrayObj.isDataInline()) {
-    uint8_t* outlineAlloc = (uint8_t*)dataHeaderFromDataPointer(arrayObj.data_);
-    uint8_t* prior = outlineAlloc;
-    TraceBufferEdge(trc, &arrayObj, &outlineAlloc, "WasmArrayObject storage");
-    if (outlineAlloc != prior) {
-      arrayObj.data_ = (uint8_t*)(((DataHeader*)outlineAlloc) + 1);
+    OOLDataHeader* oolHeader = oolDataHeaderFromDataPointer(arrayObj.data_);
+    OOLDataHeader* prior = oolHeader;
+    TraceBufferEdge(trc, &arrayObj, &oolHeader, "WasmArrayObject storage");
+    if (oolHeader != prior) {
+      arrayObj.data_ = oolDataHeaderToDataPointer(oolHeader);
     }
   }
 
@@ -287,36 +294,88 @@ void WasmArrayObject::obj_trace(JSTracer* trc, JSObject* object) {
 }
 
 /* static */
-size_t WasmArrayObject::obj_moved(JSObject* obj, JSObject* old) {
-  // Moving inline arrays requires us to update the data pointer.
-  WasmArrayObject& arrayObj = obj->as<WasmArrayObject>();
-  WasmArrayObject& oldArrayObj = old->as<WasmArrayObject>();
-  if (oldArrayObj.isDataInline()) {
-    // The old array had inline storage, which has been copied.
-    // Fix up the data pointer on the new array to point to it.
-    arrayObj.data_ = WasmArrayObject::addressOfInlineData(&arrayObj);
-  }
-  MOZ_ASSERT(arrayObj.isDataInline() == oldArrayObj.isDataInline());
+size_t WasmArrayObject::obj_moved(JSObject* objNew, JSObject* objOld) {
+  // This gets called for array objects, both with and without OOL areas.
+  // Dealing with the no-OOL case is simple.  Thereafter, the logic for the OOL
+  // case is essentially the same as for WasmStructObject::obj_moved, since
+  // that routine is only used for WasmStructObjects that have OOL storage.
+  MOZ_ASSERT(objNew != objOld);
 
-  if (IsInsideNursery(old)) {
-    Nursery& nursery = obj->runtimeFromMainThread()->gc.nursery();
-    // It's been tenured.
-    if (!arrayObj.isDataInline()) {
-      const TypeDef& typeDef = arrayObj.typeDef();
-      MOZ_ASSERT(typeDef.isArrayType());
-      // arrayObj.numElements_ was validated not to overflow when constructing
-      // the array
-      size_t trailerSize = calcStorageBytesUnchecked(
-          typeDef.arrayType().elementType().size(), arrayObj.numElements_);
-      // Ensured by WasmArrayObject::createArrayOOL.
-      MOZ_RELEASE_ASSERT(trailerSize <= size_t(MaxArrayPayloadBytes));
-      uint8_t* outlineAlloc =
-          (uint8_t*)dataHeaderFromDataPointer(arrayObj.data_);
-      uint8_t* prior = outlineAlloc;
-      nursery.maybeMoveBufferOnPromotion(&outlineAlloc, obj, trailerSize);
-      if (outlineAlloc != prior) {
-        arrayObj.data_ = (uint8_t*)(((DataHeader*)outlineAlloc) + 1);
-      }
+  WasmArrayObject& arrayNew = objNew->as<WasmArrayObject>();
+  WasmArrayObject& arrayOld = objOld->as<WasmArrayObject>();
+
+  const TypeDef* typeDefNew = &arrayNew.typeDef();
+  mozilla::DebugOnly<const TypeDef*> typeDefOld = &arrayOld.typeDef();
+  MOZ_ASSERT(typeDefNew->isArrayType());
+  MOZ_ASSERT(typeDefOld == typeDefNew);
+
+  // At this point, the object has been copied, but the OOL storage area, if
+  // any, has not been copied, nor has the data_ pointer been updated.  Hence:
+  MOZ_ASSERT(arrayNew.data_ == arrayOld.data_);
+
+  if (arrayOld.isDataInline()) {
+    // The old array had inline storage, which has been copied.  Fix up the
+    // data pointer in the new array to point to it, and we're done.
+    arrayNew.data_ = WasmArrayObject::addressOfInlineArrayData(&arrayNew);
+    MOZ_ASSERT(arrayNew.isDataInline());
+    return 0;
+  }
+
+  // The array has OOL storage.  This means the logic that follows is similar
+  // to that for WasmStructObject::obj_moved, since that routine is only used
+  // for WasmStructObjects that have OOL storage.
+
+  bool newIsInNursery = IsInsideNursery(objNew);
+  bool oldIsInNursery = IsInsideNursery(objOld);
+
+  // Tenured -> Tenured
+  if (!oldIsInNursery && !newIsInNursery) {
+    // The object already was in the tenured heap and has merely been moved
+    // somewhere else in the the tenured heap.  This isn't interesting to us.
+    return 0;
+  }
+
+  // Tenured -> Nursery: this transition isn't possible.
+  MOZ_RELEASE_ASSERT(oldIsInNursery);
+
+  // Nursery -> Nursery and Nursery -> Tenured
+  // The object is being moved, either within the nursery or from the nursery
+  // to the tenured heap.  Either way, we have to ask the nursery if it wants
+  // to move the OOL block too, and if so set up a forwarding record for it.
+
+  // arrayNew.numElements_ was validated not to overflow when constructing
+  // the array.
+  size_t oolBlockSize = calcArrayDataBytesUnchecked(
+      typeDefNew->arrayType().elementType().size(), arrayNew.numElements_);
+  // Ensured by WasmArrayObject::createArrayOOL.
+  MOZ_RELEASE_ASSERT(oolBlockSize <= size_t(MaxArrayPayloadBytes));
+  oolBlockSize += sizeof(WasmArrayObject::OOLDataHeader);
+
+  // Ask the nursery if it wants to relocate the OOL block, and if so capture
+  // its new location in `oolHeaderNew`.  Note, at this point `arrayNew.data_`
+  // has not been updated; hence the computation for `oolHeaderOld` is correct.
+  OOLDataHeader* oolHeaderOld = oolDataHeaderFromDataPointer(arrayNew.data_);
+  OOLDataHeader* oolHeaderNew = oolHeaderOld;
+  Nursery& nursery = objNew->runtimeFromMainThread()->gc.nursery();
+  nursery.maybeMoveBufferOnPromotion(&oolHeaderNew, objNew, oolBlockSize);
+
+  if (oolHeaderNew != oolHeaderOld) {
+    // The OOL block has been moved.  Fix up the data pointer in the new
+    // object.
+    arrayNew.data_ = oolDataHeaderToDataPointer(oolHeaderNew);
+    // Set up forwarding for the OOL block.  Use direct forwarding.  Write the
+    // address of the new OOL block to OOLDataHeader::word in the old OOL
+    // block.  This will be later used by Instance::updateFrameForMovingGC. See
+    // SMDOC on definition of WasmArrayObject.
+    //
+    // Note, > rather than >=, because the OOL block must be big enough to hold
+    // the data header plus at least one byte of array data.
+    MOZ_RELEASE_ASSERT(oolBlockSize > sizeof(OOLDataHeader));
+    if (nursery.isInside(oolHeaderOld)) {
+      // Store the forwarding word, with bit 0 set.
+      MOZ_ASSERT((uintptr_t(oolHeaderNew) & 1) == 0);
+      oolHeaderOld->word = uintptr_t(oolHeaderNew) | 1;
+      oolHeaderNew->word = WasmArrayObject::OOLDataHeader_Magic;
     }
   }
 
@@ -328,7 +387,7 @@ void WasmArrayObject::storeVal(const Val& val, uint32_t itemIndex) {
   size_t elementSize = arrayType.elementType().size();
   MOZ_ASSERT(itemIndex < numElements_);
   uint8_t* data = data_ + elementSize * itemIndex;
-  WriteValTo(val, arrayType.elementType(), data);
+  WriteValTo(this, val, arrayType.elementType(), data);
 }
 
 void WasmArrayObject::fillVal(const Val& val, uint32_t itemIndex,
@@ -338,7 +397,7 @@ void WasmArrayObject::fillVal(const Val& val, uint32_t itemIndex,
   uint8_t* data = data_ + elementSize * itemIndex;
   MOZ_ASSERT(itemIndex <= numElements_ && len <= numElements_ - itemIndex);
   for (uint32_t i = 0; i < len; i++) {
-    WriteValTo(val, arrayType.elementType(), data);
+    WriteValTo(this, val, arrayType.elementType(), data);
     data += elementSize;
   }
 }
@@ -371,52 +430,47 @@ const JSClass WasmArrayObject::class_ = {
 // WasmStructObject
 
 /* static */
-const JSClass* js::WasmStructObject::classForTypeDef(
-    const wasm::TypeDef* typeDef) {
-  MOZ_ASSERT(typeDef->kind() == wasm::TypeDefKind::Struct);
-  size_t nbytes = typeDef->structType().size_;
-  return nbytes > WasmStructObject_MaxInlineBytes
-             ? &WasmStructObject::classOutline_
-             : &WasmStructObject::classInline_;
-}
-
-/* static */
-js::gc::AllocKind js::WasmStructObject::allocKindForTypeDef(
-    const wasm::TypeDef* typeDef) {
-  MOZ_ASSERT(typeDef->kind() == wasm::TypeDefKind::Struct);
-  size_t nbytes = typeDef->structType().size_;
-
-  // `nbytes` is the total required size for all struct fields, including
-  // padding.  What we need is the size of resulting WasmStructObject,
-  // ignoring any space used for out-of-line data.  First, restrict `nbytes`
-  // to cover just the inline data.
-  if (nbytes > WasmStructObject_MaxInlineBytes) {
-    nbytes = WasmStructObject_MaxInlineBytes;
-  }
-
-  // Now convert it to size of the WasmStructObject as a whole.
-  nbytes = sizeOfIncludingInlineData(nbytes);
-
-  return gc::GetGCObjectKindForBytes(nbytes);
-}
-
-/* static */
 size_t js::WasmStructObject::sizeOfExcludingThis() const {
-  if (!outlineData_ || !gc::IsBufferAlloc(outlineData_)) {
+  if (!hasOOLPointer()) {
+    return 0;
+  }
+  const uint8_t* oolPointer = getOOLPointer();
+  if (!gc::IsBufferAlloc((void*)oolPointer)) {
     return 0;
   }
 
-  return gc::GetAllocSize(zone(), outlineData_);
+  return gc::GetAllocSize(zone(), oolPointer);
 }
 
+/* static */
 bool WasmStructObject::getField(JSContext* cx, uint32_t index,
                                 MutableHandle<Value> val) {
   const StructType& resultType = typeDef().structType();
   MOZ_ASSERT(index <= resultType.fields_.length());
   const FieldType& field = resultType.fields_[index];
-  uint32_t fieldOffset = resultType.fieldOffset(index);
   StorageType ty = field.type.storageType();
-  return ToJSValue(cx, fieldOffsetToAddress(ty, fieldOffset), ty, val);
+  return ToJSValue(cx, fieldIndexToAddress(index), ty, val);
+}
+
+/* static */
+uint8_t* WasmStructObject::fieldIndexToAddress(uint32_t fieldIndex) {
+  const wasm::SuperTypeVector* stv = superTypeVector_;
+  const wasm::TypeDef* typeDef = stv->typeDef();
+  MOZ_ASSERT(typeDef->superTypeVector() == stv);
+  const wasm::StructType& structType = typeDef->structType();
+  const wasm::FieldAccessPathVector& fieldAccessPaths =
+      structType.fieldAccessPaths_;
+  MOZ_RELEASE_ASSERT(fieldIndex < fieldAccessPaths.length());
+  wasm::FieldAccessPath path = fieldAccessPaths[fieldIndex];
+  uint32_t ilOffset = path.ilOffset();
+  MOZ_RELEASE_ASSERT(ilOffset != wasm::StructType::InvalidOffset);
+  if (MOZ_LIKELY(!path.hasOOL())) {
+    return (uint8_t*)this + ilOffset;
+  }
+  uint8_t* oolBlock = *(uint8_t**)((uint8_t*)this + ilOffset);
+  uint32_t oolOffset = path.oolOffset();
+  MOZ_RELEASE_ASSERT(oolOffset != wasm::StructType::InvalidOffset);
+  return oolBlock + oolOffset;
 }
 
 /* static */
@@ -425,38 +479,88 @@ void WasmStructObject::obj_trace(JSTracer* trc, JSObject* object) {
 
   const auto& structType = structObj.typeDef().structType();
   for (uint32_t offset : structType.inlineTraceOffsets_) {
-    AnyRef* fieldPtr =
-        reinterpret_cast<AnyRef*>(structObj.inlineData() + offset);
+    AnyRef* fieldPtr = reinterpret_cast<AnyRef*>((uint8_t*)&structObj + offset);
     TraceManuallyBarrieredEdge(trc, fieldPtr, "wasm-struct-field");
   }
-
-  if (structObj.outlineData_) {
-    TraceBufferEdge(trc, &structObj, &structObj.outlineData_,
+  if (MOZ_UNLIKELY(structType.totalSizeOOL_ > 0)) {
+    uint8_t** addressOfOOLPtr = structObj.addressOfOOLPointer();
+    TraceBufferEdge(trc, &structObj, addressOfOOLPtr,
                     "WasmStructObject outline data");
-
+    uint8_t* oolBase = *addressOfOOLPtr;
     for (uint32_t offset : structType.outlineTraceOffsets_) {
-      AnyRef* fieldPtr =
-          reinterpret_cast<AnyRef*>(structObj.outlineData_ + offset);
+      AnyRef* fieldPtr = reinterpret_cast<AnyRef*>(oolBase + offset);
       TraceManuallyBarrieredEdge(trc, fieldPtr, "wasm-struct-field");
     }
   }
 }
 
 /* static */
-size_t WasmStructObject::obj_moved(JSObject* obj, JSObject* old) {
-  // See also, corresponding comments in WasmArrayObject::obj_moved.
-  if (IsInsideNursery(old)) {
-    Nursery& nursery = obj->runtimeFromMainThread()->gc.nursery();
-    WasmStructObject& structObj = obj->as<WasmStructObject>();
-    const TypeDef& typeDef = structObj.typeDef();
-    MOZ_ASSERT(typeDef.isStructType());
-    uint32_t totalBytes = typeDef.structType().size_;
-    uint32_t inlineBytes, outlineBytes;
-    WasmStructObject::getDataByteSizes(totalBytes, &inlineBytes, &outlineBytes);
-    MOZ_ASSERT(inlineBytes == WasmStructObject_MaxInlineBytes);
-    MOZ_ASSERT(outlineBytes > 0);
-    nursery.maybeMoveBufferOnPromotion(&structObj.outlineData_, obj,
-                                       outlineBytes);
+size_t WasmStructObject::obj_moved(JSObject* objNew, JSObject* objOld) {
+  // This gets called only for struct objects that have an OOL area.  Compare
+  // WasmStructObjectInlineClassExt vs WasmStructObjectOutlineClassExt below.
+  MOZ_ASSERT(objNew != objOld);
+
+  WasmStructObject& structNew = objNew->as<WasmStructObject>();
+  WasmStructObject& structOld = objOld->as<WasmStructObject>();
+  MOZ_ASSERT(structNew.hasOOLPointer() && structOld.hasOOLPointer());
+
+  const TypeDef* typeDefNew = &structNew.typeDef();
+  mozilla::DebugOnly<const TypeDef*> typeDefOld = &structOld.typeDef();
+  MOZ_ASSERT(typeDefNew == typeDefOld);
+  MOZ_ASSERT(typeDefNew->isStructType());
+  MOZ_ASSERT(typeDefOld == typeDefNew);
+
+  // At this point, the object has been copied, but the OOL storage area has
+  // not been copied, nor has the OOL pointer been updated.  Hence:
+  MOZ_ASSERT(structNew.getOOLPointer() == structOld.getOOLPointer());
+
+  bool newIsInNursery = IsInsideNursery(objNew);
+  bool oldIsInNursery = IsInsideNursery(objOld);
+
+  // Tenured -> Tenured
+  if (!oldIsInNursery && !newIsInNursery) {
+    // The object already was in the tenured heap and has merely been moved
+    // somewhere else in the the tenured heap.  This isn't interesting to us.
+    return 0;
+  }
+
+  // Tenured -> Nursery: this transition isn't possible.
+  MOZ_RELEASE_ASSERT(oldIsInNursery);
+
+  // Nursery -> Nursery and Nursery -> Tenured
+  // The object is being moved, either within the nursery or from the nursery
+  // to the tenured heap.  Either way, we have to ask the nursery if it wants
+  // to move the OOL block too, and if so set up a forwarding record for it.
+
+  const StructType& structType = typeDefNew->structType();
+  uint32_t outlineBytes = structType.totalSizeOOL_;
+  // These must always agree.
+  MOZ_ASSERT((outlineBytes > 0) == structNew.hasOOLPointer());
+  // Because the WasmStructObjectInlineClassExt doesn't reference this
+  // method; only WasmStructObjectOutlineClassExt does.
+  MOZ_ASSERT(outlineBytes > 0);
+
+  // Ask the nursery if it wants to relocate the OOL area, and if so capture
+  // its new location in `addressOfOOLPointerNew`.
+  Nursery& nursery = structNew.runtimeFromMainThread()->gc.nursery();
+  uint8_t** addressOfOOLPointerNew = structNew.addressOfOOLPointer();
+  nursery.maybeMoveBufferOnPromotion(addressOfOOLPointerNew, objNew,
+                                     outlineBytes);
+
+  // Set up forwarding for the OOL area.  In order to be able to use direct
+  // forwarding, the OOL data area needs to be at least one word long, so that
+  // this call to setForwardingPointerWhileTenuring can write the forwarding
+  // address directly at the start of the old OOL area.  This is ensured by
+  // logic in StructType::init.  See also comments in
+  // WasmArrayObject::obj_moved.  Note that because the first word of the OOL
+  // area is overwritten, we must not access the area after this point, and in
+  // particular not in Instance::updateFrameForMovingGC.
+  uint8_t* oolPointerOld = structOld.getOOLPointer();
+  uint8_t* oolPointerNew = structNew.getOOLPointer();
+  MOZ_RELEASE_ASSERT(outlineBytes >= sizeof(uintptr_t));
+  if (oolPointerOld != oolPointerNew) {
+    nursery.setForwardingPointerWhileTenuring(oolPointerOld, oolPointerNew,
+                                              /*direct=*/true);
   }
 
   return 0;
@@ -464,23 +568,12 @@ size_t WasmStructObject::obj_moved(JSObject* obj, JSObject* old) {
 
 void WasmStructObject::storeVal(const Val& val, uint32_t fieldIndex) {
   const StructType& structType = typeDef().structType();
-  StorageType fieldType = structType.fields_[fieldIndex].type;
-  uint32_t fieldOffset = structType.fieldOffset(fieldIndex);
-
   MOZ_ASSERT(fieldIndex < structType.fields_.length());
-  bool areaIsOutline;
-  uint32_t areaOffset;
-  fieldOffsetToAreaAndOffset(fieldType, fieldOffset, &areaIsOutline,
-                             &areaOffset);
 
-  uint8_t* data;
-  if (areaIsOutline) {
-    data = outlineData_ + areaOffset;
-  } else {
-    data = inlineData() + areaOffset;
-  }
+  StorageType fieldType = structType.fields_[fieldIndex].type;
+  uint8_t* data = fieldIndexToAddress(fieldIndex);
 
-  WriteValTo(val, fieldType, data);
+  WriteValTo(this, val, fieldType, data);
 }
 
 static const JSClassOps WasmStructObjectOutlineClassOps = {

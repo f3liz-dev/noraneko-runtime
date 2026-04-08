@@ -13,6 +13,7 @@ import android.os.Build
 import androidx.annotation.StyleRes
 import androidx.annotation.VisibleForTesting
 import androidx.core.content.ContextCompat
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -20,6 +21,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import mozilla.components.concept.base.crash.Breadcrumb
 import mozilla.components.concept.base.crash.CrashReporting
+import mozilla.components.lib.crash.CrashReporter.Companion.requireInstance
 import mozilla.components.lib.crash.db.CrashDatabase
 import mozilla.components.lib.crash.db.forceSerializable
 import mozilla.components.lib.crash.db.insertCrashSafely
@@ -103,6 +105,7 @@ class CrashReporter internal constructor(
     enabled: Boolean = true,
     internal val promptConfiguration: PromptConfiguration = PromptConfiguration(),
     private val nonFatalCrashIntent: PendingIntent? = null,
+    private val mainDispatcher: CoroutineDispatcher = Dispatchers.Main,
     private val scope: CoroutineScope = CoroutineScope(Dispatchers.IO),
     private val maxBreadCrumbs: Int = 30,
     private val runtimeTagProviders: List<RuntimeTagProvider> = emptyList(),
@@ -118,6 +121,7 @@ class CrashReporter internal constructor(
         enabled: Boolean = true,
         promptConfiguration: PromptConfiguration = PromptConfiguration(),
         nonFatalCrashIntent: PendingIntent? = null,
+        mainDispatcher: CoroutineDispatcher = Dispatchers.Main,
         scope: CoroutineScope = CoroutineScope(Dispatchers.IO),
         maxBreadCrumbs: Int = 30,
         runtimeTagProviders: List<RuntimeTagProvider> = emptyList(),
@@ -129,6 +133,7 @@ class CrashReporter internal constructor(
         enabled = enabled,
         promptConfiguration = promptConfiguration,
         nonFatalCrashIntent = nonFatalCrashIntent,
+        mainDispatcher = mainDispatcher,
         scope = scope,
         maxBreadCrumbs = maxBreadCrumbs,
         runtimeTagProviders = runtimeTagProviders,
@@ -235,7 +240,7 @@ class CrashReporter internal constructor(
             }
 
             logger.info("Crash report submitted to ${services.size} services")
-            withContext(Dispatchers.Main) {
+            withContext(mainDispatcher) {
                 then()
             }
         }
@@ -254,7 +259,7 @@ class CrashReporter internal constructor(
             }
 
             logger.info("Crash report submitted to ${telemetryServices.size} telemetry services")
-            withContext(Dispatchers.Main) {
+            withContext(mainDispatcher) {
                 then()
             }
         }
@@ -487,15 +492,45 @@ class CrashReporter internal constructor(
         @Volatile
         private var instance: CrashReporter? = null
 
+        private var deferredInitializer: (() -> CrashReporter)? = null
+
         @VisibleForTesting
         internal fun reset() {
             instance = null
+            deferredInitializer = null
+        }
+
+        /**
+         * Register a deferred initializer that will be called lazily when [requireInstance] is accessed.
+         * This allows processes to register crash reporting setup without immediately initializing
+         * the CrashReporter and its dependencies.
+         *
+         * Note: This will not register the [Thread.UncaughtExceptionHandler] and is primarily for
+         * cases where we access the crash database or uploader.
+         *
+         * @param initializer A function that returns a configured and installed CrashReporter instance.
+         */
+        fun registerDeferredInitializer(initializer: () -> CrashReporter) = synchronized(this) {
+            deferredInitializer = initializer
         }
 
         internal val requireInstance: CrashReporter
-            get() = instance ?: throw IllegalStateException(
-                "You need to call install() on your CrashReporter instance from Application.onCreate().",
-            )
+            get() = synchronized(this) {
+                instance?.let { return it }
+
+                deferredInitializer?.let { initializer ->
+                    return initializer().also {
+                        it.logger.info("Ran deferred CrashReporter initializer")
+                        instance = it
+                        deferredInitializer = null
+                    }
+                }
+
+                throw IllegalStateException(
+                    "You need to call install() or registerDeferredInitializer() on your" +
+                        " CrashReporter from Application.onCreate().",
+                )
+            }
     }
 }
 

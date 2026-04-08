@@ -19,8 +19,8 @@ import { Notifications } from "content-src/components/Notifications/Notification
 import { TopicSelection } from "content-src/components/DiscoveryStreamComponents/TopicSelection/TopicSelection";
 import { DownloadMobilePromoHighlight } from "../DiscoveryStreamComponents/FeatureHighlight/DownloadMobilePromoHighlight";
 import { WallpaperFeatureHighlight } from "../DiscoveryStreamComponents/FeatureHighlight/WallpaperFeatureHighlight";
+import { ActivationWindowMessage } from "../ActivationWindowMessage/ActivationWindowMessage";
 import { MessageWrapper } from "content-src/components/MessageWrapper/MessageWrapper";
-import { selectWeatherPlacement } from "../../lib/utils";
 
 const VISIBLE = "visible";
 const VISIBILITY_CHANGE_EVENT = "visibilitychange";
@@ -112,6 +112,7 @@ export class BaseContent extends React.PureComponent {
     this.handleDismissDownloadHighlight =
       this.handleDismissDownloadHighlight.bind(this);
     this.applyBodyClasses = this.applyBodyClasses.bind(this);
+    this.toggleSectionsMgmtPanel = this.toggleSectionsMgmtPanel.bind(this);
     this.state = {
       fixedSearch: false,
       firstVisibleTimestamp: null,
@@ -120,7 +121,9 @@ export class BaseContent extends React.PureComponent {
       wallpaperTheme: "",
       showDownloadHighlightOverride: null,
       visible: false,
+      showSectionsMgmtPanel: false,
     };
+    this.spocPlaceholderStartTime = null;
   }
 
   setFirstVisibleTimestamp() {
@@ -138,6 +141,10 @@ export class BaseContent extends React.PureComponent {
     this.setFirstVisibleTimestamp();
     this.shouldDisplayTopicSelectionModal();
     this.onVisibilityDispatch();
+
+    if (this.isSpocsOnDemandExpired && !this.spocPlaceholderStartTime) {
+      this.spocPlaceholderStartTime = Date.now();
+    }
   }
 
   onVisibilityDispatch() {
@@ -204,6 +211,22 @@ export class BaseContent extends React.PureComponent {
     global.addEventListener("keydown", this.handleOnKeyDown);
     const prefs = this.props.Prefs.values;
     const wallpapersEnabled = prefs["newtabWallpapers.enabled"];
+
+    if (!prefs["externalComponents.enabled"]) {
+      if (prefs["search.useHandoffComponent"]) {
+        // Dynamically import the contentSearchHandoffUI module, but don't worry
+        // about webpacking this one.
+        import(
+          /* webpackIgnore: true */ "chrome://browser/content/contentSearchHandoffUI.mjs"
+        );
+      } else {
+        const scriptURL = "chrome://browser/content/contentSearchHandoffUI.js";
+        const scriptEl = document.createElement("script");
+        scriptEl.src = scriptURL;
+        document.head.appendChild(scriptEl);
+      }
+    }
+
     if (this.props.document.visibilityState === VISIBLE) {
       this.onVisible();
     } else {
@@ -235,6 +258,34 @@ export class BaseContent extends React.PureComponent {
     if (wallpapersEnabled) {
       this.updateWallpaper();
     }
+
+    this._onHashChange = () => {
+      const hash = globalThis.location?.hash || "";
+      if (hash === "#customize" || hash === "#customize-topics") {
+        this.openCustomizationMenu();
+
+        if (hash === "#customize-topics") {
+          this.toggleSectionsMgmtPanel();
+        }
+      } else if (this.props.App.customizeMenuVisible) {
+        this.closeCustomizationMenu();
+      }
+    };
+
+    // Using the Performance API to detect page reload vs fresh navigation.
+    // Only open customize menu on fresh navigation, not on page refresh.
+    // See: https://developer.mozilla.org/en-US/docs/Web/API/Performance/getEntriesByType
+    // See: https://developer.mozilla.org/en-US/docs/Web/API/PerformanceEntry/entryType#navigation
+    // See: https://developer.mozilla.org/en-US/docs/Web/API/PerformanceNavigationTiming/type
+    const isReload =
+      globalThis.performance?.getEntriesByType("navigation")[0]?.type ===
+      "reload";
+
+    if (!isReload) {
+      this._onHashChange();
+    }
+
+    globalThis.addEventListener("hashchange", this._onHashChange);
   }
 
   componentDidUpdate(prevProps) {
@@ -287,6 +338,36 @@ export class BaseContent extends React.PureComponent {
     }
 
     this.spocsOnDemandUpdated();
+    this.trackSpocPlaceholderDuration(prevProps);
+  }
+
+  trackSpocPlaceholderDuration(prevProps) {
+    // isExpired returns true when the current props have expired spocs (showing placeholders)
+    const isExpired = this.isSpocsOnDemandExpired;
+
+    // Init tracking when placeholders become visible
+    if (isExpired && this.state.visible && !this.spocPlaceholderStartTime) {
+      this.spocPlaceholderStartTime = Date.now();
+    }
+
+    // wasExpired returns true when the previous props had expired spocs (showing placeholders)
+    const wasExpired =
+      prevProps.DiscoveryStream.spocs.onDemand?.enabled &&
+      !prevProps.DiscoveryStream.spocs.onDemand?.loaded &&
+      Date.now() - prevProps.DiscoveryStream.spocs.lastUpdated >=
+        prevProps.DiscoveryStream.spocs.cacheUpdateTime;
+
+    // Record duration telemetry event when placeholders are replaced with real content
+    if (wasExpired && !isExpired && this.spocPlaceholderStartTime) {
+      const duration = Date.now() - this.spocPlaceholderStartTime;
+      this.props.dispatch(
+        ac.OnlyToMain({
+          type: at.DISCOVERY_STREAM_SPOC_PLACEHOLDER_DURATION,
+          data: { duration },
+        })
+      );
+      this.spocPlaceholderStartTime = null;
+    }
   }
 
   handleColorModeChange() {
@@ -309,6 +390,9 @@ export class BaseContent extends React.PureComponent {
         VISIBILITY_CHANGE_EVENT,
         this._onVisibilityChange
       );
+    }
+    if (this._onHashChange) {
+      globalThis.removeEventListener("hashchange", this._onHashChange);
     }
   }
 
@@ -536,7 +620,8 @@ export class BaseContent extends React.PureComponent {
 
   shouldShowOMCHighlight(componentId) {
     const messageData = this.props.Messages?.messageData;
-    if (!messageData || Object.keys(messageData).length === 0) {
+    const isVisible = this.props.Messages?.isVisible;
+    if (!messageData || Object.keys(messageData).length === 0 || !isVisible) {
       return false;
     }
     return messageData?.content?.messageType === componentId;
@@ -584,6 +669,12 @@ export class BaseContent extends React.PureComponent {
 
   isWallpaperColorDark([r, g, b]) {
     return 0.2125 * r + 0.7154 * g + 0.0721 * b <= 110;
+  }
+
+  toggleSectionsMgmtPanel() {
+    this.setState(prevState => ({
+      showSectionsMgmtPanel: !prevState.showSectionsMgmtPanel,
+    }));
   }
 
   shouldDisplayTopicSelectionModal() {
@@ -653,7 +744,6 @@ export class BaseContent extends React.PureComponent {
       !prefs["feeds.topsites"] &&
       !pocketEnabled &&
       filteredSections.filter(section => section.enabled).length === 0;
-    const searchHandoffEnabled = prefs["improvesearch.handoffToAwesomebar"];
     const enabledSections = {
       topSitesEnabled: prefs["feeds.topsites"],
       pocketEnabled: prefs["feeds.section.topstories"],
@@ -669,10 +759,6 @@ export class BaseContent extends React.PureComponent {
     const mayHaveWeather =
       prefs["system.showWeather"] || prefs.trainhopConfig?.weather?.enabled;
     const supportUrl = prefs["support.url"];
-
-    // Weather can be enabled and not rendered in the top right corner
-    const shouldDisplayWeather =
-      prefs.showWeather && this.props.weatherPlacement === "header";
 
     // Widgets experiment pref check
     const nimbusWidgetsEnabled = prefs.widgetsConfig?.enabled;
@@ -702,6 +788,8 @@ export class BaseContent extends React.PureComponent {
       listsEnabled: prefs["widgets.lists.enabled"],
       timerEnabled: prefs["widgets.focusTimer.enabled"],
       weatherEnabled: prefs.showWeather,
+      widgetsMaximized: prefs["widgets.maximized"],
+      widgetsMayBeMaximized: prefs["widgets.system.maximized"],
     };
 
     // Mobile Download Promo Pref Checks
@@ -719,16 +807,10 @@ export class BaseContent extends React.PureComponent {
     const mobileDownloadPromoWrapperHeightModifier =
       prefs["weather.display"] === "detailed" &&
       weatherEnabled &&
-      shouldDisplayWeather &&
       mayHaveWeather
         ? "is-tall"
         : "";
-
-    const hasThumbsUpDownLayout =
-      prefs["discoverystream.thumbsUpDown.searchTopsitesCompact"];
-    const hasThumbsUpDown = prefs["discoverystream.thumbsUpDown.enabled"];
     const sectionsEnabled = prefs["discoverystream.sections.enabled"];
-    const topicLabelsEnabled = prefs["discoverystream.topicLabels.enabled"];
     const sectionsCustomizeMenuPanelEnabled =
       prefs["discoverystream.sections.customizeMenuPanel.enabled"];
     const sectionsPersonalizationEnabled =
@@ -737,7 +819,6 @@ export class BaseContent extends React.PureComponent {
     // Logic to show follow/block topic mgmt panel in Customize panel
     const mayHavePersonalizedTopicSections =
       sectionsPersonalizationEnabled &&
-      topicLabelsEnabled &&
       sectionsEnabled &&
       sectionsCustomizeMenuPanelEnabled &&
       DiscoveryStream.feeds.loaded;
@@ -746,7 +827,7 @@ export class BaseContent extends React.PureComponent {
       mobileDownloadPromoEnabled &&
         mobileDownloadPromoVariantABorC &&
         "has-mobile-download-promo", // Mobile download promo modal is enabled/visible
-      weatherEnabled && mayHaveWeather && shouldDisplayWeather && "has-weather", // Weather widget is enabled/visible
+      weatherEnabled && mayHaveWeather && "has-weather", // Weather widget is enabled/visible
       prefs.showSearch ? "has-search" : "no-search",
       // layoutsVariantAEnabled ? "layout-variant-a" : "", // Layout experiment variant A
       // layoutsVariantBEnabled ? "layout-variant-b" : "", // Layout experiment variant B
@@ -771,7 +852,6 @@ export class BaseContent extends React.PureComponent {
         "only-topsites",
       noSectionsEnabled && "no-sections",
       prefs["logowordmark.alwaysVisible"] && "visible-logo",
-      hasThumbsUpDownLayout && hasThumbsUpDown && "thumbs-ui-compact",
     ]
       .filter(v => v)
       .join(" ");
@@ -785,7 +865,7 @@ export class BaseContent extends React.PureComponent {
     return (
       <div className={featureClassName}>
         <div className="weatherWrapper">
-          {shouldDisplayWeather && (
+          {weatherEnabled && (
             <ErrorBoundary>
               <Weather />
             </ErrorBoundary>
@@ -826,7 +906,6 @@ export class BaseContent extends React.PureComponent {
                     showLogo={
                       noSectionsEnabled || prefs["logowordmark.alwaysVisible"]
                     }
-                    handoffEnabled={searchHandoffEnabled}
                     {...props.Search}
                   />
                 </ErrorBoundary>
@@ -835,6 +914,14 @@ export class BaseContent extends React.PureComponent {
             {/* Bug 1914055: Show logo regardless if search is enabled */}
             {!prefs.showSearch && !noSectionsEnabled && <Logo />}
             <div className={`body-wrapper${initialized ? " on" : ""}`}>
+              {this.shouldShowOMCHighlight("ActivationWindowMessage") && (
+                <MessageWrapper dispatch={this.props.dispatch}>
+                  <ActivationWindowMessage
+                    dispatch={this.props.dispatch}
+                    messageData={this.props.Messages.messageData}
+                  />
+                </MessageWrapper>
+              )}
               {isDiscoveryStream ? (
                 <ErrorBoundary className="borderless-error">
                   <DiscoveryStreamBase
@@ -880,7 +967,13 @@ export class BaseContent extends React.PureComponent {
             mayHaveWidgets={mayHaveWidgets}
             mayHaveTimerWidget={mayHaveTimerWidget}
             mayHaveListsWidget={mayHaveListsWidget}
+            mayHaveWeatherForecast={
+              prefs["widgets.system.weatherForecast.enabled"]
+            }
+            weatherDisplay={prefs["weather.display"]}
             showing={customizeMenuVisible}
+            toggleSectionsMgmtPanel={this.toggleSectionsMgmtPanel}
+            showSectionsMgmtPanel={this.state.showSectionsMgmtPanel}
           />
           {this.shouldShowOMCHighlight("CustomWallpaperHighlight") && (
             <MessageWrapper dispatch={this.props.dispatch}>
@@ -910,5 +1003,4 @@ export const Base = connect(state => ({
   Search: state.Search,
   Wallpapers: state.Wallpapers,
   Weather: state.Weather,
-  weatherPlacement: selectWeatherPlacement(state),
 }))(_Base);

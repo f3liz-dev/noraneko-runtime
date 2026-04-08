@@ -3,8 +3,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_PresShellWidgetListener_h__
-#define mozilla_PresShellWidgetListener_h__
+#ifndef mozilla_PresShellWidgetListener_h_
+#define mozilla_PresShellWidgetListener_h_
 
 #include "Units.h"
 #include "mozilla/Attributes.h"
@@ -57,8 +57,7 @@ class PresShellWidgetListener final : public nsIWidgetListener {
   bool IsPaintSuppressed() const override {
     return IsPrimaryFramePaintSuppressed();
   }
-  bool WindowResized(nsIWidget* aWidget, int32_t aWidth,
-                     int32_t aHeight) override;
+  void WindowResized(nsIWidget*, const LayoutDeviceIntSize&) override;
   void DynamicToolbarMaxHeightChanged(mozilla::ScreenIntCoord aHeight) override;
   void DynamicToolbarOffsetChanged(mozilla::ScreenIntCoord aOffset) override;
   void KeyboardHeightChanged(mozilla::ScreenIntCoord aHeight) override;

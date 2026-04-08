@@ -48,6 +48,7 @@ remote.jar:
   content/shared/listeners/BeforeStopRequestListener.sys.mjs (shared/listeners/BeforeStopRequestListener.sys.mjs)
   content/shared/listeners/BrowsingContextListener.sys.mjs (shared/listeners/BrowsingContextListener.sys.mjs)
   content/shared/listeners/CachedResourceListener.sys.mjs (shared/listeners/CachedResourceListener.sys.mjs)
+  content/shared/listeners/ChromeWindowListener.sys.mjs (shared/listeners/ChromeWindowListener.sys.mjs)
   content/shared/listeners/ConsoleAPIListener.sys.mjs (shared/listeners/ConsoleAPIListener.sys.mjs)
   content/shared/listeners/ConsoleListener.sys.mjs (shared/listeners/ConsoleListener.sys.mjs)
   content/shared/listeners/ContextualIdentityListener.sys.mjs (shared/listeners/ContextualIdentityListener.sys.mjs)
@@ -65,6 +66,9 @@ remote.jar:
   content/shared/js-process-actors/WebDriverDocumentInsertedActor.sys.mjs (shared/js-process-actors/WebDriverDocumentInsertedActor.sys.mjs)
   content/shared/js-process-actors/WebDriverDocumentInsertedChild.sys.mjs (shared/js-process-actors/WebDriverDocumentInsertedChild.sys.mjs)
   content/shared/js-process-actors/WebDriverDocumentInsertedParent.sys.mjs (shared/js-process-actors/WebDriverDocumentInsertedParent.sys.mjs)
+  content/shared/js-process-actors/WebDriverWorkerListenerActor.sys.mjs (shared/js-process-actors/WebDriverWorkerListenerActor.sys.mjs)
+  content/shared/js-process-actors/WebDriverWorkerListenerChild.sys.mjs (shared/js-process-actors/WebDriverWorkerListenerChild.sys.mjs)
+  content/shared/js-process-actors/WebDriverWorkerListenerParent.sys.mjs (shared/js-process-actors/WebDriverWorkerListenerParent.sys.mjs)
 
   # shared modules (messagehandler architecture)
   content/shared/messagehandler/Errors.sys.mjs (shared/messagehandler/Errors.sys.mjs)

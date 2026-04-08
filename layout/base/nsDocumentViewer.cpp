@@ -428,10 +428,7 @@ class nsDocumentViewer final : public nsIDocumentViewer,
   unsigned mClosingWhilePrinting : 1;
   unsigned mCloseWindowAfterPrint : 1;
 
-#  if NS_PRINT_PREVIEW
   RefPtr<nsPrintJob> mPrintJob;
-#  endif  // NS_PRINT_PREVIEW
-
 #endif  // NS_PRINTING
 
   /* character set member data */
@@ -804,7 +801,7 @@ nsresult nsDocumentViewer::InitInternal(nsIWidget* aParentWidget,
           mDocument, nsPresContext::eContext_Galley, containerFrame);
       mPresContext->Init(mDeviceContext);
 
-#if defined(NS_PRINTING) && defined(NS_PRINT_PREVIEW)
+#ifdef NS_PRINTING
       makeCX = !GetIsPrintPreview() &&
                aNeedMakeCX;  // needs to be true except when we are already in
                              // PP or we are enabling/disabling paginated mode.
@@ -890,6 +887,7 @@ nsDocumentViewer::LoadComplete(nsresult aStatus) {
 
   // First, get the window from the document...
   nsCOMPtr<nsPIDOMWindowOuter> window = mDocument->GetWindow();
+  RefPtr<nsDocShell> docShell = nsDocShell::Cast(window->GetDocShell());
 
   mLoaded = true;
 
@@ -915,7 +913,6 @@ nsDocumentViewer::LoadComplete(nsresult aStatus) {
     // onload to the document content since that would likely confuse scripts
     // on the page.
 
-    RefPtr<nsDocShell> docShell = nsDocShell::Cast(window->GetDocShell());
     NS_ENSURE_TRUE(docShell, NS_ERROR_UNEXPECTED);
 
     // Unfortunately, docShell->GetRestoringDocument() might no longer be set
@@ -924,15 +921,16 @@ nsDocumentViewer::LoadComplete(nsresult aStatus) {
     // But we can detect the restoring case very simply: by whether our
     // document's readyState is COMPLETE.
     restoring =
-        (mDocument->GetReadyStateEnum() == Document::READYSTATE_COMPLETE);
+        (mDocument->GetReadyStateEnum() == Document::READYSTATE_COMPLETE) &&
+        !mDocument->InitialAboutBlankLoadCompleting();
     if (!restoring) {
       NS_ASSERTION(
           mDocument->GetReadyStateEnum() == Document::READYSTATE_INTERACTIVE ||
               // test_stricttransportsecurity.html has old-style
               // docshell-generated about:blank docs reach this code!
               (mDocument->GetReadyStateEnum() ==
-                   Document::READYSTATE_UNINITIALIZED &&
-               NS_IsAboutBlank(mDocument->GetDocumentURI())),
+                   Document::READYSTATE_COMPLETE &&
+               mDocument->InitialAboutBlankLoadCompleting()),
           "Bad readystate");
 #ifdef DEBUG
       bool docShellThinksWeAreRestoring;
@@ -942,7 +940,9 @@ nsDocumentViewer::LoadComplete(nsresult aStatus) {
                  "READYSTATE_COMPLETE document?");
 #endif  // DEBUG
       nsCOMPtr<Document> d = mDocument;
-      mDocument->SetReadyStateInternal(Document::READYSTATE_COMPLETE);
+      if (!mDocument->InitialAboutBlankLoadCompleting()) {
+        mDocument->SetReadyStateInternal(Document::READYSTATE_COMPLETE);
+      }
 
       RefPtr<nsDOMNavigationTiming> timing(d->GetNavigationTiming());
       if (timing) {
@@ -1004,7 +1004,7 @@ nsDocumentViewer::LoadComplete(nsresult aStatus) {
     // Re-get window, since it might have changed during above firing of onload
     window = mDocument->GetWindow();
     if (window) {
-      nsIDocShell* docShell = window->GetDocShell();
+      docShell = nsDocShell::Cast(window->GetDocShell());
       bool isInUnload;
       if (docShell && NS_SUCCEEDED(docShell->GetIsInUnload(&isInUnload)) &&
           !isInUnload) {
@@ -1026,11 +1026,27 @@ nsDocumentViewer::LoadComplete(nsresult aStatus) {
     // Now that the document has loaded, we can tell the presshell
     // to unsuppress painting.
     if (mPresShell) {
-      RefPtr<PresShell> presShell = mPresShell;
-      presShell->UnsuppressPainting();
-      // mPresShell could have been removed now, see bug 378682/421432
-      if (mPresShell) {
-        mPresShell->LoadComplete();
+      if (mDocument && mDocument->IsInitialDocument() && docShell &&
+          !docShell->HasStartedLoadingOtherThanInitialBlankURI()) {
+        // Delay paint unsuppression in case a new load elsewhere is started
+        // in the same task that permitted the initial about:blank to fire
+        // its load event. This is important for the front end, which assumes
+        // that it's performance-wise OK to create an empty XUL browser,
+        // append it in a document, and only then make it start navigating
+        // away from the initial about:blank.
+        nsCOMPtr<nsIRunnable> task = NewRunnableMethod<RefPtr<PresShell>>(
+            "nsDocShell::UnsuppressPaintingIfNoNavigationAwayFromAboutBlank",
+            docShell,
+            &nsDocShell::UnsuppressPaintingIfNoNavigationAwayFromAboutBlank,
+            mPresShell);
+        mDocument->Dispatch(task.forget());
+      } else {
+        RefPtr<PresShell> presShell = mPresShell;
+        presShell->UnsuppressPainting();
+        // mPresShell could have been removed now, see bug 378682/421432
+        if (mPresShell) {
+          mPresShell->LoadComplete();
+        }
       }
     }
   }
@@ -1104,6 +1120,11 @@ nsDocumentViewer::PermitUnload(PermitUnloadAction aAction,
 
   RefPtr<BrowsingContext> bc = mContainer->GetBrowsingContext();
   if (!bc) {
+    return NS_OK;
+  }
+
+  if (bc->GetIsDocumentPiP()) {
+    // https://wicg.github.io/document-picture-in-picture/#close-document-pip-window
     return NS_OK;
   }
 
@@ -1630,11 +1651,9 @@ nsDocumentViewer::Destroy() {
 #ifdef NS_PRINTING
   if (mPrintJob) {
     RefPtr<nsPrintJob> printJob = std::move(mPrintJob);
-#  ifdef NS_PRINT_PREVIEW
     if (printJob->CreatedForPrintPreview()) {
       printJob->FinishPrintPreview();
     }
-#  endif
     printJob->Destroy();
     MOZ_ASSERT(!mPrintJob,
                "mPrintJob shouldn't be recreated while destroying it");
@@ -2718,7 +2737,6 @@ NS_IMETHODIMP
 nsDocumentViewer::PrintPreview(nsIPrintSettings* aPrintSettings,
                                nsIWebProgressListener* aWebProgressListener,
                                PrintPreviewResolver&& aCallback) {
-#  ifdef NS_PRINT_PREVIEW
   RefPtr<Document> doc = mDocument.get();
   NS_ENSURE_STATE(doc);
 
@@ -2755,9 +2773,6 @@ nsDocumentViewer::PrintPreview(nsIPrintSettings* aPrintSettings,
     OnDonePrinting();
   }
   return rv;
-#  else
-  return NS_ERROR_FAILURE;
-#  endif  // NS_PRINT_PREVIEW
 }
 
 static const nsIFrame* GetTargetPageFrame(int32_t aTargetPageNum,
@@ -2988,7 +3003,6 @@ nsDocumentViewer::ExitPrintPreview() {
     return NS_OK;
   }
 
-#  ifdef NS_PRINT_PREVIEW
   mPrintJob->Destroy();
   mPrintJob = nullptr;
 
@@ -2998,7 +3012,6 @@ nsDocumentViewer::ExitPrintPreview() {
   // unblock navigation, we do not call `SetOverrideDPPX` to reset the
   // devicePixelRatio, and we do not call `Show` to make such changes take
   // affect.
-#  endif  // NS_PRINT_PREVIEW
 
   return NS_OK;
 }
@@ -3098,7 +3111,7 @@ void nsDocumentViewer::DecrementDestroyBlockedCount() {
 //   and print preview
 //
 void nsDocumentViewer::OnDonePrinting() {
-#if defined(NS_PRINTING) && defined(NS_PRINT_PREVIEW)
+#ifdef NS_PRINTING
   // If Destroy() has been called during calling nsPrintJob::Print() or
   // nsPrintJob::PrintPreview(), mPrintJob is already nullptr here.
   // So, the following clean up does nothing in such case.
@@ -3141,7 +3154,7 @@ void nsDocumentViewer::OnDonePrinting() {
       mClosingWhilePrinting = false;
     }
   }
-#endif  // NS_PRINTING && NS_PRINT_PREVIEW
+#endif  // NS_PRINTING
 }
 
 NS_IMETHODIMP nsDocumentViewer::SetPrintSettingsForSubdocument(

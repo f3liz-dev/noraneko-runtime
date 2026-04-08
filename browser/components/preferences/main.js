@@ -8,6 +8,10 @@
 /* import-globals-from /browser/base/content/aboutDialog-appUpdater.js */
 /* global MozXULElement */
 
+/**
+ * @import { Setting } from "chrome://global/content/preferences/Setting.mjs"
+ */
+
 ChromeUtils.defineESModuleGetters(this, {
   BackgroundUpdate: "resource://gre/modules/BackgroundUpdate.sys.mjs",
   UpdateListener: "resource://gre/modules/UpdateListener.sys.mjs",
@@ -16,10 +20,13 @@ ChromeUtils.defineESModuleGetters(this, {
   SelectableProfileService:
     "resource:///modules/profiles/SelectableProfileService.sys.mjs",
   TranslationsParent: "resource://gre/actors/TranslationsParent.sys.mjs",
+  TranslationsUtils:
+    "chrome://global/content/translations/TranslationsUtils.mjs",
   WindowsLaunchOnLogin: "resource://gre/modules/WindowsLaunchOnLogin.sys.mjs",
   NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
   FormAutofillPreferences:
     "resource://autofill/FormAutofillPreferences.sys.mjs",
+  getMozRemoteImageURL: "moz-src:///toolkit/modules/FaviconUtils.sys.mjs",
 });
 
 // Constants & Enumeration Values
@@ -53,6 +60,17 @@ const APP_ICON_ATTR_NAME = "appHandlerIcon";
 const OPEN_EXTERNAL_LINK_NEXT_TO_ACTIVE_TAB_VALUE =
   Ci.nsIBrowserDOMWindow.OPEN_NEWTAB_AFTER_CURRENT;
 
+/**
+ * @param {Setting} featureSetting
+ * @param {Setting} defaultSetting
+ */
+function canShowAiFeature(featureSetting, defaultSetting) {
+  return (
+    featureSetting.value != "blocked" &&
+    !(featureSetting.value == "default" && defaultSetting.value == "blocked")
+  );
+}
+
 Preferences.addAll([
   // Startup
   { id: "browser.startup.page", type: "int" },
@@ -66,6 +84,15 @@ Preferences.addAll([
   { id: "browser.download.always_ask_before_handling_new_types", type: "bool" },
   { id: "browser.download.folderList", type: "int" },
   { id: "browser.download.dir", type: "file" },
+
+  // AI Controls, these pref values can affect settings on the main pane and
+  // have base Settings here
+  { id: "browser.ai.control.default", type: "string" },
+  { id: "browser.ai.control.translations", type: "string" },
+  { id: "browser.ai.control.pdfjsAltText", type: "string" },
+  { id: "browser.ai.control.smartTabGroups", type: "string" },
+  { id: "browser.ai.control.linkPreviewKeyPoints", type: "string" },
+  { id: "browser.ai.control.sidebarChatbot", type: "string" },
 
   /* Tab preferences
   Preferences:
@@ -102,6 +129,7 @@ Preferences.addAll([
   { id: "browser.ctrlTab.sortByRecentlyUsed", type: "bool" },
   { id: "browser.tabs.hoverPreview.enabled", type: "bool" },
   { id: "browser.tabs.hoverPreview.showThumbnails", type: "bool" },
+  { id: "browser.tabs.groups.enabled", type: "bool" },
   { id: "browser.tabs.groups.smart.userEnabled", type: "bool" },
   { id: "browser.tabs.groups.smart.enabled", type: "bool" },
   { id: "privacy.userContext.ui.enabled", type: "bool" },
@@ -128,6 +156,8 @@ Preferences.addAll([
   // Languages
   { id: "intl.regional_prefs.use_os_locales", type: "bool" },
 
+  { id: "intl.accept_languages", type: "string" },
+  { id: "privacy.spoof_english", type: "int" },
   // General tab
 
   /* Accessibility
@@ -141,6 +171,9 @@ Preferences.addAll([
   { id: "accessibility.browsewithcaret", type: "bool" },
   { id: "accessibility.typeaheadfind", type: "bool" },
   { id: "accessibility.blockautorefresh", type: "bool" },
+
+  /* Zoom */
+  { id: "browser.zoom.full", type: "bool" },
 
   /* Browsing
    * general.autoScroll
@@ -158,6 +191,7 @@ Preferences.addAll([
   { id: "layout.css.always_underline_links", type: "bool" },
   { id: "layout.spellcheckDefault", type: "int" },
   { id: "accessibility.tabfocus", type: "int" },
+
   { id: "browser.ml.linkPreview.enabled", type: "bool" },
   { id: "browser.ml.linkPreview.optin", type: "bool" },
   { id: "browser.ml.linkPreview.longPress", type: "bool" },
@@ -185,6 +219,7 @@ Preferences.addAll([
     id: "privacy.userContext.newTabContainerOnLeftClick.enabled",
     type: "bool",
   },
+  { id: "nimbus.rollouts.enabled", type: "bool" },
 
   // Picture-in-Picture
   {
@@ -201,6 +236,9 @@ Preferences.addAll([
 
   // Appearance
   { id: "layout.css.prefers-color-scheme.content-override", type: "int" },
+
+  // Translations
+  { id: "browser.translations.automaticallyPopup", type: "bool" },
 ]);
 
 if (AppConstants.HAVE_SHELL_SERVICE) {
@@ -494,15 +532,23 @@ Preferences.addSetting(
     },
   })
 );
+
 Preferences.addSetting({
   id: "linkPreviewEnabled",
   pref: "browser.ml.linkPreview.enabled",
-  // @ts-ignore bug 1996860
-  visible: () => LinkPreview.canShowPreferences,
+  deps: ["aiControlDefault", "aiControlLinkPreviews"],
+  visible: ({ aiControlDefault, aiControlLinkPreviews }) => {
+    return (
+      canShowAiFeature(aiControlLinkPreviews, aiControlDefault) &&
+      // @ts-ignore bug 1996860
+      LinkPreview.canShowPreferences
+    );
+  },
 });
 Preferences.addSetting({
   id: "linkPreviewKeyPoints",
   pref: "browser.ml.linkPreview.optin",
+  // LinkPreview.canShowKeyPoints depends on the global genai pref.
   // @ts-ignore bug 1996860
   visible: () => LinkPreview.canShowKeyPoints,
 });
@@ -577,6 +623,23 @@ Preferences.addSetting({
   pref: "browser.newtabpage.activity-stream.asrouter.userprefs.cfr.features",
 });
 Preferences.addSetting({
+  id: "browserLayoutRadioGroup",
+  pref: "sidebar.verticalTabs",
+  get: prefValue => (prefValue ? "true" : "false"),
+  set: value => value === "true",
+});
+Preferences.addSetting({
+  id: "browserLayoutShowSidebar",
+  pref: "sidebar.revamp",
+  onUserChange(checked) {
+    if (checked) {
+      window.browsingContext.topChromeWindow.SidebarController?.enabledViaSettings(
+        true
+      );
+    }
+  },
+});
+Preferences.addSetting({
   id: "web-appearance-override-warning",
   setup: emitChange => {
     FORCED_COLORS_QUERY.addEventListener("change", emitChange);
@@ -633,7 +696,211 @@ Preferences.addSetting({
   },
 });
 
-Preferences.addSetting({ id: "zoomPlaceholder" });
+Preferences.addSetting({
+  id: "acceptLanguages",
+  pref: "intl.accept_languages",
+  get(prefVal, _, setting) {
+    return setting.pref.defaultValue != prefVal
+      ? prefVal.toLowerCase()
+      : Services.locale.acceptLanguages.toLowerCase();
+  },
+});
+Preferences.addSetting({
+  id: "availableLanguages",
+  deps: ["acceptLanguages"],
+  get(_, { acceptLanguages }) {
+    let re = /\s*(?:,|$)\s*/;
+    let _acceptLanguages = acceptLanguages.value.split(re);
+    let availableLanguages = [];
+    let localeCodes = [];
+    let localeValues = [];
+    let bundle = Services.strings.createBundle(
+      "resource://gre/res/language.properties"
+    );
+
+    for (let currString of bundle.getSimpleEnumeration()) {
+      let property = currString.key.split(".");
+      if (property[1] == "accept") {
+        localeCodes.push(property[0]);
+        localeValues.push(currString.value);
+      }
+    }
+
+    let localeNames = Services.intl.getLocaleDisplayNames(
+      undefined,
+      localeCodes
+    );
+
+    for (let i in localeCodes) {
+      let isVisible =
+        localeValues[i] == "true" &&
+        (!_acceptLanguages.includes(localeCodes[i]) ||
+          !_acceptLanguages[localeCodes[i]]);
+      let locale = {
+        code: localeCodes[i],
+        displayName: localeNames[i],
+        isVisible,
+      };
+      availableLanguages.push(locale);
+    }
+
+    return availableLanguages;
+  },
+});
+
+Preferences.addSetting({
+  id: "websiteLanguageWrapper",
+  deps: ["acceptLanguages"],
+  onUserReorder(event, deps) {
+    const { draggedIndex, targetIndex } = event.detail;
+
+    let re = /\s*(?:,|$)\s*/;
+    let languages = deps.acceptLanguages.value.split(re).filter(lang => lang);
+
+    const [draggedLang] = languages.splice(draggedIndex, 1);
+
+    languages.splice(targetIndex, 0, draggedLang);
+
+    deps.acceptLanguages.value = languages.join(",");
+  },
+  getControlConfig(config, deps) {
+    let languagePref = deps.acceptLanguages.value;
+    let localeCodes = languagePref
+      .toLowerCase()
+      .split(/\s*,\s*/)
+      .filter(code => code.length);
+    let localeDisplayNames = Services.intl.getLocaleDisplayNames(
+      undefined,
+      localeCodes
+    );
+    /** @type {SettingOptionConfig[]} */
+    let availableLanguages = [];
+    for (let i = 0; i < localeCodes.length; i++) {
+      let displayName = localeDisplayNames[i];
+      let localeCode = localeCodes[i];
+      availableLanguages.push({
+        l10nId: "languages-code-format",
+        l10nArgs: {
+          locale: displayName,
+          code: localeCode,
+        },
+        control: "moz-box-item",
+        key: localeCode,
+        options: [
+          {
+            control: "moz-button",
+            slot: "actions-start",
+            iconSrc: "chrome://global/skin/icons/delete.svg",
+            l10nId: "website-remove-language-button",
+            l10nArgs: {
+              locale: displayName,
+              code: localeCode,
+            },
+            controlAttrs: {
+              locale: localeCode,
+              action: "remove",
+            },
+          },
+        ],
+      });
+    }
+    config.options = [config.options[0], ...availableLanguages];
+    return config;
+  },
+  onUserClick(e, deps) {
+    let code = e.target.getAttribute("locale");
+    let action = e.target.getAttribute("action");
+    if (code && action) {
+      if (action === "remove") {
+        let re = /\s*(?:,|$)\s*/;
+        let acceptedLanguages = deps.acceptLanguages.value.split(re);
+        let filteredLanguages = acceptedLanguages.filter(
+          acceptedCode => acceptedCode !== code
+        );
+        deps.acceptLanguages.value = filteredLanguages.join(",");
+        let closestBoxItem = e.target.closest("moz-box-item");
+        closestBoxItem.nextElementSibling
+          ? closestBoxItem.nextElementSibling.focus()
+          : closestBoxItem.previousElementSibling.focus();
+      }
+    }
+  },
+});
+
+Preferences.addSetting({
+  id: "websiteLanguageAddLanguage",
+  deps: ["websiteLanguagePicker", "acceptLanguages"],
+  onUserClick(e, deps) {
+    let selectedLanguage = deps.websiteLanguagePicker.value;
+    if (selectedLanguage == "-1") {
+      return;
+    }
+
+    let re = /\s*(?:,|$)\s*/;
+    let currentLanguages = deps.acceptLanguages.value.split(re);
+    let isAlreadyAccepted = currentLanguages.includes(selectedLanguage);
+
+    if (isAlreadyAccepted) {
+      return;
+    }
+
+    currentLanguages.unshift(selectedLanguage);
+    deps.acceptLanguages.value = currentLanguages.join(",");
+  },
+});
+
+Preferences.addSetting(
+  /** @type {{inputValue: string} & SettingConfig } */ ({
+    id: "websiteLanguagePicker",
+    deps: ["availableLanguages", "acceptLanguages"],
+    inputValue: "-1",
+    getControlConfig(config, deps) {
+      let re = /\s*(?:,|$)\s*/;
+      let availableLanguages =
+        /** @type {{ locale: string, code: string, displayName: string, isVisible: boolean }[]} */
+        deps.availableLanguages.value;
+
+      let acceptLanguages = new Set(
+        /** @type {string} */ (deps.acceptLanguages.value).split(re)
+      );
+
+      let sortedOptions = availableLanguages.map(locale => ({
+        l10nId: "languages-code-format",
+        l10nArgs: {
+          locale: locale.displayName,
+          code: locale.code,
+        },
+        hidden: locale.isVisible && acceptLanguages.has(locale.code),
+        value: locale.code,
+      }));
+      // Sort the list of languages by name
+      let comp = new Services.intl.Collator(undefined, {
+        usage: "sort",
+      });
+
+      sortedOptions.sort((a, b) => {
+        return comp.compare(a.l10nArgs.locale, b.l10nArgs.locale);
+      });
+
+      // Take the existing "Add Language" option and prepend it.
+      config.options = [config.options[0], ...sortedOptions];
+      return config;
+    },
+    get(_, deps) {
+      if (
+        !this.inputValue ||
+        deps.acceptLanguages.value.split(",").includes(this.inputValue)
+      ) {
+        this.inputValue = "-1";
+      }
+      return this.inputValue;
+    },
+    set(inputVal) {
+      this.inputValue = String(inputVal);
+    },
+  })
+);
+
 Preferences.addSetting({
   id: "containersPane",
   onUserClick(e) {
@@ -642,6 +909,144 @@ Preferences.addSetting({
   },
 });
 Preferences.addSetting({ id: "containersPlaceholder" });
+Preferences.addSetting({
+  id: "legacyTranslationsVisible",
+  deps: ["aiControlDefault", "aiControlTranslations"],
+  visible: ({ aiControlDefault, aiControlTranslations }) =>
+    !Services.prefs.getBoolPref("browser.settings-redesign.enable", false) &&
+    canShowAiFeature(aiControlTranslations, aiControlDefault),
+});
+
+Preferences.addSetting({
+  id: "offerTranslations",
+  pref: "browser.translations.automaticallyPopup",
+  deps: ["aiControlDefault", "aiControlTranslations"],
+  visible: ({ aiControlDefault, aiControlTranslations }) =>
+    canShowAiFeature(aiControlTranslations, aiControlDefault),
+});
+
+Preferences.addSetting({
+  id: "checkSpelling",
+  pref: "layout.spellcheckDefault",
+  get: prefVal => prefVal != 0,
+  set: val => (val ? 1 : 0),
+});
+
+Preferences.addSetting({
+  id: "downloadDictionaries",
+});
+
+Preferences.addSetting({
+  id: "spellCheckPromo",
+});
+
+function createNeverTranslateSitesDescription() {
+  const description = document.createElement("span");
+  description.dataset.l10nId =
+    "settings-translations-subpage-never-translate-sites-description";
+
+  for (const [name, src] of [
+    ["translations-icon", "chrome://browser/skin/translations.svg"],
+    ["settings-icon", "chrome://global/skin/icons/settings.svg"],
+  ]) {
+    const icon = document.createElement("img");
+    icon.src = src;
+
+    icon.dataset.l10nName = name;
+    icon.style.verticalAlign = "middle";
+
+    icon.setAttribute("role", "presentation");
+    icon.setAttribute("width", "16");
+    icon.setAttribute("height", "16");
+
+    description.appendChild(icon);
+  }
+
+  return description;
+}
+
+Preferences.addSetting({
+  id: "translationsDownloadLanguagesGroup",
+});
+
+Preferences.addSetting({
+  id: "translationsDownloadLanguagesRow",
+});
+
+Preferences.addSetting({
+  id: "translationsDownloadLanguagesSelect",
+});
+
+Preferences.addSetting({
+  id: "translationsDownloadLanguagesButton",
+});
+
+Preferences.addSetting({
+  id: "translationsDownloadLanguagesNoneRow",
+});
+
+Preferences.addSetting({
+  id: "translationsAlwaysTranslateLanguagesGroup",
+});
+
+Preferences.addSetting({
+  id: "translationsAlwaysTranslateLanguagesRow",
+});
+
+Preferences.addSetting({
+  id: "translationsAlwaysTranslateLanguagesSelect",
+});
+
+Preferences.addSetting({
+  id: "translationsAlwaysTranslateLanguagesNoneRow",
+});
+
+Preferences.addSetting({
+  id: "translationsAlwaysTranslateLanguagesButton",
+});
+
+Preferences.addSetting({
+  id: "translationsNeverTranslateLanguagesNoneRow",
+});
+
+Preferences.addSetting({
+  id: "translationsNeverTranslateLanguagesButton",
+});
+
+Preferences.addSetting({
+  id: "translationsNeverTranslateLanguagesGroup",
+});
+
+Preferences.addSetting({
+  id: "translationsNeverTranslateLanguagesRow",
+});
+
+Preferences.addSetting({
+  id: "translationsNeverTranslateLanguagesSelect",
+});
+
+Preferences.addSetting({
+  id: "translationsNeverTranslateSitesGroup",
+});
+
+Preferences.addSetting({
+  id: "translationsNeverTranslateSitesRow",
+});
+
+Preferences.addSetting({
+  id: "translationsNeverTranslateSitesNoneRow",
+});
+
+Preferences.addSetting({
+  id: "translationsManageButton",
+  deps: ["aiControlDefault", "aiControlTranslations"],
+  onUserClick(e) {
+    e.preventDefault();
+    gotoPref("paneTranslations");
+  },
+  visible: ({ aiControlDefault, aiControlTranslations }) =>
+    canShowAiFeature(aiControlTranslations, aiControlDefault),
+});
 
 Preferences.addSetting({
   id: "data-migration",
@@ -658,6 +1063,11 @@ Preferences.addSetting({
 Preferences.addSetting({
   id: "connectionSettings",
   onUserClick: () => gMainPane.showConnections(),
+  controllingExtensionInfo: {
+    storeId: PROXY_KEY,
+    l10nId: "extension-controlling-proxy-config",
+    allowControl: true,
+  },
 });
 
 Preferences.addSetting({
@@ -1111,7 +1521,9 @@ const DefaultBrowserHelper = {
 
     const pollForDefaultBrowser = () => {
       if (
-        (location.hash == "" || location.hash == "#general") &&
+        (location.hash == "" ||
+          location.hash == "#general" ||
+          location.hash == "#sync") &&
         document.visibilityState == "visible"
       ) {
         const { isBrowserDefault } = this;
@@ -1255,6 +1667,17 @@ Preferences.addSetting({
   },
 });
 
+// Firefox support settings
+Preferences.addSetting({
+  id: "supportLinksGroup",
+});
+Preferences.addSetting({
+  id: "supportGetHelp",
+});
+Preferences.addSetting({
+  id: "supportShareIdeas",
+});
+
 // Performance settings
 Preferences.addSetting({
   id: "contentProcessCount",
@@ -1297,9 +1720,9 @@ Preferences.addSetting({
     const guid = e.target.getAttribute("guid");
     if (action === "remove") {
       let [title, confirm, cancel] = await document.l10n.formatValues([
-        { id: "payments-remove-payment-prompt-title" },
-        { id: "payments-remove-payment-prompt-confirm-button" },
-        { id: "payments-remove-payment-prompt-cancel-button" },
+        { id: "payments-delete-payment-prompt-title" },
+        { id: "payments-delete-payment-prompt-confirm-button" },
+        { id: "payments-delete-payment-prompt-cancel-button" },
       ]);
       FormAutofillPreferences.prototype.openRemovePaymentDialog(
         guid,
@@ -1317,16 +1740,35 @@ Preferences.addSetting({
 Preferences.addSetting({
   id: "add-payment-button",
   deps: ["saveAndFillPayments"],
+  setup: (emitChange, _, setting) => {
+    function updateDepsAndChange() {
+      setting._deps = null;
+      emitChange();
+    }
+    Services.obs.addObserver(
+      updateDepsAndChange,
+      "formautofill-preferences-initialized"
+    );
+    return () =>
+      Services.obs.removeObserver(
+        updateDepsAndChange,
+        "formautofill-preferences-initialized"
+      );
+  },
   onUserClick: ({ target }) => {
     target.ownerGlobal.gSubDialog.open(
       "chrome://formautofill/content/editCreditCard.xhtml"
     );
   },
-  disabled: ({ saveAndFillPayments }) => !saveAndFillPayments.value,
+  disabled: ({ saveAndFillPayments }) => !saveAndFillPayments?.value,
 });
 
 Preferences.addSetting({
   id: "payments-list-header",
+});
+
+Preferences.addSetting({
+  id: "no-payments-stored",
 });
 
 Preferences.addSetting(
@@ -1459,6 +1901,32 @@ Preferences.addSetting({
   visible: () => TransientPrefs.prefShouldBeVisible("browser.tabs.warnOnOpen"),
 });
 
+// AI Control pref settings
+Preferences.addSetting({
+  id: "aiControlDefault",
+  pref: "browser.ai.control.default",
+});
+Preferences.addSetting({
+  id: "aiControlTranslations",
+  pref: "browser.ai.control.translations",
+});
+Preferences.addSetting({
+  id: "aiControlPdfjsAltText",
+  pref: "browser.ai.control.pdfjsAltText",
+});
+Preferences.addSetting({
+  id: "aiControlSmartTabGroups",
+  pref: "browser.ai.control.smartTabGroups",
+});
+Preferences.addSetting({
+  id: "aiControlLinkPreviews",
+  pref: "browser.ai.control.linkPreviewKeyPoints",
+});
+Preferences.addSetting({
+  id: "aiControlSidebarChatbot",
+  pref: "browser.ai.control.sidebarChatbot",
+});
+
 // "Interaction" tabs settings
 Preferences.addSetting({
   id: "tabsInteraction",
@@ -1481,15 +1949,35 @@ Preferences.addSetting({
   visible: ({ tabHoverPreview }) => !!tabHoverPreview.value,
 });
 Preferences.addSetting({
+  id: "tabGroups",
+  pref: "browser.tabs.groups.enabled",
+});
+Preferences.addSetting({
   id: "smartTabGroups",
   pref: "browser.tabs.groups.smart.enabled",
 });
 Preferences.addSetting({
   id: "tabGroupSuggestions",
   pref: "browser.tabs.groups.smart.userEnabled",
-  deps: ["smartTabGroups"],
-  visible: ({ smartTabGroups }) =>
-    !!smartTabGroups.value && Services.locale.appLocaleAsBCP47.startsWith("en"),
+  deps: [
+    "tabGroups",
+    "smartTabGroups",
+    "aiControlDefault",
+    "aiControlSmartTabGroups",
+  ],
+  visible: ({
+    smartTabGroups,
+    tabGroups,
+    aiControlDefault,
+    aiControlSmartTabGroups,
+  }) => {
+    return (
+      canShowAiFeature(aiControlSmartTabGroups, aiControlDefault) &&
+      !!tabGroups.value &&
+      !!smartTabGroups.value &&
+      Services.locale.appLocaleAsBCP47.startsWith("en")
+    );
+  },
 });
 if (AppConstants.platform === "win") {
   /**
@@ -1653,20 +2141,452 @@ Preferences.addSetting({
   },
 });
 
-SettingGroupManager.registerGroups({
-  containers: {
-    // This section is marked as in progress for testing purposes
-    inProgress: true,
-    items: [
+/**
+ * Helper object for managing the various zoom related settings.
+ */
+const ZoomHelpers = {
+  win: window.browsingContext.topChromeWindow,
+  get FullZoom() {
+    return this.win.FullZoom;
+  },
+  get ZoomManager() {
+    return this.win.ZoomManager;
+  },
+
+  /**
+   * Set the global default zoom value.
+   *
+   * @param {number} newZoom - The new zoom
+   * @returns {Promise<void>}
+   */
+  async setDefaultZoom(newZoom) {
+    let cps2 = Cc["@mozilla.org/content-pref/service;1"].getService(
+      Ci.nsIContentPrefService2
+    );
+    let nonPrivateLoadContext = Cu.createLoadContext();
+    let resolvers = Promise.withResolvers();
+    /* Because our setGlobal function takes in a browsing context, and
+     * because we want to keep this property consistent across both private
+     * and non-private contexts, we create a non-private context and use that
+     * to set the property, regardless of our actual context.
+     */
+    cps2.setGlobal(this.FullZoom.name, newZoom, nonPrivateLoadContext, {
+      handleCompletion: resolvers.resolve,
+      handleError: resolvers.reject,
+    });
+    return resolvers.promise;
+  },
+
+  async getDefaultZoom() {
+    /** @import { ZoomUI as GlobalZoomUI } from "resource:///modules/ZoomUI.sys.mjs" */
+    /** @type {GlobalZoomUI} */
+    let ZoomUI = this.win.ZoomUI;
+    return await ZoomUI.getGlobalValue();
+  },
+
+  /**
+   * The possible zoom values.
+   *
+   * @returns {number[]}
+   */
+  get zoomValues() {
+    return this.ZoomManager.zoomValues;
+  },
+
+  toggleFullZoom() {
+    this.ZoomManager.toggleZoom();
+  },
+};
+Preferences.addSetting(
+  class extends Preferences.AsyncSetting {
+    static id = "defaultZoom";
+    /** @type {Record<"options", object[]>} */
+    optionsConfig;
+
+    /**
+     * @param {string} val - zoom value as a string
+     */
+    async set(val) {
+      ZoomHelpers.setDefaultZoom(
+        parseFloat((parseInt(val, 10) / 100).toFixed(2))
+      );
+    }
+    async get() {
+      return Math.round((await ZoomHelpers.getDefaultZoom()) * 100);
+    }
+    async getControlConfig() {
+      if (!this.optionsConfig) {
+        this.optionsConfig = {
+          options: ZoomHelpers.zoomValues.map(a => {
+            let value = Math.round(a * 100);
+            return {
+              value,
+              l10nId: "preferences-default-zoom-value",
+              l10nArgs: { percentage: value },
+            };
+          }),
+        };
+      }
+      return this.optionsConfig;
+    }
+  }
+);
+Preferences.addSetting({
+  id: "zoomTextPref",
+  pref: "browser.zoom.full",
+});
+Preferences.addSetting({
+  id: "zoomText",
+  deps: ["zoomTextPref"],
+  // Use the Setting since the ZoomManager getter may not have updated yet.
+  get: (_, { zoomTextPref }) => !zoomTextPref.value,
+  set: () => ZoomHelpers.toggleFullZoom(),
+  disabled: ({ zoomTextPref }) => zoomTextPref.locked,
+});
+Preferences.addSetting({
+  id: "zoomWarning",
+  deps: ["zoomText"],
+  visible: ({ zoomText }) => Boolean(zoomText.value),
+});
+
+/**
+ * Helper object for managing font-related settings.
+ */
+const FontHelpers = {
+  _enumerator: null,
+  _allFonts: null,
+
+  get enumerator() {
+    if (!this._enumerator) {
+      this._enumerator = Cc["@mozilla.org/gfx/fontenumerator;1"].createInstance(
+        Ci.nsIFontEnumerator
+      );
+    }
+    return this._enumerator;
+  },
+
+  ensurePref(prefId, type) {
+    let pref = Preferences.get(prefId);
+    if (!pref) {
+      pref = Preferences.add({ id: prefId, type });
+    }
+    return pref;
+  },
+
+  get langGroup() {
+    return Services.locale.fontLanguageGroup;
+  },
+
+  getFontTypePrefId(langGroup) {
+    return `font.default.${langGroup}`;
+  },
+
+  getFontType(langGroup) {
+    const prefId = this.getFontTypePrefId(langGroup);
+    return Services.prefs.getCharPref(prefId, "serif");
+  },
+
+  getFontPrefId(langGroup) {
+    const fontType = this.getFontType(langGroup);
+    return `font.name.${fontType}.${langGroup}`;
+  },
+
+  getSizePrefId(langGroup) {
+    return `font.size.variable.${langGroup}`;
+  },
+
+  buildFontOptions(langGroup, fontType) {
+    let fonts = this.enumerator.EnumerateFonts(langGroup, fontType);
+    let defaultFont = null;
+    if (fonts.length) {
+      defaultFont = this.enumerator.getDefaultFont(langGroup, fontType);
+    } else {
+      fonts = this.enumerator.EnumerateFonts(langGroup, "");
+      if (fonts.length) {
+        defaultFont = this.enumerator.getDefaultFont(langGroup, "");
+      }
+    }
+
+    if (!this._allFonts) {
+      this._allFonts = this.enumerator.EnumerateAllFonts();
+    }
+
+    const options = [];
+
+    if (fonts.length) {
+      if (defaultFont) {
+        options.push({
+          value: "",
+          l10nId: "fonts-label-default",
+          l10nArgs: { name: defaultFont },
+        });
+      } else {
+        options.push({
+          value: "",
+          l10nId: "fonts-label-default-unnamed",
+        });
+      }
+
+      for (const font of fonts) {
+        options.push({
+          value: font,
+          controlAttrs: { label: font },
+        });
+      }
+    }
+
+    if (this._allFonts.length > fonts.length) {
+      const fontSet = new Set(fonts);
+      for (const font of this._allFonts) {
+        if (!fontSet.has(font)) {
+          options.push({
+            value: font,
+            controlAttrs: { label: font },
+          });
+        }
+      }
+    }
+
+    return options;
+  },
+
+  fontSizeOptions: [
+    9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 20, 22, 24, 26, 28, 30, 32, 34, 36,
+    40, 44, 48, 56, 64, 72,
+  ].map(size => ({ value: size, controlAttrs: { label: String(size) } })),
+};
+
+Preferences.addSetting({
+  id: "fontLanguageGroup",
+  pref: "font.language.group",
+});
+
+Preferences.addSetting({
+  id: "fontType",
+  deps: ["fontLanguageGroup"],
+  setup(emitChange, deps, setting) {
+    const handleChange = () => {
+      setting.pref = FontHelpers.ensurePref(
+        FontHelpers.getFontTypePrefId(FontHelpers.langGroup),
+        "string"
+      );
+      emitChange();
+    };
+
+    handleChange();
+    deps.fontLanguageGroup.on("change", handleChange);
+    return () => deps.fontLanguageGroup.off("change", handleChange);
+  },
+});
+
+Preferences.addSetting({
+  id: "defaultFont",
+  deps: ["fontType"],
+  optionsConfig: null,
+  setup(emitChange, deps, setting) {
+    const handleChange = () => {
+      setting.pref = FontHelpers.ensurePref(
+        FontHelpers.getFontPrefId(FontHelpers.langGroup),
+        "fontname"
+      );
+      this.optionsConfig = null;
+      emitChange();
+    };
+    handleChange();
+    deps.fontType.on("change", handleChange);
+    return () => deps.fontType.off("change", handleChange);
+  },
+  getControlConfig(config) {
+    if (!this.optionsConfig) {
+      this.optionsConfig = {
+        ...config,
+        options: FontHelpers.buildFontOptions(
+          FontHelpers.langGroup,
+          FontHelpers.getFontType(FontHelpers.langGroup)
+        ),
+      };
+    }
+    return this.optionsConfig;
+  },
+});
+
+Preferences.addSetting({
+  id: "defaultFontSize",
+  deps: ["fontLanguageGroup"],
+  setup(emitChange, deps, setting) {
+    const handleLangChange = () => {
+      setting.pref = FontHelpers.ensurePref(
+        FontHelpers.getSizePrefId(FontHelpers.langGroup),
+        "int"
+      );
+      emitChange();
+    };
+    handleLangChange();
+    deps.fontLanguageGroup.on("change", handleLangChange);
+    return () => deps.fontLanguageGroup.off("change", handleLangChange);
+  },
+  getControlConfig(config) {
+    return { ...config, options: FontHelpers.fontSizeOptions };
+  },
+});
+
+Preferences.addSetting({
+  id: "advancedFonts",
+  onUserClick: () => gMainPane.configureFonts(),
+});
+
+Preferences.addSetting({
+  id: "contrastControlSettings",
+  pref: "browser.display.document_color_use",
+});
+Preferences.addSetting({
+  id: "colors",
+  onUserClick() {
+    gSubDialog.open(
+      "chrome://browser/content/preferences/dialogs/colors.xhtml",
+      { features: "resizable=no" }
+    );
+  },
+});
+
+Preferences.addSetting({
+  /** @type {{ _removeAddressDialogStrings: string[] } & SettingConfig} */
+  id: "address-item",
+  _removeAddressDialogStrings: [],
+  onUserClick(e) {
+    const action = e.target.getAttribute("action");
+    const guid = e.target.getAttribute("guid");
+    if (action === "remove") {
+      let [title, confirm, cancel] = this._removeAddressDialogStrings;
+      FormAutofillPreferences.prototype.openRemoveAddressDialog(
+        guid,
+        window.browsingContext.topChromeWindow.browsingContext,
+        title,
+        confirm,
+        cancel
+      );
+    } else if (action === "edit") {
+      FormAutofillPreferences.prototype.openEditAddressDialog(guid, window);
+    }
+  },
+  setup(emitChange) {
+    document.l10n
+      .formatValues([
+        { id: "addresses-delete-address-prompt-title" },
+        { id: "addresses-delete-address-prompt-confirm-button" },
+        { id: "addresses-delete-address-prompt-cancel-button" },
+      ])
+      .then(val => (this._removeAddressDialogStrings = val))
+      .then(emitChange);
+  },
+  disabled() {
+    return !!this._removeAddressDialogStrings.length;
+  },
+});
+
+Preferences.addSetting({
+  id: "add-address-button",
+  deps: ["saveAndFillAddresses"],
+  setup: (emitChange, _, setting) => {
+    function updateDepsAndChange() {
+      setting._deps = null;
+      emitChange();
+    }
+    Services.obs.addObserver(
+      updateDepsAndChange,
+      "formautofill-preferences-initialized"
+    );
+    return () =>
+      Services.obs.removeObserver(
+        updateDepsAndChange,
+        "formautofill-preferences-initialized"
+      );
+  },
+  onUserClick: () => {
+    FormAutofillPreferences.prototype.openEditAddressDialog(undefined, window);
+  },
+  disabled: ({ saveAndFillAddresses }) => !saveAndFillAddresses?.value,
+});
+
+Preferences.addSetting({
+  id: "addresses-list-header",
+});
+
+Preferences.addSetting({
+  id: "no-addresses-stored",
+});
+
+Preferences.addSetting(
+  class extends Preferences.AsyncSetting {
+    static id = "addresses-list";
+
+    async getAddresses() {
+      await FormAutofillPreferences.prototype.initializeAddressesStorage();
+      return FormAutofillPreferences.prototype.makeAddressesListItems();
+    }
+
+    async getControlConfig() {
+      return {
+        items: await this.getAddresses(),
+      };
+    }
+
+    setup() {
+      Services.obs.addObserver(this.emitChange, "formautofill-storage-changed");
+      return () =>
+        Services.obs.removeObserver(
+          this.emitChange,
+          "formautofill-storage-changed"
+        );
+    }
+
+    async visible() {
+      const items = await this.getAddresses();
+      return !!items.length;
+    }
+  }
+);
+
+function createDefaultBrowserConfig({
+  includeIsDefaultPane = true,
+  inProgress = false,
+} = {}) {
+  const isDefaultPane = {
+    id: "isDefaultPane",
+    l10nId: "is-default-browser-2",
+    control: "moz-promo",
+  };
+
+  const isNotDefaultPane = {
+    id: "isNotDefaultPane",
+    l10nId: "is-not-default-browser-2",
+    control: "moz-promo",
+    options: [
       {
-        id: "containersPlaceholder",
-        control: "moz-message-bar",
+        control: "moz-button",
+        l10nId: "set-as-my-default-browser-2",
+        id: "setDefaultButton",
+        slot: "actions",
         controlAttrs: {
-          message: "Placeholder for updated containers",
+          type: "primary",
         },
       },
     ],
-  },
+  };
+
+  const items = includeIsDefaultPane
+    ? [isDefaultPane, isNotDefaultPane]
+    : [isNotDefaultPane];
+
+  return {
+    l10nId: "home-default-browser-title",
+    headingLevel: 2,
+    items,
+    ...(inProgress && { inProgress }),
+  };
+}
+
+SettingGroupManager.registerGroups({
   profilePane: {
     headingLevel: 2,
     id: "browserProfilesGroupPane",
@@ -1723,7 +2643,10 @@ SettingGroupManager.registerGroups({
       },
     ],
   },
+  defaultBrowser: createDefaultBrowserConfig(),
   startup: {
+    l10nId: "startup-group",
+    headingLevel: 2,
     items: [
       {
         id: "browserRestoreSession",
@@ -1763,27 +2686,6 @@ SettingGroupManager.registerGroups({
         id: "alwaysCheckDefault",
         l10nId: "always-check-default",
       },
-      {
-        id: "isDefaultPane",
-        l10nId: "is-default-browser",
-        control: "moz-promo",
-      },
-      {
-        id: "isNotDefaultPane",
-        l10nId: "is-not-default-browser",
-        control: "moz-promo",
-        options: [
-          {
-            control: "moz-button",
-            l10nId: "set-as-my-default-browser",
-            id: "setDefaultButton",
-            slot: "actions",
-            controlAttrs: {
-              type: "primary",
-            },
-          },
-        ],
-      },
     ],
   },
   importBrowserData: {
@@ -1797,12 +2699,71 @@ SettingGroupManager.registerGroups({
       },
     ],
   },
+  homepage: {
+    inProgress: true,
+    headingLevel: 2,
+    iconSrc: "chrome://browser/skin/window-firefox.svg",
+    l10nId: "home-homepage-title",
+    items: [
+      {
+        id: "homepageNewWindows",
+        control: "moz-select",
+        l10nId: "home-homepage-new-windows",
+        options: [
+          {
+            value: "home",
+            l10nId: "home-mode-choice-default-fx",
+          },
+          { value: "blank", l10nId: "home-mode-choice-blank" },
+          { value: "custom", l10nId: "home-mode-choice-custom" },
+        ],
+      },
+      {
+        id: "homepageGoToCustomHomepageUrlPanel",
+        control: "moz-box-button",
+        l10nId: "home-homepage-custom-homepage-button",
+      },
+      {
+        id: "homepageNewTabs",
+        control: "moz-select",
+        l10nId: "home-homepage-new-tabs",
+        options: [
+          {
+            value: "true",
+            l10nId: "home-mode-choice-default-fx",
+          },
+          { value: "false", l10nId: "home-mode-choice-blank" },
+        ],
+      },
+      {
+        id: "homepageRestoreDefaults",
+        control: "moz-button",
+        iconSrc: "chrome://global/skin/icons/arrow-counterclockwise-16.svg",
+        l10nId: "home-restore-defaults",
+        controlAttrs: { id: "restoreDefaultHomePageBtn" },
+      },
+    ],
+  },
+  customHomepage: {
+    inProgress: true,
+    headingLevel: 2,
+    l10nId: "home-custom-homepage-card-header",
+    iconSrc: "chrome://global/skin/icons/link.svg",
+    items: [
+      {
+        id: "customHomepageBoxGroup",
+        control: "moz-box-group",
+        controlAttrs: {
+          type: "list",
+        },
+      },
+    ],
+  },
   home: {
     inProgress: true,
     headingLevel: 2,
     l10nId: "home-prefs-content-header",
-    // Icons are not ready to be used yet.
-    // iconSrc: "chrome://browser/skin/home.svg",
+    iconSrc: "chrome://browser/skin/home.svg",
     items: [
       {
         id: "webSearch",
@@ -1866,6 +2827,16 @@ SettingGroupManager.registerGroups({
         id: "stories",
         l10nId: "home-prefs-stories-header2",
         control: "moz-toggle",
+        items: [
+          {
+            id: "manageTopics",
+            l10nId: "home-prefs-manage-topics-link2",
+            control: "moz-box-link",
+            controlAttrs: {
+              href: "about:newtab#customize-topics",
+            },
+          },
+        ],
       },
       {
         id: "supportFirefox",
@@ -1907,9 +2878,6 @@ SettingGroupManager.registerGroups({
           {
             id: "recentActivityRows",
             control: "moz-select",
-            controlAttrs: {
-              class: "newtab-rows-select",
-            },
             options: [
               {
                 value: 1,
@@ -1947,30 +2915,153 @@ SettingGroupManager.registerGroups({
           },
         ],
       },
+      {
+        id: "chooseWallpaper",
+        l10nId: "home-prefs-choose-wallpaper-link2",
+        control: "moz-box-link",
+        controlAttrs: {
+          href: "about:newtab#customize",
+        },
+        iconSrc: "chrome://browser/skin/customize.svg",
+      },
     ],
   },
   zoom: {
-    // This section is marked as in progress for testing purposes
-    inProgress: true,
+    l10nId: "preferences-zoom-header2",
+    headingLevel: 2,
     items: [
       {
-        id: "zoomPlaceholder",
+        id: "defaultZoom",
+        l10nId: "preferences-default-zoom-label",
+        control: "moz-select",
+      },
+      {
+        id: "zoomText",
+        l10nId: "preferences-zoom-text-only",
+      },
+      {
+        id: "zoomWarning",
+        l10nId: "preferences-text-zoom-override-warning",
         control: "moz-message-bar",
         controlAttrs: {
-          message: "Placeholder for updated zoom controls",
+          type: "warning",
+        },
+      },
+    ],
+  },
+  fonts: {
+    l10nId: "preferences-fonts-header2",
+    headingLevel: 2,
+    items: [
+      {
+        id: "defaultFont",
+        l10nId: "default-font-2",
+        control: "moz-select",
+      },
+      {
+        id: "defaultFontSize",
+        l10nId: "default-font-size-2",
+        control: "moz-select",
+      },
+      {
+        id: "advancedFonts",
+        l10nId: "advanced-fonts",
+        control: "moz-box-button",
+        controlAttrs: {
+          "search-l10n-ids":
+            "fonts-window.title,fonts-langgroup-header,fonts-proportional-size,fonts-proportional-header,fonts-serif,fonts-sans-serif,fonts-monospace,fonts-langgroup-arabic.label,fonts-langgroup-armenian.label,fonts-langgroup-bengali.label,fonts-langgroup-simpl-chinese.label,fonts-langgroup-trad-chinese-hk.label,fonts-langgroup-trad-chinese.label,fonts-langgroup-cyrillic.label,fonts-langgroup-devanagari.label,fonts-langgroup-ethiopic.label,fonts-langgroup-georgian.label,fonts-langgroup-el.label,fonts-langgroup-gujarati.label,fonts-langgroup-gurmukhi.label,fonts-langgroup-japanese.label,fonts-langgroup-hebrew.label,fonts-langgroup-kannada.label,fonts-langgroup-khmer.label,fonts-langgroup-korean.label,fonts-langgroup-latin.label,fonts-langgroup-malayalam.label,fonts-langgroup-math.label,fonts-langgroup-odia.label,fonts-langgroup-sinhala.label,fonts-langgroup-tamil.label,fonts-langgroup-telugu.label,fonts-langgroup-thai.label,fonts-langgroup-tibetan.label,fonts-langgroup-canadian.label,fonts-langgroup-other.label,fonts-minsize,fonts-minsize-none.label,fonts-default-serif.label,fonts-default-sans-serif.label,fonts-allow-own.label",
+        },
+      },
+    ],
+  },
+  translations: {
+    inProgress: true,
+    l10nId: "settings-translations-header",
+    iconSrc: "chrome://browser/skin/translations.svg",
+    supportPage: "website-translation",
+    headingLevel: 2,
+    items: [
+      {
+        id: "offerTranslations",
+        l10nId: "settings-translations-offer-to-translate-label",
+      },
+      {
+        id: "translationsManageButton",
+        l10nId: "settings-translations-more-settings-button",
+        control: "moz-box-button",
+      },
+    ],
+  },
+  spellCheck: {
+    l10nId: "settings-spellcheck-header",
+    iconSrc: "chrome://global/skin/icons/check.svg",
+    headingLevel: 2,
+    items: [
+      {
+        id: "checkSpelling",
+        l10nId: "check-user-spelling",
+        supportPage: "how-do-i-use-firefox-spell-checker",
+      },
+      {
+        id: "downloadDictionaries",
+        l10nId: "spellcheck-download-dictionaries",
+        control: "moz-box-link",
+        controlAttrs: {
+          href: Services.urlFormatter.formatURLPref(
+            "browser.dictionaries.download.url"
+          ),
         },
       },
       {
-        id: "containersPane",
-        control: "moz-button",
+        id: "spellCheckPromo",
+        l10nId: "spellcheck-promo",
+        control: "moz-promo",
         controlAttrs: {
-          label: "Manage container settings",
+          imagesrc:
+            "chrome://browser/content/preferences/spell-check-promo.svg",
         },
+      },
+    ],
+  },
+  browserLayout: {
+    l10nId: "browser-layout-header2",
+    headingLevel: 2,
+    items: [
+      {
+        id: "browserLayoutRadioGroup",
+        control: "moz-visual-picker",
+        options: [
+          {
+            id: "browserLayoutHorizontalTabs",
+            value: "false",
+            l10nId: "browser-layout-horizontal-tabs2",
+            controlAttrs: {
+              class: "setting-chooser-item",
+              imagesrc:
+                "chrome://browser/content/preferences/browser-layout-horizontal.svg",
+            },
+          },
+          {
+            id: "browserLayoutVerticalTabs",
+            value: "true",
+            l10nId: "browser-layout-vertical-tabs2",
+            controlAttrs: {
+              class: "setting-chooser-item",
+              imagesrc:
+                "chrome://browser/content/preferences/browser-layout-vertical.svg",
+            },
+          },
+        ],
+      },
+      {
+        id: "browserLayoutShowSidebar",
+        l10nId: "browser-layout-show-sidebar2",
       },
     ],
   },
   appearance: {
-    l10nId: "web-appearance-group",
+    l10nId: "appearance-group",
+    headingLevel: 2,
     items: [
       {
         id: "web-appearance-override-warning",
@@ -1986,7 +3077,7 @@ SettingGroupManager.registerGroups({
             l10nId: "preferences-web-appearance-choice-auto2",
             controlAttrs: {
               id: "preferences-web-appearance-choice-auto",
-              class: "appearance-chooser-item",
+              class: "setting-chooser-item",
               imagesrc:
                 "chrome://browser/content/preferences/web-appearance-light.svg",
             },
@@ -1996,7 +3087,7 @@ SettingGroupManager.registerGroups({
             l10nId: "preferences-web-appearance-choice-light2",
             controlAttrs: {
               id: "preferences-web-appearance-choice-light",
-              class: "appearance-chooser-item",
+              class: "setting-chooser-item",
               imagesrc:
                 "chrome://browser/content/preferences/web-appearance-light.svg",
             },
@@ -2006,7 +3097,7 @@ SettingGroupManager.registerGroups({
             l10nId: "preferences-web-appearance-choice-dark2",
             controlAttrs: {
               id: "preferences-web-appearance-choice-dark",
-              class: "appearance-chooser-item",
+              class: "setting-chooser-item",
               imagesrc:
                 "chrome://browser/content/preferences/web-appearance-dark.svg",
             },
@@ -2020,6 +3111,52 @@ SettingGroupManager.registerGroups({
         controlAttrs: {
           href: "about:addons",
         },
+      },
+    ],
+  },
+  websiteLanguage: {
+    inProgress: true,
+    l10nId: "website-language-heading",
+    headingLevel: 2,
+    items: [
+      {
+        id: "websiteLanguageWrapper",
+        control: "moz-box-group",
+        controlAttrs: {
+          type: "reorderable-list",
+        },
+        options: [
+          {
+            id: "websiteLanguagePickerWrapper",
+            l10nId: "website-preferred-language",
+            key: "addlanguage",
+            control: "moz-box-item",
+            slot: "header",
+            items: [
+              {
+                id: "websiteLanguagePicker",
+                slot: "actions",
+                control: "moz-select",
+                options: [
+                  {
+                    control: "moz-option",
+                    l10nId: "website-add-language",
+                    controlAttrs: {
+                      value: "-1",
+                    },
+                  },
+                ],
+              },
+              {
+                id: "websiteLanguageAddLanguage",
+                slot: "actions",
+                control: "moz-button",
+                iconSrc: "chrome://global/skin/icons/plus.svg",
+                l10nId: "website-add-language-button",
+              },
+            ],
+          },
+        ],
       },
     ],
   },
@@ -2046,6 +3183,8 @@ SettingGroupManager.registerGroups({
     ],
   },
   drm: {
+    l10nId: "drm-group",
+    headingLevel: 2,
     subcategory: "drm",
     items: [
       {
@@ -2055,8 +3194,48 @@ SettingGroupManager.registerGroups({
       },
     ],
   },
+  contrast: {
+    l10nId: "preferences-contrast-control-group",
+    headingLevel: 2,
+    items: [
+      {
+        id: "contrastControlSettings",
+        control: "moz-radio-group",
+        l10nId: "preferences-contrast-control-radio-group",
+        options: [
+          {
+            id: "contrastSettingsAuto",
+            value: 0,
+            l10nId: "preferences-contrast-control-use-platform-settings",
+          },
+          {
+            id: "contrastSettingsOff",
+            value: 1,
+            l10nId: "preferences-contrast-control-off",
+          },
+          {
+            id: "contrastSettingsOn",
+            value: 2,
+            l10nId: "preferences-contrast-control-custom",
+            items: [
+              {
+                id: "colors",
+                l10nId: "preferences-colors-manage-button",
+                control: "moz-box-button",
+                controlAttrs: {
+                  "search-l10n-ids":
+                    "colors-text-and-background, colors-text.label, colors-text-background.label, colors-links-header, colors-links-unvisited.label, colors-links-visited.label",
+                },
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  },
   browsing: {
-    l10nId: "browsing-group-label",
+    l10nId: "browsing-group",
+    headingLevel: 1,
     items: [
       {
         id: "useAutoScroll",
@@ -2136,12 +3315,14 @@ SettingGroupManager.registerGroups({
     ],
   },
   httpsOnly: {
+    l10nId: "httpsonly-group",
+    supportPage: "https-only-prefs",
+    headingLevel: 2,
     items: [
       {
         id: "httpsOnlyRadioGroup",
         control: "moz-radio-group",
-        l10nId: "httpsonly-label",
-        supportPage: "https-only-prefs",
+        l10nId: "httpsonly-label2",
         options: [
           {
             id: "httpsOnlyRadioEnabled",
@@ -2173,17 +3354,22 @@ SettingGroupManager.registerGroups({
     ],
   },
   certificates: {
-    l10nId: "certs-description2",
+    l10nId: "certs-description3",
     supportPage: "secure-website-certificate",
     headingLevel: 2,
     items: [
+      {
+        id: "certEnableThirdPartyToggle",
+        l10nId: "certs-thirdparty-toggle",
+        supportPage: "automatically-trust-third-party-certificates",
+      },
       {
         id: "certificateButtonGroup",
         control: "moz-box-group",
         items: [
           {
             id: "viewCertificatesButton",
-            l10nId: "certs-view",
+            l10nId: "certs-view2",
             control: "moz-box-button",
             controlAttrs: {
               "search-l10n-ids":
@@ -2192,7 +3378,7 @@ SettingGroupManager.registerGroups({
           },
           {
             id: "viewSecurityDevicesButton",
-            l10nId: "certs-devices",
+            l10nId: "certs-devices2",
             control: "moz-box-button",
             controlAttrs: {
               "search-l10n-ids":
@@ -2201,15 +3387,11 @@ SettingGroupManager.registerGroups({
           },
         ],
       },
-
-      {
-        id: "certEnableThirdPartyToggle",
-        l10nId: "certs-thirdparty-toggle",
-        supportPage: "automatically-trust-third-party-certificates",
-      },
     ],
   },
   browsingProtection: {
+    l10nId: "browsing-protection-group2",
+    headingLevel: 2,
     items: [
       {
         id: "enableSafeBrowsing",
@@ -2227,10 +3409,20 @@ SettingGroupManager.registerGroups({
           },
         ],
       },
+      {
+        id: "safeBrowsingWarningMessageBox",
+        l10nId: "security-safe-browsing-warning",
+        control: "moz-message-bar",
+        controlAttrs: {
+          type: "warning",
+          dismissable: true,
+        },
+      },
     ],
   },
   nonTechnicalPrivacy: {
-    l10nId: "non-technical-privacy-label",
+    l10nId: "non-technical-privacy-group",
+    headingLevel: 2,
     items: [
       {
         id: "gpcEnabled",
@@ -2248,22 +3440,99 @@ SettingGroupManager.registerGroups({
       },
     ],
   },
+  nonTechnicalPrivacy2: {
+    inProgress: true,
+    l10nId: "non-technical-privacy-heading",
+    iconSrc: "chrome://browser/skin/controlcenter/tracking-protection.svg",
+    headingLevel: 2,
+    items: [
+      {
+        id: "gpcEnabled",
+        l10nId: "global-privacy-control-description",
+        supportPage: "global-privacy-control",
+        controlAttrs: {
+          "search-l10n-ids": "global-privacy-control-search",
+        },
+      },
+      {
+        id: "relayIntegration",
+        l10nId: "preferences-privacy-relay-available",
+        supportPage: "firefox-relay-integration",
+      },
+      {
+        id: "dntRemoval",
+        l10nId: "do-not-track-removal3",
+        control: "moz-message-bar",
+        supportPage: "how-do-i-turn-do-not-track-feature",
+        controlAttrs: {
+          dismissable: true,
+        },
+      },
+    ],
+  },
   securityPrivacyStatus: {
+    inProgress: true,
+    card: "never",
     items: [
       {
         id: "privacyCard",
         control: "security-privacy-card",
       },
+    ],
+  },
+  securityPrivacyWarnings: {
+    inProgress: true,
+    card: "never",
+    items: [
       {
-        id: "securityWarningsGroup",
-        control: "moz-box-group",
+        id: "warningCard",
+        l10nId: "security-privacy-issue-card",
+        control: "moz-card",
         controlAttrs: {
-          type: "list",
+          type: "accordion",
         },
+        items: [
+          {
+            id: "securityWarningsGroup",
+            control: "moz-box-group",
+            controlAttrs: {
+              type: "list",
+            },
+          },
+        ],
+      },
+    ],
+  },
+  support: {
+    inProgress: true,
+    l10nId: "support-application-heading",
+    headingLevel: 2,
+    items: [
+      {
+        id: "supportLinksGroup",
+        control: "moz-box-group",
+        items: [
+          {
+            id: "supportGetHelp",
+            l10nId: "support-get-help",
+            control: "moz-box-link",
+            supportPage: "preferences",
+          },
+          {
+            id: "supportShareIdeas",
+            l10nId: "support-share-ideas",
+            control: "moz-box-link",
+            controlAttrs: {
+              href: "https://connect.mozilla.org/",
+            },
+          },
+        ],
       },
     ],
   },
   performance: {
+    l10nId: "performance-group",
+    headingLevel: 1,
     items: [
       {
         id: "useRecommendedPerformanceSettings",
@@ -2279,40 +3548,42 @@ SettingGroupManager.registerGroups({
   ipprotection: {
     l10nId: "ip-protection-description",
     headingLevel: 2,
-    // TODO: Replace support url with finalized link (Bug 1993266)
-    supportPage: "ip-protection",
+    supportPage: "built-in-vpn",
     items: [
       {
-        id: "ipProtectionExceptionsMode",
-        l10nId: "ip-protection-site-exceptions",
-        control: "moz-radio-group",
+        id: "ipProtectionNotOptedInSection",
+        l10nId: "ip-protection-not-opted-in-2",
+        l10nArgs: {
+          maxUsage: "50",
+        },
+        control: "moz-promo",
+        controlAttrs: {
+          imagesrc:
+            "chrome://browser/content/ipprotection/assets/vpn-settings-get-started.svg",
+          imagealignment: "end",
+        },
+        items: [
+          {
+            id: "getStartedButton",
+            l10nId: "ip-protection-not-opted-in-button",
+            control: "moz-button",
+            slot: "actions",
+            controlAttrs: {
+              type: "primary",
+            },
+          },
+        ],
+      },
+      {
+        id: "ipProtectionExceptions",
+        control: "moz-fieldset",
         controlAttrs: {
           ".headingLevel": 3,
         },
-        options: [
+        items: [
           {
-            id: "ipProtectionExceptionRadioAll",
-            value: "all",
-            l10nId: "ip-protection-site-exceptions-all-sites-radio",
-            items: [
-              {
-                id: "ipProtectionExceptionAllListButton",
-                l10nId: "ip-protection-site-exceptions-all-sites-button",
-                control: "moz-box-button",
-              },
-            ],
-          },
-          {
-            id: "ipProtectionExceptionRadioSelect",
-            value: "select",
-            l10nId: "ip-protection-site-exceptions-select-sites-radio",
-            items: [
-              {
-                id: "ipProtectionExceptionSelectListButton",
-                l10nId: "ip-protection-site-exceptions-select-sites-button",
-                control: "moz-box-button",
-              },
-            ],
+            id: "ipProtectionExceptionAllListButton",
+            control: "moz-box-button",
           },
         ],
       },
@@ -2334,31 +3605,24 @@ SettingGroupManager.registerGroups({
         ],
       },
       {
-        id: "ipProtectionAdditionalLinks",
-        control: "moz-box-group",
-        options: [
-          {
-            id: "ipProtectionSupportLink",
-            l10nId: "ip-protection-contact-support-link",
-            control: "moz-box-link",
-            controlAttrs: {
-              href: "https://support.mozilla.org/questions/new/mozilla-vpn/form",
-            },
-          },
-          {
-            id: "ipProtectionUpgradeLink",
-            l10nId: "ip-protection-upgrade-link",
-            control: "moz-box-link",
-            controlAttrs: {
-              href: "https://www.mozilla.org/products/vpn/",
-            },
-          },
-        ],
+        id: "ipProtectionBandwidthSection",
+        control: "moz-box-item",
+        items: [{ id: "ipProtectionBandwidth", control: "bandwidth-usage" }],
+      },
+      {
+        id: "ipProtectionLinks",
+        control: "moz-box-link",
+        l10nId: "ip-protection-vpn-upgrade-link",
+        controlAttrs: {
+          href: "https://www.mozilla.org/products/vpn/?utm_medium=fx-desktop&utm_campaign=fx-vpn&utm_source=settings",
+        },
       },
     ],
   },
   cookiesAndSiteData: {
-    l10nId: "sitedata-label",
+    l10nId: "cookies-site-data-group",
+    headingLevel: 2,
+    subcategory: "sitedata",
     items: [
       {
         id: "clearSiteDataButton",
@@ -2424,24 +3688,94 @@ SettingGroupManager.registerGroups({
       },
       {
         id: "deleteOnClose",
-        l10nId: "sitedata-delete-on-close",
+        l10nId: "sitedata-delete-on-close2",
+      },
+    ],
+  },
+  cookiesAndSiteData2: {
+    inProgress: true,
+    l10nId: "sitedata-heading",
+    iconSrc: "chrome://browser/skin/controlcenter/3rdpartycookies.svg",
+    headingLevel: 2,
+    items: [
+      {
+        id: "siteDataSize",
+        l10nId: "sitedata-total-size-calculating",
+        control: "moz-box-item",
+        supportPage: "sitedata-learn-more",
+      },
+      {
+        id: "manageDataSettingsGroup",
+        control: "moz-box-group",
+        controlAttrs: {
+          type: "default",
+        },
+        items: [
+          {
+            id: "clearSiteDataButton",
+            l10nId: "sitedata-clear2",
+            control: "moz-box-button",
+            iconSrc: "chrome://browser/skin/flame.svg",
+            controlAttrs: {
+              "search-l10n-ids": `
+                clear-site-data-cookies-empty.label,
+                clear-site-data-cache-empty.label
+              `,
+            },
+          },
+          {
+            id: "siteDataSettings",
+            l10nId: "sitedata-settings3",
+            control: "moz-box-button",
+            controlAttrs: {
+              "search-l10n-ids": `
+                site-data-settings-window.title,
+                site-data-column-host.label,
+                site-data-column-cookies.label,
+                site-data-column-storage.label,
+                site-data-settings-description,
+                site-data-remove-all.label,
+              `,
+            },
+          },
+          {
+            id: "cookieExceptions",
+            l10nId: "sitedata-cookies-exceptions3",
+            control: "moz-box-button",
+            controlAttrs: {
+              "search-l10n-ids": `
+                permissions-address,
+                permissions-block.label,
+                permissions-allow.label,
+                permissions-remove.label,
+                permissions-remove-all.label,
+                permissions-exceptions-cookie-desc
+              `,
+            },
+          },
+        ],
+      },
+      {
+        id: "deleteOnClose",
+        l10nId: "sitedata-delete-on-close2",
       },
     ],
   },
   networkProxy: {
+    l10nId: "network-proxy-group2",
+    iconSrc: "chrome://devtools/skin/images/globe.svg",
+    headingLevel: 1,
+    supportPage: "prefs-connection-settings",
+    subcategory: "netsettings",
     items: [
       {
         id: "connectionSettings",
-        l10nId: "network-proxy-connection-settings",
+        l10nId: "network-proxy-connection-settings2",
         control: "moz-box-button",
         controlAttrs: {
           "search-l10n-ids":
             "connection-window2.title,connection-proxy-option-no.label,connection-proxy-option-auto.label,connection-proxy-option-system.label,connection-proxy-option-wpad.label,connection-proxy-option-manual.label,connection-proxy-http,connection-proxy-https,connection-proxy-http-port,connection-proxy-socks,connection-proxy-socks4,connection-proxy-socks5,connection-proxy-noproxy,connection-proxy-noproxy-desc,connection-proxy-https-sharing.label,connection-proxy-autotype.label,connection-proxy-reload.label,connection-proxy-autologin-checkbox.label,connection-proxy-socks-remote-dns.label",
         },
-        // Bug 1990552: due to how this lays out in the legacy page, we do not include a
-        // controllingExtensionInfo attribute here. We will want one in the redesigned page,
-        // using storeId: "proxy.settings".
-        controllingExtensionInfo: undefined,
       },
     ],
   },
@@ -2480,7 +3814,12 @@ SettingGroupManager.registerGroups({
       },
       {
         id: "requireOSAuthForPasswords",
-        l10nId: "forms-os-reauth",
+        l10nId: "forms-os-reauth-2",
+      },
+      {
+        id: "allowWindowSSO",
+        l10nId: "forms-windows-sso",
+        supportPage: "windows-sso",
       },
       {
         id: "manageSavedPasswords",
@@ -2501,7 +3840,7 @@ SettingGroupManager.registerGroups({
             items: [
               {
                 id: "usePrimaryPassword",
-                l10nId: "forms-primary-pw-use",
+                l10nId: "forms-primary-pw-use-2",
                 control: "moz-box-item",
                 supportPage: "primary-password-stored-logins",
               },
@@ -2549,6 +3888,8 @@ SettingGroupManager.registerGroups({
     ],
   },
   history: {
+    l10nId: "history-group",
+    headingLevel: 2,
     items: [
       {
         id: "historyMode",
@@ -2558,13 +3899,14 @@ SettingGroupManager.registerGroups({
             value: "remember",
             l10nId: "history-remember-option-all",
           },
-          { value: "dontremember", l10nId: "history-remember-option-never" },
-          { value: "custom", l10nId: "history-remember-option-custom" },
+          { value: "dontremember", l10nId: "history-remember-option-never2" },
+          { value: "custom", l10nId: "history-remember-option-custom2" },
         ],
         controlAttrs: {
           "search-l10n-ids": `
-            history-remember-description3,
-            history-dontremember-description3,
+            history-remember-description4,
+            history-dontremember-description4,
+            history-custom-description4,
             history-private-browsing-permanent.label,
             history-remember-browser-option.label,
             history-remember-search-option.label,
@@ -2615,9 +3957,97 @@ SettingGroupManager.registerGroups({
       },
     ],
   },
+  history2: {
+    inProgress: true,
+    l10nId: "history-section-header",
+    iconSrc: "chrome://browser/skin/controlcenter/3rdpartycookies.svg",
+    items: [
+      {
+        id: "deleteOnCloseInfo",
+        l10nId: "sitedata-delete-on-close-private-browsing4",
+        control: "moz-message-bar",
+      },
+      {
+        id: "historyMode",
+        control: "moz-radio-group",
+        options: [
+          {
+            value: "remember",
+            l10nId: "history-remember-option-all",
+          },
+          { value: "dontremember", l10nId: "history-remember-option-never2" },
+          {
+            value: "custom",
+            l10nId: "history-remember-option-custom2",
+            items: [
+              {
+                id: "customHistoryButton",
+                control: "moz-box-button",
+                l10nId: "history-custom-button",
+              },
+            ],
+          },
+        ],
+        controlAttrs: {
+          "search-l10n-ids": `
+            history-remember-description3,
+            history-dontremember-description3,
+            history-private-browsing-permanent.label,
+            history-remember-browser-option.label,
+            history-remember-search-option.label,
+            history-clear-on-close-option.label,
+            history-clear-on-close-settings.label
+          `,
+        },
+      },
+    ],
+  },
+  historyAdvanced: {
+    l10nId: "history-custom-section-header",
+    headingLevel: 2,
+    items: [
+      {
+        id: "privateBrowsingAutoStart",
+        l10nId: "history-private-browsing-permanent",
+      },
+      {
+        id: "rememberHistory",
+        l10nId: "history-remember-browser-option",
+      },
+      {
+        id: "rememberForms",
+        l10nId: "history-remember-search-option",
+      },
+      {
+        id: "alwaysClear",
+        l10nId: "history-clear-on-close-option",
+        items: [
+          {
+            id: "clearDataSettings",
+            l10nId: "history-clear-on-close-settings",
+            control: "moz-box-button",
+            controlAttrs: {
+              "search-l10n-ids": `
+                    clear-data-settings-label,
+                    history-section-label,
+                    item-history-and-downloads.label,
+                    item-cookies.label,
+                    item-active-logins.label,
+                    item-cache.label,
+                    item-form-search-history.label,
+                    data-section-label,
+                    item-site-settings.label,
+                    item-offline-apps.label
+                  `,
+            },
+          },
+        ],
+      },
+    ],
+  },
   permissions: {
     id: "permissions",
-    l10nId: "permissions-header2",
+    l10nId: "permissions-header3",
     headingLevel: 2,
     items: [
       {
@@ -2728,6 +4158,7 @@ SettingGroupManager.registerGroups({
       {
         id: "popupPolicy",
         l10nId: "permissions-block-popups2",
+        subcategory: "permissions-block-popups",
         items: [
           {
             id: "popupPolicyButton",
@@ -2742,7 +4173,7 @@ SettingGroupManager.registerGroups({
       },
       {
         id: "warnAddonInstall",
-        l10nId: "permissions-addon-install-warning2",
+        l10nId: "permissions-addon-install-warning3",
         items: [
           {
             id: "addonExceptions",
@@ -2762,6 +4193,8 @@ SettingGroupManager.registerGroups({
     ],
   },
   dnsOverHttps: {
+    l10nId: "dns-over-https-group2",
+    headingLevel: 1,
     inProgress: true,
     items: [
       {
@@ -2804,6 +4237,69 @@ SettingGroupManager.registerGroups({
             control: "moz-select",
           },
         ],
+      },
+    ],
+  },
+  searchSuggestions: {
+    l10nId: "search-suggestions-header-2",
+    headingLevel: 2,
+    items: [
+      {
+        id: "suggestionsInSearchFieldsCheckbox",
+        l10nId: "search-show-suggestions-option",
+        items: [
+          {
+            id: "urlBarSuggestionCheckbox",
+            l10nId: "search-show-suggestions-url-bar-option",
+          },
+          {
+            id: "showSearchSuggestionsFirstCheckbox",
+            l10nId: "search-show-suggestions-above-history-option-2",
+          },
+          {
+            id: "showSearchSuggestionsPrivateWindowsCheckbox",
+            l10nId: "search-show-suggestions-private-windows-2",
+          },
+          {
+            id: "showTrendingSuggestionsCheckbox",
+            l10nId: "addressbar-locbar-showtrendingsuggestions-option-2",
+            supportPage: "google-trending-searches-on-awesomebar",
+          },
+          {
+            id: "urlBarSuggestionPermanentPBMessage",
+            l10nId: "search-suggestions-cant-show-2",
+            control: "moz-message-bar",
+          },
+        ],
+      },
+    ],
+  },
+  searchShortcuts: {
+    inProgress: true,
+    l10nId: "search-one-click-header-3",
+    headingLevel: 2,
+    items: [
+      {
+        id: "updateSearchEngineSuccess",
+        l10nId: "update-search-engine-success",
+        control: "moz-message-bar",
+        controlAttrs: {
+          type: "success",
+          dismissable: true,
+        },
+      },
+      {
+        id: "addEngineButton",
+        l10nId: "search-add-engine-2",
+        control: "moz-button",
+        iconSrc: "chrome://global/skin/icons/plus.svg",
+      },
+      {
+        id: "engineList",
+        control: "moz-box-group",
+        controlAttrs: {
+          type: "reorderable-list",
+        },
       },
     ],
   },
@@ -2875,9 +4371,7 @@ SettingGroupManager.registerGroups({
       {
         id: "payments-list",
         control: "moz-box-group",
-        l10nId: "payments-list-header",
         controlAttrs: {
-          hasHeader: true,
           type: "list",
         },
       },
@@ -3010,6 +4504,7 @@ SettingGroupManager.registerGroups({
   },
   etpBanner: {
     inProgress: true,
+    card: "never",
     items: [
       {
         id: "etpBannerEl",
@@ -3024,7 +4519,7 @@ SettingGroupManager.registerGroups({
     supportPage: "enhanced-tracking-protection",
     items: [
       {
-        id: "contentBlockingCategory",
+        id: "contentBlockingCategoryRadioGroup",
         control: "moz-radio-group",
         options: [
           {
@@ -3067,6 +4562,18 @@ SettingGroupManager.registerGroups({
         ],
       },
       {
+        id: "reloadTabsHint",
+        control: "moz-message-bar",
+        l10nId: "preferences-etp-reload-tabs-hint",
+        options: [
+          {
+            control: "moz-button",
+            l10nId: "preferences-etp-reload-tabs-hint-button",
+            slot: "actions",
+          },
+        ],
+      },
+      {
         id: "rfpWarning",
         control: "moz-message-bar",
         l10nId: "preferences-etp-rfp-warning-message",
@@ -3086,6 +4593,642 @@ SettingGroupManager.registerGroups({
         id: "etpManageExceptionsButton",
         l10nId: "preferences-etp-manage-exceptions-button",
         control: "moz-box-button",
+      },
+    ],
+  },
+  etpReset: {
+    inProgress: true,
+    headingLevel: 2,
+    l10nId: "preferences-etp-reset",
+    items: [
+      {
+        id: "etpResetButtonGroup",
+        control: "div",
+        items: [
+          {
+            id: "etpResetStandardButton",
+            control: "moz-button",
+            l10nId: "preferences-etp-reset-standard-button",
+          },
+          {
+            id: "etpResetStrictButton",
+            control: "moz-button",
+            l10nId: "preferences-etp-reset-strict-button",
+          },
+        ],
+      },
+    ],
+  },
+  etpCustomize: {
+    inProgress: true,
+    headingLevel: 2,
+    l10nId: "preferences-etp-custom-control-group",
+    items: [
+      {
+        id: "etpAllowListBaselineEnabledCustom",
+        l10nId: "content-blocking-baseline-exceptions-3",
+        supportPage: "manage-enhanced-tracking-protection-exceptions",
+        control: "moz-checkbox",
+        items: [
+          {
+            id: "etpAllowListConvenienceEnabledCustom",
+            l10nId: "content-blocking-convenience-exceptions-3",
+            control: "moz-checkbox",
+          },
+        ],
+      },
+      {
+        id: "etpCustomCookiesEnabled",
+        l10nId: "preferences-etp-custom-cookies-enabled",
+        control: "moz-toggle",
+        items: [
+          {
+            id: "cookieBehavior",
+            l10nId: "preferences-etp-custom-cookie-behavior",
+            control: "moz-select",
+            options: [
+              {
+                value: Ci.nsICookieService.BEHAVIOR_ACCEPT.toString(),
+                l10nId: "preferences-etpc-custom-cookie-behavior-accept-all",
+              },
+              {
+                value: Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER.toString(),
+                l10nId: "sitedata-option-block-cross-site-trackers",
+              },
+              {
+                value:
+                  Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN.toString(),
+                l10nId: "sitedata-option-block-cross-site-cookies2",
+              },
+              {
+                value: Ci.nsICookieService.BEHAVIOR_LIMIT_FOREIGN.toString(),
+                l10nId: "sitedata-option-block-unvisited",
+              },
+              {
+                value: Ci.nsICookieService.BEHAVIOR_REJECT_FOREIGN.toString(),
+                l10nId: "sitedata-option-block-all-cross-site-cookies",
+              },
+              {
+                value: Ci.nsICookieService.BEHAVIOR_REJECT.toString(),
+                l10nId: "sitedata-option-block-all",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        id: "etpCustomTrackingProtectionEnabled",
+        l10nId: "preferences-etp-custom-tracking-protection-enabled",
+        control: "moz-toggle",
+        items: [
+          {
+            id: "etpCustomTrackingProtectionEnabledContext",
+            l10nId:
+              "preferences-etp-custom-tracking-protection-enabled-context",
+            control: "moz-select",
+            options: [
+              {
+                value: "all",
+                l10nId:
+                  "content-blocking-tracking-protection-option-all-windows",
+              },
+              {
+                value: "pbmOnly",
+                l10nId: "content-blocking-option-private",
+              },
+            ],
+          },
+        ],
+      },
+      {
+        id: "etpCustomCryptominingProtectionEnabled",
+        l10nId: "preferences-etp-custom-crypto-mining-protection-enabled",
+        control: "moz-toggle",
+      },
+      {
+        id: "etpCustomKnownFingerprintingProtectionEnabled",
+        l10nId:
+          "preferences-etp-custom-known-fingerprinting-protection-enabled",
+        control: "moz-toggle",
+      },
+      {
+        id: "etpCustomSuspectFingerprintingProtectionEnabled",
+        l10nId:
+          "preferences-etp-custom-suspect-fingerprinting-protection-enabled",
+        control: "moz-toggle",
+        items: [
+          {
+            id: "etpCustomSuspectFingerprintingProtectionEnabledContext",
+            l10nId:
+              "preferences-etp-custom-suspect-fingerprinting-protection-enabled-context",
+            control: "moz-select",
+            options: [
+              {
+                value: "all",
+                l10nId:
+                  "content-blocking-tracking-protection-option-all-windows",
+              },
+              {
+                value: "pbmOnly",
+                l10nId: "content-blocking-option-private",
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  },
+  manageAddresses: {
+    items: [
+      {
+        id: "add-address-button",
+        control: "moz-button",
+        l10nId: "autofill-addresses-add-button",
+      },
+      {
+        id: "addresses-list",
+        control: "moz-box-group",
+        controlAttrs: {
+          type: "list",
+        },
+      },
+    ],
+  },
+  defaultBrowserSync: createDefaultBrowserConfig({
+    includeIsDefaultPane: false,
+    inProgress: true,
+  }),
+  sync: {
+    inProgress: true,
+    l10nId: "sync-group-label",
+    headingLevel: 2,
+    items: [
+      {
+        id: "syncNoFxaSignIn",
+        l10nId: "sync-signedout-account-signin-4",
+        control: "moz-box-link",
+        iconSrc: "chrome://global/skin/icons/warning.svg",
+        controlAttrs: {
+          id: "noFxaSignIn",
+        },
+      },
+      {
+        id: "syncConfigured",
+        control: "moz-box-group",
+        items: [
+          {
+            id: "syncStatus",
+            l10nId: "prefs-syncing-on-2",
+            control: "moz-box-item",
+            iconSrc: "chrome://global/skin/icons/check-filled.svg",
+            items: [
+              {
+                id: "syncNow",
+                control: "moz-button",
+                l10nId: "prefs-sync-now-button-2",
+                slot: "actions",
+              },
+              {
+                id: "syncing",
+                control: "moz-button",
+                l10nId: "prefs-syncing-button-2",
+                slot: "actions",
+              },
+            ],
+          },
+          {
+            id: "syncEnginesList",
+            control: "sync-engines-list",
+          },
+          {
+            id: "syncChangeOptions",
+            control: "moz-box-button",
+            l10nId: "sync-manage-options-2",
+          },
+        ],
+      },
+      {
+        id: "syncNotConfigured",
+        l10nId: "prefs-syncing-off-2",
+        control: "moz-box-item",
+        iconSrc: "chrome://global/skin/icons/warning.svg",
+        items: [
+          {
+            id: "syncSetup",
+            control: "moz-button",
+            l10nId: "prefs-sync-turn-on-syncing-2",
+            slot: "actions",
+          },
+        ],
+      },
+      {
+        id: "fxaDeviceNameSection",
+        l10nId: "sync-device-name-header-2",
+        control: "moz-fieldset",
+        controlAttrs: {
+          ".headingLevel": 3,
+        },
+        items: [
+          {
+            id: "fxaDeviceNameGroup",
+            control: "moz-box-group",
+            items: [
+              {
+                id: "fxaDeviceName",
+                control: "sync-device-name",
+              },
+              {
+                id: "fxaConnectAnotherDevice",
+                l10nId: "sync-connect-another-device-2",
+                control: "moz-box-link",
+                iconSrc: "chrome://browser/skin/device-phone.svg",
+                controlAttrs: {
+                  id: "connect-another-device",
+                  href: "https://accounts.firefox.com/pair",
+                },
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  },
+  account: {
+    inProgress: true,
+    l10nId: "account-group-label",
+    headingLevel: 2,
+    items: [
+      {
+        id: "noFxaAccountGroup",
+        control: "moz-box-group",
+        items: [
+          {
+            id: "noFxaAccount",
+            control: "placeholder-message",
+            l10nId: "account-placeholder",
+            controlAttrs: {
+              imagesrc: "chrome://global/skin/illustrations/security-error.svg",
+            },
+          },
+          {
+            id: "noFxaSignIn",
+            control: "moz-box-link",
+            l10nId: "sync-signedout-account-short",
+          },
+        ],
+      },
+      {
+        id: "fxaSignedInGroup",
+        control: "moz-box-group",
+        items: [
+          {
+            id: "fxaLoginVerified",
+            control: "moz-box-item",
+            l10nId: "sync-account-signed-in",
+            l10nArgs: { email: "" },
+            iconSrc: "chrome://browser/skin/fxa/avatar-color.svg",
+            controlAttrs: {
+              layout: "large-icon",
+            },
+          },
+          {
+            id: "verifiedManage",
+            control: "moz-box-link",
+            l10nId: "sync-manage-account2",
+            controlAttrs: {
+              href: "https://accounts.firefox.com/settings",
+            },
+          },
+          {
+            id: "fxaUnlinkButton",
+            control: "moz-box-button",
+            l10nId: "sync-sign-out2",
+          },
+        ],
+      },
+      {
+        id: "fxaUnverifiedGroup",
+        control: "moz-box-group",
+        items: [
+          {
+            id: "fxaLoginUnverified",
+            control: "placeholder-message",
+            l10nId: "sync-signedin-unverified2",
+            l10nArgs: { email: "" },
+            controlAttrs: {
+              imagesrc: "chrome://global/skin/illustrations/security-error.svg",
+            },
+          },
+          {
+            id: "verifyFxaAccount",
+            control: "moz-box-link",
+            l10nId: "sync-verify-account",
+          },
+          {
+            id: "unverifiedUnlinkFxaAccount",
+            control: "moz-box-button",
+            l10nId: "sync-remove-account",
+          },
+        ],
+      },
+      {
+        id: "fxaLoginRejectedGroup",
+        control: "moz-box-group",
+        items: [
+          {
+            id: "fxaLoginRejected",
+            control: "placeholder-message",
+            l10nId: "sync-signedin-login-failure2",
+            l10nArgs: { email: "" },
+            controlAttrs: {
+              imagesrc: "chrome://global/skin/illustrations/security-error.svg",
+            },
+          },
+          {
+            id: "rejectReSignIn",
+            control: "moz-box-link",
+            l10nId: "sync-sign-in",
+          },
+          {
+            id: "rejectUnlinkFxaAccount",
+            control: "moz-box-button",
+            l10nId: "sync-remove-account",
+          },
+        ],
+      },
+    ],
+  },
+  translationsAutomaticTranslation: {
+    inProgress: true,
+    headingLevel: 2,
+    l10nId: "settings-translations-subpage-automatic-translation-header",
+    items: [
+      {
+        id: "translationsAlwaysTranslateLanguagesGroup",
+        control: "moz-box-group",
+        controlAttrs: {
+          type: "list",
+        },
+        items: [
+          {
+            id: "translationsAlwaysTranslateLanguagesRow",
+            l10nId: "settings-translations-subpage-always-translate-header",
+            control: "moz-box-item",
+            slot: "header",
+            controlAttrs: {
+              class: "box-header-bold",
+            },
+            items: [
+              {
+                id: "translationsAlwaysTranslateLanguagesSelect",
+                slot: "actions",
+                control: "moz-select",
+                options: [
+                  {
+                    value: "",
+                    l10nId:
+                      "settings-translations-subpage-language-select-option",
+                  },
+                ],
+              },
+              {
+                id: "translationsAlwaysTranslateLanguagesButton",
+                l10nId: "settings-translations-subpage-language-add-button",
+                control: "moz-button",
+                slot: "actions",
+                controlAttrs: {
+                  type: "icon",
+                  iconsrc: "chrome://global/skin/icons/plus.svg",
+                },
+              },
+            ],
+          },
+          {
+            id: "translationsAlwaysTranslateLanguagesNoneRow",
+            l10nId: "settings-translations-subpage-no-languages-added",
+            control: "moz-box-item",
+            controlAttrs: {
+              class: "description-deemphasized",
+            },
+          },
+        ],
+      },
+      {
+        id: "translationsNeverTranslateLanguagesGroup",
+        control: "moz-box-group",
+        controlAttrs: {
+          type: "list",
+        },
+        items: [
+          {
+            id: "translationsNeverTranslateLanguagesRow",
+            l10nId: "settings-translations-subpage-never-translate-header",
+            control: "moz-box-item",
+            slot: "header",
+            controlAttrs: {
+              class: "box-header-bold",
+            },
+            items: [
+              {
+                id: "translationsNeverTranslateLanguagesSelect",
+                slot: "actions",
+                control: "moz-select",
+                options: [
+                  {
+                    value: "",
+                    l10nId:
+                      "settings-translations-subpage-language-select-option",
+                  },
+                ],
+              },
+              {
+                id: "translationsNeverTranslateLanguagesButton",
+                l10nId: "settings-translations-subpage-language-add-button",
+                control: "moz-button",
+                slot: "actions",
+                controlAttrs: {
+                  type: "icon",
+                  iconsrc: "chrome://global/skin/icons/plus.svg",
+                },
+              },
+            ],
+          },
+          {
+            id: "translationsNeverTranslateLanguagesNoneRow",
+            l10nId: "settings-translations-subpage-no-languages-added",
+            control: "moz-box-item",
+            controlAttrs: {
+              class: "description-deemphasized",
+            },
+          },
+        ],
+      },
+      {
+        id: "translationsNeverTranslateSitesGroup",
+        control: "moz-box-group",
+        controlAttrs: {
+          type: "list",
+        },
+        items: [
+          {
+            id: "translationsNeverTranslateSitesRow",
+            l10nId:
+              "settings-translations-subpage-never-translate-sites-header",
+            control: "moz-box-item",
+            controlAttrs: {
+              class: "box-header-bold",
+              ".description": createNeverTranslateSitesDescription(),
+            },
+          },
+          {
+            id: "translationsNeverTranslateSitesNoneRow",
+            l10nId: "settings-translations-subpage-no-sites-added",
+            control: "moz-box-item",
+            controlAttrs: {
+              class: "description-deemphasized",
+            },
+          },
+        ],
+      },
+    ],
+  },
+  translationsDownloadLanguages: {
+    inProgress: true,
+    headingLevel: 2,
+    l10nId: "settings-translations-subpage-speed-up-translation-header",
+    items: [
+      {
+        id: "translationsDownloadLanguagesGroup",
+        control: "moz-box-group",
+        controlAttrs: {
+          type: "list",
+        },
+        items: [
+          {
+            id: "translationsDownloadLanguagesRow",
+            l10nId: "settings-translations-subpage-download-languages-header",
+            control: "moz-box-item",
+            slot: "header",
+            controlAttrs: {
+              class: "box-header-bold",
+            },
+            items: [
+              {
+                id: "translationsDownloadLanguagesSelect",
+                slot: "actions",
+                control: "moz-select",
+                options: [
+                  {
+                    value: "",
+                    l10nId:
+                      "settings-translations-subpage-download-languages-select-option",
+                  },
+                ],
+              },
+              {
+                id: "translationsDownloadLanguagesButton",
+                l10nId:
+                  "settings-translations-subpage-download-languages-button",
+                control: "moz-button",
+                slot: "actions",
+                controlAttrs: {
+                  type: "icon",
+                  iconsrc: "chrome://browser/skin/downloads/downloads.svg",
+                },
+              },
+            ],
+          },
+          {
+            id: "translationsDownloadLanguagesNoneRow",
+            l10nId: "settings-translations-subpage-no-languages-downloaded",
+            control: "moz-box-item",
+            controlAttrs: {
+              class: "description-deemphasized",
+            },
+          },
+        ],
+      },
+    ],
+  },
+  firefoxSuggest: {
+    id: "locationBarGroup",
+    items: [
+      {
+        id: "locationBarGroupHeader",
+        l10nId: "addressbar-header-1",
+        supportPage: "firefox-suggest",
+        control: "moz-fieldset",
+        controlAttrs: {
+          headinglevel: 2,
+        },
+        items: [
+          {
+            id: "historySuggestion",
+            l10nId: "addressbar-locbar-history-option",
+          },
+          {
+            id: "bookmarkSuggestion",
+            l10nId: "addressbar-locbar-bookmarks-option",
+          },
+          {
+            id: "clipboardSuggestion",
+            l10nId: "addressbar-locbar-clipboard-option",
+          },
+          {
+            id: "openpageSuggestion",
+            l10nId: "addressbar-locbar-openpage-option",
+          },
+          {
+            id: "topSitesSuggestion",
+            l10nId: "addressbar-locbar-shortcuts-option",
+          },
+          {
+            id: "enableRecentSearches",
+            l10nId: "addressbar-locbar-showrecentsearches-option-2",
+          },
+          {
+            id: "enginesSuggestion",
+            l10nId: "addressbar-locbar-engines-option-1",
+          },
+          {
+            id: "enableQuickActions",
+            l10nId: "addressbar-locbar-quickactions-option",
+            supportPage: "quick-actions-firefox-search-bar",
+          },
+          {
+            id: "firefoxSuggestAll",
+            l10nId: "addressbar-locbar-suggest-all-option-2",
+            items: [
+              {
+                id: "firefoxSuggestSponsored",
+                l10nId: "addressbar-locbar-suggest-sponsored-option-2",
+              },
+              {
+                id: "firefoxSuggestOnlineEnabledToggle",
+                l10nId: "addressbar-firefox-suggest-online",
+                supportPage: "firefox-suggest",
+                subcategory: "w_what-is-firefox-suggest",
+              },
+            ],
+          },
+          {
+            id: "dismissedSuggestionsDescription",
+            l10nId: "addressbar-dismissed-suggestions-label-2",
+            control: "moz-fieldset",
+            controlAttrs: {
+              headinglevel: 3,
+            },
+            items: [
+              {
+                id: "restoreDismissedSuggestions",
+                l10nId: "addressbar-restore-dismissed-suggestions-button-2",
+                control: "moz-button",
+                iconSrc:
+                  "chrome://global/skin/icons/arrow-counterclockwise-16.svg",
+              },
+            ],
+          },
+        ],
       },
     ],
   },
@@ -3112,6 +5255,7 @@ function initSettingGroup(id) {
     }
     group.config = config;
     group.getSetting = Preferences.getSetting.bind(Preferences);
+    group.srdEnabled = srdSectionPrefs.all;
   }
 }
 
@@ -3189,27 +5333,28 @@ var gMainPane = {
     }
 
     this.displayUseSystemLocale();
-    this.updateProxySettingsUI();
-    initializeProxyUI(gMainPane);
 
     if (Services.prefs.getBoolPref("intl.multilingual.enabled")) {
       gMainPane.initPrimaryBrowserLanguageUI();
     }
 
-    // We call `initDefaultZoomValues` to set and unhide the
-    // default zoom preferences menu, and to establish a
-    // listener for future menu changes.
-    gMainPane.initDefaultZoomValues();
-
     gMainPane.initTranslations();
 
     // Initialize settings groups from the config object.
+    initSettingGroup("browserLayout");
     initSettingGroup("appearance");
     initSettingGroup("downloads");
     initSettingGroup("drm");
+    initSettingGroup("contrast");
+    initSettingGroup("websiteLanguage");
     initSettingGroup("browsing");
     initSettingGroup("zoom");
+    initSettingGroup("fonts");
+    initSettingGroup("support");
+    initSettingGroup("translations");
+    initSettingGroup("spellCheck");
     initSettingGroup("performance");
+    initSettingGroup("defaultBrowser");
     initSettingGroup("startup");
     initSettingGroup("importBrowserData");
     initSettingGroup("networkProxy");
@@ -3249,34 +5394,12 @@ var gMainPane = {
       "command",
       gMainPane.showTranslationExceptions
     );
-    Preferences.get("font.language.group").on(
-      "change",
-      gMainPane._rebuildFonts.bind(gMainPane)
-    );
-    setEventListener("advancedFonts", "command", gMainPane.configureFonts);
-    setEventListener("colors", "command", gMainPane.configureColors);
-    Preferences.get("browser.display.document_color_use").on(
-      "change",
-      gMainPane.updateColorsButton.bind(gMainPane)
-    );
-    gMainPane.updateColorsButton();
-
-    document
-      .getElementById("browserLayoutShowSidebar")
-      .addEventListener(
-        "command",
-        gMainPane.onShowSidebarCommand.bind(gMainPane),
-        { capture: true }
-      );
 
     document
       .getElementById("migrationWizardDialog")
       .addEventListener("MigrationWizard:Close", function (e) {
         e.currentTarget.close();
       });
-
-    // Initializes the fonts dropdowns displayed in this pane.
-    this._rebuildFonts();
 
     // Firefox Translations settings panel
     // TODO (Bug 1817084) Remove this code when we disable the extension
@@ -3438,19 +5561,6 @@ var gMainPane = {
 
     // Notify observers that the UI is now ready
     Services.obs.notifyObservers(window, "main-pane-loaded");
-
-    Preferences.addSyncFromPrefListener(
-      document.getElementById("defaultFont"),
-      element => FontBuilder.readFontSelection(element)
-    );
-    Preferences.addSyncFromPrefListener(
-      document.getElementById("checkSpelling"),
-      () => this.readCheckSpelling()
-    );
-    Preferences.addSyncToPrefListener(
-      document.getElementById("checkSpelling"),
-      () => this.writeCheckSpelling()
-    );
     this.setInitialized();
   },
 
@@ -3493,21 +5603,6 @@ var gMainPane = {
     }
 
     return false;
-  },
-
-  /**
-   * Handle toggling the "Show sidebar" checkbox to allow SidebarController to know the
-   * origin of this change.
-   */
-  onShowSidebarCommand(event) {
-    // Note: We useCapture so while the checkbox' checked property is already updated,
-    // the pref value has not yet been changed
-    const willEnable = event.target.checked;
-    if (willEnable) {
-      window.browsingContext.topChromeWindow.SidebarController?.enabledViaSettings(
-        true
-      );
-    }
   },
 
   // CONTAINERS
@@ -3571,74 +5666,37 @@ var gMainPane = {
   },
 
   /**
-   * Fetch the existing default zoom value, initialise and unhide
-   * the preferences menu. This method also establishes a listener
-   * to ensure handleDefaultZoomChange is called on future menu
-   * changes.
-   */
-  async initDefaultZoomValues() {
-    let win = window.browsingContext.topChromeWindow;
-    let selected = await win.ZoomUI.getGlobalValue();
-    let menulist = document.getElementById("defaultZoom");
-
-    new SelectionChangedMenulist(menulist, event => {
-      let parsedZoom = parseFloat((event.target.value / 100).toFixed(2));
-      gMainPane.handleDefaultZoomChange(parsedZoom);
-    });
-
-    setEventListener("zoomText", "command", function () {
-      win.ZoomManager.toggleZoom();
-      document.getElementById("text-zoom-override-warning").hidden =
-        !document.getElementById("zoomText").checked;
-    });
-
-    let zoomValues = win.ZoomManager.zoomValues.map(a => {
-      return Math.round(a * 100);
-    });
-
-    let fragment = document.createDocumentFragment();
-    for (let zoomLevel of zoomValues) {
-      let menuitem = document.createXULElement("menuitem");
-      document.l10n.setAttributes(menuitem, "preferences-default-zoom-value", {
-        percentage: zoomLevel,
-      });
-      menuitem.setAttribute("value", zoomLevel);
-      fragment.appendChild(menuitem);
-    }
-
-    let menupopup = menulist.querySelector("menupopup");
-    menupopup.appendChild(fragment);
-    menulist.value = Math.round(selected * 100);
-
-    let checkbox = document.getElementById("zoomText");
-    checkbox.checked = !win.ZoomManager.useFullZoom;
-    document.getElementById("text-zoom-override-warning").hidden =
-      !checkbox.checked;
-    document.getElementById("zoomBox").hidden = false;
-  },
-
-  updateColorsButton() {
-    document.getElementById("colors").disabled =
-      Preferences.get("browser.display.document_color_use").value != 2;
-  },
-
-  /**
    * Initialize the translations view.
    */
   async initTranslations() {
-    if (!Services.prefs.getBoolPref("browser.translations.enable")) {
-      return;
-    }
-
+    let legacyTranslationsVisible = Preferences.getSetting(
+      "legacyTranslationsVisible"
+    );
     /**
      * Which phase a language download is in.
      *
      * @typedef {"downloaded" | "loading" | "uninstalled"} DownloadPhase
      */
 
-    // Immediately show the group so that the async load of the component does
-    // not cause the layout to jump. The group will be empty initially.
-    document.getElementById("translationsGroup").hidden = false;
+    let translationsGroup = document.getElementById("translationsGroup");
+    let setTranslationsGroupVisbility = () => {
+      // Immediately show the group so that the async load of the component does
+      // not cause the layout to jump. The group will be empty initially.
+      translationsGroup.hidden = !legacyTranslationsVisible.visible;
+      translationsGroup.classList.toggle(
+        "setting-hidden",
+        translationsGroup.hidden
+      );
+    };
+    setTranslationsGroupVisbility();
+
+    legacyTranslationsVisible.on("change", setTranslationsGroupVisbility);
+    window.addEventListener(
+      "unload",
+      () =>
+        legacyTranslationsVisible.off("change", setTranslationsGroupVisbility),
+      { once: true }
+    );
 
     class TranslationsState {
       /**
@@ -3769,7 +5827,7 @@ var gMainPane = {
         this.hideError();
         this.disableButtons(true);
         try {
-          await TranslationsParent.deleteAllLanguageFiles();
+          await TranslationsUtils.deleteAllLanguageFiles();
           this.markAllDownloadPhases("uninstalled");
         } catch (error) {
           TranslationsView.showError("translations-manage-error-remove", error);
@@ -4238,33 +6296,16 @@ var gMainPane = {
   },
 
   /**
-   * Takes as newZoom a floating point value representing the
-   * new default zoom. This value should not be a string, and
-   * should not carry a percentage sign/other localisation
-   * characteristics.
-   */
-  handleDefaultZoomChange(newZoom) {
-    let cps2 = Cc["@mozilla.org/content-pref/service;1"].getService(
-      Ci.nsIContentPrefService2
-    );
-    let nonPrivateLoadContext = Cu.createLoadContext();
-    /* Because our setGlobal function takes in a browsing context, and
-     * because we want to keep this property consistent across both private
-     * and non-private contexts, we crate a non-private context and use that
-     * to set the property, regardless of our actual context.
-     */
-
-    let win = window.browsingContext.topChromeWindow;
-    cps2.setGlobal(win.FullZoom.name, newZoom, nonPrivateLoadContext);
-  },
-
-  /**
-   *  Shows a subdialog containing the profile selector page.
+   *  Shows a window dialog containing the profile selector page.
    */
   manageProfiles() {
-    SelectableProfileService.maybeSetupDataStore().then(() => {
-      gSubDialog.open("about:profilemanager");
-    });
+    const win = window.browsingContext.topChromeWindow;
+
+    win.toOpenWindowByType(
+      "about:profilemanager",
+      "about:profilemanager",
+      "chrome,extrachrome,menubar,resizable,scrollbars,status,toolbar,centerscreen"
+    );
   },
 
   /**
@@ -4430,20 +6471,9 @@ var gMainPane = {
   },
 
   showTranslationsSettings() {
-    if (
-      Services.prefs.getBoolPref("browser.translations.newSettingsUI.enable")
-    ) {
-      const translationsSettings = document.getElementById(
-        "translations-settings-page"
-      );
-      translationsSettings.setAttribute("data-hidden-from-search", "false");
-      translationsSettings.hidden = false;
-      gotoPref("translations");
-    } else {
-      gSubDialog.open(
-        "chrome://browser/content/preferences/dialogs/translations.xhtml"
-      );
-    }
+    gSubDialog.open(
+      "chrome://browser/content/preferences/dialogs/translations.xhtml"
+    );
   },
 
   /**
@@ -4457,149 +6487,14 @@ var gMainPane = {
     );
   },
 
-  /**
-   * Displays the colors dialog, where default web page/link/etc. colors can be
-   * configured.
-   */
-  configureColors() {
-    gSubDialog.open(
-      "chrome://browser/content/preferences/dialogs/colors.xhtml",
-      { features: "resizable=no" }
-    );
-  },
-
   // NETWORK
   /**
    * Displays a dialog in which proxy settings may be changed.
    */
   showConnections() {
     gSubDialog.open(
-      "chrome://browser/content/preferences/dialogs/connection.xhtml",
-      { closingCallback: this.updateProxySettingsUI.bind(this) }
+      "chrome://browser/content/preferences/dialogs/connection.xhtml"
     );
-  },
-
-  // Update the UI to show the proper description depending on whether an
-  // extension is in control or not.
-  async updateProxySettingsUI() {
-    let controllingExtension = await getControllingExtension(
-      PREF_SETTING_TYPE,
-      PROXY_KEY
-    );
-    let description = document.getElementById("connectionSettingsDescription");
-
-    if (controllingExtension) {
-      setControllingExtensionDescription(
-        description,
-        controllingExtension,
-        "proxy.settings"
-      );
-    } else {
-      setControllingExtensionDescription(
-        description,
-        null,
-        "network-proxy-connection-description"
-      );
-    }
-  },
-
-  // FONTS
-
-  /**
-   * Populates the default font list in UI.
-   */
-  _rebuildFonts() {
-    var langGroup = Services.locale.fontLanguageGroup;
-    var isSerif = this._readDefaultFontTypeForLanguage(langGroup) == "serif";
-    this._selectDefaultLanguageGroup(langGroup, isSerif);
-  },
-
-  /**
-   * Returns the type of the current default font for the language denoted by
-   * aLanguageGroup.
-   */
-  _readDefaultFontTypeForLanguage(aLanguageGroup) {
-    const kDefaultFontType = "font.default.%LANG%";
-    var defaultFontTypePref = kDefaultFontType.replace(
-      /%LANG%/,
-      aLanguageGroup
-    );
-    var preference = Preferences.get(defaultFontTypePref);
-    if (!preference) {
-      preference = Preferences.add({ id: defaultFontTypePref, type: "string" });
-      preference.on("change", gMainPane._rebuildFonts.bind(gMainPane));
-    }
-    return preference.value;
-  },
-
-  _selectDefaultLanguageGroupPromise: Promise.resolve(),
-
-  _selectDefaultLanguageGroup(aLanguageGroup, aIsSerif) {
-    this._selectDefaultLanguageGroupPromise = (async () => {
-      // Avoid overlapping language group selections by awaiting the resolution
-      // of the previous one.  We do this because this function is re-entrant,
-      // as inserting <preference> elements into the DOM sometimes triggers a call
-      // back into this function.  And since this function is also asynchronous,
-      // that call can enter this function before the previous run has completed,
-      // which would corrupt the font menulists.  Awaiting the previous call's
-      // resolution avoids that fate.
-      await this._selectDefaultLanguageGroupPromise;
-
-      const kFontNameFmtSerif = "font.name.serif.%LANG%";
-      const kFontNameFmtSansSerif = "font.name.sans-serif.%LANG%";
-      const kFontNameListFmtSerif = "font.name-list.serif.%LANG%";
-      const kFontNameListFmtSansSerif = "font.name-list.sans-serif.%LANG%";
-      const kFontSizeFmtVariable = "font.size.variable.%LANG%";
-
-      var prefs = [
-        {
-          format: aIsSerif ? kFontNameFmtSerif : kFontNameFmtSansSerif,
-          type: "fontname",
-          element: "defaultFont",
-          fonttype: aIsSerif ? "serif" : "sans-serif",
-        },
-        {
-          format: aIsSerif ? kFontNameListFmtSerif : kFontNameListFmtSansSerif,
-          type: "unichar",
-          element: null,
-          fonttype: aIsSerif ? "serif" : "sans-serif",
-        },
-        {
-          format: kFontSizeFmtVariable,
-          type: "int",
-          element: "defaultFontSize",
-          fonttype: null,
-        },
-      ];
-      for (var i = 0; i < prefs.length; ++i) {
-        var preference = Preferences.get(
-          prefs[i].format.replace(/%LANG%/, aLanguageGroup)
-        );
-        if (!preference) {
-          var name = prefs[i].format.replace(/%LANG%/, aLanguageGroup);
-          preference = Preferences.add({ id: name, type: prefs[i].type });
-        }
-
-        if (!prefs[i].element) {
-          continue;
-        }
-
-        var element = document.getElementById(prefs[i].element);
-        if (element) {
-          element.setAttribute("preference", preference.id);
-
-          if (prefs[i].fonttype) {
-            await FontBuilder.buildFontList(
-              aLanguageGroup,
-              prefs[i].fonttype,
-              element
-            );
-          }
-
-          preference.setElementValue(element);
-        }
-      }
-    })().catch(console.error);
   },
 
   /**
@@ -4643,46 +6538,6 @@ var gMainPane = {
     );
 
     migrationWizardDialog.showModal();
-  },
-
-  /**
-   * Stores the original value of the spellchecking preference to enable proper
-   * restoration if unchanged (since we're mapping a tristate onto a checkbox).
-   */
-  _storedSpellCheck: 0,
-
-  /**
-   * Returns true if any spellchecking is enabled and false otherwise, caching
-   * the current value to enable proper pref restoration if the checkbox is
-   * never changed.
-   *
-   * layout.spellcheckDefault
-   * - an integer:
-   *     0  disables spellchecking
-   *     1  enables spellchecking, but only for multiline text fields
-   *     2  enables spellchecking for all text fields
-   */
-  readCheckSpelling() {
-    var pref = Preferences.get("layout.spellcheckDefault");
-    this._storedSpellCheck = pref.value;
-
-    return pref.value != 0;
-  },
-
-  /**
-   * Returns the value of the spellchecking preference represented by UI,
-   * preserving the preference's "hidden" value if the preference is
-   * unchanged and represents a value not strictly allowed in UI.
-   */
-  writeCheckSpelling() {
-    var checkbox = document.getElementById("checkSpelling");
-    if (checkbox.checked) {
-      if (this._storedSpellCheck == 2) {
-        return 2;
-      }
-      return 1;
-    }
-    return 0;
   },
 
   _minUpdatePrefDisableTime: 1000,
@@ -5732,12 +7587,7 @@ var gMainPane = {
     ) {
       // As the favicon originates from web content and is displayed in the parent process,
       // use the moz-remote-image: protocol to safely re-encode it.
-      let params = new URLSearchParams({
-        url: uri.prePath + "/favicon.ico",
-        width: 16,
-        height: 16,
-      });
-      return "moz-remote-image://?" + params;
+      return getMozRemoteImageURL(uri.prePath + "/favicon.ico", { size: 16 });
     }
 
     return "";

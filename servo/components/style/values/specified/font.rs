@@ -5,6 +5,7 @@
 //! Specified values for font properties
 
 use crate::context::QuirksMode;
+use crate::derives::*;
 use crate::parser::{Parse, ParserContext};
 use crate::values::computed::font::{FamilyName, FontFamilyList, SingleFontFamily};
 use crate::values::computed::Percentage as ComputedPercentage;
@@ -22,7 +23,7 @@ use crate::values::specified::{
 };
 use crate::values::{serialize_atom_identifier, CustomIdent, SelectorParseErrorKind};
 use crate::Atom;
-use cssparser::{Parser, Token};
+use cssparser::{match_ignore_ascii_case, Parser, Token};
 #[cfg(feature = "gecko")]
 use malloc_size_of::{MallocSizeOf, MallocSizeOfOps, MallocUnconditionalSizeOf};
 use std::fmt::{self, Write};
@@ -404,6 +405,7 @@ impl ToComputedValue for FontStyle {
 #[derive(
     Clone, Copy, Debug, MallocSizeOf, Parse, PartialEq, SpecifiedValueInfo, ToCss, ToShmem, ToTyped,
 )]
+#[typed_value(derive_fields)]
 pub enum FontStretch {
     Stretch(NonNegativePercentage),
     Keyword(FontStretchKeyword),
@@ -413,7 +415,7 @@ pub enum FontStretch {
 
 /// A keyword value for `font-stretch`.
 #[derive(
-    Clone, Copy, Debug, MallocSizeOf, Parse, PartialEq, SpecifiedValueInfo, ToCss, ToShmem,
+    Clone, Copy, Debug, MallocSizeOf, Parse, PartialEq, SpecifiedValueInfo, ToCss, ToShmem, ToTyped,
 )]
 #[allow(missing_docs)]
 pub enum FontStretchKeyword {
@@ -490,6 +492,7 @@ impl ToComputedValue for FontStretch {
     ToShmem,
     Serialize,
     Deserialize,
+    ToTyped,
 )]
 #[allow(missing_docs)]
 #[repr(u8)]
@@ -553,8 +556,10 @@ impl Default for FontSizeKeyword {
     ToCss,
     ToResolvedValue,
     ToShmem,
+    ToTyped,
 )]
 #[cfg_attr(feature = "servo", derive(Serialize, Deserialize))]
+#[typed_value(derive_fields)]
 /// Additional information for keyword-derived font sizes.
 pub struct KeywordInfo {
     /// The keyword used
@@ -620,6 +625,7 @@ impl SpecifiedValueInfo for KeywordInfo {
 }
 
 #[derive(Clone, Debug, MallocSizeOf, PartialEq, SpecifiedValueInfo, ToCss, ToShmem, ToTyped)]
+#[typed_value(derive_fields)]
 /// A specified font-size value
 pub enum FontSize {
     /// A length; e.g. 10px.

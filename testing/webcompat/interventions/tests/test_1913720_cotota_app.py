@@ -2,7 +2,7 @@ import pytest
 
 URL = "https://cotota.app/"
 
-SUCCESS_CSS = "#content"
+SUCCESS_CSS = "#email"
 BLOCKED_TEXT = "403 Forbidden"
 
 

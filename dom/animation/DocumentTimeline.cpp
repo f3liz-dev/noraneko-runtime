@@ -47,7 +47,7 @@ DocumentTimeline::DocumentTimeline(Document* aDocument,
       mDocument(aDocument),
       mOriginTime(aOriginTime) {
   if (mDocument) {
-    mDocument->Timelines().insertBack(this);
+    mDocument->TimelinesController().AddDocumentTimeline(*this);
   }
   // Ensure mLastRefreshDriverTime is valid.
   UpdateLastRefreshDriverTime();
@@ -173,6 +173,13 @@ void DocumentTimeline::TriggerAllPendingAnimationsNow() {
   for (Animation* animation :
        ToTArray<AutoTArray<RefPtr<Animation>, 32>>(mAnimationOrder)) {
     animation->TryTriggerNow();
+  }
+}
+
+void DocumentTimeline::PostUpdateForAllAnimations() {
+  for (Animation* animation :
+       ToTArray<AutoTArray<RefPtr<Animation>, 32>>(mAnimationOrder)) {
+    animation->PostUpdate();
   }
 }
 

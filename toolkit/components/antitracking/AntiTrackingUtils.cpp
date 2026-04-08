@@ -160,28 +160,6 @@ bool AntiTrackingUtils::CreateStorageFramePermissionKey(
 }
 
 // static
-bool AntiTrackingUtils::CreateStorageRequestPermissionKey(
-    nsIURI* aURI, nsACString& aPermissionKey) {
-  MOZ_ASSERT(aPermissionKey.IsEmpty());
-  nsCOMPtr<nsIEffectiveTLDService> eTLDService =
-      mozilla::components::EffectiveTLD::Service();
-  if (!eTLDService) {
-    return false;
-  }
-  nsCString site;
-  nsresult rv = eTLDService->GetSite(aURI, site);
-  if (NS_FAILED(rv)) {
-    return false;
-  }
-  static const nsLiteralCString prefix =
-      nsLiteralCString("AllowStorageAccessRequest^");
-  aPermissionKey.SetCapacity(prefix.Length() + site.Length());
-  aPermissionKey.Append(prefix);
-  aPermissionKey.Append(site);
-  return true;
-}
-
-// static
 bool AntiTrackingUtils::IsStorageAccessPermission(nsIPermission* aPermission,
                                                   nsIPrincipal* aPrincipal) {
   MOZ_ASSERT(aPermission);
@@ -1252,7 +1230,7 @@ bool AntiTrackingUtils::IsThirdPartyContext(BrowsingContext* aBrowsingContext) {
     if (!parentDocShell) {
       return true;
     }
-    Document* parentDoc = parentDocShell->GetDocument();
+    Document* parentDoc = parentDocShell->GetExtantDocument();
     if (!parentDoc || parentDoc->GetSandboxFlags() & SANDBOXED_ORIGIN) {
       return true;
     }

@@ -23,6 +23,9 @@ newtab-personalize-dialog-label =
     .aria-label = Настроить
 newtab-logo-and-wordmark =
     .aria-label = { -brand-full-name }
+newtab-card-dismiss-button =
+    .title = Убрать
+    .aria-label = Убрать
 
 ## Search box component.
 
@@ -53,7 +56,7 @@ newtab-search-box-input =
 
 newtab-topsites-add-search-engine-header = Добавить поисковую систему
 newtab-topsites-add-shortcut-header = Новый ярлык
-newtab-topsites-edit-topsites-header = Изменить сайт из топа
+newtab-topsites-edit-topsites-header = Изменить сайт из любимых
 newtab-topsites-edit-shortcut-header = Изменить ярлык
 newtab-topsites-add-shortcut-label = Добавить ярлык
 newtab-topsites-add-shortcut-title =
@@ -151,11 +154,7 @@ newtab-menu-report-this-ad = Пожаловаться на эту рекламу
 newtab-privacy-modal-button-done = Готово
 newtab-privacy-modal-button-manage = Управление настройками контента спонсоров
 newtab-privacy-modal-header = Ваша приватность имеет значение.
-newtab-privacy-modal-paragraph-2 =
-    Помимо сохранения увлекательных статей, мы также показываем вам
-    проверенный контент от избранных спонсоров. Будьте уверены, <strong>ваши данные
-    веб-сёрфинга никогда не покинут вашу личную копию { -brand-product-name }</strong> — мы не имеем
-    к ним доступа, и наши спонсоры тоже не имеют.
+newtab-privacy-modal-paragraph-2 = Помимо сохранения увлекательных статей, мы также показываем вам проверенный контент от избранных спонсоров. Будьте уверены, <strong>ваши данные веб-сёрфинга никогда не покинут вашу личную копию { -brand-product-name }</strong> — мы не имеем к ним доступа, и наши спонсоры тоже не имеют.
 newtab-privacy-modal-link = Посмотрите, как работает приватность, в новой вкладке
 
 ##
@@ -192,7 +191,7 @@ newtab-label-bookmarked = В закладках
 newtab-label-removed-bookmark = Закладка удалена
 newtab-label-recommended = Популярные
 newtab-label-saved = Сохранено в { -pocket-brand-name }
-newtab-label-download = Загружено
+newtab-label-download = Скачано
 # This string is used in the story cards to indicate sponsored content
 # Variables:
 #   $sponsorOrSource (string) - The name of a company or their domain
@@ -217,7 +216,7 @@ newtab-section-menu-collapse-section = Свернуть раздел
 newtab-section-menu-expand-section = Развернуть раздел
 newtab-section-menu-manage-section = Управление разделом
 newtab-section-menu-manage-webext = Управление расширением
-newtab-section-menu-add-topsite = Добавить в топ сайтов
+newtab-section-menu-add-topsite = Добавить в любимые сайты
 newtab-section-menu-add-search-engine = Добавить поисковую систему
 newtab-section-menu-move-up = Вверх
 newtab-section-menu-move-down = Вниз
@@ -232,7 +231,7 @@ newtab-section-expand-section-label =
 
 ## Section Headers.
 
-newtab-section-header-topsites = Топ сайтов
+newtab-section-header-topsites = Любимые сайты
 newtab-section-header-recent-activity = Последние действия
 # Variables:
 #   $provider (string) - Name of the corresponding content provider.
@@ -330,18 +329,18 @@ newtab-custom-recent-subtitle = Подборка недавних сайтов �
 newtab-custom-weather-toggle =
     .label = Погода
     .description = Краткий прогноз на сегодня
-newtab-custom-trending-search-toggle =
-    .label = Популярные поисковые запросы
-    .description = Популярные и часто запрашиваемые темы
 newtab-custom-widget-weather-toggle =
     .label = Погода
-newtab-custom-widget-trending-search-toggle =
-    .label = Популярные поисковые запросы
 newtab-custom-widget-lists-toggle =
     .label = Списки
 newtab-custom-widget-timer-toggle =
     .label = Таймер
 newtab-custom-widget-section-title = Виджеты
+newtab-custom-widget-section-toggle =
+    .label = Виджеты
+newtab-widget-manage-title = Виджеты
+newtab-widget-manage-widget-button =
+    .label = Управление виджетами
 # Tooltip for close button
 newtab-custom-close-menu-button =
     .title = Закрыть
@@ -469,6 +468,8 @@ newtab-weather-change-location-search-input-placeholder =
     .placeholder = Поиск местоположения
     .aria-label = Поиск местоположения
 newtab-weather-menu-weather-display = Отображение погоды
+newtab-weather-todays-forecast = Сегодняшний прогноз
+newtab-weather-see-full-forecast = Посмотреть полный прогноз
 # Display options are:
 # - Simple: Displays a current weather condition icon and the current temperature
 # - Detailed: Include simple information plus a short text summary: e.g. "Mostly cloudy"
@@ -481,6 +482,7 @@ newtab-weather-menu-temperature-option-fahrenheit = Фаренгейт
 newtab-weather-menu-temperature-option-celsius = Цельсий
 newtab-weather-menu-change-temperature-units-fahrenheit = Переключиться на градусы Фаренгейта
 newtab-weather-menu-change-temperature-units-celsius = Переключиться на градусы Цельсия
+newtab-weather-menu-hide-weather-v2 = Скрыть погоду
 newtab-weather-menu-hide-weather = Скрыть погоду на новой вкладке
 newtab-weather-menu-learn-more = Подробнее
 newtab-weather-menu-detect-my-location = Определить моё местоположение
@@ -493,6 +495,11 @@ newtab-weather-opt-in-yes =
     .label = Да
 # We'll be showing static (fake) weather data if the user has not opted in to using their location
 newtab-weather-static-city = Нью-Йорк
+# Variables:
+#   $provider (string) - Service provider for weather data
+newtab-weather-see-forecast-description =
+    .title = Посмотреть прогноз в { $provider }
+    .aria-description = { $provider } ∙ На правах рекламы
 
 ## Topic Labels
 
@@ -584,20 +591,20 @@ newtab-new-user-custom-wallpaper-cta = Попробовать сейчас
 
 ## Strings for download mobile highlight
 
-newtab-download-mobile-highlight-title = Скачать { -brand-product-name } для мобильных устройств
+newtab-download-mobile-highlight-title = Скачайте { -brand-product-name } для мобильных устройств
 # "Scan the code" refers to scanning the QR code that appears above the body text that leads to Firefox for mobile download.
 newtab-download-mobile-highlight-body-variant-a = Отсканируйте код, чтобы безопасно работать в Интернете.
 newtab-download-mobile-highlight-body-variant-b = Продолжайте с того места, где вы остановились, при синхронизации вкладок, паролей и многого другого.
 newtab-download-mobile-highlight-body-variant-c = Знаете ли вы, что { -brand-product-name } можно брать с собой? Тот же браузер. У вас в кармане.
 newtab-download-mobile-highlight-image =
-    .aria-label = QR-код для загрузки { -brand-product-name } для мобильных устройств
+    .aria-label = QR-код для скачивания { -brand-product-name } для мобильных устройств
 
 ## Strings for shortcuts highlight
 
 newtab-shortcuts-highlight-title = Ваше любимое на кончиках ваших пальцев
 newtab-shortcuts-highlight-subtitle = Добавьте ярлык, чтобы держать под рукой любимые сайты.
 
-## Strings for reporting ads and content
+## Strings for reporting issues with ads and content
 
 newtab-report-content-why-reporting-this =
     .label = Почему вы сообщаете об этом?
@@ -615,21 +622,13 @@ newtab-report-content-inappropriate-offensive =
     .label = Неуместное или оскорбительное
 newtab-report-content-spam-misleading =
     .label = Спам или вводящее в заблуждение
+newtab-report-content-requires-payment-subscription =
+    .label = Требуется оплата или подписка
+newtab-report-content-requires-payment-subscription-learn-more = Узнать больше
 newtab-report-cancel = Отмена
 newtab-report-submit = Отправить
 newtab-toast-thanks-for-reporting =
     .message = Благодарим за сообщение.
-
-## Strings for trending searches
-
-newtab-trending-searches-show-trending =
-    .title = Показать популярные поисковые запросы
-newtab-trending-searches-hide-trending =
-    .title = Скрыть популярные поисковые запросы
-newtab-trending-searches-learn-more = Узнать больше
-newtab-trending-searches-dismiss = Скрыть популярные поисковые запросы
-# "Trending searches refers to popular searches from search engines
-newtab-trending-searches-title = Популярные поисковые запросы
 
 ## Strings for task / to-do list productivity widget
 
@@ -669,6 +668,17 @@ newtab-widget-lists-name-placeholder-default =
 # The placeholder value of the name field for a newly created list
 newtab-widget-lists-name-placeholder-new =
     .placeholder = Новый список
+newtab-widget-section-title = Виджеты
+# Tooltip for hide all widgets button
+newtab-widget-section-hide-all-button =
+    .title = Скрыть виджеты
+    .aria-label = Скрыть все виджеты
+newtab-widget-section-maximize =
+    .title = Развернуть виджеты
+    .aria-label = Развернуть все виджеты до полного размера
+newtab-widget-section-minimize =
+    .title = Свернуть виджеты
+    .aria-label = Свернуть все виджеты до компактного размера
 
 ## Strings for timer productivity widget
 ## When the timer ends, a system notification may be shown. Depending on which mode the timer is in, that message would be shown
@@ -691,8 +701,12 @@ newtab-widget-timer-menu-notifications = Отключить уведомлени
 newtab-widget-timer-menu-notifications-on = Включить уведомления
 newtab-widget-timer-menu-hide = Скрыть таймер
 newtab-widget-timer-menu-learn-more = Подробнее
-# Message that appears when widgets are full-height. This reminds users that there is more New Tab content to see if they scroll
-newtab-widget-keep-scrolling = Прокрутите, чтобы увидеть больше
+# The title displays above a set of top news headlines.
+newtab-daily-briefing-card-title = Самые популярные новости
+newtab-daily-briefing-card-menu-dismiss = Скрыть
+# Variables:
+#   $minutes (number) - Time since the feed has been refreshed
+newtab-daily-briefing-card-timestamp = Обновлено { $minutes } мин. назад
 newtab-widget-message-title = Оставайтесь в фокусе с помощью списков и встроенного таймера
 # to-dos stands for "things to do".
 newtab-widget-message-copy = От быстрых напоминаний до ежедневных задач, от фокус-сессий до длительных перерывов - выполняйте задачи вовремя.
@@ -702,3 +716,25 @@ newtab-promo-card-cta = Подробнее
 newtab-promo-card-dismiss-button =
     .title = Убрать
     .aria-label = Убрать
+
+## Strings for activation window message variants. In certain experiment configurations,
+## the strings from these variants may be displayed in a message below the search input
+## for the first 48 hours of a new profile's lifetime. Some messages include buttons with
+## labels, but not all.
+
+newtab-activation-window-message-dismiss-button =
+    .title = Убрать
+    .aria-label = Убрать
+# "This space" refers to about:newtab. The call to action here ("make it your own")
+# is to customize newtab with a background image or colour, or by tweaking the
+# existing widgetry that appears on it.
+newtab-activation-window-message-customization-focus-header = Сделайте это пространство своим
+newtab-activation-window-message-customization-focus-message = Выберите новые обои, добавьте ярлыки на ваши любимые сайты и будьте в курсе новостей, которые вас интересуют.
+newtab-activation-window-message-customization-focus-primary-button =
+    .label = Начать настройку
+# "This space" refers to about:newtab. The sentiment of "plays by your rules" is
+# meant to evoke the idea that newtab is malleable and customizable. The call to
+# action is to customize newtab with a background image or colour, or by tweaking
+# the existing widgetry that appears on it.
+newtab-activation-window-message-values-focus-header = Это пространство играет по вашим правилам
+newtab-activation-window-message-values-focus-message = { -brand-product-name } позволяет вам сёрфить так, как вам нравится, более личное начало дня в Интернете. Сделайте { -brand-product-name } своим.

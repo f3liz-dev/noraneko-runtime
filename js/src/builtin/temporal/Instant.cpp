@@ -15,11 +15,11 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "jsnum.h"
 #include "jspubtd.h"
 #include "NamespaceImports.h"
 
 #include "builtin/intl/DateTimeFormat.h"
+#include "builtin/Number.h"
 #include "builtin/temporal/Calendar.h"
 #include "builtin/temporal/Duration.h"
 #include "builtin/temporal/Int96.h"
@@ -232,10 +232,10 @@ static BigInt* CreateBigInt(JSContext* cx,
     if (!result) {
       return nullptr;
     }
-    if (y) {
+    if (length > 1) {
       result->setDigit(1, y);
     }
-    if (x) {
+    if (length > 0) {
       result->setDigit(0, x);
     }
     return result;
@@ -368,10 +368,10 @@ InstantObject* js::temporal::CreateTemporalInstant(
   }
 
   // Step 4.
-  object->setFixedSlot(InstantObject::SECONDS_SLOT,
-                       NumberValue(epochNanoseconds.seconds));
-  object->setFixedSlot(InstantObject::NANOSECONDS_SLOT,
-                       Int32Value(epochNanoseconds.nanoseconds));
+  object->initFixedSlot(InstantObject::SECONDS_SLOT,
+                        NumberValue(epochNanoseconds.seconds));
+  object->initFixedSlot(InstantObject::NANOSECONDS_SLOT,
+                        Int32Value(epochNanoseconds.nanoseconds));
 
   // Step 5.
   return object;
@@ -398,10 +398,10 @@ static InstantObject* CreateTemporalInstant(JSContext* cx, const CallArgs& args,
 
   // Step 4.
   auto epochNs = ToEpochNanoseconds(epochNanoseconds);
-  object->setFixedSlot(InstantObject::SECONDS_SLOT,
-                       NumberValue(epochNs.seconds));
-  object->setFixedSlot(InstantObject::NANOSECONDS_SLOT,
-                       Int32Value(epochNs.nanoseconds));
+  object->initFixedSlot(InstantObject::SECONDS_SLOT,
+                        NumberValue(epochNs.seconds));
+  object->initFixedSlot(InstantObject::NANOSECONDS_SLOT,
+                        Int32Value(epochNs.nanoseconds));
 
   // Step 5.
   return object;

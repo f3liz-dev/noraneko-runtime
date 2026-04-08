@@ -71,14 +71,13 @@ function registerProvider(payload) {
       new UrlbarResult({
         type: UrlbarUtils.RESULT_TYPE.URL,
         source: UrlbarUtils.RESULT_SOURCE.SEARCH,
-        ...UrlbarResult.payloadAndSimpleHighlights([], {
-          ...payload,
-        }),
+        payload,
       }),
     ],
     priority: Infinity,
   });
-  UrlbarProvidersManager.registerProvider(provider);
+  let providersManager = ProvidersManager.getInstanceForSap("urlbar");
+  providersManager.registerProvider(provider);
   return provider;
 }
 
@@ -199,7 +198,7 @@ add_task(async function basic() {
       );
     });
 
-    UrlbarProvidersManager.unregisterProvider(provider);
+    ProvidersManager.getInstanceForSap("urlbar").unregisterProvider(provider);
     await PlacesUtils.history.clear();
     await PlacesUtils.bookmarks.eraseEverything();
   }
@@ -274,11 +273,11 @@ add_task(async function redirection() {
 
   await PlacesUtils.history.clear();
   await PlacesUtils.bookmarks.eraseEverything();
-  UrlbarProvidersManager.unregisterProvider(provider);
+  ProvidersManager.getInstanceForSap("urlbar").unregisterProvider(provider);
 });
 
 add_task(async function search() {
-  const originalDefaultEngine = await Services.search.getDefault();
+  const originalDefaultEngine = await SearchService.getDefault();
   await SearchTestUtils.installSearchExtension({
     name: "test engine",
     keyword: "@test",
@@ -368,15 +367,15 @@ add_task(async function search() {
         );
       }
 
-      UrlbarProvidersManager.unregisterProvider(provider);
+      ProvidersManager.getInstanceForSap("urlbar").unregisterProvider(provider);
 
       await PlacesUtils.history.clear();
       await PlacesUtils.bookmarks.eraseEverything();
     });
   }
 
-  await Services.search.setDefault(
+  await SearchService.setDefault(
     originalDefaultEngine,
-    Ci.nsISearchService.CHANGE_REASON_UNKNOWN
+    SearchService.CHANGE_REASON.UNKNOWN
   );
 });

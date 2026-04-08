@@ -8,7 +8,6 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
-#include <utility>
 
 #include "MediaMIMETypes.h"
 #include "mozilla/Assertions.h"
@@ -204,6 +203,17 @@ ValidationResult IsValidVideoConfiguration(const VideoConfiguration& aConfig,
     LOG(("[Invalid VideoConfiguration (Framerate, %s) #1] Rejecting '%s'\n",
          EnumValueToString(err.unwrapErr()),
          NS_ConvertUTF16toUTF8(aConfig.mContentType).get()));
+    return err;
+  }
+
+  if (aConfig.mWidth <= 0 || aConfig.mHeight <= 0) {
+    ValidationResult err = Err(ValidationError::InvalidVideoConfiguration);
+    LOG(
+        ("[Invalid VideoConfiguration (Dimensions, %s) #1] Rejecting '%s' "
+         "(width=%u, height=%u)\n",
+         EnumValueToString(err.unwrapErr()),
+         NS_ConvertUTF16toUTF8(aConfig.mContentType).get(), aConfig.mWidth,
+         aConfig.mHeight));
     return err;
   }
 

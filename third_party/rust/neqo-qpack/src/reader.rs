@@ -53,7 +53,7 @@ impl Reader for ReceiverConnWrapper<'_> {
 }
 
 impl<'a> ReceiverConnWrapper<'a> {
-    pub fn new(conn: &'a mut Connection, stream_id: StreamId) -> Self {
+    pub const fn new(conn: &'a mut Connection, stream_id: StreamId) -> Self {
         Self { conn, stream_id }
     }
 }
@@ -128,7 +128,9 @@ impl<'a> ReceiverBufferWrapper<'a> {
         let length: usize = int_reader
             .read(self)?
             .try_into()
-            .or(Err(Error::Decompression))?;
+            .ok()
+            .filter(|&l| l <= LiteralReader::MAX_LEN)
+            .ok_or(Error::Decompression)?;
         if use_huffman {
             huffman::decode(self.slice(length)?)
         } else {
@@ -137,11 +139,12 @@ impl<'a> ReceiverBufferWrapper<'a> {
     }
 
     fn slice(&mut self, len: usize) -> Res<&[u8]> {
-        if self.offset + len > self.buf.len() {
+        let end = self.offset.checked_add(len).ok_or(Error::Decompression)?;
+        if end > self.buf.len() {
             Err(Error::Decompression)
         } else {
             let start = self.offset;
-            self.offset += len;
+            self.offset = end;
             Ok(&self.buf[start..self.offset])
         }
     }
@@ -252,6 +255,19 @@ pub struct LiteralReader {
 }
 
 impl LiteralReader {
+    /// Maximum length for a literal string in QPACK encoding.
+    ///
+    /// RFC 9204 requires implementations to set their own limits for string literal
+    /// lengths to prevent denial-of-service attacks. The RFC does not mandate a
+    /// specific value, stating only that limits "SHOULD be large enough to process
+    /// the largest individual field the HTTP implementation can be configured to
+    /// accept."
+    ///
+    /// The Gecko limit is in `network.http.max_response_header_size` and defaults to
+    /// 393216 bytes (384 KB), see `modules/libpref/init/StaticPrefList.yaml`. We use
+    /// the same limit.
+    const MAX_LEN: usize = 384 * 1024;
+
     /// Creates `LiteralReader` with the first byte. This constructor is always used
     /// when a literal has a prefix.
     /// For literals without a prefix please use the default constructor.
@@ -299,9 +315,11 @@ impl LiteralReader {
                     };
                 }
                 LiteralReaderState::ReadLength { reader } => {
-                    let v = reader.read(s)?;
-                    self.literal
-                        .resize(v.try_into().or(Err(Error::Decoding))?, 0x0);
+                    let v = usize::try_from(reader.read(s)?)
+                        .ok()
+                        .filter(|&l| l <= Self::MAX_LEN)
+                        .ok_or(Error::Decoding)?;
+                    self.literal.resize(v, 0x0);
                     self.state = LiteralReaderState::ReadLiteral { offset: 0 };
                 }
                 LiteralReaderState::ReadLiteral { offset } => {
@@ -380,12 +398,14 @@ pub(crate) mod test_receiver {
 #[cfg_attr(coverage_nightly, coverage(off))]
 mod tests {
 
+    use neqo_common::Encoder;
     use test_receiver::TestReceiver;
 
     use super::{
         huffman, test_receiver, Error, IntReader, LiteralReader, ReadByte as _,
         ReceiverBufferWrapper, Res,
     };
+    use crate::{prefix::Prefix, qpack_send_buf::Encoder as _};
 
     const TEST_CASES_NUMBERS: [(&[u8], u8, u64); 7] = [
         (&[0xEA], 3, 10),
@@ -635,5 +655,66 @@ mod tests {
         let mut buffer = ReceiverBufferWrapper::new(&buf);
         let result = buffer.read_literal_from_buffer(3).unwrap();
         assert_eq!(result, non_utf8_data);
+    }
+
+    /// Create a [`LiteralReader`] and [`TestReceiver`] for a literal with the given length.
+    fn literal_reader_for_test(literal_len: usize) -> (LiteralReader, TestReceiver) {
+        const PREFIX_LEN: u8 = 3;
+        let mut data = Encoder::default();
+        data.encode_literal(
+            false,
+            Prefix::new(0x00, PREFIX_LEN),
+            &vec![b'a'; literal_len],
+        );
+        let reader = LiteralReader::new_with_first_byte(data.as_ref()[0], PREFIX_LEN);
+        let mut test_receiver = TestReceiver::default();
+        test_receiver.write(&data.as_ref()[1..]);
+        (reader, test_receiver)
+    }
+
+    /// Test that [`LiteralReader`] rejects literals exceeding [`MAX_LEN`].
+    ///
+    /// This prevents denial-of-service attacks where a malicious QPACK encoder
+    /// sends an extremely large length value to trigger excessive memory allocation.
+    /// RFC 9204 requires implementations to set their own limits for string literal
+    /// lengths.
+    #[test]
+    fn literal_exceeding_max_len_rejected() {
+        let (mut reader, mut test_receiver) = literal_reader_for_test(LiteralReader::MAX_LEN + 1);
+        assert_eq!(reader.read(&mut test_receiver), Err(Error::Decoding));
+    }
+
+    /// Test that [`LiteralReader`] accepts literals at exactly [`MAX_LEN`].
+    #[test]
+    fn literal_at_max_len_accepted() {
+        let (mut reader, mut test_receiver) = literal_reader_for_test(LiteralReader::MAX_LEN);
+        let result = reader.read(&mut test_receiver).unwrap();
+        assert_eq!(result.len(), LiteralReader::MAX_LEN);
+    }
+
+    #[test]
+    fn buffer_wrapper_rejects_oversized_literal() {
+        const PREFIX_LEN: u8 = 3;
+        // Encode only the length field (MAX_LEN + 1) without allocating the actual data.
+        // The validation should fail before attempting to read the literal content.
+        let mut data = Encoder::default();
+        data.encode_prefixed_encoded_int(
+            Prefix::new(0x00, PREFIX_LEN + 1),
+            (LiteralReader::MAX_LEN + 1) as u64,
+        );
+        let mut buffer = ReceiverBufferWrapper::new(data.as_ref());
+        assert_eq!(
+            buffer.read_literal_from_buffer(PREFIX_LEN),
+            Err(Error::Decompression)
+        );
+    }
+
+    #[test]
+    fn buffer_wrapper_slice_detects_overflow() {
+        let buf = [0u8; 10];
+        let mut wrapper = ReceiverBufferWrapper::new(&buf);
+        wrapper.offset = 5;
+        assert_eq!(wrapper.slice(7), Err(Error::Decompression));
+        assert_eq!(wrapper.slice(usize::MAX), Err(Error::Decompression));
     }
 }

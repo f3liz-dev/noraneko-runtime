@@ -220,6 +220,8 @@ let interfaceNamesInGlobalScope = [
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "CDATASection", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "CSPViolationReportBody", insecureContext: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "CSS", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "CSSAnimation", insecureContext: true },
@@ -316,12 +318,7 @@ let interfaceNamesInGlobalScope = [
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "CloseEvent", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
-  {
-    name: "CloseWatcher",
-    insecureContext: true,
-    nightly: true,
-    android: false,
-  },
+  { name: "CloseWatcher", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "CommandEvent", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
@@ -410,6 +407,20 @@ let interfaceNamesInGlobalScope = [
   { name: "Document", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "DocumentFragment", insecureContext: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  {
+    name: "DocumentPictureInPicture",
+    insecureContext: false,
+    nightly: true,
+    android: false,
+  },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  {
+    name: "DocumentPictureInPictureEvent",
+    insecureContext: false,
+    nightly: true,
+    android: false,
+  },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "DocumentTimeline", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
@@ -877,6 +888,8 @@ let interfaceNamesInGlobalScope = [
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "InstallTrigger", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "IntegrityViolationReportBody", insecureContext: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "IntersectionObserver", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "IntersectionObserverEntry", insecureContext: true },
@@ -1241,6 +1254,10 @@ let interfaceNamesInGlobalScope = [
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "ReadableStreamDefaultReader", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "ReportBody", insecureContext: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "ReportingObserver", insecureContext: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "Request", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "ResizeObserver", insecureContext: true },
@@ -1445,7 +1462,7 @@ let interfaceNamesInGlobalScope = [
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "SVGViewElement", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
-  { name: "Sanitizer", insecureContext: true, earlyBetaOrEarlier: true },
+  { name: "Sanitizer", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "Scheduler", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
@@ -1559,23 +1576,15 @@ let interfaceNamesInGlobalScope = [
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "TreeWalker", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
-  { name: "TrustedHTML", earlyBetaOrEarlier: true, insecureContext: true },
+  { name: "TrustedHTML", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
-  { name: "TrustedScript", earlyBetaOrEarlier: true, insecureContext: true },
+  { name: "TrustedScript", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
-  { name: "TrustedScriptURL", earlyBetaOrEarlier: true, insecureContext: true },
+  { name: "TrustedScriptURL", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
-  {
-    name: "TrustedTypePolicy",
-    earlyBetaOrEarlier: true,
-    insecureContext: true,
-  },
+  { name: "TrustedTypePolicy", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
-  {
-    name: "TrustedTypePolicyFactory",
-    earlyBetaOrEarlier: true,
-    insecureContext: true,
-  },
+  { name: "TrustedTypePolicyFactory", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "U2F", insecureContext: false, disabled: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
@@ -1754,6 +1763,13 @@ let interfaceNamesInGlobalScope = [
   { name: "devicePixelRatio", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "document", insecureContext: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  {
+    name: "documentPictureInPicture",
+    insecureContext: false,
+    nightly: true,
+    android: false,
+  },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "dump", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
@@ -2175,7 +2191,7 @@ let interfaceNamesInGlobalScope = [
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "top", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
-  { name: "trustedTypes", earlyBetaOrEarlier: true, insecureContext: true },
+  { name: "trustedTypes", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "u2f", insecureContext: false, disabled: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!

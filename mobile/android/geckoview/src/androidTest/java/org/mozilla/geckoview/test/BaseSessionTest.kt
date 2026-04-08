@@ -136,6 +136,7 @@ open class BaseSessionTest(
         const val CONTEXT_MENU_IMAGE_HTML_PATH = "/assets/www/context_menu_image.html"
         const val CONTEXT_MENU_LINK_HTML_PATH = "/assets/www/context_menu_link.html"
         const val CONTEXT_MENU_LINK_TEXT_HTML_PATH = "/assets/www/context_menu_link_text.html"
+        const val CONTEXT_MENU_LINK_TEXT_HTML_NORMAL_LENGTH_PATH = "/assets/www/context_menu_normal_link_text.html"
         const val CONTEXT_MENU_VIDEO_HTML_PATH = "/assets/www/context_menu_video.html"
         const val CONTEXT_MENU_BLOB_FULL_HTML_PATH = "/assets/www/context_menu_blob_full.html"
         const val CONTEXT_MENU_BLOB_BUFFERED_HTML_PATH = "/assets/www/context_menu_blob_buffered.html"
@@ -158,6 +159,7 @@ open class BaseSessionTest(
         const val BUG1985669_HTML_PATH = "/assets/www/bug1985669.html"
         const val BUG1993407_HTML_PATH = "/assets/www/bug1993407.html"
         const val BUG1994311_HTML_PATH = "/assets/www/bug1994311.html"
+        const val PAGE_EXTRACTION_HTML_PATH = "/assets/www/page-extraction.html"
         const val POSITION_STICKY_HTML_PATH = "/assets/www/position-sticky.html"
         const val POSITION_STICKY_ON_MAIN_THREAD_HTML_PATH = "/assets/www/position-sticky-on-main-thread.html"
         const val INTERACTIVE_WIDGET_HTML_PATH = "/assets/www/interactive-widget.html"
@@ -165,6 +167,8 @@ open class BaseSessionTest(
         const val VIEW_TRANSITION_SNAPSHOT_SIZE = "/assets/www/view-transition-snapshot-size.html"
         const val FRAMEBUSTING_CHILD_URI = "https://example.org/tests/junit/framebusting_child.html"
         const val FRAMEBUSTING_PARENT_URI = "https://example.net/tests/junit/framebusting_parent.html"
+        const val DIALOG_HTML_PATH = "/assets/www/dialog.html"
+        const val POPOVER_HTML_PATH = "/assets/www/popover.html"
 
         const val TEST_ENDPOINT = GeckoSessionTestRule.TEST_ENDPOINT
         const val TEST_HOST = GeckoSessionTestRule.TEST_HOST

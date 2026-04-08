@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_dom_workers_workerprivate_h__
-#define mozilla_dom_workers_workerprivate_h__
+#ifndef mozilla_dom_workers_workerprivate_h_
+#define mozilla_dom_workers_workerprivate_h_
 
 #include <bitset>
 
@@ -61,7 +61,8 @@ class nsIThreadInternal;
 
 namespace JS {
 struct RuntimeStats;
-}
+class Dispatchable;
+}  // namespace JS
 
 namespace mozilla {
 class ThrottledEventQueue;
@@ -1208,6 +1209,9 @@ class WorkerPrivate final
   void IncreaseWorkerFinishedRunnableCount() { ++mWorkerFinishedRunnableCount; }
   void DecreaseWorkerFinishedRunnableCount() { --mWorkerFinishedRunnableCount; }
 
+  void JSAsyncTaskStarted(JS::Dispatchable* aDispatchable);
+  void JSAsyncTaskFinished(JS::Dispatchable* aDispatchable);
+
   void RunShutdownTasks();
 
   bool CancelBeforeWorkerScopeConstructed() const {
@@ -1330,6 +1334,12 @@ class WorkerPrivate final
 
  public:
   void CancelGCTimers() { SetGCTimerMode(NoTimer); }
+
+  // Initialize global's endpoint list with the processed header result
+  // in mLoadInfo
+  void InitializeGlobalReportingEndpoints();
+
+  void SetReportingEndpointsHeader(const nsACString& aHeader);
 
  private:
   void ShutdownGCTimers();
@@ -1715,6 +1725,9 @@ class WorkerPrivate final
   Atomic<uint32_t> mTopLevelWorkerFinishedRunnableCount;
   Atomic<uint32_t> mWorkerFinishedRunnableCount;
 
+  // A set of active JS async tasks that should prevent idle shutdown.
+  HashMap<JS::Dispatchable*, RefPtr<StrongWorkerRef>> mPendingJSAsyncTasks;
+
   TargetShutdownTaskSet mShutdownTasks MOZ_GUARDED_BY(mMutex);
   bool mShutdownTasksRun MOZ_GUARDED_BY(mMutex) = false;
 
@@ -1789,4 +1802,4 @@ class WorkerParentRef final {
 }  // namespace dom
 }  // namespace mozilla
 
-#endif /* mozilla_dom_workers_workerprivate_h__ */
+#endif /* mozilla_dom_workers_workerprivate_h_ */

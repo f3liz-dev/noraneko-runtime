@@ -68,7 +68,7 @@ class Debugger;
 class DebuggerEnvironment;
 class PromiseObject;
 namespace gc {
-struct Cell;
+class Cell;
 } /* namespace gc */
 namespace wasm {
 class Instance;
@@ -348,8 +348,7 @@ class DebuggerWeakMap : private WeakMap<Referent*, Wrapper*, ZoneAllocPolicy> {
   using ReferentType = Referent;
   using WrapperType = Wrapper;
 
-  explicit DebuggerWeakMap(JSContext* cx)
-      : Base(cx), compartment(cx->compartment()) {}
+  explicit DebuggerWeakMap(JSContext* cx);
 
  public:
   // Expose those parts of HashMap public interface that are used by Debugger
@@ -667,6 +666,9 @@ class Debugger : private mozilla::LinkedListElement<Debugger> {
   template <typename T>
   struct DebuggerLinkAccess {
     static mozilla::DoublyLinkedListElement<T>& Get(T* aThis) {
+      return aThis->debuggerLink;
+    }
+    static const mozilla::DoublyLinkedListElement<T>& Get(const T* aThis) {
       return aThis->debuggerLink;
     }
   };
@@ -1472,6 +1474,9 @@ class BreakpointSite {
   template <typename T>
   struct SiteLinkAccess {
     static mozilla::DoublyLinkedListElement<T>& Get(T* aThis) {
+      return aThis->siteLink;
+    }
+    static const mozilla::DoublyLinkedListElement<T>& Get(const T* aThis) {
       return aThis->siteLink;
     }
   };

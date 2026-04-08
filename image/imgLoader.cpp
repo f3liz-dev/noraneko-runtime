@@ -56,7 +56,6 @@
 #include "nsIInterfaceRequestor.h"
 #include "nsIInterfaceRequestorUtils.h"
 #include "nsIMemoryReporter.h"
-#include "nsINetworkPredictor.h"
 #include "nsIProgressEventSink.h"
 #include "nsIProtocolHandler.h"
 #include "nsImageModule.h"
@@ -1549,8 +1548,8 @@ nsresult imgLoader::RemoveEntriesInternal(
     const auto& key = entry.GetKey();
 
     if (SharedSubResourceCacheUtils::ShouldClearEntry(
-            key.URI(), key.LoaderPrincipal(), key.PartitionPrincipal(),
-            Nothing(), aPrincipal, aSchemelessSite, aPattern, aURL)) {
+            key.URI(), key.PartitionPrincipal(), Nothing(), aPrincipal,
+            aSchemelessSite, aPattern, aURL)) {
       entriesToBeRemoved.AppendElement(entry.GetData());
     }
   }
@@ -1888,9 +1887,6 @@ bool imgLoader::ValidateRequestWithNewChannel(
   // Add the proxy without notifying
   hvc->AddProxy(req);
 
-  mozilla::net::PredictorLearn(aURI, aInitialDocumentURI,
-                               nsINetworkPredictor::LEARN_LOAD_SUBRESOURCE,
-                               aLoadGroup);
   rv = newChannel->AsyncOpen(listener);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     req->CancelAndForgetObserver(rv);
@@ -1942,7 +1938,7 @@ void imgLoader::NotifyObserversForCachedImage(
     newChannel->SetContentType(nsDependentCString(request->GetMimeType()));
     RefPtr<mozilla::image::Image> image = request->GetImage();
     if (image) {
-      newChannel->SetContentLength(aEntry->GetDataSize());
+      newChannel->SetContentLength(request->GetContentLength());
     }
     obsService->NotifyObservers(newChannel, "http-on-resource-cache-response",
                                 nullptr);
@@ -2566,10 +2562,6 @@ nsresult imgLoader::LoadImage(
     MOZ_LOG(gImgLog, LogLevel::Debug,
             ("[this=%p] imgLoader::LoadImage -- Calling channel->AsyncOpen()\n",
              this));
-
-    mozilla::net::PredictorLearn(aURI, aInitialDocumentURI,
-                                 nsINetworkPredictor::LEARN_LOAD_SUBRESOURCE,
-                                 aLoadGroup);
 
     nsresult openRes;
     openRes = newChannel->AsyncOpen(listener);

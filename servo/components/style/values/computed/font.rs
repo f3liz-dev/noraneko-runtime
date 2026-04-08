@@ -4,6 +4,7 @@
 
 //! Computed values for font properties
 
+use crate::derives::*;
 use crate::parser::{Parse, ParserContext};
 use crate::values::animated::ToAnimatedValue;
 use crate::values::computed::{
@@ -21,12 +22,12 @@ use crate::values::specified::font::{
 use crate::values::specified::length::{FontBaseSize, LineHeightBase, NoCalcLength};
 use crate::values::CSSInteger;
 use crate::Atom;
-use cssparser::{serialize_identifier, CssStringWriter, Parser};
+use cssparser::{match_ignore_ascii_case, serialize_identifier, CssStringWriter, Parser};
 use malloc_size_of::{MallocSizeOf, MallocSizeOfOps};
 use num_traits::abs;
 use num_traits::cast::AsPrimitive;
 use std::fmt::{self, Write};
-use style_traits::{CssWriter, ParseError, ToCss};
+use style_traits::{CssWriter, ParseError, ToCss, ToTyped, TypedValue};
 
 pub use crate::values::computed::Length as MozScriptMinSize;
 pub use crate::values::specified::font::MozScriptSizeMultiplier;
@@ -260,6 +261,7 @@ impl FontWeight {
     ToTyped,
 )]
 #[cfg_attr(feature = "servo", derive(Serialize, Deserialize))]
+#[typed_value(derive_fields)]
 /// The computed value of font-size
 pub struct FontSize {
     /// The computed size, that we use to compute ems etc. This accounts for
@@ -361,15 +363,13 @@ pub struct FontFamily {
 
 macro_rules! static_font_family {
     ($ident:ident, $family:expr) => {
-        lazy_static! {
-            static ref $ident: FontFamily = FontFamily {
-                families: FontFamilyList {
-                    list: crate::ArcSlice::from_iter_leaked(std::iter::once($family)),
-                },
-                is_system_font: false,
-                is_initial: false,
-            };
-        }
+        static $ident: std::sync::LazyLock<FontFamily> = std::sync::LazyLock::new(|| FontFamily {
+            families: FontFamilyList {
+                list: crate::ArcSlice::from_iter_leaked(std::iter::once($family)),
+            },
+            is_system_font: false,
+            is_initial: false,
+        });
     };
 }
 
@@ -1263,15 +1263,7 @@ pub type FontStretchFixedPoint = FixedPoint<u16, FONT_STRETCH_FRACTION_BITS>;
 /// cbindgen:derive-gt
 /// cbindgen:derive-gte
 #[derive(
-    Clone,
-    ComputeSquaredDistance,
-    Copy,
-    Debug,
-    MallocSizeOf,
-    PartialEq,
-    PartialOrd,
-    ToResolvedValue,
-    ToTyped,
+    Clone, ComputeSquaredDistance, Copy, Debug, MallocSizeOf, PartialEq, PartialOrd, ToResolvedValue,
 )]
 #[cfg_attr(feature = "servo", derive(Deserialize, Hash, Serialize))]
 #[repr(C)]
@@ -1394,6 +1386,15 @@ impl ToCss for FontStretch {
         W: fmt::Write,
     {
         self.to_percentage().to_css(dest)
+    }
+}
+
+impl ToTyped for FontStretch {
+    fn to_typed(&self) -> Option<TypedValue> {
+        self.as_keyword()
+            .map_or(self.to_percentage().to_typed(), |keyword| {
+                keyword.to_typed()
+            })
     }
 }
 

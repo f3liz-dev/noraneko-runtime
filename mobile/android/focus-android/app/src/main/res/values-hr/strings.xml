@@ -237,7 +237,7 @@
   <!-- Label for the button to quick add the current URL to the custom autocomplete list -->
   <string name="add_custom_autocomplete_label">Dodaj poveznicu u automatsko ispunjavanje</string>
   <!-- Preference category for settings about cookies and site data -->
-  <string name="preference_category_cookies">Kolačići i podatci stranica</string>
+  <string name="preference_category_cookies">Kolačići i podaci stranica</string>
   <!-- Preference category for settings about data choices -->
   <string name="preference_category_data_choices">Izbori podataka</string>
   <!-- Title of the screen for removing custom autocomplete URLs. -->
@@ -562,6 +562,8 @@
   <string name="tabs_tray_action_erase">Obriši povijest pretraživanja</string>
   <!-- Label for the option in the Focus "tabs tray" to clos the other tabs except the current tab. -->
   <string name="tabs_tray_action_erase_other">Zatvori ostale kartice</string>
+  <!-- Label for the option in the Focus "tabs tray" to add a new tab. -->
+  <string name="tabs_tray_action_add_new_tab">Dodaj novu karticu</string>
   <!--
     If the user decides to open the current page in another browser and if Firefox is not installed then we show this
     item in the list of browsers. Clicking it will open the app store installed on the device (usually that's Google Play).

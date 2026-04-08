@@ -14,7 +14,8 @@ use super::{
 };
 use crate::context::QuirksMode;
 use crate::custom_properties;
-use crate::dom::DummyAttributeProvider;
+use crate::derives::*;
+use crate::dom::AttributeTracker;
 use crate::error_reporting::{ContextualParseError, ParseErrorReporter};
 use crate::parser::ParserContext;
 use crate::properties::{
@@ -260,6 +261,15 @@ pub struct PropertyDeclarationBlock {
     property_ids: PropertyDeclarationIdSet,
 }
 
+impl PartialEq for PropertyDeclarationBlock {
+    fn eq(&self, other: &Self) -> bool {
+        // property_ids must be equal if declarations are equal, so we don't
+        // need to compare them explicitly.
+        self.declarations == other.declarations
+            && self.declarations_importance == other.declarations_importance
+    }
+}
+
 /// Iterator over `(PropertyDeclaration, Importance)` pairs.
 pub struct DeclarationImportanceIterator<'a> {
     iter: Zip<Iter<'a, PropertyDeclaration>, smallbitvec::Iter<'a>>,
@@ -362,7 +372,7 @@ impl<'a, 'cx, 'cx_a: 'cx> Iterator for AnimationValueIterator<'a, 'cx, 'cx_a> {
                 self.style,
                 self.default_values,
                 // TODO (descalante): should be able to get an attr from an animated element
-                &DummyAttributeProvider {},
+                &mut AttributeTracker::new_dummy(),
             );
 
             if let Some(anim) = animation {
@@ -1014,7 +1024,7 @@ impl PropertyDeclarationBlock {
                     stylist,
                     &context,
                     &mut Default::default(),
-                    &DummyAttributeProvider {},
+                    &mut AttributeTracker::new_dummy(),
                 )
                 .to_css(dest),
             (ref d, _) => d.to_css(dest),

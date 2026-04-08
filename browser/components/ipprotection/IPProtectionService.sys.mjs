@@ -7,21 +7,19 @@ import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
-  GuardianClient: "resource:///modules/ipprotection/GuardianClient.sys.mjs",
+  GuardianClient:
+    "moz-src:///browser/components/ipprotection/GuardianClient.sys.mjs",
   IPPEnrollAndEntitleManager:
-    "resource:///modules/ipprotection/IPPEnrollAndEntitleManager.sys.mjs",
-  IPPHelpers: "resource:///modules/ipprotection/IPProtectionHelpers.sys.mjs",
-  IPPNimbusHelper: "resource:///modules/ipprotection/IPPNimbusHelper.sys.mjs",
-  IPPOptOutHelper: "resource:///modules/ipprotection/IPPOptOutHelper.sys.mjs",
-  IPPSignInWatcher: "resource:///modules/ipprotection/IPPSignInWatcher.sys.mjs",
-  IPPStartupCache: "resource:///modules/ipprotection/IPPStartupCache.sys.mjs",
-  IPPVPNAddonHelper:
-    "resource:///modules/ipprotection/IPPVPNAddonHelper.sys.mjs",
-  SpecialMessageActions:
-    "resource://messaging-system/lib/SpecialMessageActions.sys.mjs",
+    "moz-src:///browser/components/ipprotection/IPPEnrollAndEntitleManager.sys.mjs",
+  IPPHelpers:
+    "moz-src:///browser/components/ipprotection/IPProtectionHelpers.sys.mjs",
+  IPPNimbusHelper:
+    "moz-src:///browser/components/ipprotection/IPPNimbusHelper.sys.mjs",
+  IPPSignInWatcher:
+    "moz-src:///browser/components/ipprotection/IPPSignInWatcher.sys.mjs",
+  IPPStartupCache:
+    "moz-src:///browser/components/ipprotection/IPPStartupCache.sys.mjs",
 });
-
-import { SIGNIN_DATA } from "chrome://browser/content/ipprotection/ipprotection-constants.mjs";
 
 const ENABLED_PREF = "browser.ipProtection.enabled";
 
@@ -34,8 +32,6 @@ const ENABLED_PREF = "browser.ipProtection.enabled";
  *  The user is not eligible (via nimbus) or still not signed in. No UI is available.
  * @property {string} UNAUTHENTICATED
  *  The user is signed out but eligible (via nimbus). The panel should show the login view.
- * @property {string} OPTED_OUT
- *  The user has opted out from using VPN. The toolbar icon and panel should not be visible.
  * @property {string} READY
  *  Ready to be activated.
  *
@@ -46,7 +42,6 @@ export const IPProtectionStates = Object.freeze({
   UNINITIALIZED: "uninitialized",
   UNAVAILABLE: "unavailable",
   UNAUTHENTICATED: "unauthenticated",
-  OPTED_OUT: "optedout",
   READY: "ready",
 });
 
@@ -60,7 +55,7 @@ export const IPProtectionStates = Object.freeze({
 class IPProtectionServiceSingleton extends EventTarget {
   #state = IPProtectionStates.UNINITIALIZED;
 
-  guardian = null;
+  #guardian = null;
 
   #helpers = null;
 
@@ -74,28 +69,19 @@ class IPProtectionServiceSingleton extends EventTarget {
     return this.#state;
   }
 
+  get guardian() {
+    if (!this.#guardian) {
+      this.#guardian = new lazy.GuardianClient();
+    }
+    return this.#guardian;
+  }
+
   constructor() {
     super();
-
-    this.guardian = new lazy.GuardianClient();
-
     this.updateState = this.#updateState.bind(this);
     this.setState = this.#setState.bind(this);
 
     this.#helpers = lazy.IPPHelpers;
-  }
-
-  /**
-   * Setups the IPProtectionService if enabled early during the firefox startup
-   * phases.
-   */
-  async maybeEarlyInit() {
-    if (
-      this.featureEnabled &&
-      Services.prefs.getBoolPref("browser.ipProtection.autoStartEnabled")
-    ) {
-      await this.init();
-    }
   }
 
   /**
@@ -125,6 +111,7 @@ class IPProtectionServiceSingleton extends EventTarget {
     if (this.#state === IPProtectionStates.UNINITIALIZED) {
       return;
     }
+    this.#guardian = null;
 
     this.#helpers.forEach(helper => helper.uninit());
 
@@ -133,12 +120,8 @@ class IPProtectionServiceSingleton extends EventTarget {
 
   async initOnStartupCompleted() {
     await Promise.allSettled(
-      this.#helpers.map(helper => helper.initOnStartupCompleted())
+      this.#helpers.map(helper => helper.initOnStartupCompleted?.())
     );
-  }
-
-  async startLoginFlow(browser) {
-    return lazy.SpecialMessageActions.fxaSignInFlow(SIGNIN_DATA, browser);
   }
 
   /**
@@ -160,36 +143,30 @@ class IPProtectionServiceSingleton extends EventTarget {
       return IPProtectionStates.UNINITIALIZED;
     }
 
-    if (lazy.IPPOptOutHelper.optedOut) {
-      return IPProtectionStates.OPTED_OUT;
-    }
-
     // Maybe we have to use the cached state, because we are not initialized yet.
     if (!lazy.IPPStartupCache.isStartupCompleted) {
       return lazy.IPPStartupCache.state;
     }
 
-    // If the VPN add-on is installed...
-    if (
-      lazy.IPPVPNAddonHelper.vpnAddonDetected &&
-      lazy.IPPEnrollAndEntitleManager.hasUpgraded
-    ) {
+    // If the device is not eligible no UI is shown.
+    if (!lazy.IPPNimbusHelper.isEligible) {
       return IPProtectionStates.UNAVAILABLE;
     }
 
-    // For non authenticated users, we can check if they are eligible (the UI
-    // is shown and they have to login) or we don't know yet their current
-    // enroll state (no UI is shown).
-    let eligible = lazy.IPPNimbusHelper.isEligible;
+    // For non authenticated users, we don't know yet their enroll state so the UI
+    // is shown and they have to login.
     if (!lazy.IPPSignInWatcher.isSignedIn) {
-      return !eligible
-        ? IPProtectionStates.UNAVAILABLE
-        : IPProtectionStates.UNAUTHENTICATED;
+      return IPProtectionStates.UNAUTHENTICATED;
     }
 
-    // Check if the current account is enrolled and has an entitlement.
-    if (!lazy.IPPEnrollAndEntitleManager.isEnrolledAndEntitled && !eligible) {
-      return IPProtectionStates.UNAVAILABLE;
+    // If the current account is not enrolled and entitled, the UI is shown and
+    // they have to opt-in.
+    // If they are currently enrolling, they have already opted-in.
+    if (
+      !lazy.IPPEnrollAndEntitleManager.isEnrolledAndEntitled &&
+      !lazy.IPPEnrollAndEntitleManager.isEnrolling
+    ) {
+      return IPProtectionStates.UNAUTHENTICATED;
     }
 
     // The proxy can be activated.

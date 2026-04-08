@@ -368,6 +368,12 @@ struct ReflowInput : public SizeComputationInput {
   // unconstrained dimensions replaced by zero.
   nsSize ComputedSizeAsContainerIfConstrained() const;
 
+  // Return the physical content box relative to the frame itself.
+  nsRect ComputedPhysicalContentBoxRelativeToSelf() const {
+    auto bp = ComputedPhysicalBorderPadding();
+    return nsRect(nsPoint(bp.left, bp.top), ComputedPhysicalSize());
+  }
+
   // Get the writing mode of the containing block, to resolve float/clear
   // logical sides appropriately.
   WritingMode GetCBWritingMode() const;
@@ -463,6 +469,14 @@ struct ReflowInput : public SizeComputationInput {
     // reflow. The available block-size of the last column might become
     // unconstrained.
     bool mIsInLastColumnBalancingReflow : 1;
+
+    // We have an ancestor nsColumnSetFrame performing a measuring reflow. The
+    // available block-size becomes unconstrained.
+    //
+    // Note: only the top-level multicol can initiate a measuring reflow, so
+    // nested multicols will do a measuring reflow only when the top-level one
+    // is doing it. See nsColumnSetFrame::Reflow() for details.
+    bool mIsInColumnMeasuringReflow : 1;
 
     // True if ColumnSetWrapperFrame has a constrained block-size, and is going
     // to consume all of its block-size in this fragment. This bit is passed to

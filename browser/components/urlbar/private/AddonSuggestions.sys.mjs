@@ -53,18 +53,11 @@ export class AddonSuggestions extends SuggestProvider {
       return null;
     }
 
-    // If the user hasn't clicked the "Show less frequently" command, the
-    // suggestion can be shown. Otherwise, the suggestion can be shown if the
-    // user typed more than one word with at least `showLessFrequentlyCount`
-    // characters after the first word, including spaces.
-    if (this.showLessFrequentlyCount) {
-      let spaceIndex = searchString.search(/\s/);
-      if (
-        spaceIndex < 0 ||
-        searchString.length - spaceIndex < this.showLessFrequentlyCount
-      ) {
-        return null;
-      }
+    if (
+      this.showLessFrequentlyCount &&
+      searchString.length < this.#minKeywordLength
+    ) {
+      return null;
     }
 
     const { guid } =
@@ -87,32 +80,25 @@ export class AddonSuggestions extends SuggestProvider {
       }
     }
 
-    const payload = {
-      url: url.href,
-      originalUrl: suggestion.url,
-      shouldShowUrl: true,
-      // Rust uses `iconUrl` but Merino uses `icon`.
-      icon: suggestion.iconUrl ?? suggestion.icon,
-      title: suggestion.title,
-      description: suggestion.description,
-      bottomTextL10n: {
-        id: "firefox-suggest-addons-recommended",
-      },
-      helpUrl: lazy.QuickSuggest.HELP_URL,
-    };
-
     return new lazy.UrlbarResult({
       type: lazy.UrlbarUtils.RESULT_TYPE.URL,
       source: lazy.UrlbarUtils.RESULT_SOURCE.SEARCH,
       isBestMatch: true,
+      isNovaSuggestion: true,
       suggestedIndex: 1,
-      isRichSuggestion: true,
       richSuggestionIconSize: 24,
-      showFeedbackMenu: true,
-      ...lazy.UrlbarResult.payloadAndSimpleHighlights(
-        queryContext.tokens,
-        payload
-      ),
+      payload: {
+        url: url.href,
+        originalUrl: suggestion.url,
+        // Rust uses `iconUrl` but Merino uses `icon`.
+        icon: suggestion.iconUrl ?? suggestion.icon,
+        title: suggestion.title,
+        subtitleL10n: { id: "urlbar-result-addons-subtitle" },
+        description: suggestion.description,
+        bottomTextL10n: {
+          id: "urlbar-result-suggestion-recommended",
+        },
+      },
     });
   }
 
@@ -137,23 +123,16 @@ export class AddonSuggestions extends SuggestProvider {
 
     commands.push(
       {
+        name: RESULT_MENU_COMMAND.NOT_RELEVANT,
         l10n: {
-          id: "firefox-suggest-command-dont-show-this",
+          id: "urlbar-result-menu-dismiss-suggestion",
         },
-        children: [
-          {
-            name: RESULT_MENU_COMMAND.NOT_RELEVANT,
-            l10n: {
-              id: "firefox-suggest-command-not-relevant",
-            },
-          },
-          {
-            name: RESULT_MENU_COMMAND.NOT_INTERESTED,
-            l10n: {
-              id: "firefox-suggest-command-not-interested",
-            },
-          },
-        ],
+      },
+      {
+        name: RESULT_MENU_COMMAND.NOT_INTERESTED,
+        l10n: {
+          id: "firefox-suggest-command-dont-show-addons",
+        },
       },
       { name: "separator" },
       {
@@ -167,7 +146,7 @@ export class AddonSuggestions extends SuggestProvider {
     return commands;
   }
 
-  onEngagement(queryContext, controller, details, _searchString) {
+  onEngagement(queryContext, controller, details, searchString) {
     let { result } = details;
     switch (details.selType) {
       case RESULT_MENU_COMMAND.MANAGE:
@@ -195,6 +174,10 @@ export class AddonSuggestions extends SuggestProvider {
         if (!this.canShowLessFrequently) {
           controller.view.invalidateResultMenuCommands();
         }
+        lazy.UrlbarPrefs.set(
+          "addons.minKeywordLength",
+          searchString.length + 1
+        );
         break;
     }
   }
@@ -219,5 +202,10 @@ export class AddonSuggestions extends SuggestProvider {
       lazy.QuickSuggest.config.showLessFrequentlyCap ||
       0;
     return !cap || this.showLessFrequentlyCount < cap;
+  }
+
+  get #minKeywordLength() {
+    let minLength = lazy.UrlbarPrefs.get("addons.minKeywordLength");
+    return Math.max(minLength, 0);
   }
 }

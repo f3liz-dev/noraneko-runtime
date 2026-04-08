@@ -4,6 +4,7 @@
 
 //! Specified types for CSS values related to borders.
 
+use crate::derives::*;
 use crate::parser::{Parse, ParserContext};
 use crate::values::computed::border::BorderSideWidth as ComputedBorderSideWidth;
 use crate::values::computed::{Context, ToComputedValue};
@@ -14,13 +15,12 @@ use crate::values::generics::border::{
 use crate::values::generics::rect::Rect;
 use crate::values::generics::size::Size2D;
 use crate::values::specified::length::{Length, NonNegativeLength, NonNegativeLengthPercentage};
-use crate::values::specified::Color;
 use crate::values::specified::{AllowQuirks, NonNegativeNumber, NonNegativeNumberOrPercentage};
 use crate::Zero;
 use app_units::Au;
 use cssparser::Parser;
 use std::fmt::{self, Write};
-use style_traits::{values::SequenceWriter, CssWriter, ParseError, ToCss};
+use style_traits::{CssWriter, ParseError, ToCss};
 
 /// A specified value for a single side of a `border-style` property.
 ///
@@ -100,6 +100,7 @@ impl BorderImageSlice {
 
 /// https://drafts.csswg.org/css-backgrounds-3/#typedef-line-width
 #[derive(Clone, Debug, MallocSizeOf, PartialEq, SpecifiedValueInfo, ToCss, ToShmem, ToTyped)]
+#[typed_value(derive_fields)]
 pub enum LineWidth {
     /// `thin`
     Thin,
@@ -168,6 +169,7 @@ impl ToComputedValue for LineWidth {
 /// A specified value for a single side of the `border-width` property. The difference between this
 /// and LineWidth is whether we snap to device pixels or not.
 #[derive(Clone, Debug, MallocSizeOf, PartialEq, SpecifiedValueInfo, ToCss, ToShmem, ToTyped)]
+#[typed_value(derive_fields)]
 pub struct BorderSideWidth(LineWidth);
 
 impl BorderSideWidth {
@@ -410,33 +412,4 @@ impl Parse for BorderImageRepeat {
             vertical.unwrap_or(horizontal),
         ))
     }
-}
-
-/// Serializes a border shorthand value composed of width/style/color.
-pub fn serialize_directional_border<W>(
-    dest: &mut CssWriter<W>,
-    width: &BorderSideWidth,
-    style: &BorderStyle,
-    color: &Color,
-) -> fmt::Result
-where
-    W: Write,
-{
-    let has_style = *style != BorderStyle::None;
-    let has_color = *color != Color::CurrentColor;
-    let has_width = *width != BorderSideWidth::medium();
-    if !has_style && !has_color && !has_width {
-        return width.to_css(dest);
-    }
-    let mut writer = SequenceWriter::new(dest, " ");
-    if has_width {
-        writer.item(width)?;
-    }
-    if has_style {
-        writer.item(style)?;
-    }
-    if has_color {
-        writer.item(color)?;
-    }
-    Ok(())
 }

@@ -24,6 +24,8 @@ fail-if = [
 
 ["browser_UITour5.js"]
 
+["browser_UITour_aiwindow.js"]
+
 ["browser_UITour_annotation_size_attributes.js"]
 
 ["browser_UITour_availableTargets.js"]
@@ -74,5 +76,3 @@ tags = "os_integration"
 ["browser_fxa_config.js"]
 
 ["browser_openPreferences.js"]
-
-["browser_openSearchPanel.js"]

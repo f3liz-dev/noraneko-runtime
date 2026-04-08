@@ -46,6 +46,9 @@ const MAXIMUM_NUMBER_OF_UNREMOVABLE_STAGING_ITEMS_PREF_NAME =
 const CREATED_MANAGED_PROFILES_PREF_NAME = "browser.profiles.created";
 const RESTORED_BACKUP_METADATA_PREF_NAME =
   "browser.backup.restored-backup-metadata";
+const SANITIZE_ON_SHUTDOWN_PREF_NAME = "privacy.sanitize.sanitizeOnShutdown";
+const FORCE_ENABLE_BACKUP_PROFILES_PREF_NAME =
+  "browser.backup.profiles.force-enable";
 
 const SCHEMAS = Object.freeze({
   BACKUP_MANIFEST: 1,
@@ -210,7 +213,19 @@ XPCOMUtils.defineLazyPreferenceGetter(
   lazy,
   "lastBackupFileName",
   LAST_BACKUP_FILE_NAME_PREF_NAME,
-  ""
+  "",
+  function onUpdateLastBackupFileName(_pref, _prevVal, newVal) {
+    let bs;
+    try {
+      bs = BackupService.get();
+    } catch (e) {
+      // This can throw if the BackupService hasn't initialized yet, which
+      // is a case we're okay to ignore.
+    }
+    if (bs) {
+      bs.onUpdateLastBackupFileName(newVal);
+    }
+  }
 );
 
 XPCOMUtils.defineLazyServiceGetter(
@@ -628,6 +643,28 @@ export class BackupService extends EventTarget {
   static #errorRetries = 0;
 
   /**
+   * Time to wait (in seconds) until the next backup attempt.
+   *
+   * This uses exponential backoff based on the number of consecutive
+   * failed backup attempts since the last successful backup.
+   *
+   * Backoff formula:
+   *
+   *   ``2^(retryCount) * 60``
+   *
+   * Example:
+   *
+   *   If 2 backup attempts have failed since the last successful backup,
+   *   the next attempt will occur after:
+   *
+   *   ``2^2 * 60 = 240 seconds (4 minutes)``
+   *
+   * This differs from minimumTimeBetweenBackupsSeconds, which is used to determine
+   * the time between successful backups.
+   */
+  static backoffSeconds = () => Math.pow(2, BackupService.#errorRetries) * 60;
+
+  /**
    * @typedef {object} EnabledStatus
    * @property {boolean} enabled
    *   True if the feature is enabled.
@@ -674,15 +711,13 @@ export class BackupService extends EventTarget {
       };
     }
 
-    if (Services.prefs.getBoolPref("privacy.sanitize.sanitizeOnShutdown")) {
-      return {
-        enabled: false,
-        reason: "Backup is disabled for users with sanitizeOnShutdown enabled.",
-        internalReason: "sanitizeOnShutdown",
-      };
-    }
-
-    if (lazy.SelectableProfileService.hasCreatedSelectableProfiles()) {
+    if (
+      !Services.prefs.getBoolPref(
+        FORCE_ENABLE_BACKUP_PROFILES_PREF_NAME,
+        false
+      ) &&
+      lazy.SelectableProfileService.hasCreatedSelectableProfiles()
+    ) {
       return {
         enabled: false,
         reason:
@@ -747,15 +782,13 @@ export class BackupService extends EventTarget {
       };
     }
 
-    if (Services.prefs.getBoolPref("privacy.sanitize.sanitizeOnShutdown")) {
-      return {
-        enabled: false,
-        reason: "Backup is disabled for users with sanitizeOnShutdown enabled.",
-        internalReason: "sanitizeOnShutdown",
-      };
-    }
-
-    if (lazy.SelectableProfileService.hasCreatedSelectableProfiles()) {
+    if (
+      !Services.prefs.getBoolPref(
+        FORCE_ENABLE_BACKUP_PROFILES_PREF_NAME,
+        false
+      ) &&
+      lazy.SelectableProfileService.hasCreatedSelectableProfiles()
+    ) {
       return {
         enabled: false,
         reason:
@@ -763,6 +796,7 @@ export class BackupService extends EventTarget {
         internalReason: "selectable profiles",
       };
     }
+
     if (
       !this.#osSupportsRestore &&
       !Services.prefs.getBoolPref(
@@ -853,7 +887,7 @@ export class BackupService extends EventTarget {
     encryptionEnabled: false,
     /** @type {number?} Number of seconds since UNIX epoch */
     lastBackupDate: null,
-    lastBackupFileName: "",
+    lastBackupFileName: lazy.lastBackupFileName,
     supportBaseLink: Services.urlFormatter.formatURLPref("app.support.baseURL"),
     recoveryInProgress: false,
     /**
@@ -1117,7 +1151,7 @@ export class BackupService extends EventTarget {
     return [
       BACKUP_ARCHIVE_ENABLED_PREF_NAME,
       BACKUP_RESTORE_ENABLED_PREF_NAME,
-      "privacy.sanitize.sanitizeOnShutdown",
+      SANITIZE_ON_SHUTDOWN_PREF_NAME,
       CREATED_MANAGED_PROFILES_PREF_NAME,
     ];
   }
@@ -1238,12 +1272,15 @@ export class BackupService extends EventTarget {
   /**
    * Returns a reference to a BackupService singleton. If this is the first time
    * that this getter is accessed, this causes the BackupService singleton to be
-   * be instantiated.
+   * instantiated.
    *
    * @static
-   * @type {BackupService}
+   * @param {object} BackupResources
+   *   Optional object containing BackupResource classes to initialize the instance with.
+   * @returns {BackupService}
+   *   The BackupService singleton instance.
    */
-  static init() {
+  static init(BackupResources = DefaultBackupResources) {
     if (this.#instance) {
       return this.#instance;
     }
@@ -1251,12 +1288,28 @@ export class BackupService extends EventTarget {
     // If there is unsent restore telemetry, send it now.
     GleanPings.profileRestore.submit();
 
-    this.#instance = new BackupService(DefaultBackupResources);
+    this.#instance = new BackupService(BackupResources);
 
     this.#instance.checkForPostRecovery();
     this.#instance.initBackupScheduler();
     this.#instance.initStatusObservers();
     return this.#instance;
+  }
+
+  /**
+   * Clears the BackupService singleton instance.
+   * This should only be used in tests.
+   *
+   * @static
+   */
+  static uninit() {
+    if (this.#instance) {
+      lazy.logConsole.debug("Uninitting the BackupService");
+
+      this.#instance.uninitBackupScheduler();
+      this.#instance.uninitStatusObservers();
+      this.#instance = null;
+    }
   }
 
   /**
@@ -1528,6 +1581,13 @@ export class BackupService extends EventTarget {
             continue;
           }
 
+          if (!resourceClass.canBackupResource) {
+            lazy.logConsole.debug(
+              `We cannot backup ${resourceClass.key}. Skipping.`
+            );
+            continue;
+          }
+
           let resourcePath = PathUtils.join(stagingPath, resourceClass.key);
           await IOUtils.makeDirectory(resourcePath);
 
@@ -1695,7 +1755,6 @@ export class BackupService extends EventTarget {
           );
 
           let result = await this.createAndPopulateStagingFolder(profilePath);
-          this.#backupInProgress = true;
           currentStep = result.currentStep;
           if (result.error) {
             // Re-throw the error so we can catch it below for telemetry
@@ -1909,9 +1968,6 @@ export class BackupService extends EventTarget {
     await IOUtils.move(sourcePath, destPath);
 
     Services.prefs.setStringPref(LAST_BACKUP_FILE_NAME_PREF_NAME, FILENAME);
-    // It is expected that our caller will call stateUpdate(), so we skip doing
-    // that here. This is done via the backupInProgress setter in createBackup.
-    this.#_state.lastBackupFileName = FILENAME;
 
     for (let childFilePath of existingChildren) {
       let childFileName = PathUtils.filename(childFilePath);
@@ -2944,6 +3000,7 @@ export class BackupService extends EventTarget {
         "datareporting.usage.uploadEnabled",
         false
       ),
+      isSelectableProfile: !!lazy.SelectableProfileService.currentProfile,
     };
 
     let fxaState = lazy.UIState.get();
@@ -2980,10 +3037,9 @@ export class BackupService extends EventTarget {
    * @param {string|null} recoveryCode
    *   The recovery code to use to attempt to decrypt the archive if it was
    *   encrypted.
-   * @param {boolean} [shouldLaunch=false]
+   * @param {boolean} [shouldLaunchOrQuit=false]
    *   An optional argument that specifies whether an instance of the app
-   *   should be launched with the newly recovered profile after recovery is
-   *   complete.
+   *   should be launched or allowed to quit after recovery is complete.
    * @param {boolean} [profilePath=PathUtils.profileDir]
    *   The profile path where the recovery files will be written to within the
    *   PROFILE_FOLDER_NAME. This is only used for testing.
@@ -2992,6 +3048,9 @@ export class BackupService extends EventTarget {
    *   profile directory should be created. If not provided, the default
    *   profile root directory will be used. This is primarily meant for
    *   testing.
+   * @param {boolean} [replaceCurrentProfile=false]
+   *   An optional argument that determines if the backed up profile should replace
+   *  the current profile, or add a new profile.
    * @returns {Promise<nsIToolkitProfile>}
    *   The nsIToolkitProfile that was created for the recovered profile.
    * @throws {Exception}
@@ -3001,9 +3060,10 @@ export class BackupService extends EventTarget {
   async recoverFromBackupArchive(
     archivePath,
     recoveryCode = null,
-    shouldLaunch = false,
+    shouldLaunchOrQuit = false,
     profilePath = PathUtils.profileDir,
-    profileRootPath = null
+    profileRootPath = null,
+    replaceCurrentProfile = false
   ) {
     const status = this.restoreEnabledStatus;
     if (!status.enabled) {
@@ -3018,6 +3078,7 @@ export class BackupService extends EventTarget {
 
     Glean.browserBackup.restoreStarted.record({
       restore_id: this.#_state.restoreID,
+      replace: replaceCurrentProfile,
     });
 
     try {
@@ -3070,12 +3131,63 @@ export class BackupService extends EventTarget {
         // of recoverFromSnapshotFolder so that the finally will not execute
         // until after recoverFromSnapshotFolder has finished resolving or
         // rejecting.
-        let newProfile = await this.recoverFromSnapshotFolder(
-          RECOVERY_FOLDER_DEST_PATH,
-          shouldLaunch,
-          profileRootPath,
-          encState
+
+        let manifest = await this.#readAndValidateManifest(
+          RECOVERY_FOLDER_DEST_PATH
         );
+
+        const replacingLegacyWithLegacy =
+          replaceCurrentProfile && manifest.meta?.isSelectableProfile === false;
+
+        // Before we do a bunch of work, let's decide if selectable profiles are allowed on this device.
+        // If they aren't, we should always default to not recovering the SelectableProfileBackupResource.
+        if (!lazy.SelectableProfileService.isEnabled) {
+          delete manifest.resources[
+            DefaultBackupResources.SelectableProfileBackupResource.key
+          ];
+        } // Otherwise, we might have to convert the current profile into a selectable profile
+        else if (
+          !lazy.SelectableProfileService.hasCreatedSelectableProfiles() &&
+          !replacingLegacyWithLegacy
+        ) {
+          // Convert to selectable when adding a legacy backup or replacing with a selectable backup.
+          // Deletion (if needed) is handled in maybeDeleteAndQuitCurrentSelectableProfile.
+          try {
+            lazy.logConsole.debug(
+              `Converting current legacy profile into a selectable profile`
+            );
+            await lazy.SelectableProfileService.maybeSetupDataStore();
+          } catch (e) {
+            // TODO: Currently, we just throw in this case, but we should be able to
+            // just fallback to recovering everything but the SelectableProfileBackupResource.
+            throw new BackupError(
+              `something went wrong when converting the current profile into a selectableProfile: ${e}`,
+              ERRORS.RECOVERY_FAILED
+            );
+          }
+        }
+
+        let newProfile;
+        if (lazy.SelectableProfileService.currentProfile) {
+          newProfile =
+            await this.recoverFromSnapshotFolderIntoSelectableProfile(
+              RECOVERY_FOLDER_DEST_PATH,
+              shouldLaunchOrQuit,
+              encState,
+              null,
+              profileRootPath,
+              manifest,
+              replaceCurrentProfile
+            );
+        } else {
+          newProfile = await this.recoverFromSnapshotFolder(
+            RECOVERY_FOLDER_DEST_PATH,
+            shouldLaunchOrQuit,
+            profileRootPath,
+            encState,
+            manifest
+          );
+        }
 
         Glean.browserBackup.restoreComplete.record({
           restore_id: this.#_state.restoreID,
@@ -3086,6 +3198,12 @@ export class BackupService extends EventTarget {
         // listen for.
         Services.obs.notifyObservers(null, "browser-backup-restore-complete");
         GleanPings.profileRestore.submit();
+
+        // Looks like everything went well, if we are replacing the current profile
+        // we are good to close and delete it now
+        if (replaceCurrentProfile) {
+          await this.deleteAndQuitCurrentSelectableProfile(shouldLaunchOrQuit);
+        }
 
         return newProfile;
       } finally {
@@ -3114,6 +3232,47 @@ export class BackupService extends EventTarget {
       this.#_state.recoveryInProgress = false;
       this.stateUpdate();
     }
+  }
+
+  /**
+   * Handles deleting the currently running selectable profile
+   * and then quitting it.
+   *
+   * @param {boolean} [shouldQuit=true]
+   * Optional param to disable actually quitting the running instance. Used
+   * primarily for testing.
+   */
+  async deleteAndQuitCurrentSelectableProfile(shouldQuit = true) {
+    if (!lazy.SelectableProfileService.hasCreatedSelectableProfiles()) {
+      lazy.logConsole.warn(
+        `We don't delete the running profile in the case of legacy backup to legacy recovery`
+      );
+      return null;
+    }
+
+    // Notify windows that a quit has been requested.
+    let cancelQuit = Cc["@mozilla.org/supports-PRBool;1"].createInstance(
+      Ci.nsISupportsPRBool
+    );
+    Services.obs.notifyObservers(cancelQuit, "quit-application-requested");
+
+    if (cancelQuit.data) {
+      // Something blocked our attempt to quit.
+      return null;
+    }
+
+    try {
+      await lazy.SelectableProfileService.deleteCurrentProfile();
+
+      if (shouldQuit) {
+        // Finally, exit.
+        Services.startup.quit(Ci.nsIAppStartup.eAttemptQuit);
+      }
+    } catch (e) {
+      // This is expected in tests.
+      lazy.logConsole.error(`Errored while attempting delete and quit: ${e}`);
+    }
+    return null;
   }
 
   /**
@@ -3170,9 +3329,10 @@ export class BackupService extends EventTarget {
       );
     }
 
-    // In the future, if we ever bump the ArchiveUtils.SCHEMA_VERSION and need
-    // to do any special behaviours to interpret older schemas, this is where
-    // we can do that, and we can remove this comment.
+    // Manifest version compatibility
+    if (manifest.version < 2) {
+      manifest.isSelectableProfile = false;
+    }
 
     let meta = manifest.meta;
 
@@ -3325,6 +3485,9 @@ export class BackupService extends EventTarget {
    *   ARCHIVE_ENCRYPTION_STATE_FILE for the recovered profile (since the
    *   original ARCHIVE_ENCRYPTION_STATE_FILE was intentionally not backed up,
    *   as the recovery device might have a different OSKeyStore secret).
+   * @param {object} [manifest=null]
+   *   If we've already read and validated the manifest, we can avoid redoing that work
+   *   by passing this in as a parameter.
    * @returns {Promise<nsIToolkitProfile>}
    *   The nsIToolkitProfile that was created for the recovered profile.
    * @throws {Exception}
@@ -3334,12 +3497,15 @@ export class BackupService extends EventTarget {
     recoveryPath,
     shouldLaunch = false,
     profileRootPath = null,
-    encState = null
+    encState = null,
+    manifest = null
   ) {
     lazy.logConsole.debug("Recovering from backup at ", recoveryPath);
 
     try {
-      let manifest = await this.#readAndValidateManifest(recoveryPath);
+      if (!manifest) {
+        manifest = await this.#readAndValidateManifest(recoveryPath);
+      }
 
       // Okay, we have a valid backup-manifest.json. Let's create a new profile
       // and start invoking the recover() method on each BackupResource.
@@ -3458,6 +3624,14 @@ export class BackupService extends EventTarget {
    *   profile group. If we are copying a profile, we will use
    *   copiedProfile.name to show that the new profile is a copy of
    *   copiedProfile on about:editprofile.
+   * @param {string} [profileRootPath=null]
+   *   Optional path where the new profile directory should be created.
+   *   If not provided, the default profile location will be used.
+   * @param {object} [manifest=null]
+   *   If we've already read and validated the manifest, we can avoid redoing that work
+   *   by passing this in as a parameter.
+   * @param {boolean} [replaceCurrentProfile=false]
+   *   Indicates if we are replacing the current running profile or adding to the group
    * @returns {Promise<SelectableProfile>}
    *   The SelectableProfile that was created for the recovered profile.
    * @throws {Exception}
@@ -3467,7 +3641,10 @@ export class BackupService extends EventTarget {
     recoveryPath,
     shouldLaunch = false,
     encState = null,
-    copiedProfile = null
+    copiedProfile = null,
+    profileRootPath = null,
+    manifest = null,
+    replaceCurrentProfile = false
   ) {
     lazy.logConsole.debug(
       "Recovering SelectableProfile from backup at ",
@@ -3475,11 +3652,23 @@ export class BackupService extends EventTarget {
     );
 
     try {
-      let manifest = await this.#readAndValidateManifest(recoveryPath);
+      if (!manifest) {
+        manifest = await this.#readAndValidateManifest(recoveryPath);
+      }
 
       // Okay, we have a valid backup-manifest.json. Let's create a new profile
       // and start invoking the recover() method on each BackupResource.
-      let profile = await lazy.SelectableProfileService.createNewProfile(false);
+      let existingProfilePath = null;
+      if (profileRootPath) {
+        let profileDirName = `recovered-${Date.now()}`;
+        let profileDirPath = PathUtils.join(profileRootPath, profileDirName);
+        await IOUtils.makeDirectory(profileDirPath, { permissions: 0o700 });
+        existingProfilePath = await IOUtils.getDirectory(profileDirPath);
+      }
+      let profile = await lazy.SelectableProfileService.createNewProfile(
+        false,
+        existingProfilePath
+      );
 
       let postRecovery = await this.#recoverResources(
         manifest,
@@ -3491,7 +3680,29 @@ export class BackupService extends EventTarget {
 
       await this.#writePostRecoveryData(postRecovery, profile.path);
 
+      // Legacy backup --> Selectable profile replacement is the only case where we take
+      // the current profile's metadata
+      if (
+        manifest.meta?.isSelectableProfile === false &&
+        replaceCurrentProfile
+      ) {
+        // set the profile items to the newly created profile
+        let currentSelectableProfile =
+          lazy.SelectableProfileService.currentProfile;
+
+        profile.name = currentSelectableProfile.name;
+        await profile.setAvatar(
+          currentSelectableProfile.hasCustomAvatar
+            ? await currentSelectableProfile.getAvatarFile()
+            : currentSelectableProfile.avatar
+        );
+        profile.theme = currentSelectableProfile.theme;
+      }
+
       if (shouldLaunch) {
+        // TODO (see Bug 2011302) - if the user is recovering a legacy profile
+        // into a selectable profile, we should open a custom about:editprofile#recovered page
+
         lazy.SelectableProfileService.launchInstance(
           profile,
           // Using URL Search Params on this about: page didn't work because
@@ -3650,6 +3861,32 @@ export class BackupService extends EventTarget {
     lazy.logConsole.debug(`Updating backup error code to ${newErrorCode}`);
 
     this.#_state.backupErrorCode = newErrorCode;
+    this.stateUpdate();
+  }
+
+  /**
+   * Updates lastBackupFileName in the backup service state. Should be called every time
+   * the value for browser.backup.scheduled.last-backup-file changes.
+   *
+   * @param {string} newLastBackupFileName
+   *    Name of the last known backup file
+   */
+  onUpdateLastBackupFileName(newLastBackupFileName) {
+    lazy.logConsole.debug(
+      `The last backup file name is being updated to ${newLastBackupFileName}`
+    );
+
+    this.#_state.lastBackupFileName = newLastBackupFileName;
+
+    if (!newLastBackupFileName) {
+      lazy.logConsole.debug(
+        `Looks like we've cleared the last backup file name, let's also clear the last backup date`
+      );
+
+      this.#_state.lastBackupDate = null;
+      Services.prefs.clearUserPref(LAST_BACKUP_TIMESTAMP_PREF_NAME);
+    }
+
     this.stateUpdate();
   }
 
@@ -3849,8 +4086,7 @@ export class BackupService extends EventTarget {
 
   /**
    * Enables encryption for backups, allowing sensitive data to be backed up.
-   * Throws if encryption is already enabled. After enabling encryption, that
-   * state is written to disk.
+   * After enabling encryption, the state is written to disk.
    *
    * @throws Exception
    * @param {string} password
@@ -3862,14 +4098,6 @@ export class BackupService extends EventTarget {
    */
   async enableEncryption(password, profilePath = PathUtils.profileDir) {
     lazy.logConsole.debug("Enabling encryption.");
-    let encState = await this.loadEncryptionState(profilePath);
-    if (encState) {
-      throw new BackupError(
-        "Encryption is already enabled.",
-        ERRORS.ENCRYPTION_ALREADY_ENABLED
-      );
-    }
-
     if (!password) {
       throw new BackupError(
         "Cannot supply a blank password.",
@@ -3884,8 +4112,8 @@ export class BackupService extends EventTarget {
       );
     }
 
-    ({ instance: encState } =
-      await lazy.ArchiveEncryptionState.initialize(password));
+    let { instance: encState } =
+      await lazy.ArchiveEncryptionState.initialize(password);
     if (!encState) {
       throw new BackupError(
         "Failed to construct ArchiveEncryptionState",
@@ -3909,7 +4137,7 @@ export class BackupService extends EventTarget {
   }
 
   /**
-   * Disables encryption of backups. Throws is encryption is already disabled.
+   * Disables encryption of backups.
    *
    * @throws Exception
    * @param {string} [profilePath=PathUtils.profileDir]
@@ -3919,22 +4147,11 @@ export class BackupService extends EventTarget {
    */
   async disableEncryption(profilePath = PathUtils.profileDir) {
     lazy.logConsole.debug("Disabling encryption.");
-    let encState = await this.loadEncryptionState(profilePath);
-    if (!encState) {
-      throw new BackupError(
-        "Encryption is already disabled.",
-        ERRORS.ENCRYPTION_ALREADY_DISABLED
-      );
-    }
-
     let encStateFile = PathUtils.join(
       profilePath,
       BackupService.PROFILE_FOLDER_NAME,
       BackupService.ARCHIVE_ENCRYPTION_STATE_FILE
     );
-    // It'd be pretty strange, but not impossible, for something else to have
-    // gotten rid of the encryption state file at this point. We'll ignore it
-    // if that's the case.
     await IOUtils.remove(encStateFile, {
       ignoreAbsent: true,
       retryReadonly: true,
@@ -3999,16 +4216,8 @@ export class BackupService extends EventTarget {
       LAST_BACKUP_TIMESTAMP_PREF_NAME,
       0
     );
-    if (!lastBackupPrefValue) {
-      this.#_state.lastBackupDate = null;
-    } else {
-      this.#_state.lastBackupDate = lastBackupPrefValue;
-    }
 
-    this.#_state.lastBackupFileName = Services.prefs.getStringPref(
-      LAST_BACKUP_FILE_NAME_PREF_NAME,
-      ""
-    );
+    this.#_state.lastBackupDate = lastBackupPrefValue || null;
 
     this.stateUpdate();
 
@@ -4053,6 +4262,7 @@ export class BackupService extends EventTarget {
     Services.obs.addObserver(this.#observer, "session-cookie-changed");
     Services.obs.addObserver(this.#observer, "newtab-linkBlocked");
     Services.obs.addObserver(this.#observer, "quit-application-granted");
+    Services.prefs.addObserver(SANITIZE_ON_SHUTDOWN_PREF_NAME, this.#observer);
   }
 
   /**
@@ -4089,6 +4299,10 @@ export class BackupService extends EventTarget {
     Services.obs.removeObserver(this.#observer, "session-cookie-changed");
     Services.obs.removeObserver(this.#observer, "newtab-linkBlocked");
     Services.obs.removeObserver(this.#observer, "quit-application-granted");
+    Services.prefs.removeObserver(
+      SANITIZE_ON_SHUTDOWN_PREF_NAME,
+      this.#observer
+    );
     this.#observer = null;
 
     this.#regenerationDebouncer.disarm();
@@ -4163,6 +4377,11 @@ export class BackupService extends EventTarget {
           this.#debounceRegeneration();
         }
         break;
+      }
+      case "nsPref:changed": {
+        if (data == SANITIZE_ON_SHUTDOWN_PREF_NAME) {
+          this.#debounceRegeneration();
+        }
       }
     }
   }
@@ -4387,6 +4606,73 @@ export class BackupService extends EventTarget {
   }
 
   /**
+   * Decide whether we should attempt a backup now.
+   *
+   * @returns {boolean}
+   */
+  shouldAttemptBackup() {
+    let now = Math.floor(Date.now() / 1000);
+    const debugInfoStr = Services.prefs.getStringPref(
+      BACKUP_DEBUG_INFO_PREF_NAME,
+      ""
+    );
+
+    let parsed = null;
+    if (debugInfoStr) {
+      try {
+        parsed = JSON.parse(debugInfoStr);
+      } catch (e) {
+        lazy.logConsole.warn(
+          "Invalid backup debug-info pref; ignoring and allowing backup attempt.",
+          e
+        );
+        parsed = null;
+      }
+    }
+
+    const lastBackupAttempt = parsed?.lastBackupAttempt;
+    const hasErroredLastAttempt = Number.isFinite(lastBackupAttempt);
+
+    if (!hasErroredLastAttempt) {
+      lazy.logConsole.debug(
+        `There have been no errored last attempts, let's do a backup`
+      );
+      return true;
+    }
+
+    const secondsSinceLastAttempt = now - lastBackupAttempt;
+
+    if (lazy.isRetryDisabledOnIdle) {
+      // Let's add a buffer before restarting the retries. Dividing by 2
+      // since currently minimumTimeBetweenBackupsSeconds is set to 24 hours
+      // We want to approximately keep a backup for each day, so let's retry
+      // in about 12 hours again.
+      if (secondsSinceLastAttempt < lazy.minimumTimeBetweenBackupsSeconds / 2) {
+        lazy.logConsole.debug(
+          `Retrying is disabled, we have to wait for ${lazy.minimumTimeBetweenBackupsSeconds / 2}s to retry`
+        );
+        return false;
+      }
+      // Looks like we've waited enough, reset the retry states and try to create
+      // a backup again.
+      BackupService.#errorRetries = 0;
+      Services.prefs.clearUserPref(DISABLED_ON_IDLE_RETRY_PREF_NAME);
+
+      return true;
+    }
+
+    // Exponential backoff guard, avoids throttling the same error again and again
+    if (secondsSinceLastAttempt < BackupService.backoffSeconds()) {
+      lazy.logConsole.debug(
+        `backoff: elapsed ${secondsSinceLastAttempt}s < backoff ${BackupService.backoffSeconds()}s`
+      );
+      return false;
+    }
+
+    return true;
+  }
+
+  /**
    * Calls BackupService.createBackup at the next moment when the event queue
    * is not busy with higher priority events. This is intentionally broken out
    * into its own method to make it easier to stub out in tests.
@@ -4394,28 +4680,14 @@ export class BackupService extends EventTarget {
    * @param {object} [options]
    * @param {boolean} [options.deletePreviousBackup]
    * @param {string} [options.reason]
+   *
+   * @returns {Promise} A backup promise to hold onto
    */
   createBackupOnIdleDispatch({ deletePreviousBackup = true, reason }) {
-    let now = Math.floor(Date.now() / 1000);
-    let errorStateDebugInfo = Services.prefs.getStringPref(
-      BACKUP_DEBUG_INFO_PREF_NAME,
-      ""
-    );
-
-    // we retry failing backups every minimumTimeBetweenBackupsSeconds if
-    // isRetryDisabledOnIdle is true. If isRetryDisabledOnIdle is false,
-    // we retry on next idle until we hit backupRetryLimit and switch isRetryDisabledOnIdle to true
-    if (
-      lazy.isRetryDisabledOnIdle &&
-      errorStateDebugInfo &&
-      now - JSON.parse(errorStateDebugInfo).lastBackupAttempt <
-        lazy.minimumTimeBetweenBackupsSeconds
-    ) {
-      lazy.logConsole.debug(
-        `We've already retried in the last ${lazy.minimumTimeBetweenBackupsSeconds}s. Waiting for next valid idleDispatch to try again.`
-      );
+    if (!this.shouldAttemptBackup()) {
       return Promise.resolve();
     }
+
     // Determine path to old backup file
     const oldBackupFile = this.#_state.lastBackupFileName;
     const isScheduledBackupsEnabled = lazy.scheduledBackupsPref;
@@ -4441,8 +4713,10 @@ export class BackupService extends EventTarget {
 
         BackupService.#errorRetries += 1;
         if (BackupService.#errorRetries > lazy.backupRetryLimit) {
-          // We've had too many errors with retries, let's only backup on next timestamp
           Services.prefs.setBoolPref(DISABLED_ON_IDLE_RETRY_PREF_NAME, true);
+          // Next retry will be 24 hours later (backoffSeconds = 2^(11) * 60s),
+          // let's just restart our backoff heuristic
+          BackupService.#errorRetries = 0;
           Glean.browserBackup.backupThrottled.record();
         }
       } finally {
@@ -4580,7 +4854,7 @@ export class BackupService extends EventTarget {
   async showBackupLocation() {
     let backupFilePath = PathUtils.join(
       lazy.backupDirPref,
-      this.#_state.lastBackupFileName
+      lazy.lastBackupFileName
     );
     if (await IOUtils.exists(backupFilePath)) {
       new lazy.nsLocalFile(backupFilePath).reveal();
@@ -4614,7 +4888,7 @@ export class BackupService extends EventTarget {
     speedUpHeuristic = false,
   } = {}) {
     // Do we already have a backup for this browser? if so, we don't need to do any searching!
-    if (this.#_state.lastBackupFileName) {
+    if (lazy.lastBackupFileName) {
       return {
         found: true,
         multipleBackupsFound: false,
@@ -4733,8 +5007,9 @@ export class BackupService extends EventTarget {
    * in an object for processing in the frontend.
    *
    * Assumptions:
-   * - Intended to be called before `about:welcome` opens.
-   * - Clears any existing `lastBackupFileName` and `backupFileToRestore`
+   *
+   * - Intended to be called before ``about:welcome`` opens.
+   * - Clears any existing ``lastBackupFileName`` and ``backupFileToRestore``
    *   in the internal state prior to searching.
    *
    * @param {object} [options] - Configuration options.
@@ -4855,13 +5130,7 @@ export class BackupService extends EventTarget {
             });
           }
 
-          this.#_state.lastBackupDate = null;
-          Services.prefs.clearUserPref(LAST_BACKUP_TIMESTAMP_PREF_NAME);
-
-          this.#_state.lastBackupFileName = "";
           Services.prefs.clearUserPref(LAST_BACKUP_FILE_NAME_PREF_NAME);
-
-          this.stateUpdate();
         } else {
           lazy.logConsole.log(
             "Not deleting last backup file, since none is known about."

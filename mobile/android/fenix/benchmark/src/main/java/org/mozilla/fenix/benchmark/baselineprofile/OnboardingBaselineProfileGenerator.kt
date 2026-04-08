@@ -8,6 +8,7 @@ import android.os.Build
 import androidx.annotation.RequiresApi
 import androidx.benchmark.macro.junit4.BaselineProfileRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import org.junit.Ignore
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -22,8 +23,6 @@ import org.mozilla.fenix.benchmark.utils.revokeNotificationPermission
  *
  * Refer to the [baseline profile documentation](https://d.android.com/topic/performance/baselineprofiles)
  * for more information.
- *
- * Make sure `autosignReleaseWithDebugKey=true` is present in local.properties.
  *
  * Generate the baseline profile using this gradle task:
  * ```
@@ -49,6 +48,7 @@ class OnboardingBaselineProfileGenerator {
     @get:Rule
     val rule = BaselineProfileRule()
 
+    @Ignore("Failing: https://bugzilla.mozilla.org/show_bug.cgi?id=2021112")
     @Test
     fun generateBaselineProfile() {
         rule.collect(

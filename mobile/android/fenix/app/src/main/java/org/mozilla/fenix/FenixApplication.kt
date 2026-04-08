@@ -6,6 +6,7 @@ package org.mozilla.fenix
 
 import android.annotation.SuppressLint
 import android.app.ActivityManager
+import android.app.Application
 import android.content.Context
 import android.content.Intent
 import android.os.Build
@@ -13,9 +14,9 @@ import android.os.Build.VERSION.SDK_INT
 import android.os.StrictMode
 import android.os.SystemClock
 import android.util.Log.INFO
-import androidx.annotation.OpenForTesting
 import androidx.annotation.VisibleForTesting
 import androidx.appcompat.app.AppCompatDelegate
+import androidx.compose.runtime.Composable
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.getSystemService
 import androidx.core.net.toUri
@@ -52,6 +53,8 @@ import mozilla.components.feature.top.sites.TopSitesProviderConfig
 import mozilla.components.feature.webcompat.reporter.WebCompatReporterFeature
 import mozilla.components.lib.crash.CrashReporter
 import mozilla.components.service.fxa.manager.SyncEnginesStorage
+import mozilla.components.service.sync.autofill.GlobalAutofillDependencyProvider
+import mozilla.components.service.sync.logins.GlobalLoginsDependencyProvider
 import mozilla.components.service.sync.logins.LoginsApiException
 import mozilla.components.support.AppServicesInitializer
 import mozilla.components.support.base.ext.areNotificationsEnabledSafe
@@ -63,10 +66,11 @@ import mozilla.components.support.base.log.sink.AndroidLogSink
 import mozilla.components.support.ktx.android.arch.lifecycle.addObservers
 import mozilla.components.support.ktx.android.content.isMainProcess
 import mozilla.components.support.ktx.android.content.runOnlyInMainProcess
-import mozilla.components.support.locale.LocaleAwareApplication
+import mozilla.components.support.locale.LocaleManager
 import mozilla.components.support.remotesettings.GlobalRemoteSettingsDependencyProvider
 import mozilla.components.support.rusthttp.RustHttpConfig
 import mozilla.components.support.utils.BrowsersCache
+import mozilla.components.support.utils.RunWhenReadyQueue
 import mozilla.components.support.utils.logElapsedTime
 import mozilla.components.support.webextensions.WebExtensionSupport
 import mozilla.telemetry.glean.Glean
@@ -89,7 +93,9 @@ import org.mozilla.fenix.components.appstate.AppAction
 import org.mozilla.fenix.components.initializeGlean
 import org.mozilla.fenix.components.metrics.MozillaProductDetector
 import org.mozilla.fenix.components.startMetricsIfEnabled
+import org.mozilla.fenix.experiments.NimbusGeckoPrefHandler
 import org.mozilla.fenix.experiments.maybeFetchExperiments
+import org.mozilla.fenix.ext.application
 import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.ext.containsQueryParameters
 import org.mozilla.fenix.ext.isCustomEngine
@@ -113,9 +119,14 @@ import org.mozilla.fenix.session.VisibilityLifecycleCallback
 import org.mozilla.fenix.settings.doh.DefaultDohSettingsProvider
 import org.mozilla.fenix.settings.doh.DohSettingsProvider
 import org.mozilla.fenix.startupCrash.StartupCrashActivity
+import org.mozilla.fenix.theme.DefaultThemeProvider
+import org.mozilla.fenix.theme.Theme
+import org.mozilla.fenix.theme.Theme.Private
+import org.mozilla.fenix.theme.ThemeProvider
 import org.mozilla.fenix.utils.Settings
 import org.mozilla.fenix.utils.isLargeScreenSize
 import org.mozilla.fenix.wallpapers.Wallpaper
+import org.mozilla.geckoview.ExperimentalGeckoViewApi
 import java.util.Date
 import java.util.concurrent.TimeUnit
 import kotlin.math.roundToLong
@@ -129,16 +140,22 @@ private const val BYTES_TO_MEGABYTES_CONVERSION = 1024.0 * 1024.0
  * Installs [CrashReporter], initializes [Glean] in fenix builds and setup [Megazord] in the main process.
  */
 @Suppress("Registered", "TooManyFunctions", "LargeClass")
-open class FenixApplication : LocaleAwareApplication(), Provider {
+open class FenixApplication : Application(), Provider, ThemeProvider {
     init {
-        recordOnInit() // DO NOT MOVE ANYTHING ABOVE HERE: the timing of this measurement is critical.
+        // [TIMER] Record startup timestamp as early as reasonable with some degree of consistency.
+        //
+        // Measured after:
+        //  - Static class initializers
+        //  - Kotlin companion-object-init blocks
+        //
+        // but before:
+        //  - ContentProvider initialization
+        //  - Application.onCreate
+        //
+        StartupTimeline.onApplicationInit()
     }
 
     private val logger = Logger("FenixApplication")
-
-    internal val isDeviceRamAboveThreshold by lazy {
-        isDeviceRamAboveThreshold()
-    }
 
     open val components by lazy { Components(this) }
 
@@ -147,130 +164,181 @@ open class FenixApplication : LocaleAwareApplication(), Provider {
 
     override fun onCreate() {
         super.onCreate()
-        initialize()
+        initializeFenixProcess()
+    }
+
+    override fun attachBaseContext(base: Context) {
+        // Sets the locale information. Other threads do not have locale aware needs
+        if (base.isMainProcess()) {
+            val localeAwareContext = LocaleManager.updateResources(base)
+            super.attachBaseContext(localeAwareContext)
+        } else {
+            super.attachBaseContext(base)
+        }
     }
 
     /**
-     * Initializes Fenix and all required subsystems such as Nimbus, Glean and Gecko.
+     * Process-level initialization for Fenix and its services. Sets up required native subsystems
+     * such as Nimbus, Glean and Gecko. Note that Robolectric tests override this with an empty
+     * implementation that skips this initialization.
      */
-    fun initialize() {
-        // We measure ourselves to avoid a call into Glean before its loaded.
+    @SuppressLint("NewApi")
+    protected open fun initializeFenixProcess() {
+        // [TIMER] Record the start of the [PerfStartup.applicationOnCreate] metric here. Do this
+        // manually because Glean has not started initializing yet. Note that by this point the
+        // content providers from Fenix and its libraries have run their initializers already.
         val start = SystemClock.elapsedRealtimeNanos()
 
-        setupInAllProcesses()
+        // Capture A-C logs to Android logcat. Note that gecko maybe directly post to logcat
+        // regardless of what we do here.
+        Log.addSink(FenixLogSink(logsDebug = Config.channel.isDebug, AndroidLogSink()))
 
-        // If the main process crashes before we've reached visual completeness, we consider it to
-        // be a startup crash and fork into the recovery flow. The activity that is responsible for
-        // that flow is hosted in a separate process, which means that we avoid the majority of
-        // initialization work that is done in `setupInMainProcess`
-        // Please see the README.md in the fenix/startupCrash package for more information.
-        if (!isMainProcess()) {
-            // If this is not the main process then do not continue with the initialization here. Everything that
-            // follows only needs to be done in our app's main process and should not be done in other processes like
-            // a GeckoView child process or the crash handling process. Most importantly we never want to end up in a
-            // situation where we create a GeckoRuntime from the Gecko child process.
-            return
-        }
+        // Register a deferred initializer for crash reporting that will be called lazily when
+        // CrashReporter.requireInstance is first accessed. This allows all processes to register
+        // the initializer without immediately constructing the Components object and its dependencies.
+        // Non-main processes genera
 
-        // DO NOT ADD ANYTHING ABOVE HERE.
-        // Note: That the startup crash recovery flow is hosted in a different process,
-        // so this call will be avoided in that case
-        setupInMainProcessOnly()
-        // DO NOT ADD ANYTHING UNDER HERE.
+        // Some of our non-main processes are for CrashReporter business and need to know our
+        // configuration from Fenix (the Analytics object). To avoid the Gecko processes that don't
+        // need this from initializing the Components/Objects/CrashReporter we register a lazy
+        // initializer so only processes that need it setup this Fenix code.
+        //
+        // Note: This doesn't setup any [UncaughtExceptionHandler].
+        // Note: Gecko processes have their own crash handling mechanisms.
+        CrashReporter.registerDeferredInitializer(::setupCrashReporting)
 
-        // DO NOT MOVE ANYTHING BELOW THIS elapsedRealtimeNanos CALL.
-        val stop = SystemClock.elapsedRealtimeNanos()
-        val durationMillis = TimeUnit.NANOSECONDS.toMillis(stop - start)
+        // While this [initializeFenixProcess] method is run for _all processes_ in the app, we only
+        // do global initialization for the _main process_ here. This main process initialization
+        // includes setting up native libraries and global 'components' instances.
+        //
+        // Note: If a crash happens during this initialization (before visual completeness), then
+        //       the [StartupCrashActivity] may be launched in a separate process. See the README.md
+        //       in fenix/startupCrash for more information.
+        //
+        // Note: Gecko service processes don't use Nimbus or the Kotlin components. They also do
+        //       their own loading of Gecko libraries.
+        //
+        // Note: The A-C / Fenix crash service processes are responsible for their own setup and
+        //       should minimize their dependencies to avoid also crashing.
+        runOnlyInMainProcess {
+            // Initialization is split into two phases based on if libmegazord is fully initialized.
+            setupEarlyMain()
+            setupPostMegazord()
 
-        // We avoid blocking the main thread on startup by calling into Glean on the background thread.
-        @OptIn(DelicateCoroutinesApi::class)
-        GlobalScope.launch(IO) {
+            // [TIMER] Record the end of the `PerfStartup.applicationOnCreate` metric. Note that
+            // glean will queue this if the backend is still starting up.
+            val stop = SystemClock.elapsedRealtimeNanos()
+            val durationMillis = TimeUnit.NANOSECONDS.toMillis(stop - start)
             PerfStartup.applicationOnCreate.accumulateSamples(listOf(durationMillis))
         }
     }
 
+    // Begin initialization of Glean if we have data-upload consent, otherwise we will have to
+    // wait until we do. Note that Glean initialization is asynchronous any may not be finished
+    // when this method returns.
     @OptIn(DelicateCoroutinesApi::class) // GlobalScope usage
-    @VisibleForTesting
-    protected open fun initializeGlean() {
-        val settings = settings()
-        // We delay the Glean initialization until, we have user consent (After onboarding).
+    private fun maybeInitializeGlean() {
+        // We delay the Glean initialization until we have user consent from onboarding.
         // If onboarding is disabled (when in local builds), continue to initialize Glean.
         if (components.fenixOnboarding.userHasBeenOnboarded() || !FeatureFlags.onboardingFeatureEnabled) {
-            initializeGlean(this, logger, settings.isTelemetryEnabled, components.core.client)
-        }
-
-        // We avoid blocking the main thread on startup by setting startup metrics on the background thread.
-        val store = components.core.store
-        GlobalScope.launch(IO) {
-            setStartupMetrics(store, settings)
+            initializeGlean(this, logger, settings().isTelemetryEnabled, components.core.client)
         }
     }
 
-    @SuppressLint("NewApi")
-    @VisibleForTesting
-    protected open fun setupInAllProcesses() {
-        // See Bug 1969818: Crash reporting requires updates to be compatible with
-        // isolated content process.
-        if (!android.os.Process.isIsolated()) {
-            setupCrashReporting()
-        }
-        // We want the log messages of all builds to go to Android logcat
-        Log.addSink(FenixLogSink(logsDebug = Config.channel.isDebug, AndroidLogSink()))
-    }
-
-    @VisibleForTesting
-    protected open fun setupInMainProcessOnly() {
-        // ⚠️ DO NOT ADD ANYTHING ABOVE THIS LINE.
-        // Especially references to the engine/BrowserStore which can alter the app initialization.
-        // See: https://github.com/mozilla-mobile/fenix/issues/26320
+    /**
+     * This phase of main-process initialization runs before application-services is fully setup
+     * so care must be taken. This phases begins loading the Nimbus, Glean, Gecko libraries.
+     *
+     * By the end of this, application-services, Nimbus and Gecko are initialized. Glean may or may
+     * not be initialized.
+     */
+    private fun setupEarlyMain() {
+        // ⚠️ The sequence of CrashReporter / Nimbus / Engine / Glean is particularly subtle due to
+        // interdependencies among them.
         //
-        // We can initialize Nimbus before Glean because Glean will queue messages
-        // before it's initialized.
+        // - We want the CrashReporter as soon as reasonable to give the best visibility. Note that
+        //   CrashReporter records Nimbus experiment list when a crash happens so it has a lazy
+        //   dependency on Nimbus.
+        //
+        // - Nimbus should be initialized quite early to ensure consistent experiment values are
+        //   applied. In particular, we want to do it before Engine so that we have the right values
+        //   before pages load. See: https://github.com/mozilla-mobile/fenix/issues/26320
+        //
+        // - Glean will queue (most) messages before being started so it is safe for Nimbus to begin
+        //   before Glean does and any metrics will be processed once Glean is ready.
+
+        // Setup the crash reporter and register the [UncaughtExceptionHandler].
+        setupCrashReporting()
+
+        // Begin application-services initialization. The megazord contains Nimbus, but not Glean.
+        setupMegazordInitial()
+
+        // Initialize Nimbus and its backend.
         initializeNimbus()
 
         ProfilerMarkerFactProcessor.create { components.core.engine.profiler }.register()
 
-        run {
-            // Make sure the engine is initialized and ready to use.
-            components.strictMode.allowViolation(StrictMode::allowThreadDiskReads) {
-                components.core.engine.warmUp()
-            }
+        // Ensure the Engine instance is initialized such that it can receive commands. Note
+        // that full initialization is typically running off-thread and it may be a while
+        // before pages can begin to render.
+        components.core.engine.warmUp()
 
-            initializeGlean()
+        // Kick off initialization of Glean backend off-thread. Glean will continue to queue
+        // metric samples until the backend is ready. If we don't have data-upload consent then
+        // this will be a no-op and initialization may be attempted after onboarding.
+        maybeInitializeGlean()
 
-            // Attention: Do not invoke any code from a-s in this scope.
-            val megazordSetup = finishSetupMegazord()
+        // Initialize the [BrowserStore] so that [setStartupMetrics] can reference this.
+        // Note: This is a historical artifact and should be revisited.
+        val store = components.core.store
 
-            setDayNightTheme()
-            components.strictMode.enableStrictMode(true)
-            warmBrowsersCache()
-
-            initializeWebExtensionSupport()
-
-            // Make sure to call this function before registering a storage worker
-            // (e.g. components.core.historyStorage.registerStorageMaintenanceWorker())
-            // as the storage maintenance worker needs a places storage globally when
-            // it is needed while the app is not running and WorkManager wakes up the app
-            // for the periodic task.
-            GlobalPlacesDependencyProvider.initialize(components.core.historyStorage)
-
-            GlobalSyncedTabsCommandsProvider.initialize(lazy { components.backgroundServices.syncedTabsCommands })
-
-            initializeRemoteSettingsSupport()
-
-            restoreBrowserState()
-            restoreDownloads()
-            restoreMessaging()
-
-            // Just to make sure it is impossible for any application-services pieces
-            // to invoke parts of itself that require complete megazord initialization
-            // before that process completes, we wait here, if necessary.
-            if (!megazordSetup.isCompleted) {
-                runBlockingIncrement { megazordSetup.await() }
-            }
+        // StartupMetrics accesses shared preferences so do this off thread.
+        @OptIn(DelicateCoroutinesApi::class)
+        GlobalScope.launch(IO) {
+            setStartupMetrics(store, settings())
         }
 
+        // Start setup for concept-fetch networking in megazord. This runs off-thread, but we wait
+        // before for its completion synchronously.
+        val megazordDeferred = setupMegazordNetwork()
+
+        setDayNightTheme()
+        components.strictMode.enableStrictMode(true)
+        warmBrowsersCache()
+
+        initializeWebExtensionSupport()
+
+        // Make sure to call this function before registering a storage worker
+        // (e.g. components.core.historyStorage.registerStorageMaintenanceWorker())
+        // as the storage maintenance worker needs a places storage globally when
+        // it is needed while the app is not running and WorkManager wakes up the app
+        // for the periodic task.
+        GlobalPlacesDependencyProvider.initialize(components.core.historyStorage)
+        GlobalLoginsDependencyProvider.initialize(lazy { components.core.passwordsStorage })
+        GlobalAutofillDependencyProvider.initialize(lazy { components.core.autofillStorage })
+
+        GlobalSyncedTabsCommandsProvider.initialize(lazy { components.backgroundServices.syncedTabsCommands })
+
+        initializeRemoteSettingsSupport()
+
+        restoreBrowserState()
+        restoreDownloads()
+        restoreMessaging()
+
+        // [IMPORTANT] Don't progress further until application-services is actually ready to go.
+        // This makes it easier to reason about behaviour and avoids issues in the Rust code.
+        runBlockingIncrement { megazordDeferred.await() }
+    }
+
+    /**
+     * The remainder of main-process initialization happens here now that we have ensured the
+     * application-services initialization is completed. This also queues a bunch of follow-up
+     * work to the visualCompletenessQueue that will be run after the Activity has started
+     * rendering.
+     */
+    private fun setupPostMegazord() {
         setupLeakCanary()
+
         if (components.fenixOnboarding.userHasBeenOnboarded()) {
             startMetricsIfEnabled(
                 logger = logger,
@@ -281,8 +349,11 @@ open class FenixApplication : LocaleAwareApplication(), Provider {
                 isDailyUsagePingEnabled = settings().isDailyUsagePingEnabled,
             )
         } else {
-            components.distributionIdManager.startAdjustIfSkippingConsentScreen()
+            CoroutineScope(IO).launch {
+                components.distributionIdManager.startAdjustIfSkippingConsentScreen()
+            }
         }
+
         setupPush()
 
         GlobalFxSuggestDependencyProvider.initialize(components.fxSuggest.storage)
@@ -294,6 +365,7 @@ open class FenixApplication : LocaleAwareApplication(), Provider {
         components.appStartReasonProvider.registerInAppOnCreate(this)
         components.startupActivityLog.registerInAppOnCreate(this)
         components.appLinkIntentLaunchTypeProvider.registerInAppOnCreate(this)
+
         initVisualCompletenessQueueAndQueueTasks()
 
         ProcessLifecycleOwner.get().lifecycle.addObservers(
@@ -333,163 +405,218 @@ open class FenixApplication : LocaleAwareApplication(), Provider {
     private fun initVisualCompletenessQueueAndQueueTasks() {
         val queue = components.performance.visualCompletenessQueue
 
-        @OptIn(DelicateCoroutinesApi::class) // GlobalScope usage
-        fun queueInitStorageAndServices() {
-            queue.runIfReadyOrQueue {
-                GlobalScope.launch(IO) {
-                    logger.info("Running post-visual completeness tasks...")
-                    logElapsedTime(logger, "Storage initialization") {
-                        components.core.historyStorage.warmUp()
-                        components.core.bookmarksStorage.warmUp()
-                        components.core.passwordsStorage.warmUp()
-                        components.core.autofillStorage.warmUp()
-
-                        // Populate the top site cache to improve initial load experience
-                        // of the home fragment when the app is launched to a tab. The actual
-                        // database call is not expensive. However, the additional context
-                        // switches delay rendering top sites when the cache is empty, which
-                        // we can prevent with this.
-                        components.core.topSitesStorage.getTopSites(
-                            totalSites = components.settings.topSitesMaxLimit,
-                            frecencyConfig = if (FxNimbus.features.homepageHideFrecentTopSites.value().enabled) {
-                                null
-                            } else {
-                                TopSitesFrecencyConfig(
-                                    frecencyTresholdOption = FrecencyThresholdOption.SKIP_ONE_TIME_PAGES,
-                                ) {
-                                    !it.url.toUri()
-                                        .containsQueryParameters(components.settings.frecencyFilterQuery)
-                                }
-                            },
-                            providerConfig = TopSitesProviderConfig(
-                                showProviderTopSites = components.settings.showContileFeature,
-                                limit = TOP_SITES_PROVIDER_LIMIT,
-                                maxThreshold = TOP_SITES_PROVIDER_MAX_THRESHOLD,
-                            ),
-                        )
-
-                        // This service uses `historyStorage`, and so we can only touch it when we know
-                        // it's safe to touch `historyStorage. By 'safe', we mainly mean that underlying
-                        // places library will be able to load, which requires first running Megazord.init().
-                        // The visual completeness tasks are scheduled after the Megazord.init() call.
-                        components.core.historyMetadataService.cleanup(
-                            System.currentTimeMillis() - Core.HISTORY_METADATA_MAX_AGE_IN_MS,
-                        )
-
-                        // If Firefox Suggest is enabled, register a worker to periodically ingest
-                        // new search suggestions. The worker requires us to have called
-                        // `GlobalFxSuggestDependencyProvider.initialize`, which we did before
-                        // scheduling these tasks. When disabled we stop the periodic work.
-                        if (settings().enableFxSuggest) {
-                            components.fxSuggest.ingestionScheduler.startPeriodicIngestion()
-                        } else {
-                            components.fxSuggest.ingestionScheduler.stopPeriodicIngestion()
-                        }
-                    }
-                    components.core.fileUploadsDirCleaner.cleanUploadsDirectory()
-                }
-                // Account manager initialization needs to happen on the main thread.
-                GlobalScope.launch(Dispatchers.Main) {
-                    logElapsedTime(logger, "Kicking-off account manager") {
-                        components.backgroundServices.accountManager
-                    }
-                }
-            }
-        }
-
-        fun queueMetrics() {
-            queue.runIfReadyOrQueue {
-                // Because it may be slow to capture the storage stats, it might be preferred to
-                // create a WorkManager task for this metric, however, I ran out of
-                // implementation time and WorkManager is harder to test.
-                StorageStatsMetrics.report(this.applicationContext)
-            }
-        }
-
-        @OptIn(DelicateCoroutinesApi::class) // GlobalScope usage
-        fun queueIncrementNumberOfAppLaunches() {
-            queue.runIfReadyOrQueue {
-                GlobalScope.launch(IO) {
-                    settings().numberOfAppLaunches += 1
-                }
-            }
-        }
-
-        @OptIn(DelicateCoroutinesApi::class) // GlobalScope usage
-        fun queueRestoreLocale() {
-            queue.runIfReadyOrQueue {
-                GlobalScope.launch(IO) {
-                    components.useCases.localeUseCases.restore()
-                }
-            }
-        }
-
-        fun queueStorageMaintenance() {
-            queue.runIfReadyOrQueue {
-                // Make sure GlobalPlacesDependencyProvider.initialize(components.core.historyStorage)
-                // is called before this call. When app is not running and WorkManager wakes up
-                // the app for the periodic task, it will require a globally provided places storage
-                // to run the maintenance on.
-                components.core.historyStorage.registerStorageMaintenanceWorker()
-            }
-        }
-
-        @OptIn(DelicateCoroutinesApi::class) // GlobalScope usage
-        fun queueNimbusFetchInForeground() {
-            queue.runIfReadyOrQueue {
-                GlobalScope.launch(IO) {
-                    components.nimbus.sdk.maybeFetchExperiments(
-                        context = this@FenixApplication,
-                    )
-                }
-            }
-        }
-
-        @OptIn(DelicateCoroutinesApi::class) // GlobalScope usage
-        fun queueSuggestIngest() {
-            queue.runIfReadyOrQueue {
-                GlobalScope.launch(IO) {
-                    components.fxSuggest.storage.runStartupIngestion()
-                }
-            }
-        }
-
-        fun queueDownloadWallpapers() {
-            queue.runIfReadyOrQueue {
-                downloadWallpapers()
-            }
-        }
-
         // We init these items in the visual completeness queue to avoid them initing in the critical
         // startup path, before the UI finishes drawing (i.e. visual completeness).
-        queueInitStorageAndServices()
-        queueMetrics()
-        queueIncrementNumberOfAppLaunches()
-        queueRestoreLocale()
-        queueStorageMaintenance()
-        queueNimbusFetchInForeground()
-        queueDownloadWallpapers()
+        queueInitStorageAndServices(queue)
+        queueMetrics(queue)
+        queueIncrementNumberOfAppLaunches(queue)
+        queueRestoreLocale(queue)
+        queueStorageMaintenance(queue)
+        queueIntegrityClientWarmUp(queue)
+        queueNimbusFetchInForeground(queue)
+        queueSetAutofillMetrics(queue)
+        queueDownloadWallpapers(queue)
+
         if (settings().enableFxSuggest) {
-            queueSuggestIngest()
+            queueSuggestIngest(queue)
         }
-        queueCollectProcessExitInfo()
+
+        queueCollectProcessExitInfo(queue)
+    }
+
+    private inline fun runOnVisualCompleteness(
+        queue: RunWhenReadyQueue,
+        crossinline block: () -> Unit,
+    ) {
+        queue.runIfReadyOrQueue { block() }
     }
 
     @OptIn(DelicateCoroutinesApi::class) // GlobalScope usage
-    private fun queueCollectProcessExitInfo() {
-        if (SDK_INT >= Build.VERSION_CODES.R && settings().isTelemetryEnabled) {
+    private fun queueInitStorageAndServices(queue: RunWhenReadyQueue) =
+        runOnVisualCompleteness(queue) {
             GlobalScope.launch(IO) {
-                ApplicationExitInfoMetrics.recordProcessExits(applicationContext)
+                logger.info("Running post-visual completeness tasks...")
+                logElapsedTime(logger, "Storage initialization") {
+                    components.core.historyStorage.warmUp()
+                    components.core.bookmarksStorage.warmUp()
+                    components.core.passwordsStorage.warmUp()
+                    components.core.autofillStorage.warmUp()
+
+                    // Populate the top site cache to improve initial load experience
+                    // of the home fragment when the app is launched to a tab. The actual
+                    // database call is not expensive. However, the additional context
+                    // switches delay rendering top sites when the cache is empty, which
+                    // we can prevent with this.
+                    components.core.topSitesStorage.getTopSites(
+                        totalSites = components.settings.topSitesMaxLimit,
+                        frecencyConfig = if (FxNimbus.features.homepageHideFrecentTopSites.value().enabled) {
+                            null
+                        } else {
+                            TopSitesFrecencyConfig(
+                                frecencyTresholdOption = FrecencyThresholdOption.SKIP_ONE_TIME_PAGES,
+                            ) {
+                                !it.url.toUri()
+                                    .containsQueryParameters(components.settings.frecencyFilterQuery)
+                            }
+                        },
+                        providerConfig = TopSitesProviderConfig(
+                            showProviderTopSites = components.settings.showContileFeature,
+                            limit = TOP_SITES_PROVIDER_LIMIT,
+                            maxThreshold = TOP_SITES_PROVIDER_MAX_THRESHOLD,
+                        ),
+                    )
+
+                    // This service uses `historyStorage`, and so we can only touch it when we know
+                    // it's safe to touch `historyStorage. By 'safe', we mainly mean that underlying
+                    // places library will be able to load, which requires first running Megazord.init().
+                    // The visual completeness tasks are scheduled after the Megazord.init() call.
+                    components.core.historyMetadataService.cleanup(
+                        System.currentTimeMillis() - Core.HISTORY_METADATA_MAX_AGE_IN_MS,
+                    )
+
+                    // If Firefox Suggest is enabled, register a worker to periodically ingest
+                    // new search suggestions. The worker requires us to have called
+                    // `GlobalFxSuggestDependencyProvider.initialize`, which we did before
+                    // scheduling these tasks. When disabled we stop the periodic work.
+                    if (settings().enableFxSuggest) {
+                        components.fxSuggest.ingestionScheduler.startPeriodicIngestion()
+                    } else {
+                        components.fxSuggest.ingestionScheduler.stopPeriodicIngestion()
+                    }
+                }
+                components.core.fileUploadsDirCleaner.cleanUploadsDirectory()
+            }
+            // Account manager initialization needs to happen on the main thread.
+            GlobalScope.launch(Dispatchers.Main) {
+                logElapsedTime(logger, "Kicking-off account manager") {
+                    components.backgroundServices.accountManager
+                }
+
+                // Start Relay feature to monitor account state throughout the app lifecycle.
+                // Note: This feature monitors FxA account changes and runs regardless of user
+                // settings; UI components check settings before actually using Relay functionality.
+                logElapsedTime(logger, "Starting Relay feature integration") {
+                    components.relayFeatureIntegration.start()
+                }
+            }
+        }
+
+    private fun queueMetrics(queue: RunWhenReadyQueue) = runOnVisualCompleteness(queue) {
+        // Because it may be slow to capture the storage stats, it might be preferred to
+        // create a WorkManager task for this metric, however, I ran out of
+        // implementation time and WorkManager is harder to test.
+        StorageStatsMetrics.report(this.applicationContext)
+    }
+
+    @OptIn(DelicateCoroutinesApi::class) // GlobalScope usage
+    private fun queueIncrementNumberOfAppLaunches(queue: RunWhenReadyQueue) =
+        runOnVisualCompleteness(queue) {
+            GlobalScope.launch(IO) {
+                settings().numberOfAppLaunches += 1
+            }
+        }
+
+    @OptIn(DelicateCoroutinesApi::class) // GlobalScope usage
+    private fun queueRestoreLocale(queue: RunWhenReadyQueue) = runOnVisualCompleteness(queue) {
+        GlobalScope.launch(IO) {
+            components.useCases.localeUseCases.restore()
+        }
+    }
+
+    private fun queueStorageMaintenance(queue: RunWhenReadyQueue) = runOnVisualCompleteness(queue) {
+        // Make sure GlobalPlacesDependencyProvider.initialize(components.core.historyStorage)
+        // is called before this call. When app is not running and WorkManager wakes up
+        // the app for the periodic task, it will require a globally provided places storage
+        // to run the maintenance on.
+        components.core.historyStorage.registerStorageMaintenanceWorker()
+        components.core.passwordsStorage.registerStorageMaintenanceWorker()
+        components.core.autofillStorage.registerStorageMaintenanceWorker()
+    }
+
+    @OptIn(DelicateCoroutinesApi::class) // GlobalScope usage
+    private fun queueIntegrityClientWarmUp(queue: RunWhenReadyQueue) =
+        runOnVisualCompleteness(queue) {
+            GlobalScope.launch(IO) {
+                components.integrityClient.warmUp()
+            }
+        }
+
+    @OptIn(DelicateCoroutinesApi::class) // GlobalScope usage
+    private fun queueNimbusFetchInForeground(queue: RunWhenReadyQueue) =
+        runOnVisualCompleteness(queue) {
+            GlobalScope.launch(IO) {
+                components.nimbus.sdk.maybeFetchExperiments(
+                    context = this@FenixApplication,
+                )
+                @ExperimentalGeckoViewApi
+                NimbusGeckoPrefHandler.getPreferenceStateFromGecko().await()
+            }
+        }
+
+    @OptIn(DelicateCoroutinesApi::class) // GlobalScope usage
+    private fun queueSuggestIngest(queue: RunWhenReadyQueue) = runOnVisualCompleteness(queue) {
+        GlobalScope.launch(IO) {
+            components.fxSuggest.storage.runStartupIngestion()
+        }
+    }
+
+    private fun queueDownloadWallpapers(queue: RunWhenReadyQueue) = runOnVisualCompleteness(queue) {
+        downloadWallpapers()
+    }
+
+    @OptIn(DelicateCoroutinesApi::class) // GlobalScope usage
+    private fun queueCollectProcessExitInfo(queue: RunWhenReadyQueue) =
+        runOnVisualCompleteness(queue) {
+            if (SDK_INT >= Build.VERSION_CODES.R && settings().isTelemetryEnabled) {
+                GlobalScope.launch(IO) {
+                    ApplicationExitInfoMetrics.recordProcessExits(applicationContext)
+                }
+            }
+        }
+
+    /**
+     * Sets autofill telemetry about Addresses, CreditCards, and Logins.
+     *
+     * @param queue The queue the function should use.
+     */
+    @OptIn(DelicateCoroutinesApi::class)
+    private fun queueSetAutofillMetrics(queue: RunWhenReadyQueue) = runOnVisualCompleteness(queue) {
+        GlobalScope.launch(IO) {
+            try {
+                val autoFillStorage = applicationContext.components.core.autofillStorage
+                Addresses.savedAll.set(autoFillStorage.countAllAddresses())
+                CreditCards.savedAll.set(autoFillStorage.countAllCreditCards())
+            } catch (e: AutofillApiException) {
+                logger.error("Failed to fetch autofill data", e)
+            }
+
+            try {
+                val passwordsStorage = applicationContext.components.core.passwordsStorage
+                Logins.savedAll.set(passwordsStorage.count())
+            } catch (e: LoginsApiException) {
+                logger.error("Failed to fetch list of logins", e)
             }
         }
     }
 
+    /**
+     * Sets up LeakCanary based on different build variant implementations.
+     *
+     * Only [ReleaseChannel.Debug] activates LeakCanary. Other variants are no-op.
+     */
     protected open fun setupLeakCanary() {
-        // no-op, LeakCanary is disabled by default
+        // The specific LeakCanarySetup implementation used will be determined based on build variant.
+        (LeakCanarySetup as LeakCanarySetupInterface).setup(application = application, components = components)
     }
 
+    /**
+     * Updates LeakCanary based on different build variant implementations.
+     *
+     * Only [ReleaseChannel.Debug] updates LeakCanary. Other variants are no-op.
+     */
     open fun updateLeakCanaryState(isEnabled: Boolean) {
-        // no-op, LeakCanary is disabled by default
+        // The specific LeakCanarySetup implementation used will be determined based on build variant.
+        (LeakCanarySetup as LeakCanarySetupInterface).updateState(isEnabled = isEnabled, components = components)
     }
 
     private fun setupPush() {
@@ -512,8 +639,8 @@ open class FenixApplication : LocaleAwareApplication(), Provider {
         }
     }
 
-    private fun setupCrashReporting() {
-        components
+    private fun setupCrashReporting(): CrashReporter {
+        return components
             .analytics
             .crashReporter
             .install(this, ::handleCaughtException)
@@ -522,7 +649,7 @@ open class FenixApplication : LocaleAwareApplication(), Provider {
     private fun handleCaughtException() {
         if (
             isMainProcess() &&
-            Config.channel.isNightlyOrDebug &&
+            components.settings.useNewCrashReporterFlow &&
             !components.performance.visualCompletenessQueue.isReady()
         ) {
             val intent = Intent(applicationContext, StartupCrashActivity::class.java)
@@ -532,9 +659,7 @@ open class FenixApplication : LocaleAwareApplication(), Provider {
         }
     }
 
-    protected open fun initializeNimbus() {
-        beginSetupMegazord()
-
+    private fun initializeNimbus() {
         // This lazily constructs the Nimbus object…
         val nimbus = components.nimbus.sdk
         // … which we then can populate the feature configuration.
@@ -555,7 +680,7 @@ open class FenixApplication : LocaleAwareApplication(), Provider {
      * engine for networking. This should do the minimum work necessary as it is done on the main
      * thread, early in the app startup sequence.
      */
-    private fun beginSetupMegazord() {
+    private fun setupMegazordInitial() {
         // Rust components must be initialized at the very beginning, before any other Rust call, ...
         AppServicesInitializer.init(
             AppServicesConfig(components.analytics.crashReporter),
@@ -563,7 +688,7 @@ open class FenixApplication : LocaleAwareApplication(), Provider {
     }
 
     @OptIn(DelicateCoroutinesApi::class) // GlobalScope usage
-    private fun finishSetupMegazord(): Deferred<Unit> {
+    private fun setupMegazordNetwork(): Deferred<Unit> {
         return GlobalScope.async(IO) {
             if (Config.channel.isDebug) {
                 RustHttpConfig.allowEmulatorLoopback()
@@ -588,9 +713,7 @@ open class FenixApplication : LocaleAwareApplication(), Provider {
 
         logger.info("onTrimMemory(), level=$level, main=${isMainProcess()}")
 
-        // See Bug 1969818: Crash reporting requires updates to be compatible with
-        // isolated content process.
-        if (!android.os.Process.isIsolated()) {
+        runOnlyInMainProcess {
             components.analytics.crashReporter.recordCrashBreadcrumb(
                 Breadcrumb(
                     category = "Memory",
@@ -602,9 +725,7 @@ open class FenixApplication : LocaleAwareApplication(), Provider {
                     level = Breadcrumb.Level.INFO,
                 ),
             )
-        }
 
-        runOnlyInMainProcess {
             components.core.icons.onTrimMemory(level)
             components.core.store.dispatch(SystemAction.LowMemoryAction(level))
         }
@@ -740,7 +861,7 @@ open class FenixApplication : LocaleAwareApplication(), Provider {
      */
     @Suppress("CognitiveComplexMethod", "LongMethod", "CyclomaticComplexMethod")
     @VisibleForTesting
-    internal fun setStartupMetrics(
+    internal suspend fun setStartupMetrics(
         browserStore: BrowserStore,
         settings: Settings,
         dohSettingsProvider: DohSettingsProvider = DefaultDohSettingsProvider(
@@ -869,8 +990,6 @@ open class FenixApplication : LocaleAwareApplication(), Provider {
                 }
             }
         }
-
-        setAutofillMetrics()
     }
 
     private fun setTermsOfUseStartUpMetrics(settings: Settings) {
@@ -904,7 +1023,9 @@ open class FenixApplication : LocaleAwareApplication(), Provider {
 
     private fun Long.toRoundedMegabytes(): Long = (this / BYTES_TO_MEGABYTES_CONVERSION).roundToLong()
 
-    private fun isDeviceRamAboveThreshold() = deviceRamApproxMegabytes() > RAM_THRESHOLD_MEGABYTES
+    internal val isDeviceRamAboveThreshold by lazy {
+        deviceRamApproxMegabytes() > RAM_THRESHOLD_MEGABYTES
+    }
 
     @Suppress("CyclomaticComplexMethod")
     private fun setPreferenceMetrics(
@@ -996,28 +1117,6 @@ open class FenixApplication : LocaleAwareApplication(), Provider {
     }
 
     @VisibleForTesting
-    @OpenForTesting
-    internal open fun setAutofillMetrics() {
-        @OptIn(DelicateCoroutinesApi::class)
-        GlobalScope.launch(IO) {
-            try {
-                val autoFillStorage = applicationContext.components.core.autofillStorage
-                Addresses.savedAll.set(autoFillStorage.getAllAddresses().size.toLong())
-                CreditCards.savedAll.set(autoFillStorage.getAllCreditCards().size.toLong())
-            } catch (e: AutofillApiException) {
-                logger.error("Failed to fetch autofill data", e)
-            }
-
-            try {
-                val passwordsStorage = applicationContext.components.core.passwordsStorage
-                Logins.savedAll.set(passwordsStorage.list().size.toLong())
-            } catch (e: LoginsApiException) {
-                logger.error("Failed to fetch list of logins", e)
-            }
-        }
-    }
-
-    @VisibleForTesting
     internal fun reportHomeScreenMetrics(settings: Settings) {
         reportOpeningScreenMetrics(settings)
         reportHomeScreenSectionMetrics(settings)
@@ -1047,14 +1146,6 @@ open class FenixApplication : LocaleAwareApplication(), Provider {
         CustomizeHome.contile.set(settings.showContileFeature)
     }
 
-    private fun recordOnInit() {
-        // This gets called by more than one process. Ideally we'd only run this in the main process
-        // but the code to check which process we're in crashes because the Context isn't valid yet.
-        //
-        // This method is not covered by our internal crash reporting: be very careful when modifying it.
-        StartupTimeline.onApplicationInit() // DO NOT MOVE ANYTHING ABOVE HERE: the timing is critical.
-    }
-
     override fun onConfigurationChanged(config: android.content.res.Configuration) {
         // Workaround for androidx appcompat issue where follow system day/night mode config changes
         // are not triggered when also using createConfigurationContext like we do in LocaleManager
@@ -1066,10 +1157,12 @@ open class FenixApplication : LocaleAwareApplication(), Provider {
             // will initialize the engine and create an additional GeckoRuntime from the Gecko
             // child process, causing a crash.
 
-            // There's a strict mode violation in A-Cs LocaleAwareApplication which
-            // reads from shared prefs: https://github.com/mozilla-mobile/android-components/issues/8816
+            // There's a strict mode violation in A-Cs LocaleManager which
+            // reads from shared prefs: Bug 1793169
             components.strictMode.allowViolation(StrictMode::allowThreadDiskReads) {
                 super.onConfigurationChanged(config)
+                // Update locale on main process
+                LocaleManager.updateResources(this)
             }
         } else {
             super.onConfigurationChanged(config)
@@ -1082,6 +1175,15 @@ open class FenixApplication : LocaleAwareApplication(), Provider {
     open fun downloadWallpapers() {
         GlobalScope.launch {
             components.useCases.wallpaperUseCases.initialize()
+        }
+    }
+
+    @Composable
+    override fun provideTheme(): Theme {
+        return if (components.appStore.state.mode.isPrivate) {
+            Private
+        } else {
+            DefaultThemeProvider.provideTheme()
         }
     }
 }

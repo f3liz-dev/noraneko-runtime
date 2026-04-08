@@ -277,17 +277,17 @@ impl<'a, 'b: 'a> StyleAdjuster<'a, 'b> {
                     .add_flags(ComputedValueFlags::IS_IN_OPACITY_ZERO_SUBTREE);
             }
         } else if self
+            .style
+            .get_parent_box()
+            .clone_display()
+            .is_item_container()
+            || self
                 .style
-                .get_parent_box()
-                .clone_display()
-                .is_item_container()
-                || self
-                    .style
-                    .get_parent_flags()
-                    .contains(ComputedValueFlags::DIPLAY_CONTENTS_IN_ITEM_CONTAINER)
+                .get_parent_flags()
+                .contains(ComputedValueFlags::DISPLAY_CONTENTS_IN_ITEM_CONTAINER)
         {
-                self.style
-                    .add_flags(ComputedValueFlags::DIPLAY_CONTENTS_IN_ITEM_CONTAINER);
+            self.style
+                .add_flags(ComputedValueFlags::DISPLAY_CONTENTS_IN_ITEM_CONTAINER);
         }
 
         if self.style.pseudo.is_some_and(|p| p.is_first_line()) {
@@ -589,7 +589,7 @@ impl<'a, 'b: 'a> StyleAdjuster<'a, 'b> {
     #[cfg(feature = "gecko")]
     fn adjust_for_fieldset_content(&mut self) {
         use crate::selector_parser::PseudoElement;
-        if self.style.pseudo != Some(&PseudoElement::FieldsetContent) {
+        if self.style.pseudo != Some(&PseudoElement::MozFieldsetContent) {
             return;
         }
         let parent_display = self.style.get_parent_box().clone_display();

@@ -10,12 +10,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
-import androidx.compose.ui.tooling.preview.PreviewLightDark
+import androidx.compose.ui.tooling.preview.PreviewParameter
 import mozilla.components.compose.base.button.TextButton
 import mozilla.components.feature.downloads.DefaultFileSizeFormatter
 import mozilla.components.feature.downloads.FileSizeFormatter
 import org.mozilla.fenix.R
 import org.mozilla.fenix.theme.FirefoxTheme
+import org.mozilla.fenix.theme.PreviewThemeProvider
 import org.mozilla.fenix.theme.Theme
 import java.util.Locale
 
@@ -96,10 +97,12 @@ fun DeleteLanguageFileDialog(
     )
 }
 
+@Preview
 @Composable
-@PreviewLightDark
-private fun DeleteLanguageFileDialogPreview() {
-    FirefoxTheme {
+private fun DeleteLanguageFileDialogPreview(
+    @PreviewParameter(PreviewThemeProvider::class) theme: Theme,
+) {
+    FirefoxTheme(theme) {
         DeleteLanguageFileDialog(
             language = Locale.CHINA.displayLanguage,
             isAllLanguagesItemType = false,
@@ -111,40 +114,12 @@ private fun DeleteLanguageFileDialogPreview() {
     }
 }
 
-@Composable
 @Preview
-private fun DeleteLanguageFileDialogPrivatePreview() {
-    FirefoxTheme(theme = Theme.Private) {
-        DeleteLanguageFileDialog(
-            language = Locale.CHINA.displayLanguage,
-            isAllLanguagesItemType = false,
-            fileSizeFormatter = DefaultFileSizeFormatter(LocalContext.current),
-            fileSize = 4000L,
-            onConfirmDelete = {},
-            onCancel = {},
-        )
-    }
-}
-
 @Composable
-@PreviewLightDark
-private fun DeleteAllLanguagesFileDialogPreview() {
-    FirefoxTheme {
-        DeleteLanguageFileDialog(
-            language = Locale.CHINA.displayLanguage,
-            isAllLanguagesItemType = true,
-            fileSizeFormatter = DefaultFileSizeFormatter(LocalContext.current),
-            fileSize = 4000L,
-            onConfirmDelete = {},
-            onCancel = {},
-        )
-    }
-}
-
-@Composable
-@Preview
-private fun DeleteAllLanguagesFileDialogPrivatePreview() {
-    FirefoxTheme(theme = Theme.Private) {
+private fun DeleteAllLanguagesFileDialogPreview(
+    @PreviewParameter(PreviewThemeProvider::class) theme: Theme,
+) {
+    FirefoxTheme(theme) {
         DeleteLanguageFileDialog(
             language = Locale.CHINA.displayLanguage,
             isAllLanguagesItemType = true,

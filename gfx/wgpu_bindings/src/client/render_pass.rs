@@ -30,6 +30,13 @@ impl<T> FfiOption<T> {
             Self::None => None,
         }
     }
+
+    pub fn as_ref(&self) -> std::option::Option<&T> {
+        match *self {
+            Self::Some(ref value) => Some(value),
+            Self::None => None,
+        }
+    }
 }
 
 /// FFI-safe analogue of [`wgc::command::RenderPassColorAttachment`].
@@ -145,6 +152,7 @@ impl<V1, V2> MapClearValue<V1, V2> for wgc::command::LoadOp<V1> {
         match self {
             Self::Clear(value) => wgc::command::LoadOp::Clear(f(value)),
             Self::Load => wgc::command::LoadOp::Load,
+            Self::DontCare(token) => wgc::command::LoadOp::DontCare(token),
         }
     }
 }

@@ -9,23 +9,21 @@ from marionette_harness.marionette_test import MarionetteTestCase
 
 class TestEnginesOnRestart(MarionetteTestCase):
     def setUp(self):
-        super(TestEnginesOnRestart, self).setUp()
-        self.marionette.enforce_gecko_prefs(
-            {
-                "browser.search.log": True,
-            }
-        )
+        super().setUp()
+        self.marionette.enforce_gecko_prefs({
+            "browser.search.log": True,
+        })
 
     def get_default_search_engine(self):
         """Retrieve the identifier of the default search engine."""
 
         script = """\
         let [resolve] = arguments;
-        let searchService = Components.classes[
-                "@mozilla.org/browser/search-service;1"]
-            .getService(Components.interfaces.nsISearchService);
-        return searchService.init().then(function () {
-          resolve(searchService.defaultEngine.id);
+        let { SearchService } = ChromeUtils.importESModule(
+            "moz-src:///toolkit/components/search/SearchService.sys.mjs"
+        );
+        return SearchService.init().then(function () {
+          resolve(SearchService.defaultEngine.id);
         });
         """
 

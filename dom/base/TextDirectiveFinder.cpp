@@ -55,7 +55,6 @@ nsTArray<RefPtr<nsRange>> TextDirectiveFinder::FindTextDirectivesInDocument() {
                  ? mDocument->GetDocumentURI()->GetSpecOrDefault()
                  : nsCString();
   TEXT_FRAGMENT_LOG("Trying to find text directives in document '{}'.", uri);
-  mDocument->FlushPendingNotifications(FlushType::Layout);
   // https://wicg.github.io/scroll-to-text-fragment/#invoke-text-directives
   // To invoke text directives, given as input a list of text directives text
   // directives and a Document document, run these steps:
@@ -186,11 +185,15 @@ RefPtr<nsRange> TextDirectiveFinder::FindRangeForTextDirective(
         return nullptr;
       }
       // 2.2.5. Advance matchRange’s start to the next non-whitespace position.
-      TextDirectiveUtil::AdvanceStartToNextNonWhitespacePosition(*matchRange);
+      const bool thereIsMoreNonWhitespaceText =
+          TextDirectiveUtil::AdvanceStartToNextNonWhitespacePosition(
+              *matchRange);
       // 2.2.6. If matchRange is collapsed return null.
       // (This can happen if prefixMatch’s end or its subsequent non-whitespace
-      // position is at the end of the document.)
-      if (matchRange->Collapsed()) {
+      // position is at the end of the document. In addition to what the spec
+      // says, this can also happen if the range is not collapsed, but no
+      // non-whitespace text nodes are left)
+      if (!thereIsMoreNonWhitespaceText) {
         return nullptr;
       }
       // 2.2.7. Assert: matchRange’s start node is a Text node.
@@ -333,7 +336,15 @@ RefPtr<nsRange> TextDirectiveFinder::FindRangeForTextDirective(
         return nullptr;
       }
       // 2.5.5. Advance suffixRange's start to the next non-whitespace position.
-      TextDirectiveUtil::AdvanceStartToNextNonWhitespacePosition(*suffixRange);
+      const bool thereIsMoreNonWhitespaceText =
+          TextDirectiveUtil::AdvanceStartToNextNonWhitespacePosition(
+              *suffixRange);
+      if (!thereIsMoreNonWhitespaceText) {
+        // If suffixRange is collapsed after advancing to the next
+        // non-whitespace position, or there is no more non-whitespace text,
+        // there can't be a match because the suffix can't exist in the document
+        break;
+      }
       auto nextBlockBoundary =
           TextDirectiveUtil::FindNextBlockBoundary<TextScanDirection::Right>(
               suffixRange->StartRef());

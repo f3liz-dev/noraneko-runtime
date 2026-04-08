@@ -32,9 +32,9 @@
   <!-- Placeholder text shown in the search bar when using application search engines -->
   <string name="application_search_hint">輸入搜尋詞彙</string>
   <!-- No Open Tabs Message Description -->
-  <string name="no_open_tabs_description">您開啟的分頁將顯示於此處。</string>
+  <string name="no_open_tabs_description" tools:ignore="UnusedResources" moz:removedIn="149">您開啟的分頁將顯示於此處。</string>
   <!-- No Private Tabs Message Description -->
-  <string name="no_private_tabs_description">您開啟的隱私瀏覽分頁將顯示於此處。</string>
+  <string name="no_private_tabs_description" tools:ignore="UnusedResources" moz:removedIn="149">您開啟的隱私瀏覽分頁將顯示於此處。</string>
   <!-- The header text displayed on the private tabs page when no private tabs are open -->
   <string name="tab_manager_empty_private_tabs_page_header">隱私瀏覽模式</string>
   <!-- The supplementary text displayed on the private tabs page when no private tabs are open. %1$s is the name of the app (for example "Firefox") -->
@@ -54,7 +54,7 @@
   <!-- Content description for close button while in multiselect mode in tab tray -->
   <string name="tab_tray_close_multiselect_content_description">離開分頁多選模式</string>
   <!-- Content description for save to collection button while in multiselect mode in tab tray -->
-  <string name="tab_tray_collection_button_multiselect_content_description">將選擇的分頁儲存至收藏集</string>
+  <string name="tab_tray_collection_button_multiselect_content_description" tools:ignore="UnusedResources" moz:removedIn="149">將選擇的分頁儲存至收藏集</string>
   <!-- The header text displayed on the synced tabs page when the user is not logged into an account. -->
   <string name="tab_manager_empty_synced_tabs_page_header">從您的其他裝置取得分頁</string>
   <!-- The supplementary text displayed on the synced tabs page when the user is not logged into an account. -->
@@ -85,13 +85,6 @@
     Title for info card on private homescreen in True Private Browsing Mode.
   -->
   <string name="felt_privacy_desc_card_title">在此裝置不留下任何痕跡</string>
-  <!--
-    Explanation for private browsing displayed to users on home view when they first enable
-    private mode in our new Total Private Browsing mode.
-    %1$s is the name of the app (for example "Firefox").
-    %2$s is a link using felt_privacy_info_card_subtitle_link_text as text
-  -->
-  <string name="felt_privacy_info_card_subtitle_2" tools:ignore="UnusedResources" moz:removedIn="147">%1$s 會在關閉所有隱私瀏覽分頁後，清除您的 Cookie、瀏覽紀錄、網站資料。%2$s</string>
   <!--
     Description of private browsing mode displayed to users on the homepage when they enable private mode.
     %1$s is the name of the app (for example "Firefox").
@@ -208,7 +201,7 @@
   <!-- Browser menu button that opens the extensions manager -->
   <string name="browser_menu_extensions">擴充套件</string>
   <!-- Browser menu banner header text for extensions onboarding when all installed extensions have been disabled. -->
-  <string name="browser_menu_disabled_extensions_banner_onboarding_header">您安裝了擴充套件，但未啟用</string>
+  <string name="browser_menu_disabled_extensions_banner_onboarding_header" tools:ignore="UnusedResources" moz:removedIn="149">您安裝了擴充套件，但未啟用</string>
   <!-- Browser menu button that opens the extensions manager -->
   <string name="browser_menu_manage_extensions">管理擴充套件</string>
   <!-- Browser menu group that contains additional settings in collapsed state -->
@@ -229,9 +222,9 @@
   <!-- Browser menu button that opens account settings -->
   <string name="browser_menu_account_settings">帳號資訊</string>
   <!-- Browser menu button that sends a user to help articles -->
-  <string name="browser_menu_help">說明</string>
+  <string name="browser_menu_help" tools:ignore="UnusedResources" moz:removedIn="149">說明</string>
   <!-- Browser menu button that sends a to a the what's new article -->
-  <string name="browser_menu_whats_new">有什麼新鮮事</string>
+  <string name="browser_menu_whats_new" tools:ignore="UnusedResources" moz:removedIn="149">有什麼新鮮事</string>
   <!-- Browser menu button that opens the settings menu -->
   <string name="browser_menu_settings">設定</string>
   <!-- Browser menu button that opens a user's library -->
@@ -239,7 +232,7 @@
   <!-- Browser menu toggle that requests a desktop site -->
   <string name="browser_menu_desktop_site">桌面版網站</string>
   <!-- Browser menu button that reopens a private tab as a regular tab -->
-  <string name="browser_menu_open_in_regular_tab">用一般分頁開啟</string>
+  <string name="browser_menu_open_in_regular_tab" tools:ignore="UnusedResources" moz:removedIn="149">用一般分頁開啟</string>
   <!-- Browser menu toggle that adds a shortcut to the site on the device home screen. -->
   <string name="browser_menu_add_to_homescreen">新增至裝置主畫面</string>
   <!-- Browser menu toggle that adds a PWA of the site on the device home screen. -->
@@ -267,7 +260,7 @@
     Browser menu text shown in custom tabs to indicate this is a Fenix tab
     %1$s is the name of the app (for example "Firefox").
   -->
-  <string name="browser_menu_powered_by">POWERED BY %1$s</string>
+  <string name="browser_menu_powered_by" tools:ignore="UnusedResources" moz:removedIn="149">POWERED BY %1$s</string>
   <!--
     Browser menu text shown in custom tabs to indicate this is a Fenix tab
     %1$s is the name of the app (for example "Firefox").
@@ -280,15 +273,15 @@
   <!-- Browser menu button to open the current page in an external app -->
   <string name="browser_menu_open_app_link">在應用程式中開啟</string>
   <!-- Browser menu button to show reader view appearance controls e.g. the used font type and size -->
-  <string name="browser_menu_customize_reader_view">自訂閱讀畫面</string>
+  <string name="browser_menu_customize_reader_view" tools:ignore="UnusedResources" moz:removedIn="149">自訂閱讀畫面</string>
   <!-- Browser menu button to show reader view appearance controls e.g. the used font type and size -->
   <string name="browser_menu_customize_reader_view_2">自訂閱讀畫面</string>
   <!-- Browser menu label for adding a bookmark -->
-  <string name="browser_menu_add">新增</string>
+  <string name="browser_menu_add" tools:ignore="UnusedResources" moz:removedIn="149">新增</string>
   <!-- Browser menu label for editing a bookmark -->
-  <string name="browser_menu_edit">編輯</string>
+  <string name="browser_menu_edit" tools:ignore="UnusedResources" moz:removedIn="149">編輯</string>
   <!-- Button shown on the home page that opens the Customize home settings -->
-  <string name="browser_menu_customize_home_1">自訂首頁</string>
+  <string name="browser_menu_customize_home_1" tools:ignore="UnusedResources" moz:removedIn="149">自訂首頁</string>
   <!-- Browser menu label to sign in to sync on the device using Mozilla accounts -->
   <string name="browser_menu_sign_in">登入</string>
   <!-- Browser menu caption label for the "Sign in" browser menu item described in `browser_menu_sign_in` -->
@@ -307,16 +300,12 @@
   <string name="browser_close_main_menu_handlebar_content_description">關閉選單</string>
   <!-- Content description (not visible, for screen readers etc.) for main menu navigation header. -->
   <string name="browser_main_menu_content_description_navigation_header">導覽</string>
-  <!-- Content description (not visible, for screen readers etc.) for main menu help button. -->
-  <string name="browser_main_menu_content_description_help_button" tools:ignore="UnusedResources" moz:removedIn="146">說明</string>
-  <!-- Content description (not visible, for screen readers etc.) for main menu settings button. -->
-  <string name="browser_main_menu_content_description_settings_button" tools:ignore="UnusedResources" moz:removedIn="146">設定</string>
   <!-- Content description (not visible, for screen readers etc.) for bottom sheet handlebar extensions menu. -->
-  <string name="browser_extensions_menu_handlebar_content_description">關閉擴充套件選單表</string>
+  <string name="browser_extensions_menu_handlebar_content_description" tools:ignore="UnusedResources" moz:removedIn="149">關閉擴充套件選單表</string>
   <!-- Content description (not visible, for screen readers etc.) for bottom sheet handlebar save menu. -->
-  <string name="browser_save_menu_handlebar_content_description">關閉儲存選單表</string>
+  <string name="browser_save_menu_handlebar_content_description" tools:ignore="UnusedResources" moz:removedIn="149">關閉儲存選單表</string>
   <!-- Content description (not visible, for screen readers etc.) for bottom sheet handlebar tools menu. -->
-  <string name="browser_tools_menu_handlebar_content_description">關閉工具選單表</string>
+  <string name="browser_tools_menu_handlebar_content_description" tools:ignore="UnusedResources" moz:removedIn="149">關閉工具選單表</string>
   <!-- Content description (not visible, for screen readers etc.) for bottom sheet handlebar custom tab menu. -->
   <string name="browser_custom_tab_menu_handlebar_content_description">關閉自訂分頁選單表</string>
   <!-- Browser menu label that bookmarks the currently visited page -->
@@ -327,8 +316,12 @@
   <string name="browser_menu_save_as_pdf_2">儲存為 PDF</string>
   <!-- Browser menu label for navigating to the translation feature, which provides language translation options the current visited page -->
   <string name="browser_menu_translate_page_2">翻譯頁面</string>
+  <!-- Browser menu label for navigating to the summarization feature, which provides site summarization for the current visited page -->
+  <string name="browser_menu_summarize_page">摘要本頁</string>
+  <!-- Browser menu badge text for summarization feature -->
+  <string name="browser_menu_summarize_page_badge">新功能</string>
   <!-- Browser menu label for navigating to the Web Compat Reporter feature, which provides users the ability to send bug reports for broken sites. -->
-  <string name="browser_menu_webcompat_reporter">回報網站問題…</string>
+  <string name="browser_menu_webcompat_reporter" tools:ignore="UnusedResources" moz:removedIn="149">回報網站問題…</string>
   <!-- Browser menu label for navigating to the Web Compat Reporter feature, which provides users the ability to send bug reports for broken sites. -->
   <string name="browser_menu_webcompat_reporter_2">回報網站問題</string>
   <!-- Browser menu label that is displayed when the current page has been translated by the translation feature. -->
@@ -379,6 +372,8 @@
     %2$s is the name of the language which the page was translated to. (For example: French)
   -->
   <string name="browser_toolbar_translated_successfully">已將頁面從 %1$s 翻譯為 %2$s。</string>
+  <!-- CFR description for the browser toolbar describing the "Shake to summarize feature" -->
+  <string name="browser_toolbar_summarize_cfr_description">搖晃您的裝置，即可在幾秒內獲得頁面摘要內容。⚡️</string>
   <!--
     Translation Toolbar
 
@@ -438,6 +433,10 @@
     The colon character (in "%s:") is intended to have the screen reader make a small pause between the search engine name and the description of the button.
   -->
   <string name="search_engine_selector_content_description">%s：搜尋引擎選擇表</string>
+  <!-- Text for the snackbar shown to confirm the deletion of a single browsing history item. %1$s is the shortened URL of the deleted history entry or the the actual deleted search term. Only one such item is deleted at a time. -->
+  <string name="search_suggestions_delete_history_item_snackbar">已從瀏覽紀錄刪除 %1$s</string>
+  <!-- Content description (not visible, for screen readers etc.): Button shown near a history search result allowing to delete it from browsing history. -->
+  <string name="mozac_browser_awesomebar_remove_suggestion" tools:ignore="UnusedResources">刪除這筆瀏覽紀錄</string>
   <!--
     Home onboarding
 
@@ -452,19 +451,8 @@
   <string name="juno_onboarding_privacy_notice_text" tools:ignore="BrandUsage">Firefox 隱私權公告</string>
   <!-- Title for set firefox as default browser screen used by Nimbus experiments. -->
   <string name="juno_onboarding_default_browser_title_nimbus_2">我們希望確保您上網安全</string>
-  <!--
-    Title for set firefox as default browser screen used by Nimbus experiments.
-    Note: The word "Firefox" should NOT be translated
-  -->
-  <string name="juno_onboarding_default_browser_title_nimbus_3" tools:ignore="BrandUsage,UnusedResources" moz:removedIn="146">看看為什麼有數百萬人愛用 Firefox</string>
-  <!-- Title for set firefox as default browser screen used by Nimbus experiments. -->
-  <string name="juno_onboarding_default_browser_title_nimbus_4" tools:ignore="UnusedResources" moz:removedIn="146">更多讓您上網更安全的選擇</string>
   <!-- Description for set firefox as default browser screen used by Nimbus experiments. -->
   <string name="juno_onboarding_default_browser_description_nimbus_3">我們這套由非營利組織所開發的瀏覽器，會自動封鎖讓大企業在網路上偷偷跟蹤您的程式。</string>
-  <!-- Description for set firefox as default browser screen used by Nimbus experiments. -->
-  <string name="juno_onboarding_default_browser_description_nimbus_4" tools:ignore="UnusedResources" moz:removedIn="146">有超過一億人選用由非營利組織全力相挺的瀏覽器，來保護他們的隱私。</string>
-  <!-- Description for set firefox as default browser screen used by Nimbus experiments. -->
-  <string name="juno_onboarding_default_browser_description_nimbus_5" tools:ignore="UnusedResources" moz:removedIn="146">遇到已知的追蹤器？會自動封鎖。想要使用擴充套件？全部有 700 套任君選用。要開啟 PDF 檔案？我們直接內建閱讀器讓您輕鬆好管理。</string>
   <!-- Text for the button to set firefox as default browser on the device -->
   <string name="juno_onboarding_default_browser_positive_button" tools:ignore="UnusedResources">設為預設瀏覽器</string>
   <!-- Text for the button dismiss the screen and move on with the flow -->
@@ -554,60 +542,60 @@
   <!-- Used as text for the link in onboarding_term_of_service_line_three. -->
   <string name="onboarding_term_of_service_line_three_link_text">管理</string>
   <!-- Terms of use (ToU) onboarding redesign title. -->
-  <string name="onboarding_redesign_tou_title">啟動終極版 Android 瀏覽器</string>
+  <string name="onboarding_redesign_tou_title" tools:ignore="UnusedResources">啟動終極版 Android 瀏覽器</string>
   <!-- Terms of use (ToU) first subheader. -->
-  <string name="onboarding_redesign_tou_subheader_one">網站載入光速快</string>
+  <string name="onboarding_redesign_tou_subheader_one" tools:ignore="UnusedResources">網站載入光速快</string>
   <!-- Terms of use (ToU) second subheader. -->
-  <string name="onboarding_redesign_tou_subheader_two">自動開啟追蹤保護</string>
+  <string name="onboarding_redesign_tou_subheader_two" tools:ignore="UnusedResources">自動開啟追蹤保護</string>
   <!-- Terms of use (ToU) third subheader. -->
-  <string name="onboarding_redesign_tou_subheader_three">數以千計的客製化功能</string>
+  <string name="onboarding_redesign_tou_subheader_three" tools:ignore="UnusedResources">數以千計的客製化功能</string>
   <!--
     Terms of use (ToU) first body text. %1$s is replaced by an active link,
     using onboarding_redesign_tou_body_one_link_text as text (“Firefox Terms of Use”).
   -->
-  <string name="onboarding_redesign_tou_body_one">若繼續，代表您同意 %1$s。</string>
+  <string name="onboarding_redesign_tou_body_one" tools:ignore="UnusedResources">若繼續，代表您同意 %1$s。</string>
   <!-- Used as text for the link in onboarding_redesign_tou_body_one. -->
-  <string name="onboarding_redesign_tou_body_one_link_text" tools:ignore="BrandUsage">Firefox 的使用條款</string>
+  <string name="onboarding_redesign_tou_body_one_link_text" tools:ignore="BrandUsage,UnusedResources">Firefox 的使用條款</string>
   <!--
     Terms of use (ToU) second body text. 'Firefox' is intentionally hardcoded.
     %1$s is replaced by an active link, using onboarding_redesign_tou_body_two_link_text as text (“Privacy Notice”).
   -->
-  <string name="onboarding_redesign_tou_body_two" tools:ignore="BrandUsage">Firefox 關心您的隱私。到我們的%1$s閱讀更多資訊。</string>
+  <string name="onboarding_redesign_tou_body_two" tools:ignore="BrandUsage,UnusedResources">Firefox 關心您的隱私。到我們的%1$s閱讀更多資訊。</string>
   <!-- Used as text for the link in onboarding_redesign_tou_body_two. -->
-  <string name="onboarding_redesign_tou_body_two_link_text">隱私權公告</string>
+  <string name="onboarding_redesign_tou_body_two_link_text" tools:ignore="UnusedResources">隱私權公告</string>
   <!--
     Terms of use (ToU) third body text. 'Firefox' and 'Mozilla' are intentionally hardcoded.
     %1$s is replaced by an active link using onboarding_redesign_tou_body_three_link_text as text (“Manage Settings”).
   -->
-  <string name="onboarding_redesign_tou_body_three" tools:ignore="BrandUsage">為了幫助改善瀏覽器，Firefox 會將除錯與互動資料傳送回 Mozilla。%1$s</string>
+  <string name="onboarding_redesign_tou_body_three" tools:ignore="BrandUsage,UnusedResources">為了幫助改善瀏覽器，Firefox 會將除錯與互動資料傳送回 Mozilla。%1$s</string>
   <!-- Used as text for the link in onboarding_redesign_tou_body_three. -->
-  <string name="onboarding_redesign_tou_body_three_link_text">管理設定</string>
+  <string name="onboarding_redesign_tou_body_three_link_text" tools:ignore="UnusedResources">管理設定</string>
   <!-- Terms of use (ToU) onboarding page continue button label. -->
-  <string name="onboarding_redesign_tou_agree_and_continue_button_label">繼續</string>
+  <string name="onboarding_redesign_tou_agree_and_continue_button_label" tools:ignore="UnusedResources">繼續</string>
   <!-- Onboarding header for the toolbar selection card. -->
-  <string name="onboarding_redesign_customize_toolbar_title">您想將網址列放在哪裡？</string>
+  <string name="onboarding_redesign_customize_toolbar_title" tools:ignore="UnusedResources">您想將網址列放在哪裡？</string>
   <!-- Onboarding label for 'Continue' button. -->
-  <string name="onboarding_redesign_continue_button">繼續</string>
+  <string name="onboarding_redesign_continue_button" tools:ignore="UnusedResources">繼續</string>
   <!-- Marketing onboarding page title. 'Firefox' is intentionally hardcoded. -->
-  <string name="onboarding_marketing_redesign_title" tools:ignore="BrandUsage">協助我們讓 Firefox 成長</string>
+  <string name="onboarding_marketing_redesign_title" tools:ignore="BrandUsage,UnusedResources">協助我們讓 Firefox 成長</string>
   <!-- Marketing onboarding page opt-out checkbox. Unchecking the box does not increase data collection. Our data practices remain the same. 'Mozilla' is intentionally hardcoded. -->
-  <string name="onboarding_marketing_redesign_opt_out_checkbox" tools:ignore="BrandUsage">與 Mozilla 的行銷夥伴分享您如何發現 Firefox 以及是如何使用的，我們絕不會販售此資料。</string>
+  <string name="onboarding_marketing_redesign_opt_out_checkbox" tools:ignore="BrandUsage,UnusedResources">與 Mozilla 的行銷夥伴分享您如何發現 Firefox 以及是如何使用的，我們絕不會販售此資料。</string>
   <!-- Marketing onboarding page clickable link text to "learn more" on how data is used. -->
-  <string name="onboarding_marketing_redesign_learn_more">我們會如何使用該資料</string>
+  <string name="onboarding_marketing_redesign_learn_more" tools:ignore="UnusedResources">我們會如何使用該資料</string>
   <!-- Marketing onboarding page button label. Button to confirm choice and start browsing. -->
-  <string name="onboarding_marketing_redesign_positive_button">確認</string>
+  <string name="onboarding_marketing_redesign_positive_button" tools:ignore="UnusedResources">確認</string>
   <!-- Set to default browser onboarding redesign title. -->
-  <string name="onboarding_redesign_set_default_browser_title">預設開啟自動追蹤保護</string>
+  <string name="onboarding_redesign_set_default_browser_title" tools:ignore="UnusedResources">預設開啟自動追蹤保護</string>
   <!-- Set to default browser onboarding redesign body. -->
-  <string name="onboarding_redesign_set_default_browser_body">只要輕鬆一點，就可以幫助防止大企業追蹤您在網路上的點擊。</string>
+  <string name="onboarding_redesign_set_default_browser_body" tools:ignore="UnusedResources">只要輕鬆一點，就可以幫助防止大企業追蹤您在網路上的點擊。</string>
   <!-- Sync onboarding redesign title. 'Firefox' is intentionally hardcoded. -->
-  <string name="onboarding_redesign_sync_title" tools:ignore="BrandUsage">同步所有使用 Firefox 的裝置</string>
+  <string name="onboarding_redesign_sync_title" tools:ignore="BrandUsage,UnusedResources">同步所有使用 Firefox 的裝置</string>
   <!-- Sync onboarding redesign body. -->
-  <string name="onboarding_redesign_sync_body">在任何裝置中都能有相同的書籤、分頁與密碼，全部都經加密保護。</string>
+  <string name="onboarding_redesign_sync_body" tools:ignore="UnusedResources">在任何裝置中都能有相同的書籤、分頁與密碼，全部都經加密保護。</string>
   <!-- Sync onboarding redesign positive button text. -->
-  <string name="onboarding_redesign_sync_positive_button">開始同步</string>
+  <string name="onboarding_redesign_sync_positive_button" tools:ignore="UnusedResources">開始同步</string>
   <!-- Sync onboarding redesign negative button text. -->
-  <string name="onboarding_redesign_sync_negative_button">現在不要</string>
+  <string name="onboarding_redesign_sync_negative_button" tools:ignore="UnusedResources">現在不要</string>
   <!-- Marketing onboarding page title. 'Firefox' is intentionally hardcoded. -->
   <string name="onboarding_marketing_title" tools:ignore="BrandUsage,UnusedResources">協助我們讓 Firefox 成長</string>
   <!-- Marketing onboarding page body. 'Firefox' is intentionally hardcoded. -->
@@ -627,46 +615,48 @@
   <!-- ==== Project "Nova" onboarding strings ==== -->
 
   <!-- "Continue" onboarding button. -->
-  <string name="nova_onboarding_continue_button" tools:ignore="UnusedResources">繼續</string>
+  <string name="nova_onboarding_continue_button">繼續</string>
   <!-- "Not now" onboarding button. -->
-  <string name="nova_onboarding_negative_button" tools:ignore="UnusedResources">現在不要</string>
+  <string name="nova_onboarding_negative_button">現在不要</string>
   <!-- Terms of use (ToU) onboarding title. -->
   <string name="nova_onboarding_tou_title" tools:ignore="UnusedResources">準備好自由奔跑</string>
   <!-- Terms of use (ToU) onboarding subtitle. -->
-  <string name="nova_onboarding_tou_subtitle" tools:ignore="UnusedResources">快速、安全、絕不把您賣掉。\n上網功能變得更棒了。</string>
+  <string name="nova_onboarding_tou_subtitle">快速、安全、絕不把您賣掉。\n上網功能變得更棒了。</string>
   <!--
     Terms of use (ToU) onboarding body line one.
     %1$s is replaced by an active link, using nova_onboarding_tou_body_line_1_link_text as text (“Firefox Terms of Use”).
   -->
-  <string name="nova_onboarding_tou_body_line_1" tools:ignore="UnusedResources">若繼續，代表您同意 %1$s。</string>
+  <string name="nova_onboarding_tou_body_line_1">若繼續，代表您同意 %1$s。</string>
   <!-- Terms of use (ToU) onboarding body line one link text for nova_onboarding_tou_body_line_1. 'Firefox' is intentionally hardcoded. -->
-  <string name="nova_onboarding_tou_body_line_1_link_text" tools:ignore="BrandUsage,UnusedResources">Firefox 的使用條款</string>
+  <string name="nova_onboarding_tou_body_line_1_link_text" tools:ignore="BrandUsage">Firefox 的使用條款</string>
   <!--
     Terms of use (ToU) onboarding body line two. 'Firefox' is intentionally hardcoded.
     %1$s is replaced by an active link, using nova_onboarding_tou_body_line_2_link_text as text (“Privacy Notice”).
   -->
-  <string name="nova_onboarding_tou_body_line_2" tools:ignore="BrandUsage,UnusedResources">Firefox 關心您的隱私。到我們的%1$s閱讀更多資訊。</string>
+  <string name="nova_onboarding_tou_body_line_2" tools:ignore="BrandUsage">Firefox 關心您的隱私。到我們的%1$s閱讀更多資訊。</string>
   <!-- Terms of use (ToU) onboarding body line two link text for nova_onboarding_tou_body_line_2. -->
-  <string name="nova_onboarding_tou_body_line_2_link_text" tools:ignore="UnusedResources">隱私權公告</string>
+  <string name="nova_onboarding_tou_body_line_2_link_text">隱私權公告</string>
   <!--
     Terms of use (ToU) onboarding body line three. 'Firefox' and 'Mozilla' are intentionally hardcoded.
     %1$s is replaced by an active link, using nova_onboarding_tou_body_line_3_link_text as text (“Manage Settings”).
   -->
-  <string name="nova_onboarding_tou_body_line_3" tools:ignore="BrandUsage,UnusedResources">為了幫助改善瀏覽器，Firefox 會將除錯與互動資料傳送回 Mozilla。%1$s</string>
+  <string name="nova_onboarding_tou_body_line_3" tools:ignore="BrandUsage">為了幫助改善瀏覽器，Firefox 會將除錯與互動資料傳送回 Mozilla。%1$s</string>
   <!-- Terms of use (ToU) onboarding body line three link text for nova_onboarding_tou_body_line_3. -->
-  <string name="nova_onboarding_tou_body_line_3_link_text" tools:ignore="UnusedResources">管理設定</string>
+  <string name="nova_onboarding_tou_body_line_3_link_text">管理設定</string>
   <!-- "Set to default" onboarding title. -->
   <string name="nova_onboarding_set_to_default_title" tools:ignore="UnusedResources">跟怪怪的追蹤器說再見</string>
+  <!-- "Set to default" onboarding title. -->
+  <string name="nova_onboarding_set_to_default_title_2">透過內建隱私權保護的瀏覽器開啟所有鏈結</string>
   <!-- "Set to default" onboarding subtitle. -->
-  <string name="nova_onboarding_set_to_default_subtitle" tools:ignore="UnusedResources">我們會保護您的資料，並自動防止企業偷窺您的點擊行為。</string>
+  <string name="nova_onboarding_set_to_default_subtitle">我們會保護您的資料，並自動防止企業偷窺您的點擊行為。</string>
   <!-- "Set to default" onboarding button. -->
-  <string name="nova_onboarding_set_to_default_button" tools:ignore="UnusedResources">設為預設瀏覽器</string>
+  <string name="nova_onboarding_set_to_default_button">設為預設瀏覽器</string>
   <!-- Toolbar selection onboarding title. -->
-  <string name="nova_onboarding_toolbar_selection_title" tools:ignore="UnusedResources">選擇網址列位置</string>
+  <string name="nova_onboarding_toolbar_selection_title">選擇網址列位置</string>
   <!-- Toolbar selection onboarding "top" option label. -->
-  <string name="nova_onboarding_toolbar_selection_top_label" tools:ignore="UnusedResources">頂端</string>
+  <string name="nova_onboarding_toolbar_selection_top_label">頂端</string>
   <!-- Toolbar selection onboarding "bottom" option label. -->
-  <string name="nova_onboarding_toolbar_selection_bottom_label" tools:ignore="UnusedResources">底部</string>
+  <string name="nova_onboarding_toolbar_selection_bottom_label">底部</string>
   <!-- Theme selection onboarding title. -->
   <string name="nova_onboarding_theme_selection_title" tools:ignore="UnusedResources">挑選佈景主題</string>
   <!-- Theme selection onboarding "automatic" option label. -->
@@ -676,32 +666,32 @@
   <!-- Theme selection onboarding "dark" option label. -->
   <string name="nova_onboarding_theme_selection_dark_label" tools:ignore="UnusedResources">暗色</string>
   <!-- Sync onboarding title. -->
-  <string name="nova_onboarding_sync_title" tools:ignore="UnusedResources">立即從結束的地方繼續</string>
+  <string name="nova_onboarding_sync_title">立即從結束的地方繼續</string>
   <!-- Sync onboarding subtitle. -->
-  <string name="nova_onboarding_sync_subtitle" tools:ignore="UnusedResources">快速從任何裝置取得書籤、密碼與更多資料，您的個人資料傳輸前會先加密，確保安全。</string>
+  <string name="nova_onboarding_sync_subtitle">快速從任何裝置取得書籤、密碼與更多資料，您的個人資料傳輸前會先加密，確保安全。</string>
   <!-- Sync onboarding button. -->
-  <string name="nova_onboarding_sync_button" tools:ignore="UnusedResources">開始同步</string>
+  <string name="nova_onboarding_sync_button">開始同步</string>
   <!-- Marketing onboarding title. -->
-  <string name="nova_onboarding_marketing_title" tools:ignore="UnusedResources">幫助我們打造更好的網路環境</string>
+  <string name="nova_onboarding_marketing_title">幫助我們打造更好的網路環境</string>
   <!--
     Marketing onboarding body. 'Firefox' and 'Mozilla' are intentionally hardcoded.
     %1$s is replaced by an active link, using nova_onboarding_marketing_body_link_text as text (“How we use the data”).
   -->
-  <string name="nova_onboarding_marketing_body" tools:ignore="BrandUsage,UnusedResources">與 Mozilla 的行銷夥伴分享您如何發現 Firefox 以及是如何使用的，我們絕不會販售此資料。%1$s</string>
+  <string name="nova_onboarding_marketing_body" tools:ignore="BrandUsage">與 Mozilla 的行銷夥伴分享您如何發現 Firefox 以及是如何使用的，我們絕不會販售此資料。%1$s</string>
   <!-- Marketing onboarding body link text. -->
-  <string name="nova_onboarding_marketing_body_link_text" tools:ignore="UnusedResources">我們會如何使用該資料</string>
+  <string name="nova_onboarding_marketing_body_link_text">我們會如何使用該資料</string>
   <!-- Notifications onboarding title. 'Firefox' is intentionally hardcoded. -->
   <string name="nova_onboarding_notifications_title" tools:ignore="BrandUsage,UnusedResources">透過通知功能，讓您使用 Firefox 更安全</string>
   <!-- Notifications onboarding subtitle. 'Firefox' is intentionally hardcoded. -->
   <string name="nova_onboarding_notifications_subtitle" tools:ignore="BrandUsage,UnusedResources">探索 Firefox 最新的隱私保護功能，這樣就可以掌握要如何受到保護的最新資訊。</string>
   <!-- Notifications onboarding button. -->
-  <string name="nova_onboarding_notifications_button" tools:ignore="UnusedResources">開啟通知</string>
+  <string name="nova_onboarding_notifications_button">開啟通知</string>
   <!-- "Add search widget" onboarding title. -->
-  <string name="nova_onboarding_add_search_widget_title" tools:ignore="UnusedResources">讓每次搜尋都更有隱私</string>
+  <string name="nova_onboarding_add_search_widget_title">讓每次搜尋都更有隱私</string>
   <!-- "Add search widget" onboarding subtitle. 'Firefox' is intentionally hardcoded. -->
-  <string name="nova_onboarding_add_search_widget_subtitle" tools:ignore="BrandUsage,UnusedResources">每次都從手機主畫面開始搜尋，讓 Firefox 的自動保護功能全程挺你。</string>
+  <string name="nova_onboarding_add_search_widget_subtitle" tools:ignore="BrandUsage">每次都從手機主畫面開始搜尋，讓 Firefox 的自動保護功能全程挺你。</string>
   <!-- "Add search widget" onboarding button. 'Firefox' is intentionally hardcoded. -->
-  <string name="nova_onboarding_add_search_widget_button" tools:ignore="BrandUsage,UnusedResources">新增 Firefox 小工具</string>
+  <string name="nova_onboarding_add_search_widget_button" tools:ignore="BrandUsage">新增 Firefox 小工具</string>
   <!-- ==== End of Project "Nova" onboarding strings ==== -->
 
   <!-- Onboarding header for the toolbar selection card, used by Nimbus experiments. -->
@@ -781,6 +771,8 @@
   <string name="preferences_search">搜尋</string>
   <!-- Preference for settings related to Search engines -->
   <string name="preferences_search_engines">搜尋引擎</string>
+  <!-- Settings item to add a search widget on the device's homescreen. -->
+  <string name="preferences_add_search_widget_from_settings">主畫面小工具</string>
   <!-- Preference for settings related to Search engines suggestions -->
   <string name="preferences_search_engines_suggestions">來自其他搜尋引擎的建議</string>
   <!-- Preference Category for settings related to Search address bar -->
@@ -932,8 +924,6 @@
   <string name="preferences_search_browsing_history">搜尋瀏覽紀錄</string>
   <!-- Preference title for switch preference to suggest bookmarks when searching -->
   <string name="preferences_search_bookmarks">搜尋書籤</string>
-  <!-- Preference title for switch preference to show shortcuts when searching -->
-  <string name="preferences_show_shortcuts" tools:ignore="UnusedResources" moz:removedIn="147">顯示捷徑</string>
   <!-- Preference title for switch preference to suggest synced tabs when searching -->
   <string name="preferences_search_synced_tabs">搜尋同步的分頁</string>
   <!-- Preference for account settings -->
@@ -954,6 +944,8 @@
   <string name="preferences_show_nonsponsored_suggestions">來自 %1$s 的建議</string>
   <!-- Summary for preference to show Firefox Suggest search suggestions for web content -->
   <string name="preferences_show_nonsponsored_suggestions_summary">取得您搜尋內容的相關建議</string>
+  <!-- Preference title for switch preference to show search optimization cards -->
+  <string name="preferences_show_search_optimization_cards">一邊打字，一邊從 Mozilla 取得建議</string>
   <!-- Preference for link sharing -->
   <string name="preferences_link_sharing">鏈結分享</string>
   <!-- Title for the link sharing toggle. %1$s is replaced by the brand name (e.g. Firefox). -->
@@ -972,6 +964,15 @@
   <string name="preferences_open_links_in_apps_ask">開啟前詢問我</string>
   <!-- Preference for open links in third party apps never open in apps option -->
   <string name="preferences_open_links_in_apps_never">永不</string>
+  <!-- Preference category for file storage. -->
+  <string name="preferences_category_file_storage">檔案儲存空間</string>
+  <!-- Preference title for downloads default location. -->
+  <string name="preferences_downloads_default_location_title">預設下載位置</string>
+  <!--
+    Message shown as the summary of the download location preference when the
+    app has lost the permission to access a previously selected custom folder.
+  -->
+  <string name="preference_downloads_folder_permission_lost" tools:ignore="UnusedResources">您沒有使用此資料夾的權限，請改選其他資料夾。</string>
   <!-- Preference title for choosing an app to handle downloads -->
   <string name="preferences_choose_app_for_downloads">使用另一套應用程式管理下載項目</string>
   <!-- Title for the setting to automatically clean up downloaded files. %s is the name of the app (for example "Firefox"). -->
@@ -1035,8 +1036,10 @@
   <!--
     Customize Home
 
-    Header text for jumping back into the recent tab in customize the home screen
+    Title for the customize home screen section with privacy report.
   -->
+  <string name="customize_toggle_privacy_report">隱私權報告</string>
+  <!-- Header text for jumping back into the recent tab in customize the home screen -->
   <string name="customize_toggle_jump_back_in">回到先前開啟頁面</string>
   <!-- Title for the customize home screen section with bookmarks. -->
   <string name="customize_toggle_bookmarks">書籤</string>
@@ -1137,8 +1140,6 @@
   <string name="alternative_app_icon_group_solid_colors">純色</string>
   <!-- Title for the "Gradients" group of alternative app icon variants in the icon picker screen. This group contains icons with gradient backgrounds inspired by natural light conditions. -->
   <string name="alternative_app_icon_group_gradients">漸層色</string>
-  <!-- Title for the "Other" group of alternative app icon variants in the icon picker screen. This group includes retro, pixel art, themed, and artist-created icons. -->
-  <string name="alternative_app_icon_group_other" tools:ignore="UnusedResources" moz:removedIn="146">其他</string>
   <!-- Title for the "Featured" group of alternative app icon variants in the icon picker screen. This group includes retro, pixel art, themed, and artist-created icons. -->
   <string name="alternative_app_icon_group_featured">精選</string>
   <!-- Title to show in alert when user selects an alternative app icon -->
@@ -1505,11 +1506,27 @@
   <!-- Title of the active section on the studies list -->
   <string name="studies_active">進行中</string>
   <!-- Description for studies -->
-  <string name="studies_description_3">在功能推出給所有人之前，搶先試用新功能與點子。</string>
+  <string name="studies_description_3" moz:removedIn="148" tools:ignore="UnusedResources">在功能推出給所有人之前，搶先試用新功能與點子。</string>
+  <!-- Description for studies. Note: The word "Firefox" should NOT be translated -->
+  <string name="studies_description_4" tools:ignore="BrandUsage">Firefox 會隨機選擇使用者來測試功能，為每個人改進品質。</string>
   <!-- Title of the Studies data preference -->
-  <string name="studies_title">安裝並進行使用者研究</string>
+  <string name="studies_title" moz:removedIn="148" tools:ignore="UnusedResources">安裝並進行使用者研究</string>
+  <!-- Title of the Studies data preference -->
+  <string name="studies_title_2">允許進行功能研究</string>
   <!-- Learn more link for studies, links to an article for more information about studies. -->
   <string name="studies_learn_more">了解更多</string>
+  <!--
+    Remote Improvements (Rollouts)
+
+    Title of the Remote Improvements (rollouts) data preference
+  -->
+  <string name="remote_improvements_title">允許遠端改善</string>
+  <!-- Description for remote improvements. Note: The word "Firefox" should NOT be translated -->
+  <string name="remote_improvements_description" tools:ignore="BrandUsage">Firefox 將在新版本推出前，從遠端套用變更，以改進功能、效能與穩定性。</string>
+  <!-- Learn more link for remote improvements, links to an article for more information about rollouts. -->
+  <string name="remote_improvements_learn_more">更多資訊</string>
+  <!-- Title for remote improvements preference in Advanced settings -->
+  <string name="preferences_remote_improvements">遠端改善</string>
   <!--
     Sessions
 
@@ -1544,17 +1561,17 @@
   <!-- Content description (not visible, for screen readers etc.): Add tab button. Adds a news tab when pressed -->
   <string name="add_private_tab">開新隱私瀏覽分頁</string>
   <!-- Text for the new tab button to indicate adding a new private tab in the tab -->
-  <string name="tab_drawer_fab_content">隱私分頁</string>
+  <string name="tab_drawer_fab_content" tools:ignore="UnusedResources" moz:removedIn="149">隱私分頁</string>
   <!-- Text for the new tab button to indicate syncing command on the synced tabs page -->
-  <string name="tab_drawer_fab_sync">同步</string>
+  <string name="tab_drawer_fab_sync" tools:ignore="UnusedResources" moz:removedIn="149">同步</string>
   <!-- Text for the tab search bar placeholder -->
   <string name="tab_manager_search_bar_placeholder">搜尋您的分頁</string>
   <!-- Text shown in the menu for sharing all tabs -->
-  <string name="tab_tray_menu_item_share">分享所有分頁</string>
+  <string name="tab_tray_menu_item_share" tools:ignore="UnusedResources" moz:removedIn="149">分享所有分頁</string>
   <!-- Text shown in the menu to view recently closed tabs -->
   <string name="tab_tray_menu_recently_closed">最近關閉的分頁</string>
   <!-- Text shown in the tabs tray inactive tabs section -->
-  <string name="tab_tray_inactive_recently_closed" tools:ignore="UnusedResources">最近關閉的分頁</string>
+  <string name="tab_tray_inactive_recently_closed" tools:ignore="UnusedResources" moz:removedIn="149">最近關閉的分頁</string>
   <!-- Text shown in the menu to view account settings -->
   <string name="tab_tray_menu_account_settings">帳號設定</string>
   <!-- Text shown in the menu to view tab settings -->
@@ -1570,19 +1587,21 @@
   <!-- Text shown on the cancel button in the Close all tabs confirmation dialog -->
   <string name="tab_manager_close_all_tabs_dialog_cancel">取消</string>
   <!-- Text shown in the multiselect menu for bookmarking selected tabs. -->
-  <string name="tab_tray_multiselect_menu_item_bookmark">加入書籤</string>
+  <string name="tab_tray_multiselect_menu_item_bookmark" tools:ignore="UnusedResources" moz:removedIn="149">加入書籤</string>
   <!-- Content description (not visible, for screen readers etc.): Bookmarks selected tabs. -->
   <string name="tab_manager_multiselect_menu_item_bookmark_content_description">將選擇的分頁加入書籤</string>
   <!-- Text shown in the multiselect menu for closing selected tabs. -->
-  <string name="tab_tray_multiselect_menu_item_close">關閉</string>
+  <string name="tab_tray_multiselect_menu_item_close" tools:ignore="UnusedResources" moz:removedIn="149">關閉</string>
   <!-- Content description (not visible, for screen readers etc.): Closes selected tabs. -->
   <string name="tab_manager_multiselect_menu_item_close_content_description">關閉選擇的分頁</string>
   <!-- Text shown in the multiselect menu for sharing selected tabs. -->
   <string name="tab_manager_multiselect_menu_item_share">分享</string>
   <!-- Text shown in the multiselect menu for adding selected tabs to collections. -->
   <string name="tab_manager_multiselect_menu_item_add_to_collection">新增至收藏集</string>
+  <!-- Text shown in the multiselect menu for adding selected tabs to a tab group. -->
+  <string name="tab_manager_multiselect_menu_item_add_to_tab_group">新增至群組</string>
   <!-- Content description for tabs tray multiselect share button -->
-  <string name="tab_tray_multiselect_share_content_description">分享選擇的分頁</string>
+  <string name="tab_tray_multiselect_share_content_description" tools:ignore="UnusedResources" moz:removedIn="149">分享選擇的分頁</string>
   <!-- Content description for tabs tray multiselect menu -->
   <string name="tab_tray_multiselect_menu_content_description">選擇分頁選單</string>
   <!-- Title text displayed for a homepage tab in the tabs tray. -->
@@ -1621,6 +1640,27 @@
   <string name="pwa_site_controls_title_private">%1$s（隱私瀏覽模式）</string>
   <!-- Content description (not visible, for screen readers etc.) for the button to open the Tab Search feature to search through tabs. -->
   <string name="tab_manager_open_tab_search">開啟分頁搜尋</string>
+  <!--
+    Tab Group
+
+    Title for the create tab group bottom sheet
+  -->
+  <string name="create_tab_group_title">建立分頁群組</string>
+  <!-- Title for the edit tab group bottom sheet -->
+  <string name="edit_tab_group_title">編輯群組</string>
+  <string name="create_tab_group_save_button">儲存</string>
+  <string name="edit_tab_group_bottom_sheet_close_content_description">關閉編輯分頁群組</string>
+  <!-- Default tab group name when creating a tab group -->
+  <string name="create_tab_group_default_name" tools:ignore="UnusedResources" moz:removedIn="150">群組</string>
+  <!--
+    Default tab group name when creating a tab group
+    %d is the number of existing tab groups + 1.
+  -->
+  <string name="create_tab_group_form_default_name">群組 %d</string>
+  <!-- Label for the tab group name field in the bottom sheet to create a new tab group. -->
+  <string name="create_tab_group_name_label" tools:ignore="UnusedResources" moz:removedIn="150">名稱</string>
+  <!-- Label for the tab group name field in the bottom sheet to create or edit a tab group. -->
+  <string name="tab_group_name_label">名稱</string>
   <!--
     History
 
@@ -1703,6 +1743,8 @@
   <string name="download_delete_item">刪除</string>
   <!-- Content description for the toolbar "Navigate back" button -->
   <string name="download_navigate_back_description">瀏覽上一頁</string>
+  <!-- Content description for the toolbar "Navigate to Downloads Settings" button -->
+  <string name="download_navigate_settings_description">前往下載設定</string>
   <!-- Content description for the toolbar back button while searching the downloads -->
   <string name="download_close_search_description">返回並結束搜尋</string>
   <!--
@@ -1720,12 +1762,40 @@
   <string name="download_share_url">分享網址</string>
   <!-- Text for the button to share the download file -->
   <string name="download_share_file">分享檔案</string>
+  <!-- Text for the button to rename the download file -->
+  <string name="download_rename_file">重新命名檔案</string>
   <!-- Alert dialog confirmation before deleting multiple download items, this is the title. -->
   <string name="download_delete_multi_select_dialog_confirmation">您確定要刪除選擇的項目嗎？</string>
   <!-- Alert dialog confirmation before deleting multiple download items, this is the positive action. -->
   <string name="download_delete_multi_select_dialog_confirm">刪除</string>
   <!-- Alert dialog confirmation before deleting multiple download items, this is the negative action. -->
   <string name="download_delete_multi_select_dialog_cancel">取消</string>
+  <!-- Title for the alert dialog confirmation before renaming a download item. -->
+  <string name="download_rename_dialog_title">重新命名檔案</string>
+  <!-- Label for the name field in the alert dialog confirmation before renaming a download item. -->
+  <string name="download_rename_dialog_label">名稱</string>
+  <string name="download_rename_dialog_confirm_button">儲存</string>
+  <string name="download_rename_dialog_cancel_button">取消</string>
+  <!--
+    Error message when renaming with a name that already exists.
+    %s is the proposed file name.
+  -->
+  <string name="download_rename_error_exists_error">檔案「%s」已經存在此位置</string>
+  <!-- Error message when renaming with an invalid file name. -->
+  <string name="download_rename_error_invalid_name_error">檔案名稱中不得使用「/」符號</string>
+  <!-- Title for the alert dialog when the file cannot be renamed. -->
+  <string name="download_rename_error_cannot_rename_title">無法重新命名檔案</string>
+  <!-- Description message for the alert dialog when the file cannot be renamed. -->
+  <string name="download_rename_error_cannot_rename_description">由於系統或儲存空間限制，無法重新命名此檔案。</string>
+  <string name="download_rename_error_dismiss_button">確定</string>
+  <!--
+    Title for the alert dialog to change file extension.
+    %s is the file type to change to.
+  -->
+  <string name="change_file_extension_title">要將檔案類型更改為 %s 嗎？</string>
+  <string name="change_file_extension_description">可能會使用不同應用程式開啟，而對您的裝置造成風險。</string>
+  <string name="change_file_extension_cancel_button">取消</string>
+  <string name="change_file_extension_confirm_button">確定，請更改</string>
   <!-- Text for the header of in progress downloads -->
   <string name="download_header_in_progress">進行中</string>
   <!--
@@ -1918,12 +1988,14 @@
   <string name="bookmark_error_edit_bookmark">無法編輯書籤</string>
   <!-- Snackbar edit button shown after a bookmark has been created. -->
   <string name="edit_bookmark_snackbar_action">編輯</string>
+  <!-- Bookmark menu select button -->
+  <string name="bookmark_menu_select_button">選擇</string>
   <!-- Bookmark menu move button -->
   <string name="bookmark_menu_move_button">移動</string>
   <!-- Bookmark overflow menu edit button -->
   <string name="bookmark_menu_edit_button">編輯</string>
   <!-- Bookmark overflow menu copy button -->
-  <string name="bookmark_menu_copy_button">複製</string>
+  <string name="bookmark_menu_copy_button" tools:ignore="UnusedResources" moz:removedIn="150">複製</string>
   <!-- Bookmark overflow menu share button -->
   <string name="bookmark_menu_share_button">分享</string>
   <!-- Bookmark overflow menu select all bookmarks -->
@@ -1979,11 +2051,11 @@
   -->
   <string name="bookmark_deletion_snackbar_message">已刪除書籤 %1$s</string>
   <!-- Bookmark undo button for deletion snackbar action -->
-  <string name="bookmark_undo_deletion">還原</string>
+  <string name="bookmark_undo_deletion" tools:ignore="UnusedResources" moz:removedIn="150">還原</string>
   <!-- Bookmark snackbar message for deleting a single item. %s is the title of the item being deleted -->
-  <string name="bookmark_delete_single_item">已刪除 %s</string>
+  <string name="bookmark_delete_single_item" tools:ignore="UnusedResources" moz:removedIn="150">已刪除 %s</string>
   <!-- Bookmark snackbar message for deleting multiple items. %s is the number of items being deleted -->
-  <string name="bookmark_delete_multiple_items">已刪除 %s 個項目</string>
+  <string name="bookmark_delete_multiple_items" tools:ignore="UnusedResources" moz:removedIn="150">已刪除 %s 個項目</string>
   <!-- Content description for the bookmark navigation bar back button -->
   <string name="bookmark_navigate_back_button_content_description">瀏覽上一頁</string>
   <!-- Content description for the bookmark list new folder navigation bar button -->
@@ -1998,6 +2070,10 @@
   <string name="select_bookmark_search_button_content_description">搜尋資料夾</string>
   <!-- Content description for the overflow menu for a bookmark item. %s is a folder name or bookmark title. -->
   <string name="bookmark_item_menu_button_content_description">%s 的項目選單</string>
+  <!-- Content description for the chevron that will open a folder on the select folder screen and display its children. %s is the title of the folder that will be opened -->
+  <string name="bookmark_select_folder_expand_folder_content_description">展開資料夾：%s</string>
+  <!-- Content description for the chevron that will close a folder on the select folder screen so that its children are no longer visible. %s is the title of the folder that will be closed -->
+  <string name="bookmark_select_folder_close_folder_content_description">關閉資料夾：%s</string>
   <!-- Content description for the "close" button in bookmarks screen. -->
   <string name="bookmark_close_button_content_description">關閉書籤</string>
   <!-- Title for the bookmark list empty state -->
@@ -2200,7 +2276,7 @@
   <!-- An option from the share dialog to sign into sync -->
   <string name="sync_sign_in">登入 Sync</string>
   <!-- An option from the three dot menu to sign in -->
-  <string name="sync_menu_sign_in">登入</string>
+  <string name="sync_menu_sign_in" tools:ignore="UnusedResources" moz:removedIn="149">登入</string>
   <!-- An option from the share dialog to send link to all other sync devices -->
   <string name="sync_send_to_all">傳送到所有裝置</string>
   <!-- An option from the share dialog to reconnect to sync -->
@@ -2249,23 +2325,23 @@
   -->
   <string name="nimbus_notification_default_browser_text" tools:ignore="BrandUsage,UnusedResources">將 Firefox 設成您的預設瀏覽器</string>
   <!-- Title shown in the notification that pops up to re-engage the user -->
-  <string name="notification_re_engagement_title">試用隱私瀏覽功能</string>
+  <string name="notification_re_engagement_title" tools:ignore="UnusedResources" moz:removedIn="150">試用隱私瀏覽功能</string>
   <!--
     Text shown in the notification that pops up to re-engage the user.
     %1$s is a placeholder that will be replaced by the app name.
   -->
-  <string name="notification_re_engagement_text">上網結束後，%1$s 將不會保留任何 Cookie 與瀏覽紀錄</string>
+  <string name="notification_re_engagement_text" tools:ignore="UnusedResources" moz:removedIn="150">上網結束後，%1$s 將不會保留任何 Cookie 與瀏覽紀錄</string>
   <!-- Title A shown in the notification that pops up to re-engage the user -->
-  <string name="notification_re_engagement_A_title">瀏覽不留痕跡</string>
+  <string name="notification_re_engagement_A_title" tools:ignore="UnusedResources" moz:removedIn="150">瀏覽不留痕跡</string>
   <!--
     Text A shown in the notification that pops up to re-engage the user.
     %1$s is a placeholder that will be replaced by the app name.
   -->
-  <string name="notification_re_engagement_A_text">%1$s 的隱私瀏覽模式不會儲存您的上網資訊。</string>
+  <string name="notification_re_engagement_A_text" tools:ignore="UnusedResources" moz:removedIn="150">%1$s 的隱私瀏覽模式不會儲存您的上網資訊。</string>
   <!-- Title B shown in the notification that pops up to re-engage the user -->
-  <string name="notification_re_engagement_B_title">進行第一次搜尋吧</string>
+  <string name="notification_re_engagement_B_title" tools:ignore="UnusedResources" moz:removedIn="150">進行第一次搜尋吧</string>
   <!-- Text B shown in the notification that pops up to re-engage the user -->
-  <string name="notification_re_engagement_B_text">搜尋附近的東西或探索新鮮事物。</string>
+  <string name="notification_re_engagement_B_text" tools:ignore="UnusedResources" moz:removedIn="150">搜尋附近的東西或探索新鮮事物。</string>
   <!--
     Survey
 
@@ -2360,7 +2436,7 @@
   <!-- Summary for the Delete browsing data on quit preference. "Quit" translation should match delete_browsing_data_on_quit_action translation. -->
   <string name="preference_summary_delete_browsing_data_on_quit_2">點擊主選單中的「離開」時，自動清除上網資料</string>
   <!-- Action item in menu for the Delete browsing data on quit feature -->
-  <string name="delete_browsing_data_on_quit_action">離開</string>
+  <string name="delete_browsing_data_on_quit_action" tools:ignore="UnusedResources" moz:removedIn="149">離開</string>
   <!-- Title text of a delete browsing data dialog. -->
   <string name="delete_history_prompt_title">要清除的時間範圍</string>
   <!-- Body text of a delete browsing data dialog. -->
@@ -2441,6 +2517,16 @@
   <string name="preference_enhanced_tracking_protection_explanation_2">%s 不讓常見的追蹤器記錄您的上網行為。</string>
   <!-- Text displayed that links to website about enhanced tracking protection -->
   <string name="preference_enhanced_tracking_protection_explanation_learn_more">了解更多</string>
+  <plurals name="trackers_blocked_count">
+    <!--
+      Trackers blocked card on homepage
+
+      Text shown on the trackers blocked card. %d is the number of trackers blocked.
+    -->
+    <item quantity="other">已封鎖 %d 組追蹤器</item>
+  </plurals>
+  <!-- Text shown on the trackers blocked card when no trackers have been blocked yet -->
+  <string name="trackers_blocked_empty">讓我們保護您</string>
   <!-- Preference for enhanced tracking protection for the standard protection settings -->
   <string name="preference_enhanced_tracking_protection_standard_default_1">標準（預設）</string>
   <!-- Preference description for enhanced tracking protection for the standard protection settings -->
@@ -2824,6 +2910,24 @@
   <!-- Content description (not visible, for screen readers etc.) -->
   <string name="saved_logins_menu_dropdown_chevron_icon_content_description_2">排序密碼選單</string>
   <!--
+    Email Masks
+
+    Title for the Email Masks in the settings menu
+  -->
+  <string name="preferences_email_masks">轉寄信箱</string>
+  <!-- Title for the Suggest Email Masks toggle -->
+  <string name="preferences_email_masks_suggest_title">建議轉寄信箱</string>
+  <!-- Summary for the Suggest Email Masks toggle. -->
+  <string name="preferences_email_masks_suggest_summary">隱藏您的實際電子郵件地址，以避免您的信箱收到垃圾信。某些網站不支援轉寄信箱功能。</string>
+  <!-- Text that links to additional information about the Email Masks -->
+  <string name="preferences_email_masks_suggest_learn_more">更多資訊</string>
+  <!-- Title for the Manage Email Masks links to Firefox Relay dashboard -->
+  <string name="preferences_email_masks_manage_title">管理轉寄信箱</string>
+  <!-- The message displayed when a user has used all of their free-tier email masks, so now the application will choose an existing one at random. -->
+  <string name="email_masks_max_free_tier_reached">您已用完 5 組免費轉寄信箱，我們從中挑選一組讓您重複使用。</string>
+  <!-- The message displayed when there was an error with the email mask or Firefox Account services. -->
+  <string name="email_masks_error_retrieving_masks">目前無法使用轉寄信箱服務，請稍候幾分鐘再試一次。</string>
+  <!--
     Autofill
 
     Preference and title for managing the autofill settings
@@ -3059,9 +3163,9 @@
   -->
   <string name="certificate_info_verified_by">驗證機構: %1$s</string>
   <!-- Login overflow menu delete button -->
-  <string name="login_menu_delete_button">刪除</string>
+  <string name="login_menu_delete_button" tools:ignore="UnusedResources" moz:removedIn="149">刪除</string>
   <!-- Login overflow menu edit button -->
-  <string name="login_menu_edit_button">編輯</string>
+  <string name="login_menu_edit_button" tools:ignore="UnusedResources" moz:removedIn="149">編輯</string>
   <!-- Message in delete confirmation dialog for password -->
   <string name="login_deletion_confirmation_2">你確定要刪除這筆密碼嗎？</string>
   <!-- Positive action of a dialog asking to delete -->
@@ -3069,15 +3173,15 @@
   <!-- Negative action of a dialog asking to delete login -->
   <string name="dialog_delete_negative">取消</string>
   <!-- The saved password options menu description. -->
-  <string name="login_options_menu_2">密碼選項</string>
+  <string name="login_options_menu_2" tools:ignore="UnusedResources" moz:removedIn="149">密碼選項</string>
   <!-- The editable text field for a website address. -->
-  <string name="saved_login_hostname_description_3">網址的輸入欄位。</string>
+  <string name="saved_login_hostname_description_3" tools:ignore="UnusedResources" moz:removedIn="149">網址的輸入欄位。</string>
   <!-- The editable text field for a username. -->
-  <string name="saved_login_username_description_3">使用者名稱的輸入欄位。</string>
+  <string name="saved_login_username_description_3" tools:ignore="UnusedResources" moz:removedIn="149">使用者名稱的輸入欄位。</string>
   <!-- The editable text field for a login's password. -->
-  <string name="saved_login_password_description_2">密碼的輸入欄位。</string>
+  <string name="saved_login_password_description_2" tools:ignore="UnusedResources" moz:removedIn="149">密碼的輸入欄位。</string>
   <!-- The button description to save changes to an edited password. -->
-  <string name="save_changes_to_login_2">儲存變更。</string>
+  <string name="save_changes_to_login_2" tools:ignore="UnusedResources" moz:removedIn="149">儲存變更。</string>
   <!-- The page title for editing a saved password. -->
   <string name="edit_2">編輯密碼</string>
   <!-- The page title for adding new password. -->
@@ -3593,6 +3697,13 @@
   -->
   <string name="connection_security_panel_verified_by">由 %s 驗證</string>
   <!--
+    Text for the connection security panel when the site uses a QWAC.
+    %s is a placeholder for the organization for which the certificate was issued.
+  -->
+  <string name="connection_security_panel_issued_to">簽發給 %s</string>
+  <!-- Text for the connection security panel when the site uses a QWAC. -->
+  <string name="connection_security_panel_qualified_certificate">符合歐盟（EU）2024/1183 法規規範。</string>
+  <!--
     Debug drawer
 
     The user-facing title of the Debug Drawer feature.
@@ -3642,6 +3753,8 @@
   <string name="debug_drawer_tab_tools_tab_creation_tool_button_text_private">新增至隱私瀏覽分頁</string>
   <!--
     Microsurvey
+    Note: Some strings are marked as unused as they are referenced via the Nimbus experimentation
+    platform and have no persistent reference in code
 
     Prompt view
 
@@ -3680,6 +3793,16 @@
   <string name="likert_scale_option_7" tools:ignore="BrandUsage,UnusedResources">我不使用 Firefox 的搜尋功能</string>
   <!-- Option for likert scale -->
   <string name="likert_scale_option_8" tools:ignore="UnusedResources">我沒有使用 Sync</string>
+  <!-- Option for likert scale -->
+  <string name="likert_scale_option_slow_or_buggy" tools:ignore="UnusedResources">速度慢，或很容易故障</string>
+  <!-- Option for likert scale -->
+  <string name="likert_scale_option_features_hard_to_find_or_missing" tools:ignore="UnusedResources">很難找到功能，或缺少某些功能</string>
+  <!-- Option for likert scale -->
+  <string name="likert_scale_option_confusing_or_hard_to_use" tools:ignore="UnusedResources">讓人困惑，或者很難使用</string>
+  <!-- Option for likert scale -->
+  <string name="likert_scale_option_its_okay" tools:ignore="UnusedResources">還可以，但沒有比其他瀏覽器好</string>
+  <!-- Option for likert scale. Note: The word "Firefox" should NOT be translated. -->
+  <string name="likert_scale_option_i_plan_to_keep_using" tools:ignore="BrandUsage,UnusedResources">我會繼續使用 Firefox</string>
   <!-- Text shown in prompt for printing microsurvey. "sec" It's an abbreviation for "second". Note: The word "Firefox" should NOT be translated. -->
   <string name="microsurvey_prompt_printing_title" tools:ignore="BrandUsage,UnusedResources">幫助讓 Firefox 的列印功能變得更棒，只需幾秒鐘</string>
   <!-- Text shown in prompt for search microsurvey. Note: The word "Firefox" should NOT be translated. -->
@@ -3694,6 +3817,8 @@
   <string name="microsurvey_search_title" tools:ignore="BrandUsage,UnusedResources">您對 Firefox 的搜尋體驗滿意嗎？</string>
   <!-- Text shown in the survey title for sync experience microsurvey. Note: The word "Firefox" should NOT be translated. -->
   <string name="microsurvey_sync_title" tools:ignore="BrandUsage,UnusedResources">您對 Firefox 的同步功能使用體驗滿意嗎？</string>
+  <!-- Text shown in the survey title for 'describe your experience so far' microsurvey. Note: The word "Firefox" should NOT be translated. -->
+  <string name="microsurvey_describe_your_experience_title" tools:ignore="BrandUsage,UnusedResources">請幫助我們改進 Firefox。下列選項當中哪一項最符合您目前為止的使用體驗？</string>
   <!--
     Accessibility
 
@@ -3992,8 +4117,6 @@
   <string name="content_description_settings_search_navigate_back">瀏覽上一頁</string>
   <!-- Message displayed when the search field in the Settings Search screen is empty -->
   <string name="settings_search_empty_query_placeholder">沒有近期搜尋內容</string>
-  <!-- Message when error happens with Settings Search -->
-  <string name="settings_search_error_message" tools:ignore="UnusedResources" moz:removedIn="147">發生錯誤</string>
   <!-- Text of button allowing to clear history of recent searches done in the settings screen. -->
   <string name="settings_search_clear_recent_searches_message">全部清除</string>
   <!-- Section header for recent search results -->
@@ -4002,6 +4125,8 @@
   <string name="settings_search_no_results_title">什麼都沒找到</string>
   <!-- Sub-message displayed when the search field is not empty but search results is empty. -->
   <string name="settings_search_no_results_message">試試不同的搜尋條件？</string>
+  <!-- Content Description for the button to open Settings Search (to search through settings). -->
+  <string name="settings_search_button_content_description">搜尋選項按鈕</string>
   <!-- ==== Terms of use pop up prompt ==== -->
 
   <!-- Title for the pop up prompt -->

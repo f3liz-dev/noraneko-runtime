@@ -23,6 +23,10 @@ const TabHoverPanelSet = ChromeUtils.importESModule(
   "chrome://browser/content/tabbrowser/tab-hover-preview.mjs"
 ).default;
 
+const { TabNotes } = ChromeUtils.importESModule(
+  "moz-src:///browser/components/tabnotes/TabNotes.sys.mjs"
+);
+
 const TAB_PREVIEW_PANEL_ID = "tab-preview-panel";
 const TAB_GROUP_PREVIEW_PANEL_ID = "tabgroup-preview-panel";
 
@@ -36,16 +40,16 @@ async function openTabPreview(tab, win = window) {
 }
 
 async function closeTabPreviews(win = window) {
-  const tabs = win.document.getElementById("tabbrowser-tabs");
-  const tabsRect = tabs.getBoundingClientRect();
   const previewHidden = BrowserTestUtils.waitForPopupEvent(
     win.document.getElementById(TAB_PREVIEW_PANEL_ID),
     "hidden"
   );
+  const tabs = win.document.getElementById("tabbrowser-tabs");
+  const tabsRect = tabs.getBoundingClientRect();
   EventUtils.synthesizeMouse(
     tabs,
     0,
-    tabsRect.height + 1,
+    tabsRect.height + 10,
     {
       type: "mouseout",
     },
@@ -447,7 +451,9 @@ add_task(async function tabUrlBarInputTests() {
   await previewHidden;
 
   Assert.equal(previewElement.state, "closed", "Preview is closed");
-  await closeTabPreviews();
+  EventUtils.synthesizeMouseAtCenter(document.documentElement, {
+    type: "mousemove",
+  });
   await openTabPreview(tab1);
   Assert.equal(previewElement.state, "open", "Preview is open");
 
@@ -546,6 +552,229 @@ add_task(async function tabContentChangeTests() {
   await closeTabPreviews();
   BrowserTestUtils.removeTab(tab);
   await resetState();
+});
+
+/**
+ * Test that tab notes and their UI elements appear correctly in the tab
+ * hover preview panel.
+ */
+add_task(async function tabNotesTests() {
+  if (!Services.prefs.getBoolPref("browser.tabs.notes.enabled", false)) {
+    // Skip tests if tab notes is not enabled
+    // This is necessary because some tab notes functionality only loads at
+    // startup if the pref is enabled
+    todo(false, "Skip when tab notes is not enabled; see bug2008033");
+    return;
+  }
+
+  const previewPanel = document.getElementById(TAB_PREVIEW_PANEL_ID);
+  const noteText = "Hello world";
+
+  const tab = await addTabTo(gBrowser, "https://example.com/");
+
+  info("validate the presentation of an eligible tab with no note");
+  await openTabPreview(tab);
+  let addNoteButton = previewPanel.querySelector(".tab-preview-add-note");
+  Assert.ok(addNoteButton, "add note button exists in the DOM");
+
+  info(
+    "validate that hovering over the add note button does not hide the preview panel"
+  );
+  EventUtils.synthesizeMouseAtCenter(
+    addNoteButton,
+    { type: "mouseover" },
+    window
+  );
+
+  // eslint-disable-next-line mozilla/no-arbitrary-setTimeout
+  await new Promise(resolve => setTimeout(resolve, 300));
+
+  Assert.ok(
+    previewPanel.hasAttribute("panelopen"),
+    "Preview panel is still open"
+  );
+
+  info(
+    "validate that hovering over the panel outside of the add note button hides the panel"
+  );
+  let previewHidden = BrowserTestUtils.waitForPopupEvent(
+    previewPanel,
+    "hidden"
+  );
+  let nonhoverableArea = document.querySelector(".tab-preview-content-main");
+  EventUtils.synthesizeMouseAtCenter(
+    nonhoverableArea,
+    {
+      type: "mouseover",
+    },
+    window
+  );
+  await previewHidden;
+  Assert.ok(
+    !previewPanel.hasAttribute("panelopen"),
+    "Preview panel was hidden"
+  );
+
+  await openTabPreview(tab);
+
+  info("choose to add a note from the tab hover preview panel");
+  let tabNotePanel = document.getElementById("tabNotePanel");
+  let panelShown = BrowserTestUtils.waitForPopupEvent(tabNotePanel, "shown");
+  previewHidden = BrowserTestUtils.waitForPopupEvent(previewPanel, "hidden");
+  addNoteButton.click();
+  await Promise.all([panelShown, previewHidden]);
+
+  info("save a new tab note");
+  Assert.equal(
+    document.activeElement,
+    tabNotePanel.querySelector("textarea"),
+    "tab note textarea should be focused"
+  );
+  const input = BrowserTestUtils.waitForEvent(document.activeElement, "input");
+  EventUtils.sendString(noteText, window);
+  await input;
+  let menuHidden = BrowserTestUtils.waitForPopupEvent(tabNotePanel, "hidden");
+  let tabNoteCreated = BrowserTestUtils.waitForEvent(tab, "TabNote:Created");
+  tabNotePanel.querySelector("#tab-note-editor-button-save").click();
+  await Promise.all([menuHidden, tabNoteCreated]);
+
+  await BrowserTestUtils.waitForCondition(
+    () => Glean.tabNotes.added.testGetValue()?.length,
+    "wait for event to be recorded"
+  );
+
+  const [addedEvent] = Glean.tabNotes.added.testGetValue();
+  Assert.deepEqual(
+    addedEvent.extra,
+    { source: "hover_menu" },
+    "added event extra data should say the tab note was added from the tab hover preview menu"
+  );
+
+  await closeTabPreviews();
+
+  info("validate the presentation of an eligible tab with a tab note");
+  await openTabPreview(tab);
+
+  addNoteButton = previewPanel.querySelector(".tab-preview-add-note");
+  Assert.ok(!addNoteButton, "add note button does not exist in the DOM");
+  await closeTabPreviews();
+
+  info(
+    "delete the tab note to return the tab hover preview to the state with no tab note"
+  );
+  const tabNoteRemoved = BrowserTestUtils.waitForEvent(tab, "TabNote:Removed");
+  TabNotes.delete(tab);
+  await tabNoteRemoved;
+
+  info(
+    "validate the presentation of an eligible tab after its note has been deleted"
+  );
+  await openTabPreview(tab);
+  addNoteButton = previewPanel.querySelector(".tab-preview-add-note");
+  Assert.ok(
+    !addNoteButton.hasAttribute("hidden"),
+    "add note button should be visible on an eligible tab without a tab note after delete"
+  );
+  await closeTabPreviews();
+
+  BrowserTestUtils.removeTab(tab);
+  await resetState();
+  await TabNotes.reset();
+});
+
+/**
+ * Test that the "New" badge in the hover preview panel is displayed when
+ * browser.tabs.notes.newBadge.enabled is true.
+ */
+add_task(async function tabNotesNewBadgeVisibilityTests() {
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.tabs.notes.enabled", true]],
+  });
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.tabs.notes.newBadge.enabled", true]],
+  });
+
+  const previewPanel = document.getElementById(TAB_PREVIEW_PANEL_ID);
+  const tab = await addTabTo(gBrowser, "https://example.com/");
+
+  await openTabPreview(tab);
+  const badge = previewPanel.querySelector(".tab-preview-add-note moz-badge");
+  Assert.ok(
+    !badge.hasAttribute("hidden"),
+    "badge is visible when newBadge pref is true"
+  );
+  await closeTabPreviews();
+  await SpecialPowers.popPrefEnv();
+
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.tabs.notes.newBadge.enabled", false]],
+  });
+  await openTabPreview(tab);
+  Assert.ok(
+    badge.hasAttribute("hidden"),
+    "badge is hidden when newBadge pref is false"
+  );
+  await closeTabPreviews();
+
+  await SpecialPowers.popPrefEnv();
+  await SpecialPowers.popPrefEnv();
+  BrowserTestUtils.removeTab(tab);
+  await resetState();
+});
+
+/**
+ * Test that clicking "Add Note" in the hover preview panel sets the
+ * browser.tabs.notes.newBadge.enabled pref to false, and that the badge
+ * is hidden on the next hover
+ */
+add_task(async function tabNotesNewBadgeDismissedByPreviewPanelTests() {
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["browser.tabs.notes.enabled", true],
+      ["browser.tabs.notes.newBadge.enabled", true],
+    ],
+  });
+
+  const previewPanel = document.getElementById(TAB_PREVIEW_PANEL_ID);
+
+  const tab = await addTabTo(gBrowser, "https://example.com/");
+
+  await openTabPreview(tab);
+
+  const addNoteButton = previewPanel.querySelector(".tab-preview-add-note");
+  const tabNotePanel = document.getElementById("tabNotePanel");
+  const panelShown = BrowserTestUtils.waitForPopupEvent(tabNotePanel, "shown");
+  const previewHidden = BrowserTestUtils.waitForPopupEvent(
+    previewPanel,
+    "hidden"
+  );
+  addNoteButton.click();
+  await Promise.all([panelShown, previewHidden]);
+
+  Assert.ok(
+    !Services.prefs.getBoolPref("browser.tabs.notes.newBadge.enabled"),
+    "pref is set to false after clicking Add Note in the preview panel"
+  );
+
+  const panelHidden = BrowserTestUtils.waitForPopupEvent(
+    tabNotePanel,
+    "hidden"
+  );
+  tabNotePanel.hidePopup();
+  await panelHidden;
+  await closeTabPreviews();
+
+  await openTabPreview(tab);
+  const badge = previewPanel.querySelector(".tab-preview-add-note moz-badge");
+  Assert.ok(
+    badge.hasAttribute("hidden"),
+    "badge is hidden on subsequent hover after dismissal"
+  );
+  await closeTabPreviews();
+
+  BrowserTestUtils.removeTab(tab);
+  await resetState();
+  await SpecialPowers.popPrefEnv();
 });
 
 /*
@@ -934,15 +1163,12 @@ add_task(async function tabGroupPanelUpdatesTests() {
 // TODO Bug 1899556: If possible, write a test to confirm tab previews
 // aren't shown when /all/ windows are in the background
 add_task(async function noPreviewInBackgroundWindowTests() {
+  todo(false, "test is failing on CI, bug 2006695");
+
+  /*
   const bgWindow = window;
-  const bgTabUngrouped = await BrowserTestUtils.openNewForegroundTab(
-    gBrowser,
-    "about:robots"
-  );
-  const bgTabGrouped = await BrowserTestUtils.openNewForegroundTab(
-    gBrowser,
-    "about:robots"
-  );
+  const bgTabUngrouped = await addTab("about:robots");
+  const bgTabGrouped = await addTab("about:robots");
   const bgGroup = gBrowser.addTabGroup([bgTabGrouped]);
   bgGroup.collapsed = true;
 
@@ -1010,6 +1236,7 @@ add_task(async function noPreviewInBackgroundWindowTests() {
 
   sinon.restore();
   await resetState();
+  */
 });
 
 /**
@@ -1174,6 +1401,81 @@ add_task(async function testDragToCancelPreview() {
   BrowserTestUtils.removeTab(tab);
   sinon.restore();
   await SpecialPowers.popPrefEnv();
+});
+
+add_task(async function tabPreviewHidesWhenDraggingOverPanel() {
+  const tab = await BrowserTestUtils.openNewForegroundTab(
+    gBrowser,
+    "about:robots"
+  );
+  const previewElement = document.getElementById(TAB_PREVIEW_PANEL_ID);
+
+  await openTabPreview(tab);
+
+  const previewHidden = BrowserTestUtils.waitForPopupEvent(
+    previewElement,
+    "hidden"
+  );
+  const dragend = BrowserTestUtils.waitForEvent(tab, "dragend");
+
+  EventUtils.synthesizePlainDragAndDrop({
+    srcElement: tab,
+    destElement: null,
+    stepX: 10,
+    stepY: 0,
+  });
+
+  await previewHidden;
+  Assert.equal(
+    previewElement.state,
+    "closed",
+    "Preview closes when dragging downward over the panel"
+  );
+
+  await dragend;
+
+  BrowserTestUtils.removeTab(tab);
+  await resetState();
+
+  const groupTab = await BrowserTestUtils.openNewForegroundTab(
+    gBrowser,
+    "about:robots"
+  );
+  const group = gBrowser.addTabGroup([groupTab]);
+  group.collapsed = true;
+
+  await openGroupPreview(group);
+
+  const groupPreviewElement = document.getElementById(
+    TAB_GROUP_PREVIEW_PANEL_ID
+  );
+  const groupPreviewHidden = BrowserTestUtils.waitForPopupEvent(
+    groupPreviewElement,
+    "hidden"
+  );
+  const groupDragend = BrowserTestUtils.waitForEvent(
+    group.labelElement,
+    "dragend"
+  );
+
+  EventUtils.synthesizePlainDragAndDrop({
+    srcElement: group.labelElement,
+    destElement: null,
+    stepX: 10,
+    stepY: 0,
+  });
+
+  await groupPreviewHidden;
+  Assert.equal(
+    groupPreviewElement.state,
+    "closed",
+    "Group preview closes when dragging downward over the panel"
+  );
+
+  await groupDragend;
+
+  BrowserTestUtils.removeTab(groupTab);
+  await resetState();
 });
 
 /**

@@ -11,6 +11,7 @@
 
 const flags = require("resource://devtools/shared/flags.js");
 const {
+  VIEW_NODE_ATTR_TYPE,
   VIEW_NODE_CSS_QUERY_CONTAINER,
   VIEW_NODE_CSS_SELECTOR_WARNINGS,
   VIEW_NODE_FONT_TYPE,
@@ -68,10 +69,17 @@ loader.lazyRequireGetter(
   "resource://devtools/client/shared/widgets/tooltip/css-selector-warnings-tooltip-helper.js",
   false
 );
+loader.lazyRequireGetter(
+  this,
+  "setAttrTooltip",
+  "resource://devtools/client/shared/widgets/tooltip/AttrTooltipHelper.js",
+  true
+);
 
 const PREF_IMAGE_TOOLTIP_SIZE = "devtools.inspector.imagePreviewTooltipSize";
 
 // Types of existing tooltips
+const TOOLTIP_ATTR_TYPE = "attr";
 const TOOLTIP_CSS_COMPATIBILITY = "css-compatibility";
 const TOOLTIP_CSS_QUERY_CONTAINER = "css-query-info";
 const TOOLTIP_CSS_SELECTOR_WARNINGS = "css-selector-warnings";
@@ -82,21 +90,21 @@ const TOOLTIP_VARIABLE_TYPE = "variable";
 
 /**
  * Manages all tooltips in the style-inspector.
- *
- * @param {CssRuleView|CssComputedView} view
- *        Either the rule-view or computed-view panel
  */
-function TooltipsOverlay(view) {
-  this.view = view;
-  this._instances = new Map();
+class TooltipsOverlay {
+  /**
+   * @param {CssRuleView|CssComputedView} view
+   *        Either the rule-view or computed-view panel
+   */
+  constructor(view) {
+    this.view = view;
+    this._instances = new Map();
 
-  this._onNewSelection = this._onNewSelection.bind(this);
-  this.view.inspector.selection.on("new-node-front", this._onNewSelection);
+    this._onNewSelection = this._onNewSelection.bind(this);
+    this.view.inspector.selection.on("new-node-front", this._onNewSelection);
 
-  this.addToView();
-}
-
-TooltipsOverlay.prototype = {
+    this.addToView();
+  }
   get isEditing() {
     for (const [, tooltip] of this._instances) {
       if (typeof tooltip.isEditing == "function" && tooltip.isEditing()) {
@@ -104,7 +112,7 @@ TooltipsOverlay.prototype = {
       }
     }
     return false;
-  },
+  }
 
   /**
    * Add the tooltips overlay to the view. This will start tracking mouse
@@ -141,7 +149,7 @@ TooltipsOverlay.prototype = {
         );
       }
     }
-  },
+  }
 
   /**
    * Lazily fetch and initialize the different tooltips that are used in the inspector.
@@ -207,7 +215,7 @@ TooltipsOverlay.prototype = {
     }
     this._instances.set(name, tooltip);
     return tooltip;
-  },
+  }
 
   /**
    * Remove the tooltips overlay from the view. This will stop tracking mouse
@@ -226,7 +234,7 @@ TooltipsOverlay.prototype = {
     this.compatibilityTooltipHelper.destroy();
 
     this._isStarted = false;
-  },
+  }
 
   /**
    * Given a hovered node info, find out which type of tooltip should be shown,
@@ -274,8 +282,13 @@ TooltipsOverlay.prototype = {
       tooltipType = TOOLTIP_CSS_SELECTOR_WARNINGS;
     }
 
+    // Attribute (used in `attr()`) preview tooltip
+    if (type === VIEW_NODE_ATTR_TYPE) {
+      tooltipType = TOOLTIP_ATTR_TYPE;
+    }
+
     return tooltipType;
-  },
+  }
 
   _removePreviousInstances() {
     for (const tooltip of this._instances.values()) {
@@ -286,7 +299,7 @@ TooltipsOverlay.prototype = {
         tooltip.hide();
       }
     }
-  },
+  }
 
   /**
    * Executed by the tooltip when the pointer hovers over an element of the
@@ -372,8 +385,17 @@ TooltipsOverlay.prototype = {
       return true;
     }
 
+    if (type === TOOLTIP_ATTR_TYPE) {
+      const { attribute } = nodeInfo.value;
+      await this._setAttrPreviewTooltip({
+        text: attribute,
+      });
+
+      return true;
+    }
+
     return false;
-  },
+  }
 
   /**
    * Executed by the tooltip when the pointer hovers over an element of the
@@ -458,7 +480,7 @@ TooltipsOverlay.prototype = {
     }
 
     return false;
-  },
+  }
 
   /**
    * Send a telemetry Scalar showing that a tooltip of `type` has been opened.
@@ -468,7 +490,7 @@ TooltipsOverlay.prototype = {
    */
   sendOpenScalarToTelemetry(type) {
     Glean.devtoolsTooltip.shown[type].add(1);
-  },
+  }
 
   /**
    * Set the content of the preview tooltip to display an image preview. The image URL can
@@ -505,7 +527,7 @@ TooltipsOverlay.prototype = {
       naturalWidth,
       naturalHeight,
     });
-  },
+  }
 
   /**
    * Set the content of the preview tooltip to display a font family preview.
@@ -553,7 +575,7 @@ TooltipsOverlay.prototype = {
       naturalWidth,
       naturalHeight,
     });
-  },
+  }
 
   /**
    * Set the content of the preview tooltip to display a variable preview.
@@ -569,13 +591,25 @@ TooltipsOverlay.prototype = {
       doc,
       tooltipParams
     );
-  },
+  }
+
+  /**
+   * Set the content of the preview tooltip to display an attr preview.
+   *
+   * @param {object} tooltipParams
+   *        See AttrTooltipHelper.js setAttrTooltip `params`.
+   * @return {Promise} A promise that resolves when the preview tooltip content is ready
+   */
+  async _setAttrPreviewTooltip(tooltipParams) {
+    const doc = this.view.inspector.panelDoc;
+    await setAttrTooltip(this.getTooltip("previewTooltip"), doc, tooltipParams);
+  }
 
   _onNewSelection() {
     for (const [, tooltip] of this._instances) {
       tooltip.hide();
     }
-  },
+  }
 
   /**
    * Destroy this overlay instance, removing it from the view
@@ -587,7 +621,7 @@ TooltipsOverlay.prototype = {
     this.view = null;
 
     this._isDestroyed = true;
-  },
-};
+  }
+}
 
 module.exports = TooltipsOverlay;

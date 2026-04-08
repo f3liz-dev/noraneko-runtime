@@ -30,9 +30,9 @@
   <!-- Placeholder text shown in the search bar when using application search engines -->
   <string name="application_search_hint">Иҭажәгал шәыԥшааратә ажәақәа</string>
   <!-- No Open Tabs Message Description -->
-  <string name="no_open_tabs_description">Иаарту анҵамҭақәа абра иаарԥшхоит.</string>
+  <string name="no_open_tabs_description" tools:ignore="UnusedResources" moz:removedIn="149">Иаарту анҵамҭақәа абра иаарԥшхоит.</string>
   <!-- No Private Tabs Message Description -->
-  <string name="no_private_tabs_description">Ухатә ҭаӡҩырақәа абра иаарԥшхоит.</string>
+  <string name="no_private_tabs_description" tools:ignore="UnusedResources" moz:removedIn="149">Ухатә ҭаӡҩырақәа абра иаарԥшхоит.</string>
   <!-- Tab tray multi select title in app bar. %1$d is the number of tabs selected -->
   <string name="tab_tray_multi_select_title">Иалху: %1$d</string>
   <!-- Label of button in create collection dialog for creating a new collection -->
@@ -44,7 +44,7 @@
   <!-- Content description for close button while in multiselect mode in tab tray -->
   <string name="tab_tray_close_multiselect_content_description">Ирацәоу алхрақәа ррежим аҭыҵра</string>
   <!-- Content description for save to collection button while in multiselect mode in tab tray -->
-  <string name="tab_tray_collection_button_multiselect_content_description">Иалху абларҭақәа аизгаҿы еиқәырхатәуп</string>
+  <string name="tab_tray_collection_button_multiselect_content_description" tools:ignore="UnusedResources" moz:removedIn="149">Иалху абларҭақәа аизгаҿы еиқәырхатәуп</string>
   <!--
     Home - Bookmarks
 
@@ -65,13 +65,6 @@
     Title for info card on private homescreen in True Private Browsing Mode.
   -->
   <string name="felt_privacy_desc_card_title">Ари ахархәагаҿы ашьҭа аанумыжьлан</string>
-  <!--
-    Explanation for private browsing displayed to users on home view when they first enable
-    private mode in our new Total Private Browsing mode.
-    %1$s is the name of the app (for example "Firefox").
-    %2$s is a link using felt_privacy_info_card_subtitle_link_text as text
-  -->
-  <string name="felt_privacy_info_card_subtitle_2" tools:ignore="UnusedResources" moz:removedIn="147">%1$s иԥнахуеит укукиқәа, уҭоурых, усаит адыррақәа ухатә ҭаӡҩырақәа зегьы ануаркуа. %2$s</string>
   <!--
     Clickable portion of the explanation for private browsing that links the user to our
     about privacy page.
@@ -177,7 +170,7 @@
   <!-- Browser menu button that opens the extensions manager -->
   <string name="browser_menu_extensions">Аиҵыхрақәа</string>
   <!-- Browser menu banner header text for extensions onboarding when all installed extensions have been disabled. -->
-  <string name="browser_menu_disabled_extensions_banner_onboarding_header">Анарҭбаарақәа шьақәыргылоуп аха аус ауӡом</string>
+  <string name="browser_menu_disabled_extensions_banner_onboarding_header" tools:ignore="UnusedResources" moz:removedIn="149">Анарҭбаарақәа шьақәыргылоуп аха аус ауӡом</string>
   <!-- Browser menu button that opens the extensions manager -->
   <string name="browser_menu_manage_extensions">Анарҭбаарақәа рнапхгара</string>
   <!--
@@ -192,9 +185,9 @@
   <!-- Browser menu button that opens account settings -->
   <string name="browser_menu_account_settings">Уара ухыԥхьаӡара</string>
   <!-- Browser menu button that sends a user to help articles -->
-  <string name="browser_menu_help">Азхьарԥш</string>
+  <string name="browser_menu_help" tools:ignore="UnusedResources" moz:removedIn="149">Азхьарԥш</string>
   <!-- Browser menu button that sends a to a the what's new article -->
-  <string name="browser_menu_whats_new">Иҿыцу</string>
+  <string name="browser_menu_whats_new" tools:ignore="UnusedResources" moz:removedIn="149">Иҿыцу</string>
   <!-- Browser menu button that opens the settings menu -->
   <string name="browser_menu_settings">Архиарақәа</string>
   <!-- Browser menu button that opens a user's library -->
@@ -202,7 +195,7 @@
   <!-- Browser menu toggle that requests a desktop site -->
   <string name="browser_menu_desktop_site">Акомпьютер аԥшра</string>
   <!-- Browser menu button that reopens a private tab as a regular tab -->
-  <string name="browser_menu_open_in_regular_tab">Иаабац абларҭаҿы иаарттәуп</string>
+  <string name="browser_menu_open_in_regular_tab" tools:ignore="UnusedResources" moz:removedIn="149">Иаабац абларҭаҿы иаарттәуп</string>
   <!-- Browser menu toggle that adds a shortcut to the site on the device home screen. -->
   <string name="browser_menu_add_to_homescreen">Ахатә екран ахь</string>
   <!-- Text for notifying users that Xiaomi devices require additional permissions to add to home screen -->
@@ -226,7 +219,7 @@
     Browser menu text shown in custom tabs to indicate this is a Fenix tab
     %1$s is the name of the app (for example "Firefox").
   -->
-  <string name="browser_menu_powered_by">Амотор аҟны %1$s</string>
+  <string name="browser_menu_powered_by" tools:ignore="UnusedResources" moz:removedIn="149">Амотор аҟны %1$s</string>
   <!--
     Browser menu text shown in custom tabs to indicate this is a Fenix tab
     %1$s is the name of the app (for example "Firefox").
@@ -239,15 +232,15 @@
   <!-- Browser menu button to open the current page in an external app -->
   <string name="browser_menu_open_app_link">Апрограммаҿы иаарттәуп</string>
   <!-- Browser menu button to show reader view appearance controls e.g. the used font type and size -->
-  <string name="browser_menu_customize_reader_view">Аԥхьара аҿаԥшыра шьақәыргылатәуп</string>
+  <string name="browser_menu_customize_reader_view" tools:ignore="UnusedResources" moz:removedIn="149">Аԥхьара аҿаԥшыра шьақәыргылатәуп</string>
   <!-- Browser menu button to show reader view appearance controls e.g. the used font type and size -->
   <string name="browser_menu_customize_reader_view_2">Аԥхьара аԥшра рхиатәуп</string>
   <!-- Browser menu label for adding a bookmark -->
-  <string name="browser_menu_add">Ацҵара</string>
+  <string name="browser_menu_add" tools:ignore="UnusedResources" moz:removedIn="149">Ацҵара</string>
   <!-- Browser menu label for editing a bookmark -->
-  <string name="browser_menu_edit">Аԥсахра</string>
+  <string name="browser_menu_edit" tools:ignore="UnusedResources" moz:removedIn="149">Аԥсахра</string>
   <!-- Button shown on the home page that opens the Customize home settings -->
-  <string name="browser_menu_customize_home_1">Ахәаԥшышьа аԥсахра</string>
+  <string name="browser_menu_customize_home_1" tools:ignore="UnusedResources" moz:removedIn="149">Ахәаԥшышьа аԥсахра</string>
   <!-- Browser menu label to sign in to sync on the device using Mozilla accounts -->
   <string name="browser_menu_sign_in">Аҭалара</string>
   <!-- Browser menu label to sign back in to sync on the device when the user's account needs to be reauthenticated -->
@@ -259,11 +252,11 @@
   <!-- Browser menu label that navigates to the Password screen -->
   <string name="browser_menu_passwords">Амаӡажәақәа</string>
   <!-- Content description (not visible, for screen readers etc.) for bottom sheet handlebar extensions menu. -->
-  <string name="browser_extensions_menu_handlebar_content_description">Анарҭбаарақәа рмениу адаҟьа арктәуп</string>
+  <string name="browser_extensions_menu_handlebar_content_description" tools:ignore="UnusedResources" moz:removedIn="149">Анарҭбаарақәа рмениу адаҟьа арктәуп</string>
   <!-- Content description (not visible, for screen readers etc.) for bottom sheet handlebar save menu. -->
-  <string name="browser_save_menu_handlebar_content_description">Аиқәырхара амениу адаҟьа арктәуп</string>
+  <string name="browser_save_menu_handlebar_content_description" tools:ignore="UnusedResources" moz:removedIn="149">Аиқәырхара амениу адаҟьа арктәуп</string>
   <!-- Content description (not visible, for screen readers etc.) for bottom sheet handlebar tools menu. -->
-  <string name="browser_tools_menu_handlebar_content_description">Иарктәуп амыругақәа рмениу адаҟьа</string>
+  <string name="browser_tools_menu_handlebar_content_description" tools:ignore="UnusedResources" moz:removedIn="149">Иарктәуп амыругақәа рмениу адаҟьа</string>
   <!-- Content description (not visible, for screen readers etc.) for bottom sheet handlebar custom tab menu. -->
   <string name="browser_custom_tab_menu_handlebar_content_description">Иарктәуп иҷыдоу абларҭа амениу адаҟьа</string>
   <!-- Browser menu label that navigates to the edit bookmark screen for the current bookmarked page -->
@@ -356,19 +349,8 @@
   <string name="juno_onboarding_privacy_notice_text" tools:ignore="BrandUsage">Firefox Амаӡаратә рдырраҭара</string>
   <!-- Title for set firefox as default browser screen used by Nimbus experiments. -->
   <string name="juno_onboarding_default_browser_title_nimbus_2">Ҳара бзиа иаҳбоит шәыхьчара</string>
-  <!--
-    Title for set firefox as default browser screen used by Nimbus experiments.
-    Note: The word "Firefox" should NOT be translated
-  -->
-  <string name="juno_onboarding_default_browser_title_nimbus_3" tools:ignore="BrandUsage,UnusedResources" moz:removedIn="146">Еилышәкаа миллионҩыла ауаа Firefox бзиа изырбо</string>
-  <!-- Title for set firefox as default browser screen used by Nimbus experiments. -->
-  <string name="juno_onboarding_default_browser_title_nimbus_4" tools:ignore="UnusedResources" moz:removedIn="146">Алхрақәа рацәаны иҟоу ашәарҭадаратә веб-серфинг</string>
   <!-- Description for set firefox as default browser screen used by Nimbus experiments. -->
   <string name="juno_onboarding_default_browser_description_nimbus_3">Ахашәалахәы ззыԥшым аиҿкаара адгылара азызуа ҳбраузер акомпаниақәа онлаин шәышьҭаҵара аанкылара иацхраауеит.</string>
-  <!-- Description for set firefox as default browser screen used by Nimbus experiments. -->
-  <string name="juno_onboarding_default_browser_description_nimbus_4" tools:ignore="UnusedResources" moz:removedIn="146">100 миллионҩык ауаа рхатә ԥсҭазаара рыхьчоит, ахашәалахәы ззыԥшым аиҿкаара иацхраауа абраузер алхны.</string>
-  <!-- Description for set firefox as default browser screen used by Nimbus experiments. -->
-  <string name="juno_onboarding_default_browser_description_nimbus_5" tools:ignore="UnusedResources" moz:removedIn="146">Еицырдыруа ашьҭаҵаҩцәа? Автоматла иаанкылоуп. Аиҵыхрақәа? Зегьы ԥышәа 700. PDF фаилқәа? Ҳара иагәылоу аԥхьаҩ урҭ рнапхгара марианы иҟанаҵоит.</string>
   <!-- Text for the button to set firefox as default browser on the device -->
   <string name="juno_onboarding_default_browser_positive_button" tools:ignore="UnusedResources">Абраузер ишыҟоу еиԥш ишьақәыргылатәуп</string>
   <!-- Text for the button dismiss the screen and move on with the flow -->
@@ -654,11 +636,7 @@
   <string name="customize_addon_collection_user_hint">Аизга зтәу (ахархәаҩ иID)</string>
   <!-- Toast shown after confirming the custom extension collection configuration -->
   <string name="toast_customize_extension_collection_done">Анарҭбаара аизга ԥсахуп. Аԥсахрақәа рхархәаразы апликациа аҭыҵра…</string>
-  <!--
-    Customize Home
-
-    Header text for jumping back into the recent tab in customize the home screen
-  -->
+  <!-- Header text for jumping back into the recent tab in customize the home screen -->
   <string name="customize_toggle_jump_back_in">Ухынҳәы</string>
   <!-- Title for the customize home screen section with bookmarks. -->
   <string name="customize_toggle_bookmarks">Адыргақәа</string>
@@ -990,15 +968,15 @@
   <!-- Content description (not visible, for screen readers etc.): Add tab button. Adds a news tab when pressed -->
   <string name="add_private_tab">Ихатәу абларҭа ацҵатәуп</string>
   <!-- Text for the new tab button to indicate adding a new private tab in the tab -->
-  <string name="tab_drawer_fab_content">Хаҭалатәи</string>
+  <string name="tab_drawer_fab_content" tools:ignore="UnusedResources" moz:removedIn="149">Хаҭалатәи</string>
   <!-- Text for the new tab button to indicate syncing command on the synced tabs page -->
-  <string name="tab_drawer_fab_sync">Асинхронизациа</string>
+  <string name="tab_drawer_fab_sync" tools:ignore="UnusedResources" moz:removedIn="149">Асинхронизациа</string>
   <!-- Text shown in the menu for sharing all tabs -->
-  <string name="tab_tray_menu_item_share">Агәылаҵақәа зегьы еицаҳзеиԥшуп</string>
+  <string name="tab_tray_menu_item_share" tools:ignore="UnusedResources" moz:removedIn="149">Агәылаҵақәа зегьы еицаҳзеиԥшуп</string>
   <!-- Text shown in the menu to view recently closed tabs -->
   <string name="tab_tray_menu_recently_closed">Ааигәа иаркыз абларҭақәа</string>
   <!-- Text shown in the tabs tray inactive tabs section -->
-  <string name="tab_tray_inactive_recently_closed" tools:ignore="UnusedResources">Ааигәа иаркыз</string>
+  <string name="tab_tray_inactive_recently_closed" tools:ignore="UnusedResources" moz:removedIn="149">Ааигәа иаркыз</string>
   <!-- Text shown in the menu to view account settings -->
   <string name="tab_tray_menu_account_settings">Ахыԥхьаӡара архиарақәа</string>
   <!-- Text shown in the menu to view tab settings -->
@@ -1006,11 +984,11 @@
   <!-- Text shown in the menu for closing all tabs -->
   <string name="tab_tray_menu_item_close">Агәылаҵақәа зегьы арктәуп</string>
   <!-- Text shown in the multiselect menu for bookmarking selected tabs. -->
-  <string name="tab_tray_multiselect_menu_item_bookmark">Адыргақәа рахь иацҵатәуп</string>
+  <string name="tab_tray_multiselect_menu_item_bookmark" tools:ignore="UnusedResources" moz:removedIn="149">Адыргақәа рахь иацҵатәуп</string>
   <!-- Text shown in the multiselect menu for closing selected tabs. -->
-  <string name="tab_tray_multiselect_menu_item_close">Аркра</string>
+  <string name="tab_tray_multiselect_menu_item_close" tools:ignore="UnusedResources" moz:removedIn="149">Аркра</string>
   <!-- Content description for tabs tray multiselect share button -->
-  <string name="tab_tray_multiselect_share_content_description">Иалху абларҭақәа еицашәыцеиҩшатәуп</string>
+  <string name="tab_tray_multiselect_share_content_description" tools:ignore="UnusedResources" moz:removedIn="149">Иалху абларҭақәа еицашәыцеиҩшатәуп</string>
   <!-- Content description for tabs tray multiselect menu -->
   <string name="tab_tray_multiselect_menu_content_description">Иалху абларҭақәа рмениу</string>
   <!-- Content description (not visible, for screen readers etc.): Removes tab from collection button. Removes the selected tab from collection when pressed -->
@@ -1106,7 +1084,7 @@
   <!-- Bookmark overflow menu edit button -->
   <string name="bookmark_menu_edit_button">Аԥсахра</string>
   <!-- Bookmark overflow menu copy button -->
-  <string name="bookmark_menu_copy_button">Ақәҭыхра</string>
+  <string name="bookmark_menu_copy_button" tools:ignore="UnusedResources" moz:removedIn="150">Ақәҭыхра</string>
   <!-- Bookmark overflow menu share button -->
   <string name="bookmark_menu_share_button">Ашара</string>
   <!-- Bookmark overflow menu open in new tab button -->
@@ -1148,11 +1126,11 @@
   -->
   <string name="bookmark_deletion_snackbar_message">%1$s аныхуп</string>
   <!-- Bookmark undo button for deletion snackbar action -->
-  <string name="bookmark_undo_deletion">АԤЫХРА</string>
+  <string name="bookmark_undo_deletion" tools:ignore="UnusedResources" moz:removedIn="150">АԤЫХРА</string>
   <!-- Bookmark snackbar message for deleting a single item. %s is the title of the item being deleted -->
-  <string name="bookmark_delete_single_item">%s аныхуп</string>
+  <string name="bookmark_delete_single_item" tools:ignore="UnusedResources" moz:removedIn="150">%s аныхуп</string>
   <!-- Bookmark snackbar message for deleting multiple items. %s is the number of items being deleted -->
-  <string name="bookmark_delete_multiple_items">Ианыху ахәҭақәа: %s</string>
+  <string name="bookmark_delete_multiple_items" tools:ignore="UnusedResources" moz:removedIn="150">Ианыху ахәҭақәа: %s</string>
   <!-- Content description for the bookmark navigation bar back button -->
   <string name="bookmark_navigate_back_button_content_description">Ухынҳәы</string>
   <!-- Content description for the bookmark list new folder navigation bar button -->
@@ -1392,23 +1370,23 @@
   -->
   <string name="nimbus_notification_default_browser_text" tools:ignore="BrandUsage,UnusedResources">Firefox браузерс иҟашәҵа</string>
   <!-- Title shown in the notification that pops up to re-engage the user -->
-  <string name="notification_re_engagement_title">Иԥышәшәа хатә ԥшаара</string>
+  <string name="notification_re_engagement_title" tools:ignore="UnusedResources" moz:removedIn="150">Иԥышәшәа хатә ԥшаара</string>
   <!--
     Text shown in the notification that pops up to re-engage the user.
     %1$s is a placeholder that will be replaced by the app name.
   -->
-  <string name="notification_re_engagement_text">Аԥшаара еиқәырхоу акукиқәеи аҭоурыхи рыда %1$s аҟны</string>
+  <string name="notification_re_engagement_text" tools:ignore="UnusedResources" moz:removedIn="150">Аԥшаара еиқәырхоу акукиқәеи аҭоурыхи рыда %1$s аҟны</string>
   <!-- Title A shown in the notification that pops up to re-engage the user -->
-  <string name="notification_re_engagement_A_title">Ашьҭа нмыжькәа ауеб аԥшаара</string>
+  <string name="notification_re_engagement_A_title" tools:ignore="UnusedResources" moz:removedIn="150">Ашьҭа нмыжькәа ауеб аԥшаара</string>
   <!--
     Text A shown in the notification that pops up to re-engage the user.
     %1$s is a placeholder that will be replaced by the app name.
   -->
-  <string name="notification_re_engagement_A_text">Хаҭалатәи аԥшаара %1$s аҟны уусура еиқәнархаӡом.</string>
+  <string name="notification_re_engagement_A_text" tools:ignore="UnusedResources" moz:removedIn="150">Хаҭалатәи аԥшаара %1$s аҟны уусура еиқәнархаӡом.</string>
   <!-- Title B shown in the notification that pops up to re-engage the user -->
-  <string name="notification_re_engagement_B_title">Раԥхьатәи аԥшаара алагара</string>
+  <string name="notification_re_engagement_B_title" tools:ignore="UnusedResources" moz:removedIn="150">Раԥхьатәи аԥшаара алагара</string>
   <!-- Text B shown in the notification that pops up to re-engage the user -->
-  <string name="notification_re_engagement_B_text">Ааигәа акы ԥшаа. Мамзаргьы иччархәу акы аԥшаара.</string>
+  <string name="notification_re_engagement_B_text" tools:ignore="UnusedResources" moz:removedIn="150">Ааигәа акы ԥшаа. Мамзаргьы иччархәу акы аԥшаара.</string>
   <!--
     Survey
 
@@ -1499,7 +1477,7 @@
   <!-- Summary for the Delete browsing data on quit preference. "Quit" translation should match delete_browsing_data_on_quit_action translation. -->
   <string name="preference_summary_delete_browsing_data_on_quit_2">Автоматла иаԥнахуеит уҳа аԥшааратә данноқәа \"Quit\" Амениу хада аҟны</string>
   <!-- Action item in menu for the Delete browsing data on quit feature -->
-  <string name="delete_browsing_data_on_quit_action">Аҭыҵра</string>
+  <string name="delete_browsing_data_on_quit_action" tools:ignore="UnusedResources" moz:removedIn="149">Аҭыҵра</string>
   <!-- Title text of a delete browsing data dialog. -->
   <string name="delete_history_prompt_title">Аԥыхразы аамҭа</string>
   <!-- Body text of a delete browsing data dialog. -->
@@ -2000,9 +1978,9 @@
   -->
   <string name="certificate_info_verified_by">Ишьақәырӷәӷәоуп: %1$s</string>
   <!-- Login overflow menu delete button -->
-  <string name="login_menu_delete_button">Аныхра</string>
+  <string name="login_menu_delete_button" tools:ignore="UnusedResources" moz:removedIn="149">Аныхра</string>
   <!-- Login overflow menu edit button -->
-  <string name="login_menu_edit_button">Аредактура азура</string>
+  <string name="login_menu_edit_button" tools:ignore="UnusedResources" moz:removedIn="149">Аредактура азура</string>
   <!-- Message in delete confirmation dialog for password -->
   <string name="login_deletion_confirmation_2">Агәра ганы уҟоума ари амаӡажәа аԥыхра?</string>
   <!-- Positive action of a dialog asking to delete -->
@@ -2010,15 +1988,15 @@
   <!-- Negative action of a dialog asking to delete login -->
   <string name="dialog_delete_negative">Аԥыхра</string>
   <!-- The saved password options menu description. -->
-  <string name="login_options_menu_2">Амаӡа архиарақәа</string>
+  <string name="login_options_menu_2" tools:ignore="UnusedResources" moz:removedIn="149">Амаӡа архиарақәа</string>
   <!-- The editable text field for a website address. -->
-  <string name="saved_login_hostname_description_3">Асаит адрес азы аредакциа зызутәу атексттә ҭыԥ.</string>
+  <string name="saved_login_hostname_description_3" tools:ignore="UnusedResources" moz:removedIn="149">Асаит адрес азы аредакциа зызутәу атексттә ҭыԥ.</string>
   <!-- The editable text field for a username. -->
-  <string name="saved_login_username_description_3">Ахархәаҩ ихьӡ азы аредакциа зызутәу атексттә ҭыԥ.</string>
+  <string name="saved_login_username_description_3" tools:ignore="UnusedResources" moz:removedIn="149">Ахархәаҩ ихьӡ азы аредакциа зызутәу атексттә ҭыԥ.</string>
   <!-- The editable text field for a login's password. -->
-  <string name="saved_login_password_description_2">Апароль азы аредакциа зызутәу атексттә ҭыԥ.</string>
+  <string name="saved_login_password_description_2" tools:ignore="UnusedResources" moz:removedIn="149">Апароль азы аредакциа зызутәу атексттә ҭыԥ.</string>
   <!-- The button description to save changes to an edited password. -->
-  <string name="save_changes_to_login_2">Еиқәырхатәуп аԥсахрақәа.</string>
+  <string name="save_changes_to_login_2" tools:ignore="UnusedResources" moz:removedIn="149">Еиқәырхатәуп аԥсахрақәа.</string>
   <!-- The page title for editing a saved password. -->
   <string name="edit_2">Амаӡажәа ԥсахтәуп</string>
   <!-- The page title for adding new password. -->
@@ -2471,6 +2449,8 @@
   <string name="debug_drawer_tab_tools_tab_creation_tool_button_text_private">Ихатәу абларҭақәа рахь иацҵатәуп</string>
   <!--
     Microsurvey
+    Note: Some strings are marked as unused as they are referenced via the Nimbus experimentation
+    platform and have no persistent reference in code
 
     Prompt view
 

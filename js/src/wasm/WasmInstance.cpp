@@ -24,8 +24,7 @@
 #include <algorithm>
 #include <utility>
 
-#include "jsmath.h"
-
+#include "builtin/Math.h"
 #include "builtin/String.h"
 #include "gc/Barrier.h"
 #include "gc/Marking.h"
@@ -34,7 +33,6 @@
 #include "jit/JitCommon.h"
 #include "jit/JitRuntime.h"
 #include "jit/Registers.h"
-#include "js/ForOfIterator.h"
 #include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
 #include "js/Stack.h"                 // JS::NativeStackLimitMin
 #include "util/StringBuilder.h"
@@ -179,8 +177,8 @@ static bool UnpackResults(JSContext* cx, const ValTypeVector& resultTypes,
   }
 
   MOZ_ASSERT(stackResultsArea.isSome());
-  Rooted<ArrayObject*> array(cx);
-  if (!IterableToArray(cx, rval, &array)) {
+  Rooted<ArrayObject*> array(cx, IterableToArray(cx, rval));
+  if (!array) {
     return false;
   }
 
@@ -249,6 +247,11 @@ static bool UnpackResults(JSContext* cx, const ValTypeVector& resultTypes,
 bool Instance::callImport(JSContext* cx, uint32_t funcImportIndex,
                           unsigned argc, uint64_t* argv) {
   AssertRealmUnchanged aru(cx);
+
+#ifdef ENABLE_WASM_JSPI
+  // We should not be on a suspendable stack.
+  MOZ_ASSERT(!cx->wasm().onSuspendableStack());
+#endif
 
   FuncImportInstanceData& instanceFuncImport =
       funcImportInstanceData(funcImportIndex);
@@ -408,24 +411,6 @@ bool Instance::callImport(JSContext* cx, uint32_t funcImportIndex,
 Instance::callImport_general(Instance* instance, int32_t funcImportIndex,
                              int32_t argc, uint64_t* argv) {
   JSContext* cx = instance->cx();
-#ifdef ENABLE_WASM_JSPI
-  if (IsSuspendableStackActive(cx)) {
-    struct ImportCallData {
-      Instance* instance;
-      int32_t funcImportIndex;
-      int32_t argc;
-      uint64_t* argv;
-      static bool Call(ImportCallData* data) {
-        Instance* instance = data->instance;
-        JSContext* cx = instance->cx();
-        return instance->callImport(cx, data->funcImportIndex, data->argc,
-                                    data->argv);
-      }
-    } data = {instance, funcImportIndex, argc, argv};
-    return CallOnMainStack(
-        cx, reinterpret_cast<CallOnMainStackFn>(ImportCallData::Call), &data);
-  }
-#endif
   return instance->callImport(cx, funcImportIndex, argc, argv);
 }
 
@@ -614,9 +599,12 @@ static int32_t PerformWake(Instance* instance, PtrT byteOffset, int32_t count,
   Pages pages = instance->memory(memoryIndex)->volatilePages();
 #ifdef JS_64BIT
   // Ensure that the memory size is no more than 4GiB.
-  MOZ_ASSERT(pages <= Pages(MaxMemory32PagesValidation));
+  MOZ_ASSERT(pages <=
+             Pages::fromPageCount(
+                 MaxMemoryPagesValidation(AddressType::I32, pages.pageSize()),
+                 pages.pageSize()));
 #endif
-  return uint32_t(pages.value());
+  return uint32_t(pages.pageCount());
 }
 
 /* static */ uint64_t Instance::memorySize_m64(Instance* instance,
@@ -630,9 +618,10 @@ static int32_t PerformWake(Instance* instance, PtrT byteOffset, int32_t count,
 
   Pages pages = instance->memory(memoryIndex)->volatilePages();
 #ifdef JS_64BIT
-  MOZ_ASSERT(pages <= Pages(MaxMemory64PagesValidation));
+  MOZ_ASSERT(pages <= Pages::fromPageCount(MaxMemory64StandardPagesValidation,
+                                           pages.pageSize()));
 #endif
-  return pages.value();
+  return pages.pageCount();
 }
 
 template <typename PointerT, typename CopyFuncT, typename IndexT>
@@ -1250,7 +1239,8 @@ static bool WasmDiscardCheck(Instance* instance, I byteOffset, I byteLen,
                              size_t memLen, bool shared) {
   JSContext* cx = instance->cx();
 
-  if (byteOffset % wasm::PageSize != 0 || byteLen % wasm::PageSize != 0) {
+  if (byteOffset % wasm::StandardPageSizeBytes != 0 ||
+      byteLen % wasm::StandardPageSizeBytes != 0) {
     ReportTrapError(cx, JSMSG_WASM_UNALIGNED_ACCESS);
     return false;
   }
@@ -1627,11 +1617,9 @@ static bool ArrayCopyFromElem(JSContext* cx, Handle<WasmArrayObject*> arrayObj,
     return false;
   }
 
-  GCPtr<AnyRef>* dst = reinterpret_cast<GCPtr<AnyRef>*>(arrayObj->data_);
-  for (uint32_t i = 0; i < numElements; i++) {
-    dst[arrayIndex + i] = seg[segOffset + i];
-  }
-
+  AnyRef* dst = reinterpret_cast<AnyRef*>(arrayObj->data_) + arrayIndex;
+  AnyRef* src = seg.begin()->unbarrieredAddress() + segOffset;
+  BarrieredCopyRange(arrayObj, dst, src, numElements);
   return true;
 }
 
@@ -1914,14 +1902,9 @@ static bool ArrayCopyFromElem(JSContext* cx, Handle<WasmArrayObject*> arrayObj,
     return 0;
   }
 
-  GCPtr<AnyRef>* dst = (GCPtr<AnyRef>*)dstBase;
   AnyRef* src = (AnyRef*)srcBase;
-  // The std::copy performs GCPtr::set() operation under the hood.
-  if (uintptr_t(dstBase) < uintptr_t(srcBase)) {
-    std::copy(src, src + numElements, dst);
-  } else {
-    std::copy_backward(src, src + numElements, dst + numElements);
-  }
+  BarrieredMoveRange(dstArrayObj, dstBase, src, numElements);
+
   return 0;
 }
 
@@ -2045,21 +2028,18 @@ void* Instance::stringFromCharCodeArray(Instance* instance, void* arrayArg,
   }
   uint32_t arrayCount = arrayEnd - arrayStart;
 
-  // GC is disabled on this call since it can cause the array to move,
-  // invalidating the data pointer we pass as a parameter
-  JSLinearString* string = NewStringCopyN<NoGC, char16_t>(
-      cx, (char16_t*)array->data_ + arrayStart, arrayCount);
+  JSStringBuilder builder(cx);
+  if (!builder.ensureTwoByteChars() || !builder.reserve(arrayCount)) {
+    return nullptr;
+  }
+  for (uint32_t i = 0; i < arrayCount; i++) {
+    char16_t c = array->get<char16_t>(arrayStart + i);
+    builder.infallibleAppend(c);
+  }
+  JSLinearString* string = builder.finishString();
   if (!string) {
-    // If the first attempt failed, we need to try again with a potential GC.
-    // Acquire a stable version of the array that we can use. This may copy
-    // inline data to the stack, so we avoid doing it unless we must.
-    StableWasmArrayObjectElements<uint16_t> stableElements(cx, array);
-    string = NewStringCopyN<CanGC, char16_t>(
-        cx, (char16_t*)stableElements.elements() + arrayStart, arrayCount);
-    if (!string) {
-      MOZ_ASSERT(cx->isThrowingOutOfMemory());
-      return nullptr;
-    }
+    MOZ_ASSERT(cx->isThrowingOutOfMemory());
+    return nullptr;
   }
   return AnyRef::fromJSString(string).forCompiledCode();
 }
@@ -2363,6 +2343,11 @@ JSObject* MaybeOptimizeFunctionCallBind(const wasm::FuncType& funcType,
     return nullptr;
   }
 
+  if (boundThis.toObject().is<JSFunction>() &&
+      boundThis.toObject().as<JSFunction>().isWasm()) {
+    return nullptr;
+  }
+
   return boundThis.toObjectOrNull();
 }
 
@@ -2436,8 +2421,8 @@ bool Instance::init(JSContext* cx, const JSObjectVector& funcImports,
   jumpTable_ = code_->tieringJumpTable();
   debugFilter_ = nullptr;
   callRefMetrics_ = nullptr;
-  addressOfNeedsIncrementalBarrier_ =
-      cx->compartment()->zone()->addressOfNeedsIncrementalBarrier();
+  addressOfNeedsMarkingBarrier_ =
+      cx->compartment()->zone()->addressOfNeedsMarkingBarrier();
   addressOfNurseryPosition_ = cx->nursery().addressOfPosition();
 #ifdef JS_GC_ZEAL
   addressOfGCZealModeBits_ = cx->runtime()->gc.addressOfZealModeBits();
@@ -2481,44 +2466,51 @@ bool Instance::init(JSContext* cx, const JSObjectVector& funcImports,
 
     if (typeDef.kind() == TypeDefKind::Struct ||
         typeDef.kind() == TypeDefKind::Array) {
-      // Compute the parameters that allocation will use.  First, the class
-      // and alloc kind for the type definition.
-      const JSClass* clasp;
-      gc::AllocKind allocKind;
-
+      // Compute the parameters that allocation will use.  First, the class for
+      // the type definition.
       if (typeDef.kind() == TypeDefKind::Struct) {
-        clasp = WasmStructObject::classForTypeDef(&typeDef);
-        allocKind = WasmStructObject::allocKindForTypeDef(&typeDef);
-        allocKind = gc::GetFinalizedAllocKindForClass(allocKind, clasp);
+        const StructType& structType = typeDef.structType();
+        bool needsOOLstorage = structType.hasOOL();
+        typeDefData->clasp =
+            WasmStructObject::classFromOOLness(needsOOLstorage);
       } else {
-        clasp = &WasmArrayObject::class_;
-        allocKind = gc::AllocKind::INVALID;
+        typeDefData->clasp = &WasmArrayObject::class_;
       }
 
       // Find the shape using the class and recursion group
       const ObjectFlags objectFlags = {ObjectFlag::NotExtensible};
-      typeDefData->shape =
-          WasmGCShape::getShape(cx, clasp, cx->realm(), TaggedProto(),
-                                &typeDef.recGroup(), objectFlags);
+      typeDefData->shape = WasmGCShape::getShape(
+          cx, typeDefData->clasp, cx->realm(), TaggedProto(),
+          &typeDef.recGroup(), objectFlags);
       if (!typeDefData->shape) {
         return false;
       }
 
-      typeDefData->clasp = clasp;
-      typeDefData->allocKind = allocKind;
-
-      // If `typeDef` is a struct, cache its size here, so that allocators
-      // don't have to chase back through `typeDef` to determine that.
-      // Similarly, if `typeDef` is an array, cache its array element size
-      // here.
-      MOZ_ASSERT(typeDefData->unused == 0);
+      // If `typeDef` is a struct, cache some layout info here, so that
+      // allocators don't have to chase back through `typeDef` to determine
+      // that.  Similarly, if `typeDef` is an array, cache its array element
+      // size here.
       if (typeDef.kind() == TypeDefKind::Struct) {
-        typeDefData->structTypeSize = typeDef.structType().size_;
-        // StructLayout::close ensures this is an integral number of words.
-        MOZ_ASSERT((typeDefData->structTypeSize % sizeof(uintptr_t)) == 0);
+        const StructType& structType = typeDef.structType();
+        typeDefData->cached.strukt.payloadOffsetIL =
+            structType.payloadOffsetIL_;
+        typeDefData->cached.strukt.totalSizeIL = structType.totalSizeIL_;
+        typeDefData->cached.strukt.totalSizeOOL = structType.totalSizeOOL_;
+        typeDefData->cached.strukt.oolPointerOffset =
+            structType.oolPointerOffset_;
+        typeDefData->cached.strukt.allocKind =
+            gc::GetFinalizedAllocKindForClass(structType.allocKind_,
+                                              typeDefData->clasp);
+        MOZ_ASSERT(!IsFinalizedKind(typeDefData->cached.strukt.allocKind));
+        // StructLayout::totalSizeIL/OOL() ensures these are an integral number
+        // of words.
+        MOZ_ASSERT(
+            (typeDefData->cached.strukt.totalSizeIL % sizeof(uintptr_t)) == 0);
+        MOZ_ASSERT(
+            (typeDefData->cached.strukt.totalSizeOOL % sizeof(uintptr_t)) == 0);
       } else {
         uint32_t arrayElemSize = typeDef.arrayType().elementType().size();
-        typeDefData->arrayElemSize = arrayElemSize;
+        typeDefData->cached.array.elemSize = arrayElemSize;
         MOZ_ASSERT(arrayElemSize == 16 || arrayElemSize == 8 ||
                    arrayElemSize == 4 || arrayElemSize == 2 ||
                    arrayElemSize == 1);
@@ -2606,6 +2598,11 @@ bool Instance::init(JSContext* cx, const JSObjectVector& funcImports,
   }
 #endif
 
+  // We use writeToTenuredHeapLocation below as WasmInstanceObject is always
+  // tenured.
+  Rooted<WasmInstanceObject*> instanceObj(cx, object());
+  MOZ_ASSERT(instanceObj->isTenured());
+
   // Initialize globals in the instance data.
   //
   // This must be performed after we have initialized runtime types as a global
@@ -2633,14 +2630,13 @@ bool Instance::init(JSContext* cx, const JSObjectVector& funcImports,
           *(void**)globalAddr =
               (void*)&globalObjs[imported]->val().get().cell();
         } else {
-          globalImportValues[imported].writeToHeapLocation(globalAddr);
+          globalImportValues[imported].writeToTenuredHeapLocation(globalAddr);
         }
         break;
       }
       case GlobalKind::Variable: {
         RootedVal val(cx);
         const InitExpr& init = global.initExpr();
-        Rooted<WasmInstanceObject*> instanceObj(cx, object());
         if (!init.evaluate(cx, instanceObj, &val)) {
           return false;
         }
@@ -2652,7 +2648,7 @@ bool Instance::init(JSContext* cx, const JSObjectVector& funcImports,
           // Link to the cell
           *(void**)globalAddr = globalObjs[i]->addressOfCell();
         } else {
-          val.get().writeToHeapLocation(globalAddr);
+          val.get().writeToTenuredHeapLocation(globalAddr);
         }
         break;
       }
@@ -2679,6 +2675,12 @@ bool Instance::init(JSContext* cx, const JSObjectVector& funcImports,
     MOZ_ASSERT(limit <= UINT32_MAX);
 #endif
     data.boundsCheckLimit = limit;
+#ifdef ENABLE_WASM_CUSTOM_PAGE_SIZES
+    data.boundsCheckLimit16 = limit > 1 ? limit - 1 : 0;
+    data.boundsCheckLimit32 = limit > 3 ? limit - 3 : 0;
+    data.boundsCheckLimit64 = limit > 7 ? limit - 7 : 0;
+    data.boundsCheckLimit128 = limit > 15 ? limit - 15 : 0;
+#endif
     data.isShared = md.isShared();
 
     // Add observer if our memory base may grow
@@ -2721,7 +2723,7 @@ bool Instance::init(JSContext* cx, const JSObjectVector& funcImports,
   // All (linked) tables with non-nullable types must be initialized.
   for (size_t i = 0; i < tables_.length(); i++) {
     const TableDesc& td = codeMeta().tables[i];
-    if (!td.elemType.isNullable()) {
+    if (!td.elemType().isNullable()) {
       tables_[i]->assertRangeNotNull(0, tables_[i]->length());
     }
   }
@@ -3260,7 +3262,7 @@ uintptr_t Instance::traceFrame(JSTracer* trc, const wasm::WasmFrameIter& wfi,
 }
 
 void Instance::updateFrameForMovingGC(const wasm::WasmFrameIter& wfi,
-                                      uint8_t* nextPC) {
+                                      uint8_t* nextPC, Nursery& nursery) {
   const StackMap* map = code().lookupStackMap(nextPC);
   if (!map) {
     return;
@@ -3268,21 +3270,71 @@ void Instance::updateFrameForMovingGC(const wasm::WasmFrameIter& wfi,
   Frame* frame = wfi.frame();
   uintptr_t* stackWords = GetFrameScanStartForStackMap(frame, map, nullptr);
 
-  // Update interior array data pointers for any inline-storage arrays that
-  // moved.
-  for (uint32_t i = 0; i < map->header.numMappedWords; i++) {
-    if (map->get(i) != StackMap::Kind::ArrayDataPointer) {
-      continue;
-    }
+  // Update array data pointers, both IL and OOL, and struct data pointers,
+  // which are only OOL, for any such data areas that moved.  Note, the
+  // remapping info consulted by the calls to Nursery::forwardBufferPointer is
+  // what previous calls to Nursery::setForwardingPointerWhileTenuring in
+  // Wasm{Struct,Array}Object::obj_moved set up.
 
-    uint8_t** addressOfArrayDataPointer = (uint8_t**)&stackWords[i];
-    if (WasmArrayObject::isDataInline(*addressOfArrayDataPointer)) {
-      WasmArrayObject* oldArray =
-          WasmArrayObject::fromInlineDataPointer(*addressOfArrayDataPointer);
-      WasmArrayObject* newArray =
-          (WasmArrayObject*)gc::MaybeForwarded(oldArray);
-      *addressOfArrayDataPointer =
-          WasmArrayObject::addressOfInlineData(newArray);
+  for (uint32_t i = 0; i < map->header.numMappedWords; i++) {
+    StackMap::Kind kind = map->get(i);
+
+    switch (kind) {
+      case StackMap::Kind::ArrayDataPointer: {
+        // The following makes more sense if you look at the pictures in the
+        // SMDOC at the definition of WasmArrayData, and also read-along in
+        // WasmArrayObject::obj_moved, which sets up the forwarding information
+        // which we now will consult.
+
+        // Make oldDataPointer point at the storage array in the old object.
+        uint8_t* oldDataPointer = (uint8_t*)stackWords[i];
+        if (WasmArrayObject::isDataInline(oldDataPointer)) {
+          // It's a pointer into the object itself.  Figure out where the old
+          // object is, ask where it got moved to, and fish out the updated
+          // value from the new object.
+          WasmArrayObject* oldArray =
+              WasmArrayObject::fromInlineDataPointer(oldDataPointer);
+          WasmArrayObject* newArray =
+              (WasmArrayObject*)gc::MaybeForwarded(oldArray);
+          if (newArray != oldArray) {
+            stackWords[i] =
+                uintptr_t(WasmArrayObject::addressOfInlineArrayData(newArray));
+            MOZ_ASSERT(WasmArrayObject::isDataInline((uint8_t*)stackWords[i]));
+          }
+        } else {
+          // It's a pointer managed by BufferAllocator.  The forwarded location
+          // is stored in the OOLHeader::word field of the old block, with its
+          // bit zero set to 1.
+          WasmArrayObject::OOLDataHeader* oldHeader =
+              WasmArrayObject::oolDataHeaderFromDataPointer(oldDataPointer);
+          if (nursery.isInside((const void*)oldHeader)) {
+            // If the old header word is OOLDataHeader_Magic it means there's
+            // no forwarding pointer stored there, so don't update the stack
+            // slot.
+            if (oldHeader->word != WasmArrayObject::OOLDataHeader_Magic) {
+              MOZ_ASSERT(oldHeader->word & 1);
+              WasmArrayObject::OOLDataHeader* newHeader =
+                  (WasmArrayObject::OOLDataHeader*)(oldHeader->word &
+                                                    ~uintptr_t(1));
+              MOZ_ASSERT(newHeader != oldHeader);
+              stackWords[i] = uintptr_t(
+                  WasmArrayObject::oolDataHeaderToDataPointer(newHeader));
+              newHeader->word = WasmArrayObject::OOLDataHeader_Magic;
+            }
+          }
+        }
+        break;
+      }
+
+      case StackMap::Kind::StructDataPointer: {
+        // It's an unmodified pointer from BufferAllocator, so this is simple.
+        nursery.forwardBufferPointer(&stackWords[i]);
+        break;
+      }
+
+      default: {
+        break;
+      }
     }
   }
 }
@@ -3984,9 +4036,8 @@ WasmStructObject* Instance::constantStructNewDefault(JSContext* cx,
   TypeDefInstanceData* typeDefData = typeDefInstanceData(typeIndex);
   const wasm::TypeDef* typeDef = typeDefData->typeDef;
   MOZ_ASSERT(typeDef->kind() == wasm::TypeDefKind::Struct);
-  uint32_t totalBytes = typeDef->structType().size_;
 
-  bool needsOOL = WasmStructObject::requiresOutlineBytes(totalBytes);
+  bool needsOOL = typeDef->structType().hasOOL();
   return needsOOL ? WasmStructObject::createStructOOL<true>(
                         cx, typeDefData, nullptr, gc::Heap::Tenured)
                   : WasmStructObject::createStructIL<true>(
@@ -4044,6 +4095,12 @@ void Instance::onMovingGrowMemory(const WasmMemoryObject* memory) {
     MOZ_ASSERT(limit <= UINT32_MAX);
 #endif
     md.boundsCheckLimit = limit;
+#ifdef ENABLE_WASM_CUSTOM_PAGE_SIZES
+    md.boundsCheckLimit16 = limit > 1 ? limit - 1 : 0;
+    md.boundsCheckLimit32 = limit > 3 ? limit - 3 : 0;
+    md.boundsCheckLimit64 = limit > 7 ? limit - 7 : 0;
+    md.boundsCheckLimit128 = limit > 15 ? limit - 15 : 0;
+#endif
 
     if (i == 0) {
       memory0Base_ = md.base;

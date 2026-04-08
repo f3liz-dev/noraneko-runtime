@@ -26,6 +26,7 @@ class TestTargetTasks(unittest.TestCase):
                 "project": project,
                 "repository_type": "hg",
                 "hg_branch": "default",
+                "level": "3",
             },
         )
 
@@ -127,19 +128,17 @@ class TestTargetTasks(unittest.TestCase):
             "ddd-var-2": Task(kind="test", label="ddd-var-2", attributes={}, task={}),
         }
         graph = Graph(
-            nodes=set(
-                [
-                    "a",
-                    "b",
-                    "c",
-                    "ddd-1",
-                    "ddd-2",
-                    "ddd-1-cf",
-                    "ddd-2-cf",
-                    "ddd-var-1",
-                    "ddd-var-2",
-                ]
-            ),
+            nodes=set([
+                "a",
+                "b",
+                "c",
+                "ddd-1",
+                "ddd-2",
+                "ddd-1-cf",
+                "ddd-2-cf",
+                "ddd-var-1",
+                "ddd-var-2",
+            ]),
             edges=set(),
         )
         return TaskGraph(tasks, graph)

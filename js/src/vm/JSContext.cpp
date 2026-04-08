@@ -26,7 +26,6 @@
 #endif  // XP_WIN
 
 #include "jsapi.h"  // JS_SetNativeStackQuota
-#include "jsexn.h"
 #include "jstypes.h"
 
 #include "builtin/RegExp.h"  // js::RegExpSearcherLastLimitSentinel
@@ -56,7 +55,9 @@
 #include "util/NativeStack.h"
 #include "util/Text.h"
 #include "util/WindowsWrapper.h"
-#include "vm/BytecodeUtil.h"  // JSDVG_IGNORE_STACK
+#include "js/friend/DumpFunctions.h"  // for stack trace utilities
+#include "js/Printer.h"               // for FixedBufferPrinter
+#include "vm/BytecodeUtil.h"          // JSDVG_IGNORE_STACK
 #include "vm/ErrorObject.h"
 #include "vm/ErrorReporting.h"
 #include "vm/FrameIter.h"
@@ -278,6 +279,8 @@ void JSContext::onOutOfMemory() {
   runtime()->hadOutOfMemory = true;
   gc::AutoSuppressGC suppressGC(this);
 
+  requestInterrupt(js::InterruptReason::OOMStackTrace);
+
   /* Report the oom. */
   if (JS::OutOfMemoryCallback oomCallback = runtime()->oomCallback) {
     oomCallback(this, runtime()->oomCallbackData);
@@ -384,7 +387,7 @@ void js::ReportAllocationOverflow(JSContext* cx) {
     return;
   }
 
-  cx->reportAllocationOverflow();
+  cx->reportAllocOverflow();
 }
 
 void js::ReportAllocationOverflow(FrontendContext* fc) {
@@ -735,7 +738,7 @@ void JSContext::recoverFromOutOfMemory() {
   }
 }
 
-void JSContext::reportAllocationOverflow() {
+void JSContext::reportAllocOverflow() {
   gc::AutoSuppressGC suppressGC(this);
   JS_ReportErrorNumberASCII(this, GetErrorMessage, nullptr,
                             JSMSG_ALLOC_OVERFLOW);
@@ -778,48 +781,35 @@ JSObject* InternalJobQueue::copyJobs(JSContext* cx) {
     return nullptr;
   }
 
-  if (JS::Prefs::use_js_microtask_queue()) {
-    auto& queues = cx->microTaskQueues;
-    auto addToArray = [&](auto& queue) -> bool {
-      for (const auto& e : queue) {
-        JS::JSMicroTask* task = JS::ToUnwrappedJSMicroTask(e);
-        if (task) {
-          // All any test cares about is the global of the job so let's do it.
-          RootedObject global(cx, JS::GetExecutionGlobalFromJSMicroTask(task));
-          if (!global) {
-            JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
-                                      JSMSG_DEAD_OBJECT);
-            return false;
-          }
-          if (!cx->compartment()->wrap(cx, &global)) {
-            return false;
-          }
-          if (!NewbornArrayPush(cx, jobs, ObjectValue(*global))) {
-            return false;
-          }
+  auto& queues = cx->microTaskQueues;
+  auto addToArray = [&](auto& queue) -> bool {
+    for (const auto& e : queue) {
+      JS::JSMicroTask* task = JS::ToUnwrappedJSMicroTask(e);
+      if (task) {
+        // All any test cares about is the global of the job so let's do it.
+        RootedObject global(cx, JS::GetExecutionGlobalFromJSMicroTask(task));
+        if (!global) {
+          JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
+                                    JSMSG_DEAD_OBJECT);
+          return false;
+        }
+        if (!cx->compartment()->wrap(cx, &global)) {
+          return false;
+        }
+        if (!NewbornArrayPush(cx, jobs, ObjectValue(*global))) {
+          return false;
         }
       }
-
-      return true;
-    };
-
-    if (!addToArray(queues->debugMicroTaskQueue)) {
-      return nullptr;
     }
-    if (!addToArray(queues->microTaskQueue)) {
-      return nullptr;
-    }
-  } else {
-    for (const JSObject* unwrappedJob : queue.get()) {
-      RootedObject job(cx, const_cast<JSObject*>(unwrappedJob));
-      if (!cx->compartment()->wrap(cx, &job)) {
-        return nullptr;
-      }
 
-      if (!NewbornArrayPush(cx, jobs, ObjectValue(*job))) {
-        return nullptr;
-      }
-    }
+    return true;
+  };
+
+  if (!addToArray(queues->debugMicroTaskQueue)) {
+    return nullptr;
+  }
+  if (!addToArray(queues->microTaskQueue)) {
+    return nullptr;
   }
 
   return jobs;
@@ -859,21 +849,6 @@ bool InternalJobQueue::getHostDefinedData(
   return true;
 }
 
-bool InternalJobQueue::enqueuePromiseJob(JSContext* cx,
-                                         JS::HandleObject promise,
-                                         JS::HandleObject job,
-                                         JS::HandleObject allocationSite,
-                                         JS::HandleObject hostDefinedData) {
-  MOZ_ASSERT(job);
-  if (!queue.pushBack(job)) {
-    ReportOutOfMemory(cx);
-    return false;
-  }
-
-  JS::JobQueueMayNotBeEmpty(cx);
-  return true;
-}
-
 void InternalJobQueue::runJobs(JSContext* cx) {
   if (draining_ || interrupted_) {
     return;
@@ -888,96 +863,49 @@ void InternalJobQueue::runJobs(JSContext* cx) {
     // so we simply ignore nested calls of drainJobQueue.
     draining_ = true;
 
-    if (JS::Prefs::use_js_microtask_queue()) {
-      // Execute jobs in a loop until we've reached the end of the queue.
-      JS::Rooted<JS::JSMicroTask*> job(cx);
-      JS::Rooted<JS::GenericMicroTask> dequeueJob(cx);
-      while (JS::HasAnyMicroTasks(cx)) {
-        MOZ_ASSERT(queue.empty());
-        // A previous job might have set this flag. E.g., the js shell
-        // sets it if the `quit` builtin function is called.
-        if (interrupted_) {
-          break;
-        }
-
-        cx->runtime()->offThreadPromiseState.ref().internalDrain(cx);
-
-        dequeueJob = JS::DequeueNextMicroTask(cx);
-        MOZ_ASSERT(!dequeueJob.isNull());
-        job = JS::ToMaybeWrappedJSMicroTask(dequeueJob);
-        MOZ_ASSERT(job);
-
-        // If the next job is the last job in the job queue, allow
-        // skipping the standard job queuing behavior.
-        if (!JS::HasAnyMicroTasks(cx)) {
-          JS::JobQueueIsEmpty(cx);
-        }
-
-        if (!JS::GetExecutionGlobalFromJSMicroTask(job)) {
-          continue;
-        }
-        AutoRealm ar(cx, JS::GetExecutionGlobalFromJSMicroTask(job));
-        {
-          if (!JS::RunJSMicroTask(cx, job)) {
-            // Nothing we can do about uncatchable exceptions.
-            if (!cx->isExceptionPending()) {
-              continue;
-            }
-
-            // Always clear the exception, because
-            // PrepareScriptEnvironmentAndInvoke will assert that we don't have
-            // one.
-            RootedValue exn(cx);
-            bool success = cx->getPendingException(&exn);
-            cx->clearPendingException();
-            if (success) {
-              js::ReportExceptionClosure reportExn(exn);
-              PrepareScriptEnvironmentAndInvoke(cx, cx->global(), reportExn);
-            }
-          }
-        }
+    // Execute jobs in a loop until we've reached the end of the queue.
+    JS::Rooted<JS::JSMicroTask*> job(cx);
+    JS::Rooted<JS::GenericMicroTask> dequeueJob(cx);
+    while (JS::HasAnyMicroTasks(cx)) {
+      // A previous job might have set this flag. E.g., the js shell
+      // sets it if the `quit` builtin function is called.
+      if (interrupted_) {
+        break;
       }
-    } else {
-      RootedObject job(cx);
-      JS::HandleValueArray args(JS::HandleValueArray::empty());
-      RootedValue rval(cx);
-      // Execute jobs in a loop until we've reached the end of the queue.
-      while (!queue.empty()) {
-        // A previous job might have set this flag. E.g., the js shell
-        // sets it if the `quit` builtin function is called.
-        if (interrupted_) {
-          break;
-        }
 
-        cx->runtime()->offThreadPromiseState.ref().internalDrain(cx);
+      cx->runtime()->offThreadPromiseState.ref().internalDrain(cx);
 
-        job = queue.front();
-        queue.popFront();
+      dequeueJob = JS::DequeueNextMicroTask(cx);
+      MOZ_ASSERT(!dequeueJob.isNull());
+      job = JS::ToMaybeWrappedJSMicroTask(dequeueJob);
+      MOZ_ASSERT(job);
 
-        // If the next job is the last job in the job queue, allow
-        // skipping the standard job queuing behavior.
-        if (queue.empty()) {
-          JS::JobQueueIsEmpty(cx);
-        }
+      // If the next job is the last job in the job queue, allow
+      // skipping the standard job queuing behavior.
+      if (!JS::HasAnyMicroTasks(cx)) {
+        JS::JobQueueIsEmpty(cx);
+      }
 
-        AutoRealm ar(cx, &job->as<JSFunction>());
-        {
-          if (!JS::Call(cx, UndefinedHandleValue, job, args, &rval)) {
-            // Nothing we can do about uncatchable exceptions.
-            if (!cx->isExceptionPending()) {
-              continue;
-            }
+      if (!JS::GetExecutionGlobalFromJSMicroTask(job)) {
+        continue;
+      }
+      AutoRealm ar(cx, JS::GetExecutionGlobalFromJSMicroTask(job));
+      {
+        if (!JS::RunJSMicroTask(cx, job)) {
+          // Nothing we can do about uncatchable exceptions.
+          if (!cx->isExceptionPending()) {
+            continue;
+          }
 
-            // Always clear the exception, because
-            // PrepareScriptEnvironmentAndInvoke will assert that we don't have
-            // one.
-            RootedValue exn(cx);
-            bool success = cx->getPendingException(&exn);
-            cx->clearPendingException();
-            if (success) {
-              js::ReportExceptionClosure reportExn(exn);
-              PrepareScriptEnvironmentAndInvoke(cx, cx->global(), reportExn);
-            }
+          // Always clear the exception, because
+          // PrepareScriptEnvironmentAndInvoke will assert that we don't have
+          // one.
+          RootedValue exn(cx);
+          bool success = cx->getPendingException(&exn);
+          cx->clearPendingException();
+          if (success) {
+            js::ReportExceptionClosure reportExn(exn);
+            PrepareScriptEnvironmentAndInvoke(cx, cx->global(), reportExn);
           }
         }
       }
@@ -989,12 +917,8 @@ void InternalJobQueue::runJobs(JSContext* cx) {
       break;
     }
 
-    if (JS::Prefs::use_js_microtask_queue()) {
-      // MG:XXX: Should use public API here.
-      cx->microTaskQueues->clear();
-    } else {
-      queue.clear();
-    }
+    // MG:XXX: Should use public API here.
+    cx->microTaskQueues->clear();
 
     // It's possible a job added a new off-thread promise task.
     if (!cx->runtime()->offThreadPromiseState.ref().internalHasPending()) {
@@ -1003,59 +927,34 @@ void InternalJobQueue::runJobs(JSContext* cx) {
   }
 }
 
-bool InternalJobQueue::empty() const { return queue.empty(); }
-
-JSObject* InternalJobQueue::maybeFront() const {
-  if (queue.empty()) {
-    return nullptr;
-  }
-
-  return queue.get().front();
-}
-
 class js::InternalJobQueue::SavedQueue : public JobQueue::SavedJobQueue {
  public:
-  SavedQueue(JSContext* cx, Queue&& saved, MicroTaskQueueSet&& queueSet,
-             bool draining)
-      : cx(cx),
-        saved(cx, std::move(saved)),
-        savedQueues(cx, std::move(queueSet)),
-        draining_(draining) {
+  SavedQueue(JSContext* cx, MicroTaskQueueSet&& queueSet, bool draining)
+      : cx(cx), savedQueues(cx, std::move(queueSet)), draining_(draining) {
     MOZ_ASSERT(cx->internalJobQueue.ref());
-    if (JS::Prefs::use_js_microtask_queue()) {
-      MOZ_ASSERT(saved.empty());
-    } else {
-      MOZ_ASSERT(queueSet.empty());
-    }
   }
 
   ~SavedQueue() {
     MOZ_ASSERT(cx->internalJobQueue.ref());
-    cx->internalJobQueue->queue = std::move(saved.get());
     cx->internalJobQueue->draining_ = draining_;
     *cx->microTaskQueues.get() = std::move(savedQueues.get());
   }
 
  private:
   JSContext* cx;
-  PersistentRooted<Queue> saved;
   PersistentRooted<MicroTaskQueueSet> savedQueues;
   bool draining_;
 };
 
 js::UniquePtr<JS::JobQueue::SavedJobQueue> InternalJobQueue::saveJobQueue(
     JSContext* cx) {
-  auto saved = js::MakeUnique<SavedQueue>(
-      cx, std::move(queue.get()), std::move(*cx->microTaskQueues), draining_);
+  auto saved = js::MakeUnique<SavedQueue>(cx, std::move(*cx->microTaskQueues),
+                                          draining_);
   if (!saved) {
-    // When MakeUnique's allocation fails, the SavedQueue constructor is never
-    // called, so this->queue is still initialized. (The move doesn't occur
-    // until the constructor gets called.)
     ReportOutOfMemory(cx);
     return nullptr;
   }
 
-  queue = Queue(SystemAllocPolicy());
   draining_ = false;
   return saved;
 }
@@ -1290,11 +1189,20 @@ JSContext::JSContext(JSRuntime* runtime, const JS::ContextOptions& options)
       canSkipEnqueuingJobs(this, false),
       promiseRejectionTrackerCallback(this, nullptr),
       promiseRejectionTrackerCallbackData(this, nullptr),
+      oomStackTraceBuffer_(this, nullptr),
+      oomStackTraceBufferValid_(this, false),
       bypassCSPForDebugger(this, false),
+      hasDebuggerForcedLexicalInit(this, false),
       insideExclusiveDebuggerOnEval(this, nullptr),
       microTaskQueues(this) {
   MOZ_ASSERT(static_cast<JS::RootingContext*>(this) ==
              JS::RootingContext::get(this));
+
+  if (JS::Prefs::experimental_capture_oom_stack_trace()) {
+    // Allocate pre-allocated buffer for OOM stack traces
+    oomStackTraceBuffer_ =
+        static_cast<char*>(js_calloc(OOMStackTraceBufferSize));
+  }
 }
 
 JSContext::~JSContext() {
@@ -1324,7 +1232,39 @@ JSContext::~JSContext() {
     irregexp::DestroyIsolate(isolate.ref());
   }
 
+  // Free the pre-allocated OOM stack trace buffer
+  if (oomStackTraceBuffer_) {
+    js_free(oomStackTraceBuffer_);
+  }
+
   TlsContext.set(nullptr);
+}
+
+void JSContext::unsetOOMStackTrace() { oomStackTraceBufferValid_ = false; }
+
+const char* JSContext::getOOMStackTrace() const {
+  if (!oomStackTraceBufferValid_ || !oomStackTraceBuffer_) {
+    return nullptr;
+  }
+  return oomStackTraceBuffer_;
+}
+
+bool JSContext::hasOOMStackTrace() const { return oomStackTraceBufferValid_; }
+
+void JSContext::captureOOMStackTrace() {
+  // Clear any existing stack trace
+  oomStackTraceBufferValid_ = false;
+
+  if (!oomStackTraceBuffer_) {
+    return;  // Buffer not available
+  }
+
+  // Write directly to pre-allocated buffer to avoid any memory allocation
+  FixedBufferPrinter fbp(oomStackTraceBuffer_, OOMStackTraceBufferSize);
+  js::DumpBacktrace(this, fbp);
+  MOZ_ASSERT(strlen(oomStackTraceBuffer_) < OOMStackTraceBufferSize);
+
+  oomStackTraceBufferValid_ = true;
 }
 
 void JSContext::setRuntime(JSRuntime* rt) {
@@ -1536,7 +1476,7 @@ void JSContext::trace(JSTracer* trc) {
     irregexp::TraceIsolate(trc, isolate.ref());
   }
 #ifdef ENABLE_WASM_JSPI
-  wasm().promiseIntegration.trace(trc);
+  wasm().trace(trc);
 #endif
 }
 
@@ -1716,9 +1656,6 @@ AutoUnsafeCallWithABI::AutoUnsafeCallWithABI(UnsafeABIStrictness strictness)
       break;
     case UnsafeABIStrictness::AllowPendingExceptions:
       checkForPendingException_ = !JS_IsExceptionPending(cx_);
-      break;
-    case UnsafeABIStrictness::AllowThrownExceptions:
-      checkForPendingException_ = false;
       break;
   }
 

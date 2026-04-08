@@ -4,7 +4,6 @@
 
 "use strict";
 
-const flags = require("resource://devtools/shared/flags.js");
 const { ELLIPSIS } = require("resource://devtools/shared/l10n.js");
 const EventEmitter = require("resource://devtools/shared/event-emitter.js");
 
@@ -27,22 +26,21 @@ const SHADOW_ROOT_TAGNAME = "#shadow-root";
 /**
  * Component to replicate functionality of XUL arrowscrollbox
  * for breadcrumbs
- *
- * @param {Window} win The window containing the breadcrumbs
- * @parem {DOMNode} container The element in which to put the scroll box
  */
-function ArrowScrollBox(win, container) {
-  this.win = win;
-  this.doc = win.document;
-  this.container = container;
-  EventEmitter.decorate(this);
-  this.init();
-}
-
-ArrowScrollBox.prototype = {
+class ArrowScrollBox extends EventEmitter {
+  /**
+   * @param {Window} win The window containing the breadcrumbs
+   * @param {Element} container The element in which to put the scroll box
+   */
+  constructor(win, container) {
+    super();
+    this.win = win;
+    this.doc = win.document;
+    this.container = container;
+    this.init();
+  }
   // Scroll behavior, exposed for testing
-  scrollBehavior: "smooth",
-
+  scrollBehavior = "smooth";
   /**
    * Build the HTML, add to the DOM and start listening to
    * events
@@ -67,7 +65,7 @@ ArrowScrollBox.prototype = {
     // Overflow and underflow are moz specific events
     this.inner.addEventListener("underflow", this.onUnderflow);
     this.inner.addEventListener("overflow", this.onOverflow);
-  },
+  }
 
   /**
    * Scroll to the specified element using the current scroll behavior
@@ -77,7 +75,7 @@ ArrowScrollBox.prototype = {
    */
   scrollToElement(element, block) {
     element.scrollIntoView({ block, behavior: this.scrollBehavior });
-  },
+  }
 
   /**
    * Call the given function once; then continuously
@@ -109,7 +107,7 @@ ArrowScrollBox.prototype = {
     container.addEventListener("mouseout", cancelHold);
     container.addEventListener("mouseup", handleClick);
     timer = window.setTimeout(repeated, SCROLL_REPEAT_MS);
-  },
+  }
 
   /**
    * When start button is dbl clicked scroll to first element
@@ -122,7 +120,7 @@ ArrowScrollBox.prototype = {
 
     const element = this.inner.childNodes[0];
     this.scrollToElement(element, "start");
-  },
+  }
 
   /**
    * When end button is dbl clicked scroll to last element
@@ -135,7 +133,7 @@ ArrowScrollBox.prototype = {
 
     const element = children[children.length - 1];
     this.scrollToElement(element, "start");
-  },
+  }
 
   /**
    * When start arrow button is clicked scroll towards first element
@@ -151,7 +149,7 @@ ArrowScrollBox.prototype = {
     };
 
     this.clickOrHold(scrollToStart);
-  },
+  }
 
   /**
    * When end arrow button is clicked scroll towards last element
@@ -167,7 +165,7 @@ ArrowScrollBox.prototype = {
     };
 
     this.clickOrHold(scrollToEnd);
-  },
+  }
 
   /**
    * Event handler for scrolling, update the
@@ -187,7 +185,7 @@ ArrowScrollBox.prototype = {
     } else {
       this.endBtn.removeAttribute("disabled");
     }
-  },
+  }
 
   /**
    * On underflow, make the arrow buttons invisible
@@ -196,7 +194,7 @@ ArrowScrollBox.prototype = {
     this.startBtn.style.visibility = "collapse";
     this.endBtn.style.visibility = "collapse";
     this.emit("underflow");
-  },
+  }
 
   /**
    * On overflow, show the arrow buttons
@@ -205,7 +203,7 @@ ArrowScrollBox.prototype = {
     this.startBtn.style.visibility = "visible";
     this.endBtn.style.visibility = "visible";
     this.emit("overflow");
-  },
+  }
 
   /**
    * Check whether the element is to the left of its container but does
@@ -220,7 +218,7 @@ ArrowScrollBox.prototype = {
     return (
       elementLeft < left - SCROLL_MARGIN && elementRight < right - SCROLL_MARGIN
     );
-  },
+  }
 
   /**
    * Check whether the element is to the right of its container but does
@@ -235,7 +233,7 @@ ArrowScrollBox.prototype = {
     return (
       elementLeft > left + SCROLL_MARGIN && elementRight > right + SCROLL_MARGIN
     );
-  },
+  }
 
   /**
    * Get the first (i.e. furthest left for LTR)
@@ -246,7 +244,7 @@ ArrowScrollBox.prototype = {
 
     const predicate = this.elementLeftOfContainer;
     return this.findFirstWithBounds(elementsList, predicate);
-  },
+  }
 
   /**
    * Get the last (i.e. furthest right for LTR)
@@ -255,7 +253,7 @@ ArrowScrollBox.prototype = {
   getLastInvisibleElement() {
     const predicate = this.elementRightOfContainer;
     return this.findFirstWithBounds(this.inner.childNodes, predicate);
-  },
+  }
 
   /**
    * Find the first element that matches the given predicate, called with bounds
@@ -280,7 +278,7 @@ ArrowScrollBox.prototype = {
     }
 
     return null;
-  },
+  }
 
   /**
    * Build the HTML for the scroll box and insert it into the DOM
@@ -315,7 +313,7 @@ ArrowScrollBox.prototype = {
       this.container
     );
     this.createElement("div", "toolbarbutton-icon", this.endBtn);
-  },
+  }
 
   /**
    * Create an XHTML element with the given class name, and append it to the
@@ -323,8 +321,8 @@ ArrowScrollBox.prototype = {
    *
    * @param {string} tagName name of the tag to create
    * @param {string} className class of the element
-   * @param {DOMNode} parent the parent node to which it should be appended
-   * @return {DOMNode} The new element
+   * @param {Element} parent the parent node to which it should be appended
+   * @return {Element} The new element
    */
   createElement(tagName, className, parent) {
     const el = this.doc.createElementNS(NS_XHTML, tagName);
@@ -334,7 +332,7 @@ ArrowScrollBox.prototype = {
     }
 
     return el;
-  },
+  }
 
   /**
    * Remove event handlers and clean up
@@ -349,8 +347,8 @@ ArrowScrollBox.prototype = {
     // Overflow and underflow are moz specific events
     this.inner.removeEventListener("underflow", this.onUnderflow);
     this.inner.removeEventListener("overflow", this.onOverflow);
-  },
-};
+  }
+}
 
 /**
  * Display the ancestors of the current node and its children.
@@ -361,23 +359,21 @@ ArrowScrollBox.prototype = {
  *   then display the ancestor of the selected node and the selected node;
  *   else select the node;
  * - If the selected node is the last node displayed, append its first (if any).
- *
- * @param {InspectorPanel} inspector The inspector hosting this widget.
  */
-function HTMLBreadcrumbs(inspector) {
-  this.inspector = inspector;
-  this.selection = this.inspector.selection;
-  this.win = this.inspector.panelWin;
-  this.doc = this.inspector.panelDoc;
-  this._init();
-}
-
-exports.HTMLBreadcrumbs = HTMLBreadcrumbs;
-
-HTMLBreadcrumbs.prototype = {
+class HTMLBreadcrumbs {
+  /**
+   * @param {InspectorPanel} inspector The inspector hosting this widget.
+   */
+  constructor(inspector) {
+    this.inspector = inspector;
+    this.selection = this.inspector.selection;
+    this.win = this.inspector.panelWin;
+    this.doc = this.inspector.panelDoc;
+    this._init();
+  }
   get walker() {
     return this.inspector.walker;
-  },
+  }
 
   _init() {
     this.outer = this.doc.getElementById("inspector-breadcrumbs");
@@ -394,18 +390,13 @@ HTMLBreadcrumbs.prototype = {
 
     this.handleShortcut = this.handleShortcut.bind(this);
 
-    if (flags.testing) {
-      // In tests, we start listening immediately to avoid having to simulate a focus.
-      this.initKeyShortcuts();
-    } else {
-      this.outer.addEventListener(
-        "focus",
-        () => {
-          this.initKeyShortcuts();
-        },
-        { once: true }
-      );
-    }
+    this.outer.addEventListener(
+      "focus",
+      () => {
+        this.initKeyShortcuts();
+      },
+      { once: true }
+    );
 
     // We will save a list of already displayed nodes in this array.
     this.nodeHierarchy = [];
@@ -424,13 +415,13 @@ HTMLBreadcrumbs.prototype = {
     this.selection.on("attribute-changed", this.updateSelectors);
     this.inspector.on("markupmutation", this.updateWithMutations);
     this.update();
-  },
+  }
 
   initKeyShortcuts() {
     this.shortcuts = new KeyShortcuts({ window: this.win, target: this.outer });
     this.shortcuts.on("Right", this.handleShortcut);
     this.shortcuts.on("Left", this.handleShortcut);
-  },
+  }
 
   /**
    * Build a string that represents the node: tagName#id.class1.class2.
@@ -459,7 +450,7 @@ HTMLBreadcrumbs.prototype = {
     }
 
     return text;
-  },
+  }
 
   /**
    * Build <span>s that represent the node:
@@ -526,7 +517,7 @@ HTMLBreadcrumbs.prototype = {
     fragment.appendChild(pseudosLabel);
 
     return fragment;
-  },
+  }
 
   /**
    * Generic event handler.
@@ -543,18 +534,14 @@ HTMLBreadcrumbs.prototype = {
     } else if (event.type == "focus") {
       this.handleFocus(event);
     }
-  },
+  }
 
   /**
    * Focus event handler. When breadcrumbs container gets focus,
    * aria-activedescendant needs to be updated to currently selected
    * breadcrumb. Ensures that the focus stays on the container at all times.
-   *
-   * @param {DOMEvent} event.
    */
   handleFocus(event) {
-    event.stopPropagation();
-
     const node = this.nodeHierarchy[this.currentIndex];
     if (node) {
       this.outer.setAttribute("aria-activedescendant", node.button.id);
@@ -562,8 +549,11 @@ HTMLBreadcrumbs.prototype = {
       this.outer.removeAttribute("aria-activedescendant");
     }
 
-    this.outer.focus();
-  },
+    // The focus should always be set on the outer element
+    if (event.target !== this.outer) {
+      this.outer.focus();
+    }
+  }
 
   /**
    * On click navigate to the correct node.
@@ -575,7 +565,7 @@ HTMLBreadcrumbs.prototype = {
     if (target.tagName == "button") {
       target.onBreadcrumbsClick();
     }
-  },
+  }
 
   /**
    * On mouse over, highlight the corresponding content DOM Node.
@@ -587,7 +577,7 @@ HTMLBreadcrumbs.prototype = {
     if (target.tagName == "button") {
       target.onBreadcrumbsHover();
     }
-  },
+  }
 
   /**
    * On mouse out, make sure to unhighlight.
@@ -596,7 +586,7 @@ HTMLBreadcrumbs.prototype = {
     this.inspector.highlighters.hideHighlighterType(
       this.inspector.highlighters.TYPES.BOXMODEL
     );
-  },
+  }
 
   /**
    * Handle a keyboard shortcut supported by the breadcrumbs widget.
@@ -633,7 +623,7 @@ HTMLBreadcrumbs.prototype = {
         reason: "breadcrumbs",
       });
     });
-  },
+  }
 
   /**
    * Remove nodes and clean up.
@@ -663,14 +653,14 @@ HTMLBreadcrumbs.prototype = {
     this.nodeHierarchy = null;
 
     this.isDestroyed = true;
-  },
+  }
 
   /**
    * Empty the breadcrumbs container.
    */
   empty() {
     this.container.replaceChildren();
-  },
+  }
 
   /**
    * Set which button represent the selected node.
@@ -695,7 +685,7 @@ HTMLBreadcrumbs.prototype = {
       this.outer.removeAttribute("aria-activedescendant");
     }
     this.currentIndex = index;
-  },
+  }
 
   /**
    * Get the index of the node in the cache.
@@ -710,7 +700,7 @@ HTMLBreadcrumbs.prototype = {
       }
     }
     return -1;
-  },
+  }
 
   /**
    * Remove all the buttons and their references in the cache after a given
@@ -723,7 +713,7 @@ HTMLBreadcrumbs.prototype = {
       const toRemove = this.nodeHierarchy.pop();
       this.container.removeChild(toRemove.button);
     }
-  },
+  }
 
   /**
    * Build a button representing the node.
@@ -756,7 +746,7 @@ HTMLBreadcrumbs.prototype = {
     };
 
     return button;
-  },
+  }
 
   /**
    * Connecting the end of the breadcrumbs to a node.
@@ -785,7 +775,7 @@ HTMLBreadcrumbs.prototype = {
       node = node.parentOrHost();
     }
     this.container.appendChild(fragment, this.container.firstChild);
-  },
+  }
 
   /**
    * Find the "youngest" ancestor of a node which is already in the breadcrumbs.
@@ -802,7 +792,7 @@ HTMLBreadcrumbs.prototype = {
       node = node.parentNode();
     }
     return -1;
-  },
+  }
 
   /**
    * Ensure the selected node is visible.
@@ -813,7 +803,7 @@ HTMLBreadcrumbs.prototype = {
       const element = this.nodeHierarchy[this.currentIndex].button;
       this.arrowScrollBox.scrollToElement(element, "end");
     }
-  },
+  }
 
   /**
    * Update all button outputs.
@@ -838,7 +828,7 @@ HTMLBreadcrumbs.prototype = {
 
       this.nodeHierarchy[i].currentPrettyPrintText = textOutput;
     }
-  },
+  }
 
   /**
    * Given a list of mutation changes (passed by the markupmutation event),
@@ -861,7 +851,7 @@ HTMLBreadcrumbs.prototype = {
     }
 
     return false;
-  },
+  }
 
   /**
    * Check if the provided mutation (from a markupmutation event) is relevant
@@ -885,7 +875,7 @@ HTMLBreadcrumbs.prototype = {
       return attributeName === "class" || attributeName === "id";
     }
     return false;
-  },
+  }
 
   /**
    * Update the breadcrumbs display when a new node is selected and there are
@@ -896,7 +886,7 @@ HTMLBreadcrumbs.prototype = {
    */
   updateWithMutations(mutations) {
     return this.update("markupmutation", mutations);
-  },
+  }
 
   /**
    * Update the breadcrumbs display when a new node is selected.
@@ -991,5 +981,7 @@ HTMLBreadcrumbs.prototype = {
         }
       }
     }, 0);
-  },
-};
+  }
+}
+
+exports.HTMLBreadcrumbs = HTMLBreadcrumbs;

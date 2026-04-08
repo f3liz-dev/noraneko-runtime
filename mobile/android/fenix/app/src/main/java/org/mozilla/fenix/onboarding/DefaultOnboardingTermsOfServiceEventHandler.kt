@@ -18,6 +18,7 @@ class DefaultOnboardingTermsOfServiceEventHandler(
     private val openLink: (String) -> Unit,
     private val showManagePrivacyPreferencesDialog: () -> Unit,
     private val settings: Settings,
+    private val startGlean: () -> Unit,
 ) : OnboardingTermsOfServiceEventHandler {
 
     override fun onTermsOfServiceLinkClicked(url: String) {
@@ -33,7 +34,7 @@ class DefaultOnboardingTermsOfServiceEventHandler(
         telemetryRecorder.onTermsOfServicePrivacyNoticeLinkClick()
         openLink(
             url.trim().ifNullOrEmpty {
-                SupportUtils.getMozillaPageUrl(SupportUtils.MozillaPage.PRIVATE_NOTICE)
+                SupportUtils.getMozillaPageUrl(SupportUtils.MozillaPage.PRIVACY_NOTICE)
             },
         )
     }
@@ -48,5 +49,6 @@ class DefaultOnboardingTermsOfServiceEventHandler(
         settings.hasAcceptedTermsOfService = true
         settings.termsOfUseAcceptedVersion = TOU_VERSION
         settings.termsOfUseAcceptedTimeInMillis = nowMillis
+        startGlean()
     }
 }

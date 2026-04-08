@@ -58,7 +58,7 @@ void nsMathMLContainerFrame::SaveReflowAndBoundingMetricsFor(
 /* static */
 void nsMathMLContainerFrame::GetReflowAndBoundingMetricsFor(
     nsIFrame* aFrame, ReflowOutput& aReflowOutput,
-    nsBoundingMetrics& aBoundingMetrics, eMathMLFrameType* aMathMLFrameType) {
+    nsBoundingMetrics& aBoundingMetrics, MathMLFrameType* aMathMLFrameType) {
   MOZ_ASSERT(aFrame, "null arg");
 
   ReflowOutput* reflowOutput = aFrame->GetProperty(HTMLReflowOutputProperty());
@@ -80,7 +80,7 @@ void nsMathMLContainerFrame::GetReflowAndBoundingMetricsFor(
         return;
       }
     }
-    *aMathMLFrameType = eMathMLFrameType_UNKNOWN;
+    *aMathMLFrameType = MathMLFrameType::Unknown;
   }
 }
 
@@ -188,117 +188,118 @@ nscoord nsMathMLContainerFrame::ApplyAdjustmentForWidthAndHeight(
 // helper to get the preferred size that a container frame should use to fire
 // the stretch on its stretchy child frames.
 void nsMathMLContainerFrame::GetPreferredStretchSize(
-    DrawTarget* aDrawTarget, uint32_t aOptions,
-    nsStretchDirection aStretchDirection,
+    DrawTarget* aDrawTarget, PreferredStretchSizeMode aMode,
+    StretchDirection aStretchDirection,
     nsBoundingMetrics& aPreferredStretchSize) {
-  if (aOptions & STRETCH_CONSIDER_ACTUAL_SIZE) {
-    // when our actual size is ok, just use it
-    aPreferredStretchSize = mBoundingMetrics;
-  } else if (aOptions & STRETCH_CONSIDER_EMBELLISHMENTS) {
-    // compute our up-to-date size using Place(), without border/padding.
-    ReflowOutput reflowOutput(GetWritingMode());
-    PlaceFlags flags(PlaceFlag::MeasureOnly, PlaceFlag::IgnoreBorderPadding);
-    Place(aDrawTarget, flags, reflowOutput);
-    aPreferredStretchSize = reflowOutput.mBoundingMetrics;
-  } else {
-    // compute a size that includes embellishments iff the container stretches
-    // in the same direction as the embellished operator.
-    bool stretchAll = aStretchDirection == NS_STRETCH_DIRECTION_VERTICAL
-                          ? NS_MATHML_WILL_STRETCH_ALL_CHILDREN_VERTICALLY(
-                                mPresentationData.flags)
-                          : NS_MATHML_WILL_STRETCH_ALL_CHILDREN_HORIZONTALLY(
-                                mPresentationData.flags);
-    NS_ASSERTION(aStretchDirection == NS_STRETCH_DIRECTION_HORIZONTAL ||
-                     aStretchDirection == NS_STRETCH_DIRECTION_VERTICAL,
-                 "You must specify a direction in which to stretch");
-    NS_ASSERTION(
-        NS_MATHML_IS_EMBELLISH_OPERATOR(mEmbellishData.flags) || stretchAll,
-        "invalid call to GetPreferredStretchSize");
-    bool firstTime = true;
-    nsBoundingMetrics bm, bmChild;
-    nsIFrame* childFrame = stretchAll ? PrincipalChildList().FirstChild()
-                                      : mPresentationData.baseFrame;
-    while (childFrame) {
-      // initializations in case this child happens not to be a MathML frame
-      nsIMathMLFrame* mathMLFrame = do_QueryFrame(childFrame);
-      if (mathMLFrame) {
-        nsEmbellishData embellishData;
-        nsPresentationData presentationData;
-        mathMLFrame->GetEmbellishData(embellishData);
-        mathMLFrame->GetPresentationData(presentationData);
-        if (NS_MATHML_IS_EMBELLISH_OPERATOR(embellishData.flags) &&
-            embellishData.direction == aStretchDirection &&
-            presentationData.baseFrame) {
-          // embellishements are not included, only consider the inner first
-          // child itself
-          // XXXkt Does that mean the core descendent frame should be used
-          // instead of the base child?
-          nsIMathMLFrame* mathMLchildFrame =
-              do_QueryFrame(presentationData.baseFrame);
-          if (mathMLchildFrame) {
-            mathMLFrame = mathMLchildFrame;
+  switch (aMode) {
+    case PreferredStretchSizeMode::Embellishments: {
+      // compute our up-to-date size using Place(), without border/padding.
+      ReflowOutput reflowOutput(GetWritingMode());
+      PlaceFlags flags(PlaceFlag::MeasureOnly, PlaceFlag::IgnoreBorderPadding);
+      Place(aDrawTarget, flags, reflowOutput);
+      aPreferredStretchSize = reflowOutput.mBoundingMetrics;
+    } break;
+    case PreferredStretchSizeMode::EmbellishmentsIfSameStretchDirection: {
+      // compute a size that includes embellishments iff the container stretches
+      // in the same direction as the embellished operator.
+      bool stretchAll = mPresentationData.flags.contains(
+          aStretchDirection == StretchDirection::Vertical
+              ? MathMLPresentationFlag::StretchAllChildrenVertically
+              : MathMLPresentationFlag::StretchAllChildrenHorizontally);
+      NS_ASSERTION(aStretchDirection == StretchDirection::Horizontal ||
+                       aStretchDirection == StretchDirection::Vertical,
+                   "You must specify a direction in which to stretch");
+      NS_ASSERTION(mEmbellishData.flags.contains(
+                       MathMLEmbellishFlag::EmbellishedOperator) ||
+                       stretchAll,
+                   "invalid call to GetPreferredStretchSize");
+      bool firstTime = true;
+      nsBoundingMetrics bm, bmChild;
+      nsIFrame* childFrame = stretchAll ? PrincipalChildList().FirstChild()
+                                        : mPresentationData.baseFrame;
+      while (childFrame) {
+        // initializations in case this child happens not to be a MathML frame
+        nsIMathMLFrame* mathMLFrame = do_QueryFrame(childFrame);
+        if (mathMLFrame) {
+          nsEmbellishData embellishData;
+          nsPresentationData presentationData;
+          mathMLFrame->GetEmbellishData(embellishData);
+          mathMLFrame->GetPresentationData(presentationData);
+          if (embellishData.flags.contains(
+                  MathMLEmbellishFlag::EmbellishedOperator) &&
+              embellishData.direction == aStretchDirection &&
+              presentationData.baseFrame) {
+            // embellishements are not included, only consider the inner first
+            // child itself
+            // XXXkt Does that mean the core descendent frame should be used
+            // instead of the base child?
+            nsIMathMLFrame* mathMLchildFrame =
+                do_QueryFrame(presentationData.baseFrame);
+            if (mathMLchildFrame) {
+              mathMLFrame = mathMLchildFrame;
+            }
           }
-        }
-        mathMLFrame->GetBoundingMetrics(bmChild);
-      } else {
-        ReflowOutput unused(GetWritingMode());
-        GetReflowAndBoundingMetricsFor(childFrame, unused, bmChild);
-      }
-
-      if (firstTime) {
-        firstTime = false;
-        bm = bmChild;
-        if (!stretchAll) {
-          // we may get here for cases such as <msup><mo>...</mo> ... </msup>,
-          // or <maction>...<mo>...</mo></maction>.
-          break;
-        }
-      } else {
-        if (aStretchDirection == NS_STRETCH_DIRECTION_HORIZONTAL) {
-          // if we get here, it means this is container that will stack its
-          // children vertically and fire an horizontal stretch on each them.
-          // This is the case for \munder, \mover, \munderover. We just sum-up
-          // the size vertically.
-          bm.descent += bmChild.ascent + bmChild.descent;
-          // Sometimes non-spacing marks (when width is zero) are positioned
-          // to the left of the origin, but it is the distance between left
-          // and right bearing that is important rather than the offsets from
-          // the origin.
-          if (bmChild.width == 0) {
-            bmChild.rightBearing -= bmChild.leftBearing;
-            bmChild.leftBearing = 0;
-          }
-          if (bm.leftBearing > bmChild.leftBearing) {
-            bm.leftBearing = bmChild.leftBearing;
-          }
-          if (bm.rightBearing < bmChild.rightBearing) {
-            bm.rightBearing = bmChild.rightBearing;
-          }
-        } else if (aStretchDirection == NS_STRETCH_DIRECTION_VERTICAL) {
-          // just sum-up the sizes horizontally.
-          bm += bmChild;
+          mathMLFrame->GetBoundingMetrics(bmChild);
         } else {
-          NS_ERROR("unexpected case in GetPreferredStretchSize");
-          break;
+          ReflowOutput unused(GetWritingMode());
+          GetReflowAndBoundingMetricsFor(childFrame, unused, bmChild);
         }
+
+        if (firstTime) {
+          firstTime = false;
+          bm = bmChild;
+          if (!stretchAll) {
+            // we may get here for cases such as <msup><mo>...</mo> ... </msup>,
+            // or <maction>...<mo>...</mo></maction>.
+            break;
+          }
+        } else {
+          if (aStretchDirection == StretchDirection::Horizontal) {
+            // if we get here, it means this is container that will stack its
+            // children vertically and fire an horizontal stretch on each them.
+            // This is the case for \munder, \mover, \munderover. We just sum-up
+            // the size vertically.
+            bm.descent += bmChild.ascent + bmChild.descent;
+            // Sometimes non-spacing marks (when width is zero) are positioned
+            // to the left of the origin, but it is the distance between left
+            // and right bearing that is important rather than the offsets from
+            // the origin.
+            if (bmChild.width == 0) {
+              bmChild.rightBearing -= bmChild.leftBearing;
+              bmChild.leftBearing = 0;
+            }
+            if (bm.leftBearing > bmChild.leftBearing) {
+              bm.leftBearing = bmChild.leftBearing;
+            }
+            if (bm.rightBearing < bmChild.rightBearing) {
+              bm.rightBearing = bmChild.rightBearing;
+            }
+          } else if (aStretchDirection == StretchDirection::Vertical) {
+            // just sum-up the sizes horizontally.
+            bm += bmChild;
+          } else {
+            NS_ERROR("unexpected case in GetPreferredStretchSize");
+            break;
+          }
+        }
+        childFrame = childFrame->GetNextSibling();
       }
-      childFrame = childFrame->GetNextSibling();
-    }
-    aPreferredStretchSize = bm;
+      aPreferredStretchSize = bm;
+    } break;
   }
 }
 
 NS_IMETHODIMP
 nsMathMLContainerFrame::Stretch(DrawTarget* aDrawTarget,
-                                nsStretchDirection aStretchDirection,
+                                StretchDirection aStretchDirection,
                                 nsBoundingMetrics& aContainerSize,
                                 ReflowOutput& aDesiredStretchSize) {
-  if (NS_MATHML_IS_EMBELLISH_OPERATOR(mEmbellishData.flags)) {
-    if (NS_MATHML_STRETCH_WAS_DONE(mPresentationData.flags)) {
+  if (mEmbellishData.flags.contains(MathMLEmbellishFlag::EmbellishedOperator)) {
+    if (mPresentationData.flags.contains(MathMLPresentationFlag::StretchDone)) {
       NS_WARNING("it is wrong to fire stretch more than once on a frame");
       return NS_OK;
     }
-    mPresentationData.flags |= NS_MATHML_STRETCH_DONE;
+    mPresentationData.flags += MathMLPresentationFlag::StretchDone;
 
     // Pass the stretch to the base child ...
 
@@ -326,17 +327,19 @@ nsMathMLContainerFrame::Stretch(DrawTarget* aDrawTarget,
         // </math>
         nsBoundingMetrics containerSize = aContainerSize;
         if (aStretchDirection != mEmbellishData.direction &&
-            mEmbellishData.direction != NS_STRETCH_DIRECTION_UNSUPPORTED) {
+            mEmbellishData.direction != StretchDirection::Unsupported) {
           NS_ASSERTION(
-              mEmbellishData.direction != NS_STRETCH_DIRECTION_DEFAULT,
+              mEmbellishData.direction != StretchDirection::Default,
               "Stretches may have a default direction, operators can not.");
-          if (mEmbellishData.direction == NS_STRETCH_DIRECTION_VERTICAL
-                  ? NS_MATHML_WILL_STRETCH_ALL_CHILDREN_VERTICALLY(
-                        mPresentationData.flags)
-                  : NS_MATHML_WILL_STRETCH_ALL_CHILDREN_HORIZONTALLY(
-                        mPresentationData.flags)) {
-            GetPreferredStretchSize(aDrawTarget, 0, mEmbellishData.direction,
-                                    containerSize);
+          if (mPresentationData.flags.contains(
+                  mEmbellishData.direction == StretchDirection::Vertical
+                      ? MathMLPresentationFlag::StretchAllChildrenVertically
+                      : MathMLPresentationFlag::
+                            StretchAllChildrenHorizontally)) {
+            GetPreferredStretchSize(
+                aDrawTarget,
+                PreferredStretchSizeMode::EmbellishmentsIfSameStretchDirection,
+                mEmbellishData.direction, containerSize);
             // Stop further recalculations
             aStretchDirection = mEmbellishData.direction;
           } else {
@@ -357,17 +360,18 @@ nsMathMLContainerFrame::Stretch(DrawTarget* aDrawTarget,
         // Now that this embellished child may have changed, we need to
         // fire the stretch on its siblings using our updated size
 
-        if (NS_MATHML_WILL_STRETCH_ALL_CHILDREN_VERTICALLY(
-                mPresentationData.flags) ||
-            NS_MATHML_WILL_STRETCH_ALL_CHILDREN_HORIZONTALLY(
-                mPresentationData.flags)) {
-          nsStretchDirection stretchDir =
-              NS_MATHML_WILL_STRETCH_ALL_CHILDREN_VERTICALLY(
-                  mPresentationData.flags)
-                  ? NS_STRETCH_DIRECTION_VERTICAL
-                  : NS_STRETCH_DIRECTION_HORIZONTAL;
+        if (mPresentationData.flags.contains(
+                MathMLPresentationFlag::StretchAllChildrenVertically) ||
+            mPresentationData.flags.contains(
+                MathMLPresentationFlag::StretchAllChildrenHorizontally)) {
+          StretchDirection stretchDir =
+              mPresentationData.flags.contains(
+                  MathMLPresentationFlag::StretchAllChildrenVertically)
+                  ? StretchDirection::Vertical
+                  : StretchDirection::Horizontal;
 
-          GetPreferredStretchSize(aDrawTarget, STRETCH_CONSIDER_EMBELLISHMENTS,
+          GetPreferredStretchSize(aDrawTarget,
+                                  PreferredStretchSizeMode::Embellishments,
                                   stretchDir, containerSize);
 
           nsIFrame* childFrame = mFrames.FirstChild();
@@ -467,9 +471,10 @@ nsresult nsMathMLContainerFrame::FinalizeReflow(DrawTarget* aDrawTarget,
   // <mo>...</mo> itself.
   // (<mo> needs to fire stretch on its MathMLChar in any case to initialize it)
   bool placeOrigin =
-      !NS_MATHML_IS_EMBELLISH_OPERATOR(mEmbellishData.flags) ||
+      !mEmbellishData.flags.contains(
+          MathMLEmbellishFlag::EmbellishedOperator) ||
       (mEmbellishData.coreFrame != this && !mPresentationData.baseFrame &&
-       mEmbellishData.direction == NS_STRETCH_DIRECTION_UNSUPPORTED);
+       mEmbellishData.direction == StretchDirection::Unsupported);
   PlaceFlags flags;
   if (!placeOrigin) {
     flags += PlaceFlag::MeasureOnly;
@@ -488,11 +493,12 @@ nsresult nsMathMLContainerFrame::FinalizeReflow(DrawTarget* aDrawTarget,
       nsPresentationData presentationData;
       mathMLFrame->GetEmbellishData(embellishData);
       mathMLFrame->GetPresentationData(presentationData);
-      if (NS_MATHML_WILL_STRETCH_ALL_CHILDREN_VERTICALLY(
-              presentationData.flags) ||
-          NS_MATHML_WILL_STRETCH_ALL_CHILDREN_HORIZONTALLY(
-              presentationData.flags) ||
-          (NS_MATHML_IS_EMBELLISH_OPERATOR(embellishData.flags) &&
+      if (presentationData.flags.contains(
+              MathMLPresentationFlag::StretchAllChildrenVertically) ||
+          presentationData.flags.contains(
+              MathMLPresentationFlag::StretchAllChildrenHorizontally) ||
+          (embellishData.flags.contains(
+               MathMLEmbellishFlag::EmbellishedOperator) &&
            presentationData.baseFrame == this)) {
         parentWillFireStretch = true;
       }
@@ -501,22 +507,22 @@ nsresult nsMathMLContainerFrame::FinalizeReflow(DrawTarget* aDrawTarget,
       // There is nobody who will fire the stretch for us, we do it ourselves!
 
       bool stretchAll =
-          /* NS_MATHML_WILL_STRETCH_ALL_CHILDREN_VERTICALLY(mPresentationData.flags)
+          /* mPresentationData.flags.contains(MathMLPresentationFlag::StretchAllChildrenVertically)
              || */
-          NS_MATHML_WILL_STRETCH_ALL_CHILDREN_HORIZONTALLY(
-              mPresentationData.flags);
+          mPresentationData.flags.contains(
+              MathMLPresentationFlag::StretchAllChildrenHorizontally);
 
-      nsStretchDirection stretchDir;
+      StretchDirection stretchDir;
       if (mEmbellishData.coreFrame ==
               this || /* case of a bare <mo>...</mo> itself */
-          (mEmbellishData.direction == NS_STRETCH_DIRECTION_HORIZONTAL &&
+          (mEmbellishData.direction == StretchDirection::Horizontal &&
            stretchAll) || /* or <mover><mo>...</mo>...</mover>, or friends */
           mEmbellishData.direction ==
-              NS_STRETCH_DIRECTION_UNSUPPORTED) { /* Doesn't stretch */
+              StretchDirection::Unsupported) { /* Doesn't stretch */
         stretchDir = mEmbellishData.direction;
       } else {
         // Let the Stretch() call decide the direction.
-        stretchDir = NS_STRETCH_DIRECTION_DEFAULT;
+        stretchDir = StretchDirection::Default;
       }
       // Use our current size as computed earlier by Place()
       // The stretch call will detect if this is incorrect and recalculate the
@@ -551,7 +557,7 @@ nsresult nsMathMLContainerFrame::FinalizeReflow(DrawTarget* aDrawTarget,
     GatherAndStoreOverflow(&aDesiredSize);
   }
 
-  mPresentationData.flags &= ~NS_MATHML_STRETCH_DONE;
+  mPresentationData.flags -= MathMLPresentationFlag::StretchDone;
   return NS_OK;
 }
 
@@ -566,8 +572,9 @@ nsresult nsMathMLContainerFrame::FinalizeReflow(DrawTarget* aDrawTarget,
 // a subtree that may contain non-mathml container frames
 /* static */
 void nsMathMLContainerFrame::PropagatePresentationDataFor(
-    nsIFrame* aFrame, uint32_t aFlagsValues, uint32_t aFlagsToUpdate) {
-  if (!aFrame || !aFlagsToUpdate) {
+    nsIFrame* aFrame, MathMLPresentationFlags aFlagsValues,
+    MathMLPresentationFlags aFlagsToUpdate) {
+  if (!aFrame || aFlagsToUpdate.isEmpty()) {
     return;
   }
   nsIMathMLFrame* mathMLFrame = do_QueryFrame(aFrame);
@@ -589,8 +596,9 @@ void nsMathMLContainerFrame::PropagatePresentationDataFor(
 /* static */
 void nsMathMLContainerFrame::PropagatePresentationDataFromChildAt(
     nsIFrame* aParentFrame, int32_t aFirstChildIndex, int32_t aLastChildIndex,
-    uint32_t aFlagsValues, uint32_t aFlagsToUpdate) {
-  if (!aParentFrame || !aFlagsToUpdate) {
+    MathMLPresentationFlags aFlagsValues,
+    MathMLPresentationFlags aFlagsToUpdate) {
+  if (!aParentFrame || aFlagsToUpdate.isEmpty()) {
     return;
   }
   int32_t index = 0;
@@ -861,24 +869,28 @@ void nsMathMLContainerFrame::Reflow(nsPresContext* aPresContext,
 
   DrawTarget* drawTarget = aReflowInput.mRenderingContext->GetDrawTarget();
 
-  if (!NS_MATHML_IS_EMBELLISH_OPERATOR(mEmbellishData.flags) &&
-      (NS_MATHML_WILL_STRETCH_ALL_CHILDREN_VERTICALLY(
-           mPresentationData.flags) ||
-       NS_MATHML_WILL_STRETCH_ALL_CHILDREN_HORIZONTALLY(
-           mPresentationData.flags))) {
+  if (!mEmbellishData.flags.contains(
+          MathMLEmbellishFlag::EmbellishedOperator) &&
+      (mPresentationData.flags.contains(
+           MathMLPresentationFlag::StretchAllChildrenVertically) ||
+       mPresentationData.flags.contains(
+           MathMLPresentationFlag::StretchAllChildrenHorizontally))) {
     // get the stretchy direction
-    nsStretchDirection stretchDir =
-        NS_MATHML_WILL_STRETCH_ALL_CHILDREN_VERTICALLY(mPresentationData.flags)
-            ? NS_STRETCH_DIRECTION_VERTICAL
-            : NS_STRETCH_DIRECTION_HORIZONTAL;
+    StretchDirection stretchDir =
+        mPresentationData.flags.contains(
+            MathMLPresentationFlag::StretchAllChildrenVertically)
+            ? StretchDirection::Vertical
+            : StretchDirection::Horizontal;
 
     // what size should we use to stretch our stretchy children
-    // We don't use STRETCH_CONSIDER_ACTUAL_SIZE -- because our size is not
-    // known yet We don't use STRETCH_CONSIDER_EMBELLISHMENTS -- because we
-    // don't want to include them in the caculations of the size of stretchy
+    // We don't use PreferredStretchSizeMode::Embellishments -- because
+    // we don't want to include them in the caculations of the size of stretchy
     // elements
     nsBoundingMetrics containerSize;
-    GetPreferredStretchSize(drawTarget, 0, stretchDir, containerSize);
+    GetPreferredStretchSize(
+        drawTarget,
+        PreferredStretchSizeMode::EmbellishmentsIfSameStretchDirection,
+        stretchDir, containerSize);
 
     // fire the stretch on each child
     childFrame = mFrames.FirstChild();
@@ -982,32 +994,31 @@ void nsMathMLContainerFrame::GetIntrinsicISizeMetrics(
 // see spacing table in Chapter 18, TeXBook (p.170)
 // Our table isn't quite identical to TeX because operators have
 // built-in values for lspace & rspace in the Operator Dictionary.
-static int32_t
-    kInterFrameSpacingTable[eMathMLFrameType_COUNT][eMathMLFrameType_COUNT] = {
-        // in units of muspace.
-        // upper half of the byte is set if the
-        // spacing is not to be used for scriptlevel > 0
+static constexpr uint8_t
+    kInterFrameSpacingTable[MathMLFrameTypeCount][MathMLFrameTypeCount] = {
+        // clang-format off
+  // in units of muspace.
+  // Ord OpOrd OpInv OpUsr Inner Italic Upright
+  {  0,  0,    0,    1,    1,    0,     0      }, // Ord
+  {  0,  0,    0,    0,    0,    0,     0      }, // OpOrd
+  {  0,  0,    0,    0,    0,    0,     0      }, // OpInv
+  {  1,  0,    0,    1,    1,    1,     1      }, // OpUsr
+  {  1,  0,    0,    1,    1,    1,     1      }, // Inner
+  {  0,  0,    0,    1,    1,    0,     1      }, // Italic
+  {  0,  0,    0,    1,    1,    1,     0      }, // Upright
+        // clang-format on
+};
 
-        /*           Ord  OpOrd OpInv OpUsr Inner Italic Upright */
-        /*Ord    */ {0x00, 0x00, 0x00, 0x01, 0x01, 0x00, 0x00},
-        /*OpOrd  */ {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
-        /*OpInv  */ {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
-        /*OpUsr  */ {0x01, 0x00, 0x00, 0x01, 0x01, 0x01, 0x01},
-        /*Inner  */ {0x01, 0x00, 0x00, 0x01, 0x01, 0x01, 0x01},
-        /*Italic */ {0x00, 0x00, 0x00, 0x01, 0x01, 0x00, 0x01},
-        /*Upright*/ {0x00, 0x00, 0x00, 0x01, 0x01, 0x01, 0x00}};
-
-#define GET_INTERSPACE(scriptlevel_, frametype1_, frametype2_, space_) \
-  /* no space if there is a frame that we know nothing about */        \
-  if (frametype1_ == eMathMLFrameType_UNKNOWN ||                       \
-      frametype2_ == eMathMLFrameType_UNKNOWN)                         \
-    space_ = 0;                                                        \
-  else {                                                               \
-    space_ = kInterFrameSpacingTable[frametype1_][frametype2_];        \
-    space_ = (scriptlevel_ > 0 && (space_ & 0xF0))                     \
-                 ? 0 /* spacing is disabled */                         \
-                 : space_ & 0x0F;                                      \
+static int32_t GetInterFrameSpacing(MathMLFrameType aFirstFrameType,
+                                    MathMLFrameType aSecondFrameType) {
+  // no space if there is a frame that we know nothing about.
+  if (aFirstFrameType == MathMLFrameType::Unknown ||
+      aSecondFrameType == MathMLFrameType::Unknown) {
+    return 0;
   }
+  return kInterFrameSpacingTable[size_t(aFirstFrameType)]
+                                [size_t(aSecondFrameType)];
+};
 
 // This function computes the inter-space between two frames. However,
 // since invisible operators need special treatment, the inter-space may
@@ -1019,29 +1030,27 @@ static int32_t
 // aCarrySpace: keeps track of the inter-space that is delayed.
 // @returns: current inter-space (which is 0 when the true inter-space is
 // delayed -- and thus has no effect since the frame is invisible anyway).
-static nscoord GetInterFrameSpacing(int32_t aScriptLevel,
-                                    eMathMLFrameType aFirstFrameType,
-                                    eMathMLFrameType aSecondFrameType,
-                                    eMathMLFrameType* aFromFrameType,  // IN/OUT
-                                    int32_t* aCarrySpace)              // IN/OUT
+static nscoord GetInterFrameSpacing(MathMLFrameType aFirstFrameType,
+                                    MathMLFrameType aSecondFrameType,
+                                    MathMLFrameType* aFromFrameType,  // IN/OUT
+                                    int32_t* aCarrySpace)             // IN/OUT
 {
-  eMathMLFrameType firstType = aFirstFrameType;
-  eMathMLFrameType secondType = aSecondFrameType;
+  MathMLFrameType firstType = aFirstFrameType;
+  MathMLFrameType secondType = aSecondFrameType;
 
-  int32_t space;
-  GET_INTERSPACE(aScriptLevel, firstType, secondType, space);
+  int32_t space = GetInterFrameSpacing(firstType, secondType);
 
   // feedback control to avoid the inter-space to be added when not necessary
-  if (secondType == eMathMLFrameType_OperatorInvisible) {
+  if (secondType == MathMLFrameType::OperatorInvisible) {
     // see if we should start to carry the space forward until we
     // encounter a visible frame
-    if (*aFromFrameType == eMathMLFrameType_UNKNOWN) {
+    if (*aFromFrameType == MathMLFrameType::Unknown) {
       *aFromFrameType = firstType;
       *aCarrySpace = space;
     }
     // keep carrying *aCarrySpace forward, while returning 0 for this stage
     space = 0;
-  } else if (*aFromFrameType != eMathMLFrameType_UNKNOWN) {
+  } else if (*aFromFrameType != MathMLFrameType::Unknown) {
     // no carry-forward anymore, get the real inter-space between
     // the two frames of interest
 
@@ -1056,26 +1065,26 @@ static nscoord GetInterFrameSpacing(int32_t aScriptLevel,
     // the trick to get the inter-space in either situation
     // is to promote "<mi>sin</mi><mo>&ApplyFunction;</mo>" and
     // "<mo>&InvisibileTime;</mo><mi>sin</mi>" to user-defined operators...
-    if (firstType == eMathMLFrameType_UprightIdentifier) {
-      firstType = eMathMLFrameType_OperatorUserDefined;
-    } else if (secondType == eMathMLFrameType_UprightIdentifier) {
-      secondType = eMathMLFrameType_OperatorUserDefined;
+    if (firstType == MathMLFrameType::UprightIdentifier) {
+      firstType = MathMLFrameType::OperatorUserDefined;
+    } else if (secondType == MathMLFrameType::UprightIdentifier) {
+      secondType = MathMLFrameType::OperatorUserDefined;
     }
 
-    GET_INTERSPACE(aScriptLevel, firstType, secondType, space);
+    space = GetInterFrameSpacing(firstType, secondType);
 
     // Now, we have two values: the computed space and the space that
     // has been carried forward until now. Which value do we pick?
     // If the second type is an operator (e.g., fence), it already has
     // built-in lspace & rspace, so we let them win. Otherwise we pick
     // the max between the two values that we have.
-    if (secondType != eMathMLFrameType_OperatorOrdinary &&
+    if (secondType != MathMLFrameType::OperatorOrdinary &&
         space < *aCarrySpace) {
       space = *aCarrySpace;
     }
 
     // reset everything now that the carry-forward is done
-    *aFromFrameType = eMathMLFrameType_UNKNOWN;
+    *aFromFrameType = MathMLFrameType::Unknown;
     *aCarrySpace = 0;
   }
 
@@ -1094,9 +1103,9 @@ class nsMathMLContainerFrame::RowChildFrameIterator {
         mReflowOutput(aParentFrame->GetWritingMode()),
         mX(0),
         mFlags(aFlags),
-        mChildFrameType(eMathMLFrameType_UNKNOWN),
+        mChildFrameType(MathMLFrameType::Unknown),
         mCarrySpace(0),
-        mFromFrameType(eMathMLFrameType_UNKNOWN),
+        mFromFrameType(MathMLFrameType::Unknown),
         mRTL(aParentFrame->StyleVisibility()->mDirection ==
              StyleDirection::Rtl) {
     if (!mRTL) {
@@ -1127,15 +1136,13 @@ class nsMathMLContainerFrame::RowChildFrameIterator {
       return *this;
     }
 
-    eMathMLFrameType prevFrameType = mChildFrameType;
+    MathMLFrameType prevFrameType = mChildFrameType;
     InitMetricsForChild();
 
     // add inter frame spacing
-    const nsStyleFont* font = mParentFrame->StyleFont();
-    nscoord space =
-        GetInterFrameSpacing(font->mMathDepth, prevFrameType, mChildFrameType,
-                             &mFromFrameType, &mCarrySpace);
-    mX += space * GetThinSpace(font);
+    nscoord space = GetInterFrameSpacing(prevFrameType, mChildFrameType,
+                                         &mFromFrameType, &mCarrySpace);
+    mX += space * GetThinSpace(mParentFrame->StyleFont());
     return *this;
   }
 
@@ -1160,9 +1167,9 @@ class nsMathMLContainerFrame::RowChildFrameIterator {
   nsMargin mMargin;
 
   nscoord mItalicCorrection;
-  eMathMLFrameType mChildFrameType;
+  MathMLFrameType mChildFrameType;
   int32_t mCarrySpace;
-  eMathMLFrameType mFromFrameType;
+  MathMLFrameType mFromFrameType;
 
   bool mRTL;
 
@@ -1272,8 +1279,7 @@ void nsMathMLContainerFrame::PositionRowChildFrames(nscoord aOffsetX,
 // helpers to fix the inter-spacing when <math> is the only parent
 // e.g., it fixes <math> <mi>f</mi> <mo>q</mo> <mi>f</mi> <mo>I</mo> </math>
 
-static nscoord GetInterFrameSpacingFor(int32_t aScriptLevel,
-                                       nsIFrame* aParentFrame,
+static nscoord GetInterFrameSpacingFor(nsIFrame* aParentFrame,
                                        nsIFrame* aChildFrame) {
   nsIFrame* childFrame = aParentFrame->PrincipalChildList().FirstChild();
   if (!childFrame || aChildFrame == childFrame) {
@@ -1281,17 +1287,16 @@ static nscoord GetInterFrameSpacingFor(int32_t aScriptLevel,
   }
 
   int32_t carrySpace = 0;
-  eMathMLFrameType fromFrameType = eMathMLFrameType_UNKNOWN;
-  eMathMLFrameType prevFrameType = eMathMLFrameType_UNKNOWN;
-  eMathMLFrameType childFrameType =
+  MathMLFrameType fromFrameType = MathMLFrameType::Unknown;
+  MathMLFrameType prevFrameType = MathMLFrameType::Unknown;
+  MathMLFrameType childFrameType =
       nsMathMLFrame::GetMathMLFrameTypeFor(childFrame);
   childFrame = childFrame->GetNextSibling();
   while (childFrame) {
     prevFrameType = childFrameType;
     childFrameType = nsMathMLFrame::GetMathMLFrameTypeFor(childFrame);
-    nscoord space =
-        GetInterFrameSpacing(aScriptLevel, prevFrameType, childFrameType,
-                             &fromFrameType, &carrySpace);
+    nscoord space = GetInterFrameSpacing(prevFrameType, childFrameType,
+                                         &fromFrameType, &carrySpace);
     if (aChildFrame == childFrame) {
       // get thinspace
       ComputedStyle* parentContext = aParentFrame->Style();
@@ -1315,8 +1320,7 @@ static nscoord AddInterFrameSpacingToSize(ReflowOutput& aDesiredSize,
     return 0;
   }
   if (parentContent->IsAnyOfMathMLElements(nsGkAtoms::math, nsGkAtoms::mtd)) {
-    gap = GetInterFrameSpacingFor(aFrame->StyleFont()->mMathDepth, parent,
-                                  aFrame);
+    gap = GetInterFrameSpacingFor(parent, aFrame);
     // add our own italic correction
     nscoord leftCorrection = 0, italicCorrection = 0;
     nsMathMLContainerFrame::GetItalicCorrection(
@@ -1387,7 +1391,8 @@ nsresult nsMathMLContainerFrame::TransmitAutomaticDataForMrowLikeElement() {
       }
       baseFrame = childFrame;
       GetEmbellishDataFrom(baseFrame, embellishData);
-      if (!NS_MATHML_IS_EMBELLISH_OPERATOR(embellishData.flags)) {
+      if (!embellishData.flags.contains(
+              MathMLEmbellishFlag::EmbellishedOperator)) {
         break;
       }
       embellishedOpFound = true;
@@ -1399,7 +1404,7 @@ nsresult nsMathMLContainerFrame::TransmitAutomaticDataForMrowLikeElement() {
     // condition 1) or 2) holds.
     if (!embellishedOpFound) {
       // the mrow-like element is space-like.
-      mPresentationData.flags |= NS_MATHML_SPACE_LIKE;
+      mPresentationData.flags += MathMLPresentationFlag::SpaceLike;
     } else {
       // the mrow-like element is an embellished operator.
       // let the state of the embellished operator found bubble to us.
@@ -1411,16 +1416,16 @@ nsresult nsMathMLContainerFrame::TransmitAutomaticDataForMrowLikeElement() {
   if (childFrame || !embellishedOpFound) {
     // The element is not embellished operator
     mPresentationData.baseFrame = nullptr;
-    mEmbellishData.flags = 0;
+    mEmbellishData.flags.clear();
     mEmbellishData.coreFrame = nullptr;
-    mEmbellishData.direction = NS_STRETCH_DIRECTION_UNSUPPORTED;
+    mEmbellishData.direction = StretchDirection::Unsupported;
     mEmbellishData.leadingSpace = 0;
     mEmbellishData.trailingSpace = 0;
   }
 
   if (childFrame || embellishedOpFound) {
     // The element is not space-like
-    mPresentationData.flags &= ~NS_MATHML_SPACE_LIKE;
+    mPresentationData.flags -= MathMLPresentationFlag::SpaceLike;
   }
 
   return NS_OK;

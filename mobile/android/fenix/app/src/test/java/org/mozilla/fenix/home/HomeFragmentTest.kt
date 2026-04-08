@@ -8,7 +8,6 @@ import android.content.Context
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.spyk
-import io.mockk.verify
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
@@ -20,8 +19,8 @@ import org.mozilla.fenix.HomeActivity
 import org.mozilla.fenix.components.Core
 import org.mozilla.fenix.ext.application
 import org.mozilla.fenix.ext.components
-import org.mozilla.fenix.home.toolbar.HomeToolbarView
 import org.mozilla.fenix.utils.Settings
+import org.mozilla.fenix.wallpapers.Wallpaper
 
 class HomeFragmentTest {
 
@@ -135,13 +134,29 @@ class HomeFragmentTest {
     }
 
     @Test
-    fun `WHEN configuration changed THEN menu is dismissed`() {
-        val toolbarView: HomeToolbarView = mockk(relaxed = true)
+    fun `GIVEN default wallpaper is set WHEN isEdgeToEdgeBackgroundEnabled is called THEN return false`() {
+        every { settings.currentWallpaperName } returns Wallpaper.DEFAULT
+        assertFalse(homeFragment.isEdgeToEdgeBackgroundEnabled())
+    }
 
-        homeFragment.nullableToolbarView = toolbarView
+    @Test
+    fun `GIVEN edgeToEdge is enabled by nimbus and wallpaper is EdgeToEdge WHEN isEdgeToEdgeBackgroundEnabled is called THEN return true`() {
+        every { settings.enableHomepageEdgeToEdgeBackgroundFeature } returns true
+        every { settings.currentWallpaperName } returns Wallpaper.EDGE_TO_EDGE
+        assertTrue(homeFragment.isEdgeToEdgeBackgroundEnabled())
+    }
 
-        homeFragment.onConfigurationChanged(mockk(relaxed = true))
+    @Test
+    fun `GIVEN edgeToEdge is disabled by nimbus wallpaper is Default WHEN isEdgeToEdgeBackgroundEnabled is called THEN return true`() {
+        every { settings.enableHomepageEdgeToEdgeBackgroundFeature } returns false
+        every { settings.currentWallpaperName } returns Wallpaper.DEFAULT
+        assertFalse(homeFragment.isEdgeToEdgeBackgroundEnabled())
+    }
 
-        verify(exactly = 1) { toolbarView.dismissMenu() }
+    @Test
+    fun `GIVEN edgeToEdge is disabled by nimbus wallpaper is EdgeToEdge WHEN isEdgeToEdgeBackgroundEnabled is called THEN return true`() {
+        every { settings.enableHomepageEdgeToEdgeBackgroundFeature } returns false
+        every { settings.currentWallpaperName } returns Wallpaper.EDGE_TO_EDGE
+        assertFalse(homeFragment.isEdgeToEdgeBackgroundEnabled())
     }
 }

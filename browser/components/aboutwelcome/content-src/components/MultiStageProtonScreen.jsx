@@ -19,18 +19,23 @@ import { LinkParagraph } from "./LinkParagraph";
 import { ContentTiles } from "./ContentTiles";
 import { InstallButton } from "./InstallButton";
 
+const DEFAULT_AUTO_ADVANCE_MS = 20000;
+
 export const MultiStageProtonScreen = props => {
   const { autoAdvance, handleAction, order } = props;
   useEffect(() => {
     if (autoAdvance) {
+      const value = autoAdvance?.actionEl ?? autoAdvance;
+      const timeout = autoAdvance?.actionTimeMS ?? DEFAULT_AUTO_ADVANCE_MS;
+
       const timer = setTimeout(() => {
         handleAction({
           currentTarget: {
-            value: autoAdvance,
+            value,
           },
           name: "AUTO_ADVANCE",
         });
-      }, 20000);
+      }, timeout);
       return () => clearTimeout(timer);
     }
     return () => {};
@@ -81,6 +86,8 @@ export const MultiStageProtonScreen = props => {
       setActiveMultiSelect={props.setActiveMultiSelect}
       activeSingleSelectSelections={props.activeSingleSelectSelections}
       setActiveSingleSelectSelection={props.setActiveSingleSelectSelection}
+      textInputs={props.textInputs}
+      setTextInput={props.setTextInput}
       totalNumberOfScreens={props.totalNumberOfScreens}
       handleAction={props.handleAction}
       isFirstScreen={props.isFirstScreen}
@@ -96,6 +103,7 @@ export const MultiStageProtonScreen = props => {
       addonIconURL={props.addonIconURL}
       themeScreenshots={props.themeScreenshots}
       messageId={props.messageId}
+      writeInMicrosurvey={props.writeInMicrosurvey}
       negotiatedLanguage={props.negotiatedLanguage}
       langPackInstallPhase={props.langPackInstallPhase}
       forceHideStepsIndicator={props.forceHideStepsIndicator}
@@ -114,6 +122,7 @@ export const ProtonScreenActionButtons = props => {
     addonType,
     addonName,
     activeMultiSelect,
+    textInputs,
     installedAddons,
   } = props;
   const defaultValue = content.checkbox?.defaultValue;
@@ -145,8 +154,8 @@ export const ProtonScreenActionButtons = props => {
 
   // If we have a multi-select screen, we want to disable the primary button
   // until the user has selected at least one item.
-  const isPrimaryDisabled = primaryDisabledValue => {
-    if (primaryDisabledValue === "hasActiveMultiSelect") {
+  const isPrimaryDisabled = disabledValue => {
+    if (disabledValue === "hasActiveMultiSelect") {
       if (!activeMultiSelect) {
         return true;
       }
@@ -159,7 +168,17 @@ export const ProtonScreenActionButtons = props => {
       }
       return true;
     }
-    return primaryDisabledValue;
+    if (disabledValue === "hasTextInput") {
+      // For text input, we check if the user has entered any text in the
+      // textarea(s) present on the screen.
+      if (!textInputs) {
+        return true;
+      }
+      return Object.values(textInputs).every(
+        input => !input.isValid || input.value.trim().length === 0
+      );
+    }
+    return disabledValue;
   };
 
   return (
@@ -207,7 +226,12 @@ export const ProtonScreenActionButtons = props => {
         </Localized>
       )}
       {content.additional_button ? (
-        <AdditionalCTA content={content} handleAction={props.handleAction} />
+        <AdditionalCTA
+          content={content}
+          handleAction={props.handleAction}
+          activeMultiSelect={activeMultiSelect}
+          textInputs={textInputs}
+        />
       ) : null}
       {content.checkbox ? (
         <div className="checkbox-container">
@@ -229,6 +253,7 @@ export const ProtonScreenActionButtons = props => {
           content={content}
           handleAction={props.handleAction}
           activeMultiSelect={activeMultiSelect}
+          textInputs={textInputs}
         />
       ) : null}
     </div>
@@ -367,6 +392,7 @@ export class ProtonScreen extends React.PureComponent {
         negotiatedLanguage={this.props.negotiatedLanguage}
         langPackInstallPhase={this.props.langPackInstallPhase}
         messageId={this.props.messageId}
+        writeInMicrosurvey={this.props.writeInMicrosurvey}
       />
     ) : null;
   }
@@ -470,9 +496,9 @@ export class ProtonScreen extends React.PureComponent {
       typeof hero_text === "string" ||
       (typeof hero_text === "object" &&
         hero_text !== null &&
-        "string_id" in hero_text);
+        ("string_id" in hero_text || "raw" in hero_text));
 
-    const HeroTextWrapper = ({ children, className = "" }) => (
+    const HeroTextWrapper = ({ children, className }) => (
       <React.Fragment>
         <div className={`message-text ${className}`}>
           <div className="spacer-top" />
@@ -484,7 +510,7 @@ export class ProtonScreen extends React.PureComponent {
 
     if (isSimpleText) {
       return (
-        <HeroTextWrapper>
+        <HeroTextWrapper className="simple">
           <Localized text={hero_text}>
             <h1 />
           </Localized>
@@ -610,6 +636,7 @@ export class ProtonScreen extends React.PureComponent {
         addonType={this.props.addonType}
         handleAction={this.props.handleAction}
         activeMultiSelect={this.props.activeMultiSelect}
+        textInputs={this.props.textInputs}
       />
     ) : null;
   }

@@ -13,9 +13,12 @@ add_task(async function test_receive_punycode_result() {
         type: UrlbarUtils.RESULT_TYPE.URL,
         source: UrlbarUtils.RESULT_SOURCE.HISTORY,
         suggestedIndex: 0,
-        ...UrlbarResult.payloadAndSimpleHighlights(context.tokens, {
-          url: [url, UrlbarUtils.HIGHLIGHT.TYPED],
-        }),
+        payload: {
+          url,
+        },
+        highlights: {
+          url: UrlbarUtils.HIGHLIGHT.TYPED,
+        },
       });
       addCallback(this, result);
     }
@@ -26,12 +29,13 @@ add_task(async function test_receive_punycode_result() {
   }
   let provider = new ResultWithHighlightsProvider();
 
+  let providersManager = ProvidersManager.getInstanceForSap("urlbar");
   registerCleanupFunction(async () => {
-    UrlbarProvidersManager.unregisterProvider(provider);
+    providersManager.unregisterProvider(provider);
     await UrlbarTestUtils.promisePopupClose(window, () => gURLBar.blur());
     gURLBar.handleRevert();
   });
-  UrlbarProvidersManager.registerProvider(provider);
+  providersManager.registerProvider(provider);
 
   info("Open the result popup");
   await UrlbarTestUtils.promiseAutocompleteResultPopup({
@@ -42,12 +46,12 @@ add_task(async function test_receive_punycode_result() {
   let row = await UrlbarTestUtils.waitForAutocompleteResultAt(window, 0);
   is(row.result.type, UrlbarUtils.RESULT_TYPE.URL, "row.result.type");
   is(
-    row.result.payload.displayUrl,
+    row.result.getDisplayableValueAndHighlights("url", { isURL: true }).value,
     "اختبار.اختبار.org:5000",
     "Result is trimmed and formatted correctly."
   );
   is(
-    row.result.payload.title,
+    row.result.getDisplayableValueAndHighlights("title").value,
     "www.اختبار.اختبار.org:5000",
     "Result is trimmed and formatted correctly."
   );

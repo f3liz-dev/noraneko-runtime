@@ -307,7 +307,7 @@ impl<B: Buffer> Builder<B> {
     /// This stores a value that can be used as a limit.  This does not cause
     /// this limit to be enforced until encryption occurs.  Prior to that, it
     /// is only used voluntarily by users of the builder, through `remaining()`.
-    pub fn set_limit(&mut self, limit: usize) {
+    pub const fn set_limit(&mut self, limit: usize) {
         self.limit = limit;
     }
 
@@ -336,7 +336,7 @@ impl<B: Buffer> Builder<B> {
     }
 
     /// Mark the packet as needing padding (or not).
-    pub fn enable_padding(&mut self, needs_padding: bool) {
+    pub const fn enable_padding(&mut self, needs_padding: bool) {
         self.padding = needs_padding;
     }
 
@@ -499,10 +499,10 @@ impl<B: Buffer> Builder<B> {
         self.pad_to(data_end + crypto.expansion(), 0);
 
         // Calculate the mask.
-        let ciphertext = crypto.encrypt(self.pn, self.header.clone(), self.encoder.as_mut())?;
-        let offset = SAMPLE_OFFSET - self.offsets.pn.len();
+        crypto.encrypt(self.pn, self.header.clone(), self.encoder.as_mut())?;
         // `decode()` already checked that `decoder.remaining() >= SAMPLE_OFFSET + SAMPLE_SIZE`.
-        let sample = ciphertext[offset..offset + SAMPLE_SIZE]
+        let sample_start = self.header.end + SAMPLE_OFFSET - self.offsets.pn.len();
+        let sample = self.encoder.as_ref()[sample_start..sample_start + SAMPLE_SIZE]
             .try_into()
             .map_err(|_| Error::Internal)?;
         let mask = crypto.compute_mask(sample)?;
@@ -794,8 +794,9 @@ impl<'a> Public<'a> {
         self.data.len()
     }
 
+    #[cfg(feature = "build-fuzzing-corpus")]
     #[must_use]
-    pub fn data(&self) -> &[u8] {
+    pub const fn data(&self) -> &[u8] {
         self.data
     }
 
@@ -814,6 +815,12 @@ impl<'a> Public<'a> {
         }
     }
 
+    #[allow(
+        clippy::allow_attributes,
+        clippy::missing_asserts_for_indexing,
+        reason = "Checked, but clippy doesn't recognize it."
+        // FIXME: Check if MSRV >= 1.88 fixes this.
+    )]
     /// Decrypt the header of the packet.
     fn decrypt_header(&mut self, crypto: &CryptoDxState) -> Res<(bool, Number, Range<usize>)> {
         debug_assert_ne!(self.packet_type, Type::Retry);
@@ -838,6 +845,7 @@ impl<'a> Public<'a> {
         } else {
             HP_MASK_LONG
         };
+        assert!(!self.data.is_empty());
         let first_byte = self.data[0] ^ (mask[0] & bits);
 
         let mut hdrbytes = 0..self.header_len + 4;
@@ -870,45 +878,65 @@ impl<'a> Public<'a> {
     ///
     /// This will return an error if the packet cannot be decrypted.
     pub fn decrypt(
-        &mut self,
+        mut self,
         crypto: &mut CryptoStates,
         release_at: Instant,
-    ) -> Res<Decrypted<'_>> {
-        let epoch: Epoch = self.packet_type.try_into()?;
+    ) -> Result<Decrypted<'a>, DecryptionError<'a>> {
+        let epoch = match self.packet_type.try_into() {
+            Ok(e) => e,
+            Err(e) => return Err((self, e).into()),
+        };
         // When we don't have a version, the crypto code doesn't need a version
         // for lookup, so use the default, but fix it up if decryption succeeds.
         let version = self.version().unwrap_or_default();
         // This has to work in two stages because we need to remove header protection
         // before picking the keys to use.
-        if let Some(rx) = crypto.rx_hp(version, epoch) {
-            // Note that this will dump early, which creates a side-channel.
-            // This is OK in this case because we the only reason this can
-            // fail is if the cryptographic module is bad or the packet is
-            // too small (which is public information).
-            let (key_phase, pn, header) = self.decrypt_header(rx)?;
-            let Some(rx) = crypto.rx(version, epoch, key_phase) else {
-                return Err(Error::Decrypt);
-            };
-            let version = rx.version(); // Version fixup; see above.
-            let d = rx.decrypt(pn, header, self.data)?;
-            // If this is the first packet ever successfully decrypted
-            // using `rx`, make sure to initiate a key update.
-            if rx.needs_update() {
-                crypto.key_update_received(release_at)?;
+        let Some(rx) = crypto.rx_hp(version, epoch) else {
+            if crypto.rx_pending(epoch) {
+                return Err((self, Error::KeysPending(epoch)).into());
             }
-            crypto.check_pn_overlap()?;
-            Ok(Decrypted {
-                version,
-                pt: self.packet_type,
-                pn,
-                data: d,
-            })
-        } else if crypto.rx_pending(epoch) {
-            Err(Error::KeysPending(epoch))
-        } else {
             qtrace!("keys for {epoch:?} already discarded");
-            Err(Error::KeysDiscarded(epoch))
+            return Err((self, Error::KeysDiscarded(epoch)).into());
+        };
+        // Note that this will dump early, which creates a side-channel.
+        // This is OK in this case because we the only reason this can
+        // fail is if the cryptographic module is bad or the packet is
+        // too small (which is public information).
+        let (key_phase, pn, header) = match self.decrypt_header(rx) {
+            Ok(v) => v,
+            Err(e) => return Err((self, e).into()),
+        };
+        let Some(rx) = crypto.rx(version, epoch, key_phase) else {
+            return Err((self, Error::Decrypt).into());
+        };
+        let version = rx.version(); // Version fixup; see above.
+        let header_end = header.end;
+        let payload_len = match rx.decrypt(pn, header, self.data) {
+            Ok(v) => v,
+            Err(e) => return Err((self, e).into()),
+        };
+        let data = &self.data[header_end..header_end + payload_len];
+        // Helper for late errors where `self` is partially borrowed.
+        let make_err = |error| DecryptionError {
+            error,
+            data: self.data,
+            dcid: self.dcid.clone(),
+            packet_type: self.packet_type,
+        };
+        // If this is the first packet ever successfully decrypted
+        // using `rx`, make sure to initiate a key update.
+        if rx.needs_update() {
+            crypto.key_update_received(release_at).map_err(make_err)?;
         }
+        crypto.check_pn_overlap().map_err(make_err)?;
+        Ok(Decrypted {
+            version,
+            pt: self.packet_type,
+            pn,
+            dcid: self.dcid,
+            scid: self.scid,
+            data,
+        })
     }
 
     /// # Errors
@@ -941,11 +969,58 @@ impl fmt::Debug for Public<'_> {
     }
 }
 
+/// Error information from a failed decryption attempt.
+/// Contains minimal packet information needed for error handling.
+#[derive(Debug)]
+pub struct DecryptionError<'a> {
+    /// The error that occurred.
+    pub error: Error,
+    /// The original packet data (unchanged since decryption failed).
+    pub data: &'a [u8],
+    /// The destination connection ID.
+    pub dcid: ConnectionId,
+    /// The packet type.
+    pub packet_type: Type,
+}
+
+impl<'a> From<(Public<'a>, Error)> for DecryptionError<'a> {
+    fn from((packet, error): (Public<'a>, Error)) -> Self {
+        Self {
+            error,
+            data: packet.data,
+            dcid: packet.dcid,
+            packet_type: packet.packet_type,
+        }
+    }
+}
+
+impl DecryptionError<'_> {
+    #[must_use]
+    pub const fn len(&self) -> usize {
+        self.data.len()
+    }
+
+    // The packet module is made public when the `bench` feature is enabled or we're fuzzing, which
+    // triggers the `clippy::len_without_is_empty` lint without this.
+    #[cfg(any(fuzzing, feature = "bench"))]
+    #[must_use]
+    pub const fn is_empty(&self) -> bool {
+        self.data.is_empty()
+    }
+
+    #[must_use]
+    pub const fn packet_type(&self) -> Type {
+        self.packet_type
+    }
+}
+
 pub struct Decrypted<'a> {
     version: Version,
     pt: Type,
     pn: Number,
     data: &'a [u8],
+    dcid: ConnectionId,
+    scid: Option<ConnectionId>,
 }
 
 impl Decrypted<'_> {
@@ -962,6 +1037,22 @@ impl Decrypted<'_> {
     #[must_use]
     pub const fn pn(&self) -> Number {
         self.pn
+    }
+
+    #[must_use]
+    pub fn dcid(&self) -> ConnectionIdRef<'_> {
+        self.dcid.as_cid_ref()
+    }
+
+    /// # Panics
+    ///
+    /// This will panic if called for a short header packet.
+    #[must_use]
+    pub fn scid(&self) -> ConnectionIdRef<'_> {
+        self.scid
+            .as_ref()
+            .expect("should only be called for long header packets")
+            .as_cid_ref()
     }
 }
 
@@ -1030,7 +1121,7 @@ mod tests {
         assert_eq!(burn.len(), prot.expansion());
 
         let mut builder = Builder::long(
-            Encoder::new(),
+            Encoder::default(),
             Type::Initial,
             Version::default(),
             None::<&[u8]>,
@@ -1051,7 +1142,7 @@ mod tests {
         fixture_init();
         let mut padded = SAMPLE_INITIAL.to_vec();
         padded.extend_from_slice(EXTRA);
-        let (mut packet, remainder) = Public::decode(&mut padded, &cid_mgr()).unwrap();
+        let (packet, remainder) = Public::decode(&mut padded, &cid_mgr()).unwrap();
         assert_eq!(packet.packet_type(), Type::Initial);
         assert_eq!(&packet.dcid()[..], &[] as &[u8]);
         assert_eq!(&packet.scid()[..], SERVER_CID);
@@ -1066,7 +1157,7 @@ mod tests {
 
     #[test]
     fn disallow_long_dcid() {
-        let mut enc = Encoder::new();
+        let mut enc = Encoder::default();
         enc.encode_byte(packet::BIT_LONG | packet::BIT_FIXED_QUIC);
         enc.encode_uint(4, Version::default().wire_version());
         enc.encode_vec(1, &[0x00; ConnectionId::MAX_LEN + 1]);
@@ -1078,7 +1169,7 @@ mod tests {
 
     #[test]
     fn disallow_long_scid() {
-        let mut enc = Encoder::new();
+        let mut enc = Encoder::default();
         enc.encode_byte(packet::BIT_LONG | packet::BIT_FIXED_QUIC);
         enc.encode_uint(4, Version::default().wire_version());
         enc.encode_vec(1, &[]);
@@ -1097,12 +1188,14 @@ mod tests {
     #[test]
     fn build_short() {
         fixture_init();
+        assert!(!Type::Short.is_long());
         let mut builder = Builder::short(
-            Encoder::new(),
+            Encoder::default(),
             true,
             Some(ConnectionId::from(SERVER_CID)),
             packet::LIMIT,
         );
+        assert!(!builder.is_empty());
         builder.pn(0, 1);
         builder.encode(SAMPLE_SHORT_PAYLOAD); // Enough payload for sampling.
         let packet = builder
@@ -1117,7 +1210,7 @@ mod tests {
         let mut firsts = Vec::new();
         for _ in 0..64 {
             let mut builder = Builder::short(
-                Encoder::new(),
+                Encoder::default(),
                 true,
                 Some(ConnectionId::from(SERVER_CID)),
                 packet::LIMIT,
@@ -1141,7 +1234,7 @@ mod tests {
     fn decode_short() {
         fixture_init();
         let mut sample_short = SAMPLE_SHORT.to_vec();
-        let (mut packet, remainder) = Public::decode(&mut sample_short, &cid_mgr()).unwrap();
+        let (packet, remainder) = Public::decode(&mut sample_short, &cid_mgr()).unwrap();
         assert_eq!(packet.packet_type(), Type::Short);
         assert!(remainder.is_empty());
         let decrypted = packet
@@ -1156,7 +1249,7 @@ mod tests {
     fn decode_short_bad_cid() {
         fixture_init();
         let mut sample_short = SAMPLE_SHORT.to_vec();
-        let (mut packet, remainder) = Public::decode(
+        let (packet, remainder) = Public::decode(
             &mut sample_short,
             &RandomConnectionIdGenerator::new(SERVER_CID.len() - 1),
         )
@@ -1184,7 +1277,7 @@ mod tests {
         fixture_init();
         let mut prot = CryptoDxState::test_default();
         let mut builder = Builder::long(
-            Encoder::new(),
+            Encoder::default(),
             Type::Handshake,
             Version::default(),
             Some(ConnectionId::from(SERVER_CID)),
@@ -1224,7 +1317,7 @@ mod tests {
 
         fixture_init();
         let mut builder = Builder::long(
-            Encoder::new(),
+            Encoder::default(),
             Type::Handshake,
             Version::default(),
             None::<&[u8]>,
@@ -1244,7 +1337,7 @@ mod tests {
         let mut found_set = false;
         for _ in 1..64 {
             let mut builder = Builder::long(
-                Encoder::new(),
+                Encoder::default(),
                 Type::Handshake,
                 Version::default(),
                 None::<&[u8]>,
@@ -1266,7 +1359,7 @@ mod tests {
     #[test]
     fn build_abort() {
         let mut builder = Builder::long(
-            Encoder::new(),
+            Encoder::default(),
             Type::Initial,
             Version::default(),
             None::<&[u8]>,
@@ -1292,7 +1385,7 @@ mod tests {
         fixture_init();
 
         let mut builder = Builder::short(
-            Encoder::new(),
+            Encoder::default(),
             true,
             Some(ConnectionId::from(SERVER_CID)),
             LIMIT_FIRST,
@@ -1329,7 +1422,7 @@ mod tests {
         fixture_init();
         let crypto = CryptoDxState::test_default();
 
-        let mut encoder = Encoder::new();
+        let mut encoder = Encoder::default();
         encoder.pad_to(FIRST_QUIC_PACKET, 0);
 
         // Builder::long should add 1 (first byte) + 4 (version) + 2
@@ -1366,7 +1459,7 @@ mod tests {
 
         // Set up a builder with a very small limit
         let mut builder = Builder::short(
-            Encoder::new(),
+            Encoder::default(),
             false,
             Some(ConnectionId::from(SERVER_CID)),
             SMALL_LIMIT,
@@ -1503,7 +1596,7 @@ mod tests {
 
         let mut damaged_retry = SAMPLE_RETRY_V1.to_vec();
         let last = damaged_retry.len() - 1;
-        damaged_retry[last] ^= 66;
+        damaged_retry[last] ^= 0b100_0010; // 66
         let (packet, remainder) = Public::decode(&mut damaged_retry, &cid_mgr).unwrap();
         assert!(remainder.is_empty());
         assert!(!packet.is_valid_retry(&odcid));
@@ -1609,7 +1702,7 @@ mod tests {
         ];
         fixture_init();
         let mut packet = PACKET.to_vec();
-        let (mut packet, slice) =
+        let (packet, slice) =
             Public::decode(&mut packet, &EmptyConnectionIdGenerator::default()).unwrap();
         assert!(slice.is_empty());
         let decrypted = packet

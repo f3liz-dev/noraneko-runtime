@@ -4,6 +4,9 @@
 
 import { ContentProcessWatcherRegistry } from "resource://devtools/server/connectors/js-process-actor/ContentProcessWatcherRegistry.sys.mjs";
 
+// Do not import Targets/index.js to prevent having to load DevTools module loader.
+const FRAME = "frame";
+
 const lazy = {};
 ChromeUtils.defineESModuleGetters(
   lazy,
@@ -111,11 +114,11 @@ function createTargetsForWatcher(watcherDataObject, isProcessActorStartup) {
       //
       // We want to avoid creating transient targets for initial about blank when a new WindowGlobal
       // just get created as it will most likely navigate away just after and confuse the frontend with short lived target.
-      const acceptInitialDocument = !isProcessActorStartup;
+      const acceptUncommitedInitialDocument = !isProcessActorStartup;
 
       if (
         lazy.isWindowGlobalPartOfContext(windowGlobalChild, sessionContext, {
-          acceptInitialDocument,
+          acceptUncommitedInitialDocument,
         })
       ) {
         createWindowGlobalTargetActor(watcherDataObject, windowGlobalChild);
@@ -240,14 +243,6 @@ function onWindowGlobalCreated(
       "frame"
     )) {
       const { sessionContext } = watcherDataObject;
-      /*
-      try {
-        windowGlobal.browsingContext.watchedByDevTools = true;
-      } catch (e) {}
-      try {
-        windowGlobal.browsingContext.top.watchedByDevTools = true;
-      } catch (e) {}
-      */
       if (
         lazy.isWindowGlobalPartOfContext(windowGlobal, sessionContext, {
           forceAcceptTopLevelTarget,
@@ -369,7 +364,8 @@ function onWindowGlobalDestroyed(innerWindowId) {
     // be created and managed by the watcher universe, like all the others.
     const isTopLevelActorRegisteredOutsideOfWatcherActor =
       !watcherDataObject.actors.find(
-        actor => actor.innerWindowId == innerWindowId
+        actor =>
+          actor.innerWindowId == innerWindowId && actor.targetType == FRAME
       );
     const targetActorForm = isTopLevelActorRegisteredOutsideOfWatcherActor
       ? existingTarget.form()
@@ -479,6 +475,16 @@ function observe(subject, topic) {
     topic == "content-document-global-created" ||
     topic == "chrome-document-global-created"
   ) {
+    if (subject.isUncommittedInitialDocument) {
+      // If this is the initial document, it might be a short-lived transient one, and
+      // onWindowGlobalCreated will ignore such documents. If we receive a load
+      // event, the document has been committed to, and we know the initial document
+      // will persist. In that case, we need to call onWindowGlobalCreated again.
+      subject.addEventListener("DOMContentLoaded", handleEvent, {
+        capture: true,
+        once: true,
+      });
+    }
     onWindowGlobalCreated(subject);
   } else if (topic == "inner-window-destroyed") {
     const innerWindowId = subject.QueryInterface(Ci.nsISupportsPRUint64).data;
@@ -575,6 +581,20 @@ function handleEvent({ type, persisted, target }) {
     // if we navigate back to it, the next DOMWindowCreated won't create a new target for it.
     onWindowGlobalDestroyed(target.defaultView.windowGlobalChild.innerWindowId);
   }
+
+  if (type == "DOMContentLoaded") {
+    if (!target.isInitialDocument) {
+      return;
+    }
+
+    // This is similar to initial-document-element-inserted. onWindowGlobalCreated likely
+    // ignored the earlier call for this document because it was the uncommitted initial one. Now
+    // that we got a load event we know that the document is not transient but the destination of a
+    // load. Its state will have changed and onWindowGlobalCreated won't skip it anymore.
+    onWindowGlobalCreated(target.defaultView, {
+      ignoreIfExisting: true,
+    });
+  }
 }
 
 /**
@@ -598,8 +618,10 @@ function findTargetActor({
   //
   // And start by checking if there is a perfect match first by doing a WindowGlobal / innerWindowId lookup,
   // before falling back to a BrowsingContext / browsingContextID lookup.
+  // Check the actorType to avoid considering ContentScript targets which might
+  // have the same innerWindowId.
   let targetActor = watcherDataObject.actors.find(
-    actor => actor.innerWindowId == innerWindowId
+    actor => actor.innerWindowId == innerWindowId && actor.targetType == FRAME
   );
   if (!targetActor && browsingContextID) {
     targetActor = watcherDataObject.actors.find(
@@ -622,7 +644,9 @@ function findTargetActor({
     connectionPrefix
   );
 
-  return targetActors.find(actor => actor.innerWindowId == innerWindowId);
+  return targetActors.find(
+    actor => actor.innerWindowId == innerWindowId && actor.targetType == FRAME
+  );
 }
 
 export const WindowGlobalTargetWatcher = {

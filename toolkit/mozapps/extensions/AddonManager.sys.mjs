@@ -17,13 +17,6 @@ if ("@mozilla.org/xre/app-info;1" in Cc) {
 
 import { AppConstants } from "resource://gre/modules/AppConstants.sys.mjs";
 
-const MOZ_COMPATIBILITY_NIGHTLY = ![
-  "aurora",
-  "beta",
-  "release",
-  "esr",
-].includes(AppConstants.MOZ_UPDATE_CHANNEL);
-
 const INTL_LOCALES_CHANGED = "intl:app-locales-changed";
 const XPIPROVIDER_BLOCKLIST_ATTENTION_UPDATED =
   "xpi-provider:blocklist-attention-updated";
@@ -53,11 +46,14 @@ const PREF_WEBAPI_TESTING = "extensions.webapi.testing";
 const PREF_EM_POSTDOWNLOAD_THIRD_PARTY =
   "extensions.postDownloadThirdPartyPrompt";
 
+const PREF_ALLOW_EXECUTESCRIPT_IN_MOZEXTENSION =
+  "extensions.webextensions.allow_executeScript_in_moz_extension";
+
 const UPDATE_REQUEST_VERSION = 2;
 
 const BRANCH_REGEXP = /^([^\.]+\.[0-9]+[a-z]*).*/gi;
 const PREF_EM_CHECK_COMPATIBILITY_BASE = "extensions.checkCompatibility";
-var PREF_EM_CHECK_COMPATIBILITY = MOZ_COMPATIBILITY_NIGHTLY
+var PREF_EM_CHECK_COMPATIBILITY = AppConstants.NIGHTLY_BUILD
   ? PREF_EM_CHECK_COMPATIBILITY_BASE + ".nightly"
   : undefined;
 
@@ -143,6 +139,17 @@ XPCOMUtils.defineLazyPreferenceGetter(
   "GLEAN_PING_ADDONS_UPDATED_TESTING",
   PREF_GLEAN_PING_ADDONS_UPDATED_TESTING,
   false
+);
+
+XPCOMUtils.defineLazyPreferenceGetter(
+  lazy,
+  "ALLOW_EXECUTESCRIPT_IN_MOZEXTENSION",
+  PREF_ALLOW_EXECUTESCRIPT_IN_MOZEXTENSION,
+  false,
+  // onUpdate callback.
+  (_pref, _oldValue, newValue) => {
+    Glean.extensions.allowExecuteScriptInMozExtension.set(newValue);
+  }
 );
 
 // Initialize the WebExtension process script service as early as possible,
@@ -689,7 +696,7 @@ var AddonManagerInternal = {
         );
       }
 
-      if (!MOZ_COMPATIBILITY_NIGHTLY) {
+      if (!AppConstants.NIGHTLY_BUILD) {
         PREF_EM_CHECK_COMPATIBILITY =
           PREF_EM_CHECK_COMPATIBILITY_BASE +
           "." +
@@ -851,6 +858,10 @@ var AddonManagerInternal = {
       Services.prefs.getBoolPref(PREF_USE_REMOTE)
     );
     Services.prefs.addObserver(PREF_USE_REMOTE, this);
+
+    Glean.extensions.allowExecuteScriptInMozExtension.set(
+      lazy.ALLOW_EXECUTESCRIPT_IN_MOZEXTENSION
+    );
 
     logger.debug("Completed startup sequence");
     this.callManagerListeners("onStartup");
@@ -3014,9 +3025,9 @@ var AddonManagerInternal = {
    *
    * @param  aIDs
    *         The array of IDs to retrieve
-   * @return {Promise}
-   * @resolves The array of found add-ons.
-   * @rejects  Never
+   * @returns {Promise}
+   *   Resolves to the array of found add-ons.
+   * @rejects Never
    * @throws if the aIDs argument is not specified
    */
   getAddonsByIDs(aIDs) {
@@ -3089,9 +3100,9 @@ var AddonManagerInternal = {
    * @param  aTypes
    *         An optional array of types to retrieve. Each type is a string name
    *
-   * @resolve {addons: Array, fullData: bool}
-   *          fullData is true if addons contains all the data we have on those
-   *          addons. It is false if addons only contains partial data.
+   * @returns {Promise<{addons: Array, fullData: boolean}>}
+   *   fullData is true if addons contains all the data we have on those addons.
+   *   It is false if addons only contains partial data.
    */
   async getActiveAddons(aTypes) {
     if (!gStarted) {
@@ -4334,7 +4345,7 @@ export var AddonManager = {
     return gStartedPromise.promise;
   },
 
-  /** @constructor */
+  /** @class */
   init() {
     this._stateToString = new Map();
     for (let [name, value] of this._states) {
@@ -5974,8 +5985,8 @@ AMTelemetry = {
   },
 
   /**
-   * @params {object} opts
-   * @params {nsIURI} opts.displayURI
+   * @param {object} opts
+   * @param {nsIURI} opts.displayURI
    */
   recordSuspiciousSiteEvent({ displayURI }) {
     let site = displayURI?.displayHost ?? "(unknown)";

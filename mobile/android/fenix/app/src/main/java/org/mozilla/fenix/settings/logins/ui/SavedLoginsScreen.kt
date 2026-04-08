@@ -27,6 +27,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -40,19 +41,21 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.CollectionInfo
 import androidx.compose.ui.semantics.collectionInfo
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTag
+import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.text.style.TextDecoration
-import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.tooling.preview.PreviewParameter
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
-import mozilla.components.compose.base.annotation.FlexibleWindowLightDarkPreview
+import kotlinx.coroutines.flow.map
+import mozilla.components.compose.base.annotation.FlexibleWindowPreview
 import mozilla.components.compose.base.button.IconButton
 import mozilla.components.compose.base.menu.DropdownMenu
 import mozilla.components.compose.base.menu.MenuItem
 import mozilla.components.compose.base.textfield.TextField
-import mozilla.components.lib.state.ext.observeAsState
 import mozilla.components.support.ktx.kotlin.trimmed
 import org.mozilla.fenix.R
 import org.mozilla.fenix.compose.LinkText
@@ -62,6 +65,7 @@ import org.mozilla.fenix.compose.list.SelectableFaviconListItem
 import org.mozilla.fenix.settings.biometric.ui.SecureScreen
 import org.mozilla.fenix.settings.logins.ui.LoginsSortOrder.Alphabetical.isGuidToDelete
 import org.mozilla.fenix.theme.FirefoxTheme
+import org.mozilla.fenix.theme.PreviewThemeProvider
 import org.mozilla.fenix.theme.Theme
 import mozilla.components.ui.icons.R as iconsR
 
@@ -119,7 +123,7 @@ internal object LoginsDestinations {
 
 @Composable
 private fun LoginsList(store: LoginsStore) {
-    val state by store.observeAsState(store.state) { it }
+    val state by store.stateFlow.collectAsState()
 
     LaunchedEffect(Unit) {
         store.dispatch(LoginsListAppeared)
@@ -133,6 +137,7 @@ private fun LoginsList(store: LoginsStore) {
             )
         },
         contentWindowInsets = WindowInsets(0.dp),
+        modifier = Modifier.semantics { testTagsAsResourceId = true },
     ) { paddingValues ->
         if (state.searchText.isNullOrEmpty() && state.loginItems.isEmpty()) {
             EmptyList(dispatcher = store::dispatch, paddingValues = paddingValues)
@@ -149,6 +154,7 @@ private fun LoginsList(store: LoginsStore) {
                     .width(FirefoxTheme.layout.size.containerMaxWidth)
                     .weight(1f, false)
                     .semantics {
+                        testTag = LoginsTestingTags.SAVED_LOGINS_LIST
                         collectionInfo =
                             CollectionInfo(rowCount = state.loginItems.size, columnCount = 1)
                     },
@@ -164,6 +170,9 @@ private fun LoginsList(store: LoginsStore) {
                         isSelected = false,
                         onClick = { store.dispatch(LoginClicked(item)) },
                         description = item.username.trimmed(),
+                        modifier = Modifier.semantics {
+                            testTag = LoginsTestingTags.SAVED_LOGINS_LIST_ITEM + ".${item.url.trimmed()}"
+                        },
                     )
                 }
             }
@@ -185,6 +194,7 @@ private fun AddPasswordItem(
         label = stringResource(R.string.preferences_logins_add_login_2),
         modifier = modifier,
         beforeIconPainter = painterResource(iconsR.drawable.mozac_ic_plus_24),
+        description = stringResource(R.string.saved_logins_add_new_login_button_content_description),
         onClick = { onAddPasswordClicked() },
     )
 }
@@ -306,10 +316,13 @@ private fun LoginsListTopBar(
                 )
             }
 
-            IconButton(onClick = { searchActive = true }, contentDescription = null) {
+            IconButton(
+                onClick = { searchActive = true },
+                contentDescription = stringResource(R.string.preferences_passwords_saved_logins_search_2),
+            ) {
                 Icon(
                     painter = painterResource(iconsR.drawable.mozac_ic_search_24),
-                    contentDescription = stringResource(R.string.preferences_passwords_saved_logins_search_2),
+                    contentDescription = null,
                 )
             }
         },
@@ -336,6 +349,9 @@ private fun SearchBar(
             },
             errorText = "",
             modifier = Modifier
+                .semantics {
+                    testTag = LoginsTestingTags.SAVED_LOGINS_PASSWORD_SEARCH_FIELD
+                }
                 .fillMaxWidth()
                 .focusRequester(focusRequester),
             trailingIcon = {
@@ -349,7 +365,9 @@ private fun SearchBar(
                                 ),
                             )
                         },
-                        contentDescription = null,
+                        contentDescription = stringResource(
+                            R.string.saved_logins_clear_search_text_button_content_description,
+                        ),
                     ) {
                         Icon(
                             painter = painterResource(iconsR.drawable.mozac_ic_cross_24),
@@ -369,7 +387,9 @@ private fun LoginListSortMenu(
     onDismissRequest: () -> Unit,
     store: LoginsStore,
 ) {
-    val sortOrder by store.observeAsState(store.state.sortOrder) { store.state.sortOrder }
+    val sortOrder by remember {
+        store.stateFlow.map { store.state.sortOrder }
+    }.collectAsState(store.state.sortOrder)
     DropdownMenu(
         menuItems = listOf(
             MenuItem.CheckableItem(
@@ -409,34 +429,22 @@ private fun createStore() = LoginsStore(
     ),
 )
 
+@FlexibleWindowPreview
 @Composable
-@FlexibleWindowLightDarkPreview
-private fun LoginsListScreenPreview() {
-    FirefoxTheme {
+private fun LoginsListScreenPreview(
+    @PreviewParameter(PreviewThemeProvider::class) theme: Theme,
+) {
+    FirefoxTheme(theme) {
         LoginsList(store = createStore())
     }
 }
 
+@FlexibleWindowPreview
 @Composable
-@Preview
-private fun LoginsListScreenPrivatePreview() {
-    FirefoxTheme(theme = Theme.Private) {
-        LoginsList(store = createStore())
-    }
-}
-
-@Composable
-@FlexibleWindowLightDarkPreview
-private fun EmptyLoginsListScreenPreview() {
-    FirefoxTheme {
-        LoginsList(store = LoginsStore())
-    }
-}
-
-@Composable
-@Preview
-private fun EmptyLoginsListScreenPrivatePreview() {
-    FirefoxTheme(theme = Theme.Private) {
+private fun EmptyLoginsListScreenPreview(
+    @PreviewParameter(PreviewThemeProvider::class) theme: Theme,
+) {
+    FirefoxTheme(theme) {
         LoginsList(store = LoginsStore())
     }
 }

@@ -9,18 +9,6 @@
 import("../../webrtc.gni")
 
 rtc_library("emulated_network") {
-  visibility = [
-    ":*",
-    "../../api:create_network_emulation_manager",
-    "../../api/test/network_emulation:create_cross_traffic",
-  ]
-  if (rtc_include_tests) {
-    visibility += [
-      "../../modules/congestion_controller/goog_cc:goog_cc_unittests",
-      "../peer_scenario:*",
-      "../scenario:*",
-    ]
-  }
   testonly = true
   sources = [
     "cross_traffic.cc",
@@ -40,6 +28,7 @@ rtc_library("emulated_network") {
   ]
   deps = [
     ":simulated_network",
+    "..:create_test_environment",
     "../../api:array_view",
     "../../api:async_dns_resolver",
     "../../api:field_trials_view",
@@ -49,6 +38,7 @@ rtc_library("emulated_network") {
     "../../api:sequence_checker",
     "../../api:simulated_network_api",
     "../../api:time_controller",
+    "../../api/environment",
     "../../api/numerics",
     "../../api/task_queue",
     "../../api/task_queue:pending_task_safety_flag",
@@ -108,6 +98,7 @@ if (rtc_include_tests && !build_with_chromium) {
       "../../api:audio_options_api",
       "../../api:create_modular_peer_connection_factory",
       "../../api:enable_media_with_defaults",
+      "../../api:jsep",
       "../../api:libjingle_peerconnection_api",
       "../../api:media_stream_interface",
       "../../api:network_emulation_manager_api",

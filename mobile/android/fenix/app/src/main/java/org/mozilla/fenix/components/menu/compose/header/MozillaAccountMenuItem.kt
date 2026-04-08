@@ -37,7 +37,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
-import androidx.compose.ui.tooling.preview.PreviewLightDark
+import androidx.compose.ui.tooling.preview.PreviewParameter
 import androidx.compose.ui.unit.dp
 import mozilla.components.compose.base.theme.surfaceDimVariant
 import mozilla.components.service.fxa.manager.AccountState
@@ -49,6 +49,7 @@ import mozilla.components.service.fxa.store.Account
 import org.mozilla.fenix.R
 import org.mozilla.fenix.compose.Image
 import org.mozilla.fenix.theme.FirefoxTheme
+import org.mozilla.fenix.theme.PreviewThemeProvider
 import org.mozilla.fenix.theme.Theme
 import mozilla.components.ui.icons.R as iconsR
 
@@ -271,18 +272,12 @@ private fun MozillaAccountMenuItemPreviewContent() {
     }
 }
 
-@PreviewLightDark
-@Composable
-private fun MozillaAccountMenuItemPreview() {
-    FirefoxTheme {
-        MozillaAccountMenuItemPreviewContent()
-    }
-}
-
 @Preview
 @Composable
-private fun MozillaAccountMenuItemPrivatePreview() {
-    FirefoxTheme(theme = Theme.Private) {
+private fun MozillaAccountMenuItemPreview(
+    @PreviewParameter(PreviewThemeProvider::class) theme: Theme,
+) {
+    FirefoxTheme(theme) {
         MozillaAccountMenuItemPreviewContent()
     }
 }

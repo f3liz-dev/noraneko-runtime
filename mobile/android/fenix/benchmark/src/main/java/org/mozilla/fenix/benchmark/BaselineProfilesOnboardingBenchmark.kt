@@ -10,6 +10,7 @@ import androidx.benchmark.macro.StartupMode
 import androidx.benchmark.macro.StartupTimingMetric
 import androidx.benchmark.macro.junit4.MacrobenchmarkRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import org.junit.Ignore
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -23,8 +24,6 @@ import org.mozilla.fenix.benchmark.utils.revokeNotificationPermission
  * This test class benchmarks the speed of completing onboarding. Run this benchmark to verify how effective
  * a Baseline Profile is. It does this by comparing [CompilationMode.None], which represents the
  * app with no Baseline Profiles optimizations, and [CompilationMode.Partial], which uses Baseline Profiles.
- *
- * Before running make sure `autosignReleaseWithDebugKey=true` is present in local.properties.
  *
  * Run this benchmark to see startup measurements and captured system traces for verifying
  * the effectiveness of your Baseline Profiles. You can run it directly from Android
@@ -51,9 +50,11 @@ class BaselineProfilesOnboardingBenchmark {
     @get:Rule
     val benchmarkRule = MacrobenchmarkRule()
 
+    @Ignore("Failing: https://bugzilla.mozilla.org/show_bug.cgi?id=2021112")
     @Test
     fun onboardingNone() = onboardingBenchmark(CompilationMode.None())
 
+    @Ignore("Failing: https://bugzilla.mozilla.org/show_bug.cgi?id=2021112")
     @Test
     fun onboarding() =
         onboardingBenchmark(CompilationMode.Partial(baselineProfileMode = BaselineProfileMode.Require))

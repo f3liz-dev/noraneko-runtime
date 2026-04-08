@@ -119,6 +119,11 @@ used for different kinds of builds that target the same platform.  Values are
  * ``debug``
  * ``opt``
 
+ccov
+====
+
+Marks tasks related to code coverage collection.
+
 test_platform
 =============
 
@@ -251,6 +256,12 @@ stanzas for jobs.
 toolchain-artifact
 ==================
 For toolchain jobs, this is the path to the artifact for that toolchain.
+
+toolchain-resources
+===================
+For toolchain jobs, this is the list of paths that contribute to the toolchain's
+digest hash. These include the build script, any resources specified in the task
+definition, and the tooltool manifest (if present).
 
 toolchain-extract
 =================

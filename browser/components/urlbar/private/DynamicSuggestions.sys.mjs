@@ -103,17 +103,16 @@ export class DynamicSuggestions extends SuggestProvider {
       return null;
     }
 
+    payload.isManageable = true;
+    payload.helpUrl = lazy.QuickSuggest.HELP_URL;
+
     let resultProperties = { ...result };
     delete resultProperties.payload;
     return new lazy.UrlbarResult({
       type: lazy.UrlbarUtils.RESULT_TYPE.URL,
       source: lazy.UrlbarUtils.RESULT_SOURCE.SEARCH,
       ...resultProperties,
-      ...lazy.UrlbarResult.payloadAndSimpleHighlights(queryContext.tokens, {
-        ...payload,
-        isManageable: true,
-        helpUrl: lazy.QuickSuggest.HELP_URL,
-      }),
+      payload,
     });
   }
 

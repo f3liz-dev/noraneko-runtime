@@ -18,7 +18,6 @@
 #include <string.h>
 
 #include "jsfriendapi.h"
-#include "jsmath.h"
 
 #include "builtin/String.h"
 #include "frontend/CompilationStencil.h"
@@ -37,6 +36,7 @@
 #include "js/Stack.h"  // JS::NativeStackLimitMin
 #include "js/Wrapper.h"
 #include "js/WrapperCallbacks.h"
+#include "util/RandomSeed.h"
 #include "vm/DateTime.h"
 #include "vm/JSFunction.h"
 #include "vm/JSObject.h"
@@ -394,16 +394,27 @@ static bool InvokeInterruptCallbacks(JSContext* cx) {
   return stop;
 }
 
-static bool HandleInterrupt(JSContext* cx, bool invokeCallback) {
+static bool HandleInterrupt(JSContext* cx, bool invokeCallback,
+                            bool oomStackTrace) {
   MOZ_ASSERT(!cx->zone()->isAtomsZone());
 
   cx->runtime()->gc.gcIfRequested();
 
-  // A worker thread may have requested an interrupt after finishing an
-  // offthread compilation.
-  jit::AttachFinishedCompilations(cx);
+  if (oomStackTrace) {
+    // Capture OOM stack trace this way because we don't have memory to handle
+    // it the way ComputeStackString does.
+    cx->captureOOMStackTrace();
+  } else {
+    // We can handle OOM interrupts while handling exceptions, when it isn't
+    // safe to attach finished compilations
 
-  // Don't call the interrupt callback if we only interrupted for GC or Ion.
+    // A worker thread may have requested an interrupt after finishing an
+    // offthread compilation.
+    jit::AttachFinishedCompilations(cx);
+  }
+
+  // Don't call the interrupt callback if we only interrupted for GC, Ion, or
+  // OOM.
   if (!invokeCallback) {
     return true;
   }
@@ -415,19 +426,7 @@ static bool HandleInterrupt(JSContext* cx, bool invokeCallback) {
     return true;
   }
 
-  bool stop;
-#ifdef ENABLE_WASM_JSPI
-  if (IsSuspendableStackActive(cx)) {
-    stop = wasm::CallOnMainStack(
-        cx, reinterpret_cast<wasm::CallOnMainStackFn>(InvokeInterruptCallbacks),
-        (void*)cx);
-  } else
-#endif
-  {
-    stop = InvokeInterruptCallbacks(cx);
-  }
-
-  if (!stop) {
+  if (!InvokeInterruptCallbacks(cx)) {
     // Debugger treats invoking the interrupt callback as a "step", so
     // invoke the onStep handler.
     if (cx->realm()->isDebuggee()) {
@@ -494,9 +493,23 @@ bool JSContext::handleInterrupt() {
     bool invokeCallback =
         hasPendingInterrupt(InterruptReason::CallbackUrgent) ||
         hasPendingInterrupt(InterruptReason::CallbackCanWait);
+    bool oomStackTrace = hasPendingInterrupt(InterruptReason::OOMStackTrace);
     interruptBits_ = 0;
     resetJitStackLimit();
-    return HandleInterrupt(this, invokeCallback);
+    return HandleInterrupt(this, invokeCallback, oomStackTrace);
+  }
+  return true;
+}
+
+bool JSContext::handleInterruptNoCallbacks() {
+  MOZ_ASSERT(CurrentThreadCanAccessRuntime(runtime()));
+  if (hasAnyPendingInterrupt() || jitStackLimit == JS::NativeStackLimitMin) {
+    bool oomStackTrace = hasPendingInterrupt(InterruptReason::OOMStackTrace);
+    clearPendingInterrupt(js::InterruptReason::OOMStackTrace);
+    if (!hasAnyPendingInterrupt()) {
+      resetJitStackLimit();
+    }
+    return HandleInterrupt(this, false, oomStackTrace);
   }
   return true;
 }
@@ -606,25 +619,6 @@ JS::MaybeGetPromiseAllocationSiteFromPossiblyWrappedPromise(
     return unwrappedPromise->as<PromiseObject>().allocationSite();
   }
   return nullptr;
-}
-
-bool JSRuntime::enqueuePromiseJob(JSContext* cx, HandleFunction job,
-                                  HandleObject promise,
-                                  HandleObject hostDefinedData) {
-  MOZ_ASSERT(cx->jobQueue,
-             "Must select a JobQueue implementation using JS::JobQueue "
-             "or js::UseInternalJobQueues before using Promises");
-
-  if (promise) {
-#ifdef DEBUG
-    AssertSameCompartment(job, promise);
-#endif
-  }
-
-  RootedObject allocationSite(
-      cx, JS::MaybeGetPromiseAllocationSiteFromPossiblyWrappedPromise(promise));
-  return cx->jobQueue->enqueuePromiseJob(cx, promise, job, allocationSite,
-                                         hostDefinedData);
 }
 
 void JSRuntime::addUnhandledRejectedPromise(JSContext* cx,
@@ -746,8 +740,7 @@ void* JSRuntime::onOutOfMemoryCanGC(AllocFunction allocFunc, arena_id_t arena,
 
 bool JSRuntime::activeGCInAtomsZone() {
   Zone* zone = unsafeAtomsZone();
-  return (zone->needsIncrementalBarrier() &&
-          !gc.isVerifyPreBarriersEnabled()) ||
+  return (zone->needsMarkingBarrier() && !gc.isVerifyPreBarriersEnabled()) ||
          zone->wasGCStarted();
 }
 

@@ -9,23 +9,3 @@ include $(topsrcdir)/config/rules.mk
 install::
 	$(MAKE) -C build install
 	$(MAKE) -C shell install
-
-###############################################
-# Generating source package tarballs
-# (only possible when tar is found)
-ifneq (,$(TAR))
-
-source-package:
-	SRCDIR=$(srcdir) \
-	DIST=$(DIST) \
-	MKDIR=$(MKDIR) \
-	TAR=$(TAR) \
-	M4=$(M4) \
-	AWK=$(AWK) \
-	MOZJS_MAJOR_VERSION=$(MOZJS_MAJOR_VERSION) \
-	MOZJS_MINOR_VERSION=$(MOZJS_MINOR_VERSION) \
-	MOZJS_PATCH_VERSION=$(MOZJS_PATCH_VERSION) \
-	MOZJS_ALPHA=$(MOZJS_ALPHA) \
-	$(srcdir)/make-source-package.sh
-
-endif

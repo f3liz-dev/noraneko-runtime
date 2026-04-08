@@ -325,12 +325,13 @@ class NavigationRegistry extends EventEmitter {
   }
 
   /**
-   * Called when a navigation-committed event is recorded from the
-   * WebProgressListener actors.
+   * Called when a `document-inserted` event is recorded from the
+   * WebDriverDocumentInserted actors.
    *
    * This entry point is only intended to be called from
-   * WebProgressListenerParent, to avoid setting up observers or listeners,
-   * which are unnecessary since NavigationManager has to be a singleton.
+   * WebDriverDocumentInsertedParent, to avoid setting up
+   * observers or listeners, which are unnecessary since
+   * NavigationManager has to be a singleton.
    *
    * @param {object} data
    * @param {BrowsingContextDetails} data.contextDetails
@@ -347,7 +348,6 @@ class NavigationRegistry extends EventEmitter {
 
     const context = this.#getContextFromContextDetails(contextDetails);
     const navigableId = lazy.NavigableManager.getIdForBrowsingContext(context);
-
     const navigation = this.#navigations.get(navigableId);
 
     if (!navigation) {
@@ -668,7 +668,7 @@ class NavigationRegistry extends EventEmitter {
       return contextDetails.context;
     }
 
-    return contextDetails.isTopBrowsingContext
+    return contextDetails.isContent && contextDetails.isTopBrowsingContext
       ? BrowsingContext.getCurrentTopByBrowserId(contextDetails.browserId)
       : BrowsingContext.get(contextDetails.browsingContextId);
   }
@@ -763,8 +763,7 @@ class NavigationRegistry extends EventEmitter {
     const { download } = data;
 
     const contextId = download.source.browsingContextId;
-    const browsingContext =
-      lazy.NavigableManager.getBrowsingContextById(contextId);
+    const browsingContext = BrowsingContext.get(contextId);
     if (!browsingContext) {
       return;
     }
@@ -801,8 +800,7 @@ class NavigationRegistry extends EventEmitter {
     const { download } = data;
 
     const contextId = download.source.browsingContextId;
-    const browsingContext =
-      lazy.NavigableManager.getBrowsingContextById(contextId);
+    const browsingContext = BrowsingContext.get(contextId);
     if (!browsingContext) {
       return;
     }
@@ -829,13 +827,11 @@ class NavigationRegistry extends EventEmitter {
   };
 
   #onPromptClosed = (eventName, data) => {
-    const { contentBrowser, detail } = data;
-    const { accepted, promptType } = detail;
+    const { detail } = data;
+    const { accepted, browsingContext, promptType } = detail;
 
     // Send navigation failed event if beforeunload prompt was rejected.
     if (promptType === "beforeunload" && accepted === false) {
-      const browsingContext = contentBrowser.browsingContext;
-
       notifyNavigationFailed({
         contextDetails: {
           context: browsingContext,
@@ -847,13 +843,11 @@ class NavigationRegistry extends EventEmitter {
   };
 
   #onPromptOpened = (eventName, data) => {
-    const { contentBrowser, prompt } = data;
+    const { browsingContext, prompt } = data;
     const { promptType } = prompt;
 
     // We should start the navigation when beforeunload prompt is open.
     if (promptType === "beforeunload") {
-      const browsingContext = contentBrowser.browsingContext;
-
       notifyNavigationStarted({
         contextDetails: {
           context: browsingContext,

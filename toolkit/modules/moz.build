@@ -162,7 +162,6 @@ EXTRA_JS_MODULES += [
     "Console.sys.mjs",
     "ContentDOMReference.sys.mjs",
     "CreditCard.sys.mjs",
-    "DateTimePickerPanel.sys.mjs",
     "DeferredTask.sys.mjs",
     "E10SUtils.sys.mjs",
     "EventEmitter.sys.mjs",
@@ -215,6 +214,13 @@ EXTRA_JS_MODULES += [
     "WebChannel.sys.mjs",
 ]
 
+MOZ_SRC_FILES += [
+    "ColorPickerPanel.sys.mjs",
+    "DateTimePickerPanel.sys.mjs",
+    "FaviconUtils.sys.mjs",
+    "InputPickerPanelCommon.sys.mjs",
+]
+
 if CONFIG["MOZ_ASAN_REPORTER"]:
     EXTRA_JS_MODULES += [
         "AsanReporter.sys.mjs",
@@ -257,6 +263,10 @@ if "Android" != CONFIG["OS_TARGET"]:
         "subprocess",
     ]
 
+    DEFINES["MOZ_GOOGLE_LOCATION_SERVICE_API_KEY"] = (
+        CONFIG["MOZ_GOOGLE_LOCATION_SERVICE_API_KEY"] or ""
+    )
+
 if CONFIG["MOZ_WIDGET_TOOLKIT"] == "windows":
     EXTRA_JS_MODULES += [
         "WindowsLaunchOnLogin.sys.mjs",
@@ -271,7 +281,6 @@ for var in (
     "MOZ_APP_VERSION_DISPLAY",
     "MOZ_BING_API_CLIENTID",
     "MOZ_BING_API_KEY",
-    "MOZ_GOOGLE_LOCATION_SERVICE_API_KEY",
     "MOZ_GOOGLE_SAFEBROWSING_API_KEY",
     "MOZ_MACBUNDLE_ID",
     "MOZ_MACBUNDLE_NAME",

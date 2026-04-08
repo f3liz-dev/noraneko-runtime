@@ -5,6 +5,7 @@
 Apply some defaults and minor modifications to the jobs defined in the build
 kind.
 """
+
 import logging
 
 from mozbuild.artifact_builds import JOB_CHOICES as ARTIFACT_JOBS
@@ -18,6 +19,15 @@ from gecko_taskgraph.util.workertypes import worker_type_implementation
 logger = logging.getLogger(__name__)
 
 transforms = TransformSequence()
+
+
+@transforms.add
+def set_ccov_attribute(config, jobs):
+    for job in jobs:
+        label = job.get("label", job["name"])
+        if "ccov" in label:
+            job.setdefault("attributes", {})["ccov"] = True
+        yield job
 
 
 @transforms.add
@@ -118,9 +128,9 @@ def mozconfig(config, jobs):
         )
         mozconfig_variant = job["run"].pop("mozconfig-variant", None)
         if mozconfig_variant:
-            job["run"].setdefault("extra-config", {})[
-                "mozconfig_variant"
-            ] = mozconfig_variant
+            job["run"].setdefault("extra-config", {})["mozconfig_variant"] = (
+                mozconfig_variant
+            )
         yield job
 
 
@@ -194,7 +204,7 @@ def resolve_keys(config, jobs):
             job,
             "use-sccache",
             item_name=job["name"],
-            **{"release-level": release_level(config.params["project"])},
+            **{"release-level": release_level(config.params)},
         )
         yield job
 
@@ -241,15 +251,15 @@ def add_signing_artifacts(config, jobs):
     """
     Add signing artifacts to macOS build jobs.
     """
-    is_prod_project = release_level(config.params["project"]) == "production"
+    is_prod_project = release_level(config.params) == "production"
     for job in jobs:
         if "macosx" not in job["name"] or "searchfox" in job["name"]:
             # Not macosx build or no artifacts defined, so skip
             yield job
             continue
-        assert (
-            "artifacts" in job["worker"]
-        ), "macosx build jobs must have worker.artifacts defined."
+        assert "artifacts" in job["worker"], (
+            "macosx build jobs must have worker.artifacts defined."
+        )
         is_shippable = (
             ("shippable" in job["attributes"] and job["attributes"]["shippable"])
             # Instrumented builds don't have attributes.shippable set
@@ -283,13 +293,11 @@ def add_signing_artifacts(config, jobs):
                     )
         # Add utility.xml if not prod/shippable
         if not is_prod_project or not is_shippable:
-            job["worker"]["artifacts"].append(
-                {
-                    "name": "public/build/security/utility.xml",
-                    "path": "checkouts/gecko/security/mac/hardenedruntime/developer/utility.xml",
-                    "type": "file",
-                }
-            )
+            job["worker"]["artifacts"].append({
+                "name": "public/build/security/utility.xml",
+                "path": "checkouts/gecko/security/mac/hardenedruntime/developer/utility.xml",
+                "type": "file",
+            })
         impl, _ = worker_type_implementation(
             config.graph_config, config.params, job["worker-type"]
         )

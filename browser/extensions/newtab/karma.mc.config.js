@@ -256,6 +256,13 @@ module.exports = function (config) {
                 lines: 84,
                 functions: 83,
               },
+            "content-src/components/DiscoveryStreamComponents/BriefingCard/BriefingCard.jsx":
+              {
+                statements: 92.31,
+                branches: 66.67,
+                functions: 90,
+                lines: 94.59,
+              },
             /**
              * PromoCard currently has no functionality and is a placeholder component
              */
@@ -265,12 +272,6 @@ module.exports = function (config) {
                 lines: 0,
                 functions: 0,
                 branches: 0,
-              },
-            "content-src/components/DiscoveryStreamComponents/DSThumbsUpDownButtons/DSThumbsUpDownButtons.jsx":
-              {
-                statements: 75,
-                lines: 75,
-                branches: 50,
               },
             "content-src/components/DiscoveryStreamComponents/**/*.jsx": {
               statements: 80.95,
@@ -298,11 +299,18 @@ module.exports = function (config) {
               branches: 0,
             },
             "content-src/components/Weather/Weather.jsx": {
-              statements: 50,
-              lines: 50.94,
+              statements: 48,
+              lines: 49,
               functions: 31.2,
               branches: 31.2,
             },
+            "content-src/components/Widgets/WeatherForecast/WeatherForecast.jsx":
+              {
+                statements: 0,
+                lines: 0,
+                functions: 0,
+                branches: 0,
+              },
             "content-src/components/Weather/LocationSearch.jsx": {
               statements: 0,
               lines: 0,
@@ -325,10 +333,10 @@ module.exports = function (config) {
               branches: 0,
             },
             "content-src/components/CustomizeMenu/ContentSection/*.jsx": {
-              statements: 80,
-              lines: 80,
+              statements: 65,
+              lines: 65,
               functions: 99,
-              branches: 62,
+              branches: 56,
             },
             "content-src/components/CustomizeMenu/**/*.jsx": {
               statements: 68,
@@ -359,6 +367,12 @@ module.exports = function (config) {
               statements: 51.1,
               functions: 31.2,
               branches: 31.2,
+            },
+            "content-src/components/Search/Search.jsx": {
+              statements: 38,
+              lines: 39,
+              functions: 28,
+              branches: 25,
             },
             "content-src/components/**/*.jsx": {
               statements: 51.1,

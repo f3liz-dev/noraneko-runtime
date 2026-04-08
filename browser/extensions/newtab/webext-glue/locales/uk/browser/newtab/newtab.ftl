@@ -330,18 +330,16 @@ newtab-custom-recent-subtitle = Добірка недавніх сайтів т�
 newtab-custom-weather-toggle =
     .label = Погода
     .description = Точний прогноз на сьогодні
-newtab-custom-trending-search-toggle =
-    .label = Популярні пошукові запити
-    .description = Популярні пошукові запити
 newtab-custom-widget-weather-toggle =
     .label = Погода
-newtab-custom-widget-trending-search-toggle =
-    .label = Популярні пошукові запити
 newtab-custom-widget-lists-toggle =
     .label = Списки
 newtab-custom-widget-timer-toggle =
     .label = Таймер
 newtab-custom-widget-section-title = Віджети
+newtab-custom-widget-section-toggle =
+    .label = Віджети
+newtab-widget-manage-title = Віджети
 # Tooltip for close button
 newtab-custom-close-menu-button =
     .title = Закрити
@@ -493,6 +491,11 @@ newtab-weather-opt-in-yes =
     .label = Так
 # We'll be showing static (fake) weather data if the user has not opted in to using their location
 newtab-weather-static-city = Нью-Йорк
+# Variables:
+#   $provider (string) - Service provider for weather data
+newtab-weather-see-forecast-description =
+    .title = Дивіться прогноз у { $provider }
+    .aria-description = { $provider } ∙ Спонсоровано
 
 ## Topic Labels
 
@@ -584,7 +587,7 @@ newtab-new-user-custom-wallpaper-cta = Спробувати зараз
 
 ## Strings for download mobile highlight
 
-newtab-download-mobile-highlight-title = Завантажити { -brand-product-name } для мобільних пристроїв
+newtab-download-mobile-highlight-title = Завантажте { -brand-product-name } для мобільних пристроїв
 # "Scan the code" refers to scanning the QR code that appears above the body text that leads to Firefox for mobile download.
 newtab-download-mobile-highlight-body-variant-a = Скануйте код, щоб безпечно переглядати вебсторінки в дорозі.
 newtab-download-mobile-highlight-body-variant-b = Продовжуйте з того місця, де зупинилися, синхронізуючи вкладки, паролі тощо.
@@ -597,7 +600,7 @@ newtab-download-mobile-highlight-image =
 newtab-shortcuts-highlight-title = Ваші закладки завжди під рукою
 newtab-shortcuts-highlight-subtitle = Додайте ярлик, щоб мати миттєвий доступ до своїх улюблених сайтів.
 
-## Strings for reporting ads and content
+## Strings for reporting issues with ads and content
 
 newtab-report-content-why-reporting-this =
     .label = Чому ви повідомляєте про це?
@@ -619,17 +622,6 @@ newtab-report-cancel = Скасувати
 newtab-report-submit = Надіслати
 newtab-toast-thanks-for-reporting =
     .message = Дякуємо, що повідомили про це.
-
-## Strings for trending searches
-
-newtab-trending-searches-show-trending =
-    .title = Показати популярні пошукові запити
-newtab-trending-searches-hide-trending =
-    .title = Приховати популярні пошукові запити
-newtab-trending-searches-learn-more = Докладніше
-newtab-trending-searches-dismiss = Приховати популярні пошукові запити
-# "Trending searches refers to popular searches from search engines
-newtab-trending-searches-title = Популярні пошукові запити
 
 ## Strings for task / to-do list productivity widget
 
@@ -669,6 +661,17 @@ newtab-widget-lists-name-placeholder-default =
 # The placeholder value of the name field for a newly created list
 newtab-widget-lists-name-placeholder-new =
     .placeholder = Новий список
+newtab-widget-section-title = Віджети
+# Tooltip for hide all widgets button
+newtab-widget-section-hide-all-button =
+    .title = Приховати віджети
+    .aria-label = Приховати всі віджети
+newtab-widget-section-maximize =
+    .title = Розгорнути віджети
+    .aria-label = Розгорнути всі віджети до повного розміру
+newtab-widget-section-minimize =
+    .title = Згорнути віджети
+    .aria-label = Згорнути всі віджети до компактного розміру
 
 ## Strings for timer productivity widget
 ## When the timer ends, a system notification may be shown. Depending on which mode the timer is in, that message would be shown
@@ -691,8 +694,6 @@ newtab-widget-timer-menu-notifications = Вимкнути сповіщення
 newtab-widget-timer-menu-notifications-on = Увімкнути сповіщення
 newtab-widget-timer-menu-hide = Приховати таймер
 newtab-widget-timer-menu-learn-more = Докладніше
-# Message that appears when widgets are full-height. This reminds users that there is more New Tab content to see if they scroll
-newtab-widget-keep-scrolling = Прокрутіть, щоб переглянути більше
 newtab-widget-message-title = Будьте зосередженими завдяки спискам і вбудованому таймеру
 # to-dos stands for "things to do".
 newtab-widget-message-copy = Миттєві нагадування, щоденні справи, сеанси зосередження і перерви – контролюйте свої завдання і виконуйте їх вчасно.

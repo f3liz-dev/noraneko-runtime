@@ -131,7 +131,7 @@ static const std::string FormatEGLError(EGLint err) {
   }
 }
 
-MOZ_CONSTINIT static RefPtr<GLContext> sSnapshotContext;
+constinit static RefPtr<GLContext> sSnapshotContext;
 static StaticMutex sSnapshotContextMutex MOZ_UNANNOTATED;
 MOZ_RUNINIT static Atomic<int> gNewSurfaceUID(getpid());
 /* Memory reporter stuff */
@@ -276,6 +276,8 @@ bool DMABufSurface::UseDmaBufExportExtension(GLContext* aGLContext) {
     }
 
     if (!UseDmaBufGL(aGLContext)) {
+      gfxCriticalNote
+          << "DMABufSurface::UseDmaBufExportExtension(): dmabuf is disabled.";
       return false;
     }
 
@@ -294,8 +296,25 @@ bool DMABufSurface::UseDmaBufExportExtension(GLContext* aGLContext) {
             EGLExtension::EXT_image_dma_buf_import_modifiers) &&
         egl->IsExtensionSupported(EGLExtension::MESA_image_dma_buf_export);
     if (!extensionsAvailable) {
-      gfxCriticalNote << "DMABufSurface::UseDmaBufExportExtension(): "
-                         "MESA_image_dma_buf import/export extensions!";
+      if (!egl->IsExtensionSupported(EGLExtension::EXT_image_dma_buf_import)) {
+        gfxCriticalNote << "DMABufSurface::UseDmaBufExportExtension(): "
+                           "EXT_image_dma_buf_import is missing!";
+      }
+      if (!egl->IsExtensionSupported(
+              EGLExtension::EXT_image_dma_buf_import_modifiers)) {
+        gfxCriticalNote << "DMABufSurface::UseDmaBufExportExtension(): "
+                           "EXT_image_dma_buf_import_modifiers is missing!";
+      }
+      if (!egl->IsExtensionSupported(EGLExtension::MESA_image_dma_buf_export)) {
+        gfxCriticalNote << "DMABufSurface::UseDmaBufExportExtension(): "
+                           "MESA_image_dma_buf_export is missing!";
+      }
+      LOGDMAVERBOSES("Vendor: %s", aGLContext->VendorString().get());
+      LOGDMAVERBOSES("Renderer: %s", aGLContext->RendererString().get());
+      auto& strings = aGLContext->ExtensionStrings();
+      for (auto& ext : strings) {
+        LOGDMAVERBOSES("%s", ext.get());
+      }
     }
     return extensionsAvailable;
   }();
@@ -777,6 +796,7 @@ bool DMABufSurfaceRGBA::Create(mozilla::gl::GLContext* aGLContext, int aWidth,
                                RefPtr<DRMFormat> aFormat) {
   bool useGLSnapshot = gfx::gfxVars::UseDMABufSurfaceExport() && !aGLContext;
   if (useGLSnapshot) {
+    LOGDMAVERBOSES("DMABufSurfaceRGBA::Create(): use GL snapshot.");
     StaticMutexAutoLock lock(sSnapshotContextMutex);
     RefPtr<GLContext> context = ClaimSnapshotGLContext();
     auto releaseTextures = MakeScopeExit([&] {
@@ -787,6 +807,9 @@ bool DMABufSurfaceRGBA::Create(mozilla::gl::GLContext* aGLContext, int aWidth,
     // If gfxVars::UseDMABufSurfaceExport() is set but we fail due to missing
     // system support, don't try GBM.
     if (!UseDmaBufExportExtension(context)) {
+      LOGDMAVERBOSES(
+          "DMABufSurfaceRGBA::Create(): quit, can't use "
+          "UseDmaBufExportExtension!");
       return false;
     }
     return CreateExport(context, aWidth, aHeight, aDMABufSurfaceFlags);
@@ -794,6 +817,9 @@ bool DMABufSurfaceRGBA::Create(mozilla::gl::GLContext* aGLContext, int aWidth,
 
   if (gfx::gfxVars::UseDMABufSurfaceExport()) {
     if (!UseDmaBufExportExtension(aGLContext)) {
+      LOGDMAVERBOSES(
+          "DMABufSurfaceRGBA::Create(): quit, can't use "
+          "UseDmaBufExportExtension!");
       return false;
     }
     return CreateExport(aGLContext, aWidth, aHeight, aDMABufSurfaceFlags);
@@ -1533,8 +1559,9 @@ size_t DMABufSurfaceYUV::GetUsedMemoryYUV(int32_t aFOURCCFormat, int aWidth,
       // one plane 8b + two planes 8b (half sized).
       return aWidth * aHeight + (aWidth >> 1) * (aHeight >> 1) * 2;
     default:
-      MOZ_DIAGNOSTIC_CRASH(
-          "DMABufSurfaceYUV::GetUsedMemoryYUV(): unknown format!");
+      gfxCriticalError()
+          << "DMABufSurfaceYUV::GetUsedMemoryYUV(): unknown format: "
+          << gfx::hexa(aFOURCCFormat);
       return 0;
   }
 }
@@ -1745,7 +1772,8 @@ bool DMABufSurfaceYUV::CreateYUVPlaneExport(GLContext* aGLContext, int aPlane) {
       break;
     default:
       gfxCriticalError()
-          << "DMABufSurfaceYUV::CreateYUVPlaneExport(): Unsupported format";
+          << "DMABufSurfaceYUV::CreateYUVPlaneExport(): Unsupported format:"
+          << gfx::hexa(mDrmFormats[aPlane]);
       return false;
   }
 
@@ -1811,6 +1839,9 @@ bool DMABufSurfaceYUV::CreateYUVPlane(GLContext* aGLContext, int aPlane,
                                       DRMFormat* aFormat) {
   if (gfx::gfxVars::UseDMABufSurfaceExport()) {
     if (!UseDmaBufExportExtension(aGLContext)) {
+      LOGDMAVERBOSES(
+          "DMABufSurfaceYUV::CreateYUVPlane(): quit, can't use "
+          "UseDmaBufExportExtension.");
       return false;
     }
     return CreateYUVPlaneExport(aGLContext, aPlane);

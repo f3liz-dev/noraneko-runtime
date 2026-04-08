@@ -80,6 +80,13 @@ MediaSession::MediaSession(nsPIDOMWindowInner* aParent)
   }
 }
 
+MediaSession::~MediaSession() { DisconnectRequestAndListener(); }
+
+void MediaSession::DisconnectRequestAndListener() {
+  mLoadingArtworkRequest.DisconnectIfExists();
+  mMetadataChangeListener.DisconnectIfExists();
+}
+
 void MediaSession::Shutdown() {
   if (mDoc) {
     mDoc->UnregisterActivityObserver(this);
@@ -87,6 +94,7 @@ void MediaSession::Shutdown() {
   if (mParent) {
     SetMediaSessionDocStatus(SessionDocStatus::eInactive);
   }
+  DisconnectRequestAndListener();
 }
 
 void MediaSession::NotifyOwnerDocumentActivityChanged() {
@@ -117,7 +125,18 @@ JSObject* MediaSession::WrapObject(JSContext* aCx,
 MediaMetadata* MediaSession::GetMetadata() const { return mMediaMetadata; }
 
 void MediaSession::SetMetadata(MediaMetadata* aMetadata) {
+  mMetadataChangeListener.DisconnectIfExists();
   mMediaMetadata = aMetadata;
+  // Do not register a raw-pointer listener while inactive. eInactive covers
+  // both bfcache (temporary, session may resume) and Navigator::Invalidate()
+  // (permanent teardown). We still update mMediaMetadata above so that
+  // NotifyMediaSessionAttributes() can resync it when the session becomes
+  // active again after bfcache restore.
+  if (mMediaMetadata && mSessionDocState != SessionDocStatus::eInactive) {
+    mMetadataChangeListener = mMediaMetadata->MetadataChangeEvent().Connect(
+        AbstractThread::MainThread(), this,
+        &MediaSession::NotifyMetadataUpdated);
+  }
   NotifyMetadataUpdated();
 }
 
@@ -315,13 +334,43 @@ void MediaSession::NotifyMetadataUpdated() {
   RefPtr<BrowsingContext> currentBC = GetParentObject()->GetBrowsingContext();
   MOZ_ASSERT(currentBC, "Update session metadata after context destroyed!");
 
+  mLoadingArtworkRequest.DisconnectIfExists();
+
+  RefPtr<IMediaInfoUpdater> updater = ContentMediaAgent::Get(currentBC);
+  if (!updater) {
+    return;
+  }
+
   Maybe<MediaMetadataBase> metadata;
-  if (GetMetadata()) {
-    metadata.emplace(*(GetMetadata()->AsMetadataBase()));
+  if (mMediaMetadata) {
+    metadata.emplace(*mMediaMetadata->AsMetadataBaseWithoutArtworkSurface());
   }
-  if (RefPtr<IMediaInfoUpdater> updater = ContentMediaAgent::Get(currentBC)) {
-    updater->UpdateMetadata(currentBC->Id(), metadata);
+
+  updater->UpdateMetadata(currentBC->Id(), metadata);
+
+  // If we don't have any metadata, just return. Otherwise we might have
+  // artwork that we have to load asynchronously and update the metadata
+  // together with the artwork's image surface again.
+  if (metadata.isNothing() || metadata->mArtwork.IsEmpty()) {
+    return;
   }
+
+  LOG("Starting load of the MediaMetadata artwork.");
+  mMediaMetadata->LoadMetadataArtwork()
+      ->Then(
+          GetCurrentSerialEventTarget(), __func__,
+          [self = RefPtr{this}, currentBC](MediaMetadataBase&& aMetadata) {
+            if (RefPtr<IMediaInfoUpdater> updater =
+                    ContentMediaAgent::Get(currentBC)) {
+              updater->UpdateMetadata(currentBC->Id(), Some(aMetadata));
+            }
+
+            self->mLoadingArtworkRequest.Complete();
+          },
+          [](nsresult rv) {
+            MOZ_ASSERT_UNREACHABLE("LoadMetadataArtwork should always resolve");
+          })
+      ->Track(mLoadingArtworkRequest);
 }
 
 void MediaSession::NotifyEnableSupportedAction(MediaSessionAction aAction) {

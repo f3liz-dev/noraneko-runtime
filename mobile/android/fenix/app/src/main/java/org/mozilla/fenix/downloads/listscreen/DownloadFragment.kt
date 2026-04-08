@@ -21,11 +21,11 @@ import org.mozilla.fenix.compose.snackbar.Snackbar
 import org.mozilla.fenix.compose.snackbar.SnackbarState
 import org.mozilla.fenix.downloads.getCannotOpenFileErrorMessage
 import org.mozilla.fenix.downloads.listscreen.di.DownloadUIMiddlewareProvider
-import org.mozilla.fenix.downloads.listscreen.store.DownloadUIAction
 import org.mozilla.fenix.downloads.listscreen.store.DownloadUIState
 import org.mozilla.fenix.downloads.listscreen.store.DownloadUIStore
 import org.mozilla.fenix.downloads.listscreen.store.FileItem
 import org.mozilla.fenix.ext.components
+import org.mozilla.fenix.ext.hideToolbar
 import org.mozilla.fenix.theme.FirefoxTheme
 
 /**
@@ -48,6 +48,7 @@ class DownloadFragment : Fragment() {
             middleware = DownloadUIMiddlewareProvider.provideMiddleware(
                 coroutineScope = storeProvider.viewModelScope,
                 applicationContext = requireContext().applicationContext,
+                navController = findNavController(),
             ),
         )
     }
@@ -61,13 +62,6 @@ class DownloadFragment : Fragment() {
             DownloadsScreen(
                 downloadsStore = downloadStore,
                 onItemClick = { openItem(it) },
-                onNavigationIconClick = {
-                    if (downloadStore.state.mode is DownloadUIState.Mode.Editing) {
-                        downloadStore.dispatch(DownloadUIAction.ExitEditMode)
-                    } else {
-                        this@DownloadFragment.findNavController().popBackStack()
-                    }
-                },
             )
         }
     }
@@ -95,5 +89,10 @@ class DownloadFragment : Fragment() {
                 ).show()
             }
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        hideToolbar()
     }
 }

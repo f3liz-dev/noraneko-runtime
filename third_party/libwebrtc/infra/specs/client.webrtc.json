@@ -413,6 +413,26 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
+        "name": "video_timing_tests",
+        "resultdb": {
+          "enable": true,
+          "has_native_resultdb_integration": true
+        },
+        "swarming": {
+          "dimensions": {
+            "android_devices": "1",
+            "device_type": "walleye",
+            "os": "Android"
+          },
+          "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
+        },
+        "test": "video_timing_tests",
+        "test_id_prefix": "ninja://video/timing:video_timing_tests/"
+      },
+      {
+        "merge": {
+          "script": "//testing/merge_scripts/standard_gtest_merge.py"
+        },
         "name": "voip_unittests",
         "resultdb": {
           "enable": true,
@@ -903,6 +923,26 @@
         },
         "test": "video_engine_tests",
         "test_id_prefix": "ninja://:video_engine_tests/"
+      },
+      {
+        "merge": {
+          "script": "//testing/merge_scripts/standard_gtest_merge.py"
+        },
+        "name": "video_timing_tests",
+        "resultdb": {
+          "enable": true,
+          "has_native_resultdb_integration": true
+        },
+        "swarming": {
+          "dimensions": {
+            "android_devices": "1",
+            "device_type": "walleye",
+            "os": "Android"
+          },
+          "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
+        },
+        "test": "video_timing_tests",
+        "test_id_prefix": "ninja://video/timing:video_timing_tests/"
       },
       {
         "merge": {
@@ -1431,6 +1471,26 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_gtest_merge.py"
         },
+        "name": "video_timing_tests",
+        "resultdb": {
+          "enable": true,
+          "has_native_resultdb_integration": true
+        },
+        "swarming": {
+          "dimensions": {
+            "android_devices": "1",
+            "device_type": "walleye",
+            "os": "Android"
+          },
+          "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
+        },
+        "test": "video_timing_tests",
+        "test_id_prefix": "ninja://video/timing:video_timing_tests/"
+      },
+      {
+        "merge": {
+          "script": "//testing/merge_scripts/standard_gtest_merge.py"
+        },
         "name": "voip_unittests",
         "resultdb": {
           "enable": true,
@@ -1921,6 +1981,26 @@
         },
         "test": "video_engine_tests",
         "test_id_prefix": "ninja://:video_engine_tests/"
+      },
+      {
+        "merge": {
+          "script": "//testing/merge_scripts/standard_gtest_merge.py"
+        },
+        "name": "video_timing_tests",
+        "resultdb": {
+          "enable": true,
+          "has_native_resultdb_integration": true
+        },
+        "swarming": {
+          "dimensions": {
+            "android_devices": "1",
+            "device_type": "walleye",
+            "os": "Android"
+          },
+          "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
+        },
+        "test": "video_timing_tests",
+        "test_id_prefix": "ninja://video/timing:video_timing_tests/"
       },
       {
         "merge": {
@@ -2664,6 +2744,23 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
         },
+        "name": "video_timing_tests",
+        "resultdb": {
+          "result_format": "json"
+        },
+        "swarming": {
+          "dimensions": {
+            "cpu": "x86-64",
+            "os": "Ubuntu-22.04"
+          }
+        },
+        "test": "video_timing_tests",
+        "test_id_prefix": "ninja://video/timing:video_timing_tests/"
+      },
+      {
+        "merge": {
+          "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
+        },
         "name": "voip_unittests",
         "resultdb": {
           "result_format": "json"
@@ -3015,6 +3112,23 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
         },
+        "name": "video_timing_tests",
+        "resultdb": {
+          "result_format": "json"
+        },
+        "swarming": {
+          "dimensions": {
+            "cpu": "x86-64",
+            "os": "Ubuntu-22.04"
+          }
+        },
+        "test": "video_timing_tests",
+        "test_id_prefix": "ninja://video/timing:video_timing_tests/"
+      },
+      {
+        "merge": {
+          "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
+        },
         "name": "voip_unittests",
         "resultdb": {
           "result_format": "json"
@@ -3361,6 +3475,23 @@
         },
         "test": "video_engine_tests",
         "test_id_prefix": "ninja://:video_engine_tests/"
+      },
+      {
+        "merge": {
+          "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
+        },
+        "name": "video_timing_tests",
+        "resultdb": {
+          "result_format": "json"
+        },
+        "swarming": {
+          "dimensions": {
+            "cpu": "x86-64",
+            "os": "Ubuntu-22.04"
+          }
+        },
+        "test": "video_timing_tests",
+        "test_id_prefix": "ninja://video/timing:video_timing_tests/"
       },
       {
         "merge": {
@@ -3734,6 +3865,23 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
         },
+        "name": "video_timing_tests",
+        "resultdb": {
+          "result_format": "json"
+        },
+        "swarming": {
+          "dimensions": {
+            "cpu": "x86-64",
+            "os": "Ubuntu-22.04"
+          }
+        },
+        "test": "video_timing_tests",
+        "test_id_prefix": "ninja://video/timing:video_timing_tests/"
+      },
+      {
+        "merge": {
+          "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
+        },
         "name": "voip_unittests",
         "resultdb": {
           "result_format": "json"
@@ -4102,6 +4250,23 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
         },
+        "name": "video_timing_tests",
+        "resultdb": {
+          "result_format": "json"
+        },
+        "swarming": {
+          "dimensions": {
+            "cpu": "x86-64",
+            "os": "Ubuntu-22.04"
+          }
+        },
+        "test": "video_timing_tests",
+        "test_id_prefix": "ninja://video/timing:video_timing_tests/"
+      },
+      {
+        "merge": {
+          "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
+        },
         "name": "voip_unittests",
         "resultdb": {
           "result_format": "json"
@@ -4448,6 +4613,23 @@
         },
         "test": "video_engine_tests",
         "test_id_prefix": "ninja://:video_engine_tests/"
+      },
+      {
+        "merge": {
+          "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
+        },
+        "name": "video_timing_tests",
+        "resultdb": {
+          "result_format": "json"
+        },
+        "swarming": {
+          "dimensions": {
+            "cpu": "x86-64",
+            "os": "Ubuntu-22.04"
+          }
+        },
+        "test": "video_timing_tests",
+        "test_id_prefix": "ninja://video/timing:video_timing_tests/"
       },
       {
         "merge": {
@@ -4800,6 +4982,23 @@
         },
         "test": "video_engine_tests",
         "test_id_prefix": "ninja://:video_engine_tests/"
+      },
+      {
+        "merge": {
+          "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
+        },
+        "name": "video_timing_tests",
+        "resultdb": {
+          "result_format": "json"
+        },
+        "swarming": {
+          "dimensions": {
+            "cpu": "x86-64",
+            "os": "Ubuntu-22.04"
+          }
+        },
+        "test": "video_timing_tests",
+        "test_id_prefix": "ninja://video/timing:video_timing_tests/"
       },
       {
         "merge": {
@@ -5175,6 +5374,23 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
         },
+        "name": "video_timing_tests",
+        "resultdb": {
+          "result_format": "json"
+        },
+        "swarming": {
+          "dimensions": {
+            "cpu": "x86-64",
+            "os": "Ubuntu-22.04"
+          }
+        },
+        "test": "video_timing_tests",
+        "test_id_prefix": "ninja://video/timing:video_timing_tests/"
+      },
+      {
+        "merge": {
+          "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
+        },
         "name": "voip_unittests",
         "resultdb": {
           "result_format": "json"
@@ -5539,6 +5755,23 @@
         },
         "test": "video_engine_tests",
         "test_id_prefix": "ninja://:video_engine_tests/"
+      },
+      {
+        "merge": {
+          "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
+        },
+        "name": "video_timing_tests",
+        "resultdb": {
+          "result_format": "json"
+        },
+        "swarming": {
+          "dimensions": {
+            "cpu": "x86-64",
+            "os": "Ubuntu-22.04"
+          }
+        },
+        "test": "video_timing_tests",
+        "test_id_prefix": "ninja://video/timing:video_timing_tests/"
       },
       {
         "merge": {
@@ -5910,6 +6143,24 @@
         },
         "test": "video_engine_tests",
         "test_id_prefix": "ninja://:video_engine_tests/"
+      },
+      {
+        "merge": {
+          "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
+        },
+        "name": "video_timing_tests",
+        "resultdb": {
+          "result_format": "json"
+        },
+        "swarming": {
+          "dimensions": {
+            "cores": "12",
+            "cpu": "x86-64",
+            "os": "Mac-15"
+          }
+        },
+        "test": "video_timing_tests",
+        "test_id_prefix": "ninja://video/timing:video_timing_tests/"
       },
       {
         "merge": {
@@ -6287,6 +6538,24 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
         },
+        "name": "video_timing_tests",
+        "resultdb": {
+          "result_format": "json"
+        },
+        "swarming": {
+          "dimensions": {
+            "cores": "12",
+            "cpu": "x86-64",
+            "os": "Mac-15"
+          }
+        },
+        "test": "video_timing_tests",
+        "test_id_prefix": "ninja://video/timing:video_timing_tests/"
+      },
+      {
+        "merge": {
+          "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
+        },
         "name": "voip_unittests",
         "resultdb": {
           "result_format": "json"
@@ -6640,6 +6909,23 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
         },
+        "name": "video_timing_tests",
+        "resultdb": {
+          "result_format": "json"
+        },
+        "swarming": {
+          "dimensions": {
+            "cpu": "x86-64",
+            "os": "Mac-15"
+          }
+        },
+        "test": "video_timing_tests",
+        "test_id_prefix": "ninja://video/timing:video_timing_tests/"
+      },
+      {
+        "merge": {
+          "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
+        },
         "name": "voip_unittests",
         "resultdb": {
           "result_format": "json"
@@ -6986,6 +7272,23 @@
         },
         "test": "video_engine_tests",
         "test_id_prefix": "ninja://:video_engine_tests/"
+      },
+      {
+        "merge": {
+          "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
+        },
+        "name": "video_timing_tests",
+        "resultdb": {
+          "result_format": "json"
+        },
+        "swarming": {
+          "dimensions": {
+            "cpu": "arm64-64-Apple_M1",
+            "os": "Mac-15"
+          }
+        },
+        "test": "video_timing_tests",
+        "test_id_prefix": "ninja://video/timing:video_timing_tests/"
       },
       {
         "merge": {
@@ -7367,6 +7670,23 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
         },
+        "name": "video_timing_tests",
+        "resultdb": {
+          "result_format": "json"
+        },
+        "swarming": {
+          "dimensions": {
+            "cpu": "x86-64",
+            "os": "Windows-10-19045"
+          }
+        },
+        "test": "video_timing_tests",
+        "test_id_prefix": "ninja://video/timing:video_timing_tests/"
+      },
+      {
+        "merge": {
+          "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
+        },
         "name": "voip_unittests",
         "resultdb": {
           "result_format": "json"
@@ -7713,6 +8033,23 @@
         },
         "test": "video_engine_tests",
         "test_id_prefix": "ninja://:video_engine_tests/"
+      },
+      {
+        "merge": {
+          "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
+        },
+        "name": "video_timing_tests",
+        "resultdb": {
+          "result_format": "json"
+        },
+        "swarming": {
+          "dimensions": {
+            "cpu": "x86-64",
+            "os": "Windows-10-19045"
+          }
+        },
+        "test": "video_timing_tests",
+        "test_id_prefix": "ninja://video/timing:video_timing_tests/"
       },
       {
         "merge": {
@@ -8069,6 +8406,23 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
         },
+        "name": "video_timing_tests",
+        "resultdb": {
+          "result_format": "json"
+        },
+        "swarming": {
+          "dimensions": {
+            "cpu": "x86-64",
+            "os": "Windows-10-19045"
+          }
+        },
+        "test": "video_timing_tests",
+        "test_id_prefix": "ninja://video/timing:video_timing_tests/"
+      },
+      {
+        "merge": {
+          "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
+        },
         "name": "voip_unittests",
         "resultdb": {
           "result_format": "json"
@@ -8420,6 +8774,23 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
         },
+        "name": "video_timing_tests",
+        "resultdb": {
+          "result_format": "json"
+        },
+        "swarming": {
+          "dimensions": {
+            "cpu": "x86-64",
+            "os": "Windows-10-19045"
+          }
+        },
+        "test": "video_timing_tests",
+        "test_id_prefix": "ninja://video/timing:video_timing_tests/"
+      },
+      {
+        "merge": {
+          "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
+        },
         "name": "voip_unittests",
         "resultdb": {
           "result_format": "json"
@@ -8462,7 +8833,7 @@
           "--version",
           "17.5",
           "--xcode-build-version",
-          "17a5305f",
+          "17a324",
           "--out-dir",
           "${ISOLATED_OUTDIR}",
           "--xctest"
@@ -8484,17 +8855,17 @@
             }
           ],
           "dimensions": {
-            "cpu": "x86-64",
+            "cpu": "arm64",
             "os": "Mac-15"
           },
           "named_caches": [
             {
-              "name": "xcode_ios_17a5305f",
-              "path": "Xcode.app"
-            },
-            {
               "name": "runtime_ios_17_5",
               "path": "Runtime-ios-17.5"
+            },
+            {
+              "name": "xcode_ios_17a324",
+              "path": "Xcode.app"
             }
           ],
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
@@ -8511,7 +8882,7 @@
           "--version",
           "18.2",
           "--xcode-build-version",
-          "17a5305f",
+          "17a324",
           "--out-dir",
           "${ISOLATED_OUTDIR}",
           "--xctest"
@@ -8533,17 +8904,17 @@
             }
           ],
           "dimensions": {
-            "cpu": "x86-64",
+            "cpu": "arm64",
             "os": "Mac-15"
           },
           "named_caches": [
             {
-              "name": "xcode_ios_17a5305f",
-              "path": "Xcode.app"
-            },
-            {
               "name": "runtime_ios_18_2",
               "path": "Runtime-ios-18.2"
+            },
+            {
+              "name": "xcode_ios_17a324",
+              "path": "Xcode.app"
             }
           ],
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
@@ -8554,61 +8925,12 @@
       },
       {
         "args": [
-          "--xcodebuild-sim-runner",
-          "--platform",
-          "iPhone X",
-          "--version",
-          "16.4",
-          "--xcode-build-version",
-          "17a5305f",
-          "--out-dir",
-          "${ISOLATED_OUTDIR}",
-          "--xctest"
-        ],
-        "merge": {
-          "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
-        },
-        "name": "apprtcmobile_tests iPhone X 16.4",
-        "resultdb": {
-          "enable": true,
-          "has_native_resultdb_integration": true
-        },
-        "swarming": {
-          "cipd_packages": [
-            {
-              "cipd_package": "infra/tools/mac_toolchain/${platform}",
-              "location": ".",
-              "revision": "git_revision:4c7290150d1c360cecc6a93c0214dc531585c3ab"
-            }
-          ],
-          "dimensions": {
-            "cpu": "x86-64",
-            "os": "Mac-15"
-          },
-          "named_caches": [
-            {
-              "name": "xcode_ios_17a5305f",
-              "path": "Xcode.app"
-            },
-            {
-              "name": "runtime_ios_16_4",
-              "path": "Runtime-ios-16.4"
-            }
-          ],
-          "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
-        },
-        "test": "apprtcmobile_tests",
-        "test_id_prefix": "ninja://examples:apprtcmobile_tests/",
-        "variant_id": "iPhone X 16.4"
-      },
-      {
-        "args": [
           "--platform",
           "iPhone 14",
           "--version",
           "17.5",
           "--xcode-build-version",
-          "17a5305f",
+          "17a324",
           "--out-dir",
           "${ISOLATED_OUTDIR}",
           "--xctest"
@@ -8630,17 +8952,17 @@
             }
           ],
           "dimensions": {
-            "cpu": "x86-64",
+            "cpu": "arm64",
             "os": "Mac-15"
           },
           "named_caches": [
             {
-              "name": "xcode_ios_17a5305f",
-              "path": "Xcode.app"
-            },
-            {
               "name": "runtime_ios_17_5",
               "path": "Runtime-ios-17.5"
+            },
+            {
+              "name": "xcode_ios_17a324",
+              "path": "Xcode.app"
             }
           ],
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
@@ -8656,7 +8978,7 @@
           "--version",
           "18.2",
           "--xcode-build-version",
-          "17a5305f",
+          "17a324",
           "--out-dir",
           "${ISOLATED_OUTDIR}",
           "--xctest"
@@ -8678,17 +9000,17 @@
             }
           ],
           "dimensions": {
-            "cpu": "x86-64",
+            "cpu": "arm64",
             "os": "Mac-15"
           },
           "named_caches": [
             {
-              "name": "xcode_ios_17a5305f",
-              "path": "Xcode.app"
-            },
-            {
               "name": "runtime_ios_18_2",
               "path": "Runtime-ios-18.2"
+            },
+            {
+              "name": "xcode_ios_17a324",
+              "path": "Xcode.app"
             }
           ],
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
@@ -8700,59 +9022,11 @@
       {
         "args": [
           "--platform",
-          "iPhone X",
-          "--version",
-          "16.4",
-          "--xcode-build-version",
-          "17a5305f",
-          "--out-dir",
-          "${ISOLATED_OUTDIR}",
-          "--xctest"
-        ],
-        "merge": {
-          "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
-        },
-        "name": "audio_decoder_unittests iPhone X 16.4",
-        "resultdb": {
-          "enable": true,
-          "has_native_resultdb_integration": true
-        },
-        "swarming": {
-          "cipd_packages": [
-            {
-              "cipd_package": "infra/tools/mac_toolchain/${platform}",
-              "location": ".",
-              "revision": "git_revision:4c7290150d1c360cecc6a93c0214dc531585c3ab"
-            }
-          ],
-          "dimensions": {
-            "cpu": "x86-64",
-            "os": "Mac-15"
-          },
-          "named_caches": [
-            {
-              "name": "xcode_ios_17a5305f",
-              "path": "Xcode.app"
-            },
-            {
-              "name": "runtime_ios_16_4",
-              "path": "Runtime-ios-16.4"
-            }
-          ],
-          "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
-        },
-        "test": "audio_decoder_unittests",
-        "test_id_prefix": "ninja://modules/audio_coding:audio_decoder_unittests/",
-        "variant_id": "iPhone X 16.4"
-      },
-      {
-        "args": [
-          "--platform",
           "iPhone 14",
           "--version",
           "17.5",
           "--xcode-build-version",
-          "17a5305f",
+          "17a324",
           "--out-dir",
           "${ISOLATED_OUTDIR}",
           "--xctest"
@@ -8774,17 +9048,17 @@
             }
           ],
           "dimensions": {
-            "cpu": "x86-64",
+            "cpu": "arm64",
             "os": "Mac-15"
           },
           "named_caches": [
             {
-              "name": "xcode_ios_17a5305f",
-              "path": "Xcode.app"
-            },
-            {
               "name": "runtime_ios_17_5",
               "path": "Runtime-ios-17.5"
+            },
+            {
+              "name": "xcode_ios_17a324",
+              "path": "Xcode.app"
             }
           ],
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
@@ -8800,7 +9074,7 @@
           "--version",
           "18.2",
           "--xcode-build-version",
-          "17a5305f",
+          "17a324",
           "--out-dir",
           "${ISOLATED_OUTDIR}",
           "--xctest"
@@ -8822,17 +9096,17 @@
             }
           ],
           "dimensions": {
-            "cpu": "x86-64",
+            "cpu": "arm64",
             "os": "Mac-15"
           },
           "named_caches": [
             {
-              "name": "xcode_ios_17a5305f",
-              "path": "Xcode.app"
-            },
-            {
               "name": "runtime_ios_18_2",
               "path": "Runtime-ios-18.2"
+            },
+            {
+              "name": "xcode_ios_17a324",
+              "path": "Xcode.app"
             }
           ],
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
@@ -8844,59 +9118,11 @@
       {
         "args": [
           "--platform",
-          "iPhone X",
-          "--version",
-          "16.4",
-          "--xcode-build-version",
-          "17a5305f",
-          "--out-dir",
-          "${ISOLATED_OUTDIR}",
-          "--xctest"
-        ],
-        "merge": {
-          "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
-        },
-        "name": "common_audio_unittests iPhone X 16.4",
-        "resultdb": {
-          "enable": true,
-          "has_native_resultdb_integration": true
-        },
-        "swarming": {
-          "cipd_packages": [
-            {
-              "cipd_package": "infra/tools/mac_toolchain/${platform}",
-              "location": ".",
-              "revision": "git_revision:4c7290150d1c360cecc6a93c0214dc531585c3ab"
-            }
-          ],
-          "dimensions": {
-            "cpu": "x86-64",
-            "os": "Mac-15"
-          },
-          "named_caches": [
-            {
-              "name": "xcode_ios_17a5305f",
-              "path": "Xcode.app"
-            },
-            {
-              "name": "runtime_ios_16_4",
-              "path": "Runtime-ios-16.4"
-            }
-          ],
-          "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
-        },
-        "test": "common_audio_unittests",
-        "test_id_prefix": "ninja://common_audio:common_audio_unittests/",
-        "variant_id": "iPhone X 16.4"
-      },
-      {
-        "args": [
-          "--platform",
           "iPhone 14",
           "--version",
           "17.5",
           "--xcode-build-version",
-          "17a5305f",
+          "17a324",
           "--out-dir",
           "${ISOLATED_OUTDIR}",
           "--xctest"
@@ -8918,17 +9144,17 @@
             }
           ],
           "dimensions": {
-            "cpu": "x86-64",
+            "cpu": "arm64",
             "os": "Mac-15"
           },
           "named_caches": [
             {
-              "name": "xcode_ios_17a5305f",
-              "path": "Xcode.app"
-            },
-            {
               "name": "runtime_ios_17_5",
               "path": "Runtime-ios-17.5"
+            },
+            {
+              "name": "xcode_ios_17a324",
+              "path": "Xcode.app"
             }
           ],
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
@@ -8944,7 +9170,7 @@
           "--version",
           "18.2",
           "--xcode-build-version",
-          "17a5305f",
+          "17a324",
           "--out-dir",
           "${ISOLATED_OUTDIR}",
           "--xctest"
@@ -8966,17 +9192,17 @@
             }
           ],
           "dimensions": {
-            "cpu": "x86-64",
+            "cpu": "arm64",
             "os": "Mac-15"
           },
           "named_caches": [
             {
-              "name": "xcode_ios_17a5305f",
-              "path": "Xcode.app"
-            },
-            {
               "name": "runtime_ios_18_2",
               "path": "Runtime-ios-18.2"
+            },
+            {
+              "name": "xcode_ios_17a324",
+              "path": "Xcode.app"
             }
           ],
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
@@ -8988,59 +9214,11 @@
       {
         "args": [
           "--platform",
-          "iPhone X",
-          "--version",
-          "16.4",
-          "--xcode-build-version",
-          "17a5305f",
-          "--out-dir",
-          "${ISOLATED_OUTDIR}",
-          "--xctest"
-        ],
-        "merge": {
-          "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
-        },
-        "name": "common_video_unittests iPhone X 16.4",
-        "resultdb": {
-          "enable": true,
-          "has_native_resultdb_integration": true
-        },
-        "swarming": {
-          "cipd_packages": [
-            {
-              "cipd_package": "infra/tools/mac_toolchain/${platform}",
-              "location": ".",
-              "revision": "git_revision:4c7290150d1c360cecc6a93c0214dc531585c3ab"
-            }
-          ],
-          "dimensions": {
-            "cpu": "x86-64",
-            "os": "Mac-15"
-          },
-          "named_caches": [
-            {
-              "name": "xcode_ios_17a5305f",
-              "path": "Xcode.app"
-            },
-            {
-              "name": "runtime_ios_16_4",
-              "path": "Runtime-ios-16.4"
-            }
-          ],
-          "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
-        },
-        "test": "common_video_unittests",
-        "test_id_prefix": "ninja://common_video:common_video_unittests/",
-        "variant_id": "iPhone X 16.4"
-      },
-      {
-        "args": [
-          "--platform",
           "iPhone 14",
           "--version",
           "17.5",
           "--xcode-build-version",
-          "17a5305f",
+          "17a324",
           "--out-dir",
           "${ISOLATED_OUTDIR}",
           "--xctest"
@@ -9062,17 +9240,17 @@
             }
           ],
           "dimensions": {
-            "cpu": "x86-64",
+            "cpu": "arm64",
             "os": "Mac-15"
           },
           "named_caches": [
             {
-              "name": "xcode_ios_17a5305f",
-              "path": "Xcode.app"
-            },
-            {
               "name": "runtime_ios_17_5",
               "path": "Runtime-ios-17.5"
+            },
+            {
+              "name": "xcode_ios_17a324",
+              "path": "Xcode.app"
             }
           ],
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
@@ -9088,7 +9266,7 @@
           "--version",
           "18.2",
           "--xcode-build-version",
-          "17a5305f",
+          "17a324",
           "--out-dir",
           "${ISOLATED_OUTDIR}",
           "--xctest"
@@ -9110,17 +9288,17 @@
             }
           ],
           "dimensions": {
-            "cpu": "x86-64",
+            "cpu": "arm64",
             "os": "Mac-15"
           },
           "named_caches": [
             {
-              "name": "xcode_ios_17a5305f",
-              "path": "Xcode.app"
-            },
-            {
               "name": "runtime_ios_18_2",
               "path": "Runtime-ios-18.2"
+            },
+            {
+              "name": "xcode_ios_17a324",
+              "path": "Xcode.app"
             }
           ],
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
@@ -9132,59 +9310,11 @@
       {
         "args": [
           "--platform",
-          "iPhone X",
-          "--version",
-          "16.4",
-          "--xcode-build-version",
-          "17a5305f",
-          "--out-dir",
-          "${ISOLATED_OUTDIR}",
-          "--xctest"
-        ],
-        "merge": {
-          "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
-        },
-        "name": "dcsctp_unittests iPhone X 16.4",
-        "resultdb": {
-          "enable": true,
-          "has_native_resultdb_integration": true
-        },
-        "swarming": {
-          "cipd_packages": [
-            {
-              "cipd_package": "infra/tools/mac_toolchain/${platform}",
-              "location": ".",
-              "revision": "git_revision:4c7290150d1c360cecc6a93c0214dc531585c3ab"
-            }
-          ],
-          "dimensions": {
-            "cpu": "x86-64",
-            "os": "Mac-15"
-          },
-          "named_caches": [
-            {
-              "name": "xcode_ios_17a5305f",
-              "path": "Xcode.app"
-            },
-            {
-              "name": "runtime_ios_16_4",
-              "path": "Runtime-ios-16.4"
-            }
-          ],
-          "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
-        },
-        "test": "dcsctp_unittests",
-        "test_id_prefix": "ninja://net/dcsctp:dcsctp_unittests/",
-        "variant_id": "iPhone X 16.4"
-      },
-      {
-        "args": [
-          "--platform",
           "iPhone 14",
           "--version",
           "17.5",
           "--xcode-build-version",
-          "17a5305f",
+          "17a324",
           "--out-dir",
           "${ISOLATED_OUTDIR}",
           "--xctest"
@@ -9206,17 +9336,17 @@
             }
           ],
           "dimensions": {
-            "cpu": "x86-64",
+            "cpu": "arm64",
             "os": "Mac-15"
           },
           "named_caches": [
             {
-              "name": "xcode_ios_17a5305f",
-              "path": "Xcode.app"
-            },
-            {
               "name": "runtime_ios_17_5",
               "path": "Runtime-ios-17.5"
+            },
+            {
+              "name": "xcode_ios_17a324",
+              "path": "Xcode.app"
             }
           ],
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com",
@@ -9233,7 +9363,7 @@
           "--version",
           "18.2",
           "--xcode-build-version",
-          "17a5305f",
+          "17a324",
           "--out-dir",
           "${ISOLATED_OUTDIR}",
           "--xctest"
@@ -9255,17 +9385,17 @@
             }
           ],
           "dimensions": {
-            "cpu": "x86-64",
+            "cpu": "arm64",
             "os": "Mac-15"
           },
           "named_caches": [
             {
-              "name": "xcode_ios_17a5305f",
-              "path": "Xcode.app"
-            },
-            {
               "name": "runtime_ios_18_2",
               "path": "Runtime-ios-18.2"
+            },
+            {
+              "name": "xcode_ios_17a324",
+              "path": "Xcode.app"
             }
           ],
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com",
@@ -9278,60 +9408,11 @@
       {
         "args": [
           "--platform",
-          "iPhone X",
-          "--version",
-          "16.4",
-          "--xcode-build-version",
-          "17a5305f",
-          "--out-dir",
-          "${ISOLATED_OUTDIR}",
-          "--xctest"
-        ],
-        "merge": {
-          "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
-        },
-        "name": "modules_tests iPhone X 16.4",
-        "resultdb": {
-          "enable": true,
-          "has_native_resultdb_integration": true
-        },
-        "swarming": {
-          "cipd_packages": [
-            {
-              "cipd_package": "infra/tools/mac_toolchain/${platform}",
-              "location": ".",
-              "revision": "git_revision:4c7290150d1c360cecc6a93c0214dc531585c3ab"
-            }
-          ],
-          "dimensions": {
-            "cpu": "x86-64",
-            "os": "Mac-15"
-          },
-          "named_caches": [
-            {
-              "name": "xcode_ios_17a5305f",
-              "path": "Xcode.app"
-            },
-            {
-              "name": "runtime_ios_16_4",
-              "path": "Runtime-ios-16.4"
-            }
-          ],
-          "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com",
-          "shards": 2
-        },
-        "test": "modules_tests",
-        "test_id_prefix": "ninja://modules:modules_tests/",
-        "variant_id": "iPhone X 16.4"
-      },
-      {
-        "args": [
-          "--platform",
           "iPhone 14",
           "--version",
           "17.5",
           "--xcode-build-version",
-          "17a5305f",
+          "17a324",
           "--out-dir",
           "${ISOLATED_OUTDIR}",
           "--xctest"
@@ -9354,17 +9435,17 @@
           ],
           "dimensions": {
             "cores": "12",
-            "cpu": "x86-64",
+            "cpu": "arm64",
             "os": "Mac-15"
           },
           "named_caches": [
             {
-              "name": "xcode_ios_17a5305f",
-              "path": "Xcode.app"
-            },
-            {
               "name": "runtime_ios_17_5",
               "path": "Runtime-ios-17.5"
+            },
+            {
+              "name": "xcode_ios_17a324",
+              "path": "Xcode.app"
             }
           ],
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com",
@@ -9381,7 +9462,7 @@
           "--version",
           "18.2",
           "--xcode-build-version",
-          "17a5305f",
+          "17a324",
           "--out-dir",
           "${ISOLATED_OUTDIR}",
           "--xctest"
@@ -9404,17 +9485,17 @@
           ],
           "dimensions": {
             "cores": "12",
-            "cpu": "x86-64",
+            "cpu": "arm64",
             "os": "Mac-15"
           },
           "named_caches": [
             {
-              "name": "xcode_ios_17a5305f",
-              "path": "Xcode.app"
-            },
-            {
               "name": "runtime_ios_18_2",
               "path": "Runtime-ios-18.2"
+            },
+            {
+              "name": "xcode_ios_17a324",
+              "path": "Xcode.app"
             }
           ],
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com",
@@ -9427,61 +9508,11 @@
       {
         "args": [
           "--platform",
-          "iPhone X",
-          "--version",
-          "16.4",
-          "--xcode-build-version",
-          "17a5305f",
-          "--out-dir",
-          "${ISOLATED_OUTDIR}",
-          "--xctest"
-        ],
-        "merge": {
-          "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
-        },
-        "name": "modules_unittests iPhone X 16.4",
-        "resultdb": {
-          "enable": true,
-          "has_native_resultdb_integration": true
-        },
-        "swarming": {
-          "cipd_packages": [
-            {
-              "cipd_package": "infra/tools/mac_toolchain/${platform}",
-              "location": ".",
-              "revision": "git_revision:4c7290150d1c360cecc6a93c0214dc531585c3ab"
-            }
-          ],
-          "dimensions": {
-            "cores": "12",
-            "cpu": "x86-64",
-            "os": "Mac-15"
-          },
-          "named_caches": [
-            {
-              "name": "xcode_ios_17a5305f",
-              "path": "Xcode.app"
-            },
-            {
-              "name": "runtime_ios_16_4",
-              "path": "Runtime-ios-16.4"
-            }
-          ],
-          "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com",
-          "shards": 6
-        },
-        "test": "modules_unittests",
-        "test_id_prefix": "ninja://modules:modules_unittests/",
-        "variant_id": "iPhone X 16.4"
-      },
-      {
-        "args": [
-          "--platform",
           "iPhone 14",
           "--version",
           "17.5",
           "--xcode-build-version",
-          "17a5305f",
+          "17a324",
           "--out-dir",
           "${ISOLATED_OUTDIR}",
           "--xctest"
@@ -9503,17 +9534,17 @@
             }
           ],
           "dimensions": {
-            "cpu": "x86-64",
+            "cpu": "arm64",
             "os": "Mac-15"
           },
           "named_caches": [
             {
-              "name": "xcode_ios_17a5305f",
-              "path": "Xcode.app"
-            },
-            {
               "name": "runtime_ios_17_5",
               "path": "Runtime-ios-17.5"
+            },
+            {
+              "name": "xcode_ios_17a324",
+              "path": "Xcode.app"
             }
           ],
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
@@ -9529,7 +9560,7 @@
           "--version",
           "18.2",
           "--xcode-build-version",
-          "17a5305f",
+          "17a324",
           "--out-dir",
           "${ISOLATED_OUTDIR}",
           "--xctest"
@@ -9551,17 +9582,17 @@
             }
           ],
           "dimensions": {
-            "cpu": "x86-64",
+            "cpu": "arm64",
             "os": "Mac-15"
           },
           "named_caches": [
             {
-              "name": "xcode_ios_17a5305f",
-              "path": "Xcode.app"
-            },
-            {
               "name": "runtime_ios_18_2",
               "path": "Runtime-ios-18.2"
+            },
+            {
+              "name": "xcode_ios_17a324",
+              "path": "Xcode.app"
             }
           ],
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
@@ -9573,59 +9604,11 @@
       {
         "args": [
           "--platform",
-          "iPhone X",
-          "--version",
-          "16.4",
-          "--xcode-build-version",
-          "17a5305f",
-          "--out-dir",
-          "${ISOLATED_OUTDIR}",
-          "--xctest"
-        ],
-        "merge": {
-          "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
-        },
-        "name": "rtc_media_unittests iPhone X 16.4",
-        "resultdb": {
-          "enable": true,
-          "has_native_resultdb_integration": true
-        },
-        "swarming": {
-          "cipd_packages": [
-            {
-              "cipd_package": "infra/tools/mac_toolchain/${platform}",
-              "location": ".",
-              "revision": "git_revision:4c7290150d1c360cecc6a93c0214dc531585c3ab"
-            }
-          ],
-          "dimensions": {
-            "cpu": "x86-64",
-            "os": "Mac-15"
-          },
-          "named_caches": [
-            {
-              "name": "xcode_ios_17a5305f",
-              "path": "Xcode.app"
-            },
-            {
-              "name": "runtime_ios_16_4",
-              "path": "Runtime-ios-16.4"
-            }
-          ],
-          "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
-        },
-        "test": "rtc_media_unittests",
-        "test_id_prefix": "ninja://media:rtc_media_unittests/",
-        "variant_id": "iPhone X 16.4"
-      },
-      {
-        "args": [
-          "--platform",
           "iPhone 14",
           "--version",
           "17.5",
           "--xcode-build-version",
-          "17a5305f",
+          "17a324",
           "--out-dir",
           "${ISOLATED_OUTDIR}",
           "--xctest"
@@ -9647,17 +9630,17 @@
             }
           ],
           "dimensions": {
-            "cpu": "x86-64",
+            "cpu": "arm64",
             "os": "Mac-15"
           },
           "named_caches": [
             {
-              "name": "xcode_ios_17a5305f",
-              "path": "Xcode.app"
-            },
-            {
               "name": "runtime_ios_17_5",
               "path": "Runtime-ios-17.5"
+            },
+            {
+              "name": "xcode_ios_17a324",
+              "path": "Xcode.app"
             }
           ],
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
@@ -9673,7 +9656,7 @@
           "--version",
           "18.2",
           "--xcode-build-version",
-          "17a5305f",
+          "17a324",
           "--out-dir",
           "${ISOLATED_OUTDIR}",
           "--xctest"
@@ -9695,17 +9678,17 @@
             }
           ],
           "dimensions": {
-            "cpu": "x86-64",
+            "cpu": "arm64",
             "os": "Mac-15"
           },
           "named_caches": [
             {
-              "name": "xcode_ios_17a5305f",
-              "path": "Xcode.app"
-            },
-            {
               "name": "runtime_ios_18_2",
               "path": "Runtime-ios-18.2"
+            },
+            {
+              "name": "xcode_ios_17a324",
+              "path": "Xcode.app"
             }
           ],
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
@@ -9717,59 +9700,11 @@
       {
         "args": [
           "--platform",
-          "iPhone X",
-          "--version",
-          "16.4",
-          "--xcode-build-version",
-          "17a5305f",
-          "--out-dir",
-          "${ISOLATED_OUTDIR}",
-          "--xctest"
-        ],
-        "merge": {
-          "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
-        },
-        "name": "rtc_p2p_unittests iPhone X 16.4",
-        "resultdb": {
-          "enable": true,
-          "has_native_resultdb_integration": true
-        },
-        "swarming": {
-          "cipd_packages": [
-            {
-              "cipd_package": "infra/tools/mac_toolchain/${platform}",
-              "location": ".",
-              "revision": "git_revision:4c7290150d1c360cecc6a93c0214dc531585c3ab"
-            }
-          ],
-          "dimensions": {
-            "cpu": "x86-64",
-            "os": "Mac-15"
-          },
-          "named_caches": [
-            {
-              "name": "xcode_ios_17a5305f",
-              "path": "Xcode.app"
-            },
-            {
-              "name": "runtime_ios_16_4",
-              "path": "Runtime-ios-16.4"
-            }
-          ],
-          "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
-        },
-        "test": "rtc_p2p_unittests",
-        "test_id_prefix": "ninja://:rtc_p2p_unittests/",
-        "variant_id": "iPhone X 16.4"
-      },
-      {
-        "args": [
-          "--platform",
           "iPhone 14",
           "--version",
           "17.5",
           "--xcode-build-version",
-          "17a5305f",
+          "17a324",
           "--out-dir",
           "${ISOLATED_OUTDIR}",
           "--xctest"
@@ -9791,17 +9726,17 @@
             }
           ],
           "dimensions": {
-            "cpu": "x86-64",
+            "cpu": "arm64",
             "os": "Mac-15"
           },
           "named_caches": [
             {
-              "name": "xcode_ios_17a5305f",
-              "path": "Xcode.app"
-            },
-            {
               "name": "runtime_ios_17_5",
               "path": "Runtime-ios-17.5"
+            },
+            {
+              "name": "xcode_ios_17a324",
+              "path": "Xcode.app"
             }
           ],
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
@@ -9817,7 +9752,7 @@
           "--version",
           "18.2",
           "--xcode-build-version",
-          "17a5305f",
+          "17a324",
           "--out-dir",
           "${ISOLATED_OUTDIR}",
           "--xctest"
@@ -9839,17 +9774,17 @@
             }
           ],
           "dimensions": {
-            "cpu": "x86-64",
+            "cpu": "arm64",
             "os": "Mac-15"
           },
           "named_caches": [
             {
-              "name": "xcode_ios_17a5305f",
-              "path": "Xcode.app"
-            },
-            {
               "name": "runtime_ios_18_2",
               "path": "Runtime-ios-18.2"
+            },
+            {
+              "name": "xcode_ios_17a324",
+              "path": "Xcode.app"
             }
           ],
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
@@ -9861,59 +9796,11 @@
       {
         "args": [
           "--platform",
-          "iPhone X",
-          "--version",
-          "16.4",
-          "--xcode-build-version",
-          "17a5305f",
-          "--out-dir",
-          "${ISOLATED_OUTDIR}",
-          "--xctest"
-        ],
-        "merge": {
-          "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
-        },
-        "name": "rtc_pc_unittests iPhone X 16.4",
-        "resultdb": {
-          "enable": true,
-          "has_native_resultdb_integration": true
-        },
-        "swarming": {
-          "cipd_packages": [
-            {
-              "cipd_package": "infra/tools/mac_toolchain/${platform}",
-              "location": ".",
-              "revision": "git_revision:4c7290150d1c360cecc6a93c0214dc531585c3ab"
-            }
-          ],
-          "dimensions": {
-            "cpu": "x86-64",
-            "os": "Mac-15"
-          },
-          "named_caches": [
-            {
-              "name": "xcode_ios_17a5305f",
-              "path": "Xcode.app"
-            },
-            {
-              "name": "runtime_ios_16_4",
-              "path": "Runtime-ios-16.4"
-            }
-          ],
-          "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
-        },
-        "test": "rtc_pc_unittests",
-        "test_id_prefix": "ninja://pc:rtc_pc_unittests/",
-        "variant_id": "iPhone X 16.4"
-      },
-      {
-        "args": [
-          "--platform",
           "iPhone 14",
           "--version",
           "17.5",
           "--xcode-build-version",
-          "17a5305f",
+          "17a324",
           "--out-dir",
           "${ISOLATED_OUTDIR}",
           "--xctest"
@@ -9935,17 +9822,17 @@
             }
           ],
           "dimensions": {
-            "cpu": "x86-64",
+            "cpu": "arm64",
             "os": "Mac-15"
           },
           "named_caches": [
             {
-              "name": "xcode_ios_17a5305f",
-              "path": "Xcode.app"
-            },
-            {
               "name": "runtime_ios_17_5",
               "path": "Runtime-ios-17.5"
+            },
+            {
+              "name": "xcode_ios_17a324",
+              "path": "Xcode.app"
             }
           ],
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
@@ -9961,7 +9848,7 @@
           "--version",
           "18.2",
           "--xcode-build-version",
-          "17a5305f",
+          "17a324",
           "--out-dir",
           "${ISOLATED_OUTDIR}",
           "--xctest"
@@ -9983,17 +9870,17 @@
             }
           ],
           "dimensions": {
-            "cpu": "x86-64",
+            "cpu": "arm64",
             "os": "Mac-15"
           },
           "named_caches": [
             {
-              "name": "xcode_ios_17a5305f",
-              "path": "Xcode.app"
-            },
-            {
               "name": "runtime_ios_18_2",
               "path": "Runtime-ios-18.2"
+            },
+            {
+              "name": "xcode_ios_17a324",
+              "path": "Xcode.app"
             }
           ],
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
@@ -10004,61 +9891,13 @@
       },
       {
         "args": [
-          "--platform",
-          "iPhone X",
-          "--version",
-          "16.4",
-          "--xcode-build-version",
-          "17a5305f",
-          "--out-dir",
-          "${ISOLATED_OUTDIR}",
-          "--xctest"
-        ],
-        "merge": {
-          "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
-        },
-        "name": "rtc_stats_unittests iPhone X 16.4",
-        "resultdb": {
-          "enable": true,
-          "has_native_resultdb_integration": true
-        },
-        "swarming": {
-          "cipd_packages": [
-            {
-              "cipd_package": "infra/tools/mac_toolchain/${platform}",
-              "location": ".",
-              "revision": "git_revision:4c7290150d1c360cecc6a93c0214dc531585c3ab"
-            }
-          ],
-          "dimensions": {
-            "cpu": "x86-64",
-            "os": "Mac-15"
-          },
-          "named_caches": [
-            {
-              "name": "xcode_ios_17a5305f",
-              "path": "Xcode.app"
-            },
-            {
-              "name": "runtime_ios_16_4",
-              "path": "Runtime-ios-16.4"
-            }
-          ],
-          "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
-        },
-        "test": "rtc_stats_unittests",
-        "test_id_prefix": "ninja://stats:rtc_stats_unittests/",
-        "variant_id": "iPhone X 16.4"
-      },
-      {
-        "args": [
           "--xcodebuild-sim-runner",
           "--platform",
           "iPhone 14",
           "--version",
           "17.5",
           "--xcode-build-version",
-          "17a5305f",
+          "17a324",
           "--out-dir",
           "${ISOLATED_OUTDIR}",
           "--xctest"
@@ -10080,17 +9919,17 @@
             }
           ],
           "dimensions": {
-            "cpu": "x86-64",
+            "cpu": "arm64",
             "os": "Mac-15"
           },
           "named_caches": [
             {
-              "name": "xcode_ios_17a5305f",
-              "path": "Xcode.app"
-            },
-            {
               "name": "runtime_ios_17_5",
               "path": "Runtime-ios-17.5"
+            },
+            {
+              "name": "xcode_ios_17a324",
+              "path": "Xcode.app"
             }
           ],
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
@@ -10107,7 +9946,7 @@
           "--version",
           "18.2",
           "--xcode-build-version",
-          "17a5305f",
+          "17a324",
           "--out-dir",
           "${ISOLATED_OUTDIR}",
           "--xctest"
@@ -10129,17 +9968,17 @@
             }
           ],
           "dimensions": {
-            "cpu": "x86-64",
+            "cpu": "arm64",
             "os": "Mac-15"
           },
           "named_caches": [
             {
-              "name": "xcode_ios_17a5305f",
-              "path": "Xcode.app"
-            },
-            {
               "name": "runtime_ios_18_2",
               "path": "Runtime-ios-18.2"
+            },
+            {
+              "name": "xcode_ios_17a324",
+              "path": "Xcode.app"
             }
           ],
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
@@ -10152,60 +9991,11 @@
         "args": [
           "--xcodebuild-sim-runner",
           "--platform",
-          "iPhone X",
-          "--version",
-          "16.4",
-          "--xcode-build-version",
-          "17a5305f",
-          "--out-dir",
-          "${ISOLATED_OUTDIR}",
-          "--xctest"
-        ],
-        "merge": {
-          "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
-        },
-        "name": "sdk_framework_unittests iPhone X 16.4",
-        "resultdb": {
-          "enable": true,
-          "has_native_resultdb_integration": true
-        },
-        "swarming": {
-          "cipd_packages": [
-            {
-              "cipd_package": "infra/tools/mac_toolchain/${platform}",
-              "location": ".",
-              "revision": "git_revision:4c7290150d1c360cecc6a93c0214dc531585c3ab"
-            }
-          ],
-          "dimensions": {
-            "cpu": "x86-64",
-            "os": "Mac-15"
-          },
-          "named_caches": [
-            {
-              "name": "xcode_ios_17a5305f",
-              "path": "Xcode.app"
-            },
-            {
-              "name": "runtime_ios_16_4",
-              "path": "Runtime-ios-16.4"
-            }
-          ],
-          "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
-        },
-        "test": "sdk_framework_unittests",
-        "test_id_prefix": "ninja://sdk:sdk_framework_unittests/",
-        "variant_id": "iPhone X 16.4"
-      },
-      {
-        "args": [
-          "--xcodebuild-sim-runner",
-          "--platform",
           "iPhone 14",
           "--version",
           "17.5",
           "--xcode-build-version",
-          "17a5305f",
+          "17a324",
           "--out-dir",
           "${ISOLATED_OUTDIR}",
           "--xctest"
@@ -10227,17 +10017,17 @@
             }
           ],
           "dimensions": {
-            "cpu": "x86-64",
+            "cpu": "arm64",
             "os": "Mac-15"
           },
           "named_caches": [
             {
-              "name": "xcode_ios_17a5305f",
-              "path": "Xcode.app"
-            },
-            {
               "name": "runtime_ios_17_5",
               "path": "Runtime-ios-17.5"
+            },
+            {
+              "name": "xcode_ios_17a324",
+              "path": "Xcode.app"
             }
           ],
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
@@ -10254,7 +10044,7 @@
           "--version",
           "18.2",
           "--xcode-build-version",
-          "17a5305f",
+          "17a324",
           "--out-dir",
           "${ISOLATED_OUTDIR}",
           "--xctest"
@@ -10276,17 +10066,17 @@
             }
           ],
           "dimensions": {
-            "cpu": "x86-64",
+            "cpu": "arm64",
             "os": "Mac-15"
           },
           "named_caches": [
             {
-              "name": "xcode_ios_17a5305f",
-              "path": "Xcode.app"
-            },
-            {
               "name": "runtime_ios_18_2",
               "path": "Runtime-ios-18.2"
+            },
+            {
+              "name": "xcode_ios_17a324",
+              "path": "Xcode.app"
             }
           ],
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
@@ -10297,61 +10087,12 @@
       },
       {
         "args": [
-          "--xcodebuild-sim-runner",
-          "--platform",
-          "iPhone X",
-          "--version",
-          "16.4",
-          "--xcode-build-version",
-          "17a5305f",
-          "--out-dir",
-          "${ISOLATED_OUTDIR}",
-          "--xctest"
-        ],
-        "merge": {
-          "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
-        },
-        "name": "sdk_unittests iPhone X 16.4",
-        "resultdb": {
-          "enable": true,
-          "has_native_resultdb_integration": true
-        },
-        "swarming": {
-          "cipd_packages": [
-            {
-              "cipd_package": "infra/tools/mac_toolchain/${platform}",
-              "location": ".",
-              "revision": "git_revision:4c7290150d1c360cecc6a93c0214dc531585c3ab"
-            }
-          ],
-          "dimensions": {
-            "cpu": "x86-64",
-            "os": "Mac-15"
-          },
-          "named_caches": [
-            {
-              "name": "xcode_ios_17a5305f",
-              "path": "Xcode.app"
-            },
-            {
-              "name": "runtime_ios_16_4",
-              "path": "Runtime-ios-16.4"
-            }
-          ],
-          "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
-        },
-        "test": "sdk_unittests",
-        "test_id_prefix": "ninja://sdk:sdk_unittests/",
-        "variant_id": "iPhone X 16.4"
-      },
-      {
-        "args": [
           "--platform",
           "iPhone 14",
           "--version",
           "17.5",
           "--xcode-build-version",
-          "17a5305f",
+          "17a324",
           "--out-dir",
           "${ISOLATED_OUTDIR}",
           "--xctest"
@@ -10374,17 +10115,17 @@
           ],
           "dimensions": {
             "cores": "12",
-            "cpu": "x86-64",
+            "cpu": "arm64",
             "os": "Mac-15"
           },
           "named_caches": [
             {
-              "name": "xcode_ios_17a5305f",
-              "path": "Xcode.app"
-            },
-            {
               "name": "runtime_ios_17_5",
               "path": "Runtime-ios-17.5"
+            },
+            {
+              "name": "xcode_ios_17a324",
+              "path": "Xcode.app"
             }
           ],
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com",
@@ -10401,7 +10142,7 @@
           "--version",
           "18.2",
           "--xcode-build-version",
-          "17a5305f",
+          "17a324",
           "--out-dir",
           "${ISOLATED_OUTDIR}",
           "--xctest"
@@ -10424,17 +10165,17 @@
           ],
           "dimensions": {
             "cores": "12",
-            "cpu": "x86-64",
+            "cpu": "arm64",
             "os": "Mac-15"
           },
           "named_caches": [
             {
-              "name": "xcode_ios_17a5305f",
-              "path": "Xcode.app"
-            },
-            {
               "name": "runtime_ios_18_2",
               "path": "Runtime-ios-18.2"
+            },
+            {
+              "name": "xcode_ios_17a324",
+              "path": "Xcode.app"
             }
           ],
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com",
@@ -10447,61 +10188,11 @@
       {
         "args": [
           "--platform",
-          "iPhone X",
-          "--version",
-          "16.4",
-          "--xcode-build-version",
-          "17a5305f",
-          "--out-dir",
-          "${ISOLATED_OUTDIR}",
-          "--xctest"
-        ],
-        "merge": {
-          "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
-        },
-        "name": "svc_tests iPhone X 16.4",
-        "resultdb": {
-          "enable": true,
-          "has_native_resultdb_integration": true
-        },
-        "swarming": {
-          "cipd_packages": [
-            {
-              "cipd_package": "infra/tools/mac_toolchain/${platform}",
-              "location": ".",
-              "revision": "git_revision:4c7290150d1c360cecc6a93c0214dc531585c3ab"
-            }
-          ],
-          "dimensions": {
-            "cores": "12",
-            "cpu": "x86-64",
-            "os": "Mac-15"
-          },
-          "named_caches": [
-            {
-              "name": "xcode_ios_17a5305f",
-              "path": "Xcode.app"
-            },
-            {
-              "name": "runtime_ios_16_4",
-              "path": "Runtime-ios-16.4"
-            }
-          ],
-          "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com",
-          "shards": 4
-        },
-        "test": "svc_tests",
-        "test_id_prefix": "ninja://pc:svc_tests/",
-        "variant_id": "iPhone X 16.4"
-      },
-      {
-        "args": [
-          "--platform",
           "iPhone 14",
           "--version",
           "17.5",
           "--xcode-build-version",
-          "17a5305f",
+          "17a324",
           "--out-dir",
           "${ISOLATED_OUTDIR}",
           "--xctest"
@@ -10523,17 +10214,17 @@
             }
           ],
           "dimensions": {
-            "cpu": "x86-64",
+            "cpu": "arm64",
             "os": "Mac-15"
           },
           "named_caches": [
             {
-              "name": "xcode_ios_17a5305f",
-              "path": "Xcode.app"
-            },
-            {
               "name": "runtime_ios_17_5",
               "path": "Runtime-ios-17.5"
+            },
+            {
+              "name": "xcode_ios_17a324",
+              "path": "Xcode.app"
             }
           ],
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
@@ -10549,7 +10240,7 @@
           "--version",
           "18.2",
           "--xcode-build-version",
-          "17a5305f",
+          "17a324",
           "--out-dir",
           "${ISOLATED_OUTDIR}",
           "--xctest"
@@ -10571,17 +10262,17 @@
             }
           ],
           "dimensions": {
-            "cpu": "x86-64",
+            "cpu": "arm64",
             "os": "Mac-15"
           },
           "named_caches": [
             {
-              "name": "xcode_ios_17a5305f",
-              "path": "Xcode.app"
-            },
-            {
               "name": "runtime_ios_18_2",
               "path": "Runtime-ios-18.2"
+            },
+            {
+              "name": "xcode_ios_17a324",
+              "path": "Xcode.app"
             }
           ],
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
@@ -10593,59 +10284,11 @@
       {
         "args": [
           "--platform",
-          "iPhone X",
-          "--version",
-          "16.4",
-          "--xcode-build-version",
-          "17a5305f",
-          "--out-dir",
-          "${ISOLATED_OUTDIR}",
-          "--xctest"
-        ],
-        "merge": {
-          "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
-        },
-        "name": "system_wrappers_unittests iPhone X 16.4",
-        "resultdb": {
-          "enable": true,
-          "has_native_resultdb_integration": true
-        },
-        "swarming": {
-          "cipd_packages": [
-            {
-              "cipd_package": "infra/tools/mac_toolchain/${platform}",
-              "location": ".",
-              "revision": "git_revision:4c7290150d1c360cecc6a93c0214dc531585c3ab"
-            }
-          ],
-          "dimensions": {
-            "cpu": "x86-64",
-            "os": "Mac-15"
-          },
-          "named_caches": [
-            {
-              "name": "xcode_ios_17a5305f",
-              "path": "Xcode.app"
-            },
-            {
-              "name": "runtime_ios_16_4",
-              "path": "Runtime-ios-16.4"
-            }
-          ],
-          "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
-        },
-        "test": "system_wrappers_unittests",
-        "test_id_prefix": "ninja://system_wrappers:system_wrappers_unittests/",
-        "variant_id": "iPhone X 16.4"
-      },
-      {
-        "args": [
-          "--platform",
           "iPhone 14",
           "--version",
           "17.5",
           "--xcode-build-version",
-          "17a5305f",
+          "17a324",
           "--out-dir",
           "${ISOLATED_OUTDIR}",
           "--xctest"
@@ -10667,17 +10310,17 @@
             }
           ],
           "dimensions": {
-            "cpu": "x86-64",
+            "cpu": "arm64",
             "os": "Mac-15"
           },
           "named_caches": [
             {
-              "name": "xcode_ios_17a5305f",
-              "path": "Xcode.app"
-            },
-            {
               "name": "runtime_ios_17_5",
               "path": "Runtime-ios-17.5"
+            },
+            {
+              "name": "xcode_ios_17a324",
+              "path": "Xcode.app"
             }
           ],
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
@@ -10693,7 +10336,7 @@
           "--version",
           "18.2",
           "--xcode-build-version",
-          "17a5305f",
+          "17a324",
           "--out-dir",
           "${ISOLATED_OUTDIR}",
           "--xctest"
@@ -10715,17 +10358,17 @@
             }
           ],
           "dimensions": {
-            "cpu": "x86-64",
+            "cpu": "arm64",
             "os": "Mac-15"
           },
           "named_caches": [
             {
-              "name": "xcode_ios_17a5305f",
-              "path": "Xcode.app"
-            },
-            {
               "name": "runtime_ios_18_2",
               "path": "Runtime-ios-18.2"
+            },
+            {
+              "name": "xcode_ios_17a324",
+              "path": "Xcode.app"
             }
           ],
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
@@ -10737,59 +10380,11 @@
       {
         "args": [
           "--platform",
-          "iPhone X",
-          "--version",
-          "16.4",
-          "--xcode-build-version",
-          "17a5305f",
-          "--out-dir",
-          "${ISOLATED_OUTDIR}",
-          "--xctest"
-        ],
-        "merge": {
-          "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
-        },
-        "name": "test_support_unittests iPhone X 16.4",
-        "resultdb": {
-          "enable": true,
-          "has_native_resultdb_integration": true
-        },
-        "swarming": {
-          "cipd_packages": [
-            {
-              "cipd_package": "infra/tools/mac_toolchain/${platform}",
-              "location": ".",
-              "revision": "git_revision:4c7290150d1c360cecc6a93c0214dc531585c3ab"
-            }
-          ],
-          "dimensions": {
-            "cpu": "x86-64",
-            "os": "Mac-15"
-          },
-          "named_caches": [
-            {
-              "name": "xcode_ios_17a5305f",
-              "path": "Xcode.app"
-            },
-            {
-              "name": "runtime_ios_16_4",
-              "path": "Runtime-ios-16.4"
-            }
-          ],
-          "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
-        },
-        "test": "test_support_unittests",
-        "test_id_prefix": "ninja://test:test_support_unittests/",
-        "variant_id": "iPhone X 16.4"
-      },
-      {
-        "args": [
-          "--platform",
           "iPhone 14",
           "--version",
           "17.5",
           "--xcode-build-version",
-          "17a5305f",
+          "17a324",
           "--out-dir",
           "${ISOLATED_OUTDIR}",
           "--xctest"
@@ -10811,17 +10406,17 @@
             }
           ],
           "dimensions": {
-            "cpu": "x86-64",
+            "cpu": "arm64",
             "os": "Mac-15"
           },
           "named_caches": [
             {
-              "name": "xcode_ios_17a5305f",
-              "path": "Xcode.app"
-            },
-            {
               "name": "runtime_ios_17_5",
               "path": "Runtime-ios-17.5"
+            },
+            {
+              "name": "xcode_ios_17a324",
+              "path": "Xcode.app"
             }
           ],
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
@@ -10837,7 +10432,7 @@
           "--version",
           "18.2",
           "--xcode-build-version",
-          "17a5305f",
+          "17a324",
           "--out-dir",
           "${ISOLATED_OUTDIR}",
           "--xctest"
@@ -10859,17 +10454,17 @@
             }
           ],
           "dimensions": {
-            "cpu": "x86-64",
+            "cpu": "arm64",
             "os": "Mac-15"
           },
           "named_caches": [
             {
-              "name": "xcode_ios_17a5305f",
-              "path": "Xcode.app"
-            },
-            {
               "name": "runtime_ios_18_2",
               "path": "Runtime-ios-18.2"
+            },
+            {
+              "name": "xcode_ios_17a324",
+              "path": "Xcode.app"
             }
           ],
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
@@ -10881,59 +10476,11 @@
       {
         "args": [
           "--platform",
-          "iPhone X",
-          "--version",
-          "16.4",
-          "--xcode-build-version",
-          "17a5305f",
-          "--out-dir",
-          "${ISOLATED_OUTDIR}",
-          "--xctest"
-        ],
-        "merge": {
-          "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
-        },
-        "name": "tools_unittests iPhone X 16.4",
-        "resultdb": {
-          "enable": true,
-          "has_native_resultdb_integration": true
-        },
-        "swarming": {
-          "cipd_packages": [
-            {
-              "cipd_package": "infra/tools/mac_toolchain/${platform}",
-              "location": ".",
-              "revision": "git_revision:4c7290150d1c360cecc6a93c0214dc531585c3ab"
-            }
-          ],
-          "dimensions": {
-            "cpu": "x86-64",
-            "os": "Mac-15"
-          },
-          "named_caches": [
-            {
-              "name": "xcode_ios_17a5305f",
-              "path": "Xcode.app"
-            },
-            {
-              "name": "runtime_ios_16_4",
-              "path": "Runtime-ios-16.4"
-            }
-          ],
-          "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
-        },
-        "test": "tools_unittests",
-        "test_id_prefix": "ninja://rtc_tools:tools_unittests/",
-        "variant_id": "iPhone X 16.4"
-      },
-      {
-        "args": [
-          "--platform",
           "iPhone 14",
           "--version",
           "17.5",
           "--xcode-build-version",
-          "17a5305f",
+          "17a324",
           "--out-dir",
           "${ISOLATED_OUTDIR}",
           "--xctest"
@@ -10955,17 +10502,17 @@
             }
           ],
           "dimensions": {
-            "cpu": "x86-64",
+            "cpu": "arm64",
             "os": "Mac-15"
           },
           "named_caches": [
             {
-              "name": "xcode_ios_17a5305f",
-              "path": "Xcode.app"
-            },
-            {
               "name": "runtime_ios_17_5",
               "path": "Runtime-ios-17.5"
+            },
+            {
+              "name": "xcode_ios_17a324",
+              "path": "Xcode.app"
             }
           ],
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com",
@@ -10982,7 +10529,7 @@
           "--version",
           "18.2",
           "--xcode-build-version",
-          "17a5305f",
+          "17a324",
           "--out-dir",
           "${ISOLATED_OUTDIR}",
           "--xctest"
@@ -11004,17 +10551,17 @@
             }
           ],
           "dimensions": {
-            "cpu": "x86-64",
+            "cpu": "arm64",
             "os": "Mac-15"
           },
           "named_caches": [
             {
-              "name": "xcode_ios_17a5305f",
-              "path": "Xcode.app"
-            },
-            {
               "name": "runtime_ios_18_2",
               "path": "Runtime-ios-18.2"
+            },
+            {
+              "name": "xcode_ios_17a324",
+              "path": "Xcode.app"
             }
           ],
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com",
@@ -11027,11 +10574,11 @@
       {
         "args": [
           "--platform",
-          "iPhone X",
+          "iPhone 14",
           "--version",
-          "16.4",
+          "17.5",
           "--xcode-build-version",
-          "17a5305f",
+          "17a324",
           "--out-dir",
           "${ISOLATED_OUTDIR}",
           "--xctest"
@@ -11039,7 +10586,7 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
         },
-        "name": "video_engine_tests iPhone X 16.4",
+        "name": "video_timing_tests iPhone 14 17.5",
         "resultdb": {
           "enable": true,
           "has_native_resultdb_integration": true
@@ -11053,25 +10600,72 @@
             }
           ],
           "dimensions": {
-            "cpu": "x86-64",
+            "cpu": "arm64",
             "os": "Mac-15"
           },
           "named_caches": [
             {
-              "name": "xcode_ios_17a5305f",
-              "path": "Xcode.app"
+              "name": "runtime_ios_17_5",
+              "path": "Runtime-ios-17.5"
             },
             {
-              "name": "runtime_ios_16_4",
-              "path": "Runtime-ios-16.4"
+              "name": "xcode_ios_17a324",
+              "path": "Xcode.app"
             }
           ],
-          "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com",
-          "shards": 4
+          "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
         },
-        "test": "video_engine_tests",
-        "test_id_prefix": "ninja://:video_engine_tests/",
-        "variant_id": "iPhone X 16.4"
+        "test": "video_timing_tests",
+        "test_id_prefix": "ninja://video/timing:video_timing_tests/",
+        "variant_id": "iPhone 14 17.5"
+      },
+      {
+        "args": [
+          "--platform",
+          "iPhone 15",
+          "--version",
+          "18.2",
+          "--xcode-build-version",
+          "17a324",
+          "--out-dir",
+          "${ISOLATED_OUTDIR}",
+          "--xctest"
+        ],
+        "merge": {
+          "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
+        },
+        "name": "video_timing_tests iPhone 15 18.2",
+        "resultdb": {
+          "enable": true,
+          "has_native_resultdb_integration": true
+        },
+        "swarming": {
+          "cipd_packages": [
+            {
+              "cipd_package": "infra/tools/mac_toolchain/${platform}",
+              "location": ".",
+              "revision": "git_revision:4c7290150d1c360cecc6a93c0214dc531585c3ab"
+            }
+          ],
+          "dimensions": {
+            "cpu": "arm64",
+            "os": "Mac-15"
+          },
+          "named_caches": [
+            {
+              "name": "runtime_ios_18_2",
+              "path": "Runtime-ios-18.2"
+            },
+            {
+              "name": "xcode_ios_17a324",
+              "path": "Xcode.app"
+            }
+          ],
+          "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
+        },
+        "test": "video_timing_tests",
+        "test_id_prefix": "ninja://video/timing:video_timing_tests/",
+        "variant_id": "iPhone 15 18.2"
       },
       {
         "args": [
@@ -11080,7 +10674,7 @@
           "--version",
           "17.5",
           "--xcode-build-version",
-          "17a5305f",
+          "17a324",
           "--out-dir",
           "${ISOLATED_OUTDIR}",
           "--xctest"
@@ -11102,17 +10696,17 @@
             }
           ],
           "dimensions": {
-            "cpu": "x86-64",
+            "cpu": "arm64",
             "os": "Mac-15"
           },
           "named_caches": [
             {
-              "name": "xcode_ios_17a5305f",
-              "path": "Xcode.app"
-            },
-            {
               "name": "runtime_ios_17_5",
               "path": "Runtime-ios-17.5"
+            },
+            {
+              "name": "xcode_ios_17a324",
+              "path": "Xcode.app"
             }
           ],
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
@@ -11128,7 +10722,7 @@
           "--version",
           "18.2",
           "--xcode-build-version",
-          "17a5305f",
+          "17a324",
           "--out-dir",
           "${ISOLATED_OUTDIR}",
           "--xctest"
@@ -11150,17 +10744,17 @@
             }
           ],
           "dimensions": {
-            "cpu": "x86-64",
+            "cpu": "arm64",
             "os": "Mac-15"
           },
           "named_caches": [
             {
-              "name": "xcode_ios_17a5305f",
-              "path": "Xcode.app"
-            },
-            {
               "name": "runtime_ios_18_2",
               "path": "Runtime-ios-18.2"
+            },
+            {
+              "name": "xcode_ios_17a324",
+              "path": "Xcode.app"
             }
           ],
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
@@ -11172,59 +10766,11 @@
       {
         "args": [
           "--platform",
-          "iPhone X",
-          "--version",
-          "16.4",
-          "--xcode-build-version",
-          "17a5305f",
-          "--out-dir",
-          "${ISOLATED_OUTDIR}",
-          "--xctest"
-        ],
-        "merge": {
-          "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
-        },
-        "name": "voip_unittests iPhone X 16.4",
-        "resultdb": {
-          "enable": true,
-          "has_native_resultdb_integration": true
-        },
-        "swarming": {
-          "cipd_packages": [
-            {
-              "cipd_package": "infra/tools/mac_toolchain/${platform}",
-              "location": ".",
-              "revision": "git_revision:4c7290150d1c360cecc6a93c0214dc531585c3ab"
-            }
-          ],
-          "dimensions": {
-            "cpu": "x86-64",
-            "os": "Mac-15"
-          },
-          "named_caches": [
-            {
-              "name": "xcode_ios_17a5305f",
-              "path": "Xcode.app"
-            },
-            {
-              "name": "runtime_ios_16_4",
-              "path": "Runtime-ios-16.4"
-            }
-          ],
-          "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
-        },
-        "test": "voip_unittests",
-        "test_id_prefix": "ninja://:voip_unittests/",
-        "variant_id": "iPhone X 16.4"
-      },
-      {
-        "args": [
-          "--platform",
           "iPhone 14",
           "--version",
           "17.5",
           "--xcode-build-version",
-          "17a5305f",
+          "17a324",
           "--out-dir",
           "${ISOLATED_OUTDIR}",
           "--xctest"
@@ -11246,17 +10792,17 @@
             }
           ],
           "dimensions": {
-            "cpu": "x86-64",
+            "cpu": "arm64",
             "os": "Mac-15"
           },
           "named_caches": [
             {
-              "name": "xcode_ios_17a5305f",
-              "path": "Xcode.app"
-            },
-            {
               "name": "runtime_ios_17_5",
               "path": "Runtime-ios-17.5"
+            },
+            {
+              "name": "xcode_ios_17a324",
+              "path": "Xcode.app"
             }
           ],
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
@@ -11272,7 +10818,7 @@
           "--version",
           "18.2",
           "--xcode-build-version",
-          "17a5305f",
+          "17a324",
           "--out-dir",
           "${ISOLATED_OUTDIR}",
           "--xctest"
@@ -11294,17 +10840,17 @@
             }
           ],
           "dimensions": {
-            "cpu": "x86-64",
+            "cpu": "arm64",
             "os": "Mac-15"
           },
           "named_caches": [
             {
-              "name": "xcode_ios_17a5305f",
-              "path": "Xcode.app"
-            },
-            {
               "name": "runtime_ios_18_2",
               "path": "Runtime-ios-18.2"
+            },
+            {
+              "name": "xcode_ios_17a324",
+              "path": "Xcode.app"
             }
           ],
           "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
@@ -11312,54 +10858,6 @@
         "test": "webrtc_nonparallel_tests",
         "test_id_prefix": "ninja://:webrtc_nonparallel_tests/",
         "variant_id": "iPhone 15 18.2"
-      },
-      {
-        "args": [
-          "--platform",
-          "iPhone X",
-          "--version",
-          "16.4",
-          "--xcode-build-version",
-          "17a5305f",
-          "--out-dir",
-          "${ISOLATED_OUTDIR}",
-          "--xctest"
-        ],
-        "merge": {
-          "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
-        },
-        "name": "webrtc_nonparallel_tests iPhone X 16.4",
-        "resultdb": {
-          "enable": true,
-          "has_native_resultdb_integration": true
-        },
-        "swarming": {
-          "cipd_packages": [
-            {
-              "cipd_package": "infra/tools/mac_toolchain/${platform}",
-              "location": ".",
-              "revision": "git_revision:4c7290150d1c360cecc6a93c0214dc531585c3ab"
-            }
-          ],
-          "dimensions": {
-            "cpu": "x86-64",
-            "os": "Mac-15"
-          },
-          "named_caches": [
-            {
-              "name": "xcode_ios_17a5305f",
-              "path": "Xcode.app"
-            },
-            {
-              "name": "runtime_ios_16_4",
-              "path": "Runtime-ios-16.4"
-            }
-          ],
-          "service_account": "chromium-tester@chops-service-accounts.iam.gserviceaccount.com"
-        },
-        "test": "webrtc_nonparallel_tests",
-        "test_id_prefix": "ninja://:webrtc_nonparallel_tests/",
-        "variant_id": "iPhone X 16.4"
       }
     ]
   },

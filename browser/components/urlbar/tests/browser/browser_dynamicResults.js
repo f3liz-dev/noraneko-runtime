@@ -573,24 +573,29 @@ add_task(async function highlighting() {
    */
   class TestHighlightProvider extends TestProvider {
     startQuery(context, addCallback) {
+      this._tokens = context.tokens;
       let result = new UrlbarResult({
         type: UrlbarUtils.RESULT_TYPE.DYNAMIC,
         source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
         suggestedIndex: 1,
-        ...UrlbarResult.payloadAndSimpleHighlights(context.tokens, {
+        payload: {
           dynamicType: DYNAMIC_TYPE_NAME,
-          text: ["Test title", UrlbarUtils.HIGHLIGHT.TYPED],
-        }),
+          text: "Test title",
+        },
+        highlights: {
+          text: UrlbarUtils.HIGHLIGHT.TYPED,
+        },
       });
       addCallback(this, result);
     }
 
     getViewUpdate(result, _idsByName) {
+      let { value: textContent, highlights } =
+        result.getDisplayableValueAndHighlights("text", {
+          tokens: this._tokens,
+        });
       return {
-        text: {
-          textContent: result.payload.text,
-          highlights: result.payloadHighlights.text,
-        },
+        text: { textContent, highlights },
       };
     }
   }
@@ -836,7 +841,8 @@ add_task(async function clear_dynamicType_attribute() {
     Assert.equal(row.getAttribute("dynamicType"), "test");
 
     // Unregister the provider to show normal result.
-    UrlbarProvidersManager.unregisterProvider(provider);
+    let providersManager = ProvidersManager.getInstanceForSap("urlbar");
+    providersManager.unregisterProvider(provider);
     // Do a search again.
     await UrlbarTestUtils.promiseAutocompleteResultPopup({
       window,
@@ -1021,12 +1027,13 @@ async function withDynamicTypeProvider(
   }
 
   // Add a provider of the dynamic type.
-  UrlbarProvidersManager.registerProvider(provider);
+  let providersManager = ProvidersManager.getInstanceForSap("urlbar");
+  providersManager.registerProvider(provider);
 
   await callback(provider);
 
   // Clean up.
-  UrlbarProvidersManager.unregisterProvider(provider);
+  providersManager.unregisterProvider(provider);
   if (!provider.getViewTemplate) {
     UrlbarView.removeDynamicViewTemplate(DYNAMIC_TYPE_NAME);
   }

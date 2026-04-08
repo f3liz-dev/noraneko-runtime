@@ -1312,6 +1312,9 @@ function promiseMoveMouseAndScrollWheelOver(
   });
   if (waitForScroll) {
     p = p.then(() => {
+      info(
+        "Printing something here to avoid failure; see https://bugzilla.mozilla.org/show_bug.cgi?id=1776963"
+      );
       return promiseNativeWheelAndWaitForScrollEvent(
         target,
         dx,
@@ -1588,10 +1591,6 @@ function promiseTopic(aTopic) {
 // Returns a promise that is resolved when a APZ transform ends.
 function promiseTransformEnd() {
   return promiseTopic("APZ:TransformEnd");
-}
-
-function promiseScrollend(aTarget = window) {
-  return promiseOneEvent(aTarget, "scrollend");
 }
 
 // Returns a promise that resolves after the indicated number

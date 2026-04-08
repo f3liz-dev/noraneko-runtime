@@ -10,6 +10,7 @@
 #include "js/loader/ModuleLoadRequest.h"
 #include "js/loader/ScriptLoadRequest.h"
 #include "mozilla/Encoding.h"
+#include "mozilla/StaticPrefs_javascript.h"
 #include "mozilla/dom/BlobURLProtocolHandler.h"
 #include "mozilla/dom/InternalResponse.h"
 #include "mozilla/dom/Response.h"
@@ -82,6 +83,29 @@ nsresult NetworkLoadHandler::DataReceivedFromNetwork(nsIStreamLoader* aLoader,
   if (!loadContext->mChannel) {
     return NS_BINDING_ABORTED;
   }
+
+#ifdef NIGHTLY_BUILD
+  if (StaticPrefs::javascript_options_experimental_wasm_esm_integration()) {
+    if (mRequestHandle->GetRequest()->IsModuleRequest()) {
+      // https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-single-module-script
+      // Extract the content-type. If its essence is wasm, we'll attempt to
+      // compile this module as a wasm module. (Steps 13.2, 13.6)
+      nsAutoCString mimeType;
+      if (NS_SUCCEEDED(loadContext->mChannel->GetContentType(mimeType))) {
+        if (nsContentUtils::HasWasmMimeTypeEssence(
+                NS_ConvertUTF8toUTF16(mimeType))) {
+          mRequestHandle->GetRequest()
+              ->AsModuleRequest()
+              ->SetHasWasmMimeTypeEssence();
+          loadContext->mRequest->SetWasmBytes();
+          if (!loadContext->mRequest->WasmBytes().append(aString, aStringLen)) {
+            return NS_ERROR_OUT_OF_MEMORY;
+          }
+        }
+      }
+    }
+  }
+#endif
 
   loadContext->mChannel = nullptr;
 
@@ -171,19 +195,22 @@ nsresult NetworkLoadHandler::DataReceivedFromNetwork(nsIStreamLoader* aLoader,
   // May be null.
   Document* parentDoc = mWorkerRef->Private()->GetDocument();
 
-  // Set the Source type to "text" for decoding.
-  loadContext->mRequest->SetTextSource(loadContext);
+  // We only decode source text, not wasm bytecode.
+  if (!loadContext->mRequest->IsWasmBytes()) {
+    // Set the Source type to "text" for decoding.
+    loadContext->mRequest->SetTextSource(loadContext);
 
-  // Use the regular ScriptDecoder Decoder for this grunt work! Should be just
-  // fine because we're running on the main thread.
-  rv = mDecoder->DecodeRawData(loadContext->mRequest, aString, aStringLen,
-                               /* aEndOfStream = */ true);
-  NS_ENSURE_SUCCESS(rv, rv);
+    // Use the regular ScriptDecoder Decoder for this grunt work! Should be just
+    // fine because we're running on the main thread.
+    rv = mDecoder->DecodeRawData(loadContext->mRequest, aString, aStringLen,
+                                 /* aEndOfStream = */ true);
+    NS_ENSURE_SUCCESS(rv, rv);
 
-  if (!loadContext->mRequest->ScriptTextLength()) {
-    nsContentUtils::ReportToConsole(nsIScriptError::warningFlag, "DOM"_ns,
-                                    parentDoc, nsContentUtils::eDOM_PROPERTIES,
-                                    "EmptyWorkerSourceWarning");
+    if (!loadContext->mRequest->ScriptTextLength()) {
+      nsContentUtils::ReportToConsole(
+          nsIScriptError::warningFlag, "DOM"_ns, parentDoc,
+          nsContentUtils::eDOM_PROPERTIES, "EmptyWorkerSourceWarning");
+    }
   }
 
   // For modules, we need to store the base URI on the module request object,
@@ -224,6 +251,14 @@ nsresult NetworkLoadHandler::DataReceivedFromNetwork(nsIStreamLoader* aLoader,
   if (loadContext->IsTopLevel() && !isDynamic) {
     // Take care of the base URI first.
     mWorkerRef->Private()->SetBaseURI(finalURI);
+
+    if (httpChannel) {
+      nsCString reportingEndpoints;
+      if (NS_SUCCEEDED(httpChannel->GetResponseHeader("Reporting-Endpoints"_ns,
+                                                      reportingEndpoints))) {
+        mWorkerRef->Private()->SetReportingEndpointsHeader(reportingEndpoints);
+      }
+    }
 
     // Store the channel info if needed.
     mWorkerRef->Private()->InitChannelInfo(channel);
@@ -321,8 +356,15 @@ nsresult NetworkLoadHandler::PrepareForRequest(nsIRequest* aRequest) {
     auto mimeTypeUTF16 = NS_ConvertUTF8toUTF16(mimeType);
     if (!nsContentUtils::IsJavascriptMIMEType(mimeTypeUTF16)) {
       // JSON is allowed as a non-toplevel.
-      if (loadContext->IsTopLevel() ||
-          !nsContentUtils::IsJsonMimeType(mimeTypeUTF16)) {
+      if (!((!loadContext->IsTopLevel() &&
+             nsContentUtils::IsJsonMimeType(mimeTypeUTF16))
+#ifdef NIGHTLY_BUILD
+            // Allow wasm modules.
+            || (StaticPrefs::
+                    javascript_options_experimental_wasm_esm_integration() &&
+                nsContentUtils::HasWasmMimeTypeEssence(mimeTypeUTF16))
+#endif
+                )) {
         const nsCString& scope = mWorkerRef->Private()
                                      ->GetServiceWorkerRegistrationDescriptor()
                                      .Scope();

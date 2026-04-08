@@ -7,7 +7,6 @@
 
 #include <math.h>
 #include <stdio.h>
-#include <string.h>
 
 #include <algorithm>
 
@@ -33,10 +32,6 @@
 #include "webaudio/blink/DenormalDisabler.h"
 
 namespace mozilla {
-
-#undef LOG
-#undef LOGW
-#undef LOGE
 
 LazyLogModule gAudioStreamLog("AudioStream");
 // For simple logs
@@ -767,5 +762,9 @@ void AudioClock::SetPreservesPitch(bool aPreservesPitch) {
 }
 
 bool AudioClock::GetPreservesPitch() const { return mPreservesPitch; }
+
+#undef LOG
+#undef LOGW
+#undef LOGE
 
 }  // namespace mozilla

@@ -38,6 +38,7 @@ import mozilla.components.concept.sync.AuthType
 import mozilla.components.concept.sync.OAuthAccount
 import mozilla.components.concept.sync.Profile
 import mozilla.components.feature.addons.ui.AddonFilePicker
+import mozilla.components.service.fxrelay.eligibility.Eligible
 import mozilla.components.support.base.feature.ViewBoundFeatureWrapper
 import mozilla.components.support.ktx.android.view.showKeyboard
 import mozilla.components.ui.widgets.withCenterAlignedButtons
@@ -224,6 +225,7 @@ class SettingsFragment : PreferenceFragmentCompat() {
         if (showSearch) {
             showToolbarWithIconButton(
                 title = toolbarTitle,
+                contentDescription = getString(R.string.settings_search_button_content_description),
                 iconResId = R.drawable.ic_search,
                 onClick = {
                     SettingsSearch.opened.record()
@@ -247,7 +249,6 @@ class SettingsFragment : PreferenceFragmentCompat() {
         args.preferenceToScrollTo?.let {
             scrollToPreference(it)
         }
-        profilerViewModel.updateProfilerActiveStatus()
         // Consider finish of `onResume` to be the point at which we consider this fragment as 'created'.
         creatingFragment = false
     }
@@ -362,6 +363,10 @@ class SettingsFragment : PreferenceFragmentCompat() {
             resources.getString(R.string.pref_key_passwords) -> {
                 SettingsMetrics.passwords.record()
                 SettingsFragmentDirections.actionSettingsFragmentToSavedLoginsAuthFragment()
+            }
+
+            resources.getString(R.string.pref_key_email_masks) -> {
+                SettingsFragmentDirections.actionSettingsFragmentToEmailMasksSettingsFragment()
             }
 
             resources.getString(R.string.pref_key_credit_cards) -> {
@@ -480,12 +485,20 @@ class SettingsFragment : PreferenceFragmentCompat() {
                 SettingsFragmentDirections.actionSettingsFragmentToLinkSharingFragment()
             }
 
+            resources.getString(R.string.pref_key_remote_improvements) -> {
+                SettingsFragmentDirections.actionSettingsFragmentToRemoteImprovementsFragment()
+            }
+
             resources.getString(R.string.pref_key_open_links_in_apps) -> {
                 SettingsFragmentDirections.actionSettingsFragmentToOpenLinksInAppsFragment()
             }
 
             resources.getString(R.string.pref_key_downloads) -> {
                 SettingsFragmentDirections.actionSettingsFragmentToOpenDownloadsSettingsFragment()
+            }
+
+            resources.getString(R.string.pref_key_firefox_labs) -> {
+                SettingsFragmentDirections.actionSettingsFragmentToFirefoxLabsFragment()
             }
 
             resources.getString(R.string.pref_key_sync_debug) -> {
@@ -577,6 +590,9 @@ class SettingsFragment : PreferenceFragmentCompat() {
             findPreference<Preference>(
                 getPreferenceKey(R.string.pref_key_sync_debug),
             )?.isVisible = showSecretDebugMenuThisSession
+            findPreference<Preference>(
+                getPreferenceKey(R.string.pref_key_firefox_labs),
+            )?.isVisible = enableFirefoxLabs
             preferenceStartProfiler?.isVisible = showSecretDebugMenuThisSession &&
                 (components.core.engine.profiler?.isProfilerActive() != null)
         }
@@ -598,6 +614,7 @@ class SettingsFragment : PreferenceFragmentCompat() {
         setupHomepagePreference(settings)
         setupTrackingProtectionPreference(settings)
         setupDnsOverHttpsPreference(settings)
+        setupEmailMaskPreference(settings, requireComponents)
     }
 
     /**
@@ -735,6 +752,14 @@ class SettingsFragment : PreferenceFragmentCompat() {
                 Engine.DohSettingsMode.INCREASED -> getString(R.string.preference_doh_increased_protection)
                 Engine.DohSettingsMode.MAX -> getString(R.string.preference_doh_max_protection)
             }
+        }
+    }
+
+    @VisibleForTesting
+    internal fun setupEmailMaskPreference(settings: Settings, components: Components) {
+        findPreference<Preference>(getPreferenceKey(R.string.pref_key_email_masks))?.let {
+            it.isVisible = settings.isEmailMaskFeatureEnabled &&
+                    components.relayEligibilityStore.state.eligibilityState is Eligible
         }
     }
 

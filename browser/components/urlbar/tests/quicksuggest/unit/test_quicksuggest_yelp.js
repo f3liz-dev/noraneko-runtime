@@ -65,7 +65,7 @@ add_setup(async function () {
   // Add a search engine with search suggestions so sponsored suggestions can
   // be shown first. See the `quickSuggestSponsoredIndex` pref for more info.
   SearchTestUtils.setRemoteSettingsConfig(CONFIG_V2);
-  await Services.search.init();
+  await SearchService.init();
   await QuickSuggestTestUtils.ensureQuickSuggestInit({
     remoteSettingsRecords: REMOTE_SETTINGS_RECORDS,
     prefs: [
@@ -96,17 +96,6 @@ add_task(async function basic() {
           id: "firefox-suggest-yelp-service-title",
           args: {
             service: "best a service delivery in Tokyo, Tokyo-to",
-          },
-          argsHighlights: {
-            service: [
-              [0, 4],
-              [5, 1],
-              [7, 7],
-              [15, 8],
-              [24, 2],
-              [27, 5],
-              [34, 5],
-            ],
           },
         },
       },
@@ -1107,18 +1096,6 @@ add_task(async function yelpServiceResultDistinction() {
           id: "firefox-suggest-yelp-service-title",
           args: {
             service: "a service in Yokohama, Kanagawa",
-          },
-          argsHighlights: {
-            service: [
-              [0, 1],
-              [2, 7],
-              [18, 1],
-              [20, 1],
-              [24, 1],
-              [26, 1],
-              [28, 1],
-              [30, 1],
-            ],
           },
         },
       }),

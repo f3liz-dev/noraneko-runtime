@@ -23,6 +23,9 @@ newtab-personalize-dialog-label =
     .aria-label = Անհատականացնել
 newtab-logo-and-wordmark =
     .aria-label = { -brand-full-name }
+newtab-card-dismiss-button =
+    .title = Բաց թողնել
+    .aria-label = Բաց թողնել
 
 ## Search box component.
 
@@ -136,10 +139,14 @@ newtab-menu-report = Զեկուցել
 # Context menu option to personalize New Tab recommended stories by blocking a section of stories,
 # e.g. "Sports". "Block" is a verb here.
 newtab-menu-section-block = Արգելափակել
+# "Follow", "unfollow", and "following" are social media terms that refer to subscribing to or unsubscribing from a section of stories.
+# e.g. Following the travel section of stories.
+newtab-menu-section-unfollow = Չհետևել թեմային
 
 ## Context menu options for sponsored stories and new ad formats on New Tab.
 
 newtab-menu-manage-sponsored-content = Կառավարել հովանավորված բովանդակությունը
+newtab-menu-our-sponsors-and-your-privacy = Մեր հովանավորները և ձեր գաղտնիությունը
 newtab-menu-report-this-ad = Հաղորդել այս գովազդի մասին
 
 ## Message displayed in a modal window to explain privacy and provide context for sponsored content.
@@ -315,13 +322,16 @@ newtab-custom-weather-toggle =
     .description = Այսօրվա կանխատեսումը մի հայացքով
 newtab-custom-widget-weather-toggle =
     .label = Եղանակ
-newtab-custom-widget-trending-search-toggle =
-    .label = Թրենդային որոնումներ
 newtab-custom-widget-lists-toggle =
     .label = Ցանկեր
 newtab-custom-widget-timer-toggle =
     .label = ժամաչափ
 newtab-custom-widget-section-title = Վիջեթներ
+newtab-custom-widget-section-toggle =
+    .label = Վիջեթներ
+newtab-widget-manage-title = Վիջեթներ
+newtab-widget-manage-widget-button =
+    .label = Կառավարել վիջեթները
 # Tooltip for close button
 newtab-custom-close-menu-button =
     .title = Փակել
@@ -461,6 +471,11 @@ newtab-weather-opt-in-yes =
     .label = Այո
 # We'll be showing static (fake) weather data if the user has not opted in to using their location
 newtab-weather-static-city = Նյու Յորք քաղաք
+# Variables:
+#   $provider (string) - Service provider for weather data
+newtab-weather-see-forecast-description =
+    .title = Տեսեք կանխատեսումը { $provider }-ում
+    .aria-description = { $provider } ∙ Հովանավորվում է
 
 ## Topic Labels
 
@@ -553,7 +568,7 @@ newtab-download-mobile-highlight-body-variant-b = Շարունակեք այնտ�
 
 newtab-shortcuts-highlight-title = Ձեր սիրելիները՝ ձեր մատների ծայրերին
 
-## Strings for reporting ads and content
+## Strings for reporting issues with ads and content
 
 newtab-report-content-why-reporting-this =
     .label = Ինչո՞ւ եք սա հաղորդում։
@@ -571,19 +586,11 @@ newtab-report-content-inappropriate-offensive =
     .label = Անպատշաճ կամ վիրավորական
 newtab-report-content-spam-misleading =
     .label = Սպամ կամ մոլորեցնող
+newtab-report-content-requires-payment-subscription-learn-more = Իմանալ ավելին
 newtab-report-cancel = Չեղարկել
 newtab-report-submit = Ուղարկել
 newtab-toast-thanks-for-reporting =
     .message = Շնորհակալություն հայտնելու համար:
-
-## Strings for trending searches
-
-newtab-trending-searches-hide-trending =
-    .title = Թաքցնել թրենդային որոնումները
-newtab-trending-searches-learn-more = Իմանալ ավելին
-newtab-trending-searches-dismiss = Թաքցնել թրենդային որոնումները
-# "Trending searches refers to popular searches from search engines
-newtab-trending-searches-title = Թրենդային որոնումներ
 
 ## Strings for task / to-do list productivity widget
 
@@ -623,6 +630,17 @@ newtab-widget-lists-name-placeholder-default =
 # The placeholder value of the name field for a newly created list
 newtab-widget-lists-name-placeholder-new =
     .placeholder = Նոր ցանկ
+newtab-widget-section-title = Վիջեթներ
+# Tooltip for hide all widgets button
+newtab-widget-section-hide-all-button =
+    .title = Թաքցնել վիջեթները
+    .aria-label = Թաքցնել բոլոր վիջեթները
+newtab-widget-section-maximize =
+    .title = Ընդարձակել վիջեթները
+    .aria-label = Ընդարձակել բոլոր վիջեթները լրիվ չափով
+newtab-widget-section-minimize =
+    .title = Փոքրացնել վիջեթները
+    .aria-label = Կոծկել բոլոր վիջեթները սեղմ չափի
 
 ## Strings for timer productivity widget
 ## When the timer ends, a system notification may be shown. Depending on which mode the timer is in, that message would be shown
@@ -645,8 +663,6 @@ newtab-widget-timer-menu-notifications = Անջատել ծանուցումներ
 newtab-widget-timer-menu-notifications-on = Միացնել ծանուցումները
 newtab-widget-timer-menu-hide = Թաքցնել ժամաչափը
 newtab-widget-timer-menu-learn-more = Իմանալ ավելին
-# Message that appears when widgets are full-height. This reminds users that there is more New Tab content to see if they scroll
-newtab-widget-keep-scrolling = Գլորեք՝ ավելին տեսնելու համար
 newtab-widget-message-title = Մնացեք կենտրոնացած ցուցակների և ներկառուցված ժամանակաչափի միջոցով
 newtab-promo-card-title = Աջակցել { -brand-product-name }-ին
 newtab-promo-card-body = Մեր հովանավորները աջակցում են ավելի լավ համացանց կերտելու մեր առաքելությանը
@@ -654,3 +670,16 @@ newtab-promo-card-cta = Իմանալ ավելին
 newtab-promo-card-dismiss-button =
     .title = Բաց թողնել
     .aria-label = Բաց թողնել
+
+## Strings for activation window message variants. In certain experiment configurations,
+## the strings from these variants may be displayed in a message below the search input
+## for the first 48 hours of a new profile's lifetime. Some messages include buttons with
+## labels, but not all.
+
+newtab-activation-window-message-customization-focus-primary-button =
+    .label = Սկսեք անհատականացնել
+# "This space" refers to about:newtab. The sentiment of "plays by your rules" is
+# meant to evoke the idea that newtab is malleable and customizable. The call to
+# action is to customize newtab with a background image or colour, or by tweaking
+# the existing widgetry that appears on it.
+newtab-activation-window-message-values-focus-header = Այս տարածքը խաղում է ձեր կանոններով

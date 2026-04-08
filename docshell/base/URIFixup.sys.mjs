@@ -22,6 +22,10 @@ import { AppConstants } from "resource://gre/modules/AppConstants.sys.mjs";
 
 const lazy = {};
 
+ChromeUtils.defineESModuleGetters(lazy, {
+  SearchService: "moz-src:///toolkit/components/search/SearchService.sys.mjs",
+});
+
 XPCOMUtils.defineLazyServiceGetter(
   lazy,
   "externalProtocolService",
@@ -493,7 +497,7 @@ URIFixup.prototype = {
     }
     keyword = keyword.trim();
 
-    if (!Services.search.hasSuccessfullyInitialized) {
+    if (!lazy.SearchService.hasSuccessfullyInitialized) {
       return info;
     }
 
@@ -501,8 +505,8 @@ URIFixup.prototype = {
     // We must use an appropriate search engine depending on the private
     // context.
     let engine = isPrivateContext
-      ? Services.search.defaultPrivateEngine
-      : Services.search.defaultEngine;
+      ? lazy.SearchService.defaultPrivateEngine
+      : lazy.SearchService.defaultEngine;
 
     // We allow default search plugins to specify alternate parameters that are
     // specific to keyword searches.
@@ -763,11 +767,11 @@ function isDomainKnown(asciiHost) {
 }
 
 /**
- * Checks the suffix of info.fixedURI against the Public Suffix List.
- * If the suffix is unknown due to a typo this will try to fix it up.
+ * Checks the suffix of ``info.fixedURI`` against the Public Suffix List.
+ * If the suffix is unknown due to a typo this will try to fix it up in-place,
+ * by modifying the public suffix of ``info.fixedURI``.
  *
  * @param {URIFixupInfo} info about the uri to check.
- * @note this may modify the public suffix of info.fixedURI.
  * @returns {object} result The lookup result.
  * @returns {string} result.suffix The public suffix if one can be identified.
  * @returns {boolean} result.hasUnknownSuffix True when the suffix is not in the
@@ -910,8 +914,7 @@ function maybeSetAlternateFixedURI(info, fixupFlags) {
  * Try to fixup a file URI.
  *
  * @param {string} uriString The file URI to fix.
- * @returns {nsIURI} a fixed uri or null.
- * @note FileURIFixup only returns a URI if it has to add the file: protocol.
+ * @returns {?nsIURI} a fixed uri if it has to add the file: protocol or null.
  */
 function fileURIFixup(uriString) {
   let attemptFixup = false;
@@ -1279,20 +1282,14 @@ function maybeAddPrefixAndSuffix(oldHost) {
     "browser.fixup.alternate.prefix",
     "www."
   );
-  let suffix = Services.prefs.getCharPref(
-    "browser.fixup.alternate.suffix",
-    ".com"
-  );
+  let suffix = Services.locale.urlFixupSuffix;
   let newHost = "";
   let numDots = (oldHost.match(/\./g) || []).length;
   if (numDots == 0) {
     newHost = prefix + oldHost + suffix;
-  } else if (numDots == 1) {
-    if (prefix && oldHost == prefix) {
-      newHost = oldHost + suffix;
-    } else if (suffix && !oldHost.startsWith(prefix)) {
-      newHost = prefix + oldHost;
-    }
+    Glean.urlfixup.suffix.get("fixup", suffix).add(1);
+  } else if (numDots == 1 && !oldHost.startsWith(prefix)) {
+    newHost = prefix + oldHost;
   }
   return newHost ? newHost : oldHost;
 }

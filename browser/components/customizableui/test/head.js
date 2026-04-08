@@ -326,6 +326,12 @@ function promiseOverflowHidden(win) {
   return promisePanelElementHidden(win, panelEl);
 }
 
+function hideOverflow() {
+  let panelHidePromise = promiseOverflowHidden(window);
+  PanelUI.overflowPanel.hidePopup();
+  return panelHidePromise;
+}
+
 function promisePanelElementHidden(win, aPanel) {
   return new Promise((resolve, reject) => {
     let timeoutId = win.setTimeout(() => {
@@ -383,21 +389,6 @@ function waitFor(aTimeout = 100) {
   return new Promise(resolve => {
     setTimeout(() => resolve(), aTimeout);
   });
-}
-
-/**
- * Starts a load in an existing tab and waits for it to finish (via some event).
- *
- * @param aTab       The tab to load into.
- * @param aUrl       The url to load.
- * @param aEventType The load event type to wait for.  Defaults to "load".
- * @return {Promise} resolved when the event is handled.
- */
-function promiseTabLoadEvent(aTab, aURL) {
-  let browser = aTab.linkedBrowser;
-
-  BrowserTestUtils.startLoadingURIString(browser, aURL);
-  return BrowserTestUtils.browserLoaded(browser);
 }
 
 /**
@@ -473,8 +464,8 @@ function checkContextMenu(aContextMenu, aExpectedEntries, aWindow = window) {
         ? aWindow.document.getElementById(commandValue)
         : null;
       let menuItemDisabled = relatedCommand
-        ? relatedCommand.getAttribute("disabled") == "true"
-        : menuitem.getAttribute("disabled") == "true";
+        ? relatedCommand.hasAttribute("disabled")
+        : menuitem.hasAttribute("disabled");
       is(
         menuItemDisabled,
         !aExpectedEntries[i][1],

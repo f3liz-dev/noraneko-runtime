@@ -15,7 +15,6 @@ const { DeferredTask } = ChromeUtils.importESModule(
 const toolsNameMap = {
   viewGenaiChatSidebar: "aichat",
   viewGenaiPageAssistSidebar: "aipageassist",
-  viewGenaiSmartAssistSidebar: "aismartassist",
   viewTabsSidebar: "syncedtabs",
   viewHistorySidebar: "history",
   viewBookmarksSidebar: "bookmarks",
@@ -57,7 +56,8 @@ var SidebarController = {
     this._sidebars.set(commandID, sidebar);
 
     let switcherMenuitem;
-    const updateMenus = visible => {
+    sidebar._updateMenus = () => {
+      const { visible } = sidebar;
       // Hide the sidebar if it is open and should not be visible,
       // and unset the current command and lastOpenedId so they do not
       // re-open the next time the sidebar does.
@@ -91,12 +91,21 @@ var SidebarController = {
     // Detect pref changes and handle initial state.
     XPCOMUtils.defineLazyPreferenceGetter(
       sidebar,
-      "visible",
+      "_prefVisible",
       pref,
       false,
-      (_pref, _prev, val) => updateMenus(val)
+      () => sidebar._updateMenus?.()
     );
-    this.promiseInitialized.then(() => updateMenus(sidebar.visible));
+    Object.defineProperty(sidebar, "visible", {
+      get: () =>
+        sidebar._prefVisible && !(config.hideInAIWindow && this.isAIWindow()),
+      configurable: true,
+    });
+    this.promiseInitialized.then(() => sidebar._updateMenus?.());
+  },
+
+  isAIWindow() {
+    return this.AIWindow.isAIWindowActive(window);
   },
 
   get sidebars() {
@@ -184,6 +193,8 @@ var SidebarController = {
         iconUrl: "chrome://global/skin/icons/highlights.svg",
         gleanClickEvent: Glean.sidebar.chatbotIconClick,
         toolContextMenuId: "aichat",
+        permissions: true,
+        hideInAIWindow: true,
       }
     );
 
@@ -202,20 +213,6 @@ var SidebarController = {
     );
 
     this.registerPrefSidebar(
-      "browser.ml.smartAssist.enabled",
-      "viewGenaiSmartAssistSidebar",
-      {
-        name: "aismartassist",
-        elementId: "sidebar-switcher-genai-smart-assist",
-        url: "chrome://browser/content/genai/smartAssist.html",
-        menuId: "menu_genaiSmartAssistSidebar",
-        menuL10nId: "menu-view-genai-smart-assist",
-        revampL10nId: "sidebar-menu-genai-smart-assist-label",
-        iconUrl: "chrome://browser/skin/trending.svg",
-      }
-    );
-
-    this.registerPrefSidebar(
       "browser.contextual-password-manager.enabled",
       "viewCPMSidebar",
       {
@@ -227,6 +224,8 @@ var SidebarController = {
         revampL10nId: "sidebar-menu-contextual-password-manager-label",
         iconUrl: "chrome://browser/skin/login.svg",
         gleanEvent: Glean.contextualManager.sidebarToggle,
+        gleanClickEvent: Glean.sidebar.passwordsIconClick,
+        recordSidebarVersion: true,
       }
     );
 
@@ -236,7 +235,6 @@ var SidebarController = {
         revampL10nId: "sidebar-menu-customize-label",
         iconUrl: "chrome://global/skin/icons/settings.svg",
         gleanEvent: Glean.sidebarCustomize.panelToggle,
-        visible: false,
       });
     }
 
@@ -301,6 +299,7 @@ var SidebarController = {
   _verticalNewTabListenerAdded: false,
   _localesObserverAdded: false,
   _mainResizeObserverAdded: false,
+  _aiWindowObserverAdded: false,
   _mainResizeObserver: null,
   _ongoingAnimations: [],
 
@@ -514,6 +513,10 @@ var SidebarController = {
       Services.obs.addObserver(this, "tabstrip-orientation-change");
       this._tabstripOrientationObserverAdded = true;
     }
+    if (!this._aiWindowObserverAdded) {
+      Services.obs.addObserver(this, "ai-window-state-changed");
+      this._aiWindowObserverAdded = true;
+    }
 
     requestIdleCallback(() => {
       const windowPrivacyMatches =
@@ -551,7 +554,9 @@ var SidebarController = {
 
     Services.obs.removeObserver(this, "intl:app-locales-changed");
     Services.obs.removeObserver(this, "tabstrip-orientation-change");
+    Services.obs.removeObserver(this, "ai-window-state-changed");
     delete this._tabstripOrientationObserverAdded;
+    delete this._aiWindowObserverAdded;
 
     CustomizableUI.removeListener(this);
 
@@ -654,7 +659,7 @@ var SidebarController = {
   /**
    * The handler for Services.obs.addObserver.
    */
-  observe(_subject, topic, _data) {
+  observe(subject, topic, _data) {
     switch (topic) {
       case "intl:app-locales-changed": {
         if (this.isOpen) {
@@ -672,6 +677,15 @@ var SidebarController = {
       }
       case "tabstrip-orientation-change": {
         this.promiseInitialized.then(() => this.toggleTabstrip());
+        break;
+      }
+      case "ai-window-state-changed": {
+        if (subject == window) {
+          // Update menus and hide sidebars that depend on the type of window
+          for (const sidebar of this.sidebars.values()) {
+            sidebar._updateMenus?.();
+          }
+        }
         break;
       }
     }
@@ -1758,6 +1772,8 @@ var SidebarController = {
     sidebar.label = label;
 
     const updateAttributes = el => {
+      // TODO Bug 1996762 - Add support for dark-theme sidebar icons
+      // --webextension-menuitem-image-dark is used in dark themes
       el.style.setProperty("--webextension-menuitem-image", sidebar.icon);
       el.setAttribute("label", sidebar.label);
     };
@@ -1859,6 +1875,19 @@ var SidebarController = {
   },
 
   /**
+   * Check whether a sidebar panel can be shown in the current window.
+   *
+   * @param {string} commandID
+   * @returns {boolean}
+   */
+  _canShow(commandID) {
+    // Extensions without private window access wont be in the sidebars map.
+    // Some sidebars can be conditionally visible depending on the window.
+    const sidebar = this.sidebars.get(commandID);
+    return !!sidebar && (sidebar.visible ?? true);
+  },
+
+  /**
    * Show the sidebar.
    *
    * This wraps the internal method, including a ping to telemetry.
@@ -1879,9 +1908,7 @@ var SidebarController = {
     }
     this._recordPanelToggle(commandID, true);
 
-    // Extensions without private window access wont be in the
-    // sidebars map.
-    if (!this.sidebars.has(commandID)) {
+    if (!this._canShow(commandID)) {
       return false;
     }
     return this._show(commandID).then(() => {
@@ -1912,9 +1939,7 @@ var SidebarController = {
     }
     this._recordPanelToggle(commandID, true);
 
-    // Extensions without private window access wont be in the
-    // sidebars map.
-    if (!this.sidebars.has(commandID)) {
+    if (!this._canShow(commandID)) {
       return false;
     }
     return this._show(commandID).then(() => {
@@ -2001,6 +2026,15 @@ var SidebarController = {
               // Now that the currentId is updated, fire a show event.
               this._fireShowEvent();
               this._recordBrowserSize();
+
+              const sidebar = this.sidebars.get(commandID);
+              // Initialize sidebar permissions UI
+              if (sidebar?.permissions) {
+                if (!this._permissions) {
+                  this._permissions = new this.SidebarPermissions(window);
+                }
+                this._permissions.init(this.browser);
+              }
             }, 0);
           },
           { capture: true, once: true }
@@ -2295,18 +2329,12 @@ var SidebarController = {
     switch (e.type) {
       case "popupshown":
         /* Temporarily remove MousePosTracker listener when a context menu is open */
-        if (
-          e.composedTarget.id !== "tab-preview-panel" &&
-          e.composedTarget.tagName !== "tooltip"
-        ) {
+        if (e.composedTarget.tagName !== "tooltip") {
           this._addHoverStateBlocker();
         }
         break;
       case "popuphidden":
-        if (
-          e.composedTarget.id !== "tab-preview-panel" &&
-          e.composedTarget.tagName !== "tooltip"
-        ) {
+        if (e.composedTarget.tagName !== "tooltip") {
           await this._removeHoverStateBlocker();
         }
         break;
@@ -2403,9 +2431,13 @@ var SidebarController = {
 };
 
 ChromeUtils.defineESModuleGetters(SidebarController, {
+  AIWindow:
+    "moz-src:///browser/components/aiwindow/ui/modules/AIWindow.sys.mjs",
   SidebarManager:
     "moz-src:///browser/components/sidebar/SidebarManager.sys.mjs",
   SidebarState: "moz-src:///browser/components/sidebar/SidebarState.sys.mjs",
+  SidebarPermissions:
+    "chrome://browser/content/sidebar/sidebar-permissions.mjs",
 });
 
 // Add getters related to the position here, since we will want them

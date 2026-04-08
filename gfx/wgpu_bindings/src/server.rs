@@ -4,9 +4,11 @@
 
 use crate::{
     error::{error_to_string, ErrMsg, ErrorBuffer, ErrorBufferType, OwnedErrorBuffer},
-    make_byte_buf, wgpu_string, AdapterInformation, BufferMapResult, ByteBuf, CommandEncoderAction,
-    DeviceAction, FfiSlice, Message, PipelineError, QueueWriteAction, QueueWriteDataSource,
-    ServerMessage, ShaderModuleCompilationMessage, SwapChainId, TextureAction,
+    make_byte_buf,
+    telemetry::build_telemetry_struct,
+    wgpu_string, AdapterInformation, BufferMapResult, ByteBuf, CommandEncoderAction, DeviceAction,
+    FfiSlice, Message, PipelineError, QueueWriteAction, QueueWriteDataSource, ServerMessage,
+    ShaderModuleCompilationMessage, SwapChainId, TextureAction,
 };
 
 use nsstring::{nsACString, nsCString};
@@ -35,9 +37,6 @@ use windows::Win32::{Foundation, Graphics::Direct3D12};
 
 #[cfg(target_os = "linux")]
 use ash::{khr, vk};
-
-#[cfg(target_os = "macos")]
-use objc::{class, msg_send, sel, sel_impl};
 
 // The seemingly redundant u64 suffixes help cbindgen with generating the right C++ code.
 // See https://github.com/mozilla/cbindgen/issues/849.
@@ -151,7 +150,7 @@ pub extern "C" fn wgpu_server_new(owner: WebGPUParentPtr) -> *mut Global {
 
     let global = wgc::global::Global::new(
         "wgpu",
-        &wgt::InstanceDescriptor {
+        wgt::InstanceDescriptor {
             backends,
             flags: instance_flags,
             backend_options: wgt::BackendOptions {
@@ -169,7 +168,9 @@ pub extern "C" fn wgpu_server_new(owner: WebGPUParentPtr) -> *mut Global {
                 for_resource_creation: Some(95),
                 for_device_loss: Some(99),
             },
+            display: None,
         },
+        Some(build_telemetry_struct()),
     );
     let global = Global { owner, global };
     Box::into_raw(Box::new(global))
@@ -208,31 +209,23 @@ pub extern "C" fn wgpu_server_device_poll(
     global.device_poll(device_id, maintain).unwrap();
 }
 
-#[repr(C)]
-#[derive(Clone, Copy, Debug)]
-#[allow(clippy::upper_case_acronyms)]
 #[cfg(target_os = "macos")]
-struct NSOperatingSystemVersion {
-    major: usize,
-    minor: usize,
-    patch: usize,
-}
+fn ns_os_version_at_least(
+    lhs: &objc2_foundation::NSOperatingSystemVersion,
+    rhs_mac_version: (isize, isize),
+    rhs_ios_version: (isize, isize),
+    is_mac: bool,
+) -> bool {
+    let rhs = if is_mac {
+        rhs_mac_version
+    } else {
+        rhs_ios_version
+    };
 
-#[cfg(target_os = "macos")]
-impl NSOperatingSystemVersion {
-    fn at_least(
-        &self,
-        mac_version: (usize, usize),
-        ios_version: (usize, usize),
-        is_mac: bool,
-    ) -> bool {
-        let version = if is_mac { mac_version } else { ios_version };
-
-        self.major
-            .cmp(&version.0)
-            .then_with(|| self.minor.cmp(&version.1))
-            .is_ge()
-    }
+    lhs.majorVersion
+        .cmp(&rhs.0)
+        .then_with(|| lhs.minorVersion.cmp(&rhs.1))
+        .is_ge()
 }
 
 #[allow(unreachable_code)]
@@ -332,6 +325,8 @@ fn support_use_shared_texture_in_swap_chain(
 
     #[cfg(target_os = "macos")]
     {
+        use objc2_foundation::NSProcessInfo;
+
         if backend != wgt::Backend::Metal {
             log::info!(concat!(
                 "WebGPU: disabling SharedTexture swapchain: \n",
@@ -347,13 +342,9 @@ fn support_use_shared_texture_in_swap_chain(
             return false;
         }
 
-        let version: NSOperatingSystemVersion = unsafe {
-            let process_info: *mut objc::runtime::Object =
-                msg_send![class!(NSProcessInfo), processInfo];
-            msg_send![process_info, operatingSystemVersion]
-        };
+        let version = NSProcessInfo::processInfo().operatingSystemVersion();
 
-        if !version.at_least((10, 14), (12, 0), /* os_is_mac */ true) {
+        if !ns_os_version_at_least(&version, (10, 14), (12, 0), /* os_is_mac */ true) {
             log::info!(concat!(
                 "WebGPU: disabling SharedTexture swapchain:\n",
                 "operating system version is not at least 10.14 (macOS) or 12.0 (iOS)\n",
@@ -851,7 +842,7 @@ pub unsafe extern "C" fn wgpu_server_texture_create_view(
             base_array_layer: desc.base_array_layer,
             array_layer_count: desc.array_layer_count.map(|ptr| *ptr),
         },
-        usage: None,
+        usage: Some(desc.usage),
     };
     let (_, err) = global.texture_create_view(texture_id, &desc, Some(id_in));
     if let Some(err) = err {
@@ -1218,7 +1209,9 @@ pub extern "C" fn wgpu_vkimage_get_dma_buf_info(handle: &VkImageHandle) -> DMABu
 }
 
 #[cfg(target_os = "macos")]
-pub struct MetalSharedEventHandle(metal::SharedEvent);
+pub struct MetalSharedEventHandle(
+    objc2::rc::Retained<objc2::runtime::ProtocolObject<dyn objc2_metal::MTLSharedEvent>>,
+);
 #[cfg(not(target_os = "macos"))]
 pub struct MetalSharedEventHandle;
 
@@ -1231,10 +1224,12 @@ pub extern "C" fn wgpu_server_get_device_fence_metal_shared_event(
 ) -> *mut MetalSharedEventHandle {
     #[cfg(target_os = "macos")]
     {
+        use objc2::Message as _;
+
         let shared_event = unsafe {
             global
                 .device_fence_as_hal::<wgc::api::Metal>(device_id)
-                .map(|fence| fence.raw_shared_event().unwrap().clone())
+                .map(|fence| fence.raw_shared_event().unwrap().retain())
         };
         let shared_event = match shared_event {
             Some(shared_event) => shared_event,
@@ -1256,7 +1251,8 @@ pub extern "C" fn wgpu_server_metal_shared_event_signaled_value(
 ) -> u64 {
     #[cfg(target_os = "macos")]
     {
-        return shared_event.0.signaled_value();
+        use objc2_metal::MTLSharedEvent as _;
+        return shared_event.0.signaledValue();
     }
 
     u64::MAX
@@ -1489,25 +1485,6 @@ pub fn select_memory_type(
     }
 
     None
-}
-
-#[cfg(target_os = "linux")]
-struct VkImageHolder {
-    pub device: vk::Device,
-    pub image: vk::Image,
-    pub memory: vk::DeviceMemory,
-    pub fn_destroy_image: vk::PFN_vkDestroyImage,
-    pub fn_free_memory: vk::PFN_vkFreeMemory,
-}
-
-#[cfg(target_os = "linux")]
-impl VkImageHolder {
-    fn destroy(&self) {
-        unsafe {
-            (self.fn_destroy_image)(self.device, self.image, ptr::null());
-            (self.fn_free_memory)(self.device, self.memory, ptr::null());
-        }
-    }
 }
 
 impl Global {
@@ -1765,14 +1742,6 @@ impl Global {
                 }
             }
 
-            let image_holder = VkImageHolder {
-                device: device.handle(),
-                image,
-                memory,
-                fn_destroy_image: device.fp_v1_0().destroy_image,
-                fn_free_memory: device.fp_v1_0().free_memory,
-            };
-
             let hal_desc = wgh::TextureDescriptor {
                 label: None,
                 size: desc.size,
@@ -1785,15 +1754,12 @@ impl Global {
                 view_formats: vec![],
             };
 
-            let image = image_holder.image;
-
             let hal_texture = <wgh::api::Vulkan as wgh::Api>::Device::texture_from_raw(
                 &hal_device,
                 image,
                 &hal_desc,
-                Some(Box::new(move || {
-                    image_holder.destroy();
-                })),
+                None,
+                wgh::vulkan::TextureMemory::Dedicated(memory),
             );
 
             let (_, error) = self.create_texture_from_hal(
@@ -1811,118 +1777,6 @@ impl Global {
 
             true
         }
-    }
-
-    #[cfg(target_os = "macos")]
-    fn create_texture_with_shared_texture_iosurface(
-        &self,
-        device_id: id::DeviceId,
-        texture_id: id::TextureId,
-        desc: &wgc::resource::TextureDescriptor,
-        swap_chain_id: Option<SwapChainId>,
-    ) -> bool {
-        use metal::foreign_types::ForeignType as _;
-
-        let ret = unsafe {
-            wgpu_server_ensure_shared_texture_for_swap_chain(
-                self.owner,
-                swap_chain_id.unwrap(),
-                device_id,
-                texture_id,
-                desc.size.width,
-                desc.size.height,
-                desc.format,
-                desc.usage,
-            )
-        };
-        if ret != true {
-            let msg = c"Failed to create shared texture";
-            unsafe {
-                gfx_critical_note(msg.as_ptr());
-            }
-            return false;
-        }
-
-        let io_surface_id =
-            unsafe { wgpu_server_get_external_io_surface_id(self.owner, texture_id) };
-        if io_surface_id == 0 {
-            let msg = c"Failed to get io surface id";
-            unsafe {
-                gfx_critical_note(msg.as_ptr());
-            }
-            return false;
-        }
-
-        let io_surface = io_surface::lookup(io_surface_id);
-
-        let desc_ref = &desc;
-
-        let raw_texture: metal::Texture = unsafe {
-            let Some(hal_device) = self.device_as_hal::<wgc::api::Metal>(device_id) else {
-                emit_critical_invalid_note("metal device");
-                return false;
-            };
-
-            let device = hal_device.raw_device();
-
-            objc::rc::autoreleasepool(|| {
-                let descriptor = metal::TextureDescriptor::new();
-                let usage = metal::MTLTextureUsage::RenderTarget
-                    | metal::MTLTextureUsage::ShaderRead
-                    | metal::MTLTextureUsage::PixelFormatView;
-
-                descriptor.set_texture_type(metal::MTLTextureType::D2);
-                descriptor.set_width(desc_ref.size.width as u64);
-                descriptor.set_height(desc_ref.size.height as u64);
-                descriptor.set_mipmap_level_count(desc_ref.mip_level_count as u64);
-                descriptor.set_pixel_format(metal::MTLPixelFormat::BGRA8Unorm);
-                descriptor.set_usage(usage);
-                descriptor.set_storage_mode(metal::MTLStorageMode::Private);
-
-                let raw_device = device.lock();
-                msg_send![*raw_device, newTextureWithDescriptor: descriptor iosurface:io_surface.obj plane:0]
-            })
-        };
-
-        if raw_texture.as_ptr().is_null() {
-            let msg = c"Failed to create metal::Texture for swap chain";
-            unsafe {
-                gfx_critical_note(msg.as_ptr());
-            }
-            return false;
-        }
-
-        if let Some(label) = &desc_ref.label {
-            raw_texture.set_label(&label);
-        }
-
-        let hal_texture = unsafe {
-            <wgh::api::Metal as wgh::Api>::Device::texture_from_raw(
-                raw_texture,
-                wgt::TextureFormat::Bgra8Unorm,
-                metal::MTLTextureType::D2,
-                1,
-                1,
-                wgh::CopyExtent {
-                    width: desc.size.width,
-                    height: desc.size.height,
-                    depth: 1,
-                },
-            )
-        };
-
-        let (_, error) = unsafe {
-            self.create_texture_from_hal(Box::new(hal_texture), device_id, &desc, Some(texture_id))
-        };
-        if let Some(err) = error {
-            let msg = CString::new(format!("create_texture_from_hal() failed: {:?}", err)).unwrap();
-            unsafe {
-                gfx_critical_note(msg.as_ptr());
-            }
-            return false;
-        }
-
-        true
     }
 
     fn device_action(
@@ -2197,6 +2051,9 @@ impl Global {
                 if let Some(err) = error {
                     error_buf.init(err, device_id);
                 }
+            }
+            DeviceAction::CreateBindGroupLayoutError(id, label) => {
+                self.create_bind_group_layout_error(Some(id), label);
             }
             DeviceAction::RenderPipelineGetBindGroupLayout(pipeline_id, index, bgl_id) => {
                 let (_, error) =
@@ -2649,6 +2506,8 @@ unsafe fn process_message(
                     backend,
                     transient_saves_memory,
                     device_pci_bus_id: _,
+                    subgroup_min_size,
+                    subgroup_max_size,
                 } = global.adapter_get_info(adapter_id);
 
                 let is_hardware = match device_type {
@@ -2687,6 +2546,8 @@ unsafe fn process_message(
                     backend,
                     support_use_shared_texture_in_swap_chain,
                     transient_saves_memory,
+                    subgroup_min_size,
+                    subgroup_max_size,
                 };
                 Some(info)
             } else {
@@ -3243,83 +3104,237 @@ pub unsafe extern "C" fn wgpu_server_device_wait_fence_from_shared_handle(
     res.is_ok()
 }
 
-/// Imports a Metal texture from the specified plane of an IOSurface.
 #[cfg(target_os = "macos")]
-#[no_mangle]
-pub unsafe extern "C" fn wgpu_server_device_import_texture_from_iosurface(
-    global: &Global,
-    device_id: id::DeviceId,
-    id_in: id::TextureId,
-    desc: &wgt::TextureDescriptor<Option<&nsACString>, crate::FfiSlice<wgt::TextureFormat>>,
-    io_surface_id: u32,
-    plane: usize,
-    mut error_buf: ErrorBuffer,
-) {
-    let desc = desc.map_label_and_view_formats(|l| wgpu_string(*l), |v| v.as_slice().to_vec());
+mod macos {
+    use std::ffi::CString;
 
-    let surface = io_surface::lookup(io_surface_id);
-
-    let Some(hal_device) = global.device_as_hal::<wgc::api::Metal>(device_id) else {
-        emit_critical_invalid_note("metal device");
-        global.create_texture_error(Some(id_in), &desc);
-        return;
+    use super::{emit_critical_invalid_note, gfx_critical_note, Global};
+    use crate::{
+        error::ErrorBuffer,
+        server::{
+            wgpu_server_ensure_shared_texture_for_swap_chain,
+            wgpu_server_get_external_io_surface_id,
+        },
+        wgpu_string, SwapChainId,
     };
-    let metal_device = hal_device.raw_device().lock();
 
-    let metal_desc = metal::TextureDescriptor::new();
-    let texture_type = match desc.dimension {
-        wgt::TextureDimension::D1 => metal::MTLTextureType::D1,
-        wgt::TextureDimension::D2 => {
-            if desc.sample_count > 1 {
-                metal_desc.set_sample_count(desc.sample_count as u64);
-                metal::MTLTextureType::D2Multisample
-            } else if desc.size.depth_or_array_layers > 1 {
-                metal_desc.set_array_length(desc.size.depth_or_array_layers as u64);
-                metal::MTLTextureType::D2Array
-            } else {
-                metal::MTLTextureType::D2
+    use nsstring::nsACString;
+    use objc2::{
+        rc::{autoreleasepool, Retained},
+        runtime::ProtocolObject,
+    };
+    use objc2_foundation::NSString;
+    use objc2_io_surface::IOSurfaceRef;
+    use objc2_metal::{
+        MTLDevice as _, MTLPixelFormat, MTLResource, MTLStorageMode, MTLTexture,
+        MTLTextureDescriptor, MTLTextureType, MTLTextureUsage,
+    };
+    use wgc::id;
+
+    /// Imports a Metal texture from the specified plane of an IOSurface.
+    #[no_mangle]
+    pub unsafe extern "C" fn wgpu_server_device_import_texture_from_iosurface(
+        global: &Global,
+        device_id: id::DeviceId,
+        id_in: id::TextureId,
+        desc: &wgt::TextureDescriptor<Option<&nsACString>, crate::FfiSlice<wgt::TextureFormat>>,
+        io_surface_id: u32,
+        plane: usize,
+        mut error_buf: ErrorBuffer,
+    ) {
+        let desc = desc.map_label_and_view_formats(|l| wgpu_string(*l), |v| v.as_slice().to_vec());
+
+        let Some(surface) = IOSurfaceRef::lookup(io_surface_id) else {
+            emit_critical_invalid_note("IOSurface");
+            global.create_texture_error(Some(id_in), &desc);
+            return;
+        };
+
+        let Some(hal_device) = global.device_as_hal::<wgc::api::Metal>(device_id) else {
+            emit_critical_invalid_note("metal device");
+            global.create_texture_error(Some(id_in), &desc);
+            return;
+        };
+        let metal_device = hal_device.raw_device();
+
+        let metal_desc = MTLTextureDescriptor::new();
+        let texture_type = match desc.dimension {
+            wgt::TextureDimension::D1 => MTLTextureType::Type1D,
+            wgt::TextureDimension::D2 => {
+                if desc.sample_count > 1 {
+                    metal_desc.setSampleCount(desc.sample_count as usize);
+                    MTLTextureType::Type2DMultisample
+                } else if desc.size.depth_or_array_layers > 1 {
+                    metal_desc.setArrayLength(desc.size.depth_or_array_layers as usize);
+                    MTLTextureType::Type2DArray
+                } else {
+                    MTLTextureType::Type2D
+                }
             }
+            wgt::TextureDimension::D3 => {
+                metal_desc.setDepth(desc.size.depth_or_array_layers as usize);
+                MTLTextureType::Type3D
+            }
+        };
+        metal_desc.setTextureType(texture_type);
+        let format = match desc.format {
+            wgt::TextureFormat::Rgba8Unorm => MTLPixelFormat::RGBA8Unorm,
+            wgt::TextureFormat::Bgra8Unorm => MTLPixelFormat::BGRA8Unorm,
+            wgt::TextureFormat::R8Unorm => MTLPixelFormat::R8Unorm,
+            wgt::TextureFormat::Rg8Unorm => MTLPixelFormat::RG8Unorm,
+            wgt::TextureFormat::R16Unorm => MTLPixelFormat::R16Unorm,
+            wgt::TextureFormat::Rg16Unorm => MTLPixelFormat::RG16Unorm,
+            _ => unreachable!(),
+        };
+        metal_desc.setPixelFormat(format);
+        metal_desc.setWidth(desc.size.width as usize);
+        metal_desc.setHeight(desc.size.height as usize);
+        metal_desc.setMipmapLevelCount(desc.mip_level_count as usize);
+        metal_desc.setStorageMode(MTLStorageMode::Private);
+        metal_desc.setUsage(MTLTextureUsage::ShaderRead);
+
+        let Some(metal_texture) =
+            metal_device.newTextureWithDescriptor_iosurface_plane(&metal_desc, &surface, plane)
+        else {
+            emit_critical_invalid_note("IOSurface");
+            global.create_texture_error(Some(id_in), &desc);
+            return;
+        };
+
+        let hal_texture = <wgh::api::Metal as wgh::Api>::Device::texture_from_raw(
+            metal_texture,
+            desc.format,
+            texture_type,
+            desc.array_layer_count(),
+            desc.mip_level_count,
+            wgh::CopyExtent::map_extent_to_copy_size(&desc.size, desc.dimension),
+        );
+
+        let (_, error) = unsafe {
+            global.create_texture_from_hal(Box::new(hal_texture), device_id, &desc, Some(id_in))
+        };
+        if let Some(err) = error {
+            error_buf.init(err, device_id);
         }
-        wgt::TextureDimension::D3 => {
-            metal_desc.set_depth(desc.size.depth_or_array_layers as u64);
-            metal::MTLTextureType::D3
+    }
+
+    impl super::Global {
+        pub(super) fn create_texture_with_shared_texture_iosurface(
+            &self,
+            device_id: id::DeviceId,
+            texture_id: id::TextureId,
+            desc: &wgc::resource::TextureDescriptor,
+            swap_chain_id: Option<SwapChainId>,
+        ) -> bool {
+            let ret = unsafe {
+                wgpu_server_ensure_shared_texture_for_swap_chain(
+                    self.owner,
+                    swap_chain_id.unwrap(),
+                    device_id,
+                    texture_id,
+                    desc.size.width,
+                    desc.size.height,
+                    desc.format,
+                    desc.usage,
+                )
+            };
+            if ret != true {
+                let msg = c"Failed to create shared texture";
+                unsafe {
+                    gfx_critical_note(msg.as_ptr());
+                }
+                return false;
+            }
+
+            let io_surface_id =
+                unsafe { wgpu_server_get_external_io_surface_id(self.owner, texture_id) };
+            if io_surface_id == 0 {
+                let msg = c"Failed to get io surface id";
+                unsafe {
+                    gfx_critical_note(msg.as_ptr());
+                }
+                return false;
+            }
+
+            let Some(io_surface) = IOSurfaceRef::lookup(io_surface_id) else {
+                emit_critical_invalid_note("metal device");
+                return false;
+            };
+
+            let desc_ref = &desc;
+
+            let raw_texture: Retained<ProtocolObject<dyn MTLTexture>> = unsafe {
+                let Some(hal_device) = self.device_as_hal::<wgc::api::Metal>(device_id) else {
+                    emit_critical_invalid_note("metal device");
+                    return false;
+                };
+
+                let device = hal_device.raw_device();
+
+                let maybe_texture = autoreleasepool(|_| {
+                    let descriptor = MTLTextureDescriptor::new();
+                    let usage = MTLTextureUsage::RenderTarget
+                        | MTLTextureUsage::ShaderRead
+                        | MTLTextureUsage::PixelFormatView;
+
+                    descriptor.setTextureType(MTLTextureType::Type2D);
+                    descriptor.setWidth(desc_ref.size.width as usize);
+                    descriptor.setHeight(desc_ref.size.height as usize);
+                    descriptor.setMipmapLevelCount(desc_ref.mip_level_count as usize);
+                    descriptor.setPixelFormat(MTLPixelFormat::BGRA8Unorm);
+                    descriptor.setUsage(usage);
+                    descriptor.setStorageMode(MTLStorageMode::Private);
+
+                    device.newTextureWithDescriptor_iosurface_plane(&descriptor, &io_surface, 0)
+                });
+
+                let Some(texture) = maybe_texture else {
+                    let msg = c"Failed to create MTLTexture for swap chain";
+                    gfx_critical_note(msg.as_ptr());
+                    return false;
+                };
+
+                texture
+            };
+
+            if let Some(label) = &desc_ref.label {
+                ProtocolObject::<dyn MTLResource>::from_ref(&*raw_texture)
+                    .setLabel(Some(&NSString::from_str(label)));
+            }
+
+            let hal_texture = unsafe {
+                <wgh::api::Metal as wgh::Api>::Device::texture_from_raw(
+                    raw_texture,
+                    wgt::TextureFormat::Bgra8Unorm,
+                    MTLTextureType::Type2D,
+                    1,
+                    1,
+                    wgh::CopyExtent {
+                        width: desc.size.width,
+                        height: desc.size.height,
+                        depth: 1,
+                    },
+                )
+            };
+
+            let (_, error) = unsafe {
+                self.create_texture_from_hal(
+                    Box::new(hal_texture),
+                    device_id,
+                    &desc,
+                    Some(texture_id),
+                )
+            };
+            if let Some(err) = error {
+                let msg =
+                    CString::new(format!("create_texture_from_hal() failed: {:?}", err)).unwrap();
+                unsafe {
+                    gfx_critical_note(msg.as_ptr());
+                }
+                return false;
+            }
+
+            true
         }
-    };
-    metal_desc.set_texture_type(texture_type);
-    let format = match desc.format {
-        wgt::TextureFormat::Rgba8Unorm => metal::MTLPixelFormat::RGBA8Unorm,
-        wgt::TextureFormat::Bgra8Unorm => metal::MTLPixelFormat::BGRA8Unorm,
-        wgt::TextureFormat::R8Unorm => metal::MTLPixelFormat::R8Unorm,
-        wgt::TextureFormat::Rg8Unorm => metal::MTLPixelFormat::RG8Unorm,
-        wgt::TextureFormat::R16Unorm => metal::MTLPixelFormat::R16Unorm,
-        wgt::TextureFormat::Rg16Unorm => metal::MTLPixelFormat::RG16Unorm,
-        _ => unreachable!(),
-    };
-    metal_desc.set_pixel_format(format);
-    metal_desc.set_width(desc.size.width as u64);
-    metal_desc.set_height(desc.size.height as u64);
-    metal_desc.set_mipmap_level_count(desc.mip_level_count as u64);
-    metal_desc.set_storage_mode(metal::MTLStorageMode::Private);
-    metal_desc.set_usage(metal::MTLTextureUsage::ShaderRead);
-
-    let metal_texture: metal::Texture = msg_send![
-        *metal_device,
-        newTextureWithDescriptor:metal_desc iosurface:surface.obj plane:plane
-    ];
-
-    let hal_texture = <wgh::api::Metal as wgh::Api>::Device::texture_from_raw(
-        metal_texture,
-        desc.format,
-        texture_type,
-        desc.array_layer_count(),
-        desc.mip_level_count,
-        wgh::CopyExtent::map_extent_to_copy_size(&desc.size, desc.dimension),
-    );
-
-    let (_, error) = unsafe {
-        global.create_texture_from_hal(Box::new(hal_texture), device_id, &desc, Some(id_in))
-    };
-    if let Some(err) = error {
-        error_buf.init(err, device_id);
     }
 }

@@ -89,7 +89,7 @@ class StunBindingRequest : public StunRequest {
     }
 
     // The keep-alive requests will be stopped after its lifetime has passed.
-    if (WithinLifetime(Connection::AlignTime(env().clock().CurrentTime()))) {
+    if (WithinLifetime(env().clock().CurrentTime())) {
       port_->request_manager_.Send(std::make_unique<StunBindingRequest>(
                                        port_, server_addr_, start_time_),
                                    /*delay=*/port_->stun_keepalive_delay());
@@ -112,7 +112,7 @@ class StunBindingRequest : public StunRequest {
         attr ? attr->reason()
              : "STUN binding response with no error code attribute.");
 
-    Timestamp now = Connection::AlignTime(env().clock().CurrentTime());
+    Timestamp now = env().clock().CurrentTime();
     if (WithinLifetime(now) && now - start_time_ < kRetryTimeout) {
       port_->request_manager_.Send(std::make_unique<StunBindingRequest>(
                                        port_, server_addr_, start_time_),
@@ -190,7 +190,7 @@ UDPPort::UDPPort(const PortParametersRef& args,
       socket_(socket),
       error_(0),
       ready_(false),
-      stun_keepalive_delay_(STUN_KEEPALIVE_INTERVAL),
+      stun_keepalive_delay_(kStunKeepaliveInterval),
       dscp_(DSCP_NO_CHANGE),
       emit_local_for_anyaddress_(emit_local_for_anyaddress) {}
 
@@ -208,7 +208,7 @@ UDPPort::UDPPort(const PortParametersRef& args,
       socket_(nullptr),
       error_(0),
       ready_(false),
-      stun_keepalive_delay_(STUN_KEEPALIVE_INTERVAL),
+      stun_keepalive_delay_(kStunKeepaliveInterval),
       dscp_(DSCP_NO_CHANGE),
       emit_local_for_anyaddress_(emit_local_for_anyaddress) {}
 
@@ -216,8 +216,10 @@ bool UDPPort::Init() {
   stun_keepalive_lifetime_ = GetStunKeepaliveLifetime();
   if (!SharedSocket()) {
     RTC_DCHECK(socket_ == nullptr);
-    socket_ = socket_factory()->CreateUdpSocket(
-        SocketAddress(Network()->GetBestIP(), 0), min_port(), max_port());
+    owned_socket_ = socket_factory()->CreateUdpSocket(
+        env(), SocketAddress(Network()->GetBestIP(), 0), min_port(),
+        max_port());
+    socket_ = owned_socket_.get();
     if (!socket_) {
       RTC_LOG(LS_WARNING) << ToString() << ": UDP socket creation failed";
       return false;
@@ -233,10 +235,7 @@ bool UDPPort::Init() {
   return true;
 }
 
-UDPPort::~UDPPort() {
-  if (!SharedSocket())
-    delete socket_;
-}
+UDPPort::~UDPPort() = default;
 
 void UDPPort::PrepareAddress() {
   RTC_DCHECK(request_manager_.empty());
@@ -363,8 +362,8 @@ void UDPPort::GetStunStats(std::optional<StunStats>* stats) {
   *stats = stats_;
 }
 
-void UDPPort::set_stun_keepalive_delay(const std::optional<int>& delay) {
-  stun_keepalive_delay_ = delay.value_or(STUN_KEEPALIVE_INTERVAL);
+void UDPPort::set_stun_keepalive_delay(const std::optional<TimeDelta>& delay) {
+  stun_keepalive_delay_ = delay.value_or(kStunKeepaliveInterval);
 }
 
 void UDPPort::OnLocalAddressReady(AsyncPacketSocket* /* socket */,
@@ -399,9 +398,7 @@ void UDPPort::OnReadPacket(AsyncPacketSocket* socket,
   // we already cleared the request when we got the first response.
   if (server_addresses_.find(packet.source_address()) !=
       server_addresses_.end()) {
-    request_manager_.CheckResponse(
-        reinterpret_cast<const char*>(packet.payload().data()),
-        packet.payload().size());
+    request_manager_.CheckResponse(packet.payload());
     return;
   }
 
@@ -414,7 +411,7 @@ void UDPPort::OnReadPacket(AsyncPacketSocket* socket,
 
 void UDPPort::OnSentPacket(AsyncPacketSocket* /* socket */,
                            const SentPacketInfo& sent_packet) {
-  PortInterface::SignalSentPacket(sent_packet);
+  NotifySentPacket(sent_packet);
 }
 
 void UDPPort::OnReadyToSend(AsyncPacketSocket* /* socket */) {
@@ -511,8 +508,7 @@ void UDPPort::SendStunBindingRequest(const SocketAddress& stun_addr) {
         }
 
         request_manager_.Send(std::make_unique<StunBindingRequest>(
-            this, stun_addr,
-            Connection::AlignTime(env().clock().CurrentTime())));
+            this, stun_addr, env().clock().CurrentTime()));
       });
 }
 
@@ -615,9 +611,9 @@ void UDPPort::MaybeSetPortCompleteOrError() {
   // request succeeded for any stun server, or the socket is shared.
   if (server_addresses_.empty() || !bind_request_succeeded_servers_.empty() ||
       SharedSocket()) {
-    SignalPortComplete(this);
+    NotifyPortComplete(this);
   } else {
-    SignalPortError(this);
+    NotifyPortError(this);
   }
 }
 
@@ -651,7 +647,7 @@ std::unique_ptr<StunPort> StunPort::Create(
     uint16_t min_port,
     uint16_t max_port,
     const ServerAddresses& servers,
-    std::optional<int> stun_keepalive_interval) {
+    std::optional<TimeDelta> stun_keepalive_interval) {
   // Using `new` to access a non-public constructor.
   auto port = absl::WrapUnique(new StunPort(args, min_port, max_port, servers));
   port->set_stun_keepalive_delay(stun_keepalive_interval);

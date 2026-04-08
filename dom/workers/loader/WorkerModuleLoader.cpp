@@ -152,8 +152,9 @@ nsresult WorkerModuleLoader::CompileFetchedModule(
     case JS::ModuleType::Unknown:
     case JS::ModuleType::Bytes:
       MOZ_CRASH("Unexpected module type");
-    case JS::ModuleType::JavaScript:
-      return CompileJavaScriptModule(aCx, aOptions, aRequest, aModuleScript);
+    case JS::ModuleType::JavaScriptOrWasm:
+      return CompileJavaScriptOrWasmModule(aCx, aOptions, aRequest,
+                                           aModuleScript);
     case JS::ModuleType::JSON:
       return CompileJsonModule(aCx, aOptions, aRequest, aModuleScript);
     case JS::ModuleType::CSS:
@@ -163,9 +164,22 @@ nsresult WorkerModuleLoader::CompileFetchedModule(
   MOZ_CRASH("Unhandled module type");
 }
 
-nsresult WorkerModuleLoader::CompileJavaScriptModule(
+nsresult WorkerModuleLoader::CompileJavaScriptOrWasmModule(
     JSContext* aCx, JS::CompileOptions& aOptions, ModuleLoadRequest* aRequest,
     JS::MutableHandle<JSObject*> aModuleScript) {
+#ifdef NIGHTLY_BUILD
+  if (aRequest->HasWasmMimeTypeEssence()) {
+    MOZ_ASSERT(aRequest->IsWasmBytes());
+    auto* wasmModule =
+        JS::CompileWasmModule(aCx, aOptions, aRequest->WasmBytes());
+    if (!wasmModule) {
+      return NS_ERROR_FAILURE;
+    }
+
+    aModuleScript.set(wasmModule);
+    return NS_OK;
+  }
+#endif
   MOZ_ASSERT(aRequest->IsTextSource());
   MaybeSourceText maybeSource;
   nsresult rv = aRequest->GetScriptSource(aCx, &maybeSource,

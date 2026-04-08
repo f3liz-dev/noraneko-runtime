@@ -236,7 +236,7 @@ class WebPlatformTest(TestingMixin, MercurialScript, CodeCoverageMixin, AndroidM
     )
 
     def __init__(self, require_config_file=True):
-        super(WebPlatformTest, self).__init__(
+        super().__init__(
             config_options=self.config_options,
             all_actions=[
                 "clobber",
@@ -280,7 +280,7 @@ class WebPlatformTest(TestingMixin, MercurialScript, CodeCoverageMixin, AndroidM
     def query_abs_dirs(self):
         if self.abs_dirs:
             return self.abs_dirs
-        abs_dirs = super(WebPlatformTest, self).query_abs_dirs()
+        abs_dirs = super().query_abs_dirs()
 
         dirs = {}
         dirs["abs_app_install_dir"] = os.path.join(
@@ -419,8 +419,9 @@ class WebPlatformTest(TestingMixin, MercurialScript, CodeCoverageMixin, AndroidM
 
         cmd += ["--no-install-fonts"]
 
-        for test_type in test_types:
-            cmd.append("--test-type=%s" % test_type)
+        if test_types:
+            cmd.append("--test-type")
+            cmd.extend(test_types)
 
         if c["extra_prefs"]:
             cmd.extend([f"--setpref={p}" for p in c["extra_prefs"]])
@@ -553,7 +554,7 @@ class WebPlatformTest(TestingMixin, MercurialScript, CodeCoverageMixin, AndroidM
         return cmd
 
     def download_and_extract(self):
-        super(WebPlatformTest, self).download_and_extract(
+        super().download_and_extract(
             extract_dirs=[
                 "mach",
                 "bin/*",
@@ -623,7 +624,7 @@ class WebPlatformTest(TestingMixin, MercurialScript, CodeCoverageMixin, AndroidM
         if self.is_android:
             self.install_android_app(self.installer_path)
         else:
-            super(WebPlatformTest, self).install()
+            super().install()
 
     def _install_fonts(self):
         if self.is_android:

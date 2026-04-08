@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef nsDocShellLoadState_h__
-#define nsDocShellLoadState_h__
+#ifndef nsDocShellLoadState_h_
+#define nsDocShellLoadState_h_
 
 #include "mozilla/dom/BrowsingContext.h"
 #include "mozilla/dom/NavigationBinding.h"
@@ -468,6 +468,13 @@ class nsDocShellLoadState final {
   bool GetIsCaptivePortalTab() const;
   void SetIsCaptivePortalTab(bool aIsCaptivePortalTab);
 
+  void ProhibitInitialAboutBlankHandling() {
+    mIsInitialAboutBlankHandlingProhibited = true;
+  }
+  bool IsInitialAboutBlankHandlingProhibited() {
+    return mIsInitialAboutBlankHandlingProhibited;
+  }
+
  protected:
   // Destructor can't be defaulted or inlined, as header doesn't have all type
   // includes it needs to do so.
@@ -751,6 +758,11 @@ class nsDocShellLoadState final {
 
   // Whether this is a captive portal tab.
   bool mIsCaptivePortalTab = false;
+
+  // When this is the initial load and it is loading about:blank, force it
+  // to take the regular load path. It will replace the previous document
+  // and not load synchronous.
+  bool mIsInitialAboutBlankHandlingProhibited;
 };
 
-#endif /* nsDocShellLoadState_h__ */
+#endif /* nsDocShellLoadState_h_ */

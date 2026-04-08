@@ -33,6 +33,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.ReadOnlyComposable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -46,9 +47,7 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.tooling.preview.PreviewParameter
-import androidx.compose.ui.tooling.preview.PreviewParameterProvider
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import mozilla.components.compose.base.annotation.FlexibleWindowLightDarkPreview
@@ -59,7 +58,6 @@ import mozilla.components.compose.base.modifier.thenConditional
 import mozilla.components.compose.base.snackbar.Snackbar
 import mozilla.components.compose.base.snackbar.displaySnackbar
 import mozilla.components.compose.base.text.Text
-import mozilla.components.lib.state.ext.observeAsState
 import org.mozilla.fenix.R
 import org.mozilla.fenix.compose.list.ExpandableListHeader
 import org.mozilla.fenix.downloads.listscreen.store.DownloadListItem
@@ -75,7 +73,8 @@ import org.mozilla.fenix.downloads.listscreen.ui.FileListItem
 import org.mozilla.fenix.downloads.listscreen.ui.Filters
 import org.mozilla.fenix.downloads.listscreen.ui.ToolbarConfig
 import org.mozilla.fenix.theme.FirefoxTheme
-import org.mozilla.fenix.theme.Theme
+import org.mozilla.fenix.theme.ThemedValue
+import org.mozilla.fenix.theme.ThemedValueProvider
 import mozilla.components.ui.icons.R as iconsR
 
 /**
@@ -83,16 +82,14 @@ import mozilla.components.ui.icons.R as iconsR
  *
  * @param downloadsStore The [DownloadUIStore] used to manage and access the state of download items.
  * @param onItemClick Callback invoked when a download item is clicked.
- * @param onNavigationIconClick Callback for the back button click in the toolbar.
  */
 @Suppress("LongMethod", "CognitiveComplexMethod")
 @Composable
 fun DownloadsScreen(
     downloadsStore: DownloadUIStore,
     onItemClick: (FileItem) -> Unit,
-    onNavigationIconClick: () -> Unit,
 ) {
-    val uiState by downloadsStore.observeAsState(initialValue = downloadsStore.state) { it }
+    val uiState by downloadsStore.stateFlow.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     val coroutineScope = rememberCoroutineScope()
     val listState = rememberLazyListState()
@@ -161,7 +158,9 @@ fun DownloadsScreen(
                 },
                 navigationIcon = {
                     if (!uiState.isSearchFieldVisible) {
-                        IconButton(onClick = onNavigationIconClick) {
+                        IconButton(onClick = {
+                            downloadsStore.dispatch(DownloadUIAction.NavigationIconClicked)
+                        }) {
                             Icon(
                                 painter = painterResource(iconsR.drawable.mozac_ic_back_24),
                                 contentDescription = stringResource(R.string.download_navigate_back_description),
@@ -171,6 +170,17 @@ fun DownloadsScreen(
                     }
                 },
                 actions = {
+                    if (uiState.isSettingsIconVisible) {
+                        IconButton(onClick = {
+                            downloadsStore.dispatch(DownloadUIAction.SettingsIconClicked)
+                        }) {
+                            Icon(
+                                painter = painterResource(iconsR.drawable.mozac_ic_settings_24),
+                                contentDescription = stringResource(R.string.download_navigate_settings_description),
+                                tint = toolbarConfig.iconColor,
+                            )
+                        }
+                    }
                     if (uiState.mode is Mode.Editing) {
                         ToolbarEditActions(
                             downloadsStore = downloadsStore,
@@ -278,6 +288,22 @@ fun DownloadsScreen(
                     ),
                 )
             },
+            onRenameFileClick = { downloadsStore.dispatch(DownloadUIAction.RenameFileClicked(it)) },
+            onRenameFileConfirmed = { item: FileItem, newName: String ->
+                downloadsStore.dispatch(
+                    DownloadUIAction.RenameFileConfirmed(item = item, newName = newName),
+                )
+            },
+            onRenameFileDismissed = { downloadsStore.dispatch(DownloadUIAction.RenameFileDismissed) },
+            onRenameFileFailureDismissed = { downloadsStore.dispatch(DownloadUIAction.RenameFileFailureDismissed) },
+            onFileExtensionChangedByUser = { item: FileItem, newName: String ->
+                downloadsStore.dispatch(
+                    DownloadUIAction.FileExtensionChangedByUser(item = item, newName = newName),
+                )
+            },
+            onCloseChangeFileExtensionDialog = {
+                downloadsStore.dispatch(DownloadUIAction.CloseChangeFileExtensionDialog)
+            },
         )
     }
 }
@@ -346,6 +372,12 @@ private fun ToolbarEditActions(
  * @param onDeleteClick Invoked when delete icon button is clicked.
  * @param onShareUrlClick Invoked when share url button is clicked.
  * @param onShareFileClick Invoked when share file button is clicked.
+ * @param onRenameFileClick Invoked when rename file button is clicked.
+ * @param onRenameFileConfirmed Invoked when rename file dialog is confirmed.
+ * @param onRenameFileDismissed Invoked when rename file dialog is dismissed.
+ * @param onRenameFileFailureDismissed Invoked when rename file failure dialog is dismissed.
+ * @param onFileExtensionChangedByUser Callback invoked when the user changes the file extension during renaming.
+ * @param onCloseChangeFileExtensionDialog Callback invoked when the file extension change dialog is closed.
  */
 @SuppressWarnings("LongParameterList")
 @Composable
@@ -362,6 +394,12 @@ private fun DownloadsScreenContent(
     onDeleteClick: (FileItem) -> Unit,
     onShareUrlClick: (FileItem) -> Unit,
     onShareFileClick: (FileItem) -> Unit,
+    onRenameFileClick: (FileItem) -> Unit,
+    onRenameFileConfirmed: (FileItem, String) -> Unit,
+    onRenameFileDismissed: () -> Unit,
+    onRenameFileFailureDismissed: () -> Unit,
+    onFileExtensionChangedByUser: (FileItem, String) -> Unit,
+    onCloseChangeFileExtensionDialog: () -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -379,6 +417,17 @@ private fun DownloadsScreenContent(
                 onContentTypeSelected = onContentTypeSelected,
             )
         }
+
+        DownloadRenameFlow(
+            fileToRename = uiState.fileToRename,
+            renameFileError = uiState.renameFileError,
+            isChangeFileExtensionDialogVisible = uiState.isChangeFileExtensionDialogVisible,
+            onRenameFileConfirmed = onRenameFileConfirmed,
+            onRenameFileDismissed = onRenameFileDismissed,
+            onRenameFileFailureDismissed = onRenameFileFailureDismissed,
+            onFileExtensionChangedByUser = onFileExtensionChangedByUser,
+            onCloseChangeFileExtensionDialog = onCloseChangeFileExtensionDialog,
+        )
 
         when (uiState.itemsState) {
             is DownloadUIState.ItemsState.NoItems -> EmptyState(modifier = Modifier.fillMaxSize())
@@ -398,6 +447,7 @@ private fun DownloadsScreenContent(
                 onDeleteClick = onDeleteClick,
                 onShareUrlClick = onShareUrlClick,
                 onShareFileClick = onShareFileClick,
+                onRenameFileClick = onRenameFileClick,
                 modifier = Modifier.fillMaxSize(),
             )
         }
@@ -419,6 +469,7 @@ private fun DownloadsContent(
     onDeleteClick: (FileItem) -> Unit,
     onShareUrlClick: (FileItem) -> Unit,
     onShareFileClick: (FileItem) -> Unit,
+    onRenameFileClick: (FileItem) -> Unit,
 ) {
     val haptics = LocalHapticFeedback.current
 
@@ -459,6 +510,7 @@ private fun DownloadsContent(
                         onRetryClick = onRetryClick,
                         onShareUrlClick = onShareUrlClick,
                         onShareFileClick = onShareFileClick,
+                        onRenameFileClick = onRenameFileClick,
                         modifier = Modifier
                             .animateItem()
                             .width(FirefoxTheme.layout.size.containerMaxWidth)
@@ -602,9 +654,8 @@ private fun getDeleteSnackBarMessage(fileItems: Set<FileItem>, context: Context)
 }
 
 private class DownloadsScreenPreviewModelParameterProvider :
-    PreviewParameterProvider<DownloadUIState> {
-    override val values: Sequence<DownloadUIState>
-        get() = sequenceOf(
+    ThemedValueProvider<DownloadUIState>(
+        sequenceOf(
             DownloadUIState.INITIAL,
             DownloadUIState(
                 items = listOf(
@@ -719,18 +770,18 @@ private class DownloadsScreenPreviewModelParameterProvider :
                 pendingDeletionIds = emptySet(),
                 userSelectedContentTypeFilter = FileItem.ContentTypeFilter.All,
             ),
-        )
-}
+        ),
+    )
 
 @Composable
 @FlexibleWindowLightDarkPreview
 private fun DownloadsScreenPreviews(
-    @PreviewParameter(DownloadsScreenPreviewModelParameterProvider::class) state: DownloadUIState,
+    @PreviewParameter(DownloadsScreenPreviewModelParameterProvider::class) state: ThemedValue<DownloadUIState>,
 ) {
-    val downloadsStore = remember { DownloadUIStore(initialState = state) }
+    val downloadsStore = remember { DownloadUIStore(initialState = state.value) }
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
-    FirefoxTheme {
+    FirefoxTheme(state.theme) {
         Box {
             DownloadsScreen(
                 downloadsStore = downloadsStore,
@@ -738,13 +789,6 @@ private fun DownloadsScreenPreviews(
                     scope.launch {
                         snackbarHostState.displaySnackbar(
                             message = "Item ${it.fileName} clicked",
-                        )
-                    }
-                },
-                onNavigationIconClick = {
-                    scope.launch {
-                        snackbarHostState.displaySnackbar(
-                            message = "Navigation Icon clicked",
                         )
                     }
                 },
@@ -754,40 +798,6 @@ private fun DownloadsScreenPreviews(
             ) {
                 Snackbar(snackbarData = it)
             }
-        }
-    }
-}
-
-@Composable
-@Preview
-private fun DownloadsScreenPrivatePreviews(
-    @PreviewParameter(DownloadsScreenPreviewModelParameterProvider::class) state: DownloadUIState,
-) {
-    val downloadsStore = remember { DownloadUIStore(initialState = state) }
-    val snackbarHostState = remember { SnackbarHostState() }
-    val scope = rememberCoroutineScope()
-    FirefoxTheme(theme = Theme.Private) {
-        Box {
-            DownloadsScreen(
-                downloadsStore = downloadsStore,
-                onItemClick = {
-                    scope.launch {
-                        snackbarHostState.displaySnackbar(
-                            message = "Item ${it.fileName} clicked",
-                        )
-                    }
-                },
-                onNavigationIconClick = {
-                    scope.launch {
-                        snackbarHostState.displaySnackbar(
-                            message = "Navigation Icon clicked",
-                        )
-                    }
-                },
-            )
-            SnackbarHost(
-                hostState = snackbarHostState,
-            )
         }
     }
 }

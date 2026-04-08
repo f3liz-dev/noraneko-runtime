@@ -100,8 +100,11 @@ class ClipManager {
   // general we need to do this anytime PushOverrideForASR is called, as that is
   // called for the same set of conditions for which we cannot deduplicate
   // clips.
-  using ClipIdMap = std::unordered_map<const DisplayItemClipChain*,
-                                       AutoTArray<wr::WrClipId, 4>>;
+  struct ClipChainCacheEntry {
+    Maybe<wr::WrClipChainId> mWrChainID;
+  };
+  using ClipIdMap =
+      std::unordered_map<const DisplayItemClipChain*, ClipChainCacheEntry>;
   std::stack<ClipIdMap> mCacheStack;
 
   // A map that holds the cache overrides created by (a) "out of band" clips,
@@ -125,23 +128,18 @@ class ClipManager {
   // This holds some clip state for a single nsDisplayItem
   struct ItemClips {
     ItemClips(const ActiveScrolledRoot* aASR,
-              const DisplayItemClipChain* aChain, int32_t aAppUnitsPerDevPixel,
-              bool aSeparateLeaf);
+              const DisplayItemClipChain* aChain, int32_t aAppUnitsPerDevPixel);
 
     // These are the "inputs" - they come from the nsDisplayItem
     const ActiveScrolledRoot* mASR;
     const DisplayItemClipChain* mChain;
     int32_t mAppUnitsPerDevPixel;
-    bool mSeparateLeaf;
 
     // These are the "outputs" - they are pushed to WR as needed
     wr::WrSpatialId mScrollId;
     Maybe<wr::WrClipChainId> mClipChainId;
 
-    void UpdateSeparateLeaf(wr::DisplayListBuilder& aBuilder,
-                            int32_t aAppUnitsPerDevPixel);
     bool HasSameInputs(const ItemClips& aOther);
-    wr::WrSpaceAndClipChain GetSpaceAndClipChain() const;
   };
 
   // A stack of ItemClips corresponding to the nsDisplayItem ancestry. Each

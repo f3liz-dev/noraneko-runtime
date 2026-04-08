@@ -6,21 +6,17 @@ package org.mozilla.fenix.components.menu
 
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
-import androidx.test.ext.junit.runners.AndroidJUnit4
 import kotlinx.coroutines.test.runTest
 import mozilla.components.browser.state.state.ContentState
 import mozilla.components.browser.state.state.TabSessionState
 import mozilla.components.feature.addons.Addon
 import mozilla.components.lib.state.Middleware
-import mozilla.components.support.test.rule.MainCoroutineRule
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
-import org.junit.Rule
 import org.junit.Test
-import org.junit.runner.RunWith
 import org.mozilla.fenix.components.menu.store.BookmarkState
 import org.mozilla.fenix.components.menu.store.BrowserMenuState
 import org.mozilla.fenix.components.menu.store.ExtensionMenuState
@@ -31,11 +27,7 @@ import org.mozilla.fenix.components.menu.store.WebExtensionMenuItem
 import org.mozilla.fenix.components.menu.store.copyWithBrowserMenuState
 import org.mozilla.fenix.components.menu.store.copyWithExtensionMenuState
 
-@RunWith(AndroidJUnit4::class)
 class MenuStoreTest {
-
-    @get:Rule
-    val coroutineTestRule = MainCoroutineRule()
 
     @Test
     fun `WHEN store is created THEN init action is dispatched`() {
@@ -403,48 +395,5 @@ class MenuStoreTest {
                 store.state.extensionMenuState.browserWebExtensionMenuItem,
                 webExtensionMenuItemList,
             )
-        }
-
-    @Test
-    fun `WHEN update show extensions onboarding dispatched THEN extension state is updated`() =
-        runTest {
-            val initialState = MenuState()
-            val store = MenuStore(initialState = initialState)
-
-            store.dispatch(MenuAction.UpdateShowExtensionsOnboarding(true))
-
-            assertTrue(store.state.extensionMenuState.showExtensionsOnboarding)
-        }
-
-    @Test
-    fun `WHEN update manage extensions menu item visibility is dispatched THEN extension state is updated`() =
-        runTest {
-            val addon = Addon(id = "ext1")
-            val addonTwo = Addon(id = "ext2")
-            val store = MenuStore(
-                initialState = MenuState(
-                    extensionMenuState = ExtensionMenuState(
-                        recommendedAddons = listOf(
-                            addon,
-                            addonTwo,
-                        ),
-                    ),
-                ),
-            )
-
-            store.dispatch(MenuAction.UpdateManageExtensionsMenuItemVisibility(true))
-
-            assertTrue(store.state.extensionMenuState.shouldShowManageExtensionsMenuItem)
-        }
-
-    @Test
-    fun `WHEN update show disabled extensions onboarding dispatched THEN extension state is updated`() =
-        runTest {
-            val initialState = MenuState()
-            val store = MenuStore(initialState = initialState)
-
-            store.dispatch(MenuAction.UpdateShowDisabledExtensionsOnboarding(true))
-
-            assertTrue(store.state.extensionMenuState.showDisabledExtensionsOnboarding)
         }
 }

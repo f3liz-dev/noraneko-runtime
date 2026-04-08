@@ -145,6 +145,20 @@ async function testPseudoElements(inspector, container) {
     "::after shows up in breadcrumb"
   );
 
+  const dialogNodeFront = await getNodeFront("dialog", inspector);
+  const dialogChildren = await inspector.walker.children(dialogNodeFront);
+  is(
+    dialogChildren.nodes.length,
+    2,
+    "Expected number of children for the dialog element"
+  );
+  const backdropElement = dialogChildren.nodes[0];
+  await checkBreadcrumbContent(
+    backdropElement,
+    ["html", "body", "dialog", "::backdrop"],
+    ":backdrop shows up in breadcrumb"
+  );
+
   info("Check rules on ::view-transition");
   const htmlNodeFront = await getNodeFront("html", inspector);
   const onMarkupMutation = inspector.once("markupmutation");
@@ -261,7 +275,9 @@ async function testComments(inspector, container) {
   const button = container.childNodes[pressedButtonIndex];
 
   let onBreadcrumbsUpdated = inspector.once("breadcrumbs-updated");
-  button.click();
+  // Don't use button.click(), as it doesn't cause the focus event to be dispatched, which
+  // we do need here.
+  EventUtils.synthesizeMouseAtCenter(button, {}, inspector.panelWin);
   await onBreadcrumbsUpdated;
 
   is(breadcrumbs.currentIndex, pressedButtonIndex, "New button is selected");
@@ -290,7 +306,9 @@ async function testComments(inspector, container) {
 
   onInspectorUpdated = inspector.once("inspector-updated");
   onBreadcrumbsUpdated = inspector.once("breadcrumbs-updated");
-  button.click();
+  // Don't use button.click(), as it doesn't cause the focus event to be dispatched, which
+  // we do need here.
+  EventUtils.synthesizeMouseAtCenter(button, {}, inspector.panelWin);
   await Promise.all([onInspectorUpdated, onBreadcrumbsUpdated]);
 
   is(

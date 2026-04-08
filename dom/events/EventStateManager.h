@@ -54,6 +54,7 @@ class Element;
 class Selection;
 class BrowserParent;
 class RemoteDragStartData;
+struct InteractionData;
 
 }  // namespace dom
 
@@ -1381,6 +1382,7 @@ class EventStateManager : public nsSupportsWeakReference, public nsIObserver {
   // Stores the mRefPoint (the offset from the widget's origin in device
   // pixels) of the last mouse event.
   static LayoutDeviceIntPoint sLastRefPoint;
+  static LayoutDeviceIntPoint sLastRefPointOfRawUpdate;
 
   // member variables for the d&d gesture state machine
   LayoutDeviceIntPoint mGestureDownPoint;  // screen coordinates

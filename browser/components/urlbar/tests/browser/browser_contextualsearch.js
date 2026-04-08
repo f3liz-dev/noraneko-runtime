@@ -11,6 +11,10 @@ const { ActionsProviderQuickActions } = ChromeUtils.importESModule(
   "moz-src:///browser/components/urlbar/ActionsProviderQuickActions.sys.mjs"
 );
 
+const { CustomizableUITestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/CustomizableUITestUtils.sys.mjs"
+);
+
 const CONFIG = [
   {
     identifier: "default-engine",
@@ -28,7 +32,6 @@ const CONFIG = [
       },
     },
   },
-
   {
     identifier: "config-engine",
     base: {
@@ -39,23 +42,25 @@ const CONFIG = [
     // Only enable in particular locale so it is not installed by default.
     variants: [{ environment: { locales: ["sl"] } }],
   },
+  {
+    identifier: "de-engine",
+    base: {
+      urls: {
+        search: { base: "https://mochi.test/", searchTermParamName: "q" },
+      },
+    },
+    // Only enable in particular locale so it is not installed by default.
+    variants: [{ environment: { locales: ["de"] } }],
+  },
 ];
 
 let loadUri = async uri => {
-  let loaded = BrowserTestUtils.browserLoaded(
-    gBrowser.selectedBrowser,
-    false,
-    uri
-  );
-  BrowserTestUtils.startLoadingURIString(gBrowser.selectedBrowser, uri);
-  await loaded;
-};
-
-let updateConfig = async config => {
-  await waitForIdle();
-  await SearchTestUtils.setRemoteSettingsConfig(config);
-  await Services.search.wrappedJSObject.reset();
-  await Services.search.init();
+  gBrowser.selectedBrowser.stop();
+  return BrowserTestUtils.loadURIString({
+    browser: gBrowser.selectedBrowser,
+    uriString: uri,
+    wantLoad: uri,
+  });
 };
 
 add_setup(async function setup() {
@@ -67,8 +72,6 @@ add_setup(async function setup() {
   });
 
   registerCleanupFunction(async () => {
-    await updateConfig(null);
-    Services.search.restoreDefaultEngines();
     Services.prefs.clearUserPref(
       "browser.urlbar.quickactions.timesShownOnboardingLabel"
     );
@@ -95,7 +98,7 @@ add_task(async function test_engine_match() {
     PlacesTestUtils.waitForNotification("history-cleared");
   await PlacesUtils.history.clear();
   await promiseClearHistory;
-  await updateConfig(CONFIG);
+  await SearchTestUtils.updateRemoteSettingsConfig(CONFIG);
   await loadUri("https://example.org/");
 
   await UrlbarTestUtils.promiseAutocompleteResultPopup({
@@ -135,12 +138,51 @@ add_task(async function test_engine_match() {
   EventUtils.synthesizeKey("KEY_Enter");
 
   await onLoad;
-  await updateConfig(null);
+});
+
+add_task(async function test_alias_match() {
+  let newConfig = [CONFIG[0]].concat([
+    {
+      identifier: "alias-engine",
+      base: {
+        urls: {
+          search: { base: "https://example.net", searchTermParamName: "q" },
+        },
+        aliases: ["test"],
+      },
+    },
+  ]);
+  await SearchTestUtils.updateRemoteSettingsConfig(newConfig);
+
+  await UrlbarTestUtils.promiseAutocompleteResultPopup({
+    window,
+    value: "test",
+  });
+
+  let onLoad = BrowserTestUtils.browserLoaded(
+    gBrowser.selectedBrowser,
+    false,
+    "https://example.net/?q=test"
+  );
+
+  EventUtils.synthesizeKey("KEY_Tab");
+  await UrlbarTestUtils.assertSearchMode(window, {
+    engineName: "alias-engine",
+    entry: "keywordoffer",
+    isPreview: true,
+    source: 3,
+  });
+
+  await UrlbarTestUtils.promisePopupClose(window, () => {
+    EventUtils.sendString("test");
+    EventUtils.synthesizeKey("KEY_Enter");
+  });
+
+  await onLoad;
 });
 
 add_task(async function test_actions() {
   let testActionCalled = 0;
-  await updateConfig(CONFIG);
   await loadUri("https://example.net/");
 
   ActionsProviderQuickActions.addAction("testaction", {
@@ -161,7 +203,14 @@ add_task(async function test_actions() {
 
   Assert.equal(testActionCalled, 1, "Test action was called");
 
-  await updateConfig(null);
+  info("Check whether the URI on the original tab is not changed");
+  // eslint-disable-next-line mozilla/no-arbitrary-setTimeout
+  await new Promise(r => setTimeout(r, 100));
+  Assert.equal(
+    gBrowser.selectedBrowser.currentURI.spec,
+    "https://example.net/"
+  );
+
   ActionsProviderQuickActions.removeAction("testaction");
 });
 
@@ -175,7 +224,7 @@ add_task(async function test_selectContextualSearchResult_already_installed() {
   await loadUri("https://example.com/");
 
   const query = "search";
-  let engine = Services.search.getEngineByName("Contextual");
+  let engine = SearchService.getEngineByName("Contextual");
   const [expectedUrl] = UrlbarUtils.getSearchQueryUrl(engine, query);
 
   Assert.ok(
@@ -240,7 +289,7 @@ add_task(async function test_tab_to_search_engine() {
       },
     },
   ]);
-  await updateConfig(newConfig);
+  await SearchTestUtils.updateRemoteSettingsConfig(newConfig);
 
   await UrlbarTestUtils.promiseAutocompleteResultPopup({
     window,
@@ -267,19 +316,75 @@ add_task(async function test_tab_to_search_engine() {
   });
 
   await onLoad;
-  await updateConfig(null);
+  await SearchTestUtils.updateRemoteSettingsConfig(CONFIG);
 });
 
-add_task(async function test_onboarding_default_engine() {
+add_task(async function test_dont_suggest_default_engine() {
+  await UrlbarTestUtils.promiseAutocompleteResultPopup({
+    window,
+    value: "default",
+  });
+
+  Assert.ok(
+    await hasActions(1),
+    "Default engine is suggested when it matches the query"
+  );
+
+  // Load a URI from the host of the default engine.
+  await loadUri("https://example.com/");
+
+  await UrlbarTestUtils.promiseAutocompleteResultPopup({
+    window,
+    value: "something",
+  });
+
+  Assert.ok(
+    !(await hasActions(1)),
+    "Default engine is not suggested based on current host"
+  );
+
+  await UrlbarTestUtils.promisePopupClose(window, () => {
+    EventUtils.synthesizeKey("KEY_Escape");
+  });
+});
+
+add_task(async function test_dont_suggest_default_engine() {
+  await UrlbarTestUtils.promiseAutocompleteResultPopup({
+    window,
+    value: "default",
+  });
+
+  Assert.ok(
+    await hasActions(1),
+    "Default engine is suggested when it matches the query"
+  );
+
+  // Load a URI from the host of the default engine.
+  await loadUri("https://example.com/");
+
+  await UrlbarTestUtils.promiseAutocompleteResultPopup({
+    window,
+    value: "something",
+  });
+
+  Assert.ok(
+    !(await hasActions(1)),
+    "Default engine is not suggested based on current host"
+  );
+
+  await UrlbarTestUtils.promisePopupClose(window, () => {
+    EventUtils.synthesizeKey("KEY_Escape");
+  });
+});
+
+add_task(async function test_onboarding() {
   await SpecialPowers.pushPrefEnv({
     set: [["browser.urlbar.quickactions.timesToShowOnboardingLabel", 3]],
   });
 
-  await updateConfig(CONFIG);
-
   await UrlbarTestUtils.promiseAutocompleteResultPopup({
     window,
-    value: "default",
+    value: "non-default",
   });
 
   Assert.ok(
@@ -292,8 +397,41 @@ add_task(async function test_onboarding_default_engine() {
   await UrlbarTestUtils.promisePopupClose(window, () => {
     EventUtils.synthesizeKey("KEY_Escape");
   });
+});
 
-  await updateConfig(null);
+add_task(async function keep_search_query_searchbar() {
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.search.widget.new", true]],
+  });
+
+  let gCUITestUtils = new CustomizableUITestUtils(window);
+  let searchbar = await gCUITestUtils.addSearchBar();
+
+  // Visit page where de-engine will be suggested.
+  await BrowserTestUtils.loadURIString({
+    browser: gBrowser.selectedBrowser,
+    uriString: "https://mochi.test/",
+  });
+
+  await SearchbarTestUtils.promiseAutocompleteResultPopup({
+    window,
+    value: "kitten",
+  });
+
+  EventUtils.synthesizeKey("KEY_Tab");
+  EventUtils.synthesizeKey("KEY_Enter"); // Select "Seach with de-engine"
+  await BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser, {
+    wantLoad: "https://mochi.test/?q=kitten",
+  });
+
+  Assert.equal(
+    searchbar.value,
+    "kitten",
+    "Search query should stay after contextual search was executed"
+  );
+
+  gCUITestUtils.removeSearchBar();
+  await SpecialPowers.popPrefEnv();
 });
 
 async function hasActions(index) {
@@ -303,10 +441,4 @@ async function hasActions(index) {
   let result = (await UrlbarTestUtils.waitForAutocompleteResultAt(window, 1))
     .result;
   return result.providerName == "UrlbarProviderGlobalActions";
-}
-
-async function waitForIdle() {
-  for (let i = 0; i < 10; i++) {
-    await new Promise(resolve => Services.tm.idleDispatchToMainThread(resolve));
-  }
 }

@@ -2158,7 +2158,7 @@ class ThreadActor extends Actor {
     }
 
     // Preloaded WebExtension content scripts may be cached internally by
-    // ExtensionContent.jsm and ThreadActor would ignore them on a page reload
+    // ExtensionContent.sys.mjs and ThreadActor would ignore them on a page reload
     // because it finds them in the _debuggerSourcesSeen WeakSet,
     // and so we also need to be sure that there is still a source actor for the source.
     let sourceActor;
@@ -2366,16 +2366,16 @@ exports.ThreadActor = ThreadActor;
  *
  * PauseActors exist for the lifetime of a given debuggee pause.  Used to
  * scope pause-lifetime grips.
- *
- * @param {Pool} pool: The actor pool created for this pause.
  */
-function PauseActor(pool) {
-  this.pool = pool;
+class PauseActor {
+  /**
+   * @param {Pool} pool: The actor pool created for this pause.
+   */
+  constructor(pool) {
+    this.pool = pool;
+  }
+  typeName = "pause";
 }
-
-PauseActor.prototype = {
-  typeName: "pause",
-};
 
 // Utility functions.
 

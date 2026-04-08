@@ -121,7 +121,6 @@ extern bool enableWeakRefs;
 extern bool enableToSource;
 extern bool enablePropertyErrorMessageFix;
 extern bool enableIteratorHelpers;
-extern bool enableShadowRealms;
 extern bool enableArrayGrouping;
 extern bool enableWellFormedUnicodeStrings;
 extern bool enableArrayBufferTransfer;
@@ -169,9 +168,11 @@ class NonShrinkingValueVector
  public:
   bool traceWeak(JSTracer* trc) {
     for (HeapPtr<Value>& value : *this) {
-      if (value.isGCThing() &&
-          value.toGCThing()->zoneFromAnyThread()->isGCSweeping()) {
-        TraceWeakEdge(trc, &value, "NonShrinkingValueVector element");
+      if (value.isGCThing()) {
+        Zone* zone = value.toGCThing()->zoneFromAnyThread();
+        if (zone->isGCSweeping() || zone->isGCCompacting()) {
+          TraceWeakEdge(trc, &value, "NonShrinkingValueVector element");
+        }
       }
     }
     return true;

@@ -25,7 +25,6 @@ import org.mozilla.fenix.helpers.TestHelper.scrollToElementByText
 import org.mozilla.fenix.helpers.TestSetup
 import org.mozilla.fenix.helpers.perf.DetectMemoryLeaksRule
 import org.mozilla.fenix.ui.robots.browserScreen
-import org.mozilla.fenix.ui.robots.enhancedTrackingProtection
 import org.mozilla.fenix.ui.robots.homeScreen
 import org.mozilla.fenix.ui.robots.navigationToolbar
 
@@ -44,7 +43,7 @@ import org.mozilla.fenix.ui.robots.navigationToolbar
 
 class EnhancedTrackingProtectionTest : TestSetup() {
     @get:Rule
-    val activityTestRule =
+    val composeTestRule =
         AndroidComposeTestRule(
             HomeActivityIntentTestRule.withDefaultSettingsOverrides(),
         ) { it.activity }
@@ -55,9 +54,9 @@ class EnhancedTrackingProtectionTest : TestSetup() {
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/416046
     @Test
     fun testETPSettingsItemsAndSubMenus() {
-        homeScreen {
+        homeScreen(composeTestRule) {
         }.openThreeDotMenu {
-        }.openSettings {
+        }.clickSettingsButton {
             verifyEnhancedTrackingProtectionButton()
             verifySettingsOptionSummary("Enhanced Tracking Protection", "Standard")
         }.openEnhancedTrackingProtectionSubMenu {
@@ -84,7 +83,7 @@ class EnhancedTrackingProtectionTest : TestSetup() {
             verifyTPExceptionsDefaultView()
             openExceptionsLearnMoreLink()
         }
-        browserScreen {
+        browserScreen(composeTestRule) {
             waitForPageToLoad(pageLoadWaitingTime = waitingTimeLong)
             verifyETPLearnMoreURL()
         }
@@ -95,9 +94,9 @@ class EnhancedTrackingProtectionTest : TestSetup() {
     fun verifyETPStateIsReflectedInTPSheetTest() {
         val genericPage = mockWebServer.getGenericAsset(1)
 
-        homeScreen {
+        homeScreen(composeTestRule) {
         }.openThreeDotMenu {
-        }.openSettings {
+        }.clickSettingsButton {
         }.openEnhancedTrackingProtectionSubMenu {
             switchEnhancedTrackingProtectionToggle()
             verifyEnhancedTrackingProtectionOptionsEnabled(false)
@@ -106,21 +105,20 @@ class EnhancedTrackingProtectionTest : TestSetup() {
             exitMenu()
         }
 
-        navigationToolbar {
-        }.enterURLAndEnterToBrowser(genericPage.url) { }
-        enhancedTrackingProtection {
-        }.openEnhancedTrackingProtectionSheet {
+        navigationToolbar(composeTestRule) {
+        }.enterURLAndEnterToBrowser(genericPage.url) {
+            waitForPageToLoad()
+        }.openSiteSecuritySheet {
             verifyETPSwitchVisibility(false)
-        }.closeEnhancedTrackingProtectionSheet {
+        }.closeSiteSecuritySheet(composeTestRule) {
         }.openThreeDotMenu {
-        }.openSettings {
+        }.clickSettingsButton {
         }.openEnhancedTrackingProtectionSubMenu {
             switchEnhancedTrackingProtectionToggle()
             verifyEnhancedTrackingProtectionOptionsEnabled(true)
         }.goBack {
-        }.goBackToBrowser { }
-        enhancedTrackingProtection {
-        }.openEnhancedTrackingProtectionSheet {
+        }.goBackToBrowser(composeTestRule) {
+        }.openSiteSecuritySheet {
             verifyETPSwitchVisibility(true)
         }
     }
@@ -133,26 +131,25 @@ class EnhancedTrackingProtectionTest : TestSetup() {
         val firstPage = mockWebServer.getGenericAsset(1)
         val secondPage = "https://mozilla-mobile.github.io/testapp"
 
-        navigationToolbar {
-        }.enterURLAndEnterToBrowser(firstPage.url) {}
-        enhancedTrackingProtection {
-        }.openEnhancedTrackingProtectionSheet {
+        navigationToolbar(composeTestRule) {
+        }.enterURLAndEnterToBrowser(firstPage.url) {
+            waitForPageToLoad(waitingTimeLong)
+        }.openSiteSecuritySheet {
         }.toggleEnhancedTrackingProtectionFromSheet {
             verifyEnhancedTrackingProtectionSheetStatus("OFF", false)
-        }.closeEnhancedTrackingProtectionSheet {
-        }.openNavigationToolbar {
+        }.closeSiteSecuritySheet(composeTestRule) {
+        }
+        navigationToolbar(composeTestRule) {
         }.enterURLAndEnterToBrowser(secondPage.toUri()) {
             verifyPageContent("Lets test!")
-        }
-        enhancedTrackingProtection {
-        }.openEnhancedTrackingProtectionSheet {
+        }.openSiteSecuritySheet {
             verifyEnhancedTrackingProtectionSheetStatus("ON", true)
         }.toggleEnhancedTrackingProtectionFromSheet {
             verifyEnhancedTrackingProtectionSheetStatus("OFF", false)
         }
-        restartApp(activityTestRule.activityRule)
-        enhancedTrackingProtection {
-        }.openEnhancedTrackingProtectionSheet {
+        restartApp(composeTestRule.activityRule)
+        browserScreen(composeTestRule) {
+        }.openSiteSecuritySheet {
             verifyEnhancedTrackingProtectionSheetStatus("OFF", false)
         }
     }
@@ -162,29 +159,28 @@ class EnhancedTrackingProtectionTest : TestSetup() {
     fun enablingETPOnAWebsiteRemovesItFromTheExceptionListTest() {
         val trackingPage = mockWebServer.enhancedTrackingProtectionAsset
 
-        navigationToolbar {
+        navigationToolbar(composeTestRule) {
         }.enterURLAndEnterToBrowser(trackingPage.url) {
+            waitForPageToLoad(waitingTimeLong)
             verifyUrl(trackingPage.url.toString())
-        }
-        enhancedTrackingProtection {
-        }.openEnhancedTrackingProtectionSheet {
+        }.openSiteSecuritySheet {
         }.toggleEnhancedTrackingProtectionFromSheet {
             verifyEnhancedTrackingProtectionSheetStatus("OFF", false)
-        }.closeEnhancedTrackingProtectionSheet {
+        }.closeSiteSecuritySheet(composeTestRule) {
         }.openThreeDotMenu {
-        }.openSettings {
+        }.clickSettingsButton {
         }.openEnhancedTrackingProtectionSubMenu {
         }.openExceptions {
             verifySiteExceptionExists(trackingPage.url.host.toString(), true)
             exitMenu()
         }
-        enhancedTrackingProtection {
-        }.openEnhancedTrackingProtectionSheet {
+        browserScreen(composeTestRule) {
+        }.openSiteSecuritySheet {
         }.toggleEnhancedTrackingProtectionFromSheet {
             verifyEnhancedTrackingProtectionSheetStatus("ON", true)
-        }.closeEnhancedTrackingProtectionSheet {
+        }.closeSiteSecuritySheet(composeTestRule) {
         }.openThreeDotMenu {
-        }.openSettings {
+        }.clickSettingsButton {
         }.openEnhancedTrackingProtectionSubMenu {
         }.openExceptions {
             verifySiteExceptionExists(trackingPage.url.host.toString(), false)
@@ -198,24 +194,24 @@ class EnhancedTrackingProtectionTest : TestSetup() {
         val firstPage = mockWebServer.getGenericAsset(1)
         val secondPage = "https://mozilla-mobile.github.io/testapp"
 
-        navigationToolbar {
-        }.enterURLAndEnterToBrowser(firstPage.url) {}
-        enhancedTrackingProtection {
-        }.openEnhancedTrackingProtectionSheet {
+        navigationToolbar(composeTestRule) {
+        }.enterURLAndEnterToBrowser(firstPage.url) {
+            verifyPageContent(firstPage.content)
+        }.openSiteSecuritySheet {
+            verifyEnhancedTrackingProtectionSheetStatus("ON", true)
         }.toggleEnhancedTrackingProtectionFromSheet {
             verifyEnhancedTrackingProtectionSheetStatus("OFF", false)
-        }.closeEnhancedTrackingProtectionSheet {
-        }.openNavigationToolbar {
+        }.closeSiteSecuritySheet(composeTestRule) {
+        }
+        navigationToolbar(composeTestRule) {
         }.enterURLAndEnterToBrowser(secondPage.toUri()) {
             verifyPageContent("Lets test!")
-        }
-        enhancedTrackingProtection {
-        }.openEnhancedTrackingProtectionSheet {
+        }.openSiteSecuritySheet {
         }.toggleEnhancedTrackingProtectionFromSheet {
             verifyEnhancedTrackingProtectionSheetStatus("OFF", false)
-        }.closeEnhancedTrackingProtectionSheet {
+        }.closeSiteSecuritySheet(composeTestRule) {
         }.openThreeDotMenu {
-        }.openSettings {
+        }.clickSettingsButton {
         }.openEnhancedTrackingProtectionSubMenu {
         }.openExceptions {
             removeOneSiteException(secondPage.toUri().host.toString())
@@ -223,8 +219,9 @@ class EnhancedTrackingProtectionTest : TestSetup() {
             verifyTPExceptionsDefaultView()
             exitMenu()
         }
-        enhancedTrackingProtection {
-        }.openEnhancedTrackingProtectionSheet {
+        browserScreen(composeTestRule) {
+        }.openSiteSecuritySheet {
+            mDevice.waitForIdle()
             verifyEnhancedTrackingProtectionSheetStatus("ON", true)
         }
     }
@@ -235,33 +232,32 @@ class EnhancedTrackingProtectionTest : TestSetup() {
         val genericPage = mockWebServer.getGenericAsset(1)
         val trackingProtectionTest = mockWebServer.enhancedTrackingProtectionAsset.url
 
-        homeScreen {
+        homeScreen(composeTestRule) {
         }.openThreeDotMenu {
-        }.openSettings {
+        }.clickSettingsButton {
             verifyEnhancedTrackingProtectionButton()
             verifySettingsOptionSummary("Enhanced Tracking Protection", "Standard")
             exitMenu()
         }
 
         // browsing a generic page to allow GV to load on a fresh run
-        navigationToolbar {
+        navigationToolbar(composeTestRule) {
         }.enterURLAndEnterToBrowser(genericPage.url) {
             verifyPageContent(genericPage.content)
-        }.openNavigationToolbar {
+        }
+        navigationToolbar(composeTestRule) {
         }.enterURLAndEnterToBrowser(trackingProtectionTest) {
             verifyTrackingProtectionWebContent("social not blocked")
             verifyTrackingProtectionWebContent("ads not blocked")
             verifyTrackingProtectionWebContent("analytics not blocked")
             verifyTrackingProtectionWebContent("Fingerprinting blocked")
             verifyTrackingProtectionWebContent("Cryptomining blocked")
-        }
-        enhancedTrackingProtection {
-        }.openEnhancedTrackingProtectionSheet {
+        }.openSiteSecuritySheet {
             verifyEnhancedTrackingProtectionSheetStatus("ON", true)
         }.openDetails {
             // Third-party cookie tracker blocking in Nightly was disabled: https://bugzilla.mozilla.org/show_bug.cgi?id=1935156
-            if (activityTestRule.activity.components.core.engine.version.releaseChannel == EngineReleaseChannel.BETA &&
-                activityTestRule.activity.components.core.engine.version.releaseChannel == EngineReleaseChannel.RELEASE
+            if (composeTestRule.activity.components.core.engine.version.releaseChannel == EngineReleaseChannel.BETA &&
+                composeTestRule.activity.components.core.engine.version.releaseChannel == EngineReleaseChannel.RELEASE
             ) {
                 verifyCrossSiteCookiesBlocked(true)
                 navigateBackToDetails()
@@ -271,7 +267,7 @@ class EnhancedTrackingProtectionTest : TestSetup() {
             verifyFingerprintersBlocked(true)
             navigateBackToDetails()
             verifyTrackingContentBlocked(false)
-        }.closeEnhancedTrackingProtectionSheet {}
+        }.closeEnhancedTrackingProtectionSheet(composeTestRule) {}
     }
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/417441
@@ -281,31 +277,29 @@ class EnhancedTrackingProtectionTest : TestSetup() {
         val genericPage = mockWebServer.getGenericAsset(1)
         val trackingProtectionTest = mockWebServer.enhancedTrackingProtectionAsset.url
 
-        homeScreen {
+        homeScreen(composeTestRule) {
         }.openThreeDotMenu {
-        }.openSettings {
+        }.clickSettingsButton {
             verifyEnhancedTrackingProtectionButton()
             verifySettingsOptionSummary("Enhanced Tracking Protection", "Strict")
             exitMenu()
         }
 
         // browsing a generic page to allow GV to load on a fresh run
-        navigationToolbar {
+        navigationToolbar(composeTestRule) {
         }.enterURLAndEnterToBrowser(genericPage.url) {
-        }.openTabDrawer(activityTestRule) {
+        }.openTabDrawer(composeTestRule) {
             closeTab()
         }
 
-        navigationToolbar {
+        navigationToolbar(composeTestRule) {
         }.enterURLAndEnterToBrowser(trackingProtectionTest) {
             verifyTrackingProtectionWebContent("social blocked")
             verifyTrackingProtectionWebContent("ads blocked")
             verifyTrackingProtectionWebContent("analytics blocked")
             verifyTrackingProtectionWebContent("Fingerprinting blocked")
             verifyTrackingProtectionWebContent("Cryptomining blocked")
-        }
-        enhancedTrackingProtection {
-        }.openEnhancedTrackingProtectionSheet {
+        }.openSiteSecuritySheet {
             verifyEnhancedTrackingProtectionSheetStatus("ON", true)
         }.openDetails {
             verifySocialMediaTrackersBlocked(true)
@@ -326,9 +320,9 @@ class EnhancedTrackingProtectionTest : TestSetup() {
         val genericWebPage = mockWebServer.getGenericAsset(1)
         val trackingPage = mockWebServer.enhancedTrackingProtectionAsset
 
-        homeScreen {
+        homeScreen(composeTestRule) {
         }.openThreeDotMenu {
-        }.openSettings {
+        }.clickSettingsButton {
         }.openEnhancedTrackingProtectionSubMenu {
             selectTrackingProtectionOption("Custom")
             verifyCustomTrackingProtectionSettings()
@@ -337,19 +331,17 @@ class EnhancedTrackingProtectionTest : TestSetup() {
             exitMenu()
         }
 
-        navigationToolbar {
+        navigationToolbar(composeTestRule) {
         }.enterURLAndEnterToBrowser(genericWebPage.url) {
-        }.openNavigationToolbar {
+        }
+        navigationToolbar(composeTestRule) {
         }.enterURLAndEnterToBrowser(trackingPage.url) {
             verifyTrackingProtectionWebContent("social blocked")
             verifyTrackingProtectionWebContent("ads blocked")
             verifyTrackingProtectionWebContent("analytics blocked")
             verifyTrackingProtectionWebContent("Fingerprinting blocked")
             verifyTrackingProtectionWebContent("Cryptomining blocked")
-        }
-
-        enhancedTrackingProtection {
-        }.openEnhancedTrackingProtectionSheet {
+        }.openSiteSecuritySheet {
         }.openDetails {
             verifyCryptominersBlocked(true)
             navigateBackToDetails()
@@ -370,29 +362,32 @@ class EnhancedTrackingProtectionTest : TestSetup() {
         val genericWebPage = mockWebServer.getGenericAsset(1)
         val trackingPage = mockWebServer.enhancedTrackingProtectionAsset
 
-        homeScreen {
+        homeScreen(composeTestRule) {
         }.openThreeDotMenu {
-        }.openSettings {
+        }.clickSettingsButton {
         }.openEnhancedTrackingProtectionSubMenu {
             selectTrackingProtectionOption("Custom")
             verifyCustomTrackingProtectionSettings()
             selectTrackingProtectionOption("Isolate cross-site cookies")
             selectTrackingProtectionOption("All cookies (will cause websites to break)")
             selectTrackingProtectionOption("Tracking content")
-        }.goBackToHomeScreen {
+        }.goBackToHomeScreen(composeTestRule) {
             mDevice.waitForIdle()
-        }.openNavigationToolbar {
+        }
+        navigationToolbar(composeTestRule) {
             // browsing a basic page to allow GV to load on a fresh run
         }.enterURLAndEnterToBrowser(genericWebPage.url) {
             waitForPageToLoad()
-        }.openNavigationToolbar {
+            verifyPageContent(genericWebPage.content)
+        }
+        navigationToolbar(composeTestRule) {
         }.enterURLAndEnterToBrowser(trackingPage.url) {
+            waitForPageToLoad()
             verifyTrackingProtectionWebContent("social not blocked")
             verifyTrackingProtectionWebContent("ads not blocked")
             verifyTrackingProtectionWebContent("analytics not blocked")
-        }
-        enhancedTrackingProtection {
-        }.openEnhancedTrackingProtectionSheet {
+            verifyTrackingProtectionWebContent("Cryptomining blocked")
+        }.openSiteSecuritySheet {
         }.openDetails {
             verifyCrossSiteCookiesBlocked(true)
             navigateBackToDetails()
@@ -410,9 +405,9 @@ class EnhancedTrackingProtectionTest : TestSetup() {
         val genericWebPage = mockWebServer.getGenericAsset(1)
         val trackingPage = mockWebServer.enhancedTrackingProtectionAsset
 
-        homeScreen {
+        homeScreen(composeTestRule) {
         }.openThreeDotMenu {
-        }.openSettings {
+        }.clickSettingsButton {
         }.openEnhancedTrackingProtectionSubMenu {
             selectTrackingProtectionOption("Custom")
             verifyCustomTrackingProtectionSettings()
@@ -422,13 +417,15 @@ class EnhancedTrackingProtectionTest : TestSetup() {
             selectTrackingProtectionOption("Known Fingerprinters")
             selectTrackingProtectionOption("Suspected Fingerprinters")
             selectTrackingProtectionOption("Redirect Trackers")
-        }.goBackToHomeScreen {
+        }.goBackToHomeScreen(composeTestRule) {
             mDevice.waitForIdle()
-        }.openNavigationToolbar {
+        }
+        navigationToolbar(composeTestRule) {
             // browsing a basic page to allow GV to load on a fresh run
         }.enterURLAndEnterToBrowser(genericWebPage.url) {
             waitForPageToLoad()
-        }.openNavigationToolbar {
+        }
+        navigationToolbar(composeTestRule) {
         }.enterURLAndEnterToBrowser(trackingPage.url) {
             verifyTrackingProtectionWebContent("social not blocked")
             verifyTrackingProtectionWebContent("ads not blocked")
@@ -444,44 +441,44 @@ class EnhancedTrackingProtectionTest : TestSetup() {
         val genericWebPage = mockWebServer.getGenericAsset(1)
         val trackingPage = mockWebServer.enhancedTrackingProtectionAsset
 
-        homeScreen {
+        homeScreen(composeTestRule) {
         }.openThreeDotMenu {
-        }.openSettings {
+        }.clickSettingsButton {
         }.openEnhancedTrackingProtectionSubMenu {
             verifyEnhancedTrackingProtectionOptionsEnabled()
             selectTrackingProtectionOption("Custom")
             verifyCustomTrackingProtectionSettings()
             selectTrackingProtectionOption("In all tabs")
             selectTrackingProtectionOption("Only in Private tabs")
-        }.goBackToHomeScreen {
-        }.openNavigationToolbar {
+        }.goBackToHomeScreen(composeTestRule) {
+        }
+        navigationToolbar(composeTestRule) {
             // browsing a basic page to allow GV to load on a fresh run
         }.enterURLAndEnterToBrowser(genericWebPage.url) {
             waitForPageToLoad()
-        }.openNavigationToolbar {
+        }
+        navigationToolbar(composeTestRule) {
         }.enterURLAndEnterToBrowser(trackingPage.url) {
             verifyTrackingProtectionWebContent("social not blocked")
             verifyTrackingProtectionWebContent("ads not blocked")
             verifyTrackingProtectionWebContent("analytics not blocked")
             verifyTrackingProtectionWebContent("Fingerprinting blocked")
             verifyTrackingProtectionWebContent("Cryptomining blocked")
-        }.goToHomescreen(activityTestRule) {
+        }.goToHomescreen {
         }.togglePrivateBrowsingMode()
-        navigationToolbar {
+        navigationToolbar(composeTestRule) {
         }.enterURLAndEnterToBrowser(trackingPage.url) {
             verifyTrackingProtectionWebContent("social blocked")
             verifyTrackingProtectionWebContent("ads blocked")
             verifyTrackingProtectionWebContent("analytics blocked")
             verifyTrackingProtectionWebContent("Fingerprinting blocked")
             verifyTrackingProtectionWebContent("Cryptomining blocked")
-        }
-        enhancedTrackingProtection {
-        }.openEnhancedTrackingProtectionSheet {
+        }.openSiteSecuritySheet {
         }.openDetails {
             // Third-party cookie tracker blocking in Nightly was disabled: https://bugzilla.mozilla.org/show_bug.cgi?id=1935156
             if (
-                activityTestRule.activity.components.core.engine.version.releaseChannel == EngineReleaseChannel.BETA &&
-                activityTestRule.activity.components.core.engine.version.releaseChannel == EngineReleaseChannel.RELEASE
+                composeTestRule.activity.components.core.engine.version.releaseChannel == EngineReleaseChannel.BETA &&
+                composeTestRule.activity.components.core.engine.version.releaseChannel == EngineReleaseChannel.RELEASE
             ) {
                 verifyCrossSiteCookiesBlocked(true)
                 navigateBackToDetails()
@@ -505,10 +502,11 @@ class EnhancedTrackingProtectionTest : TestSetup() {
         val originHost = "mozilla-mobile.github.io"
         val currentHost = "localhost"
 
-        navigationToolbar {
+        navigationToolbar(composeTestRule) {
         }.enterURLAndEnterToBrowser(genericWebPage.url) {
             waitForPageToLoad()
-        }.openNavigationToolbar {
+        }
+        navigationToolbar(composeTestRule) {
         }.enterURLAndEnterToBrowser(testPage) {
             waitForPageToLoad()
         }.clickRequestStorageAccessButton {
@@ -528,10 +526,11 @@ class EnhancedTrackingProtectionTest : TestSetup() {
         val originHost = "mozilla-mobile.github.io"
         val currentHost = "localhost"
 
-        navigationToolbar {
+        navigationToolbar(composeTestRule) {
         }.enterURLAndEnterToBrowser(genericWebPage.url) {
             waitForPageToLoad()
-        }.openNavigationToolbar {
+        }
+        navigationToolbar(composeTestRule) {
         }.enterURLAndEnterToBrowser(testPage) {
             waitForPageToLoad()
         }.clickRequestStorageAccessButton {

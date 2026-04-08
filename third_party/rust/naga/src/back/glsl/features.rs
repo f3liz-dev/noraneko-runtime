@@ -64,7 +64,7 @@ bitflags::bitflags! {
 /// [`Module`](crate::Module)
 ///
 /// Provides helper methods to check for availability and writing required extensions
-pub struct FeaturesManager(Features);
+pub(crate) struct FeaturesManager(Features);
 
 impl FeaturesManager {
     /// Creates a new [`FeaturesManager`] instance
@@ -78,7 +78,7 @@ impl FeaturesManager {
     }
 
     /// Checks if the list of features [`Features`] contains the specified [`Features`]
-    pub fn contains(&mut self, features: Features) -> bool {
+    pub const fn contains(&mut self, features: Features) -> bool {
         self.0.contains(features)
     }
 
@@ -439,7 +439,7 @@ impl<W> Writer<'_, W> {
             }
         }
 
-        let mut push_constant_used = false;
+        let mut immediates_used = false;
 
         for (handle, global) in self.module.global_variables.iter() {
             if ep_info[handle].is_empty() {
@@ -448,11 +448,11 @@ impl<W> Writer<'_, W> {
             match global.space {
                 AddressSpace::WorkGroup => self.features.request(Features::COMPUTE_SHADER),
                 AddressSpace::Storage { .. } => self.features.request(Features::BUFFER_STORAGE),
-                AddressSpace::PushConstant => {
-                    if push_constant_used {
-                        return Err(Error::MultiplePushConstants);
+                AddressSpace::Immediate => {
+                    if immediates_used {
+                        return Err(Error::MultipleImmediateData);
                     }
-                    push_constant_used = true;
+                    immediates_used = true;
                 }
                 _ => {}
             }
@@ -613,7 +613,7 @@ impl<W> Writer<'_, W> {
                     crate::BuiltIn::InstanceIndex | crate::BuiltIn::DrawID => {
                         self.features.request(Features::INSTANCE_INDEX)
                     }
-                    crate::BuiltIn::Barycentric => {
+                    crate::BuiltIn::Barycentric { .. } => {
                         self.features.request(Features::SHADER_BARYCENTRICS)
                     }
                     _ => {}

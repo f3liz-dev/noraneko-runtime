@@ -35,7 +35,6 @@ more-from-moz-firefox-relay-button = Get { -relay-brand-short-name }
 ## These strings are for the Mozilla Monitor card in about:preferences moreFromMozilla page
 
 more-from-moz-mozilla-monitor-title = { -mozmonitor-brand-name }
-more-from-moz-mozilla-monitor-us-description = Automatically take back your exposed personal info.
 more-from-moz-mozilla-monitor-global-description = Get alerts when your data has been in a breach.
 more-from-moz-mozilla-monitor-button = Get { -monitor-brand-short-name }
 
@@ -47,6 +46,6 @@ more-from-moz-solo-button = Try { -solo-ai-brand-name }
 
 ## These strings are for the MDN card in about:preferences moreFromMozilla page
 
-more-from-moz-mdn-title = MDN Web Docs
+more-from-moz-mdn-title2 = { -mdn-brand-name }
 more-from-moz-mdn-description = Learn web development with free, comprehensive guides and references.
 more-from-moz-mdn-button = Learn web development

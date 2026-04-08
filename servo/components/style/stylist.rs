@@ -10,6 +10,7 @@ use crate::applicable_declarations::{
 use crate::computed_value_flags::ComputedValueFlags;
 use crate::context::{CascadeInputs, QuirksMode};
 use crate::custom_properties::ComputedCustomProperties;
+use crate::derives::*;
 use crate::dom::TElement;
 #[cfg(feature = "gecko")]
 use crate::gecko_bindings::structs::{ServoStyleSetSizes, StyleRuleInclusion};
@@ -22,9 +23,11 @@ use crate::invalidation::media_queries::{
 };
 use crate::invalidation::stylesheets::{RuleChangeKind, StylesheetInvalidationSet};
 use crate::media_queries::Device;
+#[cfg(feature = "gecko")]
+use crate::properties::StyleBuilder;
 use crate::properties::{
     self, AnimationDeclarations, CascadeMode, ComputedValues, FirstLineReparenting,
-    PropertyDeclarationBlock, StyleBuilder,
+    PropertyDeclarationBlock,
 };
 use crate::properties_and_values::registry::{
     PropertyRegistration, PropertyRegistrationData, ScriptRegistry as CustomPropertyScriptRegistry,
@@ -52,6 +55,7 @@ use crate::stylesheets::{
     PageRule, PerOrigin, PerOriginIter, PositionTryRule, StylesheetContents, StylesheetInDocument,
 };
 use crate::stylesheets::{CustomMediaEvaluator, CustomMediaMap};
+#[cfg(feature = "gecko")]
 use crate::values::specified::position::PositionTryFallbacksItem;
 use crate::values::specified::position::PositionTryFallbacksTryTactic;
 use crate::values::{computed, AtomIdent};
@@ -79,7 +83,7 @@ use smallvec::SmallVec;
 use std::cmp::Ordering;
 use std::hash::{Hash, Hasher};
 use std::mem;
-use std::sync::Mutex;
+use std::sync::{LazyLock, Mutex};
 
 /// The type of the stylesheets that the stylist contains.
 #[cfg(feature = "servo")]
@@ -332,11 +336,9 @@ pub fn add_size_of_ua_cache(ops: &mut MallocSizeOfOps, sizes: &mut ServoStyleSet
         .add_size_of(ops, sizes);
 }
 
-lazy_static! {
-    /// A cache of computed user-agent data, to be shared across documents.
-    static ref UA_CASCADE_DATA_CACHE: Mutex<UserAgentCascadeDataCache> =
-        Mutex::new(UserAgentCascadeDataCache::new());
-}
+/// A cache of computed user-agent data, to be shared across documents.
+static UA_CASCADE_DATA_CACHE: LazyLock<Mutex<UserAgentCascadeDataCache>> =
+    LazyLock::new(|| Mutex::new(UserAgentCascadeDataCache::new()));
 
 impl CascadeDataCacheEntry for UserAgentCascadeData {
     fn rebuild<S>(
@@ -404,14 +406,12 @@ struct UserAgentCascadeData {
     precomputed_pseudo_element_decls: PrecomputedPseudoElementDeclarations,
 }
 
-lazy_static! {
-    /// The empty UA cascade data for un-filled stylists.
-    static ref EMPTY_UA_CASCADE_DATA: Arc<UserAgentCascadeData> = {
-        let arc = Arc::new(UserAgentCascadeData::default());
-        arc.mark_as_intentionally_leaked();
-        arc
-    };
-}
+/// The empty UA cascade data for un-filled stylists.
+static EMPTY_UA_CASCADE_DATA: LazyLock<Arc<UserAgentCascadeData>> = LazyLock::new(|| {
+    let arc = Arc::new(UserAgentCascadeData::default());
+    arc.mark_as_intentionally_leaked();
+    arc
+});
 
 /// All the computed information for all the stylesheets that apply to the
 /// document.
@@ -1360,6 +1360,7 @@ impl Stylist {
     }
 
     /// Computes a fallback style lazily given the current and parent styles, and name.
+    #[cfg(feature = "gecko")]
     pub fn resolve_position_try<E>(
         &self,
         style: &ComputedValues,
@@ -1377,6 +1378,7 @@ impl Stylist {
                 // a style_resolver::with_default_parent_styles call, as below.
                 let mut builder =
                     StyleBuilder::for_derived_style(&self.device, Some(self), style, None);
+                builder.rules = style.rules.clone();
                 builder.mutate_position().set_position_area(area);
                 return Some(builder.build());
             },
@@ -1823,15 +1825,11 @@ impl Stylist {
     where
         E: TElement,
     {
-        // NB: `MatchingMode` doesn't really matter, given we don't share style
-        // between pseudos.
-        let mut matching_context = MatchingContext::new(
-            MatchingMode::Normal,
+        let mut matching_context = MatchingContext::new_for_revalidation(
             bloom,
             selector_caches,
             self.quirks_mode,
             needs_selector_flags,
-            MatchingForInvalidation::No,
         );
 
         // Note that, by the time we're revalidating, we're guaranteed that the
@@ -2040,7 +2038,6 @@ impl<T> Default for LayerOrderedMap<T> {
     }
 }
 
-#[cfg(feature = "gecko")]
 impl<T: 'static> LayerOrderedVec<T> {
     fn clear(&mut self) {
         self.0.clear();
@@ -3227,16 +3224,14 @@ pub struct CascadeData {
     num_declarations: usize,
 }
 
-lazy_static! {
-    static ref IMPLICIT_SCOPE: SelectorList<SelectorImpl> = {
-        // Implicit scope, as per https://github.com/w3c/csswg-drafts/issues/10196
-        // Also, `&` is `:where(:scope)`, as per https://github.com/w3c/csswg-drafts/issues/9740
-        // ``:where(:scope)` effectively behaves the same as the implicit scope.
-        let list = SelectorList::implicit_scope();
-        list.mark_as_intentionally_leaked();
-        list
-    };
-}
+static IMPLICIT_SCOPE: LazyLock<SelectorList<SelectorImpl>> = LazyLock::new(|| {
+    // Implicit scope, as per https://github.com/w3c/csswg-drafts/issues/10196
+    // Also, `&` is `:where(:scope)`, as per https://github.com/w3c/csswg-drafts/issues/9740
+    // ``:where(:scope)` effectively behaves the same as the implicit scope.
+    let list = SelectorList::implicit_scope();
+    list.mark_as_intentionally_leaked();
+    list
+});
 
 fn scope_start_matches_shadow_host(start: &SelectorList<SelectorImpl>) -> bool {
     // TODO(emilio): Should we carry a MatchesFeaturelessHost rather than a bool around?
@@ -3604,7 +3599,6 @@ impl CascadeData {
                 order.inc();
             }
         }
-        #[cfg(feature = "gecko")]
         self.extra_data.sort_by_layer(&self.layers);
         self.animations
             .sort_with(&self.layers, compare_keyframes_in_same_layer);
@@ -3881,8 +3875,9 @@ impl CascadeData {
                     let ancestor_selectors = containing_rule_state.ancestor_selector_lists.last();
                     let collect_replaced_selectors =
                         has_nested_rules && ancestor_selectors.is_some();
-                    let mut inner_dependencies: Option<Vec<Dependency>> =
-                        containing_rule_state.scope_is_effective().then(|| Vec::new());
+                    let mut inner_dependencies: Option<Vec<Dependency>> = containing_rule_state
+                        .scope_is_effective()
+                        .then(|| Vec::new());
                     self.add_styles(
                         &style_rule.selectors,
                         &style_rule.block,
@@ -3923,8 +3918,9 @@ impl CascadeData {
                             NestedDeclarationsContext::Style => ancestor_selectors,
                             NestedDeclarationsContext::Scope => &*IMPLICIT_SCOPE,
                         };
-                        let mut inner_dependencies: Option<Vec<Dependency>> =
-                            containing_rule_state.scope_is_effective().then(|| Vec::new());
+                        let mut inner_dependencies: Option<Vec<Dependency>> = containing_rule_state
+                            .scope_is_effective()
+                            .then(|| Vec::new());
                         self.add_styles(
                             selectors,
                             decls,
@@ -4531,7 +4527,6 @@ impl CascadeData {
             .push(ContainerConditionReference::none());
         self.scope_conditions.clear();
         self.scope_conditions.push(ScopeConditionReference::none());
-        #[cfg(feature = "gecko")]
         self.extra_data.clear();
         self.rules_source_order = 0;
         self.num_selectors = 0;

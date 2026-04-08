@@ -20,7 +20,6 @@
 
 #include "api/array_view.h"
 #include "api/jsep.h"
-#include "api/jsep_session_description.h"
 #include "api/media_types.h"
 #include "api/rtp_parameters.h"
 #include "api/rtp_transceiver_direction.h"
@@ -31,7 +30,6 @@
 #include "p2p/base/p2p_constants.h"
 #include "p2p/base/transport_description.h"
 #include "p2p/base/transport_info.h"
-#include "pc/sdp_utils.h"
 #include "pc/session_description.h"
 #include "pc/simulcast_description.h"
 #include "rtc_base/checks.h"
@@ -212,7 +210,7 @@ LocalAndRemoteSdp SignalingInterceptor::PatchOffer(
     }
   }
 
-  auto offer_for_remote = CloneSessionDescription(offer.get());
+  auto offer_for_remote = offer->Clone();
   return LocalAndRemoteSdp(std::move(offer), std::move(offer_for_remote));
 }
 
@@ -220,7 +218,7 @@ LocalAndRemoteSdp SignalingInterceptor::PatchVp8Offer(
     std::unique_ptr<SessionDescriptionInterface> offer) {
   FillSimulcastContext(offer.get());
   if (!context_.HasSimulcast()) {
-    auto offer_for_remote = CloneSessionDescription(offer.get());
+    auto offer_for_remote = offer->Clone();
     return LocalAndRemoteSdp(std::move(offer), std::move(offer_for_remote));
   }
 
@@ -309,10 +307,10 @@ LocalAndRemoteSdp SignalingInterceptor::PatchVp8Offer(
   desc->set_transport_infos(transport_infos);
 
   // Create patched offer.
-  auto patched_offer =
-      std::make_unique<JsepSessionDescription>(SdpType::kOffer);
-  patched_offer->Initialize(std::move(desc), offer->session_id(),
-                            offer->session_version());
+  std::unique_ptr<SessionDescriptionInterface> patched_offer =
+      CreateSessionDescription(SdpType::kOffer, offer->session_id(),
+                               offer->session_version(), std::move(desc));
+
   return LocalAndRemoteSdp(std::move(offer), std::move(patched_offer));
 }
 
@@ -367,7 +365,7 @@ LocalAndRemoteSdp SignalingInterceptor::PatchVp9Offer(
     stream.ssrc_groups.push_back(
         SsrcGroup(kSimSsrcGroupSemantics, primary_ssrcs));
   }
-  auto offer_for_remote = CloneSessionDescription(offer.get());
+  auto offer_for_remote = offer->Clone();
   return LocalAndRemoteSdp(std::move(offer), std::move(offer_for_remote));
 }
 
@@ -397,14 +395,14 @@ LocalAndRemoteSdp SignalingInterceptor::PatchAnswer(
     }
   }
 
-  auto answer_for_remote = CloneSessionDescription(answer.get());
+  auto answer_for_remote = answer->Clone();
   return LocalAndRemoteSdp(std::move(answer), std::move(answer_for_remote));
 }
 
 LocalAndRemoteSdp SignalingInterceptor::PatchVp8Answer(
     std::unique_ptr<SessionDescriptionInterface> answer) {
   if (!context_.HasSimulcast()) {
-    auto answer_for_remote = CloneSessionDescription(answer.get());
+    auto answer_for_remote = answer->Clone();
     return LocalAndRemoteSdp(std::move(answer), std::move(answer_for_remote));
   }
 
@@ -497,10 +495,10 @@ LocalAndRemoteSdp SignalingInterceptor::PatchVp8Answer(
   }
   desc->set_transport_infos(transport_infos);
 
-  auto patched_answer =
-      std::make_unique<JsepSessionDescription>(SdpType::kAnswer);
-  patched_answer->Initialize(std::move(desc), answer->session_id(),
-                             answer->session_version());
+  std::unique_ptr<SessionDescriptionInterface> patched_answer =
+      CreateSessionDescription(SdpType::kAnswer, answer->session_id(),
+                               answer->session_version(), std::move(desc));
+
   return LocalAndRemoteSdp(std::move(answer), std::move(patched_answer));
 }
 
@@ -522,7 +520,7 @@ SignalingInterceptor::RestoreMediaSectionsOrder(
 
 LocalAndRemoteSdp SignalingInterceptor::PatchVp9Answer(
     std::unique_ptr<SessionDescriptionInterface> answer) {
-  auto answer_for_remote = CloneSessionDescription(answer.get());
+  auto answer_for_remote = answer->Clone();
   return LocalAndRemoteSdp(std::move(answer), std::move(answer_for_remote));
 }
 

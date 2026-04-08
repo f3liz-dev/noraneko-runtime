@@ -25,6 +25,7 @@
 //! our expectations.
 
 use super::{position::AnchorSide, Context, Length, Percentage, ToComputedValue};
+use crate::derives::*;
 #[cfg(feature = "gecko")]
 use crate::gecko_bindings::structs::{AnchorPosOffsetResolutionParams, GeckoFontMetrics};
 use crate::logical_geometry::{PhysicalAxis, PhysicalSide};
@@ -36,18 +37,19 @@ use crate::values::distance::{ComputeSquaredDistance, SquaredDistance};
 use crate::values::generics::calc::{CalcUnits, PositivePercentageBasis};
 #[cfg(feature = "gecko")]
 use crate::values::generics::length::AnchorResolutionResult;
-use crate::values::generics::position::{AnchorSideKeyword, GenericAnchorSide};
+use crate::values::generics::position::GenericAnchorSide;
 use crate::values::generics::{calc, ClampToNonNegative, NonNegative};
 use crate::values::resolved::{Context as ResolvedContext, ToResolvedValue};
 use crate::values::specified::length::{FontBaseSize, LineHeightBase};
 use crate::values::{specified, CSSFloat};
 use crate::{Zero, ZeroNoPercent};
 use app_units::Au;
+use debug_unreachable::debug_unreachable;
 use malloc_size_of::{MallocSizeOf, MallocSizeOfOps};
 use serde::{Deserialize, Serialize};
 use std::fmt::{self, Write};
 use style_traits::values::specified::AllowedNumericType;
-use style_traits::{CssWriter, ToCss};
+use style_traits::{CssWriter, ToCss, ToTyped, TypedValue};
 
 #[doc(hidden)]
 #[derive(Clone, Copy)]
@@ -113,7 +115,6 @@ pub struct TagVariant {
 /// Also we need the union and the variants to be `pub` (even though the member
 /// is private) so that cbindgen generates it. They're not part of the public
 /// API otherwise.
-#[derive(ToTyped)]
 #[repr(transparent)]
 pub struct LengthPercentage(LengthPercentageUnion);
 
@@ -208,7 +209,8 @@ impl ToResolvedValue for LengthPercentage {
 }
 
 /// An unpacked `<length-percentage>` that borrows the `calc()` variant.
-#[derive(Clone, Debug, PartialEq, ToCss)]
+#[derive(Clone, Debug, PartialEq, ToCss, ToTyped)]
+#[typed_value(derive_fields)]
 pub enum Unpacked<'a> {
     /// A `calc()` value
     Calc(&'a CalcLengthPercentage),
@@ -645,6 +647,12 @@ impl ToCss for LengthPercentage {
     }
 }
 
+impl ToTyped for LengthPercentage {
+    fn to_typed(&self) -> Option<TypedValue> {
+        self.unpack().to_typed()
+    }
+}
+
 impl Zero for LengthPercentage {
     fn zero() -> Self {
         LengthPercentage::new_length(Length::zero())
@@ -703,6 +711,7 @@ impl<'de> Deserialize<'de> for LengthPercentage {
 )]
 #[allow(missing_docs)]
 #[repr(u8)]
+#[typed_value(derive_fields)]
 pub enum CalcLengthPercentageLeaf {
     Length(Length),
     Percentage(Percentage),
@@ -903,9 +912,18 @@ pub type CalcNode = calc::GenericCalcNode<CalcLengthPercentageLeaf>;
 
 /// The representation of a calc() function with mixed lengths and percentages.
 #[derive(
-    Clone, Debug, Deserialize, MallocSizeOf, Serialize, ToAnimatedZero, ToResolvedValue, ToCss,
+    Clone,
+    Debug,
+    Deserialize,
+    MallocSizeOf,
+    Serialize,
+    ToAnimatedZero,
+    ToResolvedValue,
+    ToCss,
+    ToTyped,
 )]
 #[repr(C)]
+#[typed_value(derive_fields)]
 pub struct CalcLengthPercentage {
     #[animation(constant)]
     #[css(skip)]
@@ -915,30 +933,6 @@ pub struct CalcLengthPercentage {
 
 /// Type for anchor side in `calc()` and other math fucntions.
 pub type CalcAnchorSide = GenericAnchorSide<Box<CalcNode>>;
-
-impl CalcAnchorSide {
-    /// Break down given anchor side into its equivalent keyword and percentage.
-    pub fn keyword_and_percentage(&self) -> (AnchorSideKeyword, f32) {
-        let p = match self {
-            Self::Percentage(p) => p,
-            Self::Keyword(k) => {
-                return if matches!(k, AnchorSideKeyword::Center) {
-                    (AnchorSideKeyword::Start, 0.5)
-                } else {
-                    (*k, 1.0)
-                }
-            },
-        };
-
-        if let CalcNode::Leaf(l) = &**p {
-            if let CalcLengthPercentageLeaf::Percentage(v) = l {
-                return (AnchorSideKeyword::Start, v.0);
-            }
-        }
-        debug_assert!(false, "Parsed non-percentage?");
-        (AnchorSideKeyword::Start, 1.0)
-    }
-}
 
 /// Result of resolving `CalcLengthPercentage`
 pub struct CalcLengthPercentageResolution {

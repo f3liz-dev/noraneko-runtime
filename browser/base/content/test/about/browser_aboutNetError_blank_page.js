@@ -21,7 +21,10 @@ async function test_blankPage(
   header = "show" // show (zero content-length), hide (no content-length), or lie (non-empty content-length)
 ) {
   await SpecialPowers.pushPrefEnv({
-    set: [["browser.http.blank_page_with_error_response.enabled", false]],
+    set: [
+      ["browser.http.blank_page_with_error_response.enabled", false],
+      ["browser.urlbar.trustPanel.featureGate", false],
+    ],
   });
 
   let browser;
@@ -53,23 +56,65 @@ async function test_blankPage(
   await SpecialPowers.spawn(
     browser,
     [expectedL10nID, responseStatus, responseStatusText],
-    function (l10nID, expectedStatus, expectedText) {
+    async function (l10nID, expectedStatus, expectedText) {
       const doc = content.document;
       ok(
         doc.documentURI.startsWith("about:neterror"),
         "Should be showing error page"
       );
 
-      const titleEl = doc.querySelector(".title-text");
-      const actualDataL10nID = titleEl.getAttribute("data-l10n-id");
-      is(actualDataL10nID, l10nID, "Correct error page title is set");
+      let titleEl;
+      let actualDataL10nID;
 
-      const expectedLabel =
-        "Error code: " + expectedStatus.toString() + " " + expectedText;
-      const actualLabel = doc.getElementById(
-        "response-status-label"
-      ).textContent;
-      is(actualLabel, expectedLabel, "Correct response status message is set");
+      const netErrorCard = doc.querySelector("net-error-card");
+      if (netErrorCard) {
+        const card = netErrorCard.wrappedJSObject;
+        await card.getUpdateComplete();
+
+        titleEl = card.netErrorTitleText;
+
+        const introEl = card.shadowRoot.getElementById("netErrorIntro");
+        is(
+          introEl?.getAttribute("data-l10n-id"),
+          "fp-neterror-http-error-page-intro",
+          "Intro element has correct l10n id"
+        );
+        const introArgs = JSON.parse(introEl?.getAttribute("data-l10n-args"));
+        ok(introArgs?.hostname, "Intro has hostname arg");
+        const responseEl = card.shadowRoot.getElementById(
+          "response-status-label"
+        );
+        const responseArgs = JSON.parse(
+          responseEl?.getAttribute("data-l10n-args")
+        );
+        is(
+          responseArgs?.responsestatus,
+          expectedStatus,
+          "Intro has correct responsestatus"
+        );
+        is(
+          responseArgs?.responsestatustext,
+          expectedText,
+          "Intro has correct responsestatustext"
+        );
+      } else {
+        titleEl = doc.querySelector(".title-text");
+
+        const expectedLabel =
+          "Error code: " + expectedStatus.toString() + " " + expectedText;
+        const responseStatusLabel = await ContentTaskUtils.waitForCondition(
+          () => doc.getElementById("response-status-label"),
+          "Waiting for response-status-label"
+        );
+        is(
+          responseStatusLabel.textContent,
+          expectedLabel,
+          "Correct response status message is set"
+        );
+      }
+
+      actualDataL10nID = titleEl.getAttribute("data-l10n-id");
+      is(actualDataL10nID, l10nID, "Correct error page title is set");
     }
   );
 
@@ -78,13 +123,18 @@ async function test_blankPage(
 }
 
 add_task(async function test_blankPage_4xx() {
-  await test_blankPage(BLANK_PAGE, "httpErrorPage-title", 400, "Bad Request");
+  await test_blankPage(
+    BLANK_PAGE,
+    "problem-with-this-site-title",
+    400,
+    "Bad Request"
+  );
 });
 
 add_task(async function test_blankPage_5xx() {
   await test_blankPage(
     BLANK_PAGE,
-    "serverError-title",
+    "problem-with-this-site-title",
     503,
     "Service Unavailable"
   );
@@ -93,7 +143,7 @@ add_task(async function test_blankPage_5xx() {
 add_task(async function test_blankPage_withoutHeader_4xx() {
   await test_blankPage(
     BLANK_PAGE,
-    "httpErrorPage-title",
+    "problem-with-this-site-title",
     400,
     "Bad Request",
     "hide"
@@ -103,7 +153,7 @@ add_task(async function test_blankPage_withoutHeader_4xx() {
 add_task(async function test_blankPage_withoutHeader_5xx() {
   await test_blankPage(
     BLANK_PAGE,
-    "serverError-title",
+    "problem-with-this-site-title",
     503,
     "Service Unavailable",
     "hide"
@@ -113,7 +163,7 @@ add_task(async function test_blankPage_withoutHeader_5xx() {
 add_task(async function test_blankPage_lyingHeader_4xx() {
   await test_blankPage(
     BLANK_PAGE,
-    "httpErrorPage-title",
+    "problem-with-this-site-title",
     400,
     "Bad Request",
     "lie"
@@ -123,7 +173,7 @@ add_task(async function test_blankPage_lyingHeader_4xx() {
 add_task(async function test_blankPage_lyingHeader_5xx() {
   await test_blankPage(
     BLANK_PAGE,
-    "serverError-title",
+    "problem-with-this-site-title",
     503,
     "Service Unavailable",
     "lie"

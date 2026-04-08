@@ -162,7 +162,6 @@ static constexpr Register IntArgReg4 = a4;
 static constexpr Register IntArgReg5 = a5;
 static constexpr Register IntArgReg6 = a6;
 static constexpr Register IntArgReg7 = a7;
-static constexpr Register HeapReg = s7;
 
 // Registers used by RegExpMatcher and RegExpExecMatch stubs (do not use
 // JSReturnOperand).
@@ -184,32 +183,29 @@ static constexpr Register JSReturnReg_Data = a2;
 static constexpr Register JSReturnReg = a2;
 static constexpr ValueOperand JSReturnOperand = ValueOperand(JSReturnReg);
 
-// These registers may be volatile or nonvolatile.
+// See "ABI special registers" in Assembler-shared.h for more information.
 static constexpr Register ABINonArgReg0 = t0;
 static constexpr Register ABINonArgReg1 = t1;
 static constexpr Register ABINonArgReg2 = t2;
 static constexpr Register ABINonArgReg3 = t3;
 
-// These registers may be volatile or nonvolatile.
-// Note: these three registers are all guaranteed to be different
+// See "ABI special registers" in Assembler-shared.h for more information.
 static constexpr Register ABINonArgReturnReg0 = t0;
 static constexpr Register ABINonArgReturnReg1 = t1;
 static constexpr Register ABINonVolatileReg = s0;
 
-// This register is guaranteed to be clobberable during the prologue and
-// epilogue of an ABI call which must preserve both ABI argument, return
-// and non-volatile registers.
+// See "ABI special registers" in Assembler-shared.h for more information.
 static constexpr Register ABINonArgReturnVolatileReg = ra;
 
-// This register may be volatile or nonvolatile.
+// See "ABI special registers" in Assembler-shared.h for more information.
 // Avoid f23 which is the scratch register.
 static constexpr FloatRegister ABINonArgDoubleReg{FloatRegisters::f21,
                                                   FloatRegisters::Double};
 
-// Instance pointer argument register for WebAssembly functions. This must not
-// alias any other register used for passing function arguments or return
-// values. Preserved by WebAssembly functions. Must be nonvolatile.
+// See "ABI special registers" in Assembler-shared.h, and "The WASM ABIs" in
+// WasmFrame.h for more information.
 static constexpr Register InstanceReg = s4;
+static constexpr Register HeapReg = s7;
 
 // Registers used for wasm table calls. These registers must be disjoint
 // from the ABI argument registers, InstanceReg and each other.
@@ -1023,7 +1019,7 @@ class AssemblerLOONG64 : public AssemblerShared {
     if (MOZ_UNLIKELY(printer || JitSpewEnabled(JitSpew_Codegen))) {
       va_list va;
       va_start(va, fmt);
-      spew(fmt, va);
+      spewVA(fmt, va);
       va_end(va);
     }
   }
@@ -1034,7 +1030,7 @@ class AssemblerLOONG64 : public AssemblerShared {
 #endif
 
 #ifdef JS_JITSPEW
-  MOZ_COLD void spew(const char* fmt, va_list va) MOZ_FORMAT_PRINTF(2, 0) {
+  MOZ_COLD void spewVA(const char* fmt, va_list va) MOZ_FORMAT_PRINTF(2, 0) {
     // Buffer to hold the formatted string. Note that this may contain
     // '%' characters, so do not pass it directly to printf functions.
     char buf[200];
