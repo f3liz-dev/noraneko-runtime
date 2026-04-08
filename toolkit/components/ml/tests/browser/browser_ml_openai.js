@@ -266,6 +266,7 @@ add_task(async function test_openai_fxaccount_token() {
 
   // Mock server that checks for fxAccount token in headers
   let capturedFxaHeader = null;
+  let capturedServiceTypeHeader = null;
   const { server: mockServer, port } = startMockOpenAI({
     echo: "Response with FxA token",
     onRequest: req => {
@@ -273,17 +274,21 @@ add_task(async function test_openai_fxaccount_token() {
         if (req.hasHeader("authorization")) {
           capturedFxaHeader = req.getHeader("authorization");
         }
+        if (req.hasHeader("service-type")) {
+          capturedServiceTypeHeader = req.getHeader("service-type");
+        }
       } catch (e) {
-        info("Failed to get authorization header: " + e);
+        info("Failed to get header: " + e);
       }
     },
   });
 
   const fxAccountToken = "test_fxa_token_12345";
+  const apiKey = "test-api-key";
 
   const engineInstance = await createEngine({
     ...BASE_ENGINE_OPTIONS,
-    apiKey: "test-api-key",
+    apiKey,
     baseURL: `http://localhost:${port}/v1`,
     backend: "openai",
   });
@@ -309,12 +314,18 @@ add_task(async function test_openai_fxaccount_token() {
     );
 
     // Verify that the FxA token was sent in the request headers
-    const expectedValue = `Bearer ${fxAccountToken}`;
+    const expectedValue = `Bearer ${apiKey}`;
 
     Assert.equal(
       capturedFxaHeader,
       expectedValue,
       `FxA token should be included in request headers. Expected: ${expectedValue}, Got: ${capturedFxaHeader}`
+    );
+
+    Assert.equal(
+      capturedServiceTypeHeader,
+      "ai",
+      "service-type header should be 'ai' when FxA token is provided"
     );
 
     info("Test without fxAccountToken - should not include header");
@@ -328,7 +339,8 @@ add_task(async function test_openai_fxaccount_token() {
       // No fxAccountToken
     });
 
-    capturedFxaHeader = null; // Reset captured header
+    capturedFxaHeader = null;
+    capturedServiceTypeHeader = null;
     const requestWithoutToken = {
       args: [
         {
@@ -345,6 +357,12 @@ add_task(async function test_openai_fxaccount_token() {
       capturedFxaHeader,
       "Bearer test-api-key",
       "Authorization should fall back to API key when no FxA token is provided"
+    );
+
+    Assert.equal(
+      capturedServiceTypeHeader,
+      "ai",
+      "service-type header should be present"
     );
   } finally {
     await EngineProcess.destroyMLEngine();

@@ -477,7 +477,7 @@ win32-shippable/opt:
         by-release-type:
             nightly: true
             beta: true
-            release.*: true
+            release: true
             esr.*: false
             default:
                 by-project:
@@ -1030,7 +1030,7 @@ win64-ccov/opt:
     fetches:
         toolchain:
             - win64-clang
-            - win64-rust-1.83
+            - win64-rust-dev
             - win64-rust-size
             - win64-cbindgen
             - win64-grcov
@@ -1083,7 +1083,7 @@ win64-fuzzing-ccov/opt:
     fetches:
         toolchain:
             - win64-clang
-            - win64-rust-1.83
+            - win64-rust-dev
             - win64-rust-size
             - win64-cbindgen
             - win64-grcov
@@ -1328,7 +1328,7 @@ win32-devedition/opt:
         by-release-type:
             nightly: true
             beta: true
-            release.*: true
+            release: true
             default:
                 by-project:
                     # browser/confvars.sh looks for nightly-try

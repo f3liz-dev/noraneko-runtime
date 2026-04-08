@@ -141,7 +141,7 @@ class FullParseHandler;
 }
 
 namespace gc {
-struct Cell;
+class Cell;
 }
 
 namespace jit {
@@ -223,7 +223,7 @@ bool js::ValueToIdentifier(JSContext* cx, HandleValue v, MutableHandleId id) {
 
 class js::AutoRestoreRealmDebugMode {
   Realm* realm_;
-  unsigned bits_;
+  uint32_t bits_;
 
  public:
   explicit AutoRestoreRealmDebugMode(Realm* realm)
@@ -233,7 +233,7 @@ class js::AutoRestoreRealmDebugMode {
 
   ~AutoRestoreRealmDebugMode() {
     if (realm_) {
-      realm_->debugModeBits_ = bits_;
+      realm_->restoreDebugModeBitsOnOOM(bits_);
     }
   }
 
@@ -409,6 +409,10 @@ bool js::ParseEvalOptions(JSContext* cx, HandleValue value,
 
   return true;
 }
+
+template <class R, class W, bool IKO>
+DebuggerWeakMap<R, W, IKO>::DebuggerWeakMap(JSContext* cx)
+    : Base(cx->zone()), compartment(cx->compartment()) {}
 
 /*** Breakpoints ************************************************************/
 
@@ -2029,26 +2033,27 @@ Completion Completion::fromJSFramePop(JSContext* cx, AbstractFramePtr frame,
   //
   // GetGeneratorObjectForFrame can return nullptr even when a generator
   // object does exist, if the frame is paused between the Generator and
-  // SetAliasedVar opcodes. But by checking the opcode first we eliminate that
-  // possibility, so it's fine to call genObj->isClosed().
+  // SetAliasedVar opcodes.
   Rooted<AbstractGeneratorObject*> generatorObj(
       cx, GetGeneratorObjectForFrame(cx, frame));
-  switch (JSOp(*pc)) {
-    case JSOp::InitialYield:
-      MOZ_ASSERT(!generatorObj->isClosed());
-      return Completion(InitialYield(generatorObj));
 
-    case JSOp::Yield:
-      MOZ_ASSERT(!generatorObj->isClosed());
-      return Completion(Yield(generatorObj, frame.returnValue()));
+  if (generatorObj && !generatorObj->isClosed()) {
+    switch (JSOp(*pc)) {
+      case JSOp::InitialYield:
+        return Completion(InitialYield(generatorObj));
 
-    case JSOp::Await:
-      MOZ_ASSERT(!generatorObj->isClosed());
-      return Completion(Await(generatorObj, frame.returnValue()));
+      case JSOp::Yield:
+        return Completion(Yield(generatorObj, frame.returnValue()));
 
-    default:
-      return Completion(Return(frame.returnValue()));
+      case JSOp::Await:
+        return Completion(Await(generatorObj, frame.returnValue()));
+
+      default:
+        break;
+    }
   }
+
+  return Completion(Return(frame.returnValue()));
 }
 
 void Completion::trace(JSTracer* trc) {
@@ -3356,7 +3361,6 @@ static bool UpdateExecutionObservabilityOfScriptsInZone(
   // BaselineScripts. This must be done as a separate phase as we can only
   // discard the BaselineScript on scripts that have no IonScript.
   for (size_t i = 0; i < scripts.length(); i++) {
-    MOZ_ASSERT_IF(scripts[i]->isDebuggee(), observing);
     if (!scripts[i]->jitScript()->icScript()->active()) {
       FinishDiscardBaselineScript(gcx, scripts[i]);
     }
@@ -3617,7 +3621,7 @@ bool Debugger::updateObservesCoverageOnDebuggees(JSContext* cx,
   // If any frame on the stack belongs to the debuggee, then we cannot update
   // the ScriptCounts, because this would imply to invalidate a Debugger.Frame
   // to recompile it with/without ScriptCount support.
-  for (FrameIter iter(cx); !iter.done(); ++iter) {
+  for (AllFramesIter iter(cx); !iter.done(); ++iter) {
     if (obs.shouldMarkAsDebuggee(iter)) {
       JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
                                 JSMSG_DEBUG_NOT_IDLE);
@@ -4011,7 +4015,7 @@ void DebugAPI::slowPathTraceGeneratorFrame(JSTracer* tracer,
 
     if (Debugger::GeneratorWeakMap::Ptr entry =
             dbg->generatorFrames.lookupUnbarriered(generator)) {
-      PreBarriered<DebuggerFrame*>& frameObj = entry->value();
+      const PreBarriered<DebuggerFrame*>& frameObj = entry->value();
       if (frameObj->hasAnyHooks()) {
         // See comment above.
         TraceCrossCompartmentEdge(tracer, generator, &frameObj,
@@ -4859,19 +4863,16 @@ bool Debugger::CallData::getDebuggees() {
 }
 
 bool Debugger::CallData::getNewestFrame() {
-  // Since there may be multiple contexts, use AllFramesIter.
-  for (AllFramesIter i(cx); !i.done(); ++i) {
-    if (dbg->observesFrame(i)) {
+  // Note: we use FrameIter (not AllFramesIter) because debugger-frame iteration
+  // must follow evalInFramePrev links. This preserves the debugger-visible
+  // frame chain: for a debugger eval frame, `frame.older` must be the frame
+  // we're evaluating in.
+  for (FrameIter iter(cx); !iter.done(); ++iter) {
+    if (dbg->observesFrame(iter)) {
       // Ensure that Ion frames are rematerialized. Only rematerialized
       // Ion frames may be used as AbstractFramePtrs.
-      if (i.isIon() && !i.ensureHasRematerializedFrame(cx)) {
+      if (iter.isIon() && !iter.ensureHasRematerializedFrame(cx)) {
         return false;
-      }
-      AbstractFramePtr frame = i.abstractFramePtr();
-      FrameIter iter(i.activation()->cx());
-      while (!iter.hasUsableAbstractFramePtr() ||
-             iter.abstractFramePtr() != frame) {
-        ++iter;
       }
       return dbg->getFrame(cx, iter, args.rval());
     }
@@ -7409,6 +7410,10 @@ extern JS_PUBLIC_API bool JS_DefineDebuggerObject(JSContext* cx,
   debugProto->setReservedSlot(Debugger::JSSLOT_DEBUG_MEMORY_PROTO,
                               ObjectValue(*memoryProto));
   return true;
+}
+
+extern JS_PUBLIC_API const char* JS_GetLastOOMStackTrace(JSContext* cx) {
+  return cx->getOOMStackTrace();
 }
 
 JS_PUBLIC_API bool JS::dbg::IsDebugger(JSObject& obj) {

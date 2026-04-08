@@ -118,12 +118,11 @@ nsDocShellLoadState::nsDocShellLoadState(
   mUnstrippedURI = aLoadState.UnstrippedURI();
   mRemoteTypeOverride = aLoadState.RemoteTypeOverride();
   mIsCaptivePortalTab = aLoadState.IsCaptivePortalTab();
+  mIsInitialAboutBlankHandlingProhibited =
+      aLoadState.IsInitialAboutBlankHandlingProhibited();
 
-  if (aLoadState.NavigationAPIState()) {
-    mNavigationAPIState = MakeRefPtr<nsStructuredCloneContainer>();
-    mNavigationAPIState->CopyFromClonedMessageData(
-        *aLoadState.NavigationAPIState());
-  }
+  mNavigationAPIState = aLoadState.NavigationAPIState();
+
   // We know this was created remotely, as we just received it over IPC.
   mWasCreatedRemotely = true;
 
@@ -222,7 +221,9 @@ nsDocShellLoadState::nsDocShellLoadState(const nsDocShellLoadState& aOther)
       mSchemelessInput(aOther.mSchemelessInput),
       mForceMediaDocument(aOther.mForceMediaDocument),
       mHttpsUpgradeTelemetry(aOther.mHttpsUpgradeTelemetry),
-      mNavigationAPIState(aOther.mNavigationAPIState) {
+      mNavigationAPIState(aOther.mNavigationAPIState),
+      mIsInitialAboutBlankHandlingProhibited(
+          aOther.mIsInitialAboutBlankHandlingProhibited) {
   MOZ_DIAGNOSTIC_ASSERT(
       XRE_IsParentProcess(),
       "Cloning a nsDocShellLoadState with the same load identifier is only "
@@ -270,7 +271,8 @@ nsDocShellLoadState::nsDocShellLoadState(nsIURI* aURI, uint64_t aLoadIdentifier)
       mTriggeringRemoteType(XRE_IsContentProcess()
                                 ? ContentChild::GetSingleton()->GetRemoteType()
                                 : NOT_REMOTE_TYPE),
-      mSchemelessInput(nsILoadInfo::SchemelessInputTypeUnset) {
+      mSchemelessInput(nsILoadInfo::SchemelessInputTypeUnset),
+      mIsInitialAboutBlankHandlingProhibited(false) {
   MOZ_ASSERT(aURI, "Cannot create a LoadState with a null URI!");
 
   // For https telemetry we set a flag indicating whether the load is https.
@@ -1455,13 +1457,9 @@ DocShellLoadStateInit nsDocShellLoadState::Serialize(
   loadState.UnstrippedURI() = mUnstrippedURI;
   loadState.RemoteTypeOverride() = mRemoteTypeOverride;
   loadState.IsCaptivePortalTab() = mIsCaptivePortalTab;
-
-  if (mNavigationAPIState) {
-    loadState.NavigationAPIState().emplace();
-    DebugOnly<bool> success = mNavigationAPIState->BuildClonedMessageData(
-        *loadState.NavigationAPIState());
-    MOZ_ASSERT(success);
-  }
+  loadState.IsInitialAboutBlankHandlingProhibited() =
+      mIsInitialAboutBlankHandlingProhibited;
+  loadState.NavigationAPIState() = mNavigationAPIState;
 
   if (XRE_IsParentProcess()) {
     mozilla::ipc::IToplevelProtocol* top = aActor->ToplevelProtocol();

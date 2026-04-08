@@ -392,8 +392,7 @@ void LogPrintVA(const JS::OpaqueLogger logger, mozilla::LogLevel level,
 void LogPrintFmt(const JS::OpaqueLogger logger, mozilla::LogLevel level,
                  fmt::string_view fmt, fmt::format_args args) {
   ShellLogModule* mod = static_cast<ShellLogModule*>(logger);
-  fmt::print(stderr, FMT_STRING("[{}] {}\n"), mod->name,
-             fmt::vformat(fmt, args));
+  fmt::print(stderr, "[{}] {}\n", mod->name, fmt::vformat(fmt, args));
 }
 
 JS::LoggingInterface shellLoggingInterface = {GetLoggerByName, LogPrintVA,
@@ -405,25 +404,22 @@ static void ToLower(const char* src, char* dest, size_t len) {
   }
 }
 
-// Run this after initialiation!
-void ParseLoggerOptions() {
-  char* mixedCaseOpts = getenv("MOZ_LOG");
-  if (!mixedCaseOpts) {
-    return;
-  }
-
+// This should be run once after initialization, and may be rerun (via the
+// mozLog() command) again later.
+static void ParseLoggerOptions(mozilla::Range<const char> mixedCaseOpts) {
   // Copy into a new buffer and lower case to do case insensitive matching.
   //
   // Done this way rather than just using strcasestr because Windows doesn't
   // have strcasestr as part of its base C library.
-  size_t len = strlen(mixedCaseOpts);
+  size_t len = mixedCaseOpts.length();
   mozilla::UniqueFreePtr<char[]> logOpts(
       static_cast<char*>(calloc(len + 1, 1)));
   if (!logOpts) {
     return;
   }
 
-  ToLower(mixedCaseOpts, logOpts.get(), len);
+  ToLower(mixedCaseOpts.begin().get(), logOpts.get(), len);
+  logOpts.get()[len] = '\0';
 
   // This is a really permissive parser, but will suffice!
   for (auto& logger : logModules) {
@@ -433,11 +429,13 @@ void ParseLoggerOptions() {
       mozilla::UniqueFreePtr<char[]> lowerName(
           static_cast<char*>(calloc(len + 1, 1)));
       ToLower(logger->name, lowerName.get(), len);
+      lowerName.get()[len] = '\0';
 
+      int logLevel = 0;
       if (char* needle = strstr(logOpts.get(), lowerName.get())) {
         // If the string to enable a logger is present, but no level is provided
         // then default to Debug level.
-        int logLevel = static_cast<int>(mozilla::LogLevel::Debug);
+        logLevel = static_cast<int>(mozilla::LogLevel::Debug);
 
         if (char* colon = strchr(needle, ':')) {
           // Parse character after colon as log level.
@@ -448,10 +446,39 @@ void ParseLoggerOptions() {
 
         fprintf(stderr, "[JS_LOG] Enabling Logger %s at level %d\n",
                 logger->name, logLevel);
-        logger->level = mozilla::ToLogLevel(logLevel);
+      } else {
+        if (logger->level != mozilla::ToLogLevel(logLevel)) {
+          fprintf(stderr, "[JS_LOG] Resetting Logger %s to level %d\n",
+                  logger->name, logLevel);
+        }
       }
+
+      logger->level = mozilla::ToLogLevel(logLevel);
     }
   }
+}
+
+static bool SetMozLog(JSContext* cx, unsigned argc, Value* vp) {
+  CallArgs args = CallArgsFromVp(argc, vp);
+
+  Rooted<JSString*> spec(cx, ToString(cx, args.get(0)));
+  if (!spec) {
+    return false;
+  }
+
+  if (!spec->hasLatin1Chars()) {
+    JS_ReportErrorASCII(cx, "invalid MOZ_LOG setting");
+    return false;
+  }
+
+  AutoStableStringChars stable(cx);
+  if (!stable.init(cx, spec)) {
+    return false;
+  }
+
+  mozilla::Range<const Latin1Char> r = stable.latin1Range();
+  ParseLoggerOptions({(const char*)r.begin().get(), r.length()});
+  return true;
 }
 
 /*
@@ -940,7 +967,8 @@ class ShellPrincipals final : public JSPrincipals {
     return JS_WriteUint32Pair(writer, bits, 0);
   }
 
-  bool isSystemOrAddonPrincipal() override { return true; }
+  bool isSystemPrincipal() override { return true; }
+  bool isAddonPrincipal() override { return true; }
 
   static void destroy(JSPrincipals* principals) {
     MOZ_ASSERT(principals != &fullyTrusted);
@@ -1483,41 +1511,30 @@ static bool DrainJobQueue(JSContext* cx, unsigned argc, Value* vp) {
 static bool GlobalOfFirstJobInQueue(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
 
-  if (JS::Prefs::use_js_microtask_queue()) {
-    if (cx->microTaskQueues->microTaskQueue.empty()) {
-      JS_ReportErrorASCII(cx, "Job queue is empty");
-      return false;
-    }
-
-    auto& genericJob = cx->microTaskQueues->microTaskQueue.front();
-    JS::JSMicroTask* job = JS::ToUnwrappedJSMicroTask(genericJob);
-    MOZ_ASSERT(job);
-    RootedObject global(cx, JS::GetExecutionGlobalFromJSMicroTask(job));
-    if (!global) {
-      JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
-                                JSMSG_DEAD_OBJECT);
-      return false;
-    }
-    MOZ_ASSERT(global);
-    if (!cx->compartment()->wrap(cx, &global)) {
-      return false;
-    }
-
-    args.rval().setObject(*global);
-  } else {
-    RootedObject job(cx, cx->internalJobQueue->maybeFront());
-    if (!job) {
-      JS_ReportErrorASCII(cx, "Job queue is empty");
-      return false;
-    }
-
-    RootedObject global(cx, &job->nonCCWGlobal());
-    if (!cx->compartment()->wrap(cx, &global)) {
-      return false;
-    }
-
-    args.rval().setObject(*global);
+  if (cx->microTaskQueues->microTaskQueue.empty()) {
+    JS_ReportErrorASCII(cx, "Job queue is empty");
+    return false;
   }
+
+  auto& genericJob = cx->microTaskQueues->microTaskQueue.front();
+  JS::JSMicroTask* job = JS::ToUnwrappedJSMicroTask(genericJob);
+  if (!job) {
+    JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr, JSMSG_DEAD_OBJECT);
+
+    return false;
+  }
+
+  RootedObject global(cx, JS::GetExecutionGlobalFromJSMicroTask(job));
+  if (!global) {
+    JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr, JSMSG_DEAD_OBJECT);
+    return false;
+  }
+  MOZ_ASSERT(global);
+  if (!cx->compartment()->wrap(cx, &global)) {
+    return false;
+  }
+
+  args.rval().setObject(*global);
 
   return true;
 }
@@ -1704,8 +1721,8 @@ class MOZ_RAII AutoLockTelemetry : public LockGuard<Mutex> {
 };
 
 using TelemetrySamples = mozilla::Vector<uint32_t, 0, js::SystemAllocPolicy>;
-MOZ_CONSTINIT static mozilla::Array<UniquePtr<TelemetrySamples>,
-                                    size_t(JSMetric::Count)>
+constinit static mozilla::Array<UniquePtr<TelemetrySamples>,
+                                size_t(JSMetric::Count)>
     recordedTelemetrySamples;
 
 static void AccumulateTelemetryDataCallback(JSMetric id, uint32_t sample) {
@@ -1974,12 +1991,7 @@ static bool AddIntlExtras(JSContext* cx, unsigned argc, Value* vp) {
   }
   JS::RootedObject intl(cx, &args[0].toObject());
 
-  static const JSFunctionSpec funcs[] = {
-      JS_SELF_HOSTED_FN("getCalendarInfo", "Intl_getCalendarInfo", 1, 0),
-      JS_FS_END,
-  };
-
-  if (!JS_DefineFunctions(cx, intl, funcs)) {
+  if (!JS::AddMozGetCalendarInfo(cx, intl)) {
     return false;
   }
 
@@ -4012,101 +4024,6 @@ static bool DisassFile(JSContext* cx, unsigned argc, Value* vp) {
     return false;
   }
   fprintf(gOutFile->fp, "%s\n", chars.get());
-
-  args.rval().setUndefined();
-  return true;
-}
-
-static bool DisassWithSrc(JSContext* cx, unsigned argc, Value* vp) {
-  CallArgs args = CallArgsFromVp(argc, vp);
-
-  if (!gOutFile->isOpen()) {
-    JS_ReportErrorASCII(cx, "output file is closed");
-    return false;
-  }
-
-  const size_t lineBufLen = 512;
-  unsigned len, line1, line2, bupline;
-  char linebuf[lineBufLen];
-  static const char sep[] = ";-------------------------";
-
-  RootedScript script(cx);
-  for (unsigned i = 0; i < args.length(); i++) {
-    script = TestingFunctionArgumentToScript(cx, args[i]);
-    if (!script) {
-      return false;
-    }
-
-    if (!script->filename()) {
-      JS_ReportErrorNumberASCII(cx, my_GetErrorMessage, nullptr,
-                                JSSMSG_FILE_SCRIPTS_ONLY);
-      return false;
-    }
-
-    FILE* file = OpenFile(cx, script->filename(), "rb");
-    if (!file) {
-      return false;
-    }
-    auto closeFile = MakeScopeExit([file] { fclose(file); });
-
-    jsbytecode* pc = script->code();
-    jsbytecode* end = script->codeEnd();
-
-    Sprinter sprinter(cx);
-    if (!sprinter.init()) {
-      return false;
-    }
-
-    /* burn the leading lines */
-    line2 = PCToLineNumber(script, pc);
-    for (line1 = 0; line1 < line2 - 1; line1++) {
-      char* tmp = fgets(linebuf, lineBufLen, file);
-      if (!tmp) {
-        JS_ReportErrorUTF8(cx, "failed to read %s fully", script->filename());
-        return false;
-      }
-    }
-
-    bupline = 0;
-    while (pc < end) {
-      line2 = PCToLineNumber(script, pc);
-
-      if (line2 < line1) {
-        if (bupline != line2) {
-          bupline = line2;
-          sprinter.printf("%s %3u: BACKUP\n", sep, line2);
-        }
-      } else {
-        if (bupline && line1 == line2) {
-          sprinter.printf("%s %3u: RESTORE\n", sep, line2);
-        }
-        bupline = 0;
-        while (line1 < line2) {
-          if (!fgets(linebuf, lineBufLen, file)) {
-            JS_ReportErrorNumberUTF8(cx, my_GetErrorMessage, nullptr,
-                                     JSSMSG_UNEXPECTED_EOF, script->filename());
-            return false;
-          }
-          line1++;
-          sprinter.printf("%s %3u: %s", sep, line1, linebuf);
-        }
-      }
-
-      len =
-          Disassemble1(cx, script, pc, script->pcToOffset(pc), true, &sprinter);
-      if (!len) {
-        return false;
-      }
-
-      pc += len;
-    }
-
-    JS::UniqueChars str = sprinter.release();
-    if (!str) {
-      return false;
-    }
-    fprintf(gOutFile->fp, "%s\n", str.get());
-  }
 
   args.rval().setUndefined();
   return true;
@@ -10208,10 +10125,6 @@ static const JSFunctionSpecWithHelp shell_functions[] = {
 "disfile('foo.js')",
 "  Disassemble script file into bytecodes.\n"),
 
-    JS_FN_HELP("dissrc", DisassWithSrc, 1, 0,
-"dissrc([fun/code])",
-"  Disassemble functions with source lines."),
-
     JS_FN_HELP("notes", Notes, 1, 0,
 "notes([fun])",
 "  Show source notes for functions."),
@@ -10877,6 +10790,13 @@ TestAssertRecoveredOnBailout,
     JS_FN_HELP("decompressLZ4", DecompressLZ4, 1, 0,
 "decompressLZ4(bytes)",
 " Return a decompressed copy of bytes using LZ4."),
+
+    JS_FN_HELP("mozLog", SetMozLog, 0, 0,
+"mozLog(\"logLevels\")",
+"  Modify log levels as if MOZ_LOG had been set to this at startup.\n"
+"      `logLevels` is a comma-separated list of log modules, each\n"
+"      with an optional \":<level>\" (defaults to 5 aka Debug).\n"
+"      example: mozLog('gc,wasm:4')"),
 
     JS_FS_HELP_END
 };
@@ -12707,7 +12627,10 @@ int main(int argc, char** argv) {
   if (!JS::SetLoggingInterface(shellLoggingInterface)) {
     return 1;
   }
-  ParseLoggerOptions();
+  char* logopts = getenv("MOZ_LOG");
+  if (logopts) {
+    ParseLoggerOptions(mozilla::Range(logopts, strlen(logopts)));
+  }
 
   // Start the engine.
   if (const char* message = JS_InitWithFailureDiagnostic()) {
@@ -12914,7 +12837,7 @@ bool InitOptionParser(OptionParser& op) {
                        -1) ||
       !op.addBoolOption('\0', "only-inline-selfhosted",
                         "Only inline selfhosted functions") ||
-      !op.addBoolOption('\0', "no-asmjs", "Disable asm.js compilation") ||
+      !op.addBoolOption('\0', "asmjs", "Enable asm.js compilation") ||
       !op.addStringOption(
           '\0', "wasm-compiler", "[option]",
           "Choose to enable a subset of the wasm compilers, valid options are "
@@ -12952,15 +12875,12 @@ bool InitOptionParser(OptionParser& op) {
                         "Enable iterator helpers") ||
       !op.addBoolOption('\0', "enable-async-iterator-helpers",
                         "Enable async iterator helpers") ||
-      !op.addBoolOption('\0', "enable-shadow-realms", "Enable ShadowRealms") ||
       !op.addBoolOption('\0', "disable-array-grouping",
                         "Disable Object.groupBy and Map.groupBy") ||
       !op.addBoolOption('\0', "enable-symbols-as-weakmap-keys",
                         "Enable Symbols As WeakMap keys") ||
       !op.addBoolOption('\0', "no-symbols-as-weakmap-keys",
                         "Disable Symbols As WeakMap keys") ||
-      !op.addBoolOption('\0', "enable-uint8array-base64",
-                        "Enable Uint8Array base64/hex methods") ||
       !op.addBoolOption('\0', "enable-top-level-await",
                         "Enable top-level await") ||
       !op.addStringOption('\0', "shared-memory", "on/off",
@@ -12984,6 +12904,12 @@ bool InitOptionParser(OptionParser& op) {
                           "call to enable work-in-progress call ICs)") ||
       !op.addStringOption('\0', "ion-shared-stubs", "on/off",
                           "Use shared stubs (default: on, off to disable)") ||
+      !op.addStringOption(
+          '\0', "stub-folding", "on/off",
+          "Enable stub folding (default: on, off to disable)") ||
+      !op.addStringOption('\0', "stub-folding-loads-and-stores", "on/off",
+                          "Enable stub folding for load and stores (default: "
+                          "on, off to disable)") ||
       !op.addStringOption('\0', "ion-scalar-replacement", "on/off",
                           "Scalar Replacement (default: on, off to disable)") ||
       !op.addStringOption('\0', "ion-gvn", "[mode]",
@@ -13189,6 +13115,12 @@ bool InitOptionParser(OptionParser& op) {
                         "Disable GC parallel marking") ||
       !op.addBoolOption('\0', "enable-parallel-marking",
                         "Enable GC parallel marking") ||
+#ifdef JS_GC_CONCURRENT_MARKING
+      !op.addBoolOption('\0', "no-concurrent-marking",
+                        "Disable GC concurrent marking") ||
+      !op.addBoolOption('\0', "enable-concurrent-marking",
+                        "Enable GC concurrent marking") ||
+#endif
       !op.addStringOption('\0', "nursery-strings", "on/off",
                           "Allocate strings in the nursery") ||
       !op.addStringOption('\0', "nursery-bigints", "on/off",
@@ -13231,15 +13163,21 @@ bool InitOptionParser(OptionParser& op) {
                        "NUMBER of instructions.",
                        -1) ||
 #ifdef JS_CODEGEN_RISCV64
-      !op.addBoolOption('\0', "riscv-debug", "debug print riscv info.") ||
+      !op.addBoolOption('\0', "riscv-debug",
+                        "Print riscv debugging messages.") ||
 #endif
 #ifdef JS_SIMULATOR_RISCV64
-      !op.addBoolOption('\0', "trace-sim", "print simulator info.") ||
-      !op.addBoolOption('\0', "debug-sim", "debug simulator.") ||
+      !op.addBoolOption('\0', "riscv-sim-trace",
+                        "Print the RISC-V simulator info.") ||
+      !op.addBoolOption('\0', "riscv-sim-debug",
+                        "Debug the RISC-V simulator.") ||
       !op.addBoolOption('\0', "riscv-trap-to-simulator-debugger",
-                        "trap into simulator debuggger.") ||
+                        "Trap into the RISC-V simulator debuggger.") ||
+      !op.addBoolOption('\0', "riscv-sim-icache-checks",
+                        "Enable icache flush checks in the RISC-V "
+                        "simulator.") ||
       !op.addIntOption('\0', "riscv-sim-stop-at", "NUMBER",
-                       "Stop the riscv simulator after the given "
+                       "Stop the RISC-V simulator after the given "
                        "NUMBER of instructions.",
                        -1) ||
 #endif
@@ -13304,8 +13242,6 @@ bool InitOptionParser(OptionParser& op) {
                         "Enable WebAssembly js-string-builtins proposal.") ||
       !op.addBoolOption('\0', "enable-iterator-sequencing",
                         "Enable Iterator Sequencing") ||
-      !op.addBoolOption('\0', "enable-math-sumprecise",
-                        "Enable Math.sumPrecise") ||
       !op.addBoolOption('\0', "enable-error-iserror", "Enable Error.isError") ||
       !op.addBoolOption('\0', "enable-iterator-range",
                         "Enable Iterator.range") ||
@@ -13317,12 +13253,18 @@ bool InitOptionParser(OptionParser& op) {
       !op.addBoolOption('\0', "disable-explicit-resource-management",
                         "Disable Explicit Resource Management") ||
       !op.addBoolOption('\0', "enable-temporal", "Enable Temporal") ||
-      !op.addBoolOption('\0', "enable-upsert", "Enable Upsert proposal") ||
       !op.addBoolOption('\0', "enable-import-bytes", "Enable import bytes") ||
+      !op.addBoolOption('\0', "enable-promise-allkeyed",
+                        "Enable Promise.allKeyed") ||
       !op.addBoolOption('\0', "enable-arraybuffer-immutable",
                         "Enable immutable ArrayBuffers") ||
       !op.addBoolOption('\0', "enable-iterator-chunking",
-                        "Enable Iterator Chunking")) {
+                        "Enable Iterator Chunking") ||
+      !op.addBoolOption('\0', "enable-iterator-join", "Enable Iterator.join") ||
+      !op.addBoolOption('\0', "enable-source-phase-imports",
+                        "Enable source phase imports") ||
+      !op.addBoolOption('\0', "enable-legacy-regexp",
+                        "Enable Legacy RegExp features")) {
     return false;
   }
 
@@ -13353,15 +13295,6 @@ bool SetGlobalOptionsPreJSInit(const OptionParser& op) {
 
   // Override pref values for prefs that have a custom shell flag.
   // If you're adding a new feature, consider using --setpref instead.
-  if (op.getBoolOption("enable-shadow-realms")) {
-    JS::Prefs::set_experimental_shadow_realms(true);
-  }
-  if (op.getBoolOption("enable-uint8array-base64")) {
-    JS::Prefs::setAtStartup_experimental_uint8array_base64(true);
-  }
-  if (op.getBoolOption("enable-math-sumprecise")) {
-    JS::Prefs::setAtStartup_experimental_math_sumprecise(true);
-  }
   if (op.getBoolOption("enable-atomics-pause")) {
     JS::Prefs::setAtStartup_experimental_atomics_pause(true);
   }
@@ -13378,7 +13311,13 @@ bool SetGlobalOptionsPreJSInit(const OptionParser& op) {
   }
   JS::Prefs::setAtStartup_experimental_symbols_as_weakmap_keys(
       symbolsAsWeakMapKeys);
+  if (op.getBoolOption("enable-joint-iteration")) {
+    JS::Prefs::setAtStartup_experimental_joint_iteration(true);
+  }
 
+  if (op.getBoolOption("enable-legacy-regexp")) {
+    JS::Prefs::set_experimental_legacy_regexp(true);
+  }
 #ifdef NIGHTLY_BUILD
   if (op.getBoolOption("enable-async-iterator-helpers")) {
     JS::Prefs::setAtStartup_experimental_async_iterator_helpers(true);
@@ -13389,20 +13328,25 @@ bool SetGlobalOptionsPreJSInit(const OptionParser& op) {
   if (op.getBoolOption("enable-iterator-range")) {
     JS::Prefs::setAtStartup_experimental_iterator_range(true);
   }
-  if (op.getBoolOption("enable-joint-iteration")) {
-    JS::Prefs::setAtStartup_experimental_joint_iteration(true);
-  }
-  if (op.getBoolOption("enable-upsert")) {
-    JS::Prefs::setAtStartup_experimental_upsert(true);
-  }
   if (op.getBoolOption("enable-arraybuffer-immutable")) {
     JS::Prefs::setAtStartup_experimental_arraybuffer_immutable(true);
   }
   if (op.getBoolOption("enable-import-bytes")) {
     JS::Prefs::setAtStartup_experimental_import_bytes(true);
   }
+  if (op.getBoolOption("enable-promise-allkeyed")) {
+    JS::Prefs::setAtStartup_experimental_promise_allkeyed(true);
+  }
   if (op.getBoolOption("enable-iterator-chunking")) {
     JS::Prefs::setAtStartup_experimental_iterator_chunking(true);
+  }
+  if (op.getBoolOption("enable-iterator-join")) {
+    JS::Prefs::setAtStartup_experimental_iterator_join(true);
+  }
+#endif
+#ifdef ENABLE_SOURCE_PHASE_IMPORTS
+  if (op.getBoolOption("enable-source-phase-imports")) {
+    JS::Prefs::setAtStartup_experimental_source_phase_imports(true);
   }
 #endif
 #ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
@@ -13475,6 +13419,7 @@ bool SetGlobalOptionsPreJSInit(const OptionParser& op) {
   }
 
   int32_t poolMaxOffset = op.getIntOption("asm-pool-max-offset");
+
   if (poolMaxOffset >= 5 && poolMaxOffset <= 1024) {
     jit::Assembler::AsmPoolMaxOffset = poolMaxOffset;
   }
@@ -13703,7 +13648,7 @@ bool SetContextOptions(JSContext* cx, const OptionParser& op) {
 }
 
 bool SetContextWasmOptions(JSContext* cx, const OptionParser& op) {
-  enableAsmJS = !op.getBoolOption("no-asmjs");
+  enableAsmJS = op.getBoolOption("asmjs");
 
   enableWasm = true;
   enableWasmBaseline = true;
@@ -13806,6 +13751,26 @@ bool SetContextJITOptions(JSContext* cx, const OptionParser& op) {
       jit::JitOptions.disableCacheIR = true;
     } else {
       return OptionFailure("cache-ir-stubs", str);
+    }
+  }
+
+  if (const char* str = op.getStringOption("stub-folding")) {
+    if (strcmp(str, "on") == 0) {
+      jit::JitOptions.disableStubFolding = false;
+    } else if (strcmp(str, "off") == 0) {
+      jit::JitOptions.disableStubFolding = true;
+    } else {
+      return OptionFailure("stub-folding", str);
+    }
+  }
+
+  if (const char* str = op.getStringOption("stub-folding-loads-and-stores")) {
+    if (strcmp(str, "on") == 0) {
+      jit::JitOptions.disableStubFoldingLoadsAndStores = false;
+    } else if (strcmp(str, "off") == 0) {
+      jit::JitOptions.disableStubFoldingLoadsAndStores = true;
+    } else {
+      return OptionFailure("stub-folding-loads-and-stores", str);
     }
   }
 
@@ -14275,11 +14240,14 @@ bool SetContextJITOptions(JSContext* cx, const OptionParser& op) {
   }
 #  endif
 #  ifdef JS_SIMULATOR_RISCV64
-  if (op.getBoolOption("trace-sim")) {
+  if (op.getBoolOption("riscv-sim-trace")) {
     jit::Simulator::FLAG_trace_sim = true;
   }
-  if (op.getBoolOption("debug-sim")) {
+  if (op.getBoolOption("riscv-sim-debug")) {
     jit::Simulator::FLAG_debug_sim = true;
+  }
+  if (op.getBoolOption("riscv-sim-icache-checks")) {
+    jit::SimulatorProcess::ICacheCheckingDisableCount = 0;
   }
   if (op.getBoolOption("riscv-trap-to-simulator-debugger")) {
     jit::Simulator::FLAG_riscv_trap_to_simulator_debugger = true;
@@ -14346,6 +14314,17 @@ bool SetContextGCOptions(JSContext* cx, const OptionParser& op) {
     parallelMarking = false;
   }
   JS_SetGCParameter(cx, JSGC_PARALLEL_MARKING_ENABLED, parallelMarking);
+
+#ifdef JS_GC_CONCURRENT_MARKING
+  bool concurrentMarking = false;
+  if (op.getBoolOption("enable-concurrent-marking")) {
+    concurrentMarking = true;
+  }
+  if (op.getBoolOption("no-concurrent-marking")) {
+    concurrentMarking = false;
+  }
+  JS_SetGCParameter(cx, JSGC_CONCURRENT_MARKING_ENABLED, concurrentMarking);
+#endif
 
   JS_SetGCParameter(cx, JSGC_SLICE_TIME_BUDGET_MS, 5);
 

@@ -59,6 +59,8 @@ type_policies = {
     "Double": "DoublePolicy",
     "String": "StringPolicy",
     "Symbol": "SymbolPolicy",
+    "NoTypePolicy": "NoTypePolicy",
+    "Slots": "NoTypePolicy",
 }
 
 
@@ -66,15 +68,21 @@ def decide_type_policy(types, no_type_policy):
     if no_type_policy:
         return "public NoTypePolicy::Data"
 
-    if len(types) == 1:
-        return f"public {type_policies[types[0]]}<0>::Data"
-
     type_num = 0
     mixed_type_policies = []
     for mir_type in types:
         policy = type_policies[mir_type]
+        if policy == "NoTypePolicy":
+            type_num += 1
+            continue
         mixed_type_policies.append(f"{policy}<{type_num}>")
         type_num += 1
+
+    if len(mixed_type_policies) == 0:
+        return "public NoTypePolicy::Data"
+
+    if len(mixed_type_policies) == 1:
+        return f"public {mixed_type_policies[0]}::Data"
 
     return "public MixPolicy<{}>::Data".format(", ".join(mixed_type_policies))
 
@@ -141,6 +149,7 @@ def gen_mir_class(
     can_recover,
     clone,
     can_consume_float32,
+    wasm_ref_type,
 ):
     """Generates class definition for a single MIR opcode."""
 
@@ -235,7 +244,11 @@ def gen_mir_class(
         code += "    setGuard();\\\n"
     if movable:
         code += "    setMovable();\\\n"
-    if result:
+    if wasm_ref_type is not None:
+        code += f"    setWasmRefType({wasm_ref_type});\\\n"
+    # Note: MIRType::None is the default MIR result type so don't generate a
+    # setResultType call for it.
+    if result and result != "None":
         code += f"    setResultType(MIRType::{result});\\\n"
     code += "  }\\\n public:\\\n"
     if arguments:
@@ -392,6 +405,9 @@ def generate_mir_header(c_out, yaml_path):
             can_consume_float32 = op.get("can_consume_float32", None)
             assert can_consume_float32 in (None, True, False)
 
+            wasm_ref_type = op.get("wasm_ref_type", None)
+            assert result is None or isinstance(result, str)
+
             code = gen_mir_class(
                 name,
                 operands,
@@ -410,6 +426,7 @@ def generate_mir_header(c_out, yaml_path):
                 can_recover,
                 clone,
                 can_consume_float32,
+                wasm_ref_type,
             )
             mir_op_classes.append(code)
 

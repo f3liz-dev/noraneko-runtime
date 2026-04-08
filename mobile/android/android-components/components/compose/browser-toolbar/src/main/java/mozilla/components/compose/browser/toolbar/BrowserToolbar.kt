@@ -4,10 +4,13 @@
 
 package mozilla.components.compose.browser.toolbar
 
+import androidx.compose.material3.DividerDefaults
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.PreviewLightDark
@@ -58,11 +61,16 @@ data class BrowserToolbarCFR(
  *
  * @param store The [BrowserToolbarStore] to observe the UI state from.
  * @param cfr The [BrowserToolbarCFR] to hold properties of Toolbar's CFR.
+ * @property useMinimalBottomToolbarWhenEnteringText Whether to show a smaller height addressbar
+ * with just the URL when using a bottom toolbar and the user is entering text in a website.
  */
 @Composable
 fun BrowserToolbar(
     store: BrowserToolbarStore,
     cfr: BrowserToolbarCFR? = null,
+    useMinimalBottomToolbarWhenEnteringText: Boolean = false,
+    backgroundColor: Color = MaterialTheme.colorScheme.surface,
+    outlineColor: Color = DividerDefaults.color,
 ) {
     val uiState by store.observeAsComposableState { it }
     val cfrProperties = browserToolbarCFRProperties(uiState.gravity)
@@ -74,6 +82,13 @@ fun BrowserToolbar(
             isQueryPrefilled = uiState.editState.isQueryPrefilled,
             usePrivateModeQueries = uiState.editState.isQueryPrivate,
             gravity = uiState.gravity,
+            backgroundColor =
+                if (store.state.editState.query.current.isEmpty()) {
+                    backgroundColor
+                } else {
+                    MaterialTheme.colorScheme.surface
+                },
+            outlineColor = outlineColor,
             suggestion = uiState.editState.suggestion,
             editActionsStart = uiState.editState.editActionsStart,
             editActionsEnd = uiState.editState.editActionsEnd,
@@ -82,40 +97,53 @@ fun BrowserToolbar(
             onInteraction = { store.dispatch(it) },
         )
     } else {
-        CFRPopupLayout(
-            showCFR = cfr?.enabled == true,
-            properties = cfrProperties,
-            onCFRShown = { cfr?.onShown?.invoke() },
-            onDismiss = { explicit -> cfr?.onDismiss?.invoke(explicit) },
-            title = {
-                cfr?.title?.let {
-                    Text(
-                        text = it,
-                        color = AcornTheme.colors.textOnColorPrimary,
-                        style = AcornTheme.typography.subtitle2,
-                    )
-                }
-            },
-            text = {
-                cfr?.description?.let {
-                    Text(
-                        text = it,
-                        color = AcornTheme.colors.textOnColorPrimary,
-                        style = AcornTheme.typography.body2,
-                    )
-                }
-            },
-        ) {
+        val displayToolbar = @Composable {
             BrowserDisplayToolbar(
                 pageOrigin = uiState.displayState.pageOrigin,
                 progressBarConfig = uiState.displayState.progressBarConfig,
                 gravity = uiState.gravity,
+                backgroundColor = backgroundColor,
+                outlineColor = outlineColor,
                 browserActionsStart = uiState.displayState.browserActionsStart,
                 pageActionsStart = uiState.displayState.pageActionsStart,
                 pageActionsEnd = uiState.displayState.pageActionsEnd,
                 browserActionsEnd = uiState.displayState.browserActionsEnd,
                 onInteraction = { store.dispatch(it) },
+                useMinimalBottomToolbarWhenEnteringText = useMinimalBottomToolbarWhenEnteringText,
             )
+        }
+
+        if (cfr?.enabled == true) {
+            // Wrapping the toolbar with the CFR code negatively impacts the transition
+            // between the full and minimal toolbar <=> Avoid this when not needed.
+            CFRPopupLayout(
+                showCFR = true,
+                properties = cfrProperties,
+                onCFRShown = { cfr.onShown.invoke() },
+                onDismiss = { explicit -> cfr.onDismiss.invoke(explicit) },
+                title = {
+                    cfr.title.let {
+                        Text(
+                            text = it,
+                            color = AcornTheme.colors.textOnColorPrimary,
+                            style = AcornTheme.typography.subtitle2,
+                        )
+                    }
+                },
+                text = {
+                    cfr.description.let {
+                        Text(
+                            text = it,
+                            color = AcornTheme.colors.textOnColorPrimary,
+                            style = AcornTheme.typography.body2,
+                        )
+                    }
+                },
+            ) {
+                displayToolbar()
+            }
+        } else {
+            displayToolbar()
         }
     }
 }

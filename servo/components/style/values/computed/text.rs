@@ -4,6 +4,7 @@
 
 //! Computed types for text properties.
 
+use crate::derives::*;
 use crate::values::computed::length::{Length, LengthPercentage};
 use crate::values::generics::text::{
     GenericHyphenateLimitChars, GenericInitialLetter, GenericTextDecorationInset,
@@ -19,8 +20,9 @@ use style_traits::{CssString, CssWriter, ToCss, ToTyped, TypedValue};
 
 pub use crate::values::specified::text::{
     HyphenateCharacter, LineBreak, MozControlCharacterVisibility, OverflowWrap, RubyPosition,
-    TextAlignLast, TextAutospace, TextDecorationLine, TextDecorationSkipInk, TextEmphasisPosition,
-    TextJustify, TextOverflow, TextTransform, TextUnderlinePosition, WordBreak,
+    TextAlignLast, TextAutospace, TextBoxEdge, TextBoxTrim, TextDecorationLine,
+    TextDecorationSkipInk, TextEmphasisPosition, TextJustify, TextOverflow, TextTransform,
+    TextUnderlinePosition, WordBreak,
 };
 
 /// A computed value for the `initial-letter` property.

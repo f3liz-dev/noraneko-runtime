@@ -1353,8 +1353,11 @@ nsresult Database::InitSchema(bool* aDatabaseMigrated) {
         NS_ENSURE_SUCCESS(rv, rv);
       }
 
-      if (currentSchemaVersion < 84) {
-        rv = MigrateV84Up();
+      // The schema 84 migration was the same as 85, we had to re-run it to
+      // correct issues with origin frecency.
+
+      if (currentSchemaVersion < 85) {
+        rv = MigrateV85Up();
         NS_ENSURE_SUCCESS(rv, rv);
       }
 
@@ -2285,8 +2288,9 @@ nsresult Database::MigrateV83Up() {
   return NS_OK;
 }
 
-nsresult Database::MigrateV84Up() {
-  // Recalculate frecency due to changing calculate_frecency.
+nsresult Database::MigrateV85Up() {
+  // Recalculate frecency due to changing frecency and giving too high a bonus
+  // for non-typed URLs.
   nsresult rv = mMainConn->ExecuteSimpleSQL(
       "UPDATE moz_origins "
       "SET recalc_frecency = 1 "
@@ -2442,11 +2446,12 @@ void Database::Shutdown() {
 
   mClosed = true;
 
-  // Execute PRAGMA optimized as last step, this will ensure proper database
-  // performance across restarts.
+  // Execute PRAGMA optimize as last step, this will ensure proper database
+  // performance across restarts. The 0x12 flags mean: run ANALYZE on tables
+  // that might benefit (0x02), with a row limit to keep runtime bounded (0x10).
   nsCOMPtr<mozIStoragePendingStatement> ps;
   MOZ_ALWAYS_SUCCEEDS(mMainConn->ExecuteSimpleSQLAsync(
-      "PRAGMA optimize(0x02)"_ns, nullptr, getter_AddRefs(ps)));
+      "PRAGMA optimize(0x12)"_ns, nullptr, getter_AddRefs(ps)));
 
   if (NS_FAILED(mMainConn->AsyncClose(connectionShutdown))) {
     (void)connectionShutdown->Complete(NS_ERROR_UNEXPECTED, nullptr);

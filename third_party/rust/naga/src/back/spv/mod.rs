@@ -1,7 +1,99 @@
 /*!
 Backend for [SPIR-V][spv] (Standard Portable Intermediate Representation).
 
+# Layout of values in `uniform` buffers
+
+WGSL's ["Internal Layout of Values"][ilov] rules specify the memory layout of
+each WGSL type. The memory layout is important for data stored in `uniform` and
+`storage` buffers, especially when exchanging data with CPU code.
+
+Both WGSL and Vulkan specify some conditions that a type's memory layout
+must satisfy in order to use that type in a `uniform` or `storage` buffer.
+For `storage` buffers, the WGSL and Vulkan restrictions are compatible, but
+for `uniform` buffers, WGSL allows some types that Vulkan does not, requiring
+adjustments when emitting SPIR-V for `uniform` buffers.
+
+## Padding in two-row matrices
+
+SPIR-V provides detailed control over the layout of matrix types, and is
+capable of describing the WGSL memory layout. However, Vulkan imposes
+additional restrictions.
+
+Vulkan's ["extended layout"][extended-layout] (also known as std140) rules
+apply to types used in `uniform` buffers. Under these rules, matrices are
+defined in terms of arrays of their vector type, and arrays are defined to have
+an alignment equal to the alignment of their element type rounded up to a
+multiple of 16. This means that each column of the matrix has a minimum
+alignment of 16. WGSL, and consequently Naga IR, on the other hand specifies
+column alignment equal to the alignment of the vector type, without being
+rounded up to 16.
+
+To compensate for this, for any `struct` used as a `uniform` buffer which
+contains a two-row matrix, we declare an additional "std140 compatible" type
+in which each column of the matrix has been decomposed into the containing
+struct. For example, the following WGSL struct type:
+
+```ignore
+struct Baz {
+    m: mat3x2<f32>,
+}
+```
+
+is rendered as the SPIR-V struct type:
+
+```ignore
+OpTypeStruct %v2float %v2float %v2float
+```
+
+This has the effect that struct indices in Naga IR for such types do not
+correspond to the struct indices used in SPIR-V. A mapping of struct indices
+for these types is maintained in [`Std140CompatTypeInfo`].
+
+Additionally, any two-row matrices that are declared directly as uniform
+buffers without being wrapped in a struct are declared as a struct containing a
+vector member for each column. Any array of a two-row matrix in a uniform
+buffer is declared as an array of a struct containing a vector member for each
+column. Any struct or array within a uniform buffer which contains a member or
+whose base type requires a std140 compatible type declaration, itself requires a
+std140 compatible type declaration.
+
+Whenever a value of such a type is [`loaded`] we insert code to convert the
+loaded value from the std140 compatible type to the regular type. This occurs
+in `BlockContext::write_checked_load`, making use of the wrapper function
+defined by `Writer::write_wrapped_convert_from_std140_compat_type`. For matrices
+that have been decomposed as separate columns in the containing struct, we load
+each column separately then composite the matrix type in
+`BlockContext::maybe_write_load_uniform_matcx2_struct_member`.
+
+Whenever a column of a matrix that has been decomposed into its containing
+struct is [`accessed`] with a constant index we adjust the emitted access chain
+to access from the containing struct instead, in `BlockContext::write_access_chain`.
+
+Whenever a column of a uniform buffer two-row matrix is [`dynamically accessed`]
+we must first load the matrix type, converting it from its std140 compatible
+type as described above, then access the column using the wrapper function
+defined by `Writer::write_wrapped_matcx2_get_column`. This is handled by
+`BlockContext::maybe_write_uniform_matcx2_dynamic_access`.
+
+Note that this approach differs somewhat from the equivalent code in the HLSL
+backend. For HLSL all structs containing two-row matrices (or arrays of such)
+have their declarations modified, not just those used as uniform buffers.
+Two-row matrices and arrays of such only use modified type declarations when
+used as uniform buffers, or additionally when used as struct member in any
+context. This avoids the need to convert struct values when loading from uniform
+buffers, but when loading arrays and matrices from uniform buffers or from any
+struct the conversion is still required. In contrast, the approach used here
+always requires converting *any* affected type when loading from a uniform
+buffer, but consistently *only* when loading from a uniform buffer. As a result
+this also means we only have to handle loads and not stores, as uniform buffers
+are read-only.
+
 [spv]: https://www.khronos.org/registry/SPIR-V/
+[ilov]: https://gpuweb.github.io/gpuweb/wgsl/#internal-value-layout
+[extended-layout]: https://docs.vulkan.org/spec/latest/chapters/interfaces.html#interfaces-resources-layout
+[`loaded`]: crate::Expression::Load
+[`accessed`]: crate::Expression::AccessIndex
+[`dynamically accessed`]: crate::Expression::Access
 */
 
 mod block;
@@ -11,12 +103,14 @@ mod image;
 mod index;
 mod instructions;
 mod layout;
+mod mesh_shader;
 mod ray;
 mod recyclable;
 mod selection;
 mod subgroup;
 mod writer;
 
+pub use mesh_shader::{MeshReturnInfo, MeshReturnMember};
 pub use spirv::{Capability, SourceLanguage};
 
 use alloc::{string::String, vec::Vec};
@@ -52,6 +146,7 @@ struct LogicalLayout {
     function_definitions: Vec<Word>,
 }
 
+#[derive(Clone)]
 struct Instruction {
     op: spirv::Op,
     wc: u32,
@@ -78,6 +173,8 @@ pub enum Error {
     Override,
     #[error(transparent)]
     ResolveArraySizeError(#[from] crate::proc::ResolveArraySizeError),
+    #[error("module requires SPIRV-{0}.{1}, which isn't supported")]
+    SpirvVersionTooLow(u8, u8),
     #[error("mapping of {0:?} is missing")]
     MissingBinding(crate::ResourceBinding),
 }
@@ -86,7 +183,7 @@ pub enum Error {
 struct IdGenerator(Word);
 
 impl IdGenerator {
-    fn next(&mut self) -> Word {
+    const fn next(&mut self) -> Word {
         self.0 += 1;
         self.0
     }
@@ -144,6 +241,8 @@ struct ResultMember {
 struct EntryPointContext {
     argument_ids: Vec<Word>,
     results: Vec<ResultMember>,
+    task_payload_variable_id: Option<Word>,
+    mesh_state: Option<MeshReturnInfo>,
 }
 
 #[derive(Default)]
@@ -151,6 +250,12 @@ struct Function {
     signature: Option<Instruction>,
     parameters: Vec<FunctionArgument>,
     variables: crate::FastHashMap<Handle<crate::LocalVariable>, LocalVariable>,
+    /// Map from a local variable that is a ray query to its u32 tracker.
+    ray_query_initialization_tracker_variables:
+        crate::FastHashMap<Handle<crate::LocalVariable>, LocalVariable>,
+    /// Map from a local variable that is a ray query to its tracker for the t max.
+    ray_query_t_max_tracker_variables:
+        crate::FastHashMap<Handle<crate::LocalVariable>, LocalVariable>,
     /// List of local variables used as a counters to ensure that all loops are bounded.
     force_loop_bounding_vars: Vec<LocalVariable>,
 
@@ -339,6 +444,36 @@ impl NumericType {
     }
 }
 
+/// A cooperative type, for use in [`LocalType`].
+#[derive(Debug, PartialEq, Hash, Eq, Copy, Clone)]
+enum CooperativeType {
+    Matrix {
+        columns: crate::CooperativeSize,
+        rows: crate::CooperativeSize,
+        scalar: crate::Scalar,
+        role: crate::CooperativeRole,
+    },
+}
+
+impl CooperativeType {
+    const fn from_inner(inner: &crate::TypeInner) -> Option<Self> {
+        match *inner {
+            crate::TypeInner::CooperativeMatrix {
+                columns,
+                rows,
+                scalar,
+                role,
+            } => Some(Self::Matrix {
+                columns,
+                rows,
+                scalar,
+                role,
+            }),
+            _ => None,
+        }
+    }
+}
+
 /// A SPIR-V type constructed during code generation.
 ///
 /// This is the variant of [`LookupType`] used to represent types that might not
@@ -388,6 +523,7 @@ impl NumericType {
 enum LocalType {
     /// A numeric type.
     Numeric(NumericType),
+    Cooperative(CooperativeType),
     Pointer {
         base: Word,
         class: spirv::StorageClass,
@@ -445,11 +581,23 @@ struct LookupFunctionType {
     return_type_id: Word,
 }
 
+#[derive(Debug, PartialEq, Clone, Hash, Eq)]
+enum LookupRayQueryFunction {
+    Initialize,
+    Proceed,
+    GenerateIntersection,
+    ConfirmIntersection,
+    GetVertexPositions { committed: bool },
+    GetIntersection { committed: bool },
+    Terminate,
+}
+
 #[derive(Debug)]
 enum Dimension {
     Scalar,
     Vector,
     Matrix,
+    CooperativeMatrix,
 }
 
 /// Key used to look up an operation which we have wrapped in a helper
@@ -461,6 +609,12 @@ enum WrappedFunction {
         op: crate::BinaryOperator,
         left_type_id: Word,
         right_type_id: Word,
+    },
+    ConvertFromStd140CompatType {
+        r#type: Handle<crate::Type>,
+    },
+    MatCx2GetColumn {
+        r#type: Handle<crate::Type>,
     },
 }
 
@@ -609,7 +763,7 @@ impl GlobalVariable {
     }
 
     /// Prepare `self` for use within a single function.
-    fn reset_for_function(&mut self) {
+    const fn reset_for_function(&mut self) {
         self.handle_id = 0;
         self.access_id = 0;
     }
@@ -685,10 +839,25 @@ struct BlockContext<'w> {
     expression_constness: ExpressionConstnessTracker,
 
     force_loop_bounding: bool,
+
+    /// Hash from an expression whose type is a ray query / pointer to a ray query to its tracker.
+    /// Note: this is sparse, so can't be a handle vec
+    ray_query_tracker_expr: crate::FastHashMap<Handle<crate::Expression>, RayQueryTrackers>,
+}
+
+#[derive(Clone, Copy)]
+struct RayQueryTrackers {
+    // Initialization tracker
+    initialized_tracker: Word,
+    // Tracks the t max from ray query initialize.
+    // Unlike HLSL, spir-v's equivalent getter for the current committed t has UB (instead of just
+    // returning t_max) if there was no previous hit (though in some places it treats the behaviour as
+    // defined), therefore we must track the tmax inputted into ray query initialize.
+    t_max_tracker: Word,
 }
 
 impl BlockContext<'_> {
-    fn gen_id(&mut self) -> Word {
+    const fn gen_id(&mut self) -> Word {
         self.writer.id_gen.next()
     }
 
@@ -722,6 +891,20 @@ impl BlockContext<'_> {
     }
 }
 
+/// Information about a type for which we have declared a std140 layout
+/// compatible variant, because the type is used in a uniform but does not
+/// adhere to std140 requirements. The uniform will be declared using the
+/// type `type_id`, and the result of any `Load` will be immediately converted
+/// to the base type. This is used for matrices with 2 rows, as well as any
+/// arrays or structs containing such matrices.
+pub struct Std140CompatTypeInfo {
+    /// ID of the std140 compatible type declaration.
+    type_id: Word,
+    /// For structs, a mapping of Naga IR struct member indices to the indices
+    /// used in the generated SPIR-V. For non-struct types this will be empty.
+    member_indices: Vec<u32>,
+}
+
 pub struct Writer {
     physical_layout: PhysicalLayout,
     logical_layout: LogicalLayout,
@@ -741,6 +924,7 @@ pub struct Writer {
     /// The set of spirv extensions used.
     extensions_used: crate::FastIndexSet<&'static str>,
 
+    debug_strings: Vec<Instruction>,
     debugs: Vec<Instruction>,
     annotations: Vec<Instruction>,
     flags: WriterFlags,
@@ -761,6 +945,7 @@ pub struct Writer {
     constant_ids: HandleVec<crate::Expression, Word>,
     cached_constants: crate::FastHashMap<CachedConstant, Word>,
     global_variables: HandleVec<crate::GlobalVariable, GlobalVariable>,
+    std140_compat_uniform_types: crate::FastHashMap<Handle<crate::Type>, Std140CompatTypeInfo>,
     fake_missing_bindings: bool,
     binding_map: BindingMap,
 
@@ -773,12 +958,15 @@ pub struct Writer {
     // Just a temporary list of SPIR-V ids
     temp_list: Vec<Word>,
 
-    ray_get_committed_intersection_function: Option<Word>,
-    ray_get_candidate_intersection_function: Option<Word>,
+    ray_query_functions: crate::FastHashMap<LookupRayQueryFunction, Word>,
 
     /// F16 I/O polyfill manager for handling `f16` input/output variables
     /// when `StorageInputOutput16` capability is not available.
     io_f16_polyfills: f16_polyfill::F16IoPolyfill,
+
+    /// Non semantic debug printf extension `OpExtInstImport`
+    debug_printf: Option<Word>,
+    pub(crate) ray_query_initialization_tracking: bool,
 }
 
 bitflags::bitflags! {
@@ -810,6 +998,13 @@ bitflags::bitflags! {
         ///
         /// [`BuiltIn::FragDepth`]: crate::BuiltIn::FragDepth
         const CLAMP_FRAG_DEPTH = 0x10;
+
+        /// Instead of silently failing if the arguments to generate a ray query are
+        /// invalid, uses debug printf extension to print to the command line
+        ///
+        /// Note: VK_KHR_shader_non_semantic_info must be enabled. This will have no
+        /// effect if `options.ray_query_initialization_tracking` is set to false.
+        const PRINT_ON_RAY_QUERY_INITIALIZATION_FAIL = 0x20;
     }
 }
 
@@ -867,6 +1062,10 @@ pub struct Options<'a> {
     /// to think the number of iterations is bounded.
     pub force_loop_bounding: bool,
 
+    /// if set, ray queries will get a variable to track their state to prevent
+    /// misuse.
+    pub ray_query_initialization_tracking: bool,
+
     /// Whether to use the `StorageInputOutput16` capability for `f16` shader I/O.
     /// When false, `f16` I/O is polyfilled using `f32` types with conversions.
     pub use_storage_input_output_16: bool,
@@ -891,6 +1090,7 @@ impl Default for Options<'_> {
             bounds_check_policies: BoundsCheckPolicies::default(),
             zero_initialize_workgroup_memory: ZeroInitializeWorkgroupMemoryMode::Polyfill,
             force_loop_bounding: true,
+            ray_query_initialization_tracking: true,
             use_storage_input_output_16: true,
             debug_info: None,
         }

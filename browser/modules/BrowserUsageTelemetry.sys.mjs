@@ -77,11 +77,16 @@ const UI_TARGET_CHANGE_ELEMENTS = new Set([
   "moz-select",
   "moz-radio",
   "moz-toggle",
+  "moz-input-email",
   "moz-input-folder",
+  "moz-input-number",
   "moz-input-password",
   "moz-input-search",
+  "moz-input-tel",
   "moz-input-text",
+  "moz-input-url",
   "moz-visual-picker-item",
+  "sync-device-name",
 ]);
 const UI_TARGET_COMMAND_ELEMENTS = new Set([
   "menuitem",
@@ -101,6 +106,7 @@ const UI_TARGET_COMMAND_ELEMENTS = new Set([
 ]);
 const UI_TARGET_ELEMENTS = new Map([
   ["change", UI_TARGET_CHANGE_ELEMENTS],
+  ["toggle", UI_TARGET_CHANGE_ELEMENTS],
   ["click", UI_TARGET_COMMAND_ELEMENTS],
   ["command", UI_TARGET_COMMAND_ELEMENTS],
 ]);
@@ -148,6 +154,7 @@ const PREFERENCES_PANES = [
   "paneContainers",
   "paneExperimental",
   "paneMoreFromMozilla",
+  "paneAi",
 ];
 
 const IGNORABLE_EVENTS = new WeakMap();
@@ -821,6 +828,12 @@ export let BrowserUsageTelemetry = {
       return null;
     }
 
+    // Handle share menu items before checking customizable widgets,
+    // since they are children of share-tab-button.
+    if (node.hasAttribute("data-share-name")) {
+      return "share-macos-provider";
+    }
+
     // See if this is a customizable widget.
     if (node.ownerDocument.URL == AppConstants.BROWSER_CHROME_URL) {
       // First find if it is inside one of the customizable areas.
@@ -851,6 +864,23 @@ export let BrowserUsageTelemetry = {
 
     if (node.id) {
       return node.id;
+    }
+
+    // Handle links inside shadow DOM
+    if (node.localName == "a" && node.getRootNode().host) {
+      let host = node.getRootNode().host;
+
+      // Try to find the setting-control and use its setting.id
+      let settingControl = host.closest("setting-control");
+      if (settingControl?.setting?.id) {
+        return `${settingControl.setting.id}Link`;
+      }
+
+      // Fall back to the host's widget ID
+      let hostId = this._getWidgetID(host);
+      if (hostId) {
+        return `${hostId}Link`;
+      }
     }
 
     // A couple of special cases in the tabs.
@@ -907,6 +937,11 @@ export let BrowserUsageTelemetry = {
   _getWidgetContainer(node) {
     if (node.localName == "key") {
       return "keyboard";
+    }
+
+    // If the node is a link inside shadow DOM, use the host element to find the container
+    if (node.localName == "a" && node.getRootNode().host) {
+      node = node.getRootNode().host;
     }
 
     const { URL: url } = node.ownerDocument;
@@ -988,7 +1023,12 @@ export let BrowserUsageTelemetry = {
     }
 
     // Find the actual element we're interested in.
-    let node = sourceEvent.target;
+    // For links in shadow DOM, prefer originalTarget to get the actual link element
+    let node =
+      sourceEvent.originalTarget?.localName === "a"
+        ? sourceEvent.originalTarget
+        : sourceEvent.target;
+
     const isAboutPreferences =
       node.ownerDocument.URL.startsWith("about:preferences") ||
       node.ownerDocument.URL.startsWith("about:settings");
@@ -1705,7 +1745,7 @@ export let BrowserUsageTelemetry = {
   /**
    * Tracks the window count and registers the listeners for the tab count.
    *
-   * @param{Object} win The window object.
+   * @param {object} win The window object.
    */
   _onWindowOpen(win) {
     // Make sure to have a |nsIDOMWindow|.
@@ -1889,8 +1929,9 @@ export let BrowserUsageTelemetry = {
    * @param {Array<string>} [msixPackagePrefixes] Optional, list of prefixes to
             consider "existing" installs when looking at installed MSIX packages.
             Defaults to prefixes for builds produced in Firefox automation.
-   * @return {Promise<object>} A JSON object containing install telemetry.
-   * @resolves When the event has been recorded, or if the data file was not found.
+   * @returns {Promise<object>}
+   *   Resolves to a JSON object containing install telemetry when the event has
+   *   been recorded, or if the data file was not found.
    * @rejects JavaScript exception on any failure.
    */
   async collectInstallationTelemetry(

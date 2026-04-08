@@ -23,6 +23,9 @@ newtab-personalize-dialog-label =
     .aria-label = Персаналізаваць
 newtab-logo-and-wordmark =
     .aria-label = { -brand-full-name }
+newtab-card-dismiss-button =
+    .title = Адхіліць
+    .aria-label = Адхіліць
 
 ## Search box component.
 
@@ -330,18 +333,18 @@ newtab-custom-recent-subtitle = Падборка нядаўніх сайтаў �
 newtab-custom-weather-toggle =
     .label = Надвор'е
     .description = Кароткі прагноз на сёння
-newtab-custom-trending-search-toggle =
-    .label = Папулярныя пошукавыя запыты
-    .description = Папулярныя і часта запытаныя тэмы
 newtab-custom-widget-weather-toggle =
     .label = Надвор'е
-newtab-custom-widget-trending-search-toggle =
-    .label = Папулярныя пошукавыя запыты
 newtab-custom-widget-lists-toggle =
     .label = Спісы
 newtab-custom-widget-timer-toggle =
     .label = Таймер
 newtab-custom-widget-section-title = Віджэты
+newtab-custom-widget-section-toggle =
+    .label = Віджэты
+newtab-widget-manage-title = Віджэты
+newtab-widget-manage-widget-button =
+    .label = Кіраванне віджэтамі
 # Tooltip for close button
 newtab-custom-close-menu-button =
     .title = Закрыць
@@ -469,6 +472,8 @@ newtab-weather-change-location-search-input-placeholder =
     .placeholder = Шукаць месцазнаходжанне
     .aria-label = Шукаць месцазнаходжанне
 newtab-weather-menu-weather-display = Паказ надвор'я
+newtab-weather-todays-forecast = Прагноз на сёння
+newtab-weather-see-full-forecast = Паглядзець поўны прагноз
 # Display options are:
 # - Simple: Displays a current weather condition icon and the current temperature
 # - Detailed: Include simple information plus a short text summary: e.g. "Mostly cloudy"
@@ -481,6 +486,7 @@ newtab-weather-menu-temperature-option-fahrenheit = Фарэнгейт
 newtab-weather-menu-temperature-option-celsius = Цэльсій
 newtab-weather-menu-change-temperature-units-fahrenheit = Пераключыць на фарэнгейты
 newtab-weather-menu-change-temperature-units-celsius = Пераключыць на градусы Цэльсія
+newtab-weather-menu-hide-weather-v2 = Схаваць надвор'е
 newtab-weather-menu-hide-weather = Схаваць надвор'е на новай картцы
 newtab-weather-menu-learn-more = Даведацца больш
 newtab-weather-menu-detect-my-location = Вызначыць маё месцазнаходжанне
@@ -493,6 +499,11 @@ newtab-weather-opt-in-yes =
     .label = Так
 # We'll be showing static (fake) weather data if the user has not opted in to using their location
 newtab-weather-static-city = Нью-Ёрк
+# Variables:
+#   $provider (string) - Service provider for weather data
+newtab-weather-see-forecast-description =
+    .title = Паглядзець прагноз у { $provider }
+    .aria-description = { $provider } ∙ Спонсар
 
 ## Topic Labels
 
@@ -597,7 +608,7 @@ newtab-download-mobile-highlight-image =
 newtab-shortcuts-highlight-title = Вашы любімыя рэчы ў вас пад рукой
 newtab-shortcuts-highlight-subtitle = Дадайце цэтлік, каб вашы любімыя сайты былі на адлегласці дотыку.
 
-## Strings for reporting ads and content
+## Strings for reporting issues with ads and content
 
 newtab-report-content-why-reporting-this =
     .label = Чаму вы паведамляеце пра гэта?
@@ -615,21 +626,13 @@ newtab-report-content-inappropriate-offensive =
     .label = Недарэчнае або абразлівае
 newtab-report-content-spam-misleading =
     .label = Спам або зман
+newtab-report-content-requires-payment-subscription =
+    .label = Патрэбна аплата або падпіска
+newtab-report-content-requires-payment-subscription-learn-more = Даведацца больш
 newtab-report-cancel = Скасаваць
 newtab-report-submit = Даслаць
 newtab-toast-thanks-for-reporting =
     .message = Дзякуй, што паведамілі пра гэта.
-
-## Strings for trending searches
-
-newtab-trending-searches-show-trending =
-    .title = Паказаць папулярныя пошукавыя запыты
-newtab-trending-searches-hide-trending =
-    .title = Схаваць папулярныя пошукавыя запыты
-newtab-trending-searches-learn-more = Падрабязней
-newtab-trending-searches-dismiss = Схаваць папулярныя пошукавыя запыты
-# "Trending searches refers to popular searches from search engines
-newtab-trending-searches-title = Папулярныя пошукавыя запыты
 
 ## Strings for task / to-do list productivity widget
 
@@ -669,6 +672,17 @@ newtab-widget-lists-name-placeholder-default =
 # The placeholder value of the name field for a newly created list
 newtab-widget-lists-name-placeholder-new =
     .placeholder = Новы спіс
+newtab-widget-section-title = Віджэты
+# Tooltip for hide all widgets button
+newtab-widget-section-hide-all-button =
+    .title = Схаваць віджэты
+    .aria-label = Схаваць усе віджэты
+newtab-widget-section-maximize =
+    .title = Разгарнуць віджэты
+    .aria-label = Разгарнуць усе віджэты ў поўны памер
+newtab-widget-section-minimize =
+    .title = Згарнуць віджэты
+    .aria-label = Згарнуць усе віджэты ў кампактны памер
 
 ## Strings for timer productivity widget
 ## When the timer ends, a system notification may be shown. Depending on which mode the timer is in, that message would be shown
@@ -691,8 +705,12 @@ newtab-widget-timer-menu-notifications = Выключыць апавяшчэнн
 newtab-widget-timer-menu-notifications-on = Уключыць апавяшчэнні
 newtab-widget-timer-menu-hide = Схаваць таймер
 newtab-widget-timer-menu-learn-more = Падрабязней
-# Message that appears when widgets are full-height. This reminds users that there is more New Tab content to see if they scroll
-newtab-widget-keep-scrolling = Прагартайце, каб даведацца больш
+# The title displays above a set of top news headlines.
+newtab-daily-briefing-card-title = Галоўныя загалоўкі
+newtab-daily-briefing-card-menu-dismiss = Адхіліць
+# Variables:
+#   $minutes (number) - Time since the feed has been refreshed
+newtab-daily-briefing-card-timestamp = Абноўлена { $minutes } хв. таму
 newtab-widget-message-title = Заставайцеся сканцэнтраванымі з дапамогай спісаў і ўбудаванага таймера
 # to-dos stands for "things to do".
 newtab-widget-message-copy = Паспявайце ўсё з дапамогай хуткіх напамінаў, спісаў задач, заняткаў па канцэнтрацыі ўвагі ды перапынкаў на размінку.
@@ -702,3 +720,25 @@ newtab-promo-card-cta = Падрабязней
 newtab-promo-card-dismiss-button =
     .title = Адхіліць
     .aria-label = Адхіліць
+
+## Strings for activation window message variants. In certain experiment configurations,
+## the strings from these variants may be displayed in a message below the search input
+## for the first 48 hours of a new profile's lifetime. Some messages include buttons with
+## labels, but not all.
+
+newtab-activation-window-message-dismiss-button =
+    .title = Адхіліць
+    .aria-label = Адхіліць
+# "This space" refers to about:newtab. The call to action here ("make it your own")
+# is to customize newtab with a background image or colour, or by tweaking the
+# existing widgetry that appears on it.
+newtab-activation-window-message-customization-focus-header = Зрабіце гэтую прастору сваёй
+newtab-activation-window-message-customization-focus-message = Выберыце новыя шпалеры, дадайце цэтлікі да вашых любімых сайтаў і будзьце ў курсе гісторый, якія вас цікавяць.
+newtab-activation-window-message-customization-focus-primary-button =
+    .label = Пачаць уладкаванне
+# "This space" refers to about:newtab. The sentiment of "plays by your rules" is
+# meant to evoke the idea that newtab is malleable and customizable. The call to
+# action is to customize newtab with a background image or colour, or by tweaking
+# the existing widgetry that appears on it.
+newtab-activation-window-message-values-focus-header = Гэта прастора гуляе па вашых правілах
+newtab-activation-window-message-values-focus-message = { -brand-product-name } дазваляе аглядаць так, як вам падабаецца, з больш персаналізаваным спосабам пачаць свой дзень у інтэрнэце. Зрабіце { -brand-product-name } сваім уласным.

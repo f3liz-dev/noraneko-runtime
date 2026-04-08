@@ -2,6 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+// @ts-nocheck - TODO - Remove this to type check this file.
+
 /**
  * @typedef {import("../../content/Utils.sys.mjs").ProgressAndStatusCallbackParams} ProgressAndStatusCallbackParams
  */
@@ -51,16 +53,21 @@ export class OpenAIPipeline {
   }
 
   static async initialize(mlEngineWorker, wasm, options = {}, errorFactory) {
+    let initStart = ChromeUtils.now();
     lazy.console.debug("Initializing OpenAI pipeline");
+    let importStart = ChromeUtils.now();
     if (AppConstants.NIGHTLY_BUILD) {
-      OpenAIPipeline.OpenAILib = await import(
-        "chrome://global/content/ml/openai-dev.mjs"
-      );
+      OpenAIPipeline.OpenAILib =
+        await import("chrome://global/content/ml/openai-dev.mjs");
     } else {
-      OpenAIPipeline.OpenAILib = await import(
-        "chrome://global/content/ml/openai.mjs"
-      );
+      OpenAIPipeline.OpenAILib =
+        await import("chrome://global/content/ml/openai.mjs");
     }
+    ChromeUtils.addProfilerMarker(
+      "MLEngine:OpenAI",
+      { startTime: importStart },
+      `Library loaded`
+    );
     if (options.logLevel) {
       _logLevel = options.logLevel;
       lazy.setLogLevel(options.logLevel); // setting Utils log level
@@ -73,6 +80,12 @@ export class OpenAIPipeline {
     if (lazy.console.logLevel != config.logLevel) {
       lazy.console.logLevel = config.logLevel;
     }
+
+    ChromeUtils.addProfilerMarker(
+      "MLEngine:OpenAI",
+      { startTime: initStart },
+      `Initialized`
+    );
 
     return new OpenAIPipeline(config, errorFactory);
   }
@@ -326,17 +339,20 @@ export class OpenAIPipeline {
   ) {
     lazy.console.debug("Running OpenAI pipeline");
     try {
-      const { baseURL, apiKey, modelId } = this.#options;
+      const { baseURL, apiKey, modelId, serviceType, extraHeaders, engineId } =
+        this.#options;
       const fxAccountToken = request.fxAccountToken
         ? request.fxAccountToken
         : null;
-      const defaultHeaders = fxAccountToken
-        ? { Authorization: `Bearer ${fxAccountToken}` }
-        : undefined;
+
       const client = new OpenAIPipeline.OpenAILib.OpenAI({
         baseURL: baseURL ? baseURL : "http://localhost:11434/v1",
-        apiKey: apiKey || "ollama",
-        ...(defaultHeaders ? { defaultHeaders } : {}),
+        apiKey: apiKey || fxAccountToken || "apiKey",
+        defaultHeaders: {
+          ...extraHeaders,
+          "service-type": serviceType || "ai",
+          "x-engine-id": engineId,
+        },
       });
       const stream = request.streamOptions?.enabled || false;
       const tools = request.tools || [];
@@ -371,6 +387,7 @@ export class OpenAIPipeline {
         },
         type: Progress.ProgressType.INFERENCE,
         statusText: Progress.ProgressStatusText.DONE,
+        ...(error.status && { status: error.status }),
       });
 
       throw backendError;

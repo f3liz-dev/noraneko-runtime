@@ -51,8 +51,10 @@ class SourceText;
 
 namespace js {
 
+class Compressor;
 class FrontendContext;
 class ScriptSource;
+class SourceLocationIterator;
 
 class VarScope;
 class LexicalScope;
@@ -77,7 +79,7 @@ class JitScript;
 
 class ModuleObject;
 class RegExpObject;
-class SourceCompressionTask;
+class SourceCompressionTaskEntry;
 class Shape;
 class SrcNote;
 class DebugScript;
@@ -392,7 +394,8 @@ class ScriptSource {
   // modified by the main thread, and all members are always safe to access
   // on the main thread.
 
-  friend class SourceCompressionTask;
+  friend class PendingSourceCompressionEntry;
+  friend class SourceCompressionTaskEntry;
   friend bool SynchronouslyCompressSource(JSContext* cx,
                                           JS::Handle<BaseScript*> script);
 
@@ -1006,7 +1009,7 @@ class ScriptSource {
       size_t sourceLength);
 
  private:
-  void performTaskWork(SourceCompressionTask* task);
+  void performTaskWork(SourceCompressionTaskEntry* task, Compressor& comp);
 
   struct TriggerConvertToCompressedSourceFromTask {
     ScriptSource* const source_;
@@ -1377,13 +1380,8 @@ static_assert(sizeof(ScriptWarmUpData) == sizeof(uintptr_t),
 //
 // Accessing this array just requires calling the appropriate public
 // Span-computing function.
-//
-// This class doesn't use the GC barrier wrapper classes. BaseScript::swapData
-// performs a manual pre-write barrier when detaching PrivateScriptData from a
-// script.
 class alignas(uintptr_t) PrivateScriptData final
     : public TrailingArray<PrivateScriptData> {
- private:
   uint32_t ngcthings = 0;
 
   // Note: This is only defined for scripts with an enclosing scope. This
@@ -1393,7 +1391,6 @@ class alignas(uintptr_t) PrivateScriptData final
 
   // End of fields.
 
- private:
   // Layout helpers
   Offset gcThingsOffset() { return offsetOfGCThings(); }
   Offset endOffset() const {
@@ -1401,10 +1398,10 @@ class alignas(uintptr_t) PrivateScriptData final
     return offsetOfGCThings() + size;
   }
 
+ public:
   // Initialize header and PackedSpans
   explicit PrivateScriptData(uint32_t ngcthings);
 
- public:
   static constexpr size_t offsetOfGCThings() {
     return sizeof(PrivateScriptData);
   }
@@ -1441,6 +1438,37 @@ class alignas(uintptr_t) PrivateScriptData final
   // PrivateScriptData has trailing data so isn't copyable or movable.
   PrivateScriptData(const PrivateScriptData&) = delete;
   PrivateScriptData& operator=(const PrivateScriptData&) = delete;
+};
+
+// An entry in the runtime's pendingCompressions_ list for a single
+// ScriptSource.
+//
+// It is not desirable to eagerly compress: if lazy functions that are tied to
+// the ScriptSource were to be executed relatively soon after parsing, they
+// would need to block on decompression, which hurts responsiveness.
+//
+// To this end, script sources are enqueued in a pending list by
+// ScriptSource::tryCompressOffThread. When a major GC occurs, we allocate and
+// submit SourceCompressionTasks for them. Currently, a script source is
+// considered ready 2 major GCs after being enqueued.
+class PendingSourceCompressionEntry {
+  // The major GC number of the runtime when the entry was enqueued.
+  uint64_t majorGCNumber_;
+
+  // The source to be compressed.
+  RefPtr<ScriptSource> source_;
+
+ public:
+  PendingSourceCompressionEntry(JSRuntime* rt, ScriptSource* source);
+
+  ScriptSource* source() const { return source_.get(); }
+  uint64_t majorGCNumber() const { return majorGCNumber_; }
+  bool shouldCancel() const {
+    // If the refcount is exactly 1, then nothing else is holding on to the
+    // ScriptSource, so no reason to compress it and we should cancel the
+    // compression.
+    return source_->refs == 1;
+  }
 };
 
 // [SMDOC] Script Representation (js::BaseScript)
@@ -1670,8 +1698,10 @@ class BaseScript : public gc::TenuredCellWithNonGCPointer<uint8_t> {
 
   bool hasPrivateScriptData() const { return data_ != nullptr; }
 
-  // Update data_ pointer while also informing GC MemoryUse tracking.
-  void swapData(UniquePtr<PrivateScriptData>& other);
+  // Update data_ pointer and trigger barriers.
+  void swapData(MutableHandleBuffer<PrivateScriptData> other);
+
+  void freeData();
 
   mozilla::Span<const JS::GCCellPtr> gcthings() const {
     return data_ ? data_->gcthings() : mozilla::Span<JS::GCCellPtr>();
@@ -1715,11 +1745,10 @@ class BaseScript : public gc::TenuredCellWithNonGCPointer<uint8_t> {
   static const JS::TraceKind TraceKind = JS::TraceKind::Script;
 
   void traceChildren(JSTracer* trc);
+  void traceChildrenConcurrently(JSTracer* trc, bool* skippedJitScript);
   void finalize(JS::GCContext* gcx);
 
-  size_t sizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf) {
-    return mallocSizeOf(data_);
-  }
+  size_t sizeOfExcludingThis();
 
   inline JSScript* asJSScript();
 
@@ -1746,6 +1775,9 @@ class BaseScript : public gc::TenuredCellWithNonGCPointer<uint8_t> {
 #if defined(DEBUG) || defined(JS_JITSPEW)
   void dumpStringContent(js::GenericPrinter& out) const;
 #endif
+
+ private:
+  void traceChildrenCommon(JSTracer* trc);
 };
 
 extern void SweepScriptData(JSRuntime* rt);
@@ -2108,6 +2140,8 @@ class JSScript : public js::BaseScript {
     return immutableScriptData()->notes() + numNotes();
   }
 
+  js::SourceLocationIterator sourceLocationIter() const;
+
   JSString* getString(js::GCThingIndex index) const {
     return &gcthings()[index].as<JSString>();
   }
@@ -2340,6 +2374,27 @@ extern unsigned PCToLineNumber(
     unsigned startLine, JS::LimitedColumnNumberOneOrigin startCol,
     SrcNote* notes, SrcNote* notesEnd, jsbytecode* code, jsbytecode* pc,
     JS::LimitedColumnNumberOneOrigin* columnp = nullptr);
+
+// Iterator over SrcNote array that tracks bytecode offset and line/column.
+class SourceLocationIterator {
+  SrcNoteIterator iter_;
+  ptrdiff_t offset_;
+  unsigned line_;
+  JS::LimitedColumnNumberOneOrigin column_;
+  unsigned startLine_;
+  jsbytecode* code_;
+
+ public:
+  SourceLocationIterator(unsigned startLine,
+                         JS::LimitedColumnNumberOneOrigin startCol,
+                         SrcNote* notes, SrcNote* notesEnd, jsbytecode* code);
+
+  // Advance the iterator to the given PC, updating line and column.
+  void advanceToPC(const jsbytecode* pc);
+
+  unsigned line() const { return line_; }
+  JS::LimitedColumnNumberOneOrigin column() const { return column_; }
+};
 
 /*
  * This function returns the file and line number of the script currently

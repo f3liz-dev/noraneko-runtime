@@ -13,6 +13,7 @@
 #include "nsIContentPolicy.h"
 
 class imgIContainer;
+class nsIChannel;
 
 namespace mozilla::image {
 
@@ -20,7 +21,7 @@ using FetchDecodedImagePromise =
     mozilla::MozPromise<already_AddRefed<imgIContainer>, nsresult, true>;
 
 /*
- * This method fetches and image URI and starts decoding the image soon as
+ * This method fetches an image URI and starts decoding the image soon as
  * possible. Either resolves the promise with the decoded imgIContainer or
  * rejects with an nsresult, for e.g. network failures or decoding errors.
  *
@@ -34,6 +35,10 @@ RefPtr<FetchDecodedImagePromise> FetchDecodedImage(
         nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_SEC_CONTEXT_IS_NULL,
     nsContentPolicyType aContentPolicyType =
         nsIContentPolicy::TYPE_INTERNAL_IMAGE);
+
+RefPtr<FetchDecodedImagePromise> FetchDecodedImage(nsIURI* aURI,
+                                                   nsIChannel* aChannel,
+                                                   gfx::IntSize aSize);
 
 }  // namespace mozilla::image
 

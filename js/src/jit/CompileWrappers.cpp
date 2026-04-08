@@ -142,10 +142,10 @@ const void* CompileRuntime::addressOfIonBailAfterCounter() {
 }
 #endif
 
-const uint32_t* CompileZone::addressOfNeedsIncrementalBarrier() {
+const uint32_t* CompileZone::addressOfNeedsMarkingBarrier() {
   // Cast away relaxed atomic wrapper for JIT access to barrier state.
   const mozilla::Atomic<uint32_t, mozilla::Relaxed>* ptr =
-      zone()->addressOfNeedsIncrementalBarrier();
+      zone()->addressOfNeedsMarkingBarrier();
   return reinterpret_cast<const uint32_t*>(ptr);
 }
 
@@ -177,6 +177,8 @@ void* CompileZone::addressOfNurseryAllocatedSites() {
   JSRuntime* rt = zone()->runtimeFromAnyThread();
   return rt->gc.addressOfNurseryAllocatedSites();
 }
+
+void* CompileZone::jitZone() { return zone()->jitZone(); }
 
 bool CompileZone::canNurseryAllocateStrings() {
   return zone()->allocNurseryStrings();

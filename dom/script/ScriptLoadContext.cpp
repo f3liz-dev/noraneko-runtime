@@ -59,14 +59,14 @@ ScriptLoadContext::ScriptLoadContext(
       mIsNonAsyncScriptInserted(false),
       mIsXSLT(false),
       mInCompilingList(false),
-      mClassificationFlags({0, 0}),
       mWasCompiledOMT(false),
+      mIsPreload(false),
+      mUnreportedPreloadError(NS_OK),
       mLineNo(1),
       mColumnNo(0),
-      mIsPreload(false),
+      mClassificationFlags({0, 0}),
       mScriptElement(aScriptElement),
-      mSourceText(aSourceText),
-      mUnreportedPreloadError(NS_OK) {}
+      mSourceText(aSourceText) {}
 
 ScriptLoadContext::~ScriptLoadContext() {
   MOZ_ASSERT(NS_IsMainThread());
@@ -150,6 +150,7 @@ bool ScriptLoadContext::HasScriptElement() const { return !!mScriptElement; }
 void ScriptLoadContext::GetInlineScriptText(nsAString& aText) const {
   MOZ_ASSERT(mIsInline);
   if (mSourceText.IsVoid()) {
+    // Lazily retrieve the text of inline script, see bug 1376651.
     mScriptElement->GetScriptText(aText);
   } else {
     aText.Append(mSourceText);

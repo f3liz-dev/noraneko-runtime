@@ -43,6 +43,7 @@ enum DisplayMode {
   "minimal-ui",
   "standalone",
   "fullscreen",
+  "picture-in-picture"
 };
 
 /**
@@ -242,6 +243,9 @@ interface BrowsingContext {
   // Forced-colors simulation, for DevTools
   [SetterThrows] attribute ForcedColorsOverride forcedColorsOverride;
 
+  // Animation playbackRate multiplier, for Devtools
+  [SetterThrows] attribute double animationsPlayBackRateMultiplier;
+
   /**
    * A unique identifier for the browser element that is hosting this
    * BrowsingContext tree. Every BrowsingContext in the element's tree will
@@ -300,6 +304,12 @@ interface BrowsingContext {
   undefined resetNavigationRateLimit();
 
   readonly attribute long childOffset;
+
+  // https://wicg.github.io/document-picture-in-picture/
+  // This is true both for the top-level BC of the content and chrome window
+  // of a Document Picture-in-Picture window.
+  [BinaryName="GetIsDocumentPiP"]
+  readonly attribute boolean isDocumentPiP;
 };
 
 BrowsingContext includes LoadContextMixin;

@@ -141,17 +141,21 @@ export const AccountsGlue = {
     lazy.AlertsService.showAlert(alert, clickCallback);
   },
 
-  _openURLInNewWindow(url) {
+  _openURLInNewWindow(url, privateTab = false) {
     let urlString = Cc["@mozilla.org/supports-string;1"].createInstance(
       Ci.nsISupportsString
     );
     urlString.data = url;
+    let features = "chrome,all,dialog=no";
+    if (privateTab) {
+      features += ",private";
+    }
     return new Promise(resolve => {
       let win = Services.ww.openWindow(
         null,
         AppConstants.BROWSER_CHROME_URL,
         "_blank",
-        "chrome,all,dialog=no",
+        features,
         urlString
       );
       win.addEventListener(
@@ -177,13 +181,25 @@ export const AccountsGlue = {
       // The payload is wrapped weirdly because of how Sync does notifications.
       const URIs = data.wrappedJSObject.object;
 
-      // win can be null, but it's ok, we'll assign it later in openTab()
-      let win = lazy.BrowserWindowTracker.getTopWindow({ private: false });
+      // privateWin and nonPrivateWin can be null, but it's ok, we'll assign it later in openTab() if needed.
+      let privateWin = lazy.BrowserWindowTracker.getTopWindow({
+        private: true,
+      });
+      let nonPrivateWin = lazy.BrowserWindowTracker.getTopWindow({
+        private: false,
+      });
 
       const openTab = async URI => {
         let tab;
+        let win = URI.private ? privateWin : nonPrivateWin;
+
         if (!win) {
-          win = await this._openURLInNewWindow(URI.uri);
+          win = await this._openURLInNewWindow(URI.uri, URI.private);
+          if (URI.private) {
+            privateWin = win;
+          } else {
+            nonPrivateWin = win;
+          }
           let tabs = win.gBrowser.tabs;
           tab = tabs[tabs.length - 1];
         } else {
@@ -242,21 +258,21 @@ export const AccountsGlue = {
           tabCount: URIs.length,
         });
       }
-      const title = await lazy.accountsL10n.formatValue(titleL10nId);
+      const title = await lazy.accountsL10n.formatValue(
+        titleL10nId.id,
+        titleL10nId.args
+      );
 
       const clickCallback = (obsSubject, obsTopic) => {
         if (obsTopic == "alertclickcallback") {
-          win.gBrowser.selectedTab = firstTab;
+          // We might have opened a tab in a private window, which isn't the focused
+          // window - we should focus it before selecting the tab.
+          firstTab.ownerGlobal.window.focus();
+          firstTab.ownerGlobal.gBrowser.selectedTab = firstTab;
         }
       };
 
-      // Specify an icon because on Windows no icon is shown at the moment
-      let imageURL;
-      if (AppConstants.platform == "win") {
-        imageURL = "chrome://branding/content/icon64.png";
-      }
       let alert = new AlertNotification({
-        imageURL,
         title,
         text: body,
         textClickable: true,
@@ -327,11 +343,6 @@ export const AccountsGlue = {
       }
     };
 
-    let imageURL;
-    if (AppConstants.platform == "win") {
-      imageURL = "chrome://branding/content/icon64.png";
-    }
-
     // Reset the count only if there are no pending notifications
     if (!lazy.CloseRemoteTab.hasPendingCloseTabNotification) {
       lazy.CloseRemoteTab.closeTabNotificationCount = 0;
@@ -347,7 +358,6 @@ export const AccountsGlue = {
 
     try {
       let alert = new AlertNotification({
-        imageURL,
         title,
         text: body,
         textClickable: true,
@@ -361,13 +371,9 @@ export const AccountsGlue = {
 
   async _onVerifyLoginNotification({ body, title, url }) {
     let tab;
-    let imageURL;
-    if (AppConstants.platform == "win") {
-      imageURL = "chrome://branding/content/icon64.png";
-    }
     let win = lazy.BrowserWindowTracker.getTopWindow({ private: false });
     if (!win) {
-      win = await this._openURLInNewWindow(url);
+      win = await this._openURLInNewWindow(url, false);
       let tabs = win.gBrowser.tabs;
       tab = tabs[tabs.length - 1];
     } else {
@@ -383,7 +389,6 @@ export const AccountsGlue = {
 
     try {
       let alert = new AlertNotification({
-        imageURL,
         title,
         body,
         textClickable: true,
@@ -411,7 +416,7 @@ export const AccountsGlue = {
       );
       let win = lazy.BrowserWindowTracker.getTopWindow({ private: false });
       if (!win) {
-        this._openURLInNewWindow(url);
+        this._openURLInNewWindow(url, false);
       } else {
         win.gBrowser.addWebTab(url);
       }

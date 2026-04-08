@@ -330,12 +330,16 @@ export class ExperimentManager {
 
     this._prefFlips.init();
 
-    if (!lazy.ExperimentAPI.studiesEnabled) {
-      this._handleStudiesOptOut();
-    }
-
     if (!lazy.ExperimentAPI.labsEnabled) {
       this._handleLabsDisabled();
+    }
+
+    if (!lazy.ExperimentAPI.rolloutsEnabled) {
+      this._handleRolloutsOptOut();
+    }
+
+    if (!lazy.ExperimentAPI.studiesEnabled) {
+      this._handleStudiesOptOut();
     }
 
     lazy.NimbusFeatures.nimbusTelemetry.onUpdate(() => {
@@ -395,19 +399,24 @@ export class ExperimentManager {
       return;
     }
 
-    // Unenrollment due to studies becoming disabled is handled in
-    // `_handleStudiesOptOut`.
-    if (result.status === lazy.MatchStatus.DISABLED) {
-      return;
-    }
-
-    if (recipe.isFirefoxLabsOptIn) {
+    if (
+      recipe.isFirefoxLabsOptIn &&
+      result.status !== lazy.MatchStatus.DISABLED
+    ) {
       // We do not enroll directly into Firefox Labs opt-ins.
       this.optInRecipes.push(recipe);
       return;
     }
 
     switch (result.status) {
+      case lazy.MatchStatus.DISABLED:
+        lazy.NimbusTelemetry.recordEnrollmentStatus({
+          slug: recipe.slug,
+          status: EnrollmentStatus.NOT_ENROLLED,
+          reason: EnrollmentStatusReason.OPT_OUT,
+        });
+        break;
+
       case lazy.MatchStatus.ENROLLMENT_PAUSED:
         lazy.NimbusTelemetry.recordEnrollmentStatus({
           slug: recipe.slug,
@@ -870,10 +879,14 @@ export class ExperimentManager {
       lazy.NimbusTelemetry;
 
     if (result.ok) {
-      // Unenrollment due to studies becoming disabled is handled in
-      // `_handleStudiesOptOut`. Firefox Labs can only be disabled by policy and
-      // thus its enabled state cannot change after Nimbus is initialized.
+      // Unenrollment due to studies or rollouts becoming disabled are handled in
+      // `_handleStudiesOptOut` or `_handleRolloutsOptOut` respectively.
       if (result.status === lazy.MatchStatus.DISABLED) {
+        lazy.NimbusTelemetry.recordEnrollmentStatus({
+          slug: recipe.slug,
+          status: EnrollmentStatus.NOT_ENROLLED,
+          reason: EnrollmentStatusReason.OPT_OUT,
+        });
         return false;
       }
 
@@ -940,6 +953,7 @@ export class ExperimentManager {
           enrollment,
           UnenrollmentCause.fromCheckRecipeResult(result)
         );
+        return false;
       }
 
       if (result.status === lazy.MatchStatus.TARGETING_AND_BUCKETING) {
@@ -970,6 +984,7 @@ export class ExperimentManager {
       [
         UnenrollReason.BUCKETING,
         UnenrollReason.TARGETING_MISMATCH,
+        UnenrollReason.ROLLOUTS_OPT_OUT,
         UnenrollReason.STUDIES_OPT_OUT,
       ].includes(enrollment.unenrollReason)
     ) {
@@ -1066,12 +1081,30 @@ export class ExperimentManager {
   }
 
   /**
+   * Unenroll from all active rollouts if user opts out.
+   */
+  _handleRolloutsOptOut() {
+    const enrollments = this.store
+      .getAll()
+      .filter(e => e.active && !e.isFirefoxLabsOptIn && e.isRollout);
+
+    for (const enrollment of enrollments) {
+      this._unenroll(
+        enrollment,
+        UnenrollmentCause.fromReason(
+          lazy.NimbusTelemetry.UnenrollReason.ROLLOUTS_OPT_OUT
+        )
+      );
+    }
+  }
+
+  /**
    * Unenroll from all active studies if user opts out.
    */
   _handleStudiesOptOut() {
     const enrollments = this.store
       .getAll()
-      .filter(e => e.active && !e.isFirefoxLabsOptIn);
+      .filter(e => e.active && !e.isFirefoxLabsOptIn && !e.isRollout);
 
     for (const enrollment of enrollments) {
       this._unenroll(
@@ -1198,8 +1231,8 @@ export class ExperimentManager {
   /**
    * Generate the list of prefs a recipe will set.
    *
-   * @params {object} branch The recipe branch that will be enrolled.
-   * @params {boolean} isRollout Whether or not this recipe is a rollout.
+   * @param {object} branch The recipe branch that will be enrolled.
+   * @param {boolean} isRollout Whether or not this recipe is a rollout.
    *
    * @returns {object} An object with the following keys:
    *

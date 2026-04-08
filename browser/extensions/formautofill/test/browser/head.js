@@ -87,7 +87,11 @@ const FORM_IFRAME_SANDBOXED_URL =
 const FORMS_WITH_DYNAMIC_FORM_CHANGE =
   "https://example.org" + HTTP_TEST_PATH + "dynamic_forms.html";
 const FORMS_REPLACING_ALL_FIELDS_ON_INPUT =
-  "https://example.org" + HTTP_TEST_PATH + "dynamic_forms.html";
+  "https://example.org" +
+  HTTP_TEST_PATH +
+  "dynamic_form_replacing_all_fields.html";
+const FORMS_REPLACING_FORM_ON_INPUT =
+  "https://example.org" + HTTP_TEST_PATH + "dynamic_form_replace_form.html";
 const FORM_WITH_USER_INITIATED_FORM_CHANGE =
   "https://example.org" +
   HTTP_TEST_PATH +
@@ -193,6 +197,11 @@ const CROSS_ORIGIN_2_CC_EXP =
   CROSS_ORIGIN_2_URL + "../fixtures/autocomplete_cc_exp_embeded.html";
 const CROSS_ORIGIN_2_CC_TYPE =
   CROSS_ORIGIN_2_URL + "../fixtures/autocomplete_cc_type_embeded.html";
+
+const SAME_ORIGIN_NESTED_IFRAME =
+  TOP_LEVEL_URL + "../fixtures/nested_iframe.html";
+const CROSS_ORIGIN_NESTED_IFRAME =
+  CROSS_ORIGIN_URL + "../fixtures/nested_iframe.html";
 
 // Test profiles
 const TEST_ADDRESS_1 = {
@@ -857,6 +866,7 @@ async function clickDoorhangerButton(buttonType, index = 0) {
   let button;
   if (buttonType == MAIN_BUTTON || buttonType == SECONDARY_BUTTON) {
     button = getNotification()[buttonType];
+    button.click();
   } else if (buttonType == MENU_BUTTON) {
     // Click the dropmarker arrow and wait for the menu to show up.
     info("expecting notification menu button present");
@@ -875,9 +885,9 @@ async function clickDoorhangerButton(buttonType, index = 0) {
     await dropdownPromise;
 
     button = notification.querySelectorAll("menuitem")[index];
+    notification.menupopup.activateItem(button);
   }
 
-  button.click();
   info("expecting notification popup hidden");
   await popuphidden;
 }
@@ -898,6 +908,8 @@ async function clickAddressDoorhangerButton(buttonType, subType) {
     } else if (subType == ADDRESS_MENU_LEARN_MORE) {
       button = AutofillDoorhanger.learnMoreButton(notification);
     }
+    menupopup.activateItem(button);
+    return;
   } else {
     await clickDoorhangerButton(buttonType);
     return;
@@ -1207,7 +1219,8 @@ async function verifyPreviewResult(browser, section, expectedSection) {
   for (let i = 0; i < fieldDetails.length; i++) {
     const selector = getSelectorFromFieldDetail(fieldDetails[i]);
     const context = await findContext(browser, selector);
-    let expected = expectedFieldDetails[i].autofill ?? "";
+    let expected =
+      expectedFieldDetails[i].preview ?? expectedFieldDetails[i].autofill ?? "";
     if (fieldDetails[i].fieldName == "cc-number" && expected.length) {
       expected = "•".repeat(expected.length - 4) + expected.slice(-4);
     }
@@ -1217,7 +1230,10 @@ async function verifyPreviewResult(browser, section, expectedSection) {
       if (content.HTMLSelectElement.isInstance(element)) {
         if (obj.expected) {
           for (let idx = 0; idx < element.options.length; idx++) {
-            if (element.options[idx].value == obj.expected) {
+            if (
+              element.options[idx].value == obj.expected &&
+              element.previewValue == element.options[idx].text
+            ) {
               obj.expected = element.options[idx].text;
               break;
             }
@@ -1246,11 +1262,21 @@ async function verifyAutofillResult(browser, section, expectedSection) {
     const expected = expectedFieldDetails[i].autofill ?? "";
     await SpecialPowers.spawn(context, [{ expected, selector }], async obj => {
       const element = content.document.querySelector(obj.selector);
+
+      if (obj.expected) {
+        Assert.equal(
+          element.autofillState,
+          "autofill",
+          `element ${obj.selector} is highlighted`
+        );
+      }
+
       if (content.HTMLSelectElement.isInstance(element)) {
         if (!obj.expected) {
           obj.expected = element.options[0].value;
         }
       }
+
       Assert.equal(
         element.value,
         obj.expected,

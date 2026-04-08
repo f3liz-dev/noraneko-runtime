@@ -20,14 +20,15 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextDecoration
-import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.tooling.preview.PreviewParameter
 import androidx.compose.ui.unit.dp
-import mozilla.components.compose.base.annotation.FlexibleWindowLightDarkPreview
+import mozilla.components.compose.base.annotation.FlexibleWindowPreview
 import org.mozilla.fenix.R
 import org.mozilla.fenix.compose.LinkText
 import org.mozilla.fenix.compose.LinkTextState
 import org.mozilla.fenix.settings.SupportUtils
 import org.mozilla.fenix.theme.FirefoxTheme
+import org.mozilla.fenix.theme.PreviewThemeProvider
 import org.mozilla.fenix.theme.Theme
 
 /**
@@ -207,20 +208,12 @@ internal enum class InfoScreenTopic(
     ),
 }
 
+@FlexibleWindowPreview
 @Composable
-@FlexibleWindowLightDarkPreview
-private fun InfoScreenPreview() {
-    FirefoxTheme {
-        InfoScreen(
-            infoScreenTopic = InfoScreenTopic.DEFAULT,
-        )
-    }
-}
-
-@Composable
-@Preview
-private fun InfoScreenPrivatePreview() {
-    FirefoxTheme(theme = Theme.Private) {
+private fun InfoScreenPreview(
+    @PreviewParameter(PreviewThemeProvider::class) theme: Theme,
+) {
+    FirefoxTheme(theme) {
         InfoScreen(
             infoScreenTopic = InfoScreenTopic.DEFAULT,
         )

@@ -140,6 +140,15 @@ void nsDOMCSSDeclaration::GetPropertyValue(const nsACString& aPropertyName,
   }
 }
 
+bool nsDOMCSSDeclaration::HasLonghandProperty(const nsACString& aPropertyName) {
+  if (auto* decl = GetOrCreateCSSDeclaration(Operation::Read, nullptr)) {
+    return Servo_DeclarationBlock_HasLonghandProperty(decl->Raw(),
+                                                      &aPropertyName);
+  }
+
+  return false;
+}
+
 void nsDOMCSSDeclaration::GetPropertyPriority(const nsACString& aPropertyName,
                                               nsACString& aPriority) {
   MOZ_ASSERT(aPriority.IsEmpty());
@@ -207,6 +216,7 @@ nsDOMCSSDeclaration::GetParsingEnvironmentForRule(const css::Rule* aRule,
   }
 
   MOZ_ASSERT(aRule->Type() == aRuleType);
+  MOZ_ASSERT(aRuleType != StyleCssRuleType::NestedDeclarations);
 
   StyleSheet* sheet = aRule->GetStyleSheet();
   if (!sheet) {

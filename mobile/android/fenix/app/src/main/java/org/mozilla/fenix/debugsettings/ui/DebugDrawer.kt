@@ -22,7 +22,7 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
-import androidx.compose.ui.tooling.preview.PreviewLightDark
+import androidx.compose.ui.tooling.preview.PreviewParameter
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
@@ -32,6 +32,7 @@ import mozilla.components.compose.base.button.IconButton
 import org.mozilla.fenix.R
 import org.mozilla.fenix.debugsettings.navigation.DebugDrawerDestination
 import org.mozilla.fenix.theme.FirefoxTheme
+import org.mozilla.fenix.theme.PreviewThemeProvider
 import org.mozilla.fenix.theme.Theme
 import mozilla.components.ui.icons.R as iconsR
 
@@ -111,42 +112,11 @@ fun DebugDrawer(
     }
 }
 
-@Composable
-@PreviewLightDark
-private fun DebugDrawerPreview() {
-    val navController = rememberNavController()
-    val destinations = remember {
-        List(size = 15) { index ->
-            DebugDrawerDestination(
-                route = "screen_$index",
-                title = R.string.debug_drawer_title,
-                onClick = {
-                    navController.navigate(route = "screen_$index")
-                },
-                content = {
-                    Text(
-                        text = "Tool $index",
-                        style = FirefoxTheme.typography.headline6,
-                    )
-                },
-            )
-        }
-    }
-
-    FirefoxTheme {
-        DebugDrawer(
-            navController = navController,
-            destinations = destinations,
-            onBackButtonClick = {
-                navController.popBackStack()
-            },
-        )
-    }
-}
-
-@Composable
 @Preview
-private fun DebugDrawerPrivatePreview() {
+@Composable
+private fun DebugDrawerPreview(
+    @PreviewParameter(PreviewThemeProvider::class) theme: Theme,
+) {
     val navController = rememberNavController()
     val destinations = remember {
         List(size = 15) { index ->
@@ -166,7 +136,7 @@ private fun DebugDrawerPrivatePreview() {
         }
     }
 
-    FirefoxTheme(theme = Theme.Private) {
+    FirefoxTheme(theme) {
         DebugDrawer(
             navController = navController,
             destinations = destinations,

@@ -451,9 +451,13 @@ bool BrowserChild::DoUpdateZoomConstraints(
 }
 
 nsresult BrowserChild::Init(mozIDOMWindowProxy* aParent,
-                            WindowGlobalChild* aInitialWindowChild) {
-  MOZ_ASSERT_IF(aInitialWindowChild,
-                aInitialWindowChild->BrowsingContext() == mBrowsingContext);
+                            WindowGlobalChild* aInitialWindowChild,
+                            nsIOpenWindowInfo* aOpenWindowInfo) {
+  MOZ_ASSERT(aOpenWindowInfo, "Must have openwindowinfo");
+  MOZ_ASSERT(aInitialWindowChild, "Must have window child");
+  MOZ_ASSERT(aInitialWindowChild->BrowsingContext() == mBrowsingContext);
+  MOZ_ASSERT(aInitialWindowChild->DocumentPrincipal() ==
+             aOpenWindowInfo->PrincipalToInheritForAboutBlank());
 
   nsCOMPtr<nsIWidget> widget = nsIWidget::CreatePuppetWidget(this);
   mPuppetWidget = static_cast<PuppetWidget*>(widget.get());
@@ -464,8 +468,14 @@ nsresult BrowserChild::Init(mozIDOMWindowProxy* aParent,
   mPuppetWidget->InfallibleCreate(nullptr, LayoutDeviceIntRect(),
                                   widget::InitData());
 
-  mWebBrowser = nsWebBrowser::Create(this, mPuppetWidget, mBrowsingContext,
-                                     aInitialWindowChild);
+  MOZ_TRY(nsWebBrowser::Create(this, mPuppetWidget, mBrowsingContext,
+                               aInitialWindowChild, aOpenWindowInfo,
+                               getter_AddRefs(mWebBrowser)));
+  if (!mWebBrowser) {
+    // At least the JS recursion depth check can cause an early return
+    // here. dom/base/crashtests/1419902.html
+    return NS_ERROR_FAILURE;
+  }
   nsIWebBrowser* webBrowser = mWebBrowser;
 
   mWebNav = do_QueryInterface(webBrowser);
@@ -1936,6 +1946,8 @@ mozilla::ipc::IPCResult BrowserChild::RecvRealTouchEvent(
   MOZ_LOG(sApzChildLog, LogLevel::Debug,
           ("Receiving touch event of type %d\n", aEvent.mMessage));
 
+  AutoSynthesizedEventResponder<WidgetTouchEvent> responder(this, aEvent);
+
   if (StaticPrefs::dom_events_coalesce_touchmove()) {
     if (aEvent.mMessage == eTouchEnd || aEvent.mMessage == eTouchStart) {
       ProcessPendingCoalescedTouchData();
@@ -2010,6 +2022,18 @@ mozilla::ipc::IPCResult BrowserChild::RecvRealTouchMoveEvent(
       const auto PostponeDispatchingTouchMove = [&]() {
         return sConsecutiveTouchMoveCount > 1;
       };
+      // Tests do not want to coalesces the consecutive touch events.
+      // XXX: Maybe we should add another flag to WidgetEvent::mFlags to allow
+      // move events to be coalesced, so that the content process can ignore
+      // unexpected events synthesized by the OS and avoid intermittent
+      // failures.
+      if (aEvent.mFlags.mIsSynthesizedForTests) {
+        ProcessPendingCoalescedTouchData();
+        if (!RecvRealTouchEvent(aEvent, aGuid, aInputBlockId, aApzResponse)) {
+          return IPC_FAIL_NO_REASON(this);
+        }
+        return IPC_OK();
+      }
       if (mCoalescedTouchData.IsEmpty() ||
           mCoalescedTouchData.CanCoalesce(aEvent, aGuid, aInputBlockId,
                                           aApzResponse)) {
@@ -2529,6 +2553,10 @@ mozilla::ipc::IPCResult BrowserChild::RecvRealKeyEvent(
   // we need to clear the flag explicitly here because ParamTraits should
   // keep checking the flag for avoiding regression.
   localEvent.mFlags.mNoRemoteProcessDispatch = false;
+  // The parent process won't use the native key bindings of the reply event
+  // anymore. To save the IPC cost, let's clear the edit commands before sending
+  // the event back to the parent process.
+  localEvent.PreventNativeKeyBindings();
   SendReplyKeyEvent(localEvent, aUUID);
 
   return IPC_OK();
@@ -2700,7 +2728,7 @@ mozilla::ipc::IPCResult BrowserChild::RecvLoadRemoteScript(
 }
 
 mozilla::ipc::IPCResult BrowserChild::RecvAsyncMessage(
-    const nsAString& aMessage, const ClonedMessageData& aData) {
+    const nsAString& aMessage, NotNull<StructuredCloneData*> aData) {
   AUTO_PROFILER_LABEL_DYNAMIC_LOSSY_NSSTRING("BrowserChild::RecvAsyncMessage",
                                              OTHER, aMessage);
   MMPrinter::Print("BrowserChild::RecvAsyncMessage", aMessage, aData);
@@ -2722,10 +2750,8 @@ mozilla::ipc::IPCResult BrowserChild::RecvAsyncMessage(
 
   JS::Rooted<JSObject*> kungFuDeathGrip(
       dom::RootingCx(), mBrowserChildMessageManager->GetWrapper());
-  StructuredCloneData data;
-  UnpackClonedMessageData(aData, data);
   mm->ReceiveMessage(static_cast<EventTarget*>(mBrowserChildMessageManager),
-                     nullptr, aMessage, false, &data, nullptr, IgnoreErrors());
+                     nullptr, aMessage, false, aData, nullptr);
   return IPC_OK();
 }
 
@@ -3417,22 +3443,14 @@ BrowserChild::GetChromeOuterWindowID(uint64_t* aId) {
 }
 
 bool BrowserChild::DoSendBlockingMessage(
-    const nsAString& aMessage, StructuredCloneData& aData,
-    nsTArray<UniquePtr<StructuredCloneData>>* aRetVal) {
-  ClonedMessageData data;
-  if (!BuildClonedMessageData(aData, data)) {
-    return false;
-  }
-  return SendSyncMessage(PromiseFlatString(aMessage), data, aRetVal);
+    const nsAString& aMessage, NotNull<StructuredCloneData*> aData,
+    nsTArray<NotNull<RefPtr<StructuredCloneData>>>* aRetVal) {
+  return SendSyncMessage(PromiseFlatString(aMessage), aData, aRetVal);
 }
 
 nsresult BrowserChild::DoSendAsyncMessage(const nsAString& aMessage,
-                                          StructuredCloneData& aData) {
-  ClonedMessageData data;
-  if (!BuildClonedMessageData(aData, data)) {
-    return NS_ERROR_DOM_DATA_CLONE_ERR;
-  }
-  if (!SendAsyncMessage(PromiseFlatString(aMessage), data)) {
+                                          NotNull<StructuredCloneData*> aData) {
+  if (!SendAsyncMessage(PromiseFlatString(aMessage), aData)) {
     return NS_ERROR_UNEXPECTED;
   }
   return NS_OK;
@@ -3537,6 +3555,7 @@ void BrowserChild::ReinitRendering() {
     return;
   }
 
+  bool success = false;
   // Before we establish a new PLayerTransaction, we must connect our layer tree
   // id, CompositorBridge, and the widget compositor all together again.
   // Normally this happens in BrowserParent before BrowserChild is given
@@ -3547,15 +3566,14 @@ void BrowserChild::ReinitRendering() {
   // tab. This guarantees the correct association is in place before our
   // PLayerTransaction constructor message arrives on the cross-process
   // compositor bridge.
-  CompositorOptions options;
+  Maybe<CompositorOptions> options;
   SendEnsureLayersConnected(&options);
-  mCompositorOptions = Some(options);
-
-  bool success = false;
-  RefPtr<CompositorBridgeChild> cb = CompositorBridgeChild::Get();
-
-  if (cb) {
-    success = CreateRemoteLayerManager(cb);
+  if (options) {
+    mCompositorOptions = options;
+    RefPtr<CompositorBridgeChild> cb = CompositorBridgeChild::Get();
+    if (cb) {
+      success = CreateRemoteLayerManager(cb);
+    }
   }
 
   if (!success) {
@@ -3641,6 +3659,13 @@ mozilla::ipc::IPCResult BrowserChild::RecvUIResolutionChanged(
     presContext->UIResolutionChangedSync();
   }
 
+  return IPC_OK();
+}
+
+mozilla::ipc::IPCResult BrowserChild::RecvTransparencyChanged(
+    const bool& aIsTransparent) {
+  mIsTransparent = aIsTransparent;
+  SchedulePaint();
   return IPC_OK();
 }
 
@@ -4190,9 +4215,7 @@ void BrowserChild::NotifyContentBlockingEvent(
     const Maybe<
         mozilla::ContentBlockingNotifier::StorageAccessPermissionGrantedReason>&
         aReason,
-    const Maybe<ContentBlockingNotifier::CanvasFingerprinter>&
-        aCanvasFingerprinter,
-    const Maybe<bool> aCanvasFingerprinterKnownText) {
+    const Maybe<CanvasFingerprintingEvent>& aCanvasFingerprintingEvent) {
   if (!IPCOpen()) {
     return;
   }
@@ -4201,8 +4224,7 @@ void BrowserChild::NotifyContentBlockingEvent(
   if (NS_SUCCEEDED(PrepareRequestData(aChannel, requestData))) {
     (void)SendNotifyContentBlockingEvent(
         aEvent, requestData, aBlocked, PromiseFlatCString(aTrackingOrigin),
-        aTrackingFullHashes, aReason, aCanvasFingerprinter,
-        aCanvasFingerprinterKnownText);
+        aTrackingFullHashes, aReason, aCanvasFingerprintingEvent);
   }
 }
 

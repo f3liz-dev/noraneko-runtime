@@ -24,8 +24,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Badge
-import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -47,6 +45,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.painterResource
@@ -65,8 +64,10 @@ import androidx.compose.ui.tooling.preview.PreviewParameter
 import androidx.compose.ui.tooling.preview.PreviewParameterProvider
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import mozilla.components.compose.base.badge.BADGE_SIZE_SMALL
+import mozilla.components.compose.base.badge.BadgedIcon
 import mozilla.components.compose.base.modifier.thenConditional
-import mozilla.components.compose.base.theme.surfaceDimVariant
+import mozilla.components.compose.base.theme.information
 import org.mozilla.fenix.compose.Favicon
 import org.mozilla.fenix.compose.button.RadioButton
 import org.mozilla.fenix.theme.FirefoxTheme
@@ -342,41 +343,21 @@ fun IconListItem(
 }
 
 @Composable
-@PreviewLightDark
-private fun IconListItemBeforeIconPreview() {
-    FirefoxTheme {
-        Box(Modifier.background(MaterialTheme.colorScheme.surfaceDimVariant)) {
-            IconListItemBeforeIcon(
-                isHighlighted = false,
-                painter = painterResource(iconsR.drawable.mozac_ic_shield_slash_critical_24),
-                description = "",
-                tint = Color.Unspecified,
-            )
-        }
-    }
-}
-
-@Composable
 private fun IconListItemBeforeIcon(
     isHighlighted: Boolean,
     painter: Painter,
     description: String?,
     tint: Color,
 ) {
-    BadgedBox(
-        badge = {
-            if (isHighlighted) {
-                Badge(containerColor = FirefoxTheme.colors.actionInformation)
-            }
-        },
-    ) {
-        Icon(
-            painter = painter,
-            contentDescription = description,
-            tint = tint,
-            modifier = Modifier.size(ICON_SIZE),
-        )
-    }
+    BadgedIcon(
+        painter = painter,
+        isHighlighted = isHighlighted,
+        tint = tint,
+        size = BADGE_SIZE_SMALL,
+        contentDescription = description,
+        containerColor = MaterialTheme.colorScheme.information,
+        modifier = Modifier.size(ICON_SIZE),
+    )
 }
 
 @Composable
@@ -949,12 +930,14 @@ private fun ListItemContent(
     enabled: Boolean = true,
     belowListItemContent: @Composable ColumnScope.() -> Unit = {},
 ) {
+    val locale = remember(LocalConfiguration.current) { Locale.getDefault() }
+
     Column(
         modifier = modifier,
     ) {
         overline?.let {
             Text(
-                text = it.uppercase(Locale.getDefault()),
+                text = it.uppercase(locale),
                 color = colors.overlineColor,
                 style = FirefoxTheme.typography.overline.copy(hyphens = Hyphens.Auto),
                 maxLines = 1,
@@ -1067,8 +1050,9 @@ private fun TextListItemWithIconPreview() {
     }
 }
 
+@Suppress("LongMethod")
 @Composable
-@Preview(name = "IconListItem", uiMode = Configuration.UI_MODE_NIGHT_YES)
+@PreviewLightDark
 private fun IconListItemPreview() {
     FirefoxTheme {
         Column(Modifier.background(MaterialTheme.colorScheme.surface)) {
@@ -1080,11 +1064,28 @@ private fun IconListItemPreview() {
             )
 
             IconListItem(
+                label = "Left icon list item highlighted",
+                onClick = {},
+                beforeIconPainter = painterResource(iconsR.drawable.mozac_ic_folder_24),
+                beforeIconDescription = "click me",
+                isBeforeIconHighlighted = true,
+            )
+
+            IconListItem(
                 label = "Left icon list item",
                 colors = ListItemDefaults.colors(headlineColor = MaterialTheme.colorScheme.tertiary),
                 onClick = {},
                 beforeIconPainter = painterResource(iconsR.drawable.mozac_ic_folder_24),
                 beforeIconDescription = "click me",
+            )
+
+            IconListItem(
+                label = "Left icon list item highlighted",
+                colors = ListItemDefaults.colors(headlineColor = MaterialTheme.colorScheme.tertiary),
+                onClick = {},
+                beforeIconPainter = painterResource(iconsR.drawable.mozac_ic_folder_24),
+                beforeIconDescription = "click me",
+                isBeforeIconHighlighted = true,
             )
 
             IconListItem(
@@ -1098,6 +1099,17 @@ private fun IconListItemPreview() {
             )
 
             IconListItem(
+                label = "Left icon list item highlighted + right icon",
+                onClick = {},
+                beforeIconPainter = painterResource(iconsR.drawable.mozac_ic_folder_24),
+                beforeIconDescription = "click me",
+                showDivider = true,
+                afterIconPainter = painterResource(iconsR.drawable.mozac_ic_chevron_right_24),
+                afterIconDescription = null,
+                isBeforeIconHighlighted = true,
+            )
+
+            IconListItem(
                 label = "Left icon list item + right icon (disabled)",
                 enabled = false,
                 onClick = {},
@@ -1105,6 +1117,17 @@ private fun IconListItemPreview() {
                 beforeIconDescription = "click me",
                 afterIconPainter = painterResource(iconsR.drawable.mozac_ic_chevron_right_24),
                 afterIconDescription = null,
+            )
+
+            IconListItem(
+                label = "Left icon list item highlighted + right icon (disabled)",
+                enabled = false,
+                onClick = {},
+                beforeIconPainter = painterResource(iconsR.drawable.mozac_ic_folder_24),
+                beforeIconDescription = "click me",
+                afterIconPainter = painterResource(iconsR.drawable.mozac_ic_chevron_right_24),
+                afterIconDescription = null,
+                isBeforeIconHighlighted = true,
             )
 
             IconListItem(
@@ -1127,6 +1150,18 @@ private fun IconListItemPreview() {
                 beforeIconDescription = "click me",
                 afterIconPainter = painterResource(iconsR.drawable.mozac_ic_chevron_right_24),
                 afterIconDescription = null,
+            )
+
+            IconListItem(
+                label = "Left icon list item highlighted + right icon (disabled)",
+                overline = "Overline",
+                enabled = false,
+                onClick = {},
+                beforeIconPainter = painterResource(iconsR.drawable.mozac_ic_folder_24),
+                beforeIconDescription = "click me",
+                afterIconPainter = painterResource(iconsR.drawable.mozac_ic_chevron_right_24),
+                afterIconDescription = null,
+                isBeforeIconHighlighted = true,
             )
         }
     }
@@ -1494,6 +1529,30 @@ private fun SelectableListItemPreview() {
                 afterListItemAction = {},
                 showSelectableItemAfter = true,
             )
+        }
+    }
+}
+
+@Composable
+@PreviewLightDark
+private fun IconListItemBeforeIconPreview() {
+    FirefoxTheme {
+        Surface {
+            Row(modifier = Modifier.padding(all = FirefoxTheme.layout.space.static100)) {
+                IconListItemBeforeIcon(
+                    isHighlighted = false,
+                    painter = painterResource(iconsR.drawable.mozac_ic_shield_slash_critical_24),
+                    description = "",
+                    tint = Color.Unspecified,
+                )
+
+                IconListItemBeforeIcon(
+                    isHighlighted = true,
+                    painter = painterResource(iconsR.drawable.mozac_ic_shield_slash_critical_24),
+                    description = "",
+                    tint = Color.Unspecified,
+                )
+            }
         }
     }
 }

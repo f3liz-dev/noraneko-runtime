@@ -60,6 +60,7 @@
 #include "mozilla/net/SocketProcessParent.h"
 #include "mozilla/net/SSLTokensCache.h"
 #include "mozilla/StoragePrincipalHelper.h"
+#include "SerializedLoadContext.h"
 #include "nsContentSecurityManager.h"
 #include "nsContentUtils.h"
 #include "mozilla/StaticPrefs_network.h"
@@ -262,6 +263,7 @@ static const char* gCallbackPrefsForSocketProcess[] = {
     "network.lna.address_space.public.override",
     "network.lna.websocket.enabled",
     "network.lna.local-network-to-localhost.skip-checks",
+    "network.socket.forcePort",
     nullptr,
 };
 
@@ -333,8 +335,13 @@ nsresult nsIOService::Init() {
 
   InitializeNetworkLinkService();
   InitializeProtocolProxyService();
-
   SetOffline(false);
+
+  // This is just to start the DNS service to make it fast to get later.
+  // Don't invoke directly since we're already in GetService.  RefPtr needed
+  // because already_AddRefed<> doesn't like to be dropped
+  NS_DispatchToCurrentThread(NS_NewRunnableFunction(
+      __func__, []() { RefPtr<nsIDNSService> dns = GetOrInitDNSService(); }));
 
   return NS_OK;
 }
@@ -2195,8 +2202,11 @@ nsresult nsIOService::SpeculativeConnectInternal(
   }
 
   if (IsNeckoChild()) {
+    nsCOMPtr<nsILoadContext> loadContext = do_GetInterface(aCallbacks);
+
     gNeckoChild->SendSpeculativeConnect(
-        aURI, aPrincipal, std::move(aOriginAttributes), aAnonymous);
+        nullptr, IPC::SerializedLoadContext(loadContext), aURI, aPrincipal,
+        std::move(aOriginAttributes), aAnonymous);
     return NS_OK;
   }
 

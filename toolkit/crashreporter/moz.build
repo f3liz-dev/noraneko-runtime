@@ -77,13 +77,14 @@ if CONFIG["MOZ_CRASHREPORTER"]:
             "networking",
         ]
     else:
-        DIRS += ["minidump-analyzer/android"]
+        DIRS += ["android"]
 
     DIRS += [
         "breakpad_wrapper",
         "crash_helper",
         "crash_helper_client",
         "crash_helper_server",
+        "crashping",
         "mozannotation_client",
     ]
 

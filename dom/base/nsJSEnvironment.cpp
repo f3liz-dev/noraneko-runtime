@@ -1806,8 +1806,9 @@ void nsJSContext::EnsureStatics() {
 
   JS::SetCreateGCSliceBudgetCallback(jsapi.cx(), CreateGCSliceBudget);
 
-  JS::InitDispatchsToEventLoop(jsapi.cx(), DispatchToEventLoop,
-                               DelayedDispatchToEventLoop, nullptr);
+  JS::InitAsyncTaskCallbacks(jsapi.cx(), DispatchToEventLoop,
+                             DelayedDispatchToEventLoop, nullptr, nullptr,
+                             nullptr);
 
   JS::InitConsumeStreamCallback(jsapi.cx(), ConsumeStream,
                                 FetchUtil::ReportJSStreamError);
@@ -1860,6 +1861,13 @@ void nsJSContext::EnsureStatics() {
       SetMemoryPrefChangedCallbackInt,
       "javascript.options.mem.gc_max_parallel_marking_threads",
       (void*)JSGC_MAX_MARKING_THREADS);
+
+#ifdef JS_GC_CONCURRENT_MARKING
+  Preferences::RegisterCallbackAndCall(
+      SetMemoryPrefChangedCallbackBool,
+      "javascript.options.mem.gc_experimental_concurrent_marking",
+      (void*)JSGC_CONCURRENT_MARKING_ENABLED);
+#endif
 
   Preferences::RegisterCallbackAndCall(
       SetMemoryGCSliceTimePrefChangedCallback,

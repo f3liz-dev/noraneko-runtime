@@ -1,15 +1,22 @@
-async function newFocusedWindow(trigger) {
+async function newFocusedWindow(trigger, isInitialBlank = false) {
   let winPromise = BrowserTestUtils.domWindowOpenedAndLoaded();
   let delayedStartupPromise = BrowserTestUtils.waitForNewWindow();
 
   await trigger();
 
   let win = await winPromise;
-  // New windows get focused after the first paint, see bug 1262946
-  await BrowserTestUtils.waitForContentEvent(
-    win.gBrowser.selectedBrowser,
-    "MozAfterPaint"
-  );
+  // New windows get focused after the first paint, see bug 1262946,
+  // but this is racy for the initial about:blank
+  if (!isInitialBlank) {
+    await BrowserTestUtils.waitForContentEvent(
+      win.gBrowser.selectedBrowser,
+      "MozAfterPaint"
+    );
+  } else {
+    await new Promise(res =>
+      win.requestAnimationFrame(() => win.requestAnimationFrame(res))
+    );
+  }
   await delayedStartupPromise;
   return win;
 }
@@ -203,6 +210,32 @@ async function runJSCacheTests(tests) {
           if (item.clearDisk) {
             info("clear disk cache");
             Services.cache2.clear();
+          }
+          if (item.memoryPressureLowMemory) {
+            info("notifying memory pressure low-memory");
+            await SpecialPowers.spawn(browser, [], () => {
+              Services.obs.notifyObservers(
+                null,
+                "memory-pressure",
+                "low-memory"
+              );
+            });
+          }
+          if (item.memoryPressureHeapMinimize) {
+            info("notifying memory pressure heap-minimize");
+            await SpecialPowers.spawn(browser, [], () => {
+              Services.obs.notifyObservers(
+                null,
+                "memory-pressure",
+                "heap-minimize"
+              );
+            });
+          }
+          if (item.memoryPressureStop) {
+            info("notifying memory pressure stop");
+            await SpecialPowers.spawn(browser, [], () => {
+              Services.obs.notifyObservers(null, "memory-pressure-stop");
+            });
           }
           const result = await SpecialPowers.spawn(
             browser,

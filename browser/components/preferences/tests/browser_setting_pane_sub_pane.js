@@ -81,6 +81,26 @@ describe("setting-pane", () => {
     let backButton = pageHeader.backButtonEl;
     ok(backButton, "There is a back button");
 
+    doc.dispatchEvent(
+      new CustomEvent("paneshown", {
+        bubbles: true,
+        cancelable: true,
+        detail: {
+          category: "paneTestSubPane",
+        },
+      })
+    );
+    is(
+      doc.activeElement,
+      pageHeader,
+      "Page header should have focus after pane is shown"
+    );
+    is(
+      pageHeader.shadowRoot.activeElement,
+      backButton,
+      "Back button should be focused after pane is shown"
+    );
+
     // Go back
     paneLoaded = waitForPaneChange("privacy");
     EventUtils.synthesizeMouseAtCenter(backButton, {}, win);

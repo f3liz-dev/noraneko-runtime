@@ -46,6 +46,10 @@ loader.lazyRequireGetter(
   "resource://devtools/client/shared/link.js",
   true
 );
+const lazy = {};
+ChromeUtils.defineESModuleGetters(lazy, {
+  getMdnLinkParams: "resource://devtools/shared/mdn.mjs",
+});
 
 const STYLE_INSPECTOR_PROPERTIES =
   "devtools/shared/locales/styleinspector.properties";
@@ -58,6 +62,9 @@ const L10N_TWISTY_COLLAPSE_LABEL = STYLE_INSPECTOR_L10N.getStr(
   "rule.twistyCollapse.label"
 );
 const L10N_EMPTY_VARIABLE = STYLE_INSPECTOR_L10N.getStr("rule.variableEmpty");
+const L10N_JUMP_DEFINITION_TITLE = STYLE_INSPECTOR_L10N.getStr(
+  "rule.jumpDeclaration.title"
+);
 
 const FILTER_CHANGED_TIMEOUT = 150;
 
@@ -1040,9 +1047,7 @@ class PropertyView {
     this.isCustomProperty = isCustomProperty;
 
     if (!this.isCustomProperty) {
-      this.link =
-        "https://developer.mozilla.org/docs/Web/CSS/Reference/Properties/" +
-        name;
+      this.link = `https://developer.mozilla.org/docs/Web/CSS/Reference/Properties/${name}?${lazy.getMdnLinkParams("computed-panel")}`;
     }
 
     this.#propertyInfo = new PropertyInfo(tree, name);
@@ -1467,6 +1472,16 @@ class PropertyView {
           ),
         });
       }
+
+      // We only want to show the "Jump to definition" icon if the declaration is in
+      // the RuleView
+      if (selector.isInRuleView()) {
+        const ruleLink = createChild(status, "button", {
+          class: "computed-other-property-ruleview-link jump-definition",
+          title: L10N_JUMP_DEFINITION_TITLE,
+        });
+        ruleLink.addEventListener("click", selector.focusPropertyInRuleView);
+      }
     }
 
     if (this.registeredPropertyInitialValue !== undefined) {
@@ -1606,6 +1621,7 @@ class SelectorView {
     this.#cacheStatusNames();
 
     this.openStyleEditor = this.openStyleEditor.bind(this);
+    this.focusPropertyInRuleView = this.focusPropertyInRuleView.bind(this);
 
     const rule = this.selectorInfo.rule;
     if (rule?.parentStyleSheet) {
@@ -1761,6 +1777,31 @@ class SelectorView {
     if (ToolDefinitions.styleEditor.isToolSupported(inspector.toolbox)) {
       inspector.toolbox.viewSourceInStyleEditorByResource(sheet, line, column);
     }
+  }
+
+  /**
+   * Returns whether or not the underlying rule is in the rules view
+   *
+   * @returns {boolean}
+   */
+  isInRuleView() {
+    const rule = this.selectorInfo.rule;
+    if (!rule) {
+      return false;
+    }
+
+    return this.#tree.ruleView.hasRule(rule);
+  }
+
+  /**
+   * Open the RuleView and highlight the property represented by this SelectorView
+   */
+  focusPropertyInRuleView() {
+    const ruleFront = this.selectorInfo.rule;
+    this.#tree.ruleView.highlightProperty(this.selectorInfo.name, {
+      ruleFront,
+      focusValue: true,
+    });
   }
 
   /**

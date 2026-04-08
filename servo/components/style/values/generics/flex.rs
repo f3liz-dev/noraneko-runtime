@@ -3,6 +3,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
 //! Generic types for CSS values related to flexbox.
+use crate::derives::*;
 
 /// A generic value for the `flex-basis` property.
 #[derive(
@@ -23,6 +24,7 @@
     ToTyped,
 )]
 #[repr(C)]
+#[typed_value(derive_fields)]
 pub enum GenericFlexBasis<S> {
     /// `content`
     Content,

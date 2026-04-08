@@ -171,63 +171,116 @@ add_task(async function history() {
   const testData = [
     {
       useAdaptiveHistory: true,
-      visitHistory: ["http://example.com/test"],
+      visitHistory: [
+        {
+          url: "http://example.com/test",
+          transition: PlacesUtils.history.TRANSITION_TYPED,
+        },
+      ],
       inputHistory: [{ uri: "http://example.com/test", input: "exa" }],
       userInput: "ex",
       autofilled: "example.com/",
     },
     {
       useAdaptiveHistory: true,
-      visitHistory: ["http://example.com/test"],
+      visitHistory: [
+        {
+          url: "http://example.com/test",
+          transition: PlacesUtils.history.TRANSITION_TYPED,
+        },
+      ],
       inputHistory: [{ uri: "http://example.com/test", input: "exa" }],
       userInput: "exa",
       autofilled: "example.com/test",
     },
     {
       useAdaptiveHistory: true,
-      visitHistory: ["http://example.com/test"],
+      visitHistory: [
+        {
+          url: "http://example.com/test",
+          transition: PlacesUtils.history.TRANSITION_TYPED,
+        },
+      ],
       inputHistory: [{ uri: "http://example.com/test", input: "exa" }],
       userInput: "exam",
       autofilled: "example.com/test",
     },
     {
       useAdaptiveHistory: true,
-      visitHistory: ["http://example.com/test"],
+      visitHistory: [
+        {
+          url: "http://example.com/test",
+          transition: PlacesUtils.history.TRANSITION_TYPED,
+        },
+      ],
       inputHistory: [{ uri: "http://example.com/test", input: "exa" }],
       userInput: "example.com",
       autofilled: "example.com/test",
     },
     {
       useAdaptiveHistory: true,
-      visitHistory: ["http://example.com/test"],
+      visitHistory: [
+        {
+          url: "http://example.com/test",
+          transition: PlacesUtils.history.TRANSITION_TYPED,
+        },
+      ],
       inputHistory: [{ uri: "http://example.com/test", input: "exa" }],
       userInput: "example.com/",
       autofilled: "example.com/test",
     },
     {
       useAdaptiveHistory: true,
-      visitHistory: ["http://example.com/test"],
+      visitHistory: [
+        {
+          url: "http://example.com/test",
+          transition: PlacesUtils.history.TRANSITION_TYPED,
+        },
+      ],
       inputHistory: [{ uri: "http://example.com/test", input: "exa" }],
       userInput: "example.com/test",
       autofilled: "example.com/test",
     },
     {
       useAdaptiveHistory: true,
-      visitHistory: ["http://example.com/test", "http://example.org/test"],
+      visitHistory: [
+        {
+          url: "http://example.com/test",
+          transition: PlacesUtils.history.TRANSITION_TYPED,
+        },
+        {
+          url: "http://example.org/test",
+          transition: PlacesUtils.history.TRANSITION_TYPED,
+        },
+      ],
       inputHistory: [{ uri: "http://example.com/test", input: "exa" }],
       userInput: "example.org",
       autofilled: "example.org/",
     },
     {
       useAdaptiveHistory: true,
-      visitHistory: ["http://example.com/test", "http://example.com/test/url"],
+      visitHistory: [
+        {
+          url: "http://example.com/test",
+          transition: PlacesUtils.history.TRANSITION_TYPED,
+        },
+        {
+          url: "http://example.com/test/url",
+          transition: PlacesUtils.history.TRANSITION_TYPED,
+        },
+      ],
       inputHistory: [{ uri: "http://example.com/test", input: "exa" }],
       userInput: "example.com/test/",
       autofilled: "example.com/test/",
     },
     {
       useAdaptiveHistory: true,
-      visitHistory: [{ uri: "http://example.com/test" }],
+      visitHistory: [
+        {
+          url: "http://example.com/test",
+          transition: PlacesUtils.history.TRANSITION_TYPED,
+        },
+      ],
       inputHistory: [
         { uri: "http://example.com/test", input: "http://example.com/test" },
       ],
@@ -236,14 +289,24 @@ add_task(async function history() {
     },
     {
       useAdaptiveHistory: false,
-      visitHistory: [{ uri: "http://example.com/test" }],
+      visitHistory: [
+        {
+          url: "http://example.com/test",
+          transition: PlacesUtils.history.TRANSITION_TYPED,
+        },
+      ],
       inputHistory: [{ uri: "http://example.com/test", input: "exa" }],
       userInput: "example",
       autofilled: "example.com/",
     },
     {
       useAdaptiveHistory: false,
-      visitHistory: [{ uri: "http://example.com/test" }],
+      visitHistory: [
+        {
+          url: "http://example.com/test",
+          transition: PlacesUtils.history.TRANSITION_TYPED,
+        },
+      ],
       inputHistory: [{ uri: "http://example.com/test", input: "exa" }],
       userInput: "example.com/te",
       autofilled: "example.com/test",
@@ -292,7 +355,8 @@ add_task(async function other() {
   let searchString = "exam";
   let autofilledValue = "example.com/";
   let provider = createOtherAutofillProvider(searchString, autofilledValue);
-  UrlbarProvidersManager.registerProvider(provider);
+  let providersManager = ProvidersManager.getInstanceForSap("urlbar");
+  providersManager.registerProvider(provider);
 
   let histograms = snapshotHistograms();
   await triggerAutofillAndPickResult(searchString, autofilledValue);
@@ -300,12 +364,17 @@ add_task(async function other() {
   assertSearchTelemetryEmpty(histograms.search_hist);
 
   await PlacesUtils.history.clear();
-  UrlbarProvidersManager.unregisterProvider(provider);
+  providersManager.unregisterProvider(provider);
 });
 
 // Checks autofill deletion telemetry.
 add_task(async function deletion() {
-  await PlacesTestUtils.addVisits(["http://example.com/"]);
+  await PlacesTestUtils.addVisits([
+    {
+      url: "http://example.com/",
+      transition: PlacesUtils.history.TRANSITION_TYPED,
+    },
+  ]);
   await PlacesFrecencyRecalculator.recalculateAnyOutdatedFrecencies();
 
   info("Delete autofilled value by DELETE key");

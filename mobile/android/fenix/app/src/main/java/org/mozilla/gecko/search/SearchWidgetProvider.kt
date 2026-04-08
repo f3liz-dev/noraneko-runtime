@@ -24,7 +24,10 @@ import org.mozilla.fenix.IntentReceiverActivity
 import org.mozilla.fenix.R
 import org.mozilla.fenix.ext.settings
 import org.mozilla.fenix.home.intent.StartSearchIntentProcessor
+import org.mozilla.fenix.iconpicker.DefaultAppIconRepository
+import org.mozilla.fenix.iconpicker.DefaultPackageManagerWrapper
 import org.mozilla.fenix.utils.IntentUtils
+import org.mozilla.fenix.utils.Settings
 import org.mozilla.fenix.widget.VoiceSearchActivity
 import org.mozilla.fenix.widget.VoiceSearchActivity.Companion.SPEECH_PROCESSING
 
@@ -35,16 +38,17 @@ class SearchWidgetProvider : AppWidgetProvider() {
     // The existing name replicates the name and package we used in Fennec.
 
     override fun onEnabled(context: Context) {
-        context.settings().setSearchWidgetInstalled(true)
-        Metrics.searchWidgetInstalled.set(true)
+        recordWidgetIsInstalled(context.settings())
     }
 
     override fun onDisabled(context: Context) {
-        context.settings().setSearchWidgetInstalled(false)
+        context.settings().searchWidgetInstalled = false
         Metrics.searchWidgetInstalled.set(false)
     }
 
     override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
+        recordWidgetIsInstalled(context.settings())
+
         val textSearchIntent = createTextSearchIntent(context)
         val voiceSearchIntent = createVoiceSearchIntent(context)
 
@@ -79,6 +83,13 @@ class SearchWidgetProvider : AppWidgetProvider() {
 
         val views = createRemoteViews(context, layout, textSearchIntent, voiceSearchIntent, text)
         appWidgetManager.updateAppWidget(appWidgetId, views)
+    }
+
+    private fun recordWidgetIsInstalled(settings: Settings) {
+        if (!settings.searchWidgetInstalled) {
+            settings.searchWidgetInstalled = true
+            Metrics.searchWidgetInstalled.set(true)
+        }
     }
 
     /**
@@ -164,10 +175,14 @@ class SearchWidgetProvider : AppWidgetProvider() {
     }
 
     private fun RemoteViews.setIcon(context: Context) {
+        val repository = DefaultAppIconRepository(
+            packageManager = DefaultPackageManagerWrapper(context.packageManager),
+            packageName = context.packageName,
+        )
         // gradient color available for android:fillColor only on SDK 24+
         setImageViewResource(
             R.id.button_search_widget_new_tab_icon,
-            R.drawable.ic_launcher_foreground,
+            repository.selectedAppIcon.iconForegroundId,
         )
 
         val appName = context.getString(R.string.app_name)

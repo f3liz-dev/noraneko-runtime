@@ -182,7 +182,7 @@ nsresult nsLocalFile::RevealFile(const nsString& aResolvedPath) {
 }
 
 // static
-bool nsLocalFile::CheckForReservedFileName(const nsString& aFileName) {
+bool nsLocalFile::CheckForReservedFileName(const nsAString& aFileName) {
   static const nsLiteralString forbiddenNames[] = {
       u"COM1"_ns, u"COM2"_ns, u"COM3"_ns, u"COM4"_ns, u"COM5"_ns,  u"COM6"_ns,
       u"COM7"_ns, u"COM8"_ns, u"COM9"_ns, u"LPT1"_ns, u"LPT2"_ns,  u"LPT3"_ns,
@@ -2385,7 +2385,6 @@ nsLocalFile::Remove(bool aRecursive, uint32_t* aRemoveCount) {
   // pointing to a directory, only the mWorkingPath value is used and so
   // only the shortcut file will be deleted.
 
-  // Check we are correctly initialized.
   CHECK_mWorkingPath();
 
   nsresult rv = NS_OK;
@@ -2419,8 +2418,6 @@ nsLocalFile::Remove(bool aRecursive, uint32_t* aRemoveCount) {
         return rv;
       }
 
-      // XXX: We are ignoring the result of the removal here while
-      // nsLocalFileUnix does not. We should align the behavior. (bug 1779696)
       nsCOMPtr<nsIFile> file;
       while (NS_SUCCEEDED(dirEnum->GetNextFile(getter_AddRefs(file))) && file) {
         file->Remove(aRecursive, aRemoveCount);

@@ -18,11 +18,11 @@
 #include <stdint.h>
 #include <type_traits>
 
-#include "jsnum.h"
 #include "jspubtd.h"
 #include "NamespaceImports.h"
 
 #include "builtin/intl/DurationFormat.h"
+#include "builtin/Number.h"
 #include "builtin/temporal/Calendar.h"
 #include "builtin/temporal/CalendarFields.h"
 #include "builtin/temporal/Instant.h"
@@ -1119,22 +1119,25 @@ static DurationObject* CreateTemporalDuration(JSContext* cx,
 
   // Steps 4-13.
   // Add zero to convert -0 to +0.
-  object->setFixedSlot(DurationObject::YEARS_SLOT, NumberValue(years + (+0.0)));
-  object->setFixedSlot(DurationObject::MONTHS_SLOT,
-                       NumberValue(months + (+0.0)));
-  object->setFixedSlot(DurationObject::WEEKS_SLOT, NumberValue(weeks + (+0.0)));
-  object->setFixedSlot(DurationObject::DAYS_SLOT, NumberValue(days + (+0.0)));
-  object->setFixedSlot(DurationObject::HOURS_SLOT, NumberValue(hours + (+0.0)));
-  object->setFixedSlot(DurationObject::MINUTES_SLOT,
-                       NumberValue(minutes + (+0.0)));
-  object->setFixedSlot(DurationObject::SECONDS_SLOT,
-                       NumberValue(seconds + (+0.0)));
-  object->setFixedSlot(DurationObject::MILLISECONDS_SLOT,
-                       NumberValue(milliseconds + (+0.0)));
-  object->setFixedSlot(DurationObject::MICROSECONDS_SLOT,
-                       NumberValue(microseconds + (+0.0)));
-  object->setFixedSlot(DurationObject::NANOSECONDS_SLOT,
-                       NumberValue(nanoseconds + (+0.0)));
+  object->initFixedSlot(DurationObject::YEARS_SLOT,
+                        NumberValue(years + (+0.0)));
+  object->initFixedSlot(DurationObject::MONTHS_SLOT,
+                        NumberValue(months + (+0.0)));
+  object->initFixedSlot(DurationObject::WEEKS_SLOT,
+                        NumberValue(weeks + (+0.0)));
+  object->initFixedSlot(DurationObject::DAYS_SLOT, NumberValue(days + (+0.0)));
+  object->initFixedSlot(DurationObject::HOURS_SLOT,
+                        NumberValue(hours + (+0.0)));
+  object->initFixedSlot(DurationObject::MINUTES_SLOT,
+                        NumberValue(minutes + (+0.0)));
+  object->initFixedSlot(DurationObject::SECONDS_SLOT,
+                        NumberValue(seconds + (+0.0)));
+  object->initFixedSlot(DurationObject::MILLISECONDS_SLOT,
+                        NumberValue(milliseconds + (+0.0)));
+  object->initFixedSlot(DurationObject::MICROSECONDS_SLOT,
+                        NumberValue(microseconds + (+0.0)));
+  object->initFixedSlot(DurationObject::NANOSECONDS_SLOT,
+                        NumberValue(nanoseconds + (+0.0)));
 
   // Step 14.
   return object;
@@ -1173,22 +1176,25 @@ DurationObject* js::temporal::CreateTemporalDuration(JSContext* cx,
 
   // Steps 4-13.
   // Add zero to convert -0 to +0.
-  object->setFixedSlot(DurationObject::YEARS_SLOT, NumberValue(years + (+0.0)));
-  object->setFixedSlot(DurationObject::MONTHS_SLOT,
-                       NumberValue(months + (+0.0)));
-  object->setFixedSlot(DurationObject::WEEKS_SLOT, NumberValue(weeks + (+0.0)));
-  object->setFixedSlot(DurationObject::DAYS_SLOT, NumberValue(days + (+0.0)));
-  object->setFixedSlot(DurationObject::HOURS_SLOT, NumberValue(hours + (+0.0)));
-  object->setFixedSlot(DurationObject::MINUTES_SLOT,
-                       NumberValue(minutes + (+0.0)));
-  object->setFixedSlot(DurationObject::SECONDS_SLOT,
-                       NumberValue(seconds + (+0.0)));
-  object->setFixedSlot(DurationObject::MILLISECONDS_SLOT,
-                       NumberValue(milliseconds + (+0.0)));
-  object->setFixedSlot(DurationObject::MICROSECONDS_SLOT,
-                       NumberValue(microseconds + (+0.0)));
-  object->setFixedSlot(DurationObject::NANOSECONDS_SLOT,
-                       NumberValue(nanoseconds + (+0.0)));
+  object->initFixedSlot(DurationObject::YEARS_SLOT,
+                        NumberValue(years + (+0.0)));
+  object->initFixedSlot(DurationObject::MONTHS_SLOT,
+                        NumberValue(months + (+0.0)));
+  object->initFixedSlot(DurationObject::WEEKS_SLOT,
+                        NumberValue(weeks + (+0.0)));
+  object->initFixedSlot(DurationObject::DAYS_SLOT, NumberValue(days + (+0.0)));
+  object->initFixedSlot(DurationObject::HOURS_SLOT,
+                        NumberValue(hours + (+0.0)));
+  object->initFixedSlot(DurationObject::MINUTES_SLOT,
+                        NumberValue(minutes + (+0.0)));
+  object->initFixedSlot(DurationObject::SECONDS_SLOT,
+                        NumberValue(seconds + (+0.0)));
+  object->initFixedSlot(DurationObject::MILLISECONDS_SLOT,
+                        NumberValue(milliseconds + (+0.0)));
+  object->initFixedSlot(DurationObject::MICROSECONDS_SLOT,
+                        NumberValue(microseconds + (+0.0)));
+  object->initFixedSlot(DurationObject::NANOSECONDS_SLOT,
+                        NumberValue(nanoseconds + (+0.0)));
 
   // Step 14.
   return object;
@@ -2024,8 +2030,8 @@ static UnsignedRoundingMode GetUnsignedRoundingMode(
 }
 
 struct NudgeWindow {
-  int64_t r1;
-  int64_t r2;
+  int64_t r1 = 0;
+  int64_t r2 = 0;
   EpochNanoseconds startEpochNs;
   EpochNanoseconds endEpochNs;
   DateDuration startDuration;
@@ -3732,14 +3738,6 @@ static bool Duration_round(JSContext* cx, const CallArgs& args) {
     // Step 28.g.
     auto targetDateTime = ISODateTime{targetDate, targetTime.time};
 
-    // DifferencePlainDateTimeWithRounding, step 2.
-    if (!ISODateTimeWithinLimits(isoDateTime) ||
-        !ISODateTimeWithinLimits(targetDateTime)) {
-      JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
-                                JSMSG_TEMPORAL_PLAIN_DATE_TIME_INVALID);
-      return false;
-    }
-
     // Step 28.h.
     if (!DifferencePlainDateTimeWithRounding(cx, isoDateTime, targetDateTime,
                                              calendar,
@@ -3954,14 +3952,6 @@ static bool Duration_total(JSContext* cx, const CallArgs& args) {
     // Step 13.g.
     auto targetDateTime = ISODateTime{targetDate, targetTime.time};
 
-    // DifferencePlainDateTimeWithTotal, step 2.
-    if (!ISODateTimeWithinLimits(isoDateTime) ||
-        !ISODateTimeWithinLimits(targetDateTime)) {
-      JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
-                                JSMSG_TEMPORAL_PLAIN_DATE_TIME_INVALID);
-      return false;
-    }
-
     // Step 13.h.
     if (!DifferencePlainDateTimeWithTotal(cx, isoDateTime, targetDateTime,
                                           calendar, unit, &total)) {
@@ -4136,7 +4126,7 @@ static bool Duration_toJSON(JSContext* cx, unsigned argc, Value* vp) {
  */
 static bool Duration_toLocaleString(JSContext* cx, const CallArgs& args) {
   // Steps 3-7.
-  return TemporalDurationToLocaleString(cx, args);
+  return intl::TemporalDurationToLocaleString(cx, args);
 }
 
 /**

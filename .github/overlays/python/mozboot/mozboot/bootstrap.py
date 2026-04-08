@@ -48,12 +48,22 @@ Please choose the version of Noraneko you want to build:
 %s
 Your choice: """
 
+<<<<<<< noraneko
 APPLICATIONS = OrderedDict(
     [
         ("Noraneko for Desktop Artifact Mode", "browser_artifact_mode"),
         ("Noraneko for Desktop", "browser"),
     ]
 )
+=======
+APPLICATIONS = OrderedDict([
+    ("Firefox for Desktop Artifact Mode", "browser_artifact_mode"),
+    ("Firefox for Desktop", "browser"),
+    ("GeckoView/Firefox for Android Artifact Mode", "mobile_android_artifact_mode"),
+    ("GeckoView/Firefox for Android", "mobile_android"),
+    ("SpiderMonkey JavaScript engine", "js"),
+])
+>>>>>>> upstream
 
 FINISHED = """
 Your system should be ready to build %s!
@@ -159,7 +169,10 @@ def check_for_hgrc_state_dir_mismatch(state_dir):
     import subprocess
 
     result = subprocess.run(
-        ["hg", "config", "--source", "-T", "json"], capture_output=True, text=True
+        ["hg", "config", "--source", "-T", "json"],
+        check=False,
+        capture_output=True,
+        text=True,
     )
 
     if result.returncode:
@@ -304,7 +317,7 @@ class Bootstrapper:
                 cls = WindowsBootstrapper
         if cls is None:
             raise NotImplementedError(
-                "Bootstrap support is not yet available " "for your OS."
+                "Bootstrap support is not yet available for your OS."
             )
 
         self.instance = cls(**args)
@@ -399,7 +412,7 @@ class Bootstrapper:
         repo = get_repository_object(checkout_root)
         self.instance.srcdir = checkout_root
         self.instance.validate_environment()
-        self._validate_python_environment(checkout_root)
+        self._populate_optional_packages(checkout_root)
 
         if sys.platform.startswith("win"):
             self._check_for_dev_drive(checkout_root)
@@ -674,23 +687,7 @@ class Bootstrapper:
             # No mozconfig file exists yet
             self._write_default_mozconfig(raw_mozconfig)
 
-    def _validate_python_environment(self, topsrcdir):
-        valid = True
-        pip3 = to_optional_path(which("pip3"))
-        if not pip3:
-            print("ERROR: Could not find pip3.", file=sys.stderr)
-            self.instance.suggest_install_pip3()
-            valid = False
-        if not valid:
-            print(
-                "ERROR: Your Python installation will not be able to run "
-                "`mach bootstrap`. `mach bootstrap` cannot maintain your "
-                "Python environment for you; fix the errors shown here, and "
-                "then re-run `mach bootstrap`.",
-                file=sys.stderr,
-            )
-            sys.exit(1)
-
+    def _populate_optional_packages(self, topsrcdir):
         mach_site = MachSiteManager.from_environment(
             topsrcdir,
             lambda: os.path.normpath(get_state_dir(True, topsrcdir=topsrcdir)),
@@ -703,12 +700,10 @@ def current_firefox_checkout(env, hg: Optional[Path] = None):
 
     Returns one of None, ``git``, or ``hg``.
     """
-    HG_ROOT_REVISIONS = set(
-        [
-            # From mozilla-unified.
-            "8ba995b74e18334ab3707f27e9eb8f4e37ba3d29"
-        ]
-    )
+    HG_ROOT_REVISIONS = set([
+        # From mozilla-unified.
+        "8ba995b74e18334ab3707f27e9eb8f4e37ba3d29"
+    ])
 
     path = Path.cwd()
     while path:
@@ -767,6 +762,7 @@ def _warn_if_risky_revision(path: Path):
 def _macos_is_running_under_rosetta():
     proc = subprocess.run(
         ["sysctl", "-n", "sysctl.proc_translated"],
+        check=False,
         stdout=subprocess.PIPE,
         stderr=subprocess.DEVNULL,
     )

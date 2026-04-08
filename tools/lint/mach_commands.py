@@ -10,6 +10,7 @@ import os
 from mach.decorators import Command, CommandArgument
 from mozbuild.base import BuildEnvironmentNotFoundException
 from mozbuild.base import MachCommandConditions as conditions
+from mozbuild.util import construct_log_filename
 from mozsystemmonitor.resourcemonitor import SystemResourceMonitor
 
 here = os.path.abspath(os.path.dirname(__file__))
@@ -25,7 +26,7 @@ if os.path.exists(thunderbird_excludes):
 
 GLOBAL_EXCLUDES = ["**/node_modules", "tools/lint/test/files", ".hg", ".git"]
 
-VALID_FORMATTERS = {"black", "clang-format", "eslint", "rustfmt", "stylelint"}
+VALID_FORMATTERS = {"ruff-format", "clang-format", "eslint", "rustfmt", "stylelint"}
 VALID_ANDROID_FORMATTERS = {"android-format"}
 
 # Code-review bot must index issues from the whole codebase when pushing
@@ -50,13 +51,11 @@ def get_global_excludes(**lintargs):
     topsrcdir = lintargs["root"]
 
     # exclude top level paths that look like objdirs
-    excludes.extend(
-        [
-            name
-            for name in os.listdir(topsrcdir)
-            if name.startswith("obj") and os.path.isdir(name)
-        ]
-    )
+    excludes.extend([
+        name
+        for name in os.listdir(topsrcdir)
+        if name.startswith("obj") and os.path.isdir(name)
+    ])
 
     if lintargs.get("include_third-party"):
         # For some linters, we want to include the thirdparty code too.
@@ -117,9 +116,10 @@ def lint(command_context, *runargs, **lintargs):
         if os.environ.get("MOZ_AUTOMATION") == "1":
             profile_path = "/builds/worker/profile_resource-usage.json"
         else:
-            command_context._ensure_state_subdir_exists(".")
+            log_subdir = os.path.join("logs", "lint")
+            command_context._ensure_state_subdir_exists(log_subdir)
             profile_path = command_context._get_state_filename(
-                "profile_build_resources.json"
+                construct_log_filename("profile"), subdir=log_subdir
             )
 
         with open(profile_path, "w", encoding="utf-8", newline="\n") as f:
@@ -175,7 +175,7 @@ def eslint(command_context, paths, extra_args=[], **kwargs):
         linters=["eslint"],
         paths=paths,
         argv=extra_args,
-        **kwargs
+        **kwargs,
     )
 
 
@@ -204,7 +204,7 @@ def prettier(command_context, paths, extra_args=[], **kwargs):
         linters=["eslint", "stylelint"],
         paths=paths,
         argv=extra_args,
-        **kwargs
+        **kwargs,
     )
 
 

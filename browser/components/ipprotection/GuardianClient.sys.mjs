@@ -44,7 +44,7 @@ export class GuardianClient {
   constructor(config = gConfig) {
     this.guardianEndpoint = config.guardianEndpoint;
     this.fxaOrigin = config.fxaOrigin;
-    this.withToken = config.withToken;
+    this.getToken = config.getToken;
   }
   /**
    * Checks the current user's FxA account to see if it is linked to the Guardian service.
@@ -107,10 +107,15 @@ export class GuardianClient {
       });
       const finalEndpoint = waitUntilURL(browser, url => {
         const urlObj = new URL(url);
+        if (url === "about:blank") {
+          return false;
+        }
         if (!allowedOrigins.includes(urlObj.origin)) {
           browser.stop();
           browser.remove();
-          throw new Error(`URL origin ${urlObj.origin} is not allowed.`);
+          throw new Error(
+            `URL ${url} with origin ${urlObj.origin} is not allowed.`
+          );
         }
         if (
           finalizerURLs.some(
@@ -157,41 +162,74 @@ export class GuardianClient {
   /**
    * Fetches a proxy pass from the Guardian service.
    *
-   * @returns {Promise<{error?: string, status?:number, pass?: ProxyPass}>} Resolves with an object containing either an error string or the proxy pass data and a status code.
+   * @param {AbortSignal} [abortSignal=null] - a signal to indicate the fetch should be aborted
+   * @returns {Promise<{error?: string, status?:number, pass?: ProxyPass, usage?: ProxyUsage|null, retryAfter?: string|null}>} Resolves with an object containing either an error string or the proxy pass data and a status code.
+   *
+   * Return values:
+   * - {pass, status, usage}: Success with proxy pass and optional usage info
+   * - {error: "login_needed", usage: null}: No FxA token available
+   * - {status: 429, error: "quota_exceeded", usage, retryAfter}: Usage quota exceeded
+   * - {status, error: "invalid_response", usage}: Invalid response from server
+   * - {status, error: "parse_error", usage}: Failed to parse response
+   *
    * Status codes to watch for:
    * - 200: User is a proxy user and a new pass was fetched
+   * - 429: Usage quota exceeded
    * - 403: The FxA was valid but the user is not a proxy user.
    * - 401: The FxA token was rejected.
    * - 5xx: Internal guardian error.
    */
-  async fetchProxyPass() {
-    const response = await this.withToken(async token => {
-      return await fetch(this.#tokenURL, {
-        method: "GET",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-      });
+  async fetchProxyPass(abortSignal = null) {
+    using tokenHandle = await this.getToken(abortSignal);
+    const response = await fetch(this.#tokenURL, {
+      method: "GET",
+      cache: "no-cache",
+      headers: {
+        Authorization: `Bearer ${tokenHandle.token}`,
+        "Content-Type": "application/json",
+      },
+      signal: abortSignal,
     });
     if (!response) {
-      return { error: "login_needed" };
+      return { error: "login_needed", usage: null };
     }
     const status = response.status;
+
+    let usage = null;
+    try {
+      usage = ProxyUsage.fromResponse(response);
+    } catch (error) {
+      console.warn(
+        "Usage headers missing or invalid, continuing without usage:",
+        error
+      );
+    }
+
+    if (status === 429) {
+      const retryAfter = response.headers.get("Retry-After");
+      return {
+        status,
+        error: "quota_exceeded",
+        usage,
+        retryAfter,
+      };
+    }
+
     try {
       const pass = await ProxyPass.fromResponse(response);
       if (!pass) {
-        return { status, error: "invalid_response" };
+        return { status, error: "invalid_response", usage };
       }
-      return { pass, status };
+      return { pass, status, usage };
     } catch (error) {
-      console.error("Error creating ProxyPass:", error);
-      return { status, error: "parse_error" };
+      console.error("Error parsing pass:", error);
+      return { status, error: "parse_error", usage };
     }
   }
   /**
    * Fetches the user's entitlement information.
    *
+   * @param {AbortSignal} [abortSignal=null] - a signal to indicate the fetch should be aborted
    * @returns {Promise<{status?: number, entitlement?: Entitlement|null, error?:string}>} A promise that resolves to an object containing the HTTP status code and the user's entitlement information.
    *
    * Status codes to watch for:
@@ -199,16 +237,16 @@ export class GuardianClient {
    * - 404: User is not a proxy user, no entitlement information available.
    * - 401: The FxA token was rejected, probably guardian and fxa mismatch. (i.e guardian-stage and fxa-prod)
    */
-  async fetchUserInfo() {
-    const response = await this.withToken(async token => {
-      return fetch(this.#statusURL, {
-        method: "GET",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        cache: "no-cache",
-      });
+  async fetchUserInfo(abortSignal = null) {
+    using tokenHandle = await this.getToken(abortSignal);
+    const response = await fetch(this.#statusURL, {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${tokenHandle.token}`,
+        "Content-Type": "application/json",
+      },
+      cache: "no-cache",
+      signal: abortSignal,
     });
     if (!response) {
       return { error: "login_needed" };
@@ -226,6 +264,36 @@ export class GuardianClient {
     } catch (error) {
       return { status, error: "parse_error" };
     }
+  }
+
+  /**
+   * Returns the user's proxy usage information, without fetching a new proxy pass.
+   *
+   * @param {AbortSignal} abortSignal - Signal for when this function should be aborted
+   * @returns {ProxyUsage | null}
+   */
+  async fetchProxyUsage(abortSignal) {
+    using tokenHandle = await this.getToken(abortSignal);
+    const response = await fetch(this.#tokenURL, {
+      method: "HEAD",
+      signal: abortSignal,
+      headers: {
+        Authorization: `Bearer ${tokenHandle.token}`,
+        "Content-Type": "application/json",
+      },
+    });
+    if (!response) {
+      return null;
+    }
+    try {
+      return ProxyUsage.fromResponse(response);
+    } catch (error) {
+      console.warn(
+        "Usage headers missing or invalid, continuing without usage:",
+        error
+      );
+    }
+    return null;
   }
 
   /** This is the URL that will be used to fetch the proxy pass. */
@@ -271,44 +339,65 @@ export class GuardianClient {
  *
  * Immutable after creation.
  */
-export class ProxyPass {
+export class ProxyPass extends EventTarget {
+  #body = {
+    /** Not Before */
+    nbf: 0,
+    /** Expiration */
+    exp: 0,
+  };
   /**
    * @param {string} token - The JWT to use for authentication.
-   * @param {number} until - The timestamp until which the token is valid.
    */
-  constructor(token, until) {
-    if (typeof token !== "string" || typeof until !== "number") {
-      throw new TypeError("Invalid arguments for ProxyPass constructor");
+  constructor(token) {
+    super();
+    if (typeof token !== "string") {
+      throw new TypeError(
+        "Invalid arguments for ProxyPass constructor, token is not a string"
+      );
     }
     this.token = token;
-    this.until = until;
-    this.from = Date.now();
-    const [header, body] = this.token.split(".");
+    // Contains [header.body.signature]
+    const parts = this.token.split(".");
+    if (parts.length !== 3) {
+      throw new TypeError("Invalid token format");
+    }
     try {
-      const parses = [header, body].every(json =>
-        JSON.parse(atob(json) != null)
-      );
-      if (!parses) {
-        throw new TypeError("Invalid token format");
+      const body = JSON.parse(atob(parts[1]));
+      if (
+        !lazy.JsonSchemaValidator.validate(body, ProxyPass.bodySchema).valid
+      ) {
+        throw new TypeError("Token body does not match schema");
       }
+      this.#body = body;
     } catch (error) {
       throw new TypeError("Invalid token format: " + error.message);
     }
-    Object.freeze(this);
-  }
-  isValid() {
-    const now = Date.now();
-    return this.until > now;
   }
 
-  shouldRotate() {
-    if (!this.isValid) {
+  isValid(now = Temporal.Now.instant()) {
+    // If the remaining duration is zero or positive, the pass is still valid.
+    return (
+      Temporal.Instant.compare(now, this.from) >= 0 &&
+      Temporal.Instant.compare(now, this.until) < 0
+    );
+  }
+
+  shouldRotate(now = Temporal.Now.instant()) {
+    if (!this.isValid(now)) {
       return true;
     }
-    const totalLifespan = this.until - this.from;
-    const rotationPoint =
-      this.from + totalLifespan * (ProxyPass.ROTATION_PERCENTAGE / 100);
-    return Date.now() > rotationPoint;
+    return Temporal.Instant.compare(now, this.rotationTimePoint) >= 0;
+  }
+
+  get from() {
+    // nbf is in seconds since epoch
+    return Temporal.Instant.fromEpochMilliseconds(this.#body.nbf * 1000);
+  }
+
+  get until() {
+    // exp is in seconds since epoch
+    return Temporal.Instant.fromEpochMilliseconds(this.#body.exp * 1000);
   }
 
   /**
@@ -327,24 +416,6 @@ export class ProxyPass {
     }
 
     try {
-      // Get cache_control max-age value
-      const cache_control = response.headers
-        .get("cache-control")
-        ?.match(/max-age=(\d+)/)?.[1];
-
-      if (!cache_control) {
-        console.error("Missing or invalid Cache-Control header");
-        return null;
-      }
-
-      const max_age = parseInt(cache_control, 10);
-      if (isNaN(max_age)) {
-        console.error("Invalid max-age value in Cache-Control header");
-        return null;
-      }
-
-      const until = Date.now() + max_age * 1000;
-
       // Parse JSON response
       const responseData = await response.json();
       const token = responseData?.token;
@@ -353,19 +424,61 @@ export class ProxyPass {
         console.error("Missing or invalid token in response");
         return null;
       }
-
-      return new ProxyPass(token, until);
+      return new ProxyPass(token);
     } catch (error) {
       console.error("Error parsing proxy pass response:", error);
       return null;
     }
   }
+  /**
+   * @type {Temporal.Instant} - The Point in time when the token should be rotated.
+   */
+  get rotationTimePoint() {
+    return this.until.subtract(ProxyPass.ROTATION_TIME);
+  }
 
   asBearerToken() {
     return `Bearer ${this.token}`;
   }
+  // Rotate 2 Minutes from the End Time
+  static ROTATION_TIME = Temporal.Duration.from({ minutes: 2 });
 
-  static ROTATION_PERCENTAGE = 90; // 0-100 % - how long in the duration until the pass should be rotated.
+  static get bodySchema() {
+    return {
+      $schema: "http://json-schema.org/draft-07/schema#",
+      title: "JWT Claims",
+      type: "object",
+      properties: {
+        sub: {
+          type: "string",
+          description: "Subject identifier",
+        },
+        aud: {
+          type: "string",
+          format: "uri",
+          description: "Audience for which the token is intended",
+        },
+        iat: {
+          type: "integer",
+          description: "Issued-at time (seconds since Unix epoch)",
+        },
+        nbf: {
+          type: "integer",
+          description: "Not-before time (seconds since Unix epoch)",
+        },
+        exp: {
+          type: "integer",
+          description: "Expiration time (seconds since Unix epoch)",
+        },
+        iss: {
+          type: "string",
+          description: "Issuer identifier",
+        },
+      },
+      required: ["sub", "aud", "iat", "nbf", "exp", "iss"],
+      additionalProperties: true,
+    };
+  }
 }
 
 /**
@@ -391,6 +504,8 @@ export class Entitlement {
   uid = 0;
   /** True if the User has website inclusion */
   website_inclusion = false;
+  /** The maximum number of bytes allowed for the user */
+  maxBytes = BigInt(0);
 
   constructor(
     args = {
@@ -401,12 +516,12 @@ export class Entitlement {
       subscribed: false,
       uid: 0,
       website_inclusion: false,
+      maxBytes: "0",
     }
   ) {
-    // Ensure it parses to a valid date
     const parsed = Date.parse(args.created_at);
     if (isNaN(parsed)) {
-      throw new TypeError("entitlementDate is not a valid date string");
+      throw new TypeError("created_at is not a valid date string");
     }
     this.autostart = args.autostart;
     this.limited_bandwidth = args.limited_bandwidth;
@@ -414,7 +529,8 @@ export class Entitlement {
     this.website_inclusion = args.website_inclusion;
     this.subscribed = args.subscribed;
     this.uid = args.uid;
-    this.created_at = parsed;
+    this.created_at = new Date(parsed);
+    this.maxBytes = BigInt(args.maxBytes);
     Object.freeze(this);
   }
   static fromResponse(response) {
@@ -465,6 +581,11 @@ export class Entitlement {
         website_inclusion: {
           type: "boolean",
         },
+        maxBytes: {
+          type: "string",
+          description:
+            "A BigInt string representing the maximum number of bytes allowed for the user",
+        },
       },
       required: [
         "autostart",
@@ -474,9 +595,74 @@ export class Entitlement {
         "subscribed",
         "uid",
         "website_inclusion",
+        "maxBytes",
       ],
       additionalProperties: true,
     };
+  }
+
+  toString() {
+    return JSON.stringify({
+      ...this,
+      maxBytes: this.maxBytes.toString(),
+      created_at: this.created_at.toISOString(),
+    });
+  }
+}
+
+/**
+ * Represents usage tracking information for the Proxy Service.
+ * Contains data about quota limits, remaining quota, and reset time.
+ *
+ * Immutable after creation.
+ */
+export class ProxyUsage {
+  /** @type {bigint} - Maximum bytes allowed */
+  max = BigInt(0);
+  /** @type {bigint} - Remaining bytes available */
+  remaining = BigInt(0);
+  /** @type {Temporal.Instant} - When the usage quota resets */
+  reset = null;
+
+  /**
+   * @param {string} max - Maximum bytes allowed (as string for BigInt parsing)
+   * @param {string} remaining - Remaining bytes available (as string for BigInt parsing)
+   * @param {string} reset - ISO 8601 timestamp when quota resets
+   */
+  constructor(max, remaining, reset) {
+    this.max = BigInt(max);
+    if (this.max < BigInt(0)) {
+      throw new TypeError("max must be non-negative");
+    }
+
+    this.remaining = BigInt(remaining);
+    if (this.remaining < BigInt(0)) {
+      throw new TypeError("remaining must be non-negative");
+    }
+
+    if (this.remaining > this.max) {
+      throw new TypeError("remaining cannot exceed max");
+    }
+
+    this.reset = Temporal.Instant.from(reset);
+
+    Object.freeze(this);
+  }
+
+  static fromResponse(response) {
+    const getOrThrow = headerName => {
+      const value = response.headers.get(headerName);
+      if (!value) {
+        throw new TypeError(`Missing required header: ${headerName}`);
+      }
+      return value;
+    };
+
+    const quotaLimit = getOrThrow("X-Quota-Limit");
+    const quotaRemaining = getOrThrow("X-Quota-Remaining");
+    const quotaReset = getOrThrow("X-Quota-Reset");
+
+    return new ProxyUsage(quotaLimit, quotaRemaining, quotaReset);
   }
 }
 
@@ -486,7 +672,9 @@ export class Entitlement {
 const CLIENT_ID_MAP = {
   "http://localhost:3000": "6089c54fdc970aed",
   "https://guardian-dev.herokuapp.com": "64ef9b544a31bca8",
+  "https://dev.vpn.nonprod.webservices.mozgcp.net": "64ef9b544a31bca8",
   "https://stage.guardian.nonprod.cloudops.mozgcp.net": "e6eb0d1e856335fc",
+  "https://stage.vpn.nonprod.webservices.mozgcp.net": "e6eb0d1e856335fc",
   "https://fpn.firefox.com": "e6eb0d1e856335fc",
   "https://vpn.mozilla.org": "e6eb0d1e856335fc",
 };
@@ -507,12 +695,13 @@ const listeners = new Set();
  */
 async function waitUntilURL(browser, predicate) {
   const prom = Promise.withResolvers();
-  const done = false;
+  let done = false;
   const check = arg => {
     if (done) {
       return;
     }
     if (predicate(arg)) {
+      done = true;
       listeners.delete(listener);
       browser.removeProgressListener(listener);
       prom.resolve(arg);
@@ -564,21 +753,35 @@ let gConfig = {
    * Destroys the token after use.
    *
    * @template T
-   * @param {(token: string) => T|Promise<T>} cb
-   * @returns {Promise<T|null>}
+   * @param {AbortSignal} abortSignal - An Abort Signal to abort the fetch.
+   * @returns {Promise<{token:string} & Disposable>} - A disposable, that will auto revoke the token after use.
    */
-  withToken: async cb => {
-    const token = await lazy.fxAccounts.getOAuthToken({
-      scope: ["profile", "https://identity.mozilla.com/apps/vpn"],
-    });
+  getToken: async (abortSignal = null) => {
+    let tasks = [
+      lazy.fxAccounts.getOAuthToken({
+        scope: ["profile", "https://identity.mozilla.com/apps/vpn"],
+      }),
+    ];
+    if (abortSignal) {
+      abortSignal.throwIfAborted();
+      tasks.push(
+        new Promise((_, rej) => {
+          abortSignal?.addEventListener("abort", rej, { once: true });
+        })
+      );
+    }
+    const token = await Promise.race(tasks);
     if (!token) {
       return null;
     }
-    const res = await cb(token);
-    lazy.fxAccounts.removeCachedOAuthToken({
+    return {
       token,
-    });
-    return res;
+      [Symbol.dispose]: () => {
+        lazy.fxAccounts.removeCachedOAuthToken({
+          token,
+        });
+      },
+    };
   },
   guardianEndpoint: "",
   fxaOrigin: "",

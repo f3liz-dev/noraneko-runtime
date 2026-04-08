@@ -4,8 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef mozilla_dom_Document_h___
-#define mozilla_dom_Document_h___
+#ifndef mozilla_dom_Document_h_
+#define mozilla_dom_Document_h_
 
 #include <bitset>
 #include <cstddef>
@@ -47,6 +47,7 @@
 #include "mozilla/WeakPtr.h"
 #include "mozilla/css/StylePreloadKind.h"
 #include "mozilla/dom/AnimationFrameProvider.h"
+#include "mozilla/dom/AnimationTimelinesController.h"
 #include "mozilla/dom/DocumentOrShadowRoot.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/EventTarget.h"
@@ -129,7 +130,6 @@ class ElementCreationOptionsOrString;
 class InfallibleAllocPolicy;
 class JSObject;
 class JSTracer;
-class PLDHashTable;
 class PolicyContainer;
 class gfxUserFontSet;
 class mozIDOMWindowProxy;
@@ -270,6 +270,7 @@ class NodeFilter;
 class NodeInfo;
 class NodeIterator;
 enum class OrientationType : uint8_t;
+enum class PopoverAttributeState : uint8_t;
 class ProcessingInstruction;
 class Promise;
 class ScriptLoader;
@@ -354,7 +355,7 @@ class PostMessageEvent;
 
 #define DEPRECATED_OPERATION(_op) e##_op,
 enum class DeprecatedOperations : uint16_t {
-#include "nsDeprecatedOperationList.h"
+#include "nsDeprecatedOperationList.inc"
   eDeprecatedOperationCount
 };
 #undef DEPRECATED_OPERATION
@@ -667,6 +668,8 @@ class Document : public nsINode,
       }
     }
   };
+
+  void ApplyCspFromLoadInfo(nsILoadInfo* aLoadInfo);
 
   /**
    * Let the document know that we're starting to load data into it.
@@ -1024,22 +1027,35 @@ class Document : public nsINode,
    */
   void SetBidiEnabled() { mBidiEnabled = true; }
 
+  /**
+   * Whether a document is the initial document in its window, and if so,
+   * which stage of initialness it is in.
+   */
   enum class InitialStatus : uint8_t {
-    IsInitial,
+    // The first stage of an initial document. No navigation has occured,
+    // we might navigate away or commit to this document by firing load.
+    IsInitialUncommitted,
+    // An explicit navigation to `about:blank` occured. Load was fired or will
+    // be soon.
+    IsInitialCommitted,
+    // document.open() was called on the initial document.
     IsInitialButExplicitlyOpened,
-    WasInitial,
+    // This document is not initial
     NeverInitial,
   };
 
   /**
-   * Ask this document whether it's the initial document in its window.
+   * Ask this document if the "is initial about:blank" flag is set, i.e.
+   * it is the initial document in its window.
+   * https://html.spec.whatwg.org/#is-initial-about:blank
    */
   bool IsInitialDocument() const {
-    return mInitialStatus == InitialStatus::IsInitial;
+    return mInitialStatus == InitialStatus::IsInitialUncommitted ||
+           mInitialStatus == InitialStatus::IsInitialCommitted;
   }
 
   /**
-   * Ask this document whether it has ever been a initial document in its
+   * Ask this document whether it has ever been an initial document in its
    * window.
    */
   bool IsEverInitialDocument() const {
@@ -1047,14 +1063,47 @@ class Document : public nsINode,
   }
 
   /**
-   * Tell this document that it's the initial document in its window.  See
-   * comments on mIsInitialDocumentInWindow for when this should be called.
+   * Ask this document whether it is the initial document in its window and
+   * no navigation to about:blank has yet occured that would cause us to commit
+   * to it.
    */
-  void SetIsInitialDocument(bool aIsInitialDocument);
+  bool IsUncommittedInitialDocument() const {
+    return mInitialStatus == InitialStatus::IsInitialUncommitted;
+  }
 
   InitialStatus GetInitialStatus() const { return mInitialStatus; }
 
+  /**
+   * Tell this document whether it's the initial document in its window.
+   * Should be called when creating the initial `about:blank`, when committing
+   * to it, and from `document.open()`.
+   */
   void SetInitialStatus(Document::InitialStatus aStatus);
+
+  /**
+   * Returns true if this is the initial document in its window
+   * and we are currently committing to it.
+   */
+  bool InitialAboutBlankLoadCompleting() const {
+    return mInitialAboutBlankLoadCompleting;
+  }
+
+  void BeginInitialAboutBlankLoadCompleting(nsIChannel* aChannel);
+
+  void EndInitialAboutBlankLoadCompleting() {
+    mInitialAboutBlankLoadCompleting = false;
+  }
+
+  // Returns true if the load event should be forced right now, despite
+  // possible blockers due to the initial sync load of about:blank.
+  bool ShouldForceInitialSyncLoad() {
+    // Force load if
+    // - we are currently in the synchronous load path of the docshell, i.e. we
+    //   are completing the initial about:blank load
+    // - and Document::EndLoad was already called, so the method is almost done
+    //   (we're likely called from there right now).
+    return InitialAboutBlankLoadCompleting() && !IsExpectingEndLoad();
+  }
 
   void SetLoadedAsData(bool aLoadedAsData, bool aConsiderForMemoryReporting);
 
@@ -1274,19 +1323,13 @@ class Document : public nsINode,
 
   StorageAccessAPIHelper::PerformPermissionGrant CreatePermissionGrantPromise(
       nsPIDOMWindowInner* aInnerWindow, nsIPrincipal* aPrincipal,
-      bool aHasUserInteraction, bool aRequireUserInteraction,
-      const Maybe<nsCString>& aTopLevelBaseDomain, bool aFrameOnly);
+      bool aHasUserInteraction, bool aRequireUserInteraction, bool aFrameOnly);
 
   already_AddRefed<Promise> RequestStorageAccess(ErrorResult& aRv);
 
   already_AddRefed<Promise> RequestStorageAccessForOrigin(
       const nsAString& aThirdPartyOrigin, const bool aRequireUserInteraction,
       ErrorResult& aRv);
-
-  already_AddRefed<Promise> RequestStorageAccessUnderSite(
-      const nsAString& aSerializedSite, ErrorResult& aRv);
-  already_AddRefed<Promise> CompleteStorageAccessRequestFromSite(
-      const nsAString& aSerializedOrigin, ErrorResult& aRv);
 
   bool UseRegularPrincipal() const;
 
@@ -1571,6 +1614,7 @@ class Document : public nsINode,
   nsresult InitIntegrityPolicy(nsIChannel* aChannel);
   nsresult InitCOEP(nsIChannel* aChannel);
   nsresult InitDocPolicy(nsIChannel* aChannel);
+  nsresult InitTLSCertificateBinding(nsIChannel* aChannel);
 
   nsresult InitReferrerInfo(nsIChannel* aChannel);
 
@@ -1946,6 +1990,11 @@ class Document : public nsINode,
   MOZ_CAN_RUN_SCRIPT bool TryAutoFocusCandidate(Element& aElement);
 
  public:
+  void SetAncestorOriginsList(nsTArray<nsString>&& aAncestorOriginsList);
+  Span<const nsString> GetAncestorOriginsList() const;
+  // https://html.spec.whatwg.org/#concept-location-ancestor-origins-list
+  already_AddRefed<DOMStringList> AncestorOrigins() const;
+
   // Removes all the elements with fullscreen flag set from the top layer, and
   // clears their fullscreen flag.
   void CleanupFullscreenState();
@@ -2466,6 +2515,9 @@ class Document : public nsINode,
    * Destroy() is only called on documents that have a content viewer.
    */
   virtual void Destroy();
+
+  // https://wicg.github.io/document-picture-in-picture/#close-on-destroy
+  void CloseAnyAssociatedDocumentPiPWindows();
 
   /**
    * Notify the document that its associated DocumentViewer is no longer
@@ -3186,7 +3238,12 @@ class Document : public nsINode,
   using DocumentOrShadowRoot::GetElementsByTagNameNS;
 
   DocumentTimeline* Timeline();
-  LinkedList<DocumentTimeline>& Timelines() { return mTimelines; }
+  const AnimationTimelinesController& TimelinesController() const {
+    return mTimelinesController;
+  }
+  AnimationTimelinesController& TimelinesController() {
+    return mTimelinesController;
+  }
   void UpdateHiddenByContentVisibilityForAnimations();
 
   SVGSVGElement* GetSVGRootElement() const;
@@ -3319,7 +3376,7 @@ class Document : public nsINode,
 
 #define DOCUMENT_WARNING(_op) e##_op,
   enum DocumentWarnings {
-#include "nsDocumentWarningList.h"
+#include "nsDocumentWarningList.inc"
     eDocumentWarningCount
   };
 #undef DOCUMENT_WARNING
@@ -3338,6 +3395,9 @@ class Document : public nsINode,
 
   // Posts an event to call UpdateVisibilityState.
   void PostVisibilityUpdateEvent();
+
+  // https://html.spec.whatwg.org/#reveal
+  void Reveal();
 
   bool IsSyntheticDocument() const { return mIsSyntheticDocument; }
 
@@ -3547,11 +3607,23 @@ class Document : public nsINode,
   MOZ_CAN_RUN_SCRIPT void GetWireframe(bool aIncludeNodes,
                                        Nullable<Wireframe>&);
 
+  // https://html.spec.whatwg.org/#close-entire-popover-list
+  MOZ_CAN_RUN_SCRIPT void CloseEntirePopoverList(PopoverAttributeState aMode,
+                                                 bool aFocusPreviousElement,
+                                                 bool aFireEvents);
+
   // Hides all popovers until the given end point, see
   // https://html.spec.whatwg.org/multipage/popover.html#hide-all-popovers-until
   MOZ_CAN_RUN_SCRIPT void HideAllPopoversUntil(nsINode& aEndpoint,
                                                bool aFocusPreviousElement,
                                                bool aFireEvents);
+
+  // Hides all popovers, until the given end point, see
+  // https://html.spec.whatwg.org/#hide-popover-stack-until
+  MOZ_CAN_RUN_SCRIPT void HidePopoverStackUntil(PopoverAttributeState aMode,
+                                                nsINode& aEndpoint,
+                                                bool aFocusPreviousElement,
+                                                bool aFireEvents);
 
   // Hides the given popover element, see
   // https://html.spec.whatwg.org/multipage/popover.html#hide-popover-algorithm
@@ -3561,18 +3633,15 @@ class Document : public nsINode,
                                       ErrorResult& aRv);
 
   // Returns a list of all the elements in the Document's top layer whose
-  // popover attribute is in the auto state.
+  // popover opened in mode is in the given state.
   // See https://html.spec.whatwg.org/multipage/popover.html#auto-popover-list
-  nsTArray<Element*> AutoPopoverList() const;
+  // See https://html.spec.whatwg.org/#showing-hint-popover-list
+  nsTArray<Element*> PopoverListOf(PopoverAttributeState aMode) const;
 
-  // Return document's auto popover list's last element.
+  // Return document's popover list's last element of a particular mode.
   // See
   // https://html.spec.whatwg.org/multipage/popover.html#topmost-auto-popover
-  Element* GetTopmostAutoPopover() const;
-
-  // Adds/removes an element to/from the auto popover list.
-  void AddToAutoPopoverList(Element&);
-  void RemoveFromAutoPopoverList(Element&);
+  Element* GetTopmostPopoverOf(PopoverAttributeState aMode) const;
 
   void AddPopoverToTopLayer(Element&);
   void RemovePopoverFromTopLayer(Element&);
@@ -3797,12 +3866,7 @@ class Document : public nsINode,
   // call it just before the document loses its window.
   void SendPageUseCounters();
 
-  void RecordASMJSExecutionTime();
-
   void SetUseCounter(UseCounter aUseCounter) {
-    if (aUseCounter == eUseCounter_custom_JS_use_asm) {
-      RecordASMJSExecutionTime();
-    }
     mUseCounters[aUseCounter] = true;
   }
 
@@ -4162,6 +4226,8 @@ class Document : public nsINode,
   void ResumeDOMNotifications() { mSuspendDOMNotifications = false; }
 
   bool DOMNotificationsSuspended() const { return mSuspendDOMNotifications; }
+
+  bool IsExpectingEndLoad() { return mDidCallBeginLoad; }
 
  protected:
   RefPtr<DocumentL10n> mDocumentL10n;
@@ -4891,6 +4957,13 @@ class Document : public nsINode,
   // True if we may need to recompute the language prefs for this document.
   bool mMayNeedFontPrefsUpdate : 1;
 
+  // True if we are trying to fire the load event for the initial about:blank.
+  // Since the initial about:blank is already in READYSTATE_COMPLETE when
+  // firing the load event, a different indicator is needed.
+  // IsInitialDocument() isn't a sufficient indicator, because it
+  // remains set, when navigating back in history.
+  bool mInitialAboutBlankLoadCompleting : 1;
+
   bool mIgnoreDocGroupMismatches : 1;
 
   // True if the document is considered for memory reporting as a
@@ -5051,6 +5124,7 @@ class Document : public nsINode,
 
   bool mDelayFrameLoaderInitialization : 1;
 
+  // True if we should fire load events synchronously
   bool mSynchronousDOMContentLoaded : 1;
 
   // Set to true when the document is possibly controlled by the ServiceWorker.
@@ -5178,6 +5252,9 @@ class Document : public nsINode,
   // while a paste event is being handled in JS.
   bool mClipboardCopyTriggered : 1;
 
+  // https://html.spec.whatwg.org/#has-been-revealed
+  bool mHasBeenRevealed : 1;
+
   // The fingerprinting protections overrides for this document. The value will
   // override the default enabled fingerprinting protections for this document.
   // This will only get populated if these is one that comes from the local
@@ -5268,6 +5345,8 @@ class Document : public nsINode,
  private:
   nsCString mContentType;
 
+  nsTArray<nsString> mAncestorOriginsList;
+
  protected:
   // The document's security info
   nsCOMPtr<nsITransportSecurityInfo> mSecurityInfo;
@@ -5275,9 +5354,6 @@ class Document : public nsINode,
   // The channel that failed to load and resulted in an error page.
   // This only applies to error pages. Might be null.
   nsCOMPtr<nsIChannel> mFailedChannel;
-
-  // Timer for delayed ASMJS execution time recording
-  nsCOMPtr<nsITimer> mASMJSExecutionTimer;
 
   // if this document is part of a multipart document,
   // the ID can be used to distinguish it from the other parts.
@@ -5441,11 +5517,18 @@ class Document : public nsINode,
   // https://drafts.csswg.org/css-viewport/#interactive-widget-section
   dom::InteractiveWidget mInteractiveWidgetMode;
 
-  // XXXdholbert This should really be modernized to a nsTHashMap or similar,
-  // though note that the modernization will need to take care to also convert
-  // the special hash_table_ops logic (e.g. how SubDocClearEntry clears the
-  // parent document as part of cleaning up an entry in this table).
-  UniquePtr<PLDHashTable> mSubDocuments;
+  // Custom deleter for a `unique_ptr<Document>` which first clears the
+  // ParentDocument edge, then releases the held reference to the document.
+  struct ClearParentDocumentDeleter {
+    void operator()(Document* aDocument) {
+      aDocument->SetParentDocument(nullptr);
+      NS_RELEASE(aDocument);
+    }
+  };
+
+  nsTHashMap<RefPtr<Element>,
+             std::unique_ptr<Document, ClearParentDocumentDeleter>>
+      mSubDocuments;
 
   class HeaderData;
   UniquePtr<HeaderData> mHeaderData;
@@ -5507,8 +5590,11 @@ class Document : public nsINode,
   // A set of responsive images keyed by address pointer.
   nsTHashSet<HTMLImageElement*> mResponsiveContent;
 
+  // The default document timeline associated to this document.
   RefPtr<DocumentTimeline> mDocumentTimeline;
-  LinkedList<DocumentTimeline> mTimelines;
+  // The timeline controller which holds the timelines attached to this
+  // document.
+  AnimationTimelinesController mTimelinesController;
 
   RefPtr<dom::ScriptLoader> mScriptLoader;
 
@@ -5700,11 +5786,15 @@ class Document : public nsINode,
 
   // Used for tracking a number of recent canvas extractions (e.g. toDataURL),
   // this is used for a canvas fingerprinter detection heuristic.
-  nsTArray<CanvasUsage> mCanvasUsage;
-  uint64_t mLastCanvasUsage = 0;
+  // Store all recent usages in a single nsTArray instead of a hash map.
+  nsTArray<CanvasUsage> mCanvasUsageData;
+  // Timestamp (PR_Now microseconds) of the last update to mCanvasUsageData.
+  uint64_t mCanvasUsageLastTimestamp = 0;
 
   RefPtr<class FragmentDirective> mFragmentDirective;
   UniquePtr<RadioGroupContainer> mRadioGroupContainer;
+
+  nsCOMPtr<nsIURI> mTLSCertificateBindingURI;
 
  public:
   // Needs to be public because the bindings code pokes at it.
@@ -5728,6 +5818,10 @@ class Document : public nsINode,
                                               const nsAString& aHTML,
                                               const SetHTMLOptions& aOptions,
                                               ErrorResult& aError);
+
+  nsIURI* GetTlsCertificateBindingURI() const {
+    return mTLSCertificateBindingURI;
+  }
 };
 
 enum class SyncOperationBehavior { eSuspendInput, eAllowInput };
@@ -5895,4 +5989,4 @@ inline nsISupports* ToSupports(mozilla::dom::Document* aDoc) {
   return static_cast<nsINode*>(aDoc);
 }
 
-#endif /* mozilla_dom_Document_h___ */
+#endif /* mozilla_dom_Document_h_ */

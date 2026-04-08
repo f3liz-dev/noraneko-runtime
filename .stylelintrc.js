@@ -2,13 +2,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/* eslint-env node */
-
 "use strict";
 
 const fs = require("fs");
 const path = require("path");
-const rollouts = require("./stylelint-rollouts.config");
+const rollouts = process.env.STYLELINT_SKIP_ROLLOUTS
+  ? []
+  : require("./stylelint-rollouts.config");
 
 function readFile(filePath) {
   return fs
@@ -274,16 +274,7 @@ module.exports = {
     // Remove this line setting `csscontrols/use-logical` to null after implementing fixes
     "csstools/use-logical": null,
     "stylelint-plugin-mozilla/no-base-design-tokens": true,
-    "stylelint-plugin-mozilla/use-background-color-tokens": true,
-    "stylelint-plugin-mozilla/use-border-color-tokens": true,
-    "stylelint-plugin-mozilla/use-border-radius-tokens": true,
-    "stylelint-plugin-mozilla/use-font-size-tokens": true,
-    "stylelint-plugin-mozilla/use-font-weight-tokens": true,
-    "stylelint-plugin-mozilla/use-space-tokens": true,
-    "stylelint-plugin-mozilla/use-text-color-tokens": true,
-    "stylelint-plugin-mozilla/use-box-shadow-tokens": true,
-    "stylelint-plugin-mozilla/no-non-semantic-token-usage": true,
-    "stylelint-plugin-mozilla/use-size-tokens": true,
+    "stylelint-plugin-mozilla/use-design-tokens": true,
   },
 
   overrides: [
@@ -391,11 +382,21 @@ module.exports = {
               "Avoid literal values. Use variables (e.g. var(--font-size-small)) or inherit/unset/etc.",
           },
         ],
+        "csstools/use-logical": [
+          "always",
+          {
+            // Bug 2003301: Do not enforce logical properties for any height/width properties
+            except: [/^(min-|max-)?width/i, /^(min-|max-)?height/i],
+            severity: "error",
+          },
+        ],
       },
     },
     {
       name: "design-token-rules-off",
       files: [
+        // CSS files under browser/branding do not use design tokens
+        "browser/branding/**",
         // CSS files under browser/components/extensions are not using design tokens
         "browser/components/extensions/**",
         // Webcompat interventions are not expected to use design tokens
@@ -411,7 +412,15 @@ module.exports = {
         "mobile/android/**",
         // Docs do not use design tokens
         "docs/**",
+        // DOM does not use design tokens
+        "dom/**",
+        // Layouts do not use design tokens
+        "layout/**",
+        // Testing does not use design tokens
+        "testing/**",
         // UA Widgets should not use design tokens
+        "toolkit/themes/shared/colorpicker-common.css",
+        "toolkit/themes/shared/colorpicker.css",
         "toolkit/themes/shared/media/pipToggle.css",
         "toolkit/themes/shared/media/videocontrols.css",
         "toolkit/content/widgets/datetimebox.css",
@@ -421,18 +430,14 @@ module.exports = {
         // into the HTML backup archive files that exist on a user's file system
         // and can be opened in any browser.
         "browser/components/backup/content/archive.css",
+        // Bug 2003877 - this is a centralization of a bunch of rules that had
+        // been spread across about:newtab and about:privatebrowsing. We'll
+        // fix these design tokens issues in a follow-up (presuming the
+        // replacement of the handoff bar doesn't land and remove this first).
+        "browser/components/search/content/contentSearchHandoffUI.css",
       ],
       rules: {
-        "stylelint-plugin-mozilla/use-background-color-tokens": null,
-        "stylelint-plugin-mozilla/use-border-color-tokens": null,
-        "stylelint-plugin-mozilla/use-border-radius-tokens": null,
-        "stylelint-plugin-mozilla/use-font-size-tokens": null,
-        "stylelint-plugin-mozilla/use-font-weight-tokens": null,
-        "stylelint-plugin-mozilla/use-space-tokens": null,
-        "stylelint-plugin-mozilla/use-text-color-tokens": null,
-        "stylelint-plugin-mozilla/use-box-shadow-tokens": null,
-        "stylelint-plugin-mozilla/no-non-semantic-token-usage": null,
-        "stylelint-plugin-mozilla/use-size-tokens": null,
+        "stylelint-plugin-mozilla/use-design-tokens": null,
       },
     },
     {
@@ -442,13 +447,7 @@ module.exports = {
         "devtools/client/aboutdebugging/src/**",
       ],
       rules: {
-        "stylelint-plugin-mozilla/use-background-color-tokens": true,
-        "stylelint-plugin-mozilla/use-border-color-tokens": true,
-        "stylelint-plugin-mozilla/use-border-radius-tokens": true,
-        "stylelint-plugin-mozilla/use-space-tokens": true,
-        "stylelint-plugin-mozilla/use-text-color-tokens": true,
-        "stylelint-plugin-mozilla/no-non-semantic-token-usage": true,
-        "stylelint-plugin-mozilla/use-size-tokens": true,
+        "stylelint-plugin-mozilla/use-design-tokens": true,
       },
     },
     {

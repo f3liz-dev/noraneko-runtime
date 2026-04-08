@@ -12,15 +12,22 @@ ChromeUtils.defineESModuleGetters(this, {
     "resource://gre/modules/ContentBlockingAllowList.sys.mjs",
 });
 
+const TRACKING_PAGE =
+  // eslint-disable-next-line @microsoft/sdl/no-insecure-url
+  "http://tracking.example.org/browser/browser/base/content/test/protectionsUI/trackingPage.html";
+
 const ETP_ACTIVE_ICON = 'url("chrome://browser/skin/trust-icon-active.svg")';
 const ETP_DISABLED_ICON =
   'url("chrome://browser/skin/trust-icon-disabled.svg")';
+const INSECURE_ICON = 'url("chrome://browser/skin/trust-icon-insecure.svg")';
 
 add_setup(async function setup() {
   await SpecialPowers.pushPrefEnv({
     set: [
       ["browser.urlbar.scotchBonnet.enableOverride", true],
       ["browser.urlbar.trustPanel.featureGate", true],
+      // Hover previews can block opening the trustpanel.
+      ["browser.tabs.hoverPreview.enabled", false],
     ],
   });
   registerCleanupFunction(async () => {
@@ -59,6 +66,14 @@ add_task(async function basic_test() {
   await BrowserTestUtils.waitForCondition(() => urlbarIcon(window) != "none");
 
   Assert.equal(urlbarIcon(window), ETP_ACTIVE_ICON, "Showing trusted icon");
+  Assert.equal(
+    window.document
+      .getElementById("trust-icon-container")
+      .getAttribute("tooltiptext"),
+    "Verified by: Mozilla Testing",
+    "Tooltip has been set"
+  );
+
   Assert.ok(
     !BrowserTestUtils.isVisible(urlbarLabel(window)),
     "Not showing Not Secure label"
@@ -164,5 +179,142 @@ add_task(async function test_drag_and_drop() {
   Assert.ok(tabByDnD, "DnD works from trust icon correctly");
 
   await BrowserTestUtils.removeTab(tabByDnD);
+  await BrowserTestUtils.removeTab(tab);
+});
+
+add_task(async function test_update() {
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      [
+        "urlclassifier.features.cryptomining.blacklistHosts",
+        "cryptomining.example.com",
+      ],
+      [
+        "urlclassifier.features.cryptomining.annotate.blacklistHosts",
+        "cryptomining.example.com",
+      ],
+      [
+        "urlclassifier.features.fingerprinting.blacklistHosts",
+        "fingerprinting.example.com",
+      ],
+      [
+        "urlclassifier.features.fingerprinting.annotate.blacklistHosts",
+        "fingerprinting.example.com",
+      ],
+    ],
+  });
+
+  const tab = await BrowserTestUtils.openNewForegroundTab({
+    gBrowser,
+    opening: TRACKING_PAGE,
+    waitForLoad: true,
+  });
+
+  await UrlbarTestUtils.openTrustPanel(window);
+
+  let blockerSection = document.getElementById(
+    "trustpanel-blocker-section-header"
+  );
+  Assert.equal(
+    0,
+    parseInt(blockerSection.textContent, 10),
+    "Initially not blocked any trackers"
+  );
+
+  await SpecialPowers.spawn(tab.linkedBrowser, [], function () {
+    content.postMessage("cryptomining", "*");
+  });
+
+  await BrowserTestUtils.waitForCondition(
+    () => parseInt(blockerSection.textContent, 10) == 1,
+    "Updated to show new cryptominer blocked"
+  );
+
+  await SpecialPowers.spawn(tab.linkedBrowser, [], function () {
+    content.postMessage("fingerprinting", "*");
+  });
+
+  await BrowserTestUtils.waitForCondition(
+    () => parseInt(blockerSection.textContent, 10) == 2,
+    "Updated to show new fingerprinter blocked"
+  );
+
+  BrowserTestUtils.removeTab(tab);
+});
+
+add_task(async function test_etld() {
+  const tab = await BrowserTestUtils.openNewForegroundTab({
+    gBrowser,
+    opening: "https://www.example.com",
+    waitForLoad: true,
+  });
+
+  await UrlbarTestUtils.openTrustPanel(window);
+
+  Assert.equal(
+    window.document.getElementById("trustpanel-popup-host").value,
+    "example.com",
+    "Showing the eTLD+1"
+  );
+
+  await BrowserTestUtils.removeTab(tab);
+});
+
+add_task(async function test_privacy_link() {
+  const tab = await BrowserTestUtils.openNewForegroundTab({
+    gBrowser,
+    opening: "https://www.example.com",
+    waitForLoad: true,
+  });
+
+  await UrlbarTestUtils.openTrustPanel(window);
+
+  let popupHidden = BrowserTestUtils.waitForEvent(
+    window.document,
+    "popuphidden"
+  );
+
+  let newTabPromise = BrowserTestUtils.waitForNewTab(
+    gBrowser,
+    "about:preferences#privacy",
+    true
+  );
+
+  let privacyButton = window.document.getElementById("trustpanel-privacy-link");
+  EventUtils.synthesizeMouseAtCenter(privacyButton, {}, window);
+  let newTab = await newTabPromise;
+  await popupHidden;
+
+  Assert.ok(true, "Popup was hidden");
+
+  await BrowserTestUtils.removeTab(newTab);
+  await BrowserTestUtils.removeTab(tab);
+});
+
+add_task(async function test_about() {
+  const tab = await BrowserTestUtils.openNewForegroundTab({
+    gBrowser,
+    opening: "about:config",
+    waitForLoad: true,
+  });
+
+  await UrlbarTestUtils.openTrustPanel(window);
+  Assert.ok(true, "The panel can be opened.");
+
+  await BrowserTestUtils.removeTab(tab);
+});
+
+add_task(async function insecure_and_etp_disabled_test() {
+  const tab = await BrowserTestUtils.openNewForegroundTab({
+    gBrowser,
+    // eslint-disable-next-line @microsoft/sdl/no-insecure-url
+    opening: "http://example.com",
+    waitForLoad: true,
+  });
+
+  await toggleETP(tab);
+  Assert.equal(urlbarIcon(window), INSECURE_ICON, "Showing url insecure icon");
+
+  await toggleETP(tab);
   await BrowserTestUtils.removeTab(tab);
 });

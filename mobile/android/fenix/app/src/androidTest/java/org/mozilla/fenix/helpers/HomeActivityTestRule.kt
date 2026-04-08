@@ -62,16 +62,14 @@ class HomeActivityTestRule(
         isUnifiedTrustPanelEnabled: Boolean = false,
         etpPolicy: ETPPolicy = getETPPolicy(settings),
         isLocationPermissionEnabled: SitePermissionsRules.Action = getFeaturePermission(PhoneFeature.LOCATION, settings),
-        isComposableToolbarEnabled: Boolean = false,
-        isMenuRedesignEnabled: Boolean = false,
+        isComposableToolbarEnabled: Boolean = true,
         isMenuRedesignCFREnabled: Boolean = false,
         isPageLoadTranslationsPromptEnabled: Boolean = false,
         isMicrosurveyEnabled: Boolean = settings.microsurveyFeatureEnabled,
         shouldUseBottomToolbar: Boolean = settings.shouldUseBottomToolbar,
-        isUseNewCrashReporterDialog: Boolean = false,
+        isUseNewCrashReporterFlow: Boolean = false,
         isTabSwipeCFREnabled: Boolean = false,
         isTermsOfServiceAccepted: Boolean = true,
-        isComposeLoginsEnabled: Boolean = false,
         openLinksInExternalApp: OpenLinksInApp = getOpenLinksInApp(settings),
         hasSeenBrowserToolbarCFR: Boolean = true,
     ) : this(initialTouchMode, launchActivity, skipOnboarding) {
@@ -87,15 +85,13 @@ class HomeActivityTestRule(
         this.etpPolicy = etpPolicy
         this.isLocationPermissionEnabled = isLocationPermissionEnabled
         this.isComposableToolbarEnabled = isComposableToolbarEnabled
-        this.isMenuRedesignEnabled = isMenuRedesignEnabled
         this.isMenuRedesignCFREnabled = isMenuRedesignCFREnabled
         this.enableOrDisablePageLoadTranslationsPrompt(isPageLoadTranslationsPromptEnabled)
         this.isMicrosurveyEnabled = isMicrosurveyEnabled
         this.shouldUseBottomToolbar = shouldUseBottomToolbar
-        this.isUseNewCrashReporterDialog = isUseNewCrashReporterDialog
+        this.isUseNewCrashReporterFlow = isUseNewCrashReporterFlow
         this.isTabSwipeCFREnabled = isTabSwipeCFREnabled
         this.isTermsOfServiceAccepted = isTermsOfServiceAccepted
-        this.isComposeLoginsEnabled = isComposeLoginsEnabled
         this.openLinksInExternalApp = openLinksInExternalApp
         this.hasSeenBrowserToolbarCFR = hasSeenBrowserToolbarCFR
     }
@@ -144,7 +140,7 @@ class HomeActivityTestRule(
             initialTouchMode: Boolean = false,
             launchActivity: Boolean = true,
             skipOnboarding: Boolean = false,
-            useNewCrashReporterDialog: Boolean = false,
+            useNewCrashReporterFlow: Boolean = false,
         ) = HomeActivityTestRule(
             initialTouchMode = initialTouchMode,
             launchActivity = launchActivity,
@@ -154,15 +150,13 @@ class HomeActivityTestRule(
             isWallpaperOnboardingEnabled = false,
             isOpenInAppBannerEnabled = false,
             isMicrosurveyEnabled = false,
-            isComposableToolbarEnabled = false,
             // workaround for toolbar at top position by default
             // remove with https://bugzilla.mozilla.org/show_bug.cgi?id=1917640
             shouldUseBottomToolbar = true,
             isPageLoadTranslationsPromptEnabled = false,
-            isUseNewCrashReporterDialog = useNewCrashReporterDialog,
+            isUseNewCrashReporterFlow = useNewCrashReporterFlow,
             isTabSwipeCFREnabled = true,
             isTermsOfServiceAccepted = true,
-            isComposeLoginsEnabled = false,
         )
     }
 }
@@ -199,8 +193,7 @@ class HomeActivityIntentTestRule internal constructor(
         isUnifiedTrustPanelEnabled: Boolean = false,
         etpPolicy: ETPPolicy = getETPPolicy(settings),
         isLocationPermissionEnabled: SitePermissionsRules.Action = getFeaturePermission(PhoneFeature.LOCATION, settings),
-        isComposableToolbarEnabled: Boolean = false,
-        isMenuRedesignEnabled: Boolean = false,
+        isComposableToolbarEnabled: Boolean = true,
         isMenuRedesignCFREnabled: Boolean = false,
         isPageLoadTranslationsPromptEnabled: Boolean = false,
         isMicrosurveyEnabled: Boolean = settings.microsurveyFeatureEnabled,
@@ -208,7 +201,6 @@ class HomeActivityIntentTestRule internal constructor(
         onboardingFeatureEnabled: Boolean = true,
         isTabSwipeCFREnabled: Boolean = false,
         isTermsOfServiceAccepted: Boolean = true,
-        isComposeLoginsEnabled: Boolean = false,
         openLinksInExternalApp: OpenLinksInApp = getOpenLinksInApp(settings),
         tabManagerOpeningAnimationEnabled: Boolean = false,
         hasSeenBrowserToolbarCFR: Boolean = true,
@@ -225,7 +217,6 @@ class HomeActivityIntentTestRule internal constructor(
         this.etpPolicy = etpPolicy
         this.isLocationPermissionEnabled = isLocationPermissionEnabled
         this.isComposableToolbarEnabled = isComposableToolbarEnabled
-        this.isMenuRedesignEnabled = isMenuRedesignEnabled
         this.isMenuRedesignCFREnabled = isMenuRedesignCFREnabled
         this.enableOrDisablePageLoadTranslationsPrompt(isPageLoadTranslationsPromptEnabled)
         this.isMicrosurveyEnabled = isMicrosurveyEnabled
@@ -233,7 +224,6 @@ class HomeActivityIntentTestRule internal constructor(
         this.onboardingFeatureEnabled = onboardingFeatureEnabled
         this.isTabSwipeCFREnabled = isTabSwipeCFREnabled
         this.isTermsOfServiceAccepted = isTermsOfServiceAccepted
-        this.isComposeLoginsEnabled = isComposeLoginsEnabled
         this.openLinksInExternalApp = openLinksInExternalApp
         this.tabManagerOpeningAnimationEnabled = tabManagerOpeningAnimationEnabled
         this.hasSeenBrowserToolbarCFR = hasSeenBrowserToolbarCFR
@@ -304,13 +294,11 @@ class HomeActivityIntentTestRule internal constructor(
         etpPolicy = getETPPolicy(settings)
         isLocationPermissionEnabled = getFeaturePermission(PhoneFeature.LOCATION, settings)
         isComposableToolbarEnabled = settings.shouldUseComposableToolbar
-        isMenuRedesignEnabled = settings.enableMenuRedesign
         isMenuRedesignCFREnabled = settings.shouldShowMenuCFR
         isMicrosurveyEnabled = settings.microsurveyFeatureEnabled
         shouldUseBottomToolbar = settings.shouldUseBottomToolbar
         isTabSwipeCFREnabled = !settings.hasShownTabSwipeCFR
         isTermsOfServiceAccepted = settings.hasAcceptedTermsOfService
-        isComposeLoginsEnabled = settings.enableComposeLogins
         openLinksInExternalApp = getOpenLinksInApp(settings)
         tabManagerOpeningAnimationEnabled = settings.tabManagerOpeningAnimationEnabled
         hasSeenBrowserToolbarCFR = settings.hasSeenBrowserToolbarCFR
@@ -337,14 +325,12 @@ class HomeActivityIntentTestRule internal constructor(
             isWallpaperOnboardingEnabled = false,
             isOpenInAppBannerEnabled = false,
             isMicrosurveyEnabled = false,
-            isComposableToolbarEnabled = false,
             // workaround for toolbar at top position by default
             // remove with https://bugzilla.mozilla.org/show_bug.cgi?id=1917640
             shouldUseBottomToolbar = true,
             isPageLoadTranslationsPromptEnabled = false,
             isTabSwipeCFREnabled = true,
             isTermsOfServiceAccepted = true,
-            isComposeLoginsEnabled = false,
             tabManagerOpeningAnimationEnabled = false,
         )
     }

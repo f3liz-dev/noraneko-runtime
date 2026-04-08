@@ -34,7 +34,6 @@
 #include "nsIContentPolicy.h"
 #include "nsINode.h"
 #include "nsIPrefetchService.h"
-#include "nsISizeOf.h"
 #include "nsMimeTypes.h"
 #include "nsPIDOMWindow.h"
 #include "nsReadableUtils.h"
@@ -408,8 +407,13 @@ Maybe<LinkStyle::SheetInfo> HTMLLinkElement::GetStyleSheetInfo() {
 void HTMLLinkElement::AddSizeOfExcludingThis(nsWindowSizes& aSizes,
                                              size_t* aNodeSize) const {
   nsGenericHTMLElement::AddSizeOfExcludingThis(aSizes, aNodeSize);
-  if (nsCOMPtr<nsISizeOf> iface = do_QueryInterface(mCachedURI)) {
-    *aNodeSize += iface->SizeOfIncludingThis(aSizes.mState.mMallocSizeOf);
+
+  // It is okay to include the size of mCachedURI here even though it might have
+  // strong references from elsewhere because the URI was created for this
+  // object, in nsGenericHTMLElement::GetURIAttr(). Only objects that created
+  // their own URI will call nsIURI::SizeOfIncludingThis().
+  if (mCachedURI) {
+    *aNodeSize += mCachedURI->SizeOfIncludingThis(aSizes.mState.mMallocSizeOf);
   }
 }
 
@@ -673,11 +677,10 @@ void HTMLLinkElement::UpdatePreload(nsAtom* aName, const nsAttrValue* aValue,
     }
   } else {
     MOZ_ASSERT(aName == nsGkAtoms::media);
-    nsAutoString oldMedia;
-    if (aOldValue) {
-      aOldValue->ToString(oldMedia);
-    }
-    if (net::CheckPreloadAttrs(asAttr, mimeType, oldMedia, OwnerDoc())) {
+    // Device might have changed since we evaluated the old media query. We
+    // already checked that the new query matches. If we have mPreload,
+    // nothing changes.
+    if (mPreload) {
       oldPolicyType = asPolicyType;
     } else {
       oldPolicyType = nsIContentPolicy::TYPE_INVALID;

@@ -4,6 +4,11 @@
 const BLANK_PAGE =
   "data:text/html;charset=utf-8,<!DOCTYPE html><title>Blank</title>Blank page";
 
+/** @type {import("../../../../../netwerk/test/httpserver/httpd.sys.mjs")} */
+const { HttpServer } = ChromeUtils.importESModule(
+  "resource://testing-common/httpd.sys.mjs"
+);
+
 /**
  * Use a tagged template literal to create a page extraction actor test. This spins
  * up an http server that serves the markup in a new tab. The page extractor can then
@@ -43,6 +48,8 @@ async function html(strings, ...values) {
      */
     actor,
 
+    tab,
+
     /**
      * Get a new page extractor, which can change when navigating pages.
      *
@@ -64,23 +71,32 @@ async function html(strings, ...values) {
 
 /**
  * Start an HTTP server that serves page.html with the provided HTML.
+ * Explicitly encode the text as UTF-8 to correctly handle characters outside Latin-1,
+ * which the HttpServer renders incorrectly by default.
  *
  * @param {string} html
+ * @param {number} statusCode
  */
-function serveOnce(html) {
-  /** @type {import("../../../../../netwerk/test/httpserver/httpd.sys.mjs")} */
-  const { HttpServer } = ChromeUtils.importESModule(
-    "resource://testing-common/httpd.sys.mjs"
-  );
+function serveOnce(html, statusCode = 200) {
   info("Create server");
   const server = new HttpServer();
 
   const { promise, resolve } = Promise.withResolvers();
+  const encoder = new TextEncoder();
+  const htmlUtf8 = encoder.encode(html);
 
-  server.registerPathHandler("/page.html", (_request, response) => {
+  server.registerPathHandler("/page.html", (request, response) => {
     info("Request received for: " + url);
-    response.setHeader("Content-Type", "text/html");
-    response.write(html);
+    response.setHeader("Content-Type", "text/html; charset=utf-8");
+    response.setStatusLine(request.httpVersion, statusCode);
+
+    const binaryOutputStream = Cc[
+      "@mozilla.org/binaryoutputstream;1"
+    ].createInstance(Ci.nsIBinaryOutputStream);
+
+    binaryOutputStream.setOutputStream(response.bodyOutputStream);
+    binaryOutputStream.writeByteArray(htmlUtf8);
+
     resolve(server.stop());
   });
 

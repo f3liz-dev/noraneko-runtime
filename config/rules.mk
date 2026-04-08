@@ -829,7 +829,6 @@ endif
 
 ################################################################################
 # The default location for prefs is the gre prefs directory.
-# PREF_DIR is used for L10N_PREF_JS_EXPORTS in various locales/ directories.
 PREF_DIR = defaults/pref
 
 # If DIST_SUBDIR is defined it indicates that app and gre dirs are
@@ -901,10 +900,14 @@ $(4):: $$(abspath $(3))/$(1).xpi
 
 endef
 
+ifdef XPI_TESTDIR
+$(eval $(call xpi_package_rule,$(XPI_PKGNAME),$(srcdir),$(XPI_TESTDIR),misc))
+else
 # When you move this out of the tools tier, please remove the corresponding
 # hacks in recursivemake.py that check if Makefile.in sets the variable.
 ifdef XPI_PKGNAME
 $(eval $(call xpi_package_rule,$(XPI_PKGNAME),$(FINAL_TARGET),$(FINAL_TARGET)/..,tools realchrome))
+endif
 endif
 
 #############################################################################

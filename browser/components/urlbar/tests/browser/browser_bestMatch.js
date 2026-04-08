@@ -143,7 +143,7 @@ async function checkBestMatchRow({ result, hasHelpUrl = false }) {
   Assert.ok(url.textContent, "Row URL has non-empty textContext");
   Assert.equal(
     url.textContent,
-    result.payload.displayUrl,
+    result.getDisplayableValueAndHighlights("url", { isURL: true }).value,
     "Row URL is correct"
   );
 
@@ -168,11 +168,12 @@ async function withProvider(result, callback) {
     results: [result],
     priority: Infinity,
   });
-  UrlbarProvidersManager.registerProvider(provider);
+  let providersManager = ProvidersManager.getInstanceForSap("urlbar");
+  providersManager.registerProvider(provider);
   try {
     await callback();
   } finally {
-    UrlbarProvidersManager.unregisterProvider(provider);
+    providersManager.unregisterProvider(provider);
   }
 }
 
@@ -181,10 +182,10 @@ function makeBestMatchResult(payloadExtra = {}) {
     type: UrlbarUtils.RESULT_TYPE.URL,
     source: UrlbarUtils.RESULT_SOURCE.SEARCH,
     isBestMatch: true,
-    ...UrlbarResult.payloadAndSimpleHighlights([], {
+    payload: {
       title: "Test best match",
       url: "https://example.com/best-match",
       ...payloadExtra,
-    }),
+    },
   });
 }

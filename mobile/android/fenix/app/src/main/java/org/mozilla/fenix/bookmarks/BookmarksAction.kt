@@ -41,6 +41,7 @@ internal sealed class BookmarksListMenuAction : BookmarksAction {
     internal data object SelectAll : BookmarksListMenuAction()
 
     internal sealed class Bookmark : BookmarksListMenuAction() {
+        data class SelectClicked(val bookmark: BookmarkItem.Bookmark) : Bookmark()
         data class EditClicked(val bookmark: BookmarkItem.Bookmark) : Bookmark()
         data class CopyClicked(val bookmark: BookmarkItem.Bookmark) : Bookmark()
         data class ShareClicked(val bookmark: BookmarkItem.Bookmark) : Bookmark()
@@ -49,6 +50,7 @@ internal sealed class BookmarksListMenuAction : BookmarksAction {
         data class DeleteClicked(val bookmark: BookmarkItem.Bookmark) : Bookmark()
     }
     internal sealed class Folder : BookmarksListMenuAction() {
+        data class SelectClicked(val folder: BookmarkItem.Folder) : Folder()
         data class EditClicked(val folder: BookmarkItem.Folder) : Folder()
         data class OpenAllInNormalTabClicked(val folder: BookmarkItem.Folder) : Folder()
         data class OpenAllInPrivateTabClicked(val folder: BookmarkItem.Folder) : Folder()
@@ -117,7 +119,13 @@ internal sealed class EditBookmarkAction : BookmarksAction {
 internal sealed class SelectFolderAction : BookmarksAction {
     data object ViewAppeared : SelectFolderAction()
     data class FoldersLoaded(val folders: List<SelectFolderItem>) : SelectFolderAction()
+    data class FilteredFoldersLoaded(val folders: List<SelectFolderItem>) : SelectFolderAction()
+    data class ExpandedFolderLoaded(val folder: SelectFolderItem) : SelectFolderAction()
+    data class ChevronClicked(val folder: SelectFolderItem) : SelectFolderAction()
     data class ItemClicked(val folder: SelectFolderItem) : SelectFolderAction()
+    data object SearchClicked : SelectFolderAction()
+    data object SearchDismissed : SelectFolderAction()
+    data class SearchQueryUpdated(val query: String) : SelectFolderAction()
 
     internal sealed class SortMenu : SelectFolderAction() {
         data object SortMenuButtonClicked : SortMenu()
@@ -149,4 +157,5 @@ internal sealed class DeletionDialogAction : BookmarksAction {
 internal sealed class SnackbarAction : BookmarksAction {
     data object Undo : SnackbarAction()
     data object Dismissed : SnackbarAction()
+    data object SelectFolderFailed : SnackbarAction()
 }

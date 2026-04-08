@@ -10,6 +10,13 @@ mkdir -p $UPLOAD_DIR
 cd $GECKO_PATH
 ./mach python python/mozboot/mozboot/android.py --emulator-only --no-interactive --list-packages
 
+# Bug 2018439: Pin Android emulator to version 36.3.10
+curl --fail -L https://dl.google.com/android/repository/emulator-linux_x64-14472402.zip > /tmp/emulator.zip
+cd /builds/worker/.mozbuild/android-sdk-linux
+rm -rf emulator
+unzip /tmp/emulator.zip
+cd $GECKO_PATH
+
 # Remove extra files we don't need
 rm -rfv /builds/worker/.mozbuild/android-sdk-linux/tools
 mkdir /builds/worker/.mozbuild/android-sdk-linux/system-images

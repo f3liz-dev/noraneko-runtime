@@ -164,14 +164,6 @@ void js::BaseScript::finalize(JS::GCContext* gcx) {
   }
 #endif
 
-  if (data_) {
-    // We don't need to triger any barriers here, just free the memory.
-    size_t size = data_->allocationSize();
-    AlwaysPoison(data_, JS_POISONED_JSSCRIPT_DATA_PATTERN, size,
-                 MemCheckKind::MakeNoAccess);
-    gcx->free_(this, data_, size, MemoryUse::ScriptPrivateData);
-  }
-
   freeSharedData();
 }
 
@@ -181,19 +173,28 @@ js::Scope* js::BaseScript::releaseEnclosingScope() {
   return enclosing;
 }
 
-void js::BaseScript::swapData(UniquePtr<PrivateScriptData>& other) {
-  if (data_) {
-    RemoveCellMemory(this, data_->allocationSize(),
-                     MemoryUse::ScriptPrivateData);
-  }
-
+void js::BaseScript::swapData(MutableHandleBuffer<PrivateScriptData> other) {
   PrivateScriptData* old = data_;
-  data_.set(zone(), other.release());
-  other.reset(old);
 
-  if (data_) {
-    AddCellMemory(this, data_->allocationSize(), MemoryUse::ScriptPrivateData);
+  // Write barrier for the buffer allocation.
+  if (data_ && zone()->needsMarkingBarrier()) {
+    JSTracer* trc = zone()->barrierTracer();
+    TraceBufferEdge(trc, this, &data_, "BaseScript::swapData barrier");
   }
+
+  // GCStructPtr performs write barrier for the data.
+  data_.set(zone(), other);
+
+  other.set(old);
+}
+
+void js::BaseScript::freeData() {
+  PrivateScriptData* old = data_;
+
+  // GCStructPtr performs write barrier for the data.
+  data_.set(zone(), nullptr);
+
+  gc::FreeBuffer(zone(), old);
 }
 
 js::Scope* js::BaseScript::enclosingScope() const {
@@ -1594,14 +1595,11 @@ bool ScriptSource::tryCompressOffThread(JSContext* cx) {
     return true;
   }
 
-  // Heap allocate the task. It will be freed upon compression
-  // completing in AttachFinishedCompressedSources.
-  auto task = MakeUnique<SourceCompressionTask>(cx->runtime(), this);
-  if (!task) {
+  if (!cx->runtime()->addPendingCompressionEntry(this)) {
     ReportOutOfMemory(cx);
     return false;
   }
-  return EnqueueOffThreadCompression(cx, std::move(task));
+  return true;
 }
 
 template <typename Unit>
@@ -1726,7 +1724,7 @@ template bool ScriptSource::assignSource(FrontendContext* fc,
 }
 
 template <typename Unit>
-void SourceCompressionTask::workEncodingSpecific() {
+void SourceCompressionTaskEntry::workEncodingSpecific(Compressor& comp) {
   MOZ_ASSERT(source_->isUncompressed<Unit>());
 
   // Try to keep the maximum memory usage down by only allocating half the
@@ -1739,8 +1737,8 @@ void SourceCompressionTask::workEncodingSpecific() {
   }
 
   const Unit* chars = source_->uncompressedData<Unit>()->units();
-  Compressor comp(reinterpret_cast<const unsigned char*>(chars), inputBytes);
-  if (!comp.init()) {
+  if (!comp.setInput(reinterpret_cast<const unsigned char*>(chars),
+                     inputBytes)) {
     return;
   }
 
@@ -1797,14 +1795,22 @@ void SourceCompressionTask::workEncodingSpecific() {
   resultString_ = strings.getOrCreate(std::move(compressed), totalBytes);
 }
 
-struct SourceCompressionTask::PerformTaskWork {
-  SourceCompressionTask* const task_;
+PendingSourceCompressionEntry::PendingSourceCompressionEntry(
+    JSRuntime* rt, ScriptSource* source)
+    : majorGCNumber_(rt->gc.majorGCCount()), source_(source) {
+  source->noteSourceCompressionTask();
+}
 
-  explicit PerformTaskWork(SourceCompressionTask* task) : task_(task) {}
+struct SourceCompressionTaskEntry::PerformTaskWork {
+  SourceCompressionTaskEntry* const task_;
+  Compressor& comp_;
+
+  PerformTaskWork(SourceCompressionTaskEntry* task, Compressor& comp)
+      : task_(task), comp_(comp) {}
 
   template <typename Unit, SourceRetrievable CanRetrieve>
   void operator()(const ScriptSource::Uncompressed<Unit, CanRetrieve>&) {
-    task_->workEncodingSpecific<Unit>();
+    task_->workEncodingSpecific<Unit>(comp_);
   }
 
   template <typename T>
@@ -1815,19 +1821,33 @@ struct SourceCompressionTask::PerformTaskWork {
   }
 };
 
-void ScriptSource::performTaskWork(SourceCompressionTask* task) {
+void ScriptSource::performTaskWork(SourceCompressionTaskEntry* task,
+                                   Compressor& comp) {
   MOZ_ASSERT(hasUncompressedSource());
-  data.match(SourceCompressionTask::PerformTaskWork(task));
+  data.match(SourceCompressionTaskEntry::PerformTaskWork(task, comp));
 }
 
-void SourceCompressionTask::runTask() {
+void SourceCompressionTaskEntry::runTask(Compressor& comp) {
   if (shouldCancel()) {
     return;
   }
 
   MOZ_ASSERT(source_->hasUncompressedSource());
 
-  source_->performTaskWork(this);
+  source_->performTaskWork(this, comp);
+}
+
+void SourceCompressionTask::runTask() {
+  MOZ_ASSERT(!entries_.empty());
+  // Note: here and in workEncodingSpecific we abort compression work on OOM
+  // since source compression is optional.
+  Compressor comp;
+  if (!comp.init()) {
+    return;
+  }
+  for (auto& entry : entries_) {
+    entry.runTask(comp);
+  }
 }
 
 void SourceCompressionTask::runHelperThreadTask(
@@ -1850,9 +1870,16 @@ void ScriptSource::triggerConvertToCompressedSourceFromTask(
   data.match(TriggerConvertToCompressedSourceFromTask(this, compressed));
 }
 
-void SourceCompressionTask::complete() {
+void SourceCompressionTaskEntry::complete() {
   if (!shouldCancel() && resultString_) {
     source_->triggerConvertToCompressedSourceFromTask(std::move(resultString_));
+  }
+}
+
+void SourceCompressionTask::complete() {
+  MOZ_ASSERT(!entries_.empty());
+  for (auto& entry : entries_) {
+    entry.complete();
   }
 }
 
@@ -1895,10 +1922,11 @@ bool js::SynchronouslyCompressSource(JSContext* cx,
 #endif
     MOZ_ASSERT(sourceRefs > 0, "at least |script| here should have a ref");
 
-    // |SourceCompressionTask::shouldCancel| can periodically result in source
-    // compression being canceled if we're not careful.  Guarantee that two refs
-    // to |ss| are always live in this function (at least one preexisting and
-    // one held by the task) so that compression is never canceled.
+    // |SourceCompressionTaskEntry::shouldCancel| can periodically result in
+    // source compression being canceled if we're not careful. Guarantee that
+    // two refs to |ss| are always live in this function (at least one
+    // preexisting and one held by the task) so that compression is never
+    // canceled.
     auto task = MakeUnique<SourceCompressionTask>(cx->runtime(), ss);
     if (!task) {
       ReportOutOfMemory(cx);
@@ -1910,7 +1938,7 @@ bool js::SynchronouslyCompressSource(JSContext* cx,
     // Attempt to compress.  This may not succeed if OOM happens, but (because
     // it ordinarily happens on a helper thread) no error will ever be set here.
     MOZ_ASSERT(!cx->isExceptionPending());
-    ss->performTaskWork(task.get());
+    task->runTask();
     MOZ_ASSERT(!cx->isExceptionPending());
 
     // Convert |ss| from uncompressed to compressed data.
@@ -2253,7 +2281,7 @@ js::UniquePtr<ImmutableScriptData> js::ImmutableScriptData::new_(
     return nullptr;
   }
 
-  // Constuct the ImmutableScriptData. Trailing arrays are uninitialized but
+  // Construct the ImmutableScriptData. Trailing arrays are uninitialized but
   // GCPtrs are put into a safe state.
   UniquePtr<ImmutableScriptData> result(new (raw) ImmutableScriptData(
       codeLength, noteLength, numResumeOffsets, numScopeNotes, numTryNotes));
@@ -2319,7 +2347,6 @@ SharedImmutableScriptData* SharedImmutableScriptData::createWith(
 
 void JSScript::relazify(JSRuntime* rt) {
   js::Scope* scope = enclosingScope();
-  UniquePtr<PrivateScriptData> scriptData;
 
   // Any JIT compiles should have been released, so we already point to the
   // interpreter trampoline which supports lazy scripts.
@@ -2332,10 +2359,11 @@ void JSScript::relazify(JSRuntime* rt) {
   destroyScriptCounts();
 
   // Release the bytecode and gcthings list.
-  // NOTE: We clear the PrivateScriptData to nullptr. This is fine because we
-  //       only allowed relazification (via AllowRelazify) if the original lazy
-  //       script we compiled from had a nullptr PrivateScriptData.
-  swapData(scriptData);
+  // NOTE: This clears the PrivateScriptData to nullptr. This is fine because we
+  // only allowed relazification (via AllowRelazify) if the original lazy script
+  // we compiled from had a nullptr PrivateScriptData.
+  freeData();
+
   freeSharedData();
 
   // We should not still be in any side-tables for the debugger or
@@ -2443,21 +2471,17 @@ PrivateScriptData* PrivateScriptData::new_(JSContext* cx, uint32_t ngcthings) {
     return nullptr;
   }
 
-  // Allocate contiguous raw buffer for the trailing arrays.
-  void* raw = cx->pod_malloc<uint8_t>(size.value());
-  MOZ_ASSERT(uintptr_t(raw) % alignof(PrivateScriptData) == 0);
-  if (!raw) {
-    return nullptr;
-  }
-
-  // Constuct the PrivateScriptData. Trailing arrays are uninitialized but
-  // GCPtrs are put into a safe state.
-  PrivateScriptData* result = new (raw) PrivateScriptData(ngcthings);
+  // Allocate contiguous raw buffer and construct the PrivateScriptData in
+  // it. Trailing arrays are uninitialized but GCPtrs are put into a safe state.
+  auto* result = gc::NewSizedBuffer<PrivateScriptData>(cx->zone(), size.value(),
+                                                       false, ngcthings);
   if (!result) {
+    ReportOutOfMemory(cx);
     return nullptr;
   }
 
   // Sanity check.
+  MOZ_ASSERT(uintptr_t(result) % alignof(PrivateScriptData) == 0);
   MOZ_ASSERT(result->endOffset() == size.value());
 
   return result;
@@ -2539,12 +2563,13 @@ bool JSScript::createPrivateScriptData(JSContext* cx, HandleScript script,
                                        uint32_t ngcthings) {
   cx->check(script);
 
-  UniquePtr<PrivateScriptData> data(PrivateScriptData::new_(cx, ngcthings));
+  RootedBuffer<PrivateScriptData> data(cx,
+                                       PrivateScriptData::new_(cx, ngcthings));
   if (!data) {
     return false;
   }
 
-  script->swapData(data);
+  script->swapData(&data);
   MOZ_ASSERT(!data);
 
   return true;
@@ -2565,7 +2590,7 @@ bool JSScript::fullyInitFromStencil(
   // This is initialized by BaseScript::swapData() which will run pre-barriers
   // for us. On successful conversion to non-lazy script, the old script data
   // here will be released by the UniquePtr.
-  Rooted<UniquePtr<PrivateScriptData>> lazyData(cx);
+  RootedBuffer<PrivateScriptData> lazyData(cx);
 
   // Whether we are a newborn script or an existing lazy script, we should
   // already be pointing to the interpreter trampoline.
@@ -2577,7 +2602,7 @@ bool JSScript::fullyInitFromStencil(
   if (script->isReadyForDelazification()) {
     lazyMutableFlags = script->mutableFlags_;
     lazyEnclosingScope = script->releaseEnclosingScope();
-    script->swapData(lazyData.get());
+    script->swapData(&lazyData);
     MOZ_ASSERT(script->sharedData_ == nullptr);
   }
 
@@ -2587,7 +2612,7 @@ bool JSScript::fullyInitFromStencil(
     if (lazyEnclosingScope) {
       script->mutableFlags_ = lazyMutableFlags;
       script->warmUpData_.initEnclosingScope(lazyEnclosingScope);
-      script->swapData(lazyData.get());
+      script->swapData(&lazyData);
       script->sharedData_ = nullptr;
 
       MOZ_ASSERT(script->isReadyForDelazification());
@@ -2764,6 +2789,10 @@ void JSScript::assertValidJumpTargets() const {
 }
 #endif
 
+size_t BaseScript::sizeOfExcludingThis() {
+  return gc::GetAllocSize(zone(), data_);
+}
+
 void JSScript::addSizeOfJitScript(mozilla::MallocSizeOf mallocSizeOf,
                                   size_t* sizeOfJitScript,
                                   size_t* sizeOfAllocSites) const {
@@ -2776,6 +2805,47 @@ void JSScript::addSizeOfJitScript(mozilla::MallocSizeOf mallocSizeOf,
 }
 
 js::GlobalObject& JSScript::uninlinedGlobal() const { return global(); }
+
+SourceLocationIterator::SourceLocationIterator(
+    unsigned startLine, JS::LimitedColumnNumberOneOrigin startCol,
+    SrcNote* notes, SrcNote* notesEnd, jsbytecode* code)
+    : iter_(notes, notesEnd),
+      offset_(0),
+      line_(startLine),
+      column_(startCol),
+      startLine_(startLine),
+      code_(code) {}
+
+void SourceLocationIterator::advanceToPC(const jsbytecode* pc) {
+  ptrdiff_t target = pc - code_;
+  while (offset_ < target && !iter_.atEnd()) {
+    const auto* sn = *iter_;
+    ptrdiff_t nextOffset = offset_ + sn->delta();
+    if (nextOffset > target) {
+      break;
+    }
+    offset_ = nextOffset;
+
+    SrcNoteType type = sn->type();
+    if (type == SrcNoteType::SetLine) {
+      line_ = SrcNote::SetLine::getLine(sn, startLine_);
+      column_ = JS::LimitedColumnNumberOneOrigin();
+    } else if (type == SrcNoteType::SetLineColumn) {
+      line_ = SrcNote::SetLineColumn::getLine(sn, startLine_);
+      column_ = SrcNote::SetLineColumn::getColumn(sn);
+    } else if (type == SrcNoteType::NewLine) {
+      line_++;
+      column_ = JS::LimitedColumnNumberOneOrigin();
+    } else if (type == SrcNoteType::NewLineColumn) {
+      line_++;
+      column_ = SrcNote::NewLineColumn::getColumn(sn);
+    } else if (type == SrcNoteType::ColSpan) {
+      column_ += SrcNote::ColSpan::getSpan(sn);
+    }
+
+    ++iter_;
+  }
+}
 
 unsigned js::PCToLineNumber(unsigned startLine,
                             JS::LimitedColumnNumberOneOrigin startCol,
@@ -3328,11 +3398,12 @@ BaseScript* BaseScript::CreateRawLazy(JSContext* cx, uint32_t ngcthings,
   // This condition is implicit in BaseScript::hasPrivateScriptData, and should
   // be mirrored on InputScript::hasPrivateScriptData.
   if (ngcthings || lazy->useMemberInitializers()) {
-    UniquePtr<PrivateScriptData> data(PrivateScriptData::new_(cx, ngcthings));
+    RootedBuffer<PrivateScriptData> data(
+        cx, PrivateScriptData::new_(cx, ngcthings));
     if (!data) {
       return nullptr;
     }
-    lazy->swapData(data);
+    lazy->swapData(&data);
     MOZ_ASSERT(!data);
   }
 
@@ -3392,6 +3463,11 @@ bool JSScript::hasLoops() {
     }
   }
   return false;
+}
+
+js::SourceLocationIterator JSScript::sourceLocationIter() const {
+  return SourceLocationIterator(lineno(), column(), notes(), notesEnd(),
+                                code());
 }
 
 bool JSScript::mayReadFrameArgsDirectly() {
@@ -3865,7 +3941,7 @@ JS::ubi::Base::Size JS::ubi::Concrete<BaseScript>::size(
   BaseScript* base = &get();
 
   Size size = gc::Arena::thingSize(base->getAllocKind());
-  size += base->sizeOfExcludingThis(mallocSizeOf);
+  size += base->sizeOfExcludingThis();
 
   // Include any JIT data if it exists.
   if (base->hasJitScript()) {

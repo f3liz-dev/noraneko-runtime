@@ -648,11 +648,13 @@ pub extern "C" fn wr_renderer_render(
     buffer_age: usize,
     out_stats: &mut RendererStats,
     out_dirty_rects: &mut ThinVec<DeviceIntRect>,
+    out_did_rasterize: &mut bool,
 ) -> bool {
     match renderer.render(DeviceIntSize::new(width, height), buffer_age) {
         Ok(results) => {
             *out_stats = results.stats;
             out_dirty_rects.extend(results.dirty_rects);
+            *out_did_rasterize = results.did_rasterize_any_tile;
             true
         },
         Err(errors) => {
@@ -926,7 +928,7 @@ pub fn gecko_profiler_event_marker(name: &str) {
 
 pub fn gecko_profiler_add_text_marker(name: &str, text: &str, microseconds: f64) {
     use gecko_profiler::{gecko_profiler_category, MarkerOptions, MarkerTiming, ProfilerTime};
-    if !gecko_profiler::can_accept_markers() {
+    if !gecko_profiler::current_thread_is_being_profiled_for_markers() {
         return;
     }
 
@@ -1784,6 +1786,8 @@ impl LayerCompositor for WrLayerCompositor {
         transform: CompositorSurfaceTransform,
         clip_rect: DeviceIntRect,
         image_rendering: ImageRendering,
+        rounded_clip_rect: DeviceIntRect,
+        rounded_clip_radii: ClipRadius,
     ) {
         let layer = &self.visual_tree[index];
 
@@ -1794,8 +1798,8 @@ impl LayerCompositor for WrLayerCompositor {
                 &transform,
                 clip_rect,
                 image_rendering,
-                clip_rect,
-                ClipRadius::EMPTY,
+                rounded_clip_rect,
+                rounded_clip_radii,
             );
         }
     }
@@ -2067,15 +2071,13 @@ pub extern "C" fn wr_window_new(
                 use_native_compositor,
             )),
         }
+    } else if use_layer_compositor {
+        CompositorConfig::Layer {
+            compositor: Box::new(WrLayerCompositor::new(compositor)),
+        }
     } else if use_native_compositor {
-        if use_layer_compositor {
-            CompositorConfig::Layer {
-                compositor: Box::new(WrLayerCompositor::new(compositor)),
-            }
-        } else {
-            CompositorConfig::Native {
-                compositor: Box::new(WrCompositor(compositor)),
-            }
+        CompositorConfig::Native {
+            compositor: Box::new(WrCompositor(compositor)),
         }
     } else {
         CompositorConfig::Draw {
@@ -2118,18 +2120,6 @@ pub extern "C" fn wr_window_new(
         static_prefs::pref!("gfx.webrender.precise-linear-gradients-swgl")
     } else {
         static_prefs::pref!("gfx.webrender.precise-linear-gradients")
-    };
-
-    let precise_radial_gradients = if software {
-        static_prefs::pref!("gfx.webrender.precise-radial-gradients-swgl")
-    } else {
-        static_prefs::pref!("gfx.webrender.precise-radial-gradients")
-    };
-
-    let precise_conic_gradients = if software {
-        static_prefs::pref!("gfx.webrender.precise-conic-gradients-swgl")
-    } else {
-        static_prefs::pref!("gfx.webrender.precise-conic-gradients")
     };
 
     let opts = WebRenderOptions {
@@ -2188,8 +2178,6 @@ pub extern "C" fn wr_window_new(
         max_shared_surface_size,
         enable_dithering,
         precise_linear_gradients,
-        precise_radial_gradients,
-        precise_conic_gradients,
         ..Default::default()
     };
 
@@ -3217,7 +3205,6 @@ pub extern "C" fn wr_dp_push_stacking_context(
         params.mix_blend_mode,
         &filters,
         &r_filter_datas,
-        &[],
         glyph_raster_space,
         params.flags,
         unsafe { params.snapshot.as_ref() }.cloned(),
@@ -3552,28 +3539,7 @@ pub extern "C" fn wr_dp_push_backdrop_filter(
     state
         .frame_builder
         .dl_builder
-        .push_backdrop_filter(&prim_info, &filters, &filter_datas, &[]);
-}
-
-#[no_mangle]
-pub extern "C" fn wr_dp_push_clear_rect(
-    state: &mut WrState,
-    rect: LayoutRect,
-    clip_rect: LayoutRect,
-    parent: &WrSpaceAndClipChain,
-) {
-    debug_assert!(unsafe { !is_in_render_thread() });
-
-    let space_and_clip = parent.to_webrender(state.pipeline_id);
-
-    let prim_info = CommonItemProperties {
-        clip_rect,
-        clip_chain_id: space_and_clip.clip_chain_id,
-        spatial_id: space_and_clip.spatial_id,
-        flags: prim_flags(true, /* prefer_compositor_surface */ false),
-    };
-
-    state.frame_builder.dl_builder.push_clear_rect(&prim_info, rect);
+        .push_backdrop_filter(&prim_info, &filters, &filter_datas);
 }
 
 #[no_mangle]
@@ -4393,6 +4359,7 @@ pub extern "C" fn wr_dp_push_box_shadow(
     blur_radius: f32,
     spread_radius: f32,
     border_radius: BorderRadius,
+    shadow_radius: BorderRadius,
     clip_mode: BoxShadowClipMode,
 ) {
     debug_assert!(unsafe { is_in_main_thread() });
@@ -4414,6 +4381,7 @@ pub extern "C" fn wr_dp_push_box_shadow(
         blur_radius,
         spread_radius,
         border_radius,
+        shadow_radius,
         clip_mode,
     );
 }

@@ -8,8 +8,7 @@
 
 #include "mozilla/MathAlgorithms.h"
 
-#include "jsnum.h"
-
+#include "builtin/Number.h"
 #include "jit/CodeGenerator.h"
 #include "jit/InlineScriptTree.h"
 #include "jit/JitRuntime.h"
@@ -88,7 +87,7 @@ void CodeGeneratorLOONG64::bailoutFrom(Label* label, LSnapshot* snapshot) {
   encode(snapshot);
 
   InlineScriptTree* tree = snapshot->mir()->block()->trackedTree();
-  auto* ool = new (alloc()) LambdaOutOfLineCode([=](OutOfLineCode& ool) {
+  auto* ool = new (alloc()) LambdaOutOfLineCode([=, this](OutOfLineCode& ool) {
     // Push snapshotOffset and make sure stack is aligned.
     masm.subPtr(Imm32(sizeof(Value)), StackPointer);
     masm.storePtr(ImmWord(snapshot->snapshotOffset()),

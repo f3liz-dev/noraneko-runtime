@@ -16,6 +16,7 @@
 #include "mozilla/DynamicFpiNavigationHeuristic.h"
 #include "mozilla/Components.h"
 #include "mozilla/LoadInfo.h"
+#include "mozilla/ipc/PBackgroundSharedTypes.h"
 #include "mozilla/NullPrincipal.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/ResultVariant.h"
@@ -187,8 +188,15 @@ static auto CreateDocumentLoadInfo(CanonicalBrowsingContext* aBrowsingContext,
       classificationFlags.thirdPartyFlags);
   loadInfo->SetHasValidUserGestureActivation(
       aLoadState->HasValidUserGestureActivation());
+  // External loads (e.g. links opened from other apps) are always
+  // user-initiated, so text fragment directives are allowed to scroll.
+  // XXX: This is inconsistent to the other code path that sets user activation
+  // based on the EXTERNAL load flag (nsDocShell::DoURILoad), which also sets
+  // the "normal" user activation if the flag is present. We should figure out
+  // if we should do this here as well.
   loadInfo->SetTextDirectiveUserActivation(
-      aLoadState->GetTextDirectiveUserActivation());
+      aLoadState->GetTextDirectiveUserActivation() ||
+      aLoadState->HasLoadFlags(nsIWebNavigation::LOAD_FLAGS_FROM_EXTERNAL));
   loadInfo->SetIsMetaRefresh(aLoadState->IsMetaRefresh());
 
   return loadInfo.forget();
@@ -700,6 +708,11 @@ auto DocumentLoadListener::Open(nsDocShellLoadState* aLoadState,
                                 nsresult* aRv) -> RefPtr<OpenPromise> {
   auto* loadingContext = GetLoadingBrowsingContext();
 
+  // Snapshot the referrer policy to be used when running the "create internal
+  // ancestor origins list".
+  aLoadInfo->SetFrameReferrerPolicySnapshot(
+      loadingContext->GetEmbedderFrameReferrerPolicy());
+
   MOZ_DIAGNOSTIC_ASSERT_IF(loadingContext->GetParent(),
                            loadingContext->GetParentWindowContext());
 
@@ -966,12 +979,12 @@ auto DocumentLoadListener::Open(nsDocShellLoadState* aLoadState,
             bool handled = aValue.ResolveValue();
             if (handled) {
               self->DisconnectListeners(NS_ERROR_ABORT, NS_ERROR_ABORT);
-              mParentChannelListener = nullptr;
+              self->mParentChannelListener = nullptr;
             } else {
-              nsresult rv = mChannel->AsyncOpen(openInfo);
+              nsresult rv = self->mChannel->AsyncOpen(openInfo);
               if (NS_FAILED(rv)) {
                 self->DisconnectListeners(rv, rv);
-                mParentChannelListener = nullptr;
+                self->mParentChannelListener = nullptr;
               }
             }
           }
@@ -1294,6 +1307,10 @@ bool DocumentLoadListener::SpeculativeLoadInParent(
     // allocate an identifier for this load.
     nsCOMPtr<nsIRedirectChannelRegistrar> registrar =
         RedirectChannelRegistrar::GetOrCreate();
+    if (!registrar) {
+      // Shutdown is in progress.
+      return false;
+    }
     uint64_t loadIdentifier = aLoadState->GetLoadIdentifier();
     DebugOnly<nsresult> rv =
         registrar->RegisterChannel(nullptr, loadIdentifier);
@@ -1308,6 +1325,10 @@ bool DocumentLoadListener::SpeculativeLoadInParent(
 void DocumentLoadListener::CleanupParentLoadAttempt(uint64_t aLoadIdent) {
   nsCOMPtr<nsIRedirectChannelRegistrar> registrar =
       RedirectChannelRegistrar::GetOrCreate();
+  if (!registrar) {
+    // Shutdown is in progress.
+    return;
+  }
 
   nsCOMPtr<nsIParentChannel> parentChannel;
   registrar->GetParentChannel(aLoadIdent, getter_AddRefs(parentChannel));
@@ -1328,6 +1349,11 @@ auto DocumentLoadListener::ClaimParentLoad(DocumentLoadListener** aListener,
     -> RefPtr<OpenPromise> {
   nsCOMPtr<nsIRedirectChannelRegistrar> registrar =
       RedirectChannelRegistrar::GetOrCreate();
+  if (!registrar) {
+    // Shutdown is in progress.
+    *aListener = nullptr;
+    return nullptr;
+  }
 
   nsCOMPtr<nsIParentChannel> parentChannel;
   registrar->GetParentChannel(aLoadIdent, getter_AddRefs(parentChannel));
@@ -1439,7 +1465,11 @@ void DocumentLoadListener::RedirectToRealChannelFinished(nsresult aRv) {
   // Wait for background channel ready on target channel
   nsCOMPtr<nsIRedirectChannelRegistrar> redirectReg =
       RedirectChannelRegistrar::GetOrCreate();
-  MOZ_ASSERT(redirectReg);
+  if (!redirectReg) {
+    // Shutdown is in progress.
+    FinishReplacementChannelSetup(NS_ERROR_ABORT);
+    return;
+  }
 
   nsCOMPtr<nsIParentChannel> redirectParentChannel;
   redirectReg->GetParentChannel(mRedirectChannelId,
@@ -1483,7 +1513,10 @@ void DocumentLoadListener::FinishReplacementChannelSetup(nsresult aResult) {
 
   nsCOMPtr<nsIRedirectChannelRegistrar> registrar =
       RedirectChannelRegistrar::GetOrCreate();
-  MOZ_ASSERT(registrar);
+  if (!registrar) {
+    // Shutdown is in progress.
+    return;
+  }
 
   nsCOMPtr<nsIParentChannel> redirectChannel;
   nsresult rv = registrar->GetParentChannel(mRedirectChannelId,
@@ -1690,6 +1723,43 @@ void DocumentLoadListener::SerializeRedirectData(
   MOZ_ALWAYS_SUCCEEDS(
       ipc::LoadInfoToLoadInfoArgs(redirectLoadInfo, &aArgs.loadInfo()));
 
+  if (StaticPrefs::dom_location_ancestorOrigins_enabled()) {
+    MOZ_ASSERT(XRE_IsParentProcess());
+    if (RefPtr bc = redirectLoadInfo->GetFrameBrowsingContext()) {
+      nsCOMPtr<nsIPrincipal> resultPrincipal;
+      // If this fails, we get an empty location.ancestorOrigins list
+      if (NS_SUCCEEDED(
+              nsContentUtils::GetSecurityManager()->GetChannelResultPrincipal(
+                  mChannel, getter_AddRefs(resultPrincipal)))) {
+        const auto referrerPolicy =
+            static_cast<LoadInfo*>(channelLoadInfo.get())
+                ->GetFrameReferrerPolicySnapshot();
+        bc->Canonical()->CreateRedactedAncestorOriginsList(resultPrincipal,
+                                                           referrerPolicy);
+      }
+
+      // convert principals to IPC data
+      constexpr auto prepareInfo =
+          [](nsIPrincipal* aPrincipal) -> Maybe<ipc::PrincipalInfo> {
+        if (aPrincipal == nullptr) {
+          return Nothing();
+        }
+        ipc::PrincipalInfo data;
+        return NS_SUCCEEDED(PrincipalToPrincipalInfo(aPrincipal, &data))
+                   ? Some(std::move(data))
+                   : Nothing();
+      };
+
+      // The ancestorOrigins list the document should ultimately have, that we
+      // send down with load args.
+      auto& ancestorOrigins = aArgs.loadInfo().ancestorOrigins();
+      for (const auto& ancestorPrincipal :
+           bc->Canonical()->GetPossiblyRedactedAncestorOriginsList()) {
+        ancestorOrigins.AppendElement(prepareInfo(ancestorPrincipal));
+      }
+    }
+  }
+
   mChannel->GetOriginalURI(getter_AddRefs(aArgs.originalURI()));
 
   // mChannel can be a nsHttpChannel as well as InterceptedHttpChannel so we
@@ -1893,10 +1963,10 @@ static RefPtr<dom::BrowsingContextCallbackReceivedPromise> SwitchToNewTab(
   RefPtr<nsOpenWindowInfo> openInfo = new nsOpenWindowInfo();
   openInfo->mBrowsingContextReadyCallback =
       new nsBrowsingContextReadyCallback(promise);
-  openInfo->mOriginAttributes = aLoadingBrowsingContext->OriginAttributesRef();
   openInfo->mParent = aLoadingBrowsingContext;
   openInfo->mForceNoOpener = true;
   openInfo->mIsRemote = true;
+  openInfo->mPrincipalToInheritForAboutBlank = triggeringPrincipal;
 
   // Do the actual work to open a new tab or window async.
   nsresult rv = NS_DispatchToMainThread(NS_NewRunnableFunction(
@@ -2236,7 +2306,11 @@ DocumentLoadListener::RedirectToRealChannel(
   // Register the new channel and obtain id for it
   nsCOMPtr<nsIRedirectChannelRegistrar> registrar =
       RedirectChannelRegistrar::GetOrCreate();
-  MOZ_ASSERT(registrar);
+  if (!registrar) {
+    // Shutdown is in progress.
+    return PDocumentChannelParent::RedirectToRealChannelPromise::
+        CreateAndReject(ipc::ResponseRejectReason::SendError, __func__);
+  }
   nsCOMPtr<nsIChannel> chan = mChannel;
   if (nsCOMPtr<nsIViewSourceChannel> vsc = do_QueryInterface(chan)) {
     chan = vsc->GetInnerChannel();

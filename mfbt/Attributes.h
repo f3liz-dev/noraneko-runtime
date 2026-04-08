@@ -9,8 +9,6 @@
 #ifndef mozilla_Attributes_h
 #define mozilla_Attributes_h
 
-#include "mozilla/Compiler.h"
-
 /*
  * MOZ_ALWAYS_INLINE is a macro which expands to tell the compiler that the
  * method decorated with it must be inlined, even if the compiler thinks
@@ -49,14 +47,6 @@
 #endif
 
 #if defined(_MSC_VER)
-/*
- * g++ requires -std=c++0x or -std=gnu++0x to support C++11 functionality
- * without warnings (functionality used by the macros below).  These modes are
- * detectable by checking whether __GXX_EXPERIMENTAL_CXX0X__ is defined or, more
- * standardly, by checking whether __cplusplus has a C++11 or greater value.
- * Current versions of g++ do not correctly set __cplusplus, so we check both
- * for forward compatibility.
- */
 #  define MOZ_HAVE_NEVER_INLINE __declspec(noinline)
 #elif defined(__clang__)
 /*
@@ -89,6 +79,15 @@
 #  define MOZ_HAS_CLANG_ATTRIBUTE(attr) __has_attribute(attr)
 #else
 #  define MOZ_HAS_CLANG_ATTRIBUTE(attr) 0
+#endif
+
+// Prevent a class with non-trivial destructor and/or non-trivial move
+// assignment or move-constructor to be passed by hidden reference, a.k.a
+// pointer.
+#if MOZ_HAS_CLANG_ATTRIBUTE(__trivial_abi__)
+#  define MOZ_TRIVIAL_ABI __attribute__((__trivial_abi__))
+#else
+#  define MOZ_TRIVIAL_ABI
 #endif
 
 /*
@@ -654,7 +653,6 @@
  *   expression. If a member of another class uses this class, or if another
  *   class inherits from this class, then it is considered to be a non-heap
  *   class as well, although this attribute need not be provided in such cases.
- * MOZ_CONSTINIT: pre-C++20 equivalent to `constinit`.
  * MOZ_RUNINIT: Applies to global variables with runtime initialization.
  * MOZ_GLOBINIT: Applies to global variables with potential runtime
  *   initialization (e.g. inside macro or when initialisation status depends on
@@ -1079,19 +1077,6 @@
 #  define MOZ_EMPTY_BASES __declspec(empty_bases)
 #else
 #  define MOZ_EMPTY_BASES
-#endif
-
-/**
- * Pre- C++20 equivalent to constinit
- */
-#if defined(__cpp_constinit)
-#  define MOZ_CONSTINIT constinit
-#elif defined(__clang__)
-#  define MOZ_CONSTINIT [[clang::require_constant_initialization]]
-#elif MOZ_GCC_VERSION_AT_LEAST(10, 1, 0)
-#  define MOZ_CONSTINIT __constinit
-#else
-#  define MOZ_CONSTINIT
 #endif
 
 // XXX: GCC somehow does not allow attributes before lambda return types, while

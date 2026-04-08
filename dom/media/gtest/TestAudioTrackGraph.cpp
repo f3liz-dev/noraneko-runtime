@@ -163,6 +163,23 @@ class MockAudioDataListener : public AudioDataListener {
               (MediaTrackGraph*, int,
                (const Result<cubeb_input_processing_params, int>&)));
 };
+
+class MockProcessedMediaTrack : public ProcessedMediaTrack {
+ public:
+  explicit MockProcessedMediaTrack(TrackRate aRate)
+      : ProcessedMediaTrack(aRate, MediaSegment::AUDIO, new AudioSegment()) {
+    ON_CALL(*this, ProcessInput)
+        .WillByDefault([segment = GetData<AudioSegment>()](
+                           GraphTime aFrom, GraphTime aTo, uint32_t aFlags) {
+          segment->AppendNullData(aTo - aFrom);
+        });
+  }
+
+  MOCK_METHOD(void, ProcessInput,
+              (GraphTime aFrom, GraphTime aTo, uint32_t aFlags), (override));
+
+  uint32_t NumberOfChannels() const override { return 2; };
+};
 }  // namespace
 
 /*
@@ -295,6 +312,21 @@ TEST(TestAudioTrackGraph, StreamName)
   // Test has finished. Destroy the track to shutdown the MTG.
   DispatchMethod(dummySource, &SourceMediaTrack::Destroy);
   WaitFor(cubeb->StreamDestroyEvent());
+}
+
+TEST(TestAudioTrackGraph, OfflineDestruction)
+{
+  RefPtr graph = static_cast<MediaTrackGraphImpl*>(
+      MediaTrackGraph::CreateNonRealtimeInstance(48000));
+  // Add and remove a dummy track to trigger graph shutdown.
+  RefPtr dummyTrack = new MockProcessedMediaTrack(graph->GraphRate());
+  graph->AddTrack(dummyTrack);
+  dummyTrack->Destroy();
+  // Wait until `graph` has the only reference to the graph.
+  SpinEventLoopUntil("TestAudioTrackGraph, OfflineDestruction"_ns, [&] {
+    graph.get()->AddRef();
+    return graph.get()->Release() == 1;
+  });
 }
 
 TEST(TestAudioTrackGraph, NotifyDeviceStarted)
@@ -2960,6 +2992,8 @@ TEST(TestAudioTrackGraph, PlatformProcessing)
 
   // Switch driver.
   EXPECT_CALL(*listener, RequestedInputChannelCount).WillRepeatedly(Return(2));
+  // ReevaluateInputDevice() is not required for the native input, but is
+  // called anyway.
   DispatchFunction([&] {
     track->QueueControlMessageWithNoShutdown(
         [&] { graph->ReevaluateInputDevice(device); });
@@ -3093,25 +3127,25 @@ TEST(TestAudioTrackGraph, PlatformProcessingNonNativeToNativeSwitch)
     // On non-native device's start.
     EXPECT_CALL(*secondListener,
                 NotifySetRequestedInputProcessingParams(
-                    graph, 1, CUBEB_INPUT_PROCESSING_PARAM_ECHO_CANCELLATION));
+                    graph, 3, CUBEB_INPUT_PROCESSING_PARAM_ECHO_CANCELLATION));
     EXPECT_CALL(*secondListener, NotifySetRequestedInputProcessingParamsResult(
-                                     graph, 1, Eq(std::ref(echoResult))))
+                                     graph, 3, Eq(std::ref(echoResult))))
         .WillOnce([&] { ++numProcessingParamsResults; });
     // After switch to native device for second device.
     EXPECT_CALL(*firstListener, Disconnect);
     EXPECT_CALL(*secondListener, Disconnect);
     EXPECT_CALL(*secondListener,
                 NotifySetRequestedInputProcessingParams(
-                    graph, 1, CUBEB_INPUT_PROCESSING_PARAM_ECHO_CANCELLATION));
+                    graph, 4, CUBEB_INPUT_PROCESSING_PARAM_ECHO_CANCELLATION));
     EXPECT_CALL(*secondListener, NotifySetRequestedInputProcessingParamsResult(
-                                     graph, 1, Eq(std::ref(echoResult))))
+                                     graph, 4, Eq(std::ref(echoResult))))
         .WillOnce([&] { ++numProcessingParamsResults; });
     // After param update.
     EXPECT_CALL(*secondListener,
                 NotifySetRequestedInputProcessingParams(
-                    graph, 2, CUBEB_INPUT_PROCESSING_PARAM_NOISE_SUPPRESSION));
+                    graph, 5, CUBEB_INPUT_PROCESSING_PARAM_NOISE_SUPPRESSION));
     EXPECT_CALL(*secondListener, NotifySetRequestedInputProcessingParamsResult(
-                                     graph, 2, Eq(std::ref(noiseResult))))
+                                     graph, 5, Eq(std::ref(noiseResult))))
         .WillOnce([&] { ++numProcessingParamsResults; });
     EXPECT_CALL(*secondListener, Disconnect);
   }
@@ -3283,23 +3317,6 @@ TEST(TestAudioTrackGraph, PlatformProcessingNonNativeToNativeSwitch)
     ASSERT_TRUE(!native);
   }
 }
-
-class MockProcessedMediaTrack : public ProcessedMediaTrack {
- public:
-  explicit MockProcessedMediaTrack(TrackRate aRate)
-      : ProcessedMediaTrack(aRate, MediaSegment::AUDIO, new AudioSegment()) {
-    ON_CALL(*this, ProcessInput)
-        .WillByDefault([segment = GetData<AudioSegment>()](
-                           GraphTime aFrom, GraphTime aTo, uint32_t aFlags) {
-          segment->AppendNullData(aTo - aFrom);
-        });
-  }
-
-  MOCK_METHOD(void, ProcessInput,
-              (GraphTime aFrom, GraphTime aTo, uint32_t aFlags), (override));
-
-  uint32_t NumberOfChannels() const override { return 2; };
-};
 
 TEST(TestAudioTrackGraph, EmptyProcessingInterval)
 {
@@ -3482,6 +3499,7 @@ TEST(TestAudioTrackGraph, DefaultOutputDeviceIDTracking)
 #endif
 }
 
-#undef Invoke
+#undef InvokeAsync
 #undef DispatchFunction
 #undef DispatchMethod
+#undef ProcessEventQueue

@@ -1318,14 +1318,14 @@ add_task(async function test_restorePrefs_experimentAndRollout() {
       setPrefs(pref, { userBranchValue });
     }
 
-    const { sandbox, manager, initExperimentAPI, cleanup } = await setupTest({
+    const { sandbox, manager, cleanup } = await setupTest({
       init: false,
       storePath,
       migrationState: NimbusTestUtils.migrationState.LATEST,
     });
     const setPrefSpy = sandbox.spy(PrefUtils, "setPref");
 
-    await initExperimentAPI();
+    await ExperimentAPI.init();
 
     if (branch === DEFAULT) {
       Assert.ok(setPrefSpy.calledOnce, "Should have called setPref once total");
@@ -1869,7 +1869,9 @@ add_task(async function test_prefChange() {
     }
 
     const enrollmentStatusEvents = (
-      Glean.nimbusEvents.enrollmentStatus.testGetValue("events") ?? []
+      Glean.nimbusEvents.enrollmentStatus.testGetValue(
+        "nimbus-targeting-context"
+      ) ?? []
     ).map(ev => ev.extra);
 
     for (const expectedEvent of expectedEnrollmentStatusEvents) {

@@ -45,12 +45,14 @@ EXPORTS += [
     "RFPTargets.inc",
 ]
 EXPORTS.mozilla += [
+    "nsRFPIPCUtils.h",
     "RelativeTimeline.h",
 ]
 EXPORTS.mozilla.gtest += ["nsUserCharacteristics.h"]
 
 EXTRA_JS_MODULES += [
     "!RFPTargetConstants.sys.mjs",
+    "CanvasHashData.sys.mjs",
     "FingerprintingWebCompatService.sys.mjs",
     "RFPHelper.sys.mjs",
     "UserCharacteristicsPageService.sys.mjs",

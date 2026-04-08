@@ -2,8 +2,9 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this file,
 # You can obtain one at http://mozilla.org/MPL/2.0/.
 
-import json
 from urllib.request import urlretrieve
+
+from mozfile import json
 
 REVISION = "f0b66021355352cf1e38d08e3659d0a90757d7fd"
 
@@ -114,44 +115,44 @@ namespace mozilla::dom::sanitizer {{
 
 constexpr nsStaticAtom* kDefaultHTMLElements[] = {{
     // clang-format off
-{ xhtml_elements_body }
+{xhtml_elements_body}
     // clang-format on
 }};
 
 constexpr nsStaticAtom* kDefaultMathMLElements[] = {{
     // clang-format off
-{ mathml_elements_body }
+{mathml_elements_body}
     // clang-format on
 }};
 
 constexpr nsStaticAtom* kDefaultSVGElements[] = {{
     // clang-format off
-{ svg_elements_body }
+{svg_elements_body}
     // clang-format on
 }};
 
 constexpr nsStaticAtom* kDefaultAttributes[] = {{
     // clang-format off
-{ attributes_body }
+{attributes_body}
     // clang-format on
 }};
 
 // Data is encoded as: element, attributes..., nullptr
 constexpr nsStaticAtom* kHTMLElementWithAttributes[] = {{
     // clang-format off
-{ xhtml_element_with_attributes_body }
+{xhtml_element_with_attributes_body}
     // clang-format on
 }};
 
 constexpr nsStaticAtom* kMathMLElementWithAttributes[] = {{
     // clang-format off
-{ mathml_element_with_attributes_body }
+{mathml_element_with_attributes_body}
     // clang-format on
 }};
 
 constexpr nsStaticAtom* kSVGElementWithAttributes[] = {{
     // clang-format off
-{ svg_element_with_attributes_body }
+{svg_element_with_attributes_body}
     // clang-format on
 }};
 

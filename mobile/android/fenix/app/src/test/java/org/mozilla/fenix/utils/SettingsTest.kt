@@ -28,9 +28,12 @@ import org.mozilla.fenix.browser.browsingmode.BrowsingMode
 import org.mozilla.fenix.components.toolbar.ToolbarPosition
 import org.mozilla.fenix.nimbus.DefaultBrowserPrompt
 import org.mozilla.fenix.nimbus.FakeNimbusEventStore
+import org.mozilla.fenix.nimbus.FxNimbus
+import org.mozilla.fenix.nimbus.HomescreenEdgeToEdgeBackground
 import org.mozilla.fenix.settings.PhoneFeature
 import org.mozilla.fenix.settings.ShortcutType
 import org.mozilla.fenix.settings.deletebrowsingdata.DeleteBrowsingDataOnQuitType
+import org.mozilla.fenix.wallpapers.Wallpaper
 import org.robolectric.RobolectricTestRunner
 import java.util.Calendar
 
@@ -142,6 +145,28 @@ class SettingsTest {
 
         // Then
         assertEquals("Mozilla", settings.defaultSearchEngineName)
+    }
+
+    @Test
+    fun defaultWallpaperIsEdgeToEdgeWhenEdgeToEdgeFeatureEnabled() {
+        FxNimbus.features.homescreenEdgeToEdgeBackground.withCachedValue(
+            HomescreenEdgeToEdgeBackground(enabled = true),
+        )
+        val settings = Settings(testContext)
+
+        // Then
+        assertEquals(Wallpaper.EdgeToEdge.name, settings.currentWallpaperName)
+    }
+
+    @Test
+    fun defaultWallpaperIsDefaultWhenEdgeToEdgeDisabled() {
+        FxNimbus.features.homescreenEdgeToEdgeBackground.withCachedValue(
+            HomescreenEdgeToEdgeBackground(enabled = false),
+        )
+        val settings = Settings(testContext)
+
+        // Then
+        assertEquals(Wallpaper.Default.name, settings.currentWallpaperName)
     }
 
     @Test
@@ -914,6 +939,20 @@ class SettingsTest {
     }
 
     @Test
+    fun `GIVEN should not show by default WHEN enablePersistentOnboarding is true THEN shouldShowOnboarding returns true`() {
+        val settings = spyk(settings)
+        every { settings.enablePersistentOnboarding } returns true
+
+        val actual = settings.shouldShowOnboarding(
+            featureEnabled = false,
+            hasUserBeenOnboarded = true,
+            isLauncherIntent = false,
+        )
+
+        assertTrue(actual)
+    }
+
+    @Test
     fun `GIVEN Https-only mode is disabled THEN the engine mode is HttpsOnlyMode#DISABLED`() {
         settings.shouldUseHttpsOnly = false
 
@@ -1324,6 +1363,7 @@ class SettingsTest {
 
     @Test
     fun `GIVEN toolbar customization is disabled WHEN reading toolbarSimpleShortcut THEN NEW_TAB is returned regardless of stored key`() {
+        settings.shouldShowToolbarCustomization = false
         settings.toolbarSimpleShortcutKey = ShortcutType.SHARE.value
 
         val result = settings.toolbarSimpleShortcut
@@ -1341,6 +1381,7 @@ class SettingsTest {
 
     @Test
     fun `GIVEN toolbar customization is disabled WHEN reading toolbarExpandedShortcut THEN BOOKMARK is returned regardless of stored key`() {
+        settings.shouldShowToolbarCustomization = false
         settings.toolbarExpandedShortcutKey = ShortcutType.NEW_TAB.value
 
         val result = settings.toolbarExpandedShortcut

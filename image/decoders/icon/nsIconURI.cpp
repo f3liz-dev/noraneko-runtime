@@ -573,7 +573,7 @@ void nsMozIconURI::Serialize(URIParams& aParams) {
   params.iconScale() = mScale;
   params.iconDark() = mDark;
 
-  aParams = params;
+  aParams = std::move(params);
 }
 
 bool nsMozIconURI::Deserialize(const URIParams& aParams) {
@@ -602,6 +602,11 @@ bool nsMozIconURI::Deserialize(const URIParams& aParams) {
 
   return true;
 }
+
+size_t nsMozIconURI::SizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf) {
+  // We don't need to calculate this unless it shows up in DMD.
+  return 0;
+};
 
 NS_IMETHODIMP
 nsMozIconURI::GetInnerURI(nsIURI** aURI) {

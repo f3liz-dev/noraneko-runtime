@@ -29,7 +29,6 @@
 #include "nsITimer.h"
 #include "nsTHashMap.h"
 #include "nsThreadUtils.h"
-// #include "nscore.h"
 
 namespace details {
 static nsCString MakeTargetName(const char* name) {
@@ -94,7 +93,7 @@ class TestHandleWatcher : public testing::Test {
   static already_AddRefed<mozilla::SharedThreadPool> GetPool() {
     AssertIsLive();
     if (!sPool) {
-      sPool = mozilla::SharedThreadPool::Get("Test Pool"_ns);
+      sPool = mozilla::SharedThreadPool::Get("Test Pool");
     }
     return do_AddRef(sPool);
   }
@@ -113,7 +112,7 @@ class TestHandleWatcher : public testing::Test {
 /* static */
 bool TestHandleWatcher::sIsLive = false;
 /* static */
-MOZ_CONSTINIT RefPtr<mozilla::SharedThreadPool> TestHandleWatcher::sPool;
+constinit RefPtr<mozilla::SharedThreadPool> TestHandleWatcher::sPool;
 
 ///////////////////////////////////////////////////////////////////////
 // WindowsEventObject
@@ -448,6 +447,8 @@ class MockEventTarget final : public nsIEventTarget {
   NS_IMETHOD UnregisterShutdownTask(nsITargetShutdownTask* task) override {
     return mShutdownTasks.RemoveTask(task);
   }
+  NS_IMETHOD_(FeatureFlags) GetFeatures() override { return SUPPORTS_BASE; }
+
   void RegisterDeathAction(std::function<void(void)>&& f) {
     mDeathAction = std::move(f);
   }

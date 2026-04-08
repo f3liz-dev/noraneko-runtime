@@ -10,7 +10,6 @@
 #include "mozilla/dom/BrowsingContext.h"
 #include "mozilla/dom/MediaControlKeySource.h"
 #include "mozilla/dom/BrowsingContextWebProgress.h"
-#include "mozilla/dom/EntryList.h"
 #include "mozilla/dom/FeaturePolicy.h"
 #include "mozilla/dom/ProcessIsolation.h"
 #include "mozilla/dom/Promise.h"
@@ -328,6 +327,7 @@ class CanonicalBrowsingContext final : public BrowsingContext {
   void GetLoadingSessionHistoryInfoFromParent(
       Maybe<LoadingSessionHistoryInfo>& aLoadingInfo);
 
+  MOZ_CAN_RUN_SCRIPT
   void HistoryCommitIndexAndLength();
 
   void SynchronizeLayoutHistoryState();
@@ -450,10 +450,27 @@ class CanonicalBrowsingContext final : public BrowsingContext {
 
   static bool ShouldEnforceParentalControls();
 
-  void MaybeReconstructActiveEntryList();
-
   // Get the load listener for the current load in this browsing context.
   already_AddRefed<net::DocumentLoadListener> GetCurrentLoad();
+
+  // https://html.spec.whatwg.org/#concept-internal-location-ancestor-origin-objects-list
+  void CreateRedactedAncestorOriginsList(
+      nsIPrincipal* aThisDocumentPrincipal,
+      ReferrerPolicy aFrameReferrerPolicyAttribute);
+
+  Span<const nsCOMPtr<nsIPrincipal>> GetPossiblyRedactedAncestorOriginsList()
+      const;
+  void SetPossiblyRedactedAncestorOriginsList(
+      nsTArray<nsCOMPtr<nsIPrincipal>> aAncestorOriginsList);
+
+  void SetEmbedderFrameReferrerPolicy(ReferrerPolicy aPolicy);
+
+  // Called when we need to snap shot referrer policy for ancestorOrigins
+  // and also when building the internal ancestor origins list for about:blank
+  // because it needs special handling.
+  ReferrerPolicy GetEmbedderFrameReferrerPolicy() const {
+    return mEmbedderFrameReferrerPolicy;
+  }
 
  protected:
   // Called when the browsing context is being discarded.
@@ -589,8 +606,6 @@ class CanonicalBrowsingContext final : public BrowsingContext {
 
   void MaybeReuseNavigationKeyFromActiveEntry(SessionHistoryEntry* aEntry);
 
-  EntryList* GetActiveEntries();
-
   // XXX(farre): Store a ContentParent pointer here rather than mProcessId?
   // Indicates which process owns the docshell.
   uint64_t mProcessId;
@@ -631,7 +646,6 @@ class CanonicalBrowsingContext final : public BrowsingContext {
     RefPtr<SessionHistoryEntry> mEntry;
   };
   nsTArray<LoadingSessionHistoryEntry> mLoadingEntries;
-  RefPtr<EntryList> mActiveEntryList;
   RefPtr<SessionHistoryEntry> mActiveEntry;
 
   RefPtr<nsSecureBrowserUI> mSecureBrowserUI;
@@ -674,8 +688,14 @@ class CanonicalBrowsingContext final : public BrowsingContext {
   uint32_t mPendingDiscards = 0;
 
   bool mFullyDiscarded = false;
+  // the referrerPolicy attribute of the iframe hosting this browsing context
+  // defaults to the empty string
+  ReferrerPolicy mEmbedderFrameReferrerPolicy = ReferrerPolicy::_empty;
 
   nsTArray<std::function<void(uint64_t)>> mFullyDiscardedListeners;
+
+  // https://html.spec.whatwg.org/#concept-internal-location-ancestor-origin-objects-list
+  nsTArray<nsCOMPtr<nsIPrincipal>> mPossiblyRedactedAncestorOriginsList;
 };
 
 }  // namespace dom

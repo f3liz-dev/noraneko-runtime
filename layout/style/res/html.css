@@ -235,18 +235,14 @@ h6 {
 }
 
 listing {
-  display: block;
-  font-family: -moz-fixed;
   font-size: medium;
-  white-space: pre;
-  margin-block: 1em;
 }
 
+listing,
 xmp,
 pre,
 plaintext {
   display: block;
-  font-family: -moz-fixed;
   white-space: pre;
   margin-block: 1em;
 }
@@ -512,8 +508,14 @@ dfn {
 tt,
 code,
 kbd,
-samp {
+pre,
+samp,
+listing,
+xmp,
+plaintext {
   font-family: -moz-fixed;
+  /* Replace this with text-spacing:none when the shorthand is implemented: */
+  text-autospace: no-autospace;
 }
 
 u,
@@ -668,6 +670,23 @@ img::before {
 img[usemap],
 object[usemap] {
   color: blue;
+}
+
+/* https://drafts.csswg.org/css-overflow-4/#overflow-control:
+ *
+ * Host languages should define UA style sheet rules that apply a default value
+ * of clip to such elements and set their overflow-clip-margin to content-box.
+ *
+ * NOTE(emilio): This rule is very hand-wavy, for now the
+ * <embed>/<iframe>/<object> cases are !important to match Blink, but see
+ * https://github.com/whatwg/html/issues/11986 for some discussion about making
+ * it explicit.
+ */
+canvas,
+img,
+video {
+  overflow-clip-margin: content-box;
+  overflow: clip;
 }
 
 frameset {

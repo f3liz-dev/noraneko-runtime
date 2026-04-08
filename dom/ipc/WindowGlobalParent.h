@@ -157,6 +157,8 @@ class WindowGlobalParent final : public WindowContext,
     return mIsInitialDocument.isSome() && mIsInitialDocument.value();
   }
 
+  bool IsUncommittedInitialDocument() { return mIsUncommittedInitialDocument; }
+
   already_AddRefed<mozilla::dom::Promise> PermitUnload(
       PermitUnloadAction aAction, uint32_t aTimeout, mozilla::ErrorResult& aRv);
 
@@ -194,9 +196,7 @@ class WindowGlobalParent final : public WindowContext,
       const Maybe<
           ContentBlockingNotifier::StorageAccessPermissionGrantedReason>&
           aReason,
-      const Maybe<ContentBlockingNotifier::CanvasFingerprinter>&
-          aCanvasFingerprinter,
-      const Maybe<bool> aCanvasFingerprinterKnownText);
+      const Maybe<CanvasFingerprintingEvent>& aCanvasFingerprintingEvent);
 
   ContentBlockingLog* GetContentBlockingLog() { return &mContentBlockingLog; }
 
@@ -275,6 +275,12 @@ class WindowGlobalParent final : public WindowContext,
     }
 
     mIsInitialDocument = Some(aIsInitialDocument);
+    mIsUncommittedInitialDocument = aIsInitialDocument;
+    return IPC_OK();
+  }
+  mozilla::ipc::IPCResult RecvCommitToInitialDocument() {
+    MOZ_ASSERT(mIsInitialDocument.isSome() && mIsInitialDocument.value());
+    mIsUncommittedInitialDocument = false;
     return IPC_OK();
   }
   mozilla::ipc::IPCResult RecvUpdateDocumentSecurityInfo(
@@ -282,9 +288,9 @@ class WindowGlobalParent final : public WindowContext,
   mozilla::ipc::IPCResult RecvSetClientInfo(
       const IPCClientInfo& aIPCClientInfo);
   mozilla::ipc::IPCResult RecvDestroy();
-  mozilla::ipc::IPCResult RecvRawMessage(
-      const JSActorMessageMeta& aMeta, JSIPCValue&& aData,
-      const UniquePtr<ClonedMessageData>& aStack);
+  mozilla::ipc::IPCResult RecvRawMessage(const JSActorMessageMeta& aMeta,
+                                         JSIPCValue&& aData,
+                                         StructuredCloneData* aStack);
 
   mozilla::ipc::IPCResult RecvGetContentBlockingEvents(
       GetContentBlockingEventsResolver&& aResolver);
@@ -346,6 +352,9 @@ class WindowGlobalParent final : public WindowContext,
 
   already_AddRefed<dom::PWebIdentityParent> AllocPWebIdentityParent();
 
+  already_AddRefed<dom::PDigitalCredentialParent>
+  AllocPDigitalCredentialParent();
+
  private:
   WindowGlobalParent(CanonicalBrowsingContext* aBrowsingContext,
                      uint64_t aInnerWindowId, uint64_t aOuterWindowId,
@@ -380,6 +389,8 @@ class WindowGlobalParent final : public WindowContext,
   Maybe<nsString> mDocumentTitle;
 
   Maybe<bool> mIsInitialDocument;
+
+  bool mIsUncommittedInitialDocument;
 
   // True if this window has a "beforeunload" event listener.
   bool mHasBeforeUnload;

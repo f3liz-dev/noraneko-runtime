@@ -43,7 +43,6 @@
 #include "mozilla/layers/RenderRootStateManager.h"
 #include "mozilla/layers/WebRenderLayerManager.h"
 #include "nsCOMPtr.h"
-#include "nsCSSAnonBoxes.h"
 #include "nsCSSRendering.h"
 #include "nsContentUtils.h"
 #include "nsFontMetrics.h"
@@ -973,7 +972,7 @@ Maybe<nsSize> nsImageFrame::GetViewTransitionBorderBoxSize() const {
   if (NS_WARN_IF(!vt)) {
     return {};
   }
-  return Style()->GetPseudoType() == PseudoStyleType::viewTransitionOld
+  return Style()->GetPseudoType() == PseudoStyleType::ViewTransitionOld
              ? vt->GetOldBorderBoxSize(name)
              : vt->GetNewBorderBoxSize(name);
 }
@@ -990,7 +989,7 @@ wr::ImageKey nsImageFrame::GetViewTransitionImageKey(
     return kNoKey;
   }
   const auto* key =
-      Style()->GetPseudoType() == PseudoStyleType::viewTransitionOld
+      Style()->GetPseudoType() == PseudoStyleType::ViewTransitionOld
           ? vt->ReadOldImageKey(name, aManager, aResources)
           : vt->GetNewImageKey(name);
   return key ? *key : kNoKey;
@@ -1560,22 +1559,18 @@ nscoord nsImageFrame::IntrinsicISize(const IntrinsicSizeInput& aInput,
 void nsImageFrame::ReflowChildren(nsPresContext* aPresContext,
                                   const ReflowInput& aReflowInput,
                                   const LogicalSize& aImageSize) {
+  const WritingMode wm = GetWritingMode();
   for (nsIFrame* child : mFrames) {
     ReflowOutput childDesiredSize(aReflowInput);
-    WritingMode wm = GetWritingMode();
-    // Shouldn't be hard to support if we want, but why bother.
-    MOZ_ASSERT(
-        wm == child->GetWritingMode(),
-        "We don't expect mismatched writing-modes in content we control");
-    nsReflowStatus childStatus;
-
+    const WritingMode childWm = child->GetWritingMode();
+    ReflowInput childReflowInput(aPresContext, aReflowInput, child,
+                                 aImageSize.ConvertTo(childWm, wm));
     LogicalPoint childOffset(wm);
-    ReflowInput childReflowInput(aPresContext, aReflowInput, child, aImageSize);
     const nsSize containerSize = aImageSize.GetPhysicalSize(wm);
+    nsReflowStatus childStatus;
     ReflowChild(child, aPresContext, childDesiredSize, childReflowInput, wm,
                 childOffset, containerSize, ReflowChildFlags::Default,
                 childStatus);
-
     FinishReflowChild(child, aPresContext, childDesiredSize, &childReflowInput,
                       wm, childOffset, containerSize,
                       ReflowChildFlags::Default);
@@ -1635,15 +1630,11 @@ void nsImageFrame::Reflow(nsPresContext* aPresContext, ReflowOutput& aMetrics,
   }
 
   aMetrics.SetOverflowAreasToDesiredBounds();
-  bool imageOK = mKind != Kind::ImageLoadingContent ||
-                 ImageOk(mContent->AsElement()->State());
+  const bool imageOK = mKind != Kind::ImageLoadingContent ||
+                       ImageOk(mContent->AsElement()->State());
 
   // Determine if the size is available
-  bool haveSize = false;
-  if (loadStatus & imgIRequest::STATUS_SIZE_AVAILABLE) {
-    haveSize = true;
-  }
-
+  const bool haveSize = loadStatus & imgIRequest::STATUS_SIZE_AVAILABLE;
   if (!imageOK || !haveSize) {
     nsRect altFeedbackSize(
         0, 0,
@@ -1656,10 +1647,19 @@ void nsImageFrame::Reflow(nsPresContext* aPresContext, ReflowOutput& aMetrics,
     // outside the image.
     nsRect& inkOverflow = aMetrics.InkOverflow();
     inkOverflow.UnionRect(inkOverflow, altFeedbackSize);
-  } else if (PresShell()->IsActive()) {
-    // We've just reflowed and we should have an accurate size, so we're ready
-    // to request a decode.
-    MaybeDecodeForPredictedSize();
+  } else {
+    // Union with our dest rect (note that it will most likely get clipped in
+    // FinishAndStoreOverflow). Only do this if we're not fragmented, since in
+    // that case overflow goes into our continuation.
+    if (aStatus.IsComplete()) {
+      aMetrics.mOverflowAreas.UnionAllWith(
+          GetDestRect(aReflowInput.ComputedPhysicalContentBoxRelativeToSelf()));
+    }
+    if (PresShell()->IsActive()) {
+      // We've just reflowed and we should have an accurate size, so we're ready
+      // to request a decode.
+      MaybeDecodeForPredictedSize();
+    }
   }
   FinishAndStoreOverflow(&aMetrics, aReflowInput.mStyleDisplay);
 
@@ -2351,10 +2351,8 @@ void nsDisplayImage::Paint(nsDisplayListBuilder* aBuilder, gfxContext* aCtx) {
 }
 
 nsRect nsDisplayImage::GetDestRect() const {
-  bool snap = true;
-  const nsRect frameContentBox = GetBounds(&snap);
-  nsImageFrame* imageFrame = static_cast<nsImageFrame*>(mFrame);
-  return imageFrame->GetDestRect(frameContentBox);
+  auto* f = static_cast<nsImageFrame*>(mFrame);
+  return f->GetDestRect(f->GetContentRectRelativeToSelf() + ToReferenceFrame());
 }
 
 nsRect nsDisplayImage::GetDestRectViewTransition() const {
@@ -2376,7 +2374,7 @@ nsRect nsDisplayImage::GetDestRectViewTransition() const {
   nsSize borderBoxSize;
   Maybe<nsRect> activeRect;
 
-  if (image->Style()->GetPseudoType() == PseudoStyleType::viewTransitionOld) {
+  if (image->Style()->GetPseudoType() == PseudoStyleType::ViewTransitionOld) {
     inkOverflowRect = vt->GetOldInkOverflowRect(name).value();
     borderBoxSize = vt->GetOldBorderBoxSize(name).value();
     activeRect = vt->GetOldActiveRect(name);
@@ -2581,7 +2579,8 @@ ImgDrawResult nsImageFrame::PaintImage(gfxContext& aRenderingContext,
                "bad width");
 
   nsPoint anchorPoint;
-  nsRect dest = GetDestRect(GetContentRectRelativeToSelf() + aPt, &anchorPoint);
+  const nsRect dest =
+      GetDestRect(GetContentRectRelativeToSelf() + aPt, &anchorPoint);
 
   SVGImageContext svgContext;
   SVGImageContext::MaybeStoreContextPaint(svgContext, this, aImage);
@@ -2648,7 +2647,6 @@ void nsImageFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
   }
 
   DisplayListClipState::AutoSaveRestore clipState(aBuilder);
-  const bool isViewTransition = mKind == Kind::ViewTransition;
   auto clipAxes = ShouldApplyOverflowClipping(StyleDisplay());
   if (!clipAxes.isEmpty()) {
     nsRect clipRect;
@@ -2658,15 +2656,6 @@ void nsImageFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
     clipState.ClipContainingBlockDescendants(
         clipRect + aBuilder->ToReferenceFrame(this),
         haveRadii ? &radii : nullptr);
-  } else if (!isViewTransition) {
-    // Allow overflow by default for view transitions, but not for other image
-    // types, for historical reasons.
-    uint32_t clipFlags =
-        nsStyleUtil::ObjectPropsMightCauseOverflow(StylePosition())
-            ? 0
-            : DisplayListClipState::ASSUME_DRAWING_RESTRICTED_TO_CONTENT_RECT;
-    clipState.ClipContainingBlockDescendantsToContentBox(aBuilder, this,
-                                                         clipFlags);
   }
 
   if (!mComputedSize.IsEmpty()) {
@@ -2675,6 +2664,7 @@ void nsImageFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
 
     nsCOMPtr<imgIRequest> currentRequest = GetCurrentRequest();
 
+    const bool isViewTransition = mKind == Kind::ViewTransition;
     const bool isImageFromStyle = mKind != Kind::ImageLoadingContent &&
                                   mKind != Kind::XULImage && !isViewTransition;
     const bool drawAltFeedback = [&] {
@@ -3038,7 +3028,7 @@ static bool IsInAutoWidthTableCellForQuirk(nsIFrame* aFrame) {
   }
   // Check if the parent of the closest nsBlockFrame has auto width.
   nsBlockFrame* ancestor = nsLayoutUtils::FindNearestBlockAncestor(aFrame);
-  if (ancestor->Style()->GetPseudoType() == PseudoStyleType::cellContent) {
+  if (ancestor->Style()->GetPseudoType() == PseudoStyleType::MozCellContent) {
     // Assume direct parent is a table cell frame.
     nsIFrame* grandAncestor = static_cast<nsIFrame*>(ancestor->GetParent());
     return grandAncestor &&

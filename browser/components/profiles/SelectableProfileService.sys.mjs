@@ -57,53 +57,6 @@ const COMMAND_LINE_ACTIVATE = "profiles-activate";
 
 const gSupportsBadging = "nsIMacDockSupport" in Ci || "nsIWinTaskbar" in Ci;
 
-/**
- * Handles listening to the channel requests.
- */
-class ChannelListener {
-  #request = null;
-  #imageListener = null;
-  #rejector = null;
-
-  constructor(rejector) {
-    this.#rejector = rejector;
-  }
-
-  setImageListener(imageListener) {
-    this.#imageListener = imageListener;
-    if (this.#request) {
-      this.#imageListener.onStartRequest(this.#request);
-    }
-  }
-
-  onStartRequest(request) {
-    this.#request = request;
-    if (this.#imageListener) {
-      this.#imageListener.onStartRequest(request);
-    }
-  }
-
-  onStopRequest(request, status) {
-    if (this.#imageListener) {
-      this.#imageListener.onStopRequest(request, status);
-    }
-
-    if (!Components.isSuccessCode(status)) {
-      this.#rejector(new Components.Exception("Image loading failed", status));
-    }
-
-    this.#imageListener = null;
-    this.#rejector = null;
-    this.#request = null;
-  }
-
-  onDataAvailable(request, inputStream, offset, count) {
-    if (this.#imageListener) {
-      this.#imageListener.onDataAvailable(request, inputStream, offset, count);
-    }
-  }
-}
-
 async function loadImage(profile) {
   let uri;
 
@@ -123,37 +76,7 @@ async function loadImage(profile) {
     Ci.nsIContentPolicy.TYPE_IMAGE
   );
 
-  return new Promise((resolve, reject) => {
-    let imageTools = Cc["@mozilla.org/image/tools;1"].getService(Ci.imgITools);
-
-    // Despite the docs it is fine to pass null here, we then just get a global loader.
-    let imageLoader = imageTools.getImgLoaderForDocument(null);
-    let observer = imageTools.createScriptedObserver({
-      decodeComplete() {
-        request.cancel(Cr.NS_BINDING_ABORTED);
-        resolve(request.image);
-      },
-    });
-
-    let channelListener = new ChannelListener(reject);
-    channel.asyncOpen(channelListener);
-
-    let streamListener = {};
-    let request = imageLoader.loadImageWithChannelXPCOM(
-      channel,
-      observer,
-      null,
-      streamListener
-    );
-    // Force image decoding to start when the container is available.
-    request.startDecoding(Ci.imgIContainer.FLAG_ASYNC_NOTIFY);
-
-    // If the request is coming from the cache then there will be no listener
-    // and the channel will have been automatically cancelled.
-    if (streamListener.value) {
-      channelListener.setImageListener(streamListener.value);
-    }
-  });
+  return ChromeUtils.fetchDecodedImage(uri, channel);
 }
 
 /**
@@ -1147,31 +1070,48 @@ class SelectableProfileServiceClass extends EventEmitter {
       "prefs.js",
       0o600
     );
+    await IOUtils.writeUTF8(prefsJsFilePath, Services.prefs.prefsJsPreamble);
 
+    await this.addSelectableProfilePrefs(profileDir.path);
+  }
+
+  /**
+   * Adds the preferences needed for a selectable profile to work as intended.
+   *
+   * @param {string} profileDirPath
+   */
+  async addSelectableProfilePrefs(profileDirPath) {
     const sharedPrefs = await this.getAllDBPrefs();
 
-    const prefsJs = [];
-    for (let pref of sharedPrefs) {
-      prefsJs.push(
+    const filteredPrefs = sharedPrefs.filter(
+      pref =>
+        !SelectableProfileServiceClass.ignoredSharedPrefs.includes(pref.name)
+    );
+
+    const prefsToAdd = [];
+    for (let pref of filteredPrefs) {
+      prefsToAdd.push(
         `user_pref("${pref.name}", ${
           pref.type === "string" ? `"${pref.value}"` : `${pref.value}`
         });`
       );
     }
 
-    // Preferences that must be set in newly created profiles.
-    prefsJs.push(`user_pref("browser.profiles.profile-name.updated", false);`);
-    prefsJs.push(`user_pref("browser.profiles.enabled", true);`);
-    prefsJs.push(`user_pref("browser.profiles.created", true);`);
-    prefsJs.push(`user_pref("toolkit.profiles.storeID", "${this.storeID}");`);
-    prefsJs.push(
+    // Preferences that must be set for selectable profiles.
+    prefsToAdd.push(`user_pref("browser.profiles.enabled", true);`);
+    prefsToAdd.push(`user_pref("browser.profiles.created", true);`);
+    prefsToAdd.push(
+      `user_pref("toolkit.profiles.storeID", "${this.storeID}");`
+    );
+    prefsToAdd.push(
       `user_pref("${DAU_GROUPID_PREF_NAME}", "${await this.getDBPref(DAU_GROUPID_PREF_NAME)}");`
     );
 
     const LINEBREAK = AppConstants.platform === "win" ? "\r\n" : "\n";
     await IOUtils.writeUTF8(
-      prefsJsFilePath,
-      Services.prefs.prefsJsPreamble + prefsJs.join(LINEBREAK) + LINEBREAK
+      PathUtils.join(profileDirPath, "prefs.js"),
+      prefsToAdd.join(LINEBREAK) + LINEBREAK,
+      { mode: "appendOrCreate" }
     );
   }
 
@@ -1449,13 +1389,15 @@ class SelectableProfileServiceClass extends EventEmitter {
    *
    * @param {boolean} [launchProfile=true] Whether or not this should launch
    * the newly created profile.
+   * @param {nsIFile} [existingProfilePath=null] Optional path to use for the
+   * profile instead of creating new directories in the default location.
    *
    * @returns {SelectableProfile} The profile just created.
    */
-  async createNewProfile(launchProfile = true) {
+  async createNewProfile(launchProfile = true, existingProfilePath = null) {
     await this.maybeSetupDataStore();
 
-    let profile = await this.#createProfile();
+    let profile = await this.#createProfile(existingProfilePath);
     if (launchProfile) {
       this.launchInstance(profile, ["about:newprofile"]);
     }
@@ -1653,6 +1595,14 @@ class SelectableProfileServiceClass extends EventEmitter {
     await this.flushSharedPrefToDatabase(aPrefName);
   }
 
+  async deleteDBPref(aPrefName) {
+    if (!Cu.isInAutomation) {
+      return;
+    }
+
+    await this.#deleteDBPref(aPrefName);
+  }
+
   /**
    * Remove a shared pref from the database, then notify() other running instances.
    *
@@ -1693,10 +1643,9 @@ export class CommandLineHandler {
   async findDefaultProfilePath() {
     try {
       let profilesRoot =
-        ProfilesDatastoreService.constructor.getDirectory("DefProfRt").parent
-          .path;
+        ProfilesDatastoreService.constructor.getDirectory("UAppData");
 
-      let iniPath = PathUtils.join(profilesRoot, "profiles.ini");
+      let iniPath = PathUtils.join(profilesRoot.path, "profiles.ini");
 
       let iniData = await IOUtils.readUTF8(iniPath);
 
@@ -1727,7 +1676,11 @@ export class CommandLineHandler {
 
           let isRelative = iniParser.getString(section, "IsRelative") == "1";
           if (isRelative) {
-            path = PathUtils.joinRelative(profilesRoot, path);
+            let profileDir = Cc["@mozilla.org/file/local;1"].createInstance(
+              Ci.nsIFile
+            );
+            profileDir.setRelativeDescriptor(profilesRoot, path);
+            path = profileDir.path;
           }
 
           return path;
@@ -1743,10 +1696,58 @@ export class CommandLineHandler {
     return null;
   }
 
+  /**
+   * Attempts to parse the arguments expected when opening URLs from other
+   * applications on macOS.
+   *
+   * @param {Array<string>} args The command line arguments.
+   * @returns {boolean} True if the arguments matched the expected form.
+   */
+  openUrls(args) {
+    // Arguments are expected to be in pairs of "-url" "<url>".
+    if (args.length % 2 != 0) {
+      return false;
+    }
+
+    for (let i = 0; i < args.length; i += 2) {
+      if (args[i] != "-url") {
+        return false;
+      }
+    }
+
+    // Now the arguments are verified to only be "-url" arguments we can pass
+    // them directly to the only handler for those arguments.
+    let workingDir = Services.dirsvc.get("CurWorkD", Ci.nsIFile);
+    let cmdLine = Cu.createCommandLine(
+      args,
+      workingDir,
+      Ci.nsICommandLine.STATE_REMOTE_EXPLICIT
+    );
+
+    try {
+      let handler = Cc["@mozilla.org/browser/final-clh;1"].createInstance(
+        Ci.nsICommandLineHandler
+      );
+      handler.handle(cmdLine);
+    } catch (e) {
+      console.error(e);
+      return false;
+    }
+
+    return true;
+  }
+
   async redirectCommandLine(args) {
     let defaultPath = await this.findDefaultProfilePath();
 
     if (defaultPath) {
+      if (
+        defaultPath == SelectableProfileService.currentProfile?.path &&
+        this.openUrls(args)
+      ) {
+        return;
+      }
+
       // Attempt to use the remoting service to send the arguments to any
       // existing instance of this profile (this even works for the current
       // instance on macOS which is the only platform we call this for).

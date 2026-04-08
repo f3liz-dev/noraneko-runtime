@@ -10,6 +10,7 @@ import {
   isCaptive,
   gErrorCode,
   gHasSts,
+  gOffline,
   searchParams,
   getHostName,
   getSubjectAltNames,
@@ -18,10 +19,13 @@ import {
   getCSSClass,
   gNoConnectivity,
   retryThis,
-  errorHasNoUserFix,
-  COOP_MDN_DOCS,
-  COEP_MDN_DOCS,
+  handleNSSFailure,
 } from "chrome://global/content/aboutNetErrorHelpers.mjs";
+import { initializeRegistry } from "chrome://global/content/errors/error-registry.mjs";
+import {
+  errorHasNoUserFix,
+  getResolvedErrorConfig,
+} from "chrome://global/content/errors/error-lookup.mjs";
 
 const formatter = new Intl.DateTimeFormat();
 
@@ -74,7 +78,6 @@ const KNOWN_ERROR_TITLE_IDS = new Set([
  * aboutNetErrorCodes.js which is loaded before we are: */
 /* global KNOWN_ERROR_MESSAGE_IDS */
 const ERROR_MESSAGES_FTL = "toolkit/neterror/nsserrors.ftl";
-const HTTPS_UPGRADES_MDN_DOCS = "https://support.mozilla.org/kb/https-upgrades";
 
 // If the location of the favicon changes, FAVICON_CERTERRORPAGE_URL and/or
 // FAVICON_ERRORPAGE_URL in toolkit/components/places/nsFaviconService.idl
@@ -373,35 +376,12 @@ function initTitleAndBodyIds(baseURL, isTRROnlyFailure) {
     // failures) are of type nssFailure2.
     case "nssFailure2": {
       learnMore.hidden = false;
-
-      const netErrorInfo = document.getNetErrorInfo();
-      void recordSecurityUITelemetry(
-        "securityUiTlserror",
-        "loadAbouttlserror",
-        netErrorInfo
-      );
-      const errorCode = netErrorInfo.errorCodeString;
-      switch (errorCode) {
-        case "SSL_ERROR_UNSUPPORTED_VERSION":
-        case "SSL_ERROR_PROTOCOL_VERSION_ALERT": {
-          const tlsNotice = document.getElementById("tlsVersionNotice");
-          tlsNotice.hidden = false;
-          document.l10n.setAttributes(tlsNotice, "cert-error-old-tls-version");
-        }
-        // fallthrough
-
-        case "SSL_ERROR_NO_CIPHERS_SUPPORTED":
-        case "SSL_ERROR_NO_CYPHER_OVERLAP":
-        case "SSL_ERROR_SSL_DISABLED":
-          RPMAddMessageListener("HasChangedCertPrefs", msg => {
-            if (msg.data.hasChangedCertPrefs) {
-              // Configuration overrides might have caused this; offer to reset.
-              showPrefChangeContainer();
-            }
-          });
-          RPMSendAsyncMessage("GetChangedCertPrefs");
+      const result = handleNSSFailure(showPrefChangeContainer);
+      if (result.versionError) {
+        const tlsNotice = document.getElementById("tlsVersionNotice");
+        tlsNotice.hidden = false;
+        document.l10n.setAttributes(tlsNotice, "cert-error-old-tls-version");
       }
-
       break;
     }
 
@@ -477,6 +457,21 @@ function initPage() {
 
   document.body.classList.add("neterror");
 
+  // nssFailure2 are TLS errors which are tracked by load_abouttlserror
+  if (gErrorCode !== "nssFailure2" && !isCaptive()) {
+    try {
+      let netErrorInfo = document.getNetErrorInfo();
+      if (!netErrorInfo.errorCodeString) {
+        netErrorInfo.errorCodeString = gErrorCode;
+      }
+      void recordSecurityUITelemetry(
+        "securityUiNeterror",
+        "loadAboutneterror",
+        netErrorInfo
+      );
+    } catch (ex) {}
+  }
+
   const tryAgain = document.getElementById("netErrorButtonContainer");
   tryAgain.hidden = false;
   const learnMoreLink = document.getElementById("learnMoreLink");
@@ -514,9 +509,7 @@ function initPage() {
       // enable buttons
       let trrExceptionButton = document.getElementById("trrExceptionButton");
       trrExceptionButton.addEventListener("click", () => {
-        RPMSendQuery("Browser:AddTRRExcludedDomain", {
-          hostname: HOST_NAME,
-        }).then(() => {
+        RPMSendQuery("Browser:AddTRRExcludedDomain").then(() => {
           retryThis(trrExceptionButton);
         });
       });
@@ -682,140 +675,34 @@ function setNetErrorMessageFromParts(parentElement, parts) {
  * @returns { Array<["li" | "p" | "span" | "a", string, Record<string, string> | undefined]> }
  */
 function getNetErrorDescParts(noConnectivity) {
-  switch (gErrorCode) {
-    case "connectionFailure":
-    case "netInterrupt":
-    case "netReset":
-    case "netTimeout": {
-      let errorTags = [
-        ["li", "neterror-load-error-try-again"],
-        ["li", "neterror-load-error-connection"],
-        ["li", "neterror-load-error-firewall"],
-      ];
-      if (RPMShowOSXLocalNetworkPermissionWarning()) {
-        errorTags.push(["li", "neterror-load-osx-permission"]);
-      }
-      return errorTags;
-    }
+  // Build context for resolving description parts
+  const context = {
+    hostname: HOST_NAME,
+    noConnectivity,
+    showOSXPermissionWarning: RPMShowOSXLocalNetworkPermissionWarning(),
+    offline: gOffline,
+  };
 
-    case "httpErrorPage": // 4xx
-      return [["li", "neterror-http-error-page"]];
-    case "serverError": // 5xx
-      return [["li", "neterror-load-error-try-again"]];
-    case "blockedByCOOP": {
-      return [
-        ["p", "certerror-blocked-by-corp-headers-description"],
-        ["a", "certerror-coop-learn-more", COOP_MDN_DOCS],
-      ];
-    }
-    case "blockedByCOEP": {
-      return [
-        ["p", "certerror-blocked-by-corp-headers-description"],
-        ["a", "certerror-coep-learn-more", COEP_MDN_DOCS],
-      ];
-    }
-    case "blockedByPolicy":
-    case "deniedPortAccess":
-    case "malformedURI":
-      return [];
-
-    case "captivePortal":
-      return [["p", ""]];
-    case "contentEncodingError":
-      return [["li", "neterror-content-encoding-error"]];
-    case "corruptedContentErrorv2":
-      return [
-        ["p", "neterror-corrupted-content-intro"],
-        ["li", "neterror-corrupted-content-contact-website"],
-      ];
-    case "dnsNotFound":
-      if (noConnectivity) {
-        return [
-          ["span", "neterror-dns-not-found-offline-hint-header"],
-          ["li", "neterror-dns-not-found-offline-hint-different-device"],
-          ["li", "neterror-dns-not-found-offline-hint-modem"],
-          ["li", "neterror-dns-not-found-offline-hint-reconnect"],
-        ];
-      }
-      return [
-        ["span", "neterror-dns-not-found-hint-header"],
-        ["li", "neterror-dns-not-found-hint-try-again"],
-        ["li", "neterror-dns-not-found-hint-check-network"],
-        ["li", "neterror-dns-not-found-hint-firewall"],
-      ];
-    case "fileAccessDenied":
-      return [["li", "neterror-access-denied"]];
-    case "fileNotFound":
-      return [
-        ["li", "neterror-file-not-found-filename"],
-        ["li", "neterror-file-not-found-moved"],
-      ];
-    case "inadequateSecurityError":
-      return [
-        ["p", "neterror-inadequate-security-intro", { hostname: HOST_NAME }],
-        ["p", "neterror-inadequate-security-code"],
-      ];
-    case "invalidHeaderValue": {
-      return [["li", "neterror-http-error-page"]];
-    }
-    case "mitm": {
+  // Get MITM name if available (for mitm error)
+  if (gErrorCode === "mitm") {
+    try {
       const failedCertInfo = document.getFailedCertSecurityInfo();
-      const errArgs = {
-        hostname: HOST_NAME,
-        mitm: getMitmName(failedCertInfo),
-      };
-      return [["span", "certerror-mitm", errArgs]];
+      context.mitmName = getMitmName(failedCertInfo);
+    } catch {
+      context.mitmName = "";
     }
-    case "netOffline":
-      return [["li", "neterror-net-offline"]];
-    case "networkProtocolError":
-      return [
-        ["p", "neterror-network-protocol-error-intro"],
-        ["li", "neterror-network-protocol-error-contact-website"],
-      ];
-    case "notCached":
-      return [
-        ["p", "neterror-not-cached-intro"],
-        ["li", "neterror-not-cached-sensitive"],
-        ["li", "neterror-not-cached-try-again"],
-      ];
-    case "nssFailure2":
-      return [
-        ["li", "neterror-nss-failure-not-verified"],
-        ["li", "neterror-nss-failure-contact-website"],
-      ];
-    case "proxyConnectFailure":
-      return [
-        ["li", "neterror-proxy-connect-failure-settings"],
-        ["li", "neterror-proxy-connect-failure-contact-admin"],
-      ];
-    case "proxyResolveFailure":
-      return [
-        ["li", "neterror-proxy-resolve-failure-settings"],
-        ["li", "neterror-proxy-resolve-failure-connection"],
-        ["li", "neterror-proxy-resolve-failure-firewall"],
-      ];
-    case "redirectLoop":
-      return [["li", "neterror-redirect-loop"]];
-    case "sslv3Used":
-      return [["span", "neterror-sslv3-used"]];
-    case "unknownProtocolFound":
-      return [["li", "neterror-unknown-protocol"]];
-    case "unknownSocketType":
-      return [
-        ["li", "neterror-unknown-socket-type-psm-installed"],
-        ["li", "neterror-unknown-socket-type-server-config"],
-      ];
-    case "unsafeContentType":
-      return [["li", "neterror-unsafe-content-type"]];
-    case "basicHttpAuthDisabled":
-      return [
-        ["li", "neterror-basic-http-auth", { hostname: HOST_NAME }],
-        ["a", "neterror-learn-more-link", HTTPS_UPGRADES_MDN_DOCS],
-      ];
-    default:
-      return [["p", "neterror-generic-error"]];
   }
+
+  const config = getResolvedErrorConfig(gErrorCode, context);
+
+  // Convert config descriptionParts to legacy tuple format
+  const parts = config.descriptionParts || [];
+  return parts.map(part => {
+    if (part.tag === "a") {
+      return [part.tag, part.dataL10nId, part.href];
+    }
+    return [part.tag, part.dataL10nId, part.dataL10nArgs];
+  });
 }
 
 function setNetErrorMessageFromCode() {
@@ -1300,6 +1187,11 @@ function setTechnicalDetailsOnCertError(
           // get anyone anywhere useful. bug 432491
           const okHost = altName.replace(/^\*\./, "www.");
 
+          // We can't use HOST_NAME for the comparison, as that is
+          // display-formatted and can include a port. We need the ascii host as
+          // that is what the cert's SAN value would also contain.
+          const asciiHostname = RPMGetInnermostAsciiHost();
+
           // Let's check if we want to make this a link.
           const showLink =
             /* case #1:
@@ -1315,13 +1207,13 @@ function setTechnicalDetailsOnCertError(
              * domain names are famous for having '.' characters in them,
              * which would allow spurious and possibly hostile matches.
              */
-            okHost.endsWith("." + HOST_NAME) ||
+            okHost.endsWith("." + asciiHostname) ||
             /* case #2:
              * browser.garage.maemo.org uses an invalid security certificate.
              *
              * The certificate is only valid for garage.maemo.org
              */
-            HOST_NAME.endsWith("." + okHost);
+            asciiHostname.endsWith("." + okHost);
 
           const l10nArgs = { hostname: HOST_NAME, "alt-name": altName };
           if (showLink) {
@@ -1410,21 +1302,57 @@ function setFocus(selector, position = "afterbegin") {
   }
 }
 
-if (!NetErrorCard.isSupported()) {
-  for (let button of document.querySelectorAll(".try-again")) {
-    button.addEventListener("click", function () {
-      retryThis(this);
-    });
+async function getErrorCode() {
+  try {
+    const errorInfo = gIsCertError
+      ? document.getFailedCertSecurityInfo()
+      : document.getNetErrorInfo();
+    return errorInfo.errorCodeString;
+  } catch (e) {
+    return undefined;
   }
-
-  initPage();
-
-  // Dispatch this event so tests can detect that we finished loading the error page.
-  document.dispatchEvent(
-    new CustomEvent("AboutNetErrorLoad", { bubbles: true })
-  );
-} else {
-  customElements.define("net-error-card", NetErrorCard);
-  document.body.classList.add("felt-privacy-body");
-  document.body.replaceChildren(document.createElement("net-error-card"));
 }
+
+async function retryErrorCode() {
+  return new Promise(res => {
+    setTimeout(() => {
+      res(getErrorCode());
+    }, 100);
+  });
+}
+
+async function init() {
+  let errorCode = await getErrorCode();
+  let i = 0;
+  while (!errorCode && i < 3) {
+    i++;
+    errorCode = await retryErrorCode();
+  }
+}
+
+async function main() {
+  await init();
+  if (!NetErrorCard.isSupported()) {
+    // Initialize the error registry for legacy path
+    initializeRegistry();
+
+    for (let button of document.querySelectorAll(".try-again")) {
+      button.addEventListener("click", function () {
+        retryThis(this);
+      });
+    }
+
+    initPage();
+
+    // Dispatch this event so tests can detect that we finished loading the error page.
+    document.dispatchEvent(
+      new CustomEvent("AboutNetErrorLoad", { bubbles: true })
+    );
+  } else {
+    customElements.define("net-error-card", NetErrorCard);
+    document.body.classList.add("felt-privacy-body");
+    document.body.replaceChildren(document.createElement("net-error-card"));
+  }
+}
+
+main();

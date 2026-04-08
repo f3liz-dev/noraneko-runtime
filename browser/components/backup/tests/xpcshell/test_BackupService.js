@@ -114,7 +114,7 @@ async function testCreateBackupHelper(sandbox, taskFn) {
     .stub(FakeBackupResource3.prototype, "recover")
     .resolves(fake3PostRecoveryEntry);
 
-  let bs = new BackupService({
+  let bs = BackupService.init({
     FakeBackupResource1,
     FakeBackupResource2,
     FakeBackupResource3,
@@ -316,7 +316,8 @@ async function testCreateBackupHelper(sandbox, taskFn) {
     null,
     false,
     fakeProfilePath,
-    recoveredProfilePath
+    recoveredProfilePath,
+    true
   );
 
   Assert.ok(
@@ -342,7 +343,10 @@ async function testCreateBackupHelper(sandbox, taskFn) {
   );
   Assert.deepEqual(
     restoreStartedEvents[0].extra,
-    { restore_id: restoreID },
+    {
+      restore_id: restoreID,
+      replace: "true",
+    },
     "Restore start event should have the right data"
   );
 
@@ -392,6 +396,10 @@ async function testCreateBackupHelper(sandbox, taskFn) {
   await maybeRemovePath(fakeProfilePath);
   await maybeRemovePath(recoveredProfilePath);
   await maybeRemovePath(EXPECTED_ARCHIVE_PATH);
+
+  Services.prefs.clearUserPref(LAST_BACKUP_FILE_NAME_PREF_NAME);
+
+  BackupService.uninit();
 }
 
 /**

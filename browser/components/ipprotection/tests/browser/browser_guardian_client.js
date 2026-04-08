@@ -5,7 +5,7 @@
 "use strict";
 
 const { GuardianClient } = ChromeUtils.importESModule(
-  "resource:///modules/ipprotection/GuardianClient.sys.mjs"
+  "moz-src:///browser/components/ipprotection/GuardianClient.sys.mjs"
 );
 
 function makeGuardianServer(
@@ -24,7 +24,12 @@ function makeGuardianServer(
 }
 
 const testGuardianConfig = server => ({
-  withToken: async cb => cb("test-token"),
+  getToken: async () => {
+    return {
+      token: "test-token",
+      [Symbol.dispose]: () => {},
+    };
+  },
   guardianEndpoint: `http://localhost:${server.identity.primaryPort}`,
   fxaOrigin: `http://localhost:${server.identity.primaryPort}`,
 });

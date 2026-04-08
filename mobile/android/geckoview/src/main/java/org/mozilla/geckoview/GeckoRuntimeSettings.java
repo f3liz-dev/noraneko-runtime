@@ -19,6 +19,7 @@ import androidx.annotation.AnyThread;
 import androidx.annotation.IntDef;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.annotation.StringDef;
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.util.Arrays;
@@ -570,22 +571,6 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
     }
 
     /**
-     * Sets whether or not local network access (LNA) blocking is enabled
-     *
-     * @deprecated This API is deprecated and may not work as expected. Please use {@link
-     *     #setLnaEnabled(Boolean)}, {@link #setLnaBlocking(Boolean)} and {@link
-     *     #setLnaBlockTrackers(Boolean)}} for more fine-grained control.
-     * @param enabled flag indicating whether or not local network access (LNA) blocking is enabled
-     * @return The builder instance
-     */
-    @Deprecated
-    @DeprecationSchedule(id = "deprecated-lna-api", version = 148)
-    public @NonNull Builder setLnaBlockingEnabled(@NonNull final Boolean enabled) {
-      getSettings().setLnaBlockingEnabled(enabled);
-      return this;
-    }
-
-    /**
      * Sets whether or not the request blocking feature for Local Network / Device Access blocking
      * is enabled
      *
@@ -791,6 +776,8 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
       new PrefWithoutDefault<>("fission.webContentIsolationStrategy");
   /* package */ final Pref<Boolean> mAutofillLogins =
       new Pref<Boolean>("signon.autofillForms", true);
+  /* package */ final PrefWithoutDefault<String> mFirefoxRelay =
+      new PrefWithoutDefault<>("signon.firefoxRelay.feature");
   /* package */ final Pref<Boolean> mAutomaticallyOfferPopup =
       new Pref<Boolean>("browser.translations.automaticallyPopup", true);
   /* package */ final Pref<Boolean> mHttpsOnly =
@@ -2045,6 +2032,58 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
     return this;
   }
 
+  /** Firefox Relay state definitions. */
+  @Retention(RetentionPolicy.SOURCE)
+  @StringDef(
+      value = {
+        FIREFOX_RELAY_AVAILABLE,
+        FIREFOX_RELAY_OFFERED,
+        FIREFOX_RELAY_ENABLED,
+        FIREFOX_RELAY_DISABLED
+      })
+  public @interface FirefoxRelayMode {}
+
+  /** Firefox Relay is available but not yet offered to the user. */
+  public static final String FIREFOX_RELAY_AVAILABLE = "available";
+
+  /** Firefox Relay has been offered to the user. */
+  public static final String FIREFOX_RELAY_OFFERED = "offered";
+
+  /** Firefox Relay is enabled. */
+  public static final String FIREFOX_RELAY_ENABLED = "enabled";
+
+  /** Firefox Relay is disabled. */
+  public static final String FIREFOX_RELAY_DISABLED = "disabled";
+
+  /**
+   * Get the Firefox Relay state.
+   *
+   * <p>This API is experimental because it for Mozilla official builds and will be removed to not
+   * rely on this exposed pref.
+   *
+   * @return The Firefox Relay state, or null if undefined.
+   */
+  @ExperimentalGeckoViewApi
+  public @Nullable @FirefoxRelayMode String getFirefoxRelay() {
+    return mFirefoxRelay.get();
+  }
+
+  /**
+   * Set the Firefox Relay state.
+   *
+   * <p>This API is experimental because it for Mozilla official builds and will be removed to not
+   * rely on this exposed pref.
+   *
+   * @param state The Firefox Relay state.
+   * @return This GeckoRuntimeSettings instance.
+   */
+  @ExperimentalGeckoViewApi
+  public @NonNull GeckoRuntimeSettings setFirefoxRelay(
+      @NonNull final @FirefoxRelayMode String state) {
+    mFirefoxRelay.commit(state);
+    return this;
+  }
+
   /**
    * Sets whether or not the request blocking feature of Local Network / Device Access is enabled
    *
@@ -2139,36 +2178,6 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
       return HTTPS_ONLY_PRIVATE;
     }
     return ALLOW_ALL;
-  }
-
-  /**
-   * Sets whether or not local network access (LNA) blocking is enabled
-   *
-   * @param enabled flag indicating whether or not local network access blocking is enabled
-   * @return The updated instance of {@link GeckoRuntimeSettings}
-   * @deprecated This API is deprecated and does not work as expected. Please use {@link
-   *     #setLnaEnabled(boolean)}, {@link #setLnaBlocking(boolean)} and {@link
-   *     #setLnaBlockTrackers(boolean)}} for more fine-grained control.
-   */
-  @Deprecated
-  @DeprecationSchedule(id = "deprecated-lna-api", version = 148)
-  public @NonNull GeckoRuntimeSettings setLnaBlockingEnabled(final boolean enabled) {
-    mLnaBlocking.commit(enabled);
-    return this;
-  }
-
-  /**
-   * Gets whether or not local network access (LNA) blocking is enabled
-   *
-   * @return Boolean indicating whether LNA blocking is enabled or not.
-   * @deprecated This API is deprecated and does not work as expected. Use {@link #getLnaEnabled()},
-   *     {@link #getLnaBlocking()} and {@link #getLnaBlockTrackers()} for more fine-grained control.
-   */
-  @Deprecated
-  @DeprecationSchedule(id = "deprecated-lna-api", version = 148)
-  public boolean getLnaBlockingEnabled() {
-    final Boolean lnaBlocking = mLnaBlocking.get();
-    return lnaBlocking != null ? lnaBlocking : false;
   }
 
   /**

@@ -7,7 +7,7 @@
 use base64::prelude::*;
 use neqo_bin::server::{HttpServer, Runner};
 use neqo_common::Bytes;
-use neqo_common::{event::Provider, qdebug, qinfo, qtrace, qerror, Datagram, Header};
+use neqo_common::{event::Provider, qdebug, qerror, qinfo, qtrace, Datagram, Header};
 use neqo_crypto::{generate_ech_keys, init_db, AllowZeroRtt, AntiReplay};
 use neqo_http3::{
     ConnectUdpRequest, ConnectUdpServerEvent, Error, Http3OrWebTransportStream, Http3Parameters,
@@ -70,13 +70,16 @@ struct Http3TestServer {
     posts: HashMap<Http3OrWebTransportStream, usize>,
     responses: HashMap<Http3OrWebTransportStream, Vec<u8>>,
     connections_to_close: HashMap<Instant, Vec<ConnectionRef>>,
-    current_connection_hash: u64,
     sessions_to_close: HashMap<Instant, Vec<WebTransportRequest>>,
     sessions_to_create_stream: Vec<(WebTransportRequest, StreamType, Option<Vec<u8>>)>,
     webtransport_bidi_stream: HashSet<Http3OrWebTransportStream>,
     wt_unidi_conn_to_stream: HashMap<ConnectionRef, Http3OrWebTransportStream>,
     wt_unidi_echo_back: HashMap<Http3OrWebTransportStream, Http3OrWebTransportStream>,
     received_datagram: Option<Bytes>,
+    // When true, server will stop processing datagrams after accepting 0-RTT,
+    // simulating a stuck ZERORTT session that never transitions to CONNECTED.
+    stuck_0rtt_mode: bool,
+    stuck_0rtt_activated: bool,
 }
 
 impl ::std::fmt::Display for Http3TestServer {
@@ -91,13 +94,14 @@ impl Http3TestServer {
             posts: HashMap::new(),
             responses: HashMap::new(),
             connections_to_close: HashMap::new(),
-            current_connection_hash: 0,
             sessions_to_close: HashMap::new(),
             sessions_to_create_stream: Vec::new(),
             webtransport_bidi_stream: HashSet::new(),
             wt_unidi_conn_to_stream: HashMap::new(),
             wt_unidi_echo_back: HashMap::new(),
             received_datagram: None,
+            stuck_0rtt_mode: false,
+            stuck_0rtt_activated: false,
         }
     }
 
@@ -191,13 +195,27 @@ impl Http3TestServer {
 }
 
 impl HttpServer for Http3TestServer {
-    fn process_multiple<'a>(
+    fn process_multiple<'a, D: IntoIterator<Item = Datagram<&'a mut [u8]>>>(
         &mut self,
-        dgrams: impl IntoIterator<Item = Datagram<&'a mut [u8]>>,
+        dgrams: D,
         now: Instant,
         max_datagrams: NonZeroUsize,
     ) -> OutputBatch {
+        // If stuck_0rtt_mode is enabled and we've already processed datagrams once,
+        // stop processing to simulate a connection stuck in ZERORTT state.
+        if self.stuck_0rtt_mode && self.stuck_0rtt_activated {
+            qinfo!("Stuck 0-RTT mode active - ignoring datagrams to keep session in ZERORTT");
+            // Return Callback to keep the server loop running but don't process datagrams
+            return OutputBatch::Callback(Duration::from_millis(100));
+        }
+
         let output = self.server.process_multiple(dgrams, now, max_datagrams);
+
+        // If we just processed datagrams with stuck mode enabled, mark it as activated
+        if self.stuck_0rtt_mode && !self.stuck_0rtt_activated {
+            qinfo!("Stuck 0-RTT mode activated - next datagrams will be ignored");
+            self.stuck_0rtt_activated = true;
+        }
 
         let output = if self.sessions_to_close.is_empty() && self.connections_to_close.is_empty() {
             output
@@ -231,6 +249,12 @@ impl HttpServer for Http3TestServer {
                 } => {
                     qtrace!("Headers (request={} fin={}): {:?}", stream, fin, headers);
 
+                    let connection_hash = {
+                        let mut hasher = DefaultHasher::new();
+                        stream.conn.hash(&mut hasher);
+                        hasher.finish()
+                    };
+
                     // Some responses do not have content-type. This is on purpose to exercise
                     // UnknownDecoder code.
                     let default_ret = b"Hello World".to_vec();
@@ -238,17 +262,17 @@ impl HttpServer for Http3TestServer {
                         Header::new(":status", "200"),
                         Header::new("cache-control", "no-cache"),
                         Header::new("content-length", default_ret.len().to_string()),
-                        Header::new(
-                            "x-http3-conn-hash",
-                            self.current_connection_hash.to_string(),
-                        ),
+                        Header::new("x-http3-conn-hash", connection_hash.to_string()),
                     ];
 
                     let path_hdr = headers.iter().find(|&h| h.name() == ":path");
                     match path_hdr {
                         Some(ph) if !ph.value().is_empty() => {
                             let path = ph.value();
-                            qtrace!("Serve request {:?}", ph.value_utf8().unwrap_or("<invalid utf8>"));
+                            qtrace!(
+                                "Serve request {:?}",
+                                ph.value_utf8().unwrap_or("<invalid utf8>")
+                            );
                             if path == b"/Response421" {
                                 let response_body = b"0123456789".to_vec();
                                 stream
@@ -279,6 +303,22 @@ impl HttpServer for Http3TestServer {
                                     .unwrap();
                             } else if path == b"/EarlyResponse" {
                                 stream.stream_stop_sending(Error::HttpNone.code()).unwrap();
+                            } else if path == b"/SetStuckZeroRtt" {
+                                qinfo!("Enabling stuck 0-RTT mode - next connection will be stuck in ZERORTT");
+                                self.stuck_0rtt_mode = true;
+                                let response_body = b"Stuck 0-RTT mode enabled".to_vec();
+                                stream
+                                    .send_headers(&[
+                                        Header::new(":status", "200"),
+                                        Header::new("cache-control", "no-cache"),
+                                        Header::new("content-type", "text/plain"),
+                                        Header::new(
+                                            "content-length",
+                                            response_body.len().to_string(),
+                                        ),
+                                    ])
+                                    .unwrap();
+                                self.new_response(stream, response_body, now);
                             } else if path == b"/RequestRejected" {
                                 stream
                                     .stream_stop_sending(Error::HttpRequestRejected.code())
@@ -373,18 +413,17 @@ impl HttpServer for Http3TestServer {
                                             Header::new(":status", "200"),
                                             Header::new("cache-control", "no-cache"),
                                             Header::new("content-type", "text/plain"),
-                                            Header::new("priority-mirror", priority.value_utf8().unwrap()),
+                                            Header::new(
+                                                "priority-mirror",
+                                                priority.value_utf8().unwrap(),
+                                            ),
                                             Header::new(
                                                 "content-length",
                                                 priority.value().len().to_string(),
                                             ),
                                         ])
                                         .unwrap();
-                                    self.new_response(
-                                        stream,
-                                        priority.value().to_vec(),
-                                        now,
-                                    );
+                                    self.new_response(stream, priority.value().to_vec(), now);
                                 } else {
                                     stream
                                         .send_headers(&[
@@ -460,7 +499,9 @@ impl HttpServer for Http3TestServer {
                                     self.new_response(stream, vec![b'a'; 100], now);
                                 }
                             } else {
-                                match ph.value_utf8().ok().and_then(|s| s.trim_matches(|p| p == '/').parse::<usize>().ok()) {
+                                match ph.value_utf8().ok().and_then(|s| {
+                                    s.trim_matches(|p| p == '/').parse::<usize>().ok()
+                                }) {
                                     Some(v) => {
                                         stream
                                             .send_headers(&[
@@ -524,13 +565,7 @@ impl HttpServer for Http3TestServer {
                 Http3ServerEvent::DataWritable { stream } => {
                     self.handle_stream_writable(stream, now)
                 }
-                Http3ServerEvent::StateChange { conn, state } => {
-                    if matches!(state, neqo_http3::Http3State::Connected) {
-                        let mut h = DefaultHasher::new();
-                        conn.hash(&mut h);
-                        self.current_connection_hash = h.finish();
-                    }
-                }
+                Http3ServerEvent::StateChange { .. } => {}
                 Http3ServerEvent::PriorityUpdate { .. } => {}
                 Http3ServerEvent::StreamReset { stream, error } => {
                     qtrace!("Http3ServerEvent::StreamReset {:?} {:?}", stream, error);
@@ -555,7 +590,10 @@ impl HttpServer for Http3TestServer {
                     match path_hdr {
                         Some(ph) if !ph.value().is_empty() => {
                             let path = ph.value();
-                            qtrace!("Serve request {:?}", ph.value_utf8().unwrap_or("<invalid utf8>"));
+                            qtrace!(
+                                "Serve request {:?}",
+                                ph.value_utf8().unwrap_or("<invalid utf8>")
+                            );
                             if path == b"/success" {
                                 session.response(&SessionAcceptAction::Accept, now).unwrap();
                             } else if path == b"/redirect" {
@@ -710,9 +748,9 @@ impl ::std::fmt::Display for Server {
 }
 
 impl HttpServer for Server {
-    fn process_multiple<'a>(
+    fn process_multiple<'a, D: IntoIterator<Item = Datagram<&'a mut [u8]>>>(
         &mut self,
-        dgrams: impl IntoIterator<Item = Datagram<&'a mut [u8]>>,
+        dgrams: D,
         now: Instant,
         max_datagrams: NonZeroUsize,
     ) -> OutputBatch {
@@ -951,9 +989,9 @@ impl Http3ReverseProxyServer {
 }
 
 impl HttpServer for Http3ReverseProxyServer {
-    fn process_multiple<'a>(
+    fn process_multiple<'a, D: IntoIterator<Item = Datagram<&'a mut [u8]>>>(
         &mut self,
-        dgrams: impl IntoIterator<Item = Datagram<&'a mut [u8]>>,
+        dgrams: D,
         now: Instant,
         max_datagrams: NonZeroUsize,
     ) -> OutputBatch {
@@ -997,7 +1035,9 @@ impl HttpServer for Http3ReverseProxyServer {
                                     let content_length =
                                         headers.iter().find(|&h| h.name() == "content-length");
                                     if let Some(length_str) = content_length {
-                                        if let Ok(len) = length_str.value_utf8().unwrap_or("0").parse::<u32>() {
+                                        if let Ok(len) =
+                                            length_str.value_utf8().unwrap_or("0").parse::<u32>()
+                                        {
                                             if len > 0 {
                                                 self.requests.insert(stream, (headers, Vec::new()));
                                             } else {
@@ -1099,9 +1139,9 @@ impl Http3ConnectProxyServer {
 }
 
 impl HttpServer for Http3ConnectProxyServer {
-    fn process_multiple<'a>(
+    fn process_multiple<'a, D: IntoIterator<Item = Datagram<&'a mut [u8]>>>(
         &mut self,
-        dgrams: impl IntoIterator<Item = Datagram<&'a mut [u8]>>,
+        dgrams: D,
         now: Instant,
         max_datagrams: NonZeroUsize,
     ) -> OutputBatch {
@@ -1275,7 +1315,11 @@ impl HttpServer for Http3ConnectProxyServer {
                     reason,
                     headers: _,
                 }) => {
-                    qdebug!("ConnectUdp session closed: {:?} reason: {:?}", session, reason);
+                    qdebug!(
+                        "ConnectUdp session closed: {:?} reason: {:?}",
+                        session,
+                        reason
+                    );
                     self.udp_sockets.remove(&session.stream_id());
                 }
                 Http3ServerEvent::StateChange { .. } | Http3ServerEvent::PriorityUpdate { .. } => {}
@@ -1407,7 +1451,11 @@ impl HttpServer for Http3ConnectProxyServer {
                         progressed = true;
                     }
                     Poll::Ready(Err(e)) => {
-                        qerror!("Error sending UDP datagram: {} {:?}, closing socket", e, socket.socket);
+                        qerror!(
+                            "Error sending UDP datagram: {} {:?}, closing socket",
+                            e,
+                            socket.socket
+                        );
                         failed_udp_sockets.push(*stream_id);
                         break;
                     }
@@ -1420,7 +1468,9 @@ impl HttpServer for Http3ConnectProxyServer {
             if let Some(socket) = self.udp_sockets.remove(&stream_id) {
                 qdebug!("Removed failed UDP socket for stream {}", stream_id);
                 // Close the session with an error code
-                let _ = socket.session.close_session(0x0100, "UDP socket error", Instant::now());
+                let _ = socket
+                    .session
+                    .close_session(0x0100, "UDP socket error", Instant::now());
             }
         }
 
@@ -1457,9 +1507,9 @@ impl ::std::fmt::Display for NonRespondingServer {
 }
 
 impl HttpServer for NonRespondingServer {
-    fn process_multiple<'a>(
+    fn process_multiple<'a, D: IntoIterator<Item = Datagram<&'a mut [u8]>>>(
         &mut self,
-        _dgrams: impl IntoIterator<Item = Datagram<&'a mut [u8]>>,
+        _dgrams: D,
         _now: Instant,
         _max_datagrams: NonZeroUsize,
     ) -> OutputBatch {
@@ -1710,4 +1760,6 @@ extern "C" {}
 #[cfg_attr(target_os = "windows", link(name = "propsys"))]
 extern "C" {}
 #[cfg_attr(target_os = "windows", link(name = "iphlpapi"))]
+extern "C" {}
+#[cfg_attr(target_os = "windows", link(name = "rpcrt4"))]
 extern "C" {}

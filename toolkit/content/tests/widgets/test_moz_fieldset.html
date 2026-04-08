@@ -16,9 +16,8 @@
       let html, render, renderTarget;
 
       add_setup(async function setup() {
-        ({ html, render } = await import(
-          "chrome://global/content/vendor/lit.all.mjs"
-        ));
+        ({ html, render } =
+          await import("chrome://global/content/vendor/lit.all.mjs"));
         renderTarget = document.getElementById("render");
       });
 
@@ -39,9 +38,7 @@
 
         let fieldsetEl = fieldset.shadowRoot.querySelector("fieldset");
         let legend = fieldset.shadowRoot.querySelector("fieldset > legend");
-        let description = fieldset.shadowRoot.querySelector(
-          "fieldset > #description"
-        );
+        let description = fieldset.shadowRoot.querySelector("#description");
 
         is(
           legend.childElementCount,

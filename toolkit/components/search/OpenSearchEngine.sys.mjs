@@ -196,12 +196,6 @@ export class OpenSearchEngine extends SearchEngine {
    */
   #setEngineData(data, originAttributes) {
     let name = data.name.trim();
-    if (Services.search.getEngineByName(name)) {
-      throw Components.Exception(
-        "Found a duplicate engine",
-        Ci.nsISearchService.ERROR_DUPLICATE_ENGINE
-      );
-    }
 
     this._name = name;
     this._queryCharset = data.queryCharset ?? "UTF-8";
@@ -213,9 +207,9 @@ export class OpenSearchEngine extends SearchEngine {
         });
         this._urls.push(searchFormUrl);
       } catch (ex) {
-        throw Components.Exception(
+        throw new Error(
           `Failed to add ${data.searchForm} as a searchForm URL`,
-          Cr.NS_ERROR_FAILURE
+          { cause: ex }
         );
       }
     }
@@ -231,10 +225,9 @@ export class OpenSearchEngine extends SearchEngine {
             template: url.template,
           });
         } catch (ex) {
-          throw Components.Exception(
-            `Failed to add ${url.template} as an Engine URL`,
-            Cr.NS_ERROR_FAILURE
-          );
+          throw new Error(`Failed to add ${url.template} as an Engine URL`, {
+            cause: ex,
+          });
         }
         this.#addParamsToUrl(searchFormURL, url.params);
         this._urls.push(searchFormURL);
@@ -244,10 +237,9 @@ export class OpenSearchEngine extends SearchEngine {
       try {
         engineURL = new EngineURL(url);
       } catch (ex) {
-        throw Components.Exception(
-          `Failed to add ${url.template} as an Engine URL`,
-          Cr.NS_ERROR_FAILURE
-        );
+        throw new Error(`Failed to add ${url.template} as an Engine URL`, {
+          cause: ex,
+        });
       }
 
       let nonSearchformRels = url.rels.filter(rel => rel != "searchform");

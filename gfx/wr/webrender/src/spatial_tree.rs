@@ -6,11 +6,11 @@ use api::{ExternalScrollId, PropertyBinding, ReferenceFrameKind, TransformStyle,
 use api::{APZScrollGeneration, HasScrollLinkedEffect, PipelineId, SampledScrollOffset, SpatialTreeItemKey};
 use api::units::*;
 use euclid::Transform3D;
-use crate::gpu_types::TransformPalette;
+use crate::transform::TransformPalette;
 use crate::internal_types::{FastHashMap, FastHashSet, FrameMemory, PipelineInstanceId};
 use crate::print_tree::{PrintableTree, PrintTree, PrintTreePrinter};
 use crate::scene::SceneProperties;
-use crate::spatial_node::{ReferenceFrameInfo, SpatialNode, SpatialNodeType, StickyFrameInfo, SpatialNodeDescriptor};
+use crate::spatial_node::{ReferenceFrameInfo, SpatialNode, SpatialNodeDescriptor, SpatialNodeType, StickyFrameInfo};
 use crate::spatial_node::{SpatialNodeUid, ScrollFrameKind, SceneSpatialNode, SpatialNodeInfo, SpatialNodeUidKind};
 use std::{ops, u32};
 use crate::util::{FastTransform, LayoutToWorldFastTransform, MatrixHelpers, ScaleOffset, scale_factors};
@@ -24,10 +24,16 @@ use peek_poke::PeekPoke;
 /// coordinate system has an id and those ids will be shared when the coordinates
 /// system are the same or are in the same axis-aligned space. This allows
 /// for optimizing mask generation.
-#[derive(Debug, Copy, Clone, PartialEq, PartialOrd)]
+#[derive(Copy, Clone, PartialEq, PartialOrd)]
 #[cfg_attr(feature = "capture", derive(Serialize))]
 #[cfg_attr(feature = "replay", derive(Deserialize))]
 pub struct CoordinateSystemId(pub u32);
+
+impl std::fmt::Debug for CoordinateSystemId {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "#{}", self.0)
+    }
+}
 
 /// A node in the hierarchy of coordinate system
 /// transforms.
@@ -52,7 +58,7 @@ impl CoordinateSystem {
     }
 }
 
-#[derive(Debug, Copy, Clone, Eq, Hash, MallocSizeOf, PartialEq, PeekPoke, Default)]
+#[derive(Copy, Clone, Eq, Hash, MallocSizeOf, PartialEq, PeekPoke, Default)]
 #[cfg_attr(feature = "capture", derive(Serialize))]
 #[cfg_attr(feature = "replay", derive(Deserialize))]
 pub struct SpatialNodeIndex(pub u32);
@@ -66,6 +72,18 @@ impl SpatialNodeIndex {
     /// make this type-safe with a wrapper type to ensure we know when a spatial
     /// node index may have an unknown value.
     pub const UNKNOWN: SpatialNodeIndex = SpatialNodeIndex(u32::MAX - 1);
+}
+
+impl std::fmt::Debug for SpatialNodeIndex {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        if *self == Self::INVALID {
+            write!(f, "<invalid>")
+        } else if *self == Self::UNKNOWN {
+            write!(f, "<unknown>")
+        } else {
+            write!(f, "#{}", self.0)
+        }
+    }
 }
 
 // In some cases, the conversion from CSS pixels to device pixels can result in small
@@ -667,6 +685,8 @@ pub struct SpatialTree {
 
     /// Stack of current state for each parent node while traversing and updating tree
     update_state_stack: Vec<TransformUpdateState>,
+
+    next_internal_uid: u64,
 }
 
 #[derive(Clone)]
@@ -813,6 +833,7 @@ impl SpatialTree {
             coord_systems: Vec::new(),
             root_reference_frame_index: SpatialNodeIndex::INVALID,
             update_state_stack: Vec::new(),
+            next_internal_uid: 1,
         }
     }
 
@@ -878,6 +899,9 @@ impl SpatialTree {
                         self.get_spatial_node_mut(parent).add_child(SpatialNodeIndex(index as u32));
                     }
 
+                    let uid = self.next_internal_uid;
+                    self.next_internal_uid += 1;
+
                     let node = SpatialNode {
                         viewport_transform: ScaleOffset::identity(),
                         content_transform: ScaleOffset::identity(),
@@ -891,6 +915,7 @@ impl SpatialTree {
                         invertible: true,
                         is_async_zooming: false,
                         is_ancestor_or_self_zooming: false,
+                        uid,
                     };
 
                     assert!(index <= self.spatial_nodes.len());
@@ -917,11 +942,15 @@ impl SpatialTree {
                         self.spatial_nodes[new_parent.0 as usize].add_child(SpatialNodeIndex(index as u32));
                     }
 
+                    let uid = self.next_internal_uid;
+                    self.next_internal_uid += 1;
+
                     let node = &mut self.spatial_nodes[index];
 
                     node.node_type = descriptor.node_type;
                     node.pipeline_id = descriptor.pipeline_id;
                     node.parent = parent;
+                    node.uid = uid;
                 }
                 SpatialTreeUpdate::Remove { index, .. } => {
                     let node = &mut self.spatial_nodes[index];
@@ -2116,7 +2145,7 @@ fn test_world_transforms() {
       PipelineId::dummy(),
       &LayoutRect::from_size(LayoutSize::new(400.0, 400.0)),
       &LayoutSize::new(400.0, 800.0),
-      ScrollFrameKind::Explicit, 
+      ScrollFrameKind::Explicit,
       LayoutVector2D::new(0.0, 200.0),
       APZScrollGeneration::default(),
       HasScrollLinkedEffect::No,

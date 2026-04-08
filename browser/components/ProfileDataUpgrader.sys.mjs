@@ -13,7 +13,6 @@ ChromeUtils.defineESModuleGetters(lazy, {
     "resource:///modules/FirefoxBridgeExtensionUtils.sys.mjs",
   LoginHelper: "resource://gre/modules/LoginHelper.sys.mjs",
   PlacesUIUtils: "moz-src:///browser/components/places/PlacesUIUtils.sys.mjs",
-  UrlbarPrefs: "moz-src:///browser/components/urlbar/UrlbarPrefs.sys.mjs",
   UsageReporting: "resource://gre/modules/UsageReporting.sys.mjs",
 });
 
@@ -316,11 +315,6 @@ export let ProfileDataUpgrader = {
         !oldPrefValue
       );
       Services.prefs.clearUserPref(oldPrefName);
-    }
-
-    // Initialize the new browser.urlbar.showSuggestionsBeforeGeneral pref.
-    if (existingDataVersion < 106) {
-      lazy.UrlbarPrefs.initializeShowSearchSuggestionsFirstPref();
     }
 
     if (existingDataVersion < 107) {
@@ -929,8 +923,32 @@ export let ProfileDataUpgrader = {
       Services.prefs.setBoolPref("signon.reencryptionNeeded", true);
     }
 
-    // Updating from 161 to 163 to trigger re-migrations of the Rusts store.
-    if (existingDataVersion < 163) {
+    if (existingDataVersion < 164) {
+      const { PREF_BOOL, PREF_INT, PREF_STRING } = Services.prefs;
+      const METHODS = {
+        [PREF_BOOL]: ["getBoolPref", "setBoolPref"],
+        [PREF_INT]: ["getIntPref", "setIntPref"],
+        [PREF_STRING]: ["getStringPref", "setStringPref"],
+      };
+      const OLD_PREFIX = "browser.aiwindow.";
+      for (let oldPref of Services.prefs.getChildList(OLD_PREFIX)) {
+        let prefType = Services.prefs.getPrefType(oldPref);
+        if (
+          !Services.prefs.prefHasUserValue(oldPref) ||
+          !Object.hasOwn(METHODS, prefType)
+        ) {
+          continue;
+        }
+        let newPref =
+          "browser.smartwindow." + oldPref.substring(OLD_PREFIX.length);
+        let [getter, setter] = METHODS[prefType];
+        Services.prefs[setter](newPref, Services.prefs[getter](oldPref));
+        Services.prefs.clearUserPref(oldPref);
+      }
+    }
+
+    // Updating from 161 to 165 to trigger re-migrations of the Rusts store.
+    if (existingDataVersion < 165) {
       // Force all logins to be re-migrated to the rust store.
       Services.prefs.setBoolPref("signon.rustMirror.migrationNeeded", true);
     }

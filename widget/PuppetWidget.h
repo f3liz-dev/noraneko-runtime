@@ -12,8 +12,8 @@
  * is forwarded to and/or data received from elsewhere.
  */
 
-#ifndef mozilla_widget_PuppetWidget_h__
-#define mozilla_widget_PuppetWidget_h__
+#ifndef mozilla_widget_PuppetWidget_h_
+#define mozilla_widget_PuppetWidget_h_
 
 #include "mozilla/gfx/2D.h"
 #include "mozilla/RefPtr.h"
@@ -90,7 +90,7 @@ class PuppetWidget final : public nsIWidget,
   void Resize(const DesktopRect& aRect, bool aRepaint) override {
     auto targetRect = gfx::RoundedToInt(aRect * GetDesktopToDeviceScale());
     if (mBounds.TopLeft() != targetRect.TopLeft()) {
-      NotifyWindowMoved(targetRect.X(), targetRect.Y());
+      NotifyWindowMoved(targetRect.TopLeft());
     }
     mBounds.MoveTo(targetRect.TopLeft());
     return Resize(aRect.Size(), aRepaint);
@@ -385,4 +385,4 @@ class PuppetWidget final : public nsIWidget,
 }  // namespace widget
 }  // namespace mozilla
 
-#endif  // mozilla_widget_PuppetWidget_h__
+#endif  // mozilla_widget_PuppetWidget_h_

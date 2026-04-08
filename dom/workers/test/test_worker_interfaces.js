@@ -508,6 +508,10 @@ let interfaceNamesInGlobalScope = [
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "ReadableStreamDefaultReader", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "ReportBody", insecureContext: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "ReportingObserver", insecureContext: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "Request", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "Response", insecureContext: true },
@@ -544,23 +548,15 @@ let interfaceNamesInGlobalScope = [
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "TransformStreamDefaultController", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
-  { name: "TrustedHTML", earlyBetaOrEarlier: true, insecureContext: true },
+  { name: "TrustedHTML", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
-  { name: "TrustedScript", earlyBetaOrEarlier: true, insecureContext: true },
+  { name: "TrustedScript", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
-  { name: "TrustedScriptURL", earlyBetaOrEarlier: true, insecureContext: true },
+  { name: "TrustedScriptURL", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
-  {
-    name: "TrustedTypePolicy",
-    earlyBetaOrEarlier: true,
-    insecureContext: true,
-  },
+  { name: "TrustedTypePolicy", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
-  {
-    name: "TrustedTypePolicyFactory",
-    earlyBetaOrEarlier: true,
-    insecureContext: true,
-  },
+  { name: "TrustedTypePolicyFactory", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "URL", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!

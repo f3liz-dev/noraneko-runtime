@@ -80,6 +80,10 @@ interface AnimationPropertyValueDetails {
     value?: string;
 }
 
+interface AriaNotificationOptions {
+    priority?: AriaNotifyPriority;
+}
+
 interface AssignedNodesOptions {
     flatten?: boolean;
 }
@@ -580,6 +584,7 @@ interface CookieChangeEventInit extends EventInit {
 interface CookieInit {
     domain?: string | null;
     expires?: DOMHighResTimeStamp | null;
+    maxAge?: number | null;
     name: string;
     partitioned?: boolean;
     path?: string;
@@ -588,13 +593,7 @@ interface CookieInit {
 }
 
 interface CookieListItem {
-    domain?: string | null;
-    expires?: DOMHighResTimeStamp | null;
     name?: string;
-    partitioned?: boolean;
-    path?: string;
-    sameSite?: CookieSameSite;
-    secure?: boolean;
     value?: string;
 }
 
@@ -616,6 +615,8 @@ interface CopyOptions {
 }
 
 interface CredentialCreationOptions {
+    digital?: DigitalCredentialCreationOptions;
+    mediation?: CredentialMediationRequirement;
     publicKey?: PublicKeyCredentialCreationOptions;
     signal?: AbortSignal;
 }
@@ -625,6 +626,7 @@ interface CredentialPropertiesOutput {
 }
 
 interface CredentialRequestOptions {
+    digital?: DigitalCredentialRequestOptions;
     identity?: IdentityCredentialRequestOptions;
     mediation?: CredentialMediationRequirement;
     publicKey?: PublicKeyCredentialRequestOptions;
@@ -712,7 +714,6 @@ interface DecodedStreamDebugInfo {
     instance?: string;
     lastAudio?: number;
     lastOutputTime?: number;
-    lastReportedPosition?: number;
     playing?: number;
     startTime?: number;
 }
@@ -759,6 +760,24 @@ interface DictWithAllowSharedBufferSource {
     arrayBufferView?: ArrayBufferView;
 }
 
+interface DigitalCredentialCreateRequest {
+    data: any;
+    protocol: string;
+}
+
+interface DigitalCredentialCreationOptions {
+    requests?: DigitalCredentialCreateRequest[];
+}
+
+interface DigitalCredentialGetRequest {
+    data: any;
+    protocol: string;
+}
+
+interface DigitalCredentialRequestOptions {
+    requests: DigitalCredentialGetRequest[];
+}
+
 interface DisplayMediaStreamConstraints {
     audio?: boolean | MediaTrackConstraints;
     video?: boolean | MediaTrackConstraints;
@@ -777,6 +796,17 @@ interface DisplayNameResult {
     style?: string;
     type?: string;
     values?: string[];
+}
+
+interface DocumentPictureInPictureEventInit extends EventInit {
+    window: Window;
+}
+
+interface DocumentPictureInPictureOptions {
+    disallowReturnToOpener?: boolean;
+    height?: number;
+    preferInitialWindowPlacement?: boolean;
+    width?: number;
 }
 
 interface DocumentTimelineOptions {
@@ -1158,7 +1188,7 @@ interface GPUExternalTextureDescriptor extends GPUObjectDescriptorBase {
 }
 
 interface GPUFragmentState extends GPUProgrammableStage {
-    targets: GPUColorTargetState[];
+    targets: (GPUColorTargetState | null)[];
 }
 
 interface GPUMultisampleState {
@@ -1246,14 +1276,14 @@ interface GPURenderPassDepthStencilAttachment {
 }
 
 interface GPURenderPassDescriptor extends GPUObjectDescriptorBase {
-    colorAttachments: GPURenderPassColorAttachment[];
+    colorAttachments: (GPURenderPassColorAttachment | null)[];
     depthStencilAttachment?: GPURenderPassDepthStencilAttachment;
     occlusionQuerySet?: GPUQuerySet;
     timestampWrites?: GPURenderPassTimestampWrites;
 }
 
 interface GPURenderPassLayout extends GPUObjectDescriptorBase {
-    colorFormats: GPUTextureFormat[];
+    colorFormats: (GPUTextureFormat | null)[];
     depthStencilFormat?: GPUTextureFormat;
     sampleCount?: GPUSize32;
 }
@@ -1360,6 +1390,7 @@ interface GPUTextureViewDescriptor extends GPUObjectDescriptorBase {
     dimension?: GPUTextureViewDimension;
     format?: GPUTextureFormat;
     mipLevelCount?: GPUIntegerCoordinate;
+    usage?: GPUTextureUsageFlags;
 }
 
 interface GPUUncapturedErrorEventInit extends EventInit {
@@ -1403,6 +1434,11 @@ interface GamepadLightColor {
     blue: number;
     green: number;
     red: number;
+}
+
+interface GenerateTestReportParameters {
+    group?: string;
+    message: string;
 }
 
 interface GeometryUtilsOptions {
@@ -1541,6 +1577,7 @@ interface ImageBitmapOptions {
     imageOrientation?: ImageOrientation;
     premultiplyAlpha?: PremultiplyAlpha;
     resizeHeight?: number;
+    resizeQuality?: ResizeQuality;
     resizeWidth?: number;
 }
 
@@ -1621,6 +1658,18 @@ interface InputEventInit extends UIEventInit {
     inputType?: string;
     isComposing?: boolean;
     targetRanges?: StaticRange[];
+}
+
+interface InputPickerColor {
+    alpha: number;
+    component1: number;
+    component2: number;
+    component3: number;
+}
+
+interface InspectorAnchorElement {
+    element: Element;
+    type: InspectorAnchorType;
 }
 
 interface InspectorCSSPropertyDefinition {
@@ -2427,7 +2476,7 @@ interface NavigateEventInit extends EventInit {
 }
 
 interface NavigationCurrentEntryChangeEventInit extends EventInit {
-    from: NavigationHistoryEntry;
+    from: NavigationHistoryEntry | null;
     navigationType?: NavigationType | null;
 }
 
@@ -2479,14 +2528,19 @@ interface NotificationAction {
 
 interface NotificationOptions {
     actions?: NotificationAction[];
+    badge?: string;
     body?: string;
     data?: any;
     dir?: NotificationDirection;
     icon?: string;
+    image?: string;
     lang?: string;
+    navigate?: string;
+    renotify?: boolean;
     requireInteraction?: boolean;
     silent?: boolean;
     tag?: string;
+    timestamp?: EpochTimeStamp;
     vibrate?: VibratePattern;
 }
 
@@ -2565,6 +2619,15 @@ interface OscillatorOptions extends AudioNodeOptions {
 interface PCErrorData {
     message: string;
     name: PCError;
+}
+
+interface PageRevealEventInit extends EventInit {
+    viewTransition?: ViewTransition | null;
+}
+
+interface PageSwapEventInit extends EventInit {
+    activation?: NavigationActivation | null;
+    viewTransition?: ViewTransition | null;
 }
 
 interface PageTransitionEventInit extends EventInit {
@@ -2913,6 +2976,7 @@ interface PointerEventInit extends MouseEventInit {
 }
 
 interface PopStateEventInit extends EventInit {
+    hasUAVisualTransition?: boolean;
     state?: any;
 }
 
@@ -3031,7 +3095,6 @@ interface PublicKeyCredentialCreationOptions {
 
 interface PublicKeyCredentialCreationOptionsJSON {
     attestation?: string;
-    attestationFormats?: string[];
     authenticatorSelection?: AuthenticatorSelectionCriteria;
     challenge: Base64URLString;
     excludeCredentials?: PublicKeyCredentialDescriptorJSON[];
@@ -3650,10 +3713,10 @@ interface ReceiveMessageArgument {
     data?: any;
     json?: any;
     name: string;
-    ports?: MessagePort[];
+    ports: MessagePort[];
     sync: boolean;
     target: nsISupports;
-    targetFrameLoader?: FrameLoader;
+    targetFrameLoader?: FrameLoader | null;
 }
 
 interface RedirectBlockedEventInit extends EventInit {
@@ -3816,7 +3879,7 @@ interface ShadowRootInit {
     clonable?: boolean;
     delegatesFocus?: boolean;
     mode: ShadowRootMode;
-    referenceTarget?: string;
+    referenceTarget?: string | null;
     serializable?: boolean;
     slotAssignment?: SlotAssignmentMode;
 }
@@ -3871,6 +3934,11 @@ interface SplitRelativeOptions {
     allowCurrentDir?: boolean;
     allowEmpty?: boolean;
     allowParentDir?: boolean;
+}
+
+interface StartViewTransitionOptions {
+    types?: string[] | null;
+    update?: ViewTransitionUpdateCallback | null;
 }
 
 interface StaticRangeInit {
@@ -3935,22 +4003,46 @@ interface SvcOutputMetadata {
     temporalLayerId?: number;
 }
 
-interface SynthesizeMouseEventData {
+interface SynthesizeEventData {
+    identifier?: number;
+}
+
+interface SynthesizeEventOptions {
+    isAsyncEnabled?: boolean;
+    toWindow?: boolean;
+}
+
+interface SynthesizeMouseEventData extends SynthesizeEventData {
     button?: number;
     buttons?: number;
     clickCount?: number;
-    identifier?: number;
     inputSource?: number;
     modifiers?: number;
     pressure?: number;
 }
 
-interface SynthesizeMouseEventOptions {
+interface SynthesizeMouseEventOptions extends SynthesizeEventOptions {
     ignoreRootScrollFrame?: boolean;
-    isAsyncEnabled?: boolean;
     isDOMEventSynthesized?: boolean;
     isWidgetEventSynthesized?: boolean;
-    toWindow?: boolean;
+}
+
+interface SynthesizeTouchEventData extends SynthesizeEventData {
+    altitudeAngle?: number;
+    azimuthAngle?: number;
+    offsetX: number;
+    offsetY: number;
+    pressure?: number;
+    radiiX?: number;
+    radiiY?: number;
+    rotationAngle?: number;
+    tiltX?: number;
+    tiltY?: number;
+    twist?: number;
+}
+
+interface SynthesizeTouchEventOptions extends SynthesizeEventOptions {
+    isPen?: boolean;
 }
 
 interface TCPServerSocketEventInit extends EventInit {
@@ -4348,6 +4440,7 @@ interface WebExtensionInit {
     baseURL: string;
     contentScripts?: WebExtensionContentScriptInit[];
     extensionPageCSP?: string | null;
+    hasRecommendedState?: boolean;
     id: string;
     ignoreQuarantine?: boolean;
     isPrivileged?: boolean;
@@ -4359,6 +4452,7 @@ interface WebExtensionInit {
     readyPromise?: Promise<WebExtensionPolicy | null>;
     temporarilyInstalled?: boolean;
     type?: string;
+    version?: string;
     webAccessibleResources?: WebAccessibleResourceInit[];
 }
 
@@ -4686,6 +4780,10 @@ interface ARIAMixin {
     role: string | null;
 }
 
+interface ARIANotifyMixin {
+    ariaNotify(announcement: string, options?: AriaNotificationOptions): void;
+}
+
 interface AbortController {
     readonly signal: AbortSignal;
     abort(reason?: any): void;
@@ -4727,6 +4825,7 @@ interface AbstractRange {
     readonly endOffset: number;
     readonly startContainer: Node;
     readonly startOffset: number;
+    getShrunkenRangeToVisibleLeaves(): StaticRange | null;
 }
 
 declare var AbstractRange: {
@@ -5532,6 +5631,7 @@ declare var BroadcastChannel: {
 interface BrowsingContext extends LoadContextMixin {
     allowJavascript: boolean;
     readonly ancestorsAreCurrent: boolean;
+    animationsPlayBackRateMultiplier: number;
     authorStyleDisabledDefault: boolean;
     browserId: number;
     readonly childOffset: number;
@@ -5558,6 +5658,7 @@ interface BrowsingContext extends LoadContextMixin {
     readonly isActive: boolean;
     isAppTab: boolean;
     readonly isDiscarded: boolean;
+    readonly isDocumentPiP: boolean;
     readonly isInBFCache: boolean;
     languageOverride: string;
     mediumOverride: string;
@@ -5582,9 +5683,11 @@ interface BrowsingContext extends LoadContextMixin {
     getAllBrowsingContextsInSubtree(): BrowsingContext[];
     resetNavigationRateLimit(): void;
     resetOrientationOverride(): void;
+    resetScreenAreaOverride(): void;
     setGeolocationServiceOverride(position?: nsIDOMGeoPosition): void;
     setOrientationOverride(type: OrientationType, rotationAngle: number): void;
     setRDMPaneMaxTouchPoints(maxTouchPoints: number): void;
+    setScreenAreaOverride(screenWidth: number, screenHeight: number): void;
 }
 
 declare var BrowsingContext: {
@@ -6131,10 +6234,14 @@ declare var CSSOKLab: {
 
 interface CSSPageDescriptors extends CSSStyleDeclaration {
     margin: string;
+    marginBlock: string;
     marginBottom: string;
+    marginInline: string;
     marginLeft: string;
     marginRight: string;
     marginTop: string;
+    paddingBlock: string;
+    paddingInline: string;
     pageOrientation: string;
     size: string;
 }
@@ -6161,6 +6268,8 @@ declare var CSSPerspective: {
 };
 
 interface CSSPositionTryDescriptors extends CSSStyleDeclaration {
+    MozMarginEnd: string;
+    MozMarginStart: string;
     alignSelf: string;
     blockSize: string;
     bottom: string;
@@ -6194,11 +6303,14 @@ interface CSSPositionTryDescriptors extends CSSStyleDeclaration {
     minHeight: string;
     minInlineSize: string;
     minWidth: string;
+    paddingBlock: string;
+    paddingInline: string;
     placeSelf: string;
     positionAnchor: string;
     positionArea: string;
     right: string;
     top: string;
+    webkitAlignSelf: string;
     width: string;
 }
 
@@ -6386,6 +6498,7 @@ interface CSSStyleDeclaration {
     getCSSImageURLs(property: string): string[];
     getPropertyPriority(property: string): string;
     getPropertyValue(property: string): string;
+    hasLonghandProperty(property: string): boolean;
     item(index: number): string;
     removeProperty(property: string): string;
     setProperty(property: string, value: string | null, priority?: string): void;
@@ -6410,7 +6523,15 @@ interface CSSStyleProperties extends CSSStyleDeclaration {
     MozAnimationTimingFunction: string;
     MozAppearance: string;
     MozBackfaceVisibility: string;
+    MozBorderEnd: string;
+    MozBorderEndColor: string;
+    MozBorderEndStyle: string;
+    MozBorderEndWidth: string;
     MozBorderImage: string;
+    MozBorderStart: string;
+    MozBorderStartColor: string;
+    MozBorderStartStyle: string;
+    MozBorderStartWidth: string;
     MozBoxAlign: string;
     MozBoxCollapse: string;
     MozBoxDirection: string;
@@ -6426,11 +6547,17 @@ interface CSSStyleProperties extends CSSStyleDeclaration {
     MozFontFeatureSettings: string;
     MozFontLanguageOverride: string;
     MozForceBrokenImageIcon: string;
+    MozHyphens: string;
+    MozMarginEnd: string;
+    MozMarginStart: string;
     MozOrient: string;
     MozOsxFontSmoothing: string;
+    MozPaddingEnd: string;
+    MozPaddingStart: string;
     MozPerspective: string;
     MozPerspectiveOrigin: string;
     MozSubtreeHiddenOnlyVisually: string;
+    MozTabSize: string;
     MozTextSizeAdjust: string;
     MozTheme: string;
     MozTransform: string;
@@ -6442,6 +6569,7 @@ interface CSSStyleProperties extends CSSStyleDeclaration {
     MozTransitionProperty: string;
     MozTransitionTimingFunction: string;
     MozUserFocus: string;
+    MozUserSelect: string;
     MozWindowDragging: string;
     MozWindowInputRegionMargin: string;
     MozWindowOpacity: string;
@@ -6451,6 +6579,7 @@ interface CSSStyleProperties extends CSSStyleDeclaration {
     alignContent: string;
     alignItems: string;
     alignSelf: string;
+    alignmentBaseline: string;
     all: string;
     anchorName: string;
     anchorScope: string;
@@ -6481,6 +6610,7 @@ interface CSSStyleProperties extends CSSStyleDeclaration {
     backgroundPositionY: string;
     backgroundRepeat: string;
     backgroundSize: string;
+    baselineShift: string;
     baselineSource: string;
     blockSize: string;
     border: string;
@@ -6558,6 +6688,7 @@ interface CSSStyleProperties extends CSSStyleDeclaration {
     clipPath: string;
     clipRule: string;
     color: string;
+    colorAdjust: string;
     colorInterpolation: string;
     colorInterpolationFilters: string;
     colorScheme: string;
@@ -6643,9 +6774,12 @@ interface CSSStyleProperties extends CSSStyleDeclaration {
     gridAutoRows: string;
     gridColumn: string;
     gridColumnEnd: string;
+    gridColumnGap: string;
     gridColumnStart: string;
+    gridGap: string;
     gridRow: string;
     gridRowEnd: string;
+    gridRowGap: string;
     gridRowStart: string;
     gridTemplate: string;
     gridTemplateAreas: string;
@@ -6841,6 +6975,9 @@ interface CSSStyleProperties extends CSSStyleDeclaration {
     textAlignLast: string;
     textAnchor: string;
     textAutospace: string;
+    textBox: string;
+    textBoxEdge: string;
+    textBoxTrim: string;
     textCombineUpright: string;
     textDecoration: string;
     textDecorationColor: string;
@@ -6889,18 +7026,84 @@ interface CSSStyleProperties extends CSSStyleDeclaration {
     viewTransitionClass: string;
     viewTransitionName: string;
     visibility: string;
+    webkitAlignContent: string;
+    webkitAlignItems: string;
+    webkitAlignSelf: string;
+    webkitAnimation: string;
+    webkitAnimationDelay: string;
+    webkitAnimationDirection: string;
+    webkitAnimationDuration: string;
+    webkitAnimationFillMode: string;
+    webkitAnimationIterationCount: string;
+    webkitAnimationName: string;
+    webkitAnimationPlayState: string;
+    webkitAnimationTimingFunction: string;
+    webkitAppearance: string;
+    webkitBackfaceVisibility: string;
+    webkitBackgroundClip: string;
+    webkitBackgroundOrigin: string;
+    webkitBackgroundSize: string;
+    webkitBorderBottomLeftRadius: string;
+    webkitBorderBottomRightRadius: string;
+    webkitBorderImage: string;
+    webkitBorderRadius: string;
+    webkitBorderTopLeftRadius: string;
+    webkitBorderTopRightRadius: string;
+    webkitBoxAlign: string;
+    webkitBoxDirection: string;
+    webkitBoxFlex: string;
+    webkitBoxOrdinalGroup: string;
+    webkitBoxOrient: string;
+    webkitBoxPack: string;
+    webkitBoxShadow: string;
+    webkitBoxSizing: string;
+    webkitClipPath: string;
+    webkitFilter: string;
+    webkitFlex: string;
+    webkitFlexBasis: string;
+    webkitFlexDirection: string;
+    webkitFlexFlow: string;
+    webkitFlexGrow: string;
+    webkitFlexShrink: string;
+    webkitFlexWrap: string;
+    webkitFontFeatureSettings: string;
+    webkitJustifyContent: string;
     webkitLineClamp: string;
+    webkitMask: string;
+    webkitMaskClip: string;
+    webkitMaskComposite: string;
+    webkitMaskImage: string;
+    webkitMaskOrigin: string;
+    webkitMaskPosition: string;
+    webkitMaskPositionX: string;
+    webkitMaskPositionY: string;
+    webkitMaskRepeat: string;
+    webkitMaskSize: string;
+    webkitOrder: string;
+    webkitPerspective: string;
+    webkitPerspectiveOrigin: string;
     webkitTextFillColor: string;
     webkitTextSecurity: string;
+    webkitTextSizeAdjust: string;
     webkitTextStroke: string;
     webkitTextStrokeColor: string;
     webkitTextStrokeWidth: string;
+    webkitTransform: string;
+    webkitTransformOrigin: string;
+    webkitTransformStyle: string;
+    webkitTransition: string;
+    webkitTransitionDelay: string;
+    webkitTransitionDuration: string;
+    webkitTransitionProperty: string;
+    webkitTransitionTimingFunction: string;
+    webkitUserSelect: string;
     whiteSpace: string;
     whiteSpaceCollapse: string;
     width: string;
     willChange: string;
     wordBreak: string;
     wordSpacing: string;
+    wordWrap: string;
     writingMode: string;
     x: string;
     y: string;
@@ -8449,6 +8652,20 @@ interface DeviceRotationRate {
     readonly gamma: number | null;
 }
 
+/** Available only in secure contexts. */
+interface DigitalCredential extends Credential {
+    readonly data: any;
+    readonly protocol: string;
+    toJSON(): any;
+}
+
+declare var DigitalCredential: {
+    prototype: DigitalCredential;
+    new(): DigitalCredential;
+    isInstance: IsInstance<DigitalCredential>;
+    userAgentAllowsProtocol(protocol: string): boolean;
+};
+
 interface Directory {
     readonly name: string;
     readonly path: string;
@@ -8471,8 +8688,9 @@ interface DocumentEventMap extends GlobalEventHandlersEventMap, OnErrorEventHand
     "visibilitychange": Event;
 }
 
-interface Document extends Node, DocumentOrShadowRoot, FontFaceSource, GeometryUtils, GlobalEventHandlers, NonElementParentNode, OnErrorEventHandlerForNodes, ParentNode, TouchEventHandlers, XPathEvaluatorMixin {
+interface Document extends Node, ARIANotifyMixin, DocumentOrShadowRoot, FontFaceSource, GeometryUtils, GlobalEventHandlers, NonElementParentNode, OnErrorEventHandlerForNodes, ParentNode, TouchEventHandlers, XPathEvaluatorMixin {
     readonly URL: string;
+    readonly activeViewTransition: ViewTransition | null;
     alinkColor: string;
     readonly all: HTMLAllCollection;
     readonly anchors: HTMLCollection;
@@ -8523,6 +8741,7 @@ interface Document extends Node, DocumentOrShadowRoot, FontFaceSource, GeometryU
     readonly inputEncoding: string;
     readonly isInitialDocument: boolean;
     readonly isSrcdocDocument: boolean;
+    readonly isUncommittedInitialDocument: boolean;
     readonly l10n: DocumentL10n | null;
     readonly lastModified: string;
     readonly lastStyleSheetSet: string | null;
@@ -8560,6 +8779,7 @@ interface Document extends Node, DocumentOrShadowRoot, FontFaceSource, GeometryU
     readonly styleSheetSets: DOMStringList;
     readonly timeline: DocumentTimeline;
     title: string;
+    readonly tlsCertificateBindingURI: URI | null;
     readonly visibilityState: VisibilityState;
     vlinkColor: string;
     addCertException(isTemporary: boolean): Promise<any>;
@@ -8571,7 +8791,6 @@ interface Document extends Node, DocumentOrShadowRoot, FontFaceSource, GeometryU
     clear(): void;
     clearUserGestureActivation(): void;
     close(): void;
-    completeStorageAccessRequestFromSite(serializedSite: string): Promise<void>;
     consumeTransientUserGestureActivation(): boolean;
     createAttribute(name: string): Attr;
     createAttributeNS(namespace: string | null, name: string): Attr;
@@ -8601,6 +8820,7 @@ interface Document extends Node, DocumentOrShadowRoot, FontFaceSource, GeometryU
     createEvent(eventInterface: "DeviceLightEvent"): DeviceLightEvent;
     createEvent(eventInterface: "DeviceMotionEvent"): DeviceMotionEvent;
     createEvent(eventInterface: "DeviceOrientationEvent"): DeviceOrientationEvent;
+    createEvent(eventInterface: "DocumentPictureInPictureEvent"): DocumentPictureInPictureEvent;
     createEvent(eventInterface: "DragEvent"): DragEvent;
     createEvent(eventInterface: "ErrorEvent"): ErrorEvent;
     createEvent(eventInterface: "FocusEvent"): FocusEvent;
@@ -8634,6 +8854,8 @@ interface Document extends Node, DocumentOrShadowRoot, FontFaceSource, GeometryU
     createEvent(eventInterface: "NavigationCurrentEntryChangeEvent"): NavigationCurrentEntryChangeEvent;
     createEvent(eventInterface: "NotifyPaintEvent"): NotifyPaintEvent;
     createEvent(eventInterface: "OfflineAudioCompletionEvent"): OfflineAudioCompletionEvent;
+    createEvent(eventInterface: "PageRevealEvent"): PageRevealEvent;
+    createEvent(eventInterface: "PageSwapEvent"): PageSwapEvent;
     createEvent(eventInterface: "PageTransitionEvent"): PageTransitionEvent;
     createEvent(eventInterface: "PaymentMethodChangeEvent"): PaymentMethodChangeEvent;
     createEvent(eventInterface: "PaymentRequestUpdateEvent"): PaymentRequestUpdateEvent;
@@ -8734,12 +8956,11 @@ interface Document extends Node, DocumentOrShadowRoot, FontFaceSource, GeometryU
     removeAnonymousContent(aContent: AnonymousContent): void;
     requestStorageAccess(): Promise<void>;
     requestStorageAccessForOrigin(thirdPartyOrigin: string, requireUserInteraction?: boolean): Promise<void>;
-    requestStorageAccessUnderSite(serializedSite: string): Promise<void>;
     setKeyPressEventModel(aKeyPressEventModel: number): void;
     setNotifyFetchSuccess(aShouldNotify: boolean): void;
     setNotifyFormOrPasswordRemoved(aShouldNotify: boolean): void;
     setSuppressedEventListener(aListener: EventListener | null): void;
-    startViewTransition(updateCallback?: ViewTransitionUpdateCallback): ViewTransition;
+    startViewTransition(callbackOptions?: ViewTransitionUpdateCallback | StartViewTransitionOptions): ViewTransition;
     synchronouslyUpdateRemoteBrowserDimensions(aIncludeInactive?: boolean): void;
     userInteractionForTesting(): void;
     write(...text: (TrustedHTML | string)[]): void;
@@ -8791,6 +9012,38 @@ interface DocumentOrShadowRoot {
     nodeFromPoint(x: number, y: number): Node | null;
     nodesFromPoint(x: number, y: number): Node[];
 }
+
+interface DocumentPictureInPictureEventMap {
+    "enter": Event;
+}
+
+/** Available only in secure contexts. */
+interface DocumentPictureInPicture extends EventTarget {
+    onenter: ((this: DocumentPictureInPicture, ev: Event) => any) | null;
+    readonly window: Window | null;
+    requestWindow(options?: DocumentPictureInPictureOptions): Promise<Window>;
+    addEventListener<K extends keyof DocumentPictureInPictureEventMap>(type: K, listener: (this: DocumentPictureInPicture, ev: DocumentPictureInPictureEventMap[K]) => any, options?: boolean | AddEventListenerOptions): void;
+    addEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions): void;
+    removeEventListener<K extends keyof DocumentPictureInPictureEventMap>(type: K, listener: (this: DocumentPictureInPicture, ev: DocumentPictureInPictureEventMap[K]) => any, options?: boolean | EventListenerOptions): void;
+    removeEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions): void;
+}
+
+declare var DocumentPictureInPicture: {
+    prototype: DocumentPictureInPicture;
+    new(): DocumentPictureInPicture;
+    isInstance: IsInstance<DocumentPictureInPicture>;
+};
+
+/** Available only in secure contexts. */
+interface DocumentPictureInPictureEvent extends Event {
+    readonly window: Window;
+}
+
+declare var DocumentPictureInPictureEvent: {
+    prototype: DocumentPictureInPictureEvent;
+    new(type: string, eventInitDict: DocumentPictureInPictureEventInit): DocumentPictureInPictureEvent;
+    isInstance: IsInstance<DocumentPictureInPictureEvent>;
+};
 
 interface DocumentTimeline extends AnimationTimeline {
 }
@@ -8940,7 +9193,7 @@ interface ElementEventMap {
     "fullscreenerror": Event;
 }
 
-interface Element extends Node, ARIAMixin, Animatable, ChildNode, GeometryUtils, NonDocumentTypeChildNode, ParentNode {
+interface Element extends Node, ARIAMixin, ARIANotifyMixin, Animatable, ChildNode, GeometryUtils, NonDocumentTypeChildNode, ParentNode {
     readonly assignedSlot: HTMLSlotElement | null;
     readonly attributes: NamedNodeMap;
     readonly classList: DOMTokenList;
@@ -9064,7 +9317,7 @@ interface ElementCSSInlineStyle {
 }
 
 interface ElementInternals extends ARIAMixin {
-    readonly form: HTMLFormElement | null;
+    readonly form: Element | null;
     readonly labels: NodeList;
     readonly shadowRoot: ShadowRoot | null;
     readonly states: CustomStateSet;
@@ -10637,6 +10890,7 @@ declare var GleanImpl: {
 };
 
 interface GleanLabeled {
+    testGetValue(aPingName?: string): Record<string, GleanLabeledTestValue> | null;
 }
 
 declare var GleanLabeled: {
@@ -11253,7 +11507,7 @@ interface HTMLButtonElement extends HTMLElement, PopoverInvokerElement {
     command: string;
     commandForElement: Element | null;
     disabled: boolean;
-    readonly form: HTMLFormElement | null;
+    readonly form: Element | null;
     formAction: string;
     formEnctype: string;
     formMethod: string;
@@ -11507,7 +11761,7 @@ declare var HTMLEmbedElement: {
 interface HTMLFieldSetElement extends HTMLElement {
     disabled: boolean;
     readonly elements: HTMLCollection;
-    readonly form: HTMLFormElement | null;
+    readonly form: Element | null;
     name: string;
     readonly type: string;
     readonly validationMessage: string;
@@ -11781,11 +12035,13 @@ declare var HTMLImageElement: {
 interface HTMLInputElement extends HTMLElement, MozEditableElement, MozImageLoadingContent, PopoverInvokerElement {
     accept: string;
     align: string;
+    alpha: boolean;
     alt: string;
     autocomplete: string;
     autofillState: string;
     capture: string;
     checked: boolean;
+    colorSpace: string;
     readonly controllers: XULControllers | null;
     readonly dateTimeBoxElement: Element | null;
     defaultChecked: boolean;
@@ -11793,7 +12049,7 @@ interface HTMLInputElement extends HTMLElement, MozEditableElement, MozImageLoad
     dirName: string;
     disabled: boolean;
     files: FileList | null;
-    readonly form: HTMLFormElement | null;
+    readonly form: Element | null;
     formAction: string;
     formEnctype: string;
     formMethod: string;
@@ -11804,7 +12060,7 @@ interface HTMLInputElement extends HTMLElement, MozEditableElement, MozImageLoad
     indeterminate: boolean;
     readonly labels: NodeList | null;
     readonly lastInteractiveValue: string;
-    readonly list: HTMLDataListElement | null;
+    readonly list: Element | null;
     max: string;
     maxLength: number;
     min: string;
@@ -11838,6 +12094,7 @@ interface HTMLInputElement extends HTMLElement, MozEditableElement, MozImageLoad
     checkValidity(): boolean;
     closeDateTimePicker(): void;
     getAutocompleteInfo(): AutocompleteInfo | null;
+    getColor(): InputPickerColor;
     getDateTimeInputBoxValue(): DateTimeValue;
     getFilesAndDirectories(): Promise<(File | Directory)[]>;
     getMaximum(): number;
@@ -11854,15 +12111,15 @@ interface HTMLInputElement extends HTMLElement, MozEditableElement, MozImageLoad
     reportValidity(): boolean;
     select(): void;
     setCustomValidity(error: string): void;
-    setDateTimePickerState(aIsOpen: boolean): void;
     setFocusState(aIsFocused: boolean): void;
+    setOpenState(aIsOpen: boolean): void;
     setRangeText(replacement: string): void;
     setRangeText(replacement: string, start: number, end: number, selectionMode?: SelectionMode): void;
     setSelectionRange(start: number, end: number, direction?: string): void;
+    setUserInputColor(aColor: InputPickerColor): void;
     showPicker(): void;
     stepDown(n?: number): void;
     stepUp(n?: number): void;
-    updateDateTimePicker(value?: DateTimeValue): void;
     updateValidityState(): void;
     addEventListener<K extends keyof HTMLElementEventMap>(type: K, listener: (this: HTMLInputElement, ev: HTMLElementEventMap[K]) => any, options?: boolean | AddEventListenerOptions): void;
     addEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions): void;
@@ -11896,7 +12153,7 @@ declare var HTMLLIElement: {
 
 interface HTMLLabelElement extends HTMLElement {
     readonly control: HTMLElement | null;
-    readonly form: HTMLFormElement | null;
+    readonly form: Element | null;
     htmlFor: string;
     addEventListener<K extends keyof HTMLElementEventMap>(type: K, listener: (this: HTMLLabelElement, ev: HTMLElementEventMap[K]) => any, options?: boolean | AddEventListenerOptions): void;
     addEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions): void;
@@ -11912,7 +12169,7 @@ declare var HTMLLabelElement: {
 
 interface HTMLLegendElement extends HTMLElement {
     align: string;
-    readonly form: HTMLFormElement | null;
+    readonly form: Element | null;
     addEventListener<K extends keyof HTMLElementEventMap>(type: K, listener: (this: HTMLLegendElement, ev: HTMLElementEventMap[K]) => any, options?: boolean | AddEventListenerOptions): void;
     addEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions): void;
     removeEventListener<K extends keyof HTMLElementEventMap>(type: K, listener: (this: HTMLLegendElement, ev: HTMLElementEventMap[K]) => any, options?: boolean | EventListenerOptions): void;
@@ -12059,6 +12316,7 @@ interface HTMLMediaElement extends HTMLElement {
     volume: number;
     addTextTrack(kind: TextTrackKind, label?: string, language?: string): TextTrack;
     canPlayType(type: string): string;
+    captureStream(): MediaStream;
     fastSeek(time: number): void;
     hasSuspendTaint(): boolean;
     load(): void;
@@ -12203,7 +12461,7 @@ interface HTMLObjectElement extends HTMLElement, MozFrameLoaderOwner, MozObjectL
     readonly contentWindow: WindowProxy | null;
     data: string;
     declare: boolean;
-    readonly form: HTMLFormElement | null;
+    readonly form: Element | null;
     height: string;
     hspace: number;
     name: string;
@@ -12252,7 +12510,7 @@ declare var HTMLOptGroupElement: {
 interface HTMLOptionElement extends HTMLElement {
     defaultSelected: boolean;
     disabled: boolean;
-    readonly form: HTMLFormElement | null;
+    readonly form: Element | null;
     readonly index: number;
     label: string;
     selected: boolean;
@@ -12293,7 +12551,7 @@ interface HTMLOrForeignElement {
 
 interface HTMLOutputElement extends HTMLElement {
     defaultValue: string;
-    readonly form: HTMLFormElement | null;
+    readonly form: Element | null;
     readonly htmlFor: DOMTokenList;
     readonly labels: NodeList;
     name: string;
@@ -12441,7 +12699,7 @@ interface HTMLSelectElement extends HTMLElement {
     autocomplete: string;
     autofillState: string;
     disabled: boolean;
-    readonly form: HTMLFormElement | null;
+    readonly form: Element | null;
     readonly isCombobox: boolean;
     readonly labels: NodeList;
     length: number;
@@ -12696,7 +12954,7 @@ interface HTMLTemplateElement extends HTMLElement {
     shadowRootClonable: boolean;
     shadowRootDelegatesFocus: boolean;
     shadowRootMode: string;
-    shadowRootReferenceTarget: string;
+    shadowRootReferenceTarget: string | null;
     shadowRootSerializable: boolean;
     addEventListener<K extends keyof HTMLElementEventMap>(type: K, listener: (this: HTMLTemplateElement, ev: HTMLElementEventMap[K]) => any, options?: boolean | AddEventListenerOptions): void;
     addEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions): void;
@@ -12718,7 +12976,7 @@ interface HTMLTextAreaElement extends HTMLElement, MozEditableElement {
     defaultValue: string;
     dirName: string;
     disabled: boolean;
-    readonly form: HTMLFormElement | null;
+    readonly form: Element | null;
     readonly labels: NodeList;
     maxLength: number;
     minLength: number;
@@ -13479,6 +13737,20 @@ declare var InspectorFontFace: {
     readonly NAME_ID_COMPATIBLE_FULL: 18;
     readonly NAME_ID_SAMPLE_TEXT: 19;
     isInstance: IsInstance<InspectorFontFace>;
+};
+
+interface IntegrityViolationReportBody extends ReportBody {
+    readonly blockedURL: string;
+    readonly destination: string;
+    readonly documentURL: string;
+    readonly reportOnly: boolean;
+    toJSON(): any;
+}
+
+declare var IntegrityViolationReportBody: {
+    prototype: IntegrityViolationReportBody;
+    new(): IntegrityViolationReportBody;
+    isInstance: IsInstance<IntegrityViolationReportBody>;
 };
 
 interface IntersectionObserver {
@@ -14301,6 +14573,7 @@ declare var Localization: {
 };
 
 interface Location {
+    readonly ancestorOrigins: DOMStringList;
     hash: string;
     host: string;
     hostname: string;
@@ -15162,9 +15435,7 @@ declare var MessageListenerManager: {
 
 interface MessageListenerManagerMixin {
     addMessageListener(messageName: string, listener: MessageListener, listenWhenClosed?: boolean): void;
-    addWeakMessageListener(messageName: string, listener: MessageListener): void;
     removeMessageListener(messageName: string, listener: MessageListener): void;
-    removeWeakMessageListener(messageName: string, listener: MessageListener): void;
 }
 
 interface MessageManagerGlobal {
@@ -15588,7 +15859,7 @@ declare var NavigationActivation: {
 };
 
 interface NavigationCurrentEntryChangeEvent extends Event {
-    readonly from: NavigationHistoryEntry;
+    readonly from: NavigationHistoryEntry | null;
     readonly navigationType: NavigationType | null;
 }
 
@@ -15638,6 +15909,7 @@ declare var NavigationHistoryEntry: {
 };
 
 interface NavigationPrecommitController {
+    addHandler(handler: NavigationInterceptHandler): void;
     redirect(url: string | URL, options?: NavigationNavigateOptions): void;
 }
 
@@ -15952,18 +16224,18 @@ interface NotificationEventMap {
 
 interface Notification extends EventTarget {
     readonly actions: NotificationAction[];
-    readonly body: string | null;
+    readonly body: string;
     readonly data: any;
     readonly dir: NotificationDirection;
-    readonly icon: string | null;
-    readonly lang: string | null;
+    readonly icon: string;
+    readonly lang: string;
     onclick: ((this: Notification, ev: Event) => any) | null;
     onclose: ((this: Notification, ev: Event) => any) | null;
     onerror: ((this: Notification, ev: Event) => any) | null;
     onshow: ((this: Notification, ev: Event) => any) | null;
     readonly requireInteraction: boolean;
     readonly silent: boolean;
-    readonly tag: string | null;
+    readonly tag: string;
     readonly title: string;
     readonly vibrate: number[];
     close(): void;
@@ -16152,6 +16424,27 @@ declare var OscillatorNode: {
     prototype: OscillatorNode;
     new(context: BaseAudioContext, options?: OscillatorOptions): OscillatorNode;
     isInstance: IsInstance<OscillatorNode>;
+};
+
+interface PageRevealEvent extends Event {
+    readonly viewTransition: ViewTransition | null;
+}
+
+declare var PageRevealEvent: {
+    prototype: PageRevealEvent;
+    new(type: string, eventInitDict?: PageRevealEventInit): PageRevealEvent;
+    isInstance: IsInstance<PageRevealEvent>;
+};
+
+interface PageSwapEvent extends Event {
+    readonly activation: NavigationActivation | null;
+    readonly viewTransition: ViewTransition | null;
+}
+
+declare var PageSwapEvent: {
+    prototype: PageSwapEvent;
+    new(type: string, eventInitDict?: PageSwapEventInit): PageSwapEvent;
+    isInstance: IsInstance<PageSwapEvent>;
 };
 
 interface PageTransitionEvent extends Event {
@@ -17065,6 +17358,7 @@ declare var PointerEvent: {
 };
 
 interface PopStateEvent extends Event {
+    readonly hasUAVisualTransition: boolean;
     readonly state: any;
 }
 
@@ -20105,7 +20399,7 @@ interface ShadowRoot extends DocumentFragment, DocumentOrShadowRoot {
     innerHTML: TrustedHTML | string;
     readonly mode: ShadowRootMode;
     onslotchange: ((this: ShadowRoot, ev: Event) => any) | null;
-    referenceTarget: string;
+    referenceTarget: string | null;
     readonly serializable: boolean;
     readonly slotAssignment: SlotAssignmentMode;
     createElementAndAppendChildAt(parentNode: Node, localName: string): Node;
@@ -21176,6 +21470,11 @@ declare var TestReflectedHTMLAttribute: {
     new(): TestReflectedHTMLAttribute;
     isInstance: IsInstance<TestReflectedHTMLAttribute>;
 };
+
+interface TestReportBody extends ReportBody {
+    readonly message: string;
+    toJSON(): any;
+}
 
 interface TestTrialInterface {
 }
@@ -22321,6 +22620,7 @@ declare var VideoTrackList: {
 interface ViewTransition {
     readonly finished: Promise<void>;
     readonly ready: Promise<void>;
+    readonly types: ViewTransitionTypeSet;
     readonly updateCallbackDone: Promise<void>;
     skipTransition(): void;
 }
@@ -22329,6 +22629,16 @@ declare var ViewTransition: {
     prototype: ViewTransition;
     new(): ViewTransition;
     isInstance: IsInstance<ViewTransition>;
+};
+
+interface ViewTransitionTypeSet {
+    forEach(callbackfn: (value: string, key: string, parent: ViewTransitionTypeSet) => void, thisArg?: any): void;
+}
+
+declare var ViewTransitionTypeSet: {
+    prototype: ViewTransitionTypeSet;
+    new(): ViewTransitionTypeSet;
+    isInstance: IsInstance<ViewTransitionTypeSet>;
 };
 
 interface VisualViewportEventMap {
@@ -22584,6 +22894,7 @@ interface WebExtensionPolicy {
     readonly browsingContextGroupId: number;
     readonly contentScripts: WebExtensionContentScript[];
     readonly extensionPageCSP: string;
+    readonly hasRecommendedState: boolean;
     readonly id: string;
     ignoreQuarantine: boolean;
     readonly isPrivileged: boolean;
@@ -22595,6 +22906,7 @@ interface WebExtensionPolicy {
     readonly readyPromise: any;
     readonly temporarilyInstalled: boolean;
     readonly type: string;
+    readonly version: string;
     canAccessURI(uri: URI, explicit?: boolean, checkRestricted?: boolean, allowFilePermission?: boolean): boolean;
     canAccessWindow(window: WindowProxy): boolean;
     getURL(path?: string): string;
@@ -24583,7 +24895,7 @@ interface WebTransport {
     readonly reliability: WebTransportReliabilityMode;
     close(closeInfo?: WebTransportCloseInfo): void;
     createBidirectionalStream(options?: WebTransportSendStreamOptions): Promise<WebTransportBidirectionalStream>;
-    createUnidirectionalStream(options?: WebTransportSendStreamOptions): Promise<WritableStream>;
+    createUnidirectionalStream(options?: WebTransportSendStreamOptions): Promise<WebTransportSendStream>;
     getStats(): Promise<WebTransportStats>;
 }
 
@@ -24710,6 +25022,8 @@ interface Window extends EventTarget, AnimationFrameProvider, GlobalCrypto, Glob
     readonly devicePixelRatio: number;
     readonly docShell: nsIDocShell | null;
     readonly document: Document | null;
+    /** Available only in secure contexts. */
+    readonly documentPictureInPicture: DocumentPictureInPicture;
     readonly event: Event | undefined;
     readonly external: External;
     readonly frameElement: Element | null;
@@ -24797,7 +25111,6 @@ interface Window extends EventTarget, AnimationFrameProvider, GlobalCrypto, Glob
     getDefaultComputedStyle(elt: Element, pseudoElt?: string): CSSStyleDeclaration | null;
     getGroupMessageManager(aGroup: string): ChromeMessageBroadcaster;
     getInterface(iid: any): any;
-    getRegionalPrefsLocales(): string[];
     getSelection(): Selection | null;
     getWebExposedLocales(): string[];
     getWorkspaceID(): string;
@@ -24805,6 +25118,7 @@ interface Window extends EventTarget, AnimationFrameProvider, GlobalCrypto, Glob
     maximize(): void;
     minimize(): void;
     moveBy(x: number, y: number): void;
+    moveResize(x: number, y: number, w: number, h: number): void;
     moveTo(x: number, y: number): void;
     moveToWorkspace(workspaceID: string): void;
     mozScrollSnap(): void;
@@ -24837,6 +25151,7 @@ interface Window extends EventTarget, AnimationFrameProvider, GlobalCrypto, Glob
     sizeToContent(constraints?: SizeToContentConstraints): void;
     stop(): void;
     synthesizeMouseEvent(type: string, offsetX: number, offsetY: number, mouseEventData?: SynthesizeMouseEventData, options?: SynthesizeMouseEventOptions, callback?: VoidFunction): boolean;
+    synthesizeTouchEvent(type: string, touches: SynthesizeTouchEventData[], modifiers?: number, options?: SynthesizeTouchEventOptions): boolean;
     updateCommands(action: string): void;
     readonly STATE_MAXIMIZED: 1;
     readonly STATE_MINIMIZED: 2;
@@ -24896,6 +25211,7 @@ interface WindowEventHandlersEventMap {
     "offline": Event;
     "online": Event;
     "pagehide": Event;
+    "pagereveal": Event;
     "pageshow": Event;
     "popstate": Event;
     "rejectionhandled": Event;
@@ -24917,6 +25233,7 @@ interface WindowEventHandlers {
     onoffline: ((this: WindowEventHandlers, ev: Event) => any) | null;
     ononline: ((this: WindowEventHandlers, ev: Event) => any) | null;
     onpagehide: ((this: WindowEventHandlers, ev: Event) => any) | null;
+    onpagereveal: ((this: WindowEventHandlers, ev: Event) => any) | null;
     onpageshow: ((this: WindowEventHandlers, ev: Event) => any) | null;
     onpopstate: ((this: WindowEventHandlers, ev: Event) => any) | null;
     onrejectionhandled: ((this: WindowEventHandlers, ev: Event) => any) | null;
@@ -24972,6 +25289,7 @@ interface WindowGlobalParent extends WindowContext {
     readonly isCurrentGlobal: boolean;
     readonly isInitialDocument: boolean;
     readonly isProcessRoot: boolean;
+    readonly isUncommittedInitialDocument: boolean;
     readonly osPid: number;
     readonly outerWindowId: number;
     readonly rootFrameLoader: FrameLoader | null;
@@ -25884,7 +26202,7 @@ declare namespace ChromeUtils {
     var domProcessChild: nsIDOMProcessChild | null;
     var recentJSDevError: any;
     function CreateOriginAttributesFromOriginSuffix(suffix: string): OriginAttributesDictionary;
-    function addProfilerMarker(name: string, options?: ProfilerMarkerOptions | number, text?: string): void;
+    function addProfilerMarker(name: string, options?: ProfilerMarkerOptions | number, data?: any): void;
     function androidMoveTaskToBack(): void;
     function base64URLDecode(string: string, options: Base64URLDecodeOptions): ArrayBuffer;
     function base64URLEncode(source: BufferSource, options: Base64URLEncodeOptions): string;
@@ -25910,6 +26228,7 @@ declare namespace ChromeUtils {
     function endWheelTransaction(window: WindowProxy): Promise<void>;
     function ensureHeadlessContentProcess(aRemoteType: string): Promise<nsIContentParentKeepAlive>;
     function ensureJSOracleStarted(): void;
+    function fetchDecodedImage(uri: URI, channel: MozChannel): Promise<imgIContainer>;
     function fillNonDefaultOriginAttributes(originAttrs?: OriginAttributesDictionary): OriginAttributesDictionary;
     function generateQI(interfaces: any[]): MozQueryInterface;
     function getAllDOMProcesses(): nsIDOMProcessParent[];
@@ -25920,6 +26239,7 @@ declare namespace ChromeUtils {
     function getFormAutofillConfidences(elements: Element[]): FormAutofillConfidences[];
     function getGMPContentDecryptionModuleInformation(): Promise<CDMInformation[]>;
     function getGlobalWindowCommandEnabled(name: string): boolean | null;
+    function getLastOOMStackTrace(): string;
     function getLibcConstants(): LibcConstants;
     function getObjectNodeId(obj: any): NodeId;
     function getPartitionKeyFromURL(topLevelUrl: string, subresourceUrl: string, foreignContext?: boolean): string;
@@ -25929,6 +26249,7 @@ declare namespace ChromeUtils {
     function hasReportingHeaderForOrigin(aOrigin: string): boolean;
     function idleDispatch(callback: IdleRequestCallback, options?: IdleRequestOptions): void;
     function importESModule(aResourceURI: string, aOptions?: ImportESModuleOptionsDictionary): any;
+    function invalidateResourceCache(): void;
     function isClassifierBlockingErrorCode(aError: number): boolean;
     function isDOMObject(obj: any, unwrap?: boolean): boolean;
     function isDarkBackground(element: Element): boolean;
@@ -25946,6 +26267,7 @@ declare namespace ChromeUtils {
     function originAttributesToSuffix(originAttrs?: OriginAttributesDictionary): string;
     function privateNoteIntentionalCrash(): void;
     function readHeapSnapshot(filePath: string): HeapSnapshot;
+    function registerMarkerSchema(schema: any): void;
     function registerProcessActor(aName: string, aOptions?: ProcessActorOptions): void;
     function registerWindowActor(aName: string, aOptions?: WindowActorOptions): void;
     function releaseAssert(condition: boolean, message?: string): void;
@@ -26033,6 +26355,7 @@ declare namespace InspectorUtils {
     function cssPropertyIsShorthand(property: string): boolean;
     function cssPropertySupportsType(property: string, type: InspectorPropertyType): boolean;
     function getAllStyleSheets(document: Document, documentOnly?: boolean): StyleSheet[];
+    function getAnchorFor(element: Element, anchorName?: string | null): InspectorAnchorElement | null;
     function getBlockLineCounts(element: Element): number[] | null;
     function getCSSPropertyNames(options?: PropertyNamesOptions): string[];
     function getCSSPropertyPrefs(): PropertyPref[];
@@ -26078,6 +26401,10 @@ declare namespace InspectorUtils {
     function setVerticalClipping(aContext: BrowsingContext | null, aOffset: number): void;
     function supports(conditionText: string, options?: SupportsOptions): boolean;
     function valueMatchesSyntax(document: Document, value: string, syntax: string): boolean;
+}
+
+declare namespace JSActorTypeUtils {
+    function serializeDeserialize(strict: boolean, val: any): any;
 }
 
 declare namespace L10nOverlays {
@@ -26152,6 +26479,10 @@ declare namespace SessionStoreUtils {
     function restoreSessionStorageFromParent(browsingContext: CanonicalBrowsingContext, sessionStorage: Record<string, Record<string, string>>): void;
 }
 
+declare namespace TestReportGenerator {
+    function generateReport(params: GenerateTestReportParameters): Promise<void>;
+}
+
 declare namespace TestUtils {
     function gc(): Promise<void>;
 }
@@ -26160,6 +26491,8 @@ declare namespace UniFFIScaffolding {
     function callAsync(id: UniFFIFunctionId, ...args: UniFFIScaffoldingValue[]): Promise<UniFFIScaffoldingCallResult>;
     function callAsyncWrapper(id: UniFFIFunctionId, ...args: UniFFIScaffoldingValue[]): Promise<UniFFIScaffoldingCallResult>;
     function callSync(id: UniFFIFunctionId, ...args: UniFFIScaffoldingValue[]): UniFFIScaffoldingCallResult;
+    function callbackHandleCreate(): number;
+    function callbackHandleRelease(handle: number): number;
     function deregisterCallbackHandler(interfaceId: UniFFICallbackInterfaceId): void;
     function readPointer(id: UniFFIPointerId, buff: ArrayBuffer, position: number): UniFFIPointer;
     function registerCallbackHandler(interfaceId: UniFFICallbackInterfaceId, handler: UniFFICallbackHandler): void;
@@ -26669,6 +27002,8 @@ declare var desktopToDeviceScale: number;
 declare var devicePixelRatio: number;
 declare var docShell: nsIDocShell | null;
 declare var document: Document | null;
+/** Available only in secure contexts. */
+declare var documentPictureInPicture: DocumentPictureInPicture;
 declare var event: Event | undefined;
 declare var external: External;
 declare var frameElement: Element | null;
@@ -26757,7 +27092,6 @@ declare function getComputedStyle(elt: Element, pseudoElt?: string | null): CSSS
 declare function getDefaultComputedStyle(elt: Element, pseudoElt?: string): CSSStyleDeclaration | null;
 declare function getGroupMessageManager(aGroup: string): ChromeMessageBroadcaster;
 declare function getInterface(iid: any): any;
-declare function getRegionalPrefsLocales(): string[];
 declare function getSelection(): Selection | null;
 declare function getWebExposedLocales(): string[];
 declare function getWorkspaceID(): string;
@@ -26765,6 +27099,7 @@ declare function matchMedia(query: string): MediaQueryList | null;
 declare function maximize(): void;
 declare function minimize(): void;
 declare function moveBy(x: number, y: number): void;
+declare function moveResize(x: number, y: number, w: number, h: number): void;
 declare function moveTo(x: number, y: number): void;
 declare function moveToWorkspace(workspaceID: string): void;
 declare function mozScrollSnap(): void;
@@ -26797,6 +27132,7 @@ declare function shouldReportForServiceWorkerScope(aScope: string): boolean;
 declare function sizeToContent(constraints?: SizeToContentConstraints): void;
 declare function stop(): void;
 declare function synthesizeMouseEvent(type: string, offsetX: number, offsetY: number, mouseEventData?: SynthesizeMouseEventData, options?: SynthesizeMouseEventOptions, callback?: VoidFunction): boolean;
+declare function synthesizeTouchEvent(type: string, touches: SynthesizeTouchEventData[], modifiers?: number, options?: SynthesizeTouchEventOptions): boolean;
 declare function updateCommands(action: string): void;
 declare function toString(): string;
 declare var ownerGlobal: WindowProxy | null;
@@ -26925,6 +27261,7 @@ declare var onmessageerror: ((this: Window, ev: Event) => any) | null;
 declare var onoffline: ((this: Window, ev: Event) => any) | null;
 declare var ononline: ((this: Window, ev: Event) => any) | null;
 declare var onpagehide: ((this: Window, ev: Event) => any) | null;
+declare var onpagereveal: ((this: Window, ev: Event) => any) | null;
 declare var onpageshow: ((this: Window, ev: Event) => any) | null;
 declare var onpopstate: ((this: Window, ev: Event) => any) | null;
 declare var onrejectionhandled: ((this: Window, ev: Event) => any) | null;
@@ -27032,6 +27369,7 @@ type GPUSize64Out = number;
 type GPUStencilValue = number;
 type GPUTextureUsageFlags = number;
 type GeometryNode = Text | Element | Document;
+type GleanLabeledTestValue = boolean | number | string | GleanDistributionData;
 type HTMLOrSVGImageElement = HTMLImageElement | SVGImageElement;
 type HeadersInit = string[][] | Record<string, string>;
 type ImageBitmapSource = CanvasImageSource | Blob | CanvasRenderingContext2D | ImageData;
@@ -27106,6 +27444,7 @@ type AlignSetting = "center" | "end" | "left" | "right" | "start";
 type AlphaOption = "discard" | "keep";
 type AnimationPlayState = "finished" | "idle" | "paused" | "running";
 type AnimationReplaceState = "active" | "persisted" | "removed";
+type AriaNotifyPriority = "high" | "normal";
 type AudioContextState = "closed" | "running" | "suspended";
 type AudioSampleFormat = "f32" | "f32-planar" | "s16" | "s16-planar" | "s32" | "s32-planar" | "u8" | "u8-planar";
 type AutoKeyword = "auto";
@@ -27141,7 +27480,7 @@ type CodecState = "closed" | "configured" | "unconfigured";
 type ColorGamut = "p3" | "rec2020" | "srgb";
 type ColorSpaceConversion = "default" | "none";
 type CompositeOperation = "accumulate" | "add" | "replace";
-type CompressionFormat = "deflate" | "deflate-raw" | "gzip" | "zstd";
+type CompressionFormat = "brotli" | "deflate" | "deflate-raw" | "gzip" | "zstd";
 type ConnectionType = "bluetooth" | "cellular" | "ethernet" | "none" | "other" | "unknown" | "wifi";
 type ConsoleLevel = "error" | "log" | "warning";
 type ConsoleLogLevel = "All" | "Clear" | "Debug" | "Dir" | "Dirxml" | "Error" | "Group" | "GroupEnd" | "Info" | "Log" | "Off" | "Profile" | "ProfileEnd" | "Time" | "TimeEnd" | "TimeLog" | "Trace" | "Warn";
@@ -27155,7 +27494,7 @@ type DebuggerNotificationType = "cancelAnimationFrame" | "clearInterval" | "clea
 type DeclarationOrigin = "animations" | "position-fallback" | "pres-hints" | "smil" | "style-attribute" | "transitions" | "user" | "user-agent";
 type DecoderDoctorReportType = "mediacannotinitializepulseaudio" | "mediacannotplaynodecoders" | "mediadecodeerror" | "mediadecodewarning" | "medianodecoders" | "mediaplatformdecodernotfound" | "mediaunsupportedlibavcodec" | "mediawidevinenowmf" | "mediawmfneeded";
 type DirectionSetting = "" | "lr" | "rl";
-type DisplayMode = "browser" | "fullscreen" | "minimal-ui" | "standalone";
+type DisplayMode = "browser" | "fullscreen" | "minimal-ui" | "picture-in-picture" | "standalone";
 type DistanceModelType = "exponential" | "inverse" | "linear";
 type EncodedAudioChunkType = "delta" | "key";
 type EncodedVideoChunkType = "delta" | "key";
@@ -27225,6 +27564,7 @@ type IDBTransactionMode = "cleanup" | "readonly" | "readwrite" | "readwriteflush
 type IdentityCredentialRequestOptionsMode = "active" | "passive";
 type ImageOrientation = "flipY" | "from-image" | "none";
 type ImportESModuleTargetGlobal = "contextual" | "current" | "devtools" | "shared";
+type InspectorAnchorType = "explicit" | "popover" | "pseudo-element";
 type InspectorPropertyType = "color" | "gradient" | "timing-function";
 type IterationCompositeOperation = "accumulate" | "replace";
 type JSRFPTarget = "CSSPrefersColorScheme" | "HttpUserAgent" | "JSLocalePrompt" | "RoundWindowSize" | "SiteSpecificZoom";
@@ -27325,6 +27665,7 @@ type RequestMode = "cors" | "navigate" | "no-cors" | "same-origin";
 type RequestPriority = "auto" | "high" | "low";
 type RequestRedirect = "error" | "follow" | "manual";
 type ResizeObserverBoxOptions = "border-box" | "content-box" | "device-pixel-content-box";
+type ResizeQuality = "high" | "low" | "medium" | "pixelated";
 type ResourceCacheTarget = "chrome" | "content";
 type ResourceCacheType = "image" | "script" | "stylesheet";
 type ResponseType = "basic" | "cors" | "default" | "error" | "opaque" | "opaqueredirect";
@@ -27368,7 +27709,7 @@ type VisibilityState = "hidden" | "visible";
 type WakeLockType = "screen";
 type WebGLPowerPreference = "default" | "high-performance" | "low-power";
 type WebIDLProcType = "browser" | "extension" | "file" | "forkServer" | "gmpPlugin" | "gpu" | "inference" | "ipdlUnitTest" | "preallocated" | "privilegedabout" | "privilegedmozilla" | "rdd" | "socket" | "unknown" | "utility" | "vr" | "web" | "webIsolated" | "webServiceWorker" | "withCoopCoep";
-type WebIDLUtilityActorName = "audioDecoder_AppleMedia" | "audioDecoder_Generic" | "audioDecoder_WMF" | "jSOracle" | "mfMediaEngineCDM" | "unknown" | "windowsFileDialog" | "windowsUtils";
+type WebIDLUtilityActorName = "audioDecoder_AppleMedia" | "audioDecoder_Generic" | "audioDecoder_WMF" | "jSOracle" | "mfMediaEngineCDM" | "pkcs11Module" | "unknown" | "windowsFileDialog" | "windowsUtils";
 type WebTransportCongestionControl = "default" | "low-latency" | "throughput";
 type WebTransportErrorSource = "session" | "stream";
 type WebTransportReliabilityMode = "pending" | "reliable-only" | "supports-unreliable";
@@ -27861,6 +28202,9 @@ interface VideoTrackList {
     [Symbol.iterator](): IterableIterator<VideoTrack>;
 }
 
+interface ViewTransitionTypeSet extends Set<string> {
+}
+
 interface WEBGL_draw_buffers {
     drawBuffersWEBGL(buffers: Iterable<GLenum>): void;
 }
@@ -27927,6 +28271,7 @@ interface WebGLRenderingContextBase {
 interface Window {
     postMessage(message: any, targetOrigin: string, transfer?: Iterable<any>): void;
     setScrollMarks(marks: Iterable<number>, onHorizontalScrollbar?: boolean): void;
+    synthesizeTouchEvent(type: string, touches: Iterable<SynthesizeTouchEventData>, modifiers?: number, options?: SynthesizeTouchEventOptions): boolean;
 }
 
 interface Worker {

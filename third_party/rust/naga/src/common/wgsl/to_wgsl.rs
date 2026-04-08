@@ -169,7 +169,8 @@ impl TryToWgsl for crate::BuiltIn {
             Bi::FragDepth => "frag_depth",
             Bi::FrontFacing => "front_facing",
             Bi::PrimitiveIndex => "primitive_index",
-            Bi::Barycentric => "barycentric",
+            Bi::Barycentric { perspective: true } => "barycentric",
+            Bi::Barycentric { perspective: false } => "barycentric_no_perspective",
             Bi::SampleIndex => "sample_index",
             Bi::SampleMask => "sample_mask",
             Bi::GlobalInvocationId => "global_invocation_id",
@@ -183,18 +184,23 @@ impl TryToWgsl for crate::BuiltIn {
             Bi::SubgroupInvocationId => "subgroup_invocation_id",
 
             // Non-standard built-ins.
+            Bi::MeshTaskSize => "mesh_task_size",
+            Bi::TriangleIndices => "triangle_indices",
+            Bi::LineIndices => "line_indices",
+            Bi::PointIndex => "point_index",
+            Bi::Vertices => "vertices",
+            Bi::Primitives => "primitives",
+            Bi::VertexCount => "vertex_count",
+            Bi::PrimitiveCount => "primitive_count",
+            Bi::CullPrimitive => "cull_primitive",
+
             Bi::BaseInstance
             | Bi::BaseVertex
             | Bi::CullDistance
             | Bi::PointSize
             | Bi::DrawID
             | Bi::PointCoord
-            | Bi::WorkGroupSize
-            | Bi::CullPrimitive
-            | Bi::TriangleIndices
-            | Bi::LineIndices
-            | Bi::MeshTaskSize
-            | Bi::PointIndex => return None,
+            | Bi::WorkGroupSize => return None,
         })
     }
 }
@@ -205,6 +211,7 @@ impl ToWgsl for crate::Interpolation {
             crate::Interpolation::Perspective => "perspective",
             crate::Interpolation::Linear => "linear",
             crate::Interpolation::Flat => "flat",
+            crate::Interpolation::PerVertex => "per_vertex",
         }
     }
 }
@@ -305,15 +312,23 @@ impl TryToWgsl for crate::Scalar {
     }
 }
 
+impl ToWgsl for crate::CooperativeRole {
+    fn to_wgsl(self) -> &'static str {
+        match self {
+            Self::A => "A",
+            Self::B => "B",
+            Self::C => "C",
+        }
+    }
+}
+
 impl ToWgsl for crate::ImageDimension {
     fn to_wgsl(self) -> &'static str {
-        use crate::ImageDimension as IDim;
-
         match self {
-            IDim::D1 => "1d",
-            IDim::D2 => "2d",
-            IDim::D3 => "3d",
-            IDim::Cube => "cube",
+            Self::D1 => "1d",
+            Self::D2 => "2d",
+            Self::D3 => "3d",
+            Self::Cube => "cube",
         }
     }
 }
@@ -354,11 +369,11 @@ pub const fn address_space_str(
                     "storage"
                 }
             }
-            As::PushConstant => "push_constant",
+            As::Immediate => "immediate",
             As::WorkGroup => "workgroup",
             As::Handle => return (None, None),
             As::Function => "function",
-            As::TaskPayload => return (None, None),
+            As::TaskPayload => "task_payload",
         }),
         None,
     )

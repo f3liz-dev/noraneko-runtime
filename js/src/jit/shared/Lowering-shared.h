@@ -186,6 +186,7 @@ class LIRGeneratorShared {
                           LDefinition::Policy policy = LDefinition::REGISTER);
   inline LInt64Definition tempInt64(
       LDefinition::Policy policy = LDefinition::REGISTER);
+  inline LBoxDefinition tempBox();
   inline LDefinition tempFloat32();
   inline LDefinition tempDouble();
 #ifdef ENABLE_WASM_SIMD
@@ -305,10 +306,18 @@ class LIRGeneratorShared {
     return vreg;
   }
 
-  template <typename T>
-  void annotate(T* ins);
-  template <typename T>
-  void add(T* ins, MInstruction* mir = nullptr);
+  inline void annotate(LNode* ins);
+  inline void addUnchecked(LInstruction* ins, MInstruction* mir = nullptr);
+
+  // The template parameter ensures this can only be called for LIR instructions
+  // with no outputs. Call addUnchecked directly to ignore this check for code
+  // that sets the output manually with setDef or for LIR instructions with an
+  // optional output register.
+  template <size_t Temps>
+  void add(details::LInstructionFixedDefsTempsHelper<0, Temps>* ins,
+           MInstruction* mir = nullptr) {
+    addUnchecked(ins, mir);
+  }
 
   void lowerTypedPhiInput(MPhi* phi, uint32_t inputPosition, LBlock* block,
                           size_t lirIndex);

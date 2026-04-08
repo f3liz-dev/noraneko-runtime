@@ -8,6 +8,8 @@ const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   AboutReaderParent: "resource:///actors/AboutReaderParent.sys.mjs",
+  AIWindow:
+    "moz-src:///browser/components/aiwindow/ui/modules/AIWindow.sys.mjs",
   BrowserUsageTelemetry: "resource:///modules/BrowserUsageTelemetry.sys.mjs",
   CustomizableUI:
     "moz-src:///browser/components/customizableui/CustomizableUI.sys.mjs",
@@ -16,6 +18,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
     "moz-src:///browser/components/customizableui/PanelMultiView.sys.mjs",
   ProfileAge: "resource://gre/modules/ProfileAge.sys.mjs",
   ResetProfile: "resource://gre/modules/ResetProfile.sys.mjs",
+  SearchService: "moz-src:///toolkit/components/search/SearchService.sys.mjs",
   UIState: "resource://services-sync/UIState.sys.mjs",
   UpdateUtils: "resource://gre/modules/UpdateUtils.sys.mjs",
 });
@@ -141,7 +144,9 @@ export var UITour = {
       {
         infoPanelOffsetX: 18,
         infoPanelPosition: "after_start",
-        query: "#searchbar",
+        query: Services.prefs.getBoolPref("browser.search.widget.new")
+          ? "#searchbar-new"
+          : "#searchbar",
         widgetName: "search-container",
       },
     ],
@@ -149,8 +154,12 @@ export var UITour = {
       "searchIcon",
       {
         query: aDocument => {
-          let searchbar = aDocument.getElementById("searchbar");
-          return searchbar.querySelector(".searchbar-search-button");
+          if (!Services.prefs.getBoolPref("browser.search.widget.new")) {
+            let searchbar = aDocument.getElementById("searchbar");
+            return searchbar.querySelector(".searchbar-search-button");
+          }
+          let searchbar = aDocument.getElementById("searchbar-new");
+          return searchbar.querySelector(".searchmode-switcher");
         },
         widgetName: "search-container",
       },
@@ -481,6 +490,17 @@ export var UITour = {
         break;
       }
 
+      case "showFirefoxAccountsForAIWindow": {
+        lazy.AIWindow.launchWindow(browser).then(success => {
+          if (!success) {
+            lazy.log.warn(
+              "showFirefoxAccountsForAIWindow: Failed to launch Smart Window"
+            );
+          }
+        });
+        break;
+      }
+
       case "showConnectAnotherDevice": {
         lazy.FxAccounts.config
           .promiseConnectDeviceURI(data.entrypoint || "uitour")
@@ -552,36 +572,10 @@ export var UITour = {
         targetPromise.then(target => {
           let searchbar = target.node;
           searchbar.value = data.term;
-          searchbar.updateGoButtonVisibility();
+          if (!Services.prefs.getBoolPref("browser.search.widget.new")) {
+            searchbar.updateGoButtonVisibility();
+          }
         });
-        break;
-      }
-
-      case "openSearchPanel": {
-        let targetPromise = this.getTarget(window, "search");
-        targetPromise
-          .then(target => {
-            let searchbar = target.node;
-
-            if (searchbar.textbox.open) {
-              this.sendPageCallback(browser, data.callbackID);
-            } else {
-              let onPopupShown = () => {
-                searchbar.textbox.popup.removeEventListener(
-                  "popupshown",
-                  onPopupShown
-                );
-                this.sendPageCallback(browser, data.callbackID);
-              };
-
-              searchbar.textbox.popup.addEventListener(
-                "popupshown",
-                onPopupShown
-              );
-              searchbar.openSuggestionsPanel();
-            }
-          })
-          .catch(console.error);
         break;
       }
 
@@ -1571,10 +1565,9 @@ export var UITour = {
         break;
       case "search":
       case "selectedSearchEngine":
-        Services.search
-          .getVisibleEngines()
+        lazy.SearchService.getVisibleEngines()
           .then(engines => {
-            let { defaultEngine } = Services.search;
+            let { defaultEngine } = lazy.SearchService;
             this.sendPageCallback(aBrowser, aCallbackID, {
               searchEngineIdentifier: defaultEngine.isAppProvided
                 ? defaultEngine.id
@@ -1636,7 +1629,7 @@ export var UITour = {
   async setConfiguration(aWindow, aConfiguration, _aValue) {
     switch (aConfiguration) {
       case "defaultBrowser":
-        // Ignore aValue in this case because the default browser can only
+        // Ignore _aValue in this case because the default browser can only
         // be set, not unset.
         try {
           let shell = aWindow.getShellService();
@@ -1933,13 +1926,13 @@ export var UITour = {
   },
 
   async selectSearchEngine(id) {
-    let engine = Services.search.getEngineById(id);
+    let engine = lazy.SearchService.getEngineById(id);
     if (!engine || engine.hidden) {
       throw new Error("selectSearchEngine could not find engine with given ID");
     }
-    return Services.search.setDefault(
+    return lazy.SearchService.setDefault(
       engine,
-      Ci.nsISearchService.CHANGE_REASON_UITOUR
+      lazy.SearchService.CHANGE_REASON.UITOUR
     );
   },
 

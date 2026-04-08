@@ -11,7 +11,6 @@ import { AboutPreferences } from "lib/AboutPreferences.sys.mjs";
 import { DefaultPrefs } from "lib/ActivityStreamPrefs.sys.mjs";
 import { NewTabInit } from "lib/NewTabInit.sys.mjs";
 import { SectionsFeed } from "lib/SectionsManager.sys.mjs";
-import { RecommendationProvider } from "lib/RecommendationProvider.sys.mjs";
 import { PlacesFeed } from "lib/PlacesFeed.sys.mjs";
 import { PrefsFeed } from "lib/PrefsFeed.sys.mjs";
 import { SystemTickFeed } from "lib/SystemTickFeed.sys.mjs";
@@ -44,7 +43,6 @@ describe("ActivityStream", () => {
       NewTabActorRegistry: { init: () => {} },
       NewTabInit,
       SectionsFeed,
-      RecommendationProvider,
       PlacesFeed,
       PrefsFeed,
       SystemTickFeed,
@@ -77,6 +75,19 @@ describe("ActivityStream", () => {
   });
   it("should initialize with .initialized=false", () => {
     assert.isFalse(as.initialized, ".initialized");
+  });
+  it("should have a null createdInstant if not constructed with one", () => {
+    const noCreatedInstantAS = new ActivityStream();
+    assert.isNull(noCreatedInstantAS.createdInstant);
+  });
+  it("should have a createdInstant value exposed if constructed with one", () => {
+    // The Node environment does not know what Temporal is, but we can pretend
+    // that a Date is a temporal, since ActivityStream isn't really doing any
+    // type-checking here - it's just holding onto whatever it was constructed
+    // with, and exposing it with a getter.
+    const instant = new Date();
+    const createdInstantAS = new ActivityStream(instant);
+    assert.equal(createdInstantAS.createdInstant, instant);
   });
   describe("#init", () => {
     beforeEach(() => {
@@ -194,10 +205,6 @@ describe("ActivityStream", () => {
     });
     it("should create a Favicon feed", () => {
       const feed = as.feeds.get("feeds.favicon")();
-      assert.ok(feed, "feed should exist");
-    });
-    it("should create a RecommendationProvider feed", () => {
-      const feed = as.feeds.get("feeds.recommendationprovider")();
       assert.ok(feed, "feed should exist");
     });
     it("should create a DiscoveryStreamFeed feed", () => {
@@ -454,80 +461,6 @@ describe("ActivityStream", () => {
       // Set default locales
       getStringPrefStub
         .withArgs(LOCALE_TOPIC_LABEL_CONFIG)
-        .returns("en-US,en-GB,en-CA");
-    });
-    it("should turn off when region and locale are not set", () => {
-      stub.get(() => "");
-      sandbox.stub(global.Services.locale, "appLocaleAsBCP47").get(() => "");
-      as._updateDynamicPrefs();
-      assert.isFalse(PREFS_CONFIG.get(FEATURE_ENABLED_PREF).value);
-    });
-    it("should turn off when region is not set", () => {
-      stub.get(() => "");
-      as._updateDynamicPrefs();
-      assert.isFalse(PREFS_CONFIG.get(FEATURE_ENABLED_PREF).value);
-    });
-    it("should turn on when region is supported", () => {
-      stub.get(() => "US");
-      as._updateDynamicPrefs();
-      assert.isTrue(PREFS_CONFIG.get(FEATURE_ENABLED_PREF).value);
-    });
-    it("should turn off when region is not supported", () => {
-      stub.get(() => "JP");
-      as._updateDynamicPrefs();
-      assert.isFalse(PREFS_CONFIG.get(FEATURE_ENABLED_PREF).value);
-    });
-    it("should turn off when locale is not set", () => {
-      stub.get(() => "US");
-      sandbox.stub(global.Services.locale, "appLocaleAsBCP47").get(() => "");
-      as._updateDynamicPrefs();
-      assert.isFalse(PREFS_CONFIG.get(FEATURE_ENABLED_PREF).value);
-    });
-    it("should turn on when locale is supported", () => {
-      stub.get(() => "US");
-      sandbox
-        .stub(global.Services.locale, "appLocaleAsBCP47")
-        .get(() => "en-US");
-      as._updateDynamicPrefs();
-      assert.isTrue(PREFS_CONFIG.get(FEATURE_ENABLED_PREF).value);
-    });
-    it("should turn off when locale is not supported", () => {
-      stub.get(() => "US");
-      sandbox.stub(global.Services.locale, "appLocaleAsBCP47").get(() => "fr");
-      as._updateDynamicPrefs();
-      assert.isFalse(PREFS_CONFIG.get(FEATURE_ENABLED_PREF).value);
-    });
-    it("should turn off when region and locale are both not supported", () => {
-      stub.get(() => "FR");
-      sandbox.stub(global.Services.locale, "appLocaleAsBCP47").get(() => "fr");
-      as._updateDynamicPrefs();
-      assert.isFalse(PREFS_CONFIG.get(FEATURE_ENABLED_PREF).value);
-    });
-  });
-  describe("showThumbsUpDown", () => {
-    let stub;
-    let getStringPrefStub;
-    const FEATURE_ENABLED_PREF = "discoverystream.thumbsUpDown.enabled";
-    const REGION_THUMBS_CONFIG =
-      "browser.newtabpage.activity-stream.discoverystream.thumbsUpDown.region-thumbs-config";
-    const LOCALE_THUMBS_CONFIG =
-      "browser.newtabpage.activity-stream.discoverystream.thumbsUpDown.locale-thumbs-config";
-
-    beforeEach(() => {
-      stub = sandbox.stub(global.Region, "home");
-
-      sandbox
-        .stub(global.Services.locale, "appLocaleAsBCP47")
-        .get(() => "en-US");
-
-      getStringPrefStub = sandbox.stub(global.Services.prefs, "getStringPref");
-
-      // Set default regions
-      getStringPrefStub.withArgs(REGION_THUMBS_CONFIG).returns("US, CA");
-
-      // Set default locales
-      getStringPrefStub
-        .withArgs(LOCALE_THUMBS_CONFIG)
         .returns("en-US,en-GB,en-CA");
     });
     it("should turn off when region and locale are not set", () => {

@@ -320,6 +320,9 @@ newtab-custom-pocket-subtitle = Изключително съдържание, �
 newtab-custom-stories-toggle =
     .label = Препоръчани истории
     .description = Изключително съдържание подбрано от семейството на { -brand-product-name }
+newtab-custom-stories-personalized-toggle =
+    .label = Истории
+newtab-custom-stories-personalized-checkbox-label = Персонализирани истории въз основа на вашата активност
 newtab-custom-pocket-sponsored = Платени публикации
 newtab-custom-pocket-show-recent-saves = Показване на последните запазени
 newtab-custom-recent-title = Последна активност
@@ -327,6 +330,16 @@ newtab-custom-recent-subtitle = Избрани страници и съдърж�
 newtab-custom-weather-toggle =
     .label = Времето
     .description = Времето днес накратко
+newtab-custom-widget-weather-toggle =
+    .label = Времето
+newtab-custom-widget-lists-toggle =
+    .label = Списъци
+newtab-custom-widget-timer-toggle =
+    .label = Таймер
+# Tooltip for close button
+newtab-custom-close-menu-button =
+    .title = Затваряне
+    .aria-label = Затваряне на менюто
 newtab-custom-close-button = Затваряне
 newtab-custom-settings = Настройки
 
@@ -335,6 +348,7 @@ newtab-custom-settings = Настройки
 newtab-wallpaper-title = Тапети
 newtab-wallpaper-reset = Връщане на стандартни настройки
 newtab-wallpaper-upload-image = Качване на изображение
+newtab-wallpaper-custom-color = Изберете цвят
 # Variables
 #   $file_size (number) - The number of the maximum image file size (in MB) that may be uploaded
 newtab-wallpaper-error-max-file-size = Изображението надхвърля ограничението за големина на файла от { $file_size }MB. Моля, опитайте се да качите по-малък файл.
@@ -380,6 +394,7 @@ newtab-wallpaper-abstract-purple = Лилави фигури
 newtab-wallpaper-abstract-orange = Оранжеви фигури
 newtab-wallpaper-gradient-orange = Преливащо се оранжево и розово
 newtab-wallpaper-abstract-blue-purple = Сини и лилави фигури
+newtab-wallpaper-abstract-white-curves = Бяло със засенчени извивки
 
 ## Firefox
 
@@ -395,6 +410,14 @@ newtab-wallpaper-feature-highlight-button = Разбрах
 feature-highlight-wallpaper =
     .title = { -newtab-wallpaper-feature-highlight-header }
     .aria-label = { -newtab-wallpaper-feature-highlight-content }
+
+## Celestial
+
+# “Celestial” referring to astronomy; positioned in or relating to the sky,
+# or outer space as observed in astronomy.
+# Not to be confused with religious definition of the word.
+newtab-wallpaper-category-title-celestial = Небесен
+newtab-wallpaper-celestial-lunar-eclipse = Лунно затъмнение
 
 ## New Tab Weather
 
@@ -446,22 +469,22 @@ newtab-topic-label-home = Дом и градина
 ## Topic Selection Modal
 
 newtab-topic-selection-button-maybe-later = Може би по-късно
+newtab-topic-selection-button-update-interests = Актуализирайте интересите си
 newtab-topic-selection-button-pick-interests = Изберете вашите интереси
 
 ## Strings for custom wallpaper highlight
 
 newtab-custom-wallpaper-cta = Опитайте
 
-## Strings for trending searches
-
-newtab-trending-searches-learn-more = Научете повече
-
 ## Strings for task / to-do list productivity widget
 
+newtab-widget-lists-menu-delete = Изтриване на този списък
 newtab-widget-lists-menu-learn-more = Научете повече
+newtab-widget-lists-input-menu-delete = Изтриване
 
 ## Strings for timer productivity widget
 ## When the timer ends, a system notification may be shown. Depending on which mode the timer is in, that message would be shown
 
 newtab-widget-timer-menu-learn-more = Научете повече
+newtab-promo-card-body = Нашите спонсори подкрепят мисията ни да изградим по-добра мрежа
 newtab-promo-card-cta = Научете повече

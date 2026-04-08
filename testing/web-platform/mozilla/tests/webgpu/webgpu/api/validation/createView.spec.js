@@ -62,7 +62,7 @@ fn((t) => {
 
   const compatible =
   viewFormat === undefined ||
-  textureFormatsAreViewCompatible(t.device, textureFormat, viewFormat);
+  textureFormatsAreViewCompatible(t.device.features, textureFormat, viewFormat);
 
   const texture = t.createTextureTracked({
     format: textureFormat,
@@ -356,7 +356,14 @@ unless(({ format, textureUsage }) => {
 
 }).
 beginSubcases().
-combine('textureViewUsage', [0, ...kTextureUsages])
+combine('textureViewUsage', [0, ...kTextureUsages]).
+unless(({ textureUsage, textureViewUsage }) => {
+  // TRANSIENT_ATTACHMENT is only valid when combined with RENDER_ATTACHMENT.
+  return (
+    textureUsage === GPUConst.TextureUsage.TRANSIENT_ATTACHMENT ||
+    textureViewUsage === GPUConst.TextureUsage.TRANSIENT_ATTACHMENT);
+
+})
 ).
 fn((t) => {
   const { format, textureUsage, textureViewUsage } = t.params;
@@ -393,7 +400,11 @@ u.
 combine('textureFormat', kAllTextureFormats).
 combine('usage', kTextureUsages).
 beginSubcases().
-combine('viewFormat', kAllTextureFormats)
+combine('viewFormat', kAllTextureFormats).
+unless(({ usage }) => {
+  // TRANSIENT_ATTACHMENT is only valid when combined with RENDER_ATTACHMENT.
+  return usage === GPUConst.TextureUsage.TRANSIENT_ATTACHMENT;
+})
 ).
 fn((t) => {
   const { textureFormat, viewFormat, usage } = t.params;
@@ -401,7 +412,7 @@ fn((t) => {
   t.skipIfTextureFormatNotSupported(textureFormat, viewFormat);
   t.skipIfTextureFormatDoesNotSupportUsage(usage, textureFormat);
 
-  if (!textureFormatsAreViewCompatible(t.device, textureFormat, viewFormat)) {
+  if (!textureFormatsAreViewCompatible(t.device.features, textureFormat, viewFormat)) {
     t.skip(`"${textureFormat}" and "${viewFormat}" are not view-compatible`);
   }
 
@@ -417,11 +428,14 @@ fn((t) => {
 
   // Texture view usage must be a subset of texture usage
   if (usage & GPUTextureUsage.STORAGE_BINDING) {
-    if (!isTextureFormatUsableWithStorageAccessMode(t.device, viewFormat, 'write-only'))
+    if (!isTextureFormatUsableWithStorageAccessMode(t.device.features, viewFormat, 'write-only'))
     success = false;
   }
   if (usage & GPUTextureUsage.RENDER_ATTACHMENT) {
-    if (isColorTextureFormat(viewFormat) && !isTextureFormatColorRenderable(t.device, viewFormat))
+    if (
+    isColorTextureFormat(viewFormat) &&
+    !isTextureFormatColorRenderable(t.device.features, viewFormat))
+
     success = false;
   }
 

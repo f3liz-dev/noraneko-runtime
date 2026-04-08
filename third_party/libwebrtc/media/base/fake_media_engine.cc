@@ -27,6 +27,7 @@
 #include "api/call/audio_sink.h"
 #include "api/crypto/crypto_options.h"
 #include "api/environment/environment.h"
+#include "api/field_trials_view.h"
 #include "api/make_ref_counted.h"
 #include "api/rtp_parameters.h"
 #include "api/scoped_refptr.h"
@@ -567,7 +568,11 @@ FakeVoiceEngine::FakeVoiceEngine()
   // sanity checks against that.
   SetCodecs({CreateAudioCodec(101, "fake_audio_codec", 8000, 1)});
 }
+
 void FakeVoiceEngine::Init() {}
+
+void FakeVoiceEngine::Terminate() {}
+
 scoped_refptr<AudioState> FakeVoiceEngine::GetAudioState() const {
   return scoped_refptr<AudioState>();
 }
@@ -624,7 +629,8 @@ std::optional<AudioDeviceModule::Stats> FakeVoiceEngine::GetAudioDeviceStats() {
 void FakeVoiceEngine::StopAecDump() {}
 
 std::vector<RtpHeaderExtensionCapability>
-FakeVoiceEngine::GetRtpHeaderExtensions() const {
+FakeVoiceEngine::GetRtpHeaderExtensions(
+    const FieldTrialsView* field_trials) const {
   return header_extensions_;
 }
 
@@ -699,7 +705,8 @@ bool FakeVideoEngine::SetCapture(bool capture) {
   return true;
 }
 std::vector<RtpHeaderExtensionCapability>
-FakeVideoEngine::GetRtpHeaderExtensions() const {
+FakeVideoEngine::GetRtpHeaderExtensions(
+    const FieldTrialsView* field_trials) const {
   return header_extensions_;
 }
 void FakeVideoEngine::SetRtpHeaderExtensions(

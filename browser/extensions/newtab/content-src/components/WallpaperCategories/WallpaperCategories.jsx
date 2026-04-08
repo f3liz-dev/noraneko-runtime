@@ -46,17 +46,19 @@ export class _WallpaperCategories extends React.PureComponent {
     this.focusCategory = this.focusCategory.bind(this);
     this.handleUpload = this.handleUpload.bind(this);
     this.handleBack = this.handleBack.bind(this);
+    this.handleWallpaperListEntered =
+      this.handleWallpaperListEntered.bind(this);
     this.getRGBColors = this.getRGBColors.bind(this);
     this.prefersHighContrastQuery = null;
     this.prefersDarkQuery = null;
     this.categoryRef = []; // store references for wallpaper category list
     this.wallpaperRef = []; // store reference for wallpaper selection list
+    this.arrowButtonRef = React.createRef(); // Used to focus arrow button when category opens
     this.customColorPickerRef = React.createRef(); // Used to determine contrast icon color for custom color picker
     this.customColorInput = React.createRef(); // Used to determine contrast icon color for custom color picker
     this.state = {
       activeCategory: null,
       activeCategoryFluentID: null,
-      showColorPicker: false,
       inputType: "radio",
       activeId: null,
       customWallpaperErrorType: null,
@@ -186,7 +188,7 @@ export class _WallpaperCategories extends React.PureComponent {
     if (event.key === "Tab") {
       if (event.shiftKey) {
         event.preventDefault();
-        this.backToMenuButton?.focus();
+        this.arrowButtonRef.current?.focus();
       } else {
         event.preventDefault(); // prevent tabbing within wallpaper selection. We should only be using the Tab key to tab between groups
       }
@@ -380,6 +382,10 @@ export class _WallpaperCategories extends React.PureComponent {
     });
   }
 
+  handleWallpaperListEntered() {
+    this.arrowButtonRef.current?.focus();
+  }
+
   // Record user interaction when changing wallpaper and reseting wallpaper to default
   handleUserEvent(type, data) {
     this.props.dispatch(ac.OnlyToMain({ type, data }));
@@ -426,8 +432,10 @@ export class _WallpaperCategories extends React.PureComponent {
     const prefs = this.props.Prefs.values;
     const { wallpaperList, categories } = this.props.Wallpapers;
     const { activeWallpaper } = this.props;
-    const { activeCategory, showColorPicker } = this.state;
+    const { activeCategory } = this.state;
     const { activeCategoryFluentID } = this.state;
+    // Enable custom color select if pref'ed on
+    let showColorPicker = prefs["newtabWallpapers.customColor.enabled"];
     let filteredWallpapers = wallpaperList.filter(
       wallpaper => wallpaper.category === activeCategory
     );
@@ -448,15 +456,10 @@ export class _WallpaperCategories extends React.PureComponent {
 
     // User has previous selected a custom color
     if (selectedWallpaper.includes("solid-color-picker")) {
-      this.setState({ showColorPicker: true });
+      showColorPicker = true;
       const regex = /#([a-fA-F0-9]{6})/;
       [wallpaperCustomSolidColorHex] = selectedWallpaper.match(regex);
     }
-
-    // Enable custom color select if pref'ed on
-    this.setState({
-      showColorPicker: prefs["newtabWallpapers.customColor.enabled"],
-    });
 
     // Remove last item of solid colors to make space for custom color picker
     if (
@@ -568,7 +571,7 @@ export class _WallpaperCategories extends React.PureComponent {
               }
               let style = {};
               if (thumbnail?.wallpaperUrl) {
-                style.backgroundImage = `url(${thumbnail.wallpaperUrl})`;
+                style.backgroundImage = `url(${thumbnail?.thumbnail || thumbnail?.wallpaperUrl})`;
                 style.backgroundPosition =
                   thumbnail.background_position || "center";
               } else {
@@ -648,15 +651,14 @@ export class _WallpaperCategories extends React.PureComponent {
           timeout={300}
           classNames="wallpaper-list"
           unmountOnExit={true}
+          onEntered={this.handleWallpaperListEntered}
         >
           <section className="category wallpaper-list ignore-color-mode">
             <button
+              ref={this.arrowButtonRef}
               className="arrow-button"
               data-l10n-id={activeCategoryFluentID}
               onClick={this.handleBack}
-              ref={el => {
-                this.backToMenuButton = el;
-              }}
             />
             <div
               role="grid"
@@ -671,13 +673,14 @@ export class _WallpaperCategories extends React.PureComponent {
                       solid_color,
                       theme,
                       title,
+                      thumbnail,
                       wallpaperUrl,
                     },
                     index
                   ) => {
                     let style = {};
                     if (wallpaperUrl) {
-                      style.backgroundImage = `url(${wallpaperUrl})`;
+                      style.backgroundImage = `url(${thumbnail || wallpaperUrl})`;
                       style.backgroundPosition =
                         background_position || "center";
                     } else {

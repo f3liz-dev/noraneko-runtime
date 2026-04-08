@@ -11,6 +11,7 @@
 
 #include <utility>
 
+#include "gc/GCMarker.h"
 #include "jit/BaselineIC.h"
 #include "jit/BaselineJIT.h"
 #include "jit/BytecodeAnalysis.h"
@@ -187,6 +188,10 @@ void JSScript::releaseJitScriptOnFinalize(JS::GCContext* gcx) {
 }
 
 void JitScript::trace(JSTracer* trc) {
+  // This is not safe to call concurrently with the mutator.
+  MOZ_ASSERT_IF(trc->isMarkingTracer(),
+                !GCMarker::fromTracer(trc)->isConcurrentMarking());
+
   TraceEdge(trc, &owningScript_, "JitScript::owningScript_");
 
   icScript_.trace(trc);
@@ -552,7 +557,8 @@ void ICScript::purgeStubs(Zone* zone, ICStubSpace& newStubSpace) {
       ICCacheIRStub* prev = nullptr;
       ICStub* stub = entry.firstStub();
       while (stub != fallback) {
-        ICCacheIRStub* clone = stub->toCacheIRStub()->clone(rt, newStubSpace);
+        ICCacheIRStub* clone = stub->toCacheIRStub()->clone(
+            rt, newStubSpace, ICCacheIRStub::ICScriptHandling::AssertActive);
         if (prev) {
           prev->setNext(clone);
         } else {
@@ -771,26 +777,15 @@ static void MarkActiveICScriptsAndCopyStubs(
           ICCacheIRStub* stub = layout->maybeStubPtr()->toCacheIRStub();
           auto lookup = alreadyClonedStubs.lookupForAdd(stub);
           if (!lookup) {
-            ICCacheIRStub* newStub = stub->clone(cx->runtime(), newStubSpace);
+            ICCacheIRStub* newStub =
+                stub->clone(cx->runtime(), newStubSpace,
+                            ICCacheIRStub::ICScriptHandling::MarkActive);
             AutoEnterOOMUnsafeRegion oomUnsafe;
             if (!alreadyClonedStubs.add(lookup, stub, newStub)) {
               oomUnsafe.crash("MarkActiveICScriptsAndCopyStubs");
             }
           }
           layout->setStubPtr(lookup->value());
-
-          // If this is a trial-inlining call site, also preserve the callee
-          // ICScript. Inlined constructor calls invoke CreateThisFromIC (which
-          // can trigger GC) before using the inlined ICScript.
-          JSJitFrameIter parentFrame(frame);
-          ++parentFrame;
-          BaselineFrame* blFrame = parentFrame.baselineFrame();
-          jsbytecode* pc;
-          parentFrame.baselineScriptAndPc(nullptr, &pc);
-          uint32_t pcOffset = blFrame->script()->pcToOffset(pc);
-          if (blFrame->icScript()->hasInlinedChild(pcOffset)) {
-            blFrame->icScript()->findInlinedChild(pcOffset)->setActive();
-          }
         }
         break;
       }
@@ -950,7 +945,7 @@ void JitScript::addSizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf,
                                        size_t* data, size_t* allocSites) const {
   *data += mallocSizeOf(this);
 
-  forEachICScript([=](const ICScript* script) {
+  forEachICScript([=, this](const ICScript* script) {
     // |data| already includes the outer ICScript because it's part of the
     // JitScript.
     if (script != &icScript_) {
@@ -1020,6 +1015,24 @@ HashNumber ICScript::hash(JSContext* cx) {
               // out, add an additional shape, remove this new shape during GC,
               // and then recompile with the current set of shapes.
               // See bug 2002447.
+              h = mozilla::AddToHash(h, cx->runtime()->gc.majorGCCount());
+            }
+            break;
+          }
+          case CacheOp::GuardMultipleShapesToOffset: {
+            auto args = reader.argsForGuardMultipleShapesToOffset();
+            JSObject* shapes =
+                stubInfo->getStubField<StubField::Type::JSObject>(
+                    stub->toCacheIRStub(), args.shapesOffset);
+            auto* shapesObject = &shapes->as<ShapeListWithOffsetsObject>();
+            size_t numShapes = shapesObject->numShapes();
+            if (ShapeListSnapshot::shouldSnapshot(numShapes)) {
+              for (size_t i = 0; i < numShapes; i++) {
+                Shape* shape = shapesObject->getShapeUnbarriered(i);
+                h = mozilla::AddToHash(h, shape);
+                h = mozilla::AddToHash(h, shapesObject->getOffset(i));
+              }
+              // See GuardMultipleShapes above.
               h = mozilla::AddToHash(h, cx->runtime()->gc.majorGCCount());
             }
             break;

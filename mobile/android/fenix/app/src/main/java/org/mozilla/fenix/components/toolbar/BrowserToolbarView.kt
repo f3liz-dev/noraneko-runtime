@@ -33,6 +33,7 @@ import org.mozilla.fenix.utils.Settings
 import org.mozilla.fenix.utils.ToolbarPopupWindow
 import org.mozilla.fenix.utils.getAppNightMode
 import java.lang.ref.WeakReference
+import com.google.android.material.R as materialR
 
 /**
  * A wrapper over [BrowserToolbar] to allow extra customisation and behavior.
@@ -79,8 +80,6 @@ class BrowserToolbarView(
     var toolbar: BrowserToolbar = layout.findViewById(R.id.toolbar)
 
     val toolbarIntegration: ToolbarIntegration
-
-    val menuToolbar: ToolbarMenu
 
     init {
         container.addView(layout)
@@ -145,14 +144,6 @@ class BrowserToolbarView(
                 display.hint = context.getString(R.string.search_hint)
             }
 
-            menuToolbar = ToolbarMenuBuilder(
-                context = this,
-                components = components,
-                settings = settings,
-                interactor = interactor,
-                lifecycleOwner = lifecycleOwner,
-                customTabSessionId = customTabSession?.id,
-            ).build()
             if (!isCustomTabSession) {
                 toolbar.display.setMenuDismissAction {
                     toolbar.invalidateActions()
@@ -169,7 +160,6 @@ class BrowserToolbarView(
                     context = this,
                     toolbar = toolbar,
                     scrollableToolbar = toolbar as ScrollableToolbar,
-                    toolbarMenu = menuToolbar,
                     interactor = interactor,
                     customTabId = customTabSession.id,
                     isPrivate = customTabSession.content.private,
@@ -180,7 +170,6 @@ class BrowserToolbarView(
                     context = this,
                     toolbar = toolbar,
                     scrollableToolbar = this@BrowserToolbarView,
-                    toolbarMenu = menuToolbar,
                     lifecycleOwner = lifecycleOwner,
                     isPrivate = components.core.store.state.selectedTab?.content?.private ?: false,
                     interactor = interactor,
@@ -235,7 +224,7 @@ class BrowserToolbarView(
         )
         val separatorColor = ContextCompat.getColor(
             context,
-            ThemeManager.resolveAttribute(R.attr.borderPrimary, context),
+            ThemeManager.resolveAttribute(materialR.attr.colorOutlineVariant, context),
         )
 
         toolbar.display.colors = toolbar.display.colors.copy(

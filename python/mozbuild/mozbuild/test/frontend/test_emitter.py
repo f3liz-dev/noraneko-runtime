@@ -1008,7 +1008,7 @@ class TestEmitterBasic(unittest.TestCase):
         with self.assertRaisesRegex(
             SandboxValidationError, "entry in generated-files not present elsewhere"
         ):
-            self.read_topsrcdir(reader),
+            (self.read_topsrcdir(reader),)
 
     def test_test_manifest_parent_support_files_dir(self):
         """support-files referencing a file in a parent directory works."""
@@ -1058,9 +1058,12 @@ class TestEmitterBasic(unittest.TestCase):
             mozpath.relpath(p, ipdl_collection.topsrcdir)
             for p in ipdl_collection.all_regular_sources()
         )
-        expected = set(
-            ["bar/bar.ipdl", "bar/bar2.ipdlh", "foo/foo.ipdl", "foo/foo2.ipdlh"]
-        )
+        expected = set([
+            "bar/bar.ipdl",
+            "bar/bar2.ipdlh",
+            "foo/foo.ipdl",
+            "foo/foo2.ipdlh",
+        ])
 
         self.assertEqual(ipdls, expected)
 
@@ -1713,6 +1716,31 @@ class TestEmitterBasic(unittest.TestCase):
     def test_rust_library_duplicate_features(self):
         """Test that duplicate RustLibrary features are rejected."""
         reader = self.reader("rust-library-duplicate-features")
+        with self.assertRaisesRegex(
+            SandboxValidationError, "features for .* should not contain duplicates"
+        ):
+            self.read_topsrcdir(reader)
+
+    def test_rust_program_features(self):
+        """Test that RustProgram features are correctly emitted."""
+        reader = self.reader(
+            "rust-program-features",
+            extra_substs=dict(RUST_TARGET="i686-pc-windows-msvc", BIN_SUFFIX=".exe"),
+        )
+        objs = self.read_topsrcdir(reader)
+
+        self.assertEqual(len(objs), 5)
+        ldflags, host_cflags, host_ldflags, cflags, prog = objs
+        self.assertIsInstance(ldflags, ComputedFlags)
+        self.assertIsInstance(cflags, ComputedFlags)
+        self.assertIsInstance(host_cflags, ComputedFlags)
+        self.assertIsInstance(host_ldflags, ComputedFlags)
+        self.assertIsInstance(prog, RustProgram)
+        self.assertEqual(prog.features, ["musthave", "cantlivewithout"])
+
+    def test_rust_program_duplicate_features(self):
+        """Test that duplicate RustProgram features are rejected."""
+        reader = self.reader("rust-program-duplicate-features")
         with self.assertRaisesRegex(
             SandboxValidationError, "features for .* should not contain duplicates"
         ):

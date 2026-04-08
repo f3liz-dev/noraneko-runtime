@@ -10,6 +10,7 @@ import time
 from collections import defaultdict
 from pathlib import Path
 
+import taskgraph
 import yaml
 from redo import retry
 from taskgraph import create
@@ -26,6 +27,7 @@ from taskgraph.util.yaml import load_yaml
 
 from . import GECKO
 from .actions import render_actions_json
+from .files_changed import get_changed_files
 from .parameters import get_app_version, get_version
 from .util.backstop import ANDROID_PERFTEST_BACKSTOP_INDEX, BACKSTOP_INDEX, is_backstop
 from .util.bugbug import push_schedules
@@ -76,6 +78,7 @@ PER_PROJECT_PARAMETERS = {
         "release_type": "nightly",
     },
     "mozilla-beta": {
+        "optimize_strategies": "gecko_taskgraph.optimize:project.beta",
         "target_tasks_method": "mozilla_beta_tasks",
         "release_type": "beta",
     },
@@ -242,9 +245,7 @@ def taskgraph_decision(options, parameters=None):
     # upload run-task, fetch-content, robustcheckout.py and more as artifacts
     mozharness_dir = Path(GECKO, "testing", "mozharness")
     scripts_dir = Path(GECKO, "taskcluster", "scripts")
-    taskgraph_dir = Path(
-        GECKO, "third_party", "python", "taskcluster_taskgraph", "taskgraph"
-    )
+    taskgraph_dir = Path(taskgraph.__file__).parent
     to_copy = {
         scripts_dir / "run-task": f"{ARTIFACTS_DIR}/run-task-hg",
         scripts_dir / "tester" / "test-linux.sh": ARTIFACTS_DIR,
@@ -314,17 +315,9 @@ def get_decision_parameters(graph_config, options):
             GECKO, revision=parameters["head_rev"]
         )
 
-        changed_files_since_base = set(
-            repo.get_changed_files(
-                rev=parameters["head_rev"], base=parameters["base_rev"]
-            )
+        parameters["files_changed"] = sorted(
+            get_changed_files(parameters["head_repository"], parameters["head_rev"])
         )
-        if "try" in parameters["project"] and options["tasks_for"] == "hg-push":
-            parameters["files_changed"] = sorted(
-                set(repo.get_outgoing_files()) | changed_files_since_base
-            )
-        else:
-            parameters["files_changed"] = sorted(changed_files_since_base)
 
     elif parameters["repository_type"] == "git":
         parameters["hg_branch"] = None

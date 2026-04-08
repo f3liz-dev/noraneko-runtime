@@ -2,7 +2,7 @@
 <!-- This Source Code Form is subject to the terms of the Mozilla Public
    - License, v. 2.0. If a copy of the MPL was not distributed with this
    - file, You can obtain one at http://mozilla.org/MPL/2.0/. -->
-<resources xmlns:moz="http://schemas.android.com/apk/res-auto" xmlns:tools="http://schemas.android.com/tools">
+<resources xmlns:tools="http://schemas.android.com/tools">
     <!-- Name of the application -->
     <string name="app_name" translatable="false">Firefox Fenix</string>
     <string name="firefox" translatable="false">Firefox</string>
@@ -35,20 +35,16 @@
     <string name="preferences_debug_settings_allow_third_party_root_certs_summary">Allows the use of third party certificates from the Android CA store</string>
     <!-- Label for the Nimbus experiments preference -->
     <string name="preferences_nimbus_experiments">Nimbus Experiments</string>
+    <!-- Label for the title section of active experiments the user is enrolled in. -->
+    <string name="preferences_nimbus_experiments_active">Active Experiments</string>
+    <!-- Label for an empty list of experiments. -->
+    <string name="preferences_nimbus_experiments_no_items">None</string>
+    <!-- Label for the title section of inactive experiments the user is not enrolled in. -->
+    <string name="preferences_nimbus_experiments_inactive">Inactive Experiments</string>
     <!-- Label for using the nimbus collections preview -->
     <string name="preferences_nimbus_use_preview_collection">Use Nimbus Preview Collection (requires restart)</string>
     <!-- Label for custom Glean server URL -->
     <string name="preferences_debug_settings_custom_glean_server_url" translatable="false">Custom Glean server URL (requires restart)</string>
-    <!-- Label for custom Pocket sponsored stories settings -->
-    <string name="preferences_debug_settings_custom_sponsored_stories_parameters" translatable="false">Pocket sponsored stories</string>
-    <!-- Label for custom Pocket sponsored stories site enabled setting -->
-    <string name="preferences_debug_settings_custom_sponsored_stories_parameters_enabled" translatable="false">Enable custom Pocket sponsored stories parameters (requires restart)</string>
-    <!-- Label for custom Pocket sponsored stories site id setting -->
-    <string name="preferences_debug_settings_custom_sponsored_stories_parameters_site" translatable="false">Site parameter</string>
-    <!-- Label for custom Pocket sponsored stories country parameter -->
-    <string name="preferences_debug_settings_custom_sponsored_stories_country" translatable="false">Country parameter</string>
-    <!-- Label for custom Pocket sponsored stories city parameter -->
-    <string name="preferences_debug_settings_custom_sponsored_stories_city" translatable="false">City parameter</string>
     <!-- Title of preference for sync debugging (only shown in the when the secret debug menu is enabled) -->
     <string name="preferences_sync_debug">Sync Debug</string>
     <!-- Preference to override the Push server -->
@@ -67,18 +63,18 @@
     <string name="preferences_sync_debug_permanent_auth_error_button_title">Simulate permanent account auth error</string>
     <!-- Label for enabling the Homepage Search Bar -->
     <string name="preferences_debug_settings_homepage_searchbar" translatable="false">Enable Homepage Search Bar</string>
-    <!-- Label for overriding user specified homepage sections -->
-    <string name="preferences_debug_settings_override_user_specified_homepage_sections"  tools:ignore="UnusedResources" moz:removedIn="146" translatable="false">Override user specified homepage sections</string>
-    <!-- Label for enabling the Compose Logins -->
-    <string name="preferences_debug_settings_compose_logins" translatable="false">Enable Compose Logins</string>
-    <!-- Label for enabling Homepage as a New Tab -->
+  <!-- Label for enabling Homepage as a New Tab -->
     <string name="preferences_debug_settings_homepage_as_new_tab" translatable="false">Enable Homepage as a New Tab</string>
+    <!-- Label for enabling Firefox Labs -->
+    <string name="preferences_debug_settings_firefox_labs" translatable="false">Enable Firefox Labs</string>
+    <!-- Label for enabling Browser Mode Toggle -->
+    <string name="preferences_debug_settings_browser_mode_toggle" translatable="false">Enable Browser Mode Toggle</string>
+    <!-- Label for enabling Merino Client -->
+    <string name="preferences_debug_settings_merino_client" translatable="false">Enable Merino Client</string>
     <!-- Label for enabling Mozilla Ads Client -->
     <string name="preferences_debug_settings_mozilla_ads_client" translatable="false">Enable Mozilla Ads Client</string>
     <!-- Label for enabling Discover more stories -->
     <string name="preferences_debug_settings_discover_more_stories" translatable="false">Enable Discover More Stories</string>
-    <!-- Label for enabling the menu redesign -->
-    <string name="preferences_debug_settings_menu_redesign" translatable="false">Enable Menu Redesign</string>
     <!-- Label for enabling the custom tab extension -->
     <string name="preferences_debug_settings_custom_tab_extensions" translatable="false">Enable Custom Tab Extension List</string>
     <!-- Label for a longer description of the custom tab extensions depending on the menu redesign or composable toolbar feature -->
@@ -89,14 +85,12 @@
     <string name="preferences_debug_settings_composable_toolbar" translatable="false">Enable Composable Toolbar</string>
     <!-- Label for enabling the redesigned toolbar options -->
     <string name="preferences_debug_settings_toolbar_redesign" translatable="false">Enable Redesigned Toolbar Options</string>
-    <!-- Label for enabling the redesigned simple toolbar -->
-    <string name="preferences_debug_settings_simple_toolbar_customization" tools:ignore="UnusedResources" moz:removedIn="145">Enable simple toolbar customization</string>
-    <!-- Label for enabling the redesigned expanded toolbar -->
-    <string name="preferences_debug_settings_expanded_toolbar_customization" tools:ignore="UnusedResources" moz:removedIn="145">Enable expanded toolbar customization</string>
     <!-- Label for enabling the redesigned toolbar -->
     <string name="preferences_debug_settings_toolbar_customization">Enable Toolbar Customization</string>
     <!-- Label for a longer description of the redesigned toolbar depending on the composable toolbar feature -->
     <string name="preferences_debug_settings_toolbar_redesign_summary" translatable="false">This needs the Composable Toolbar feature enabled</string>
+    <!-- Label for the option of using a minimal bottom tolbar while entering text in a website -->
+    <string name="preferences_debug_settings_use_minimal_bottom_toolbar_while_entering_text" translatable="false">Use a minimal bottom toolbar while entering text in a website</string>
     <!-- Label for the option of using new scroll data for animating the dynamic toolbar -->
     <string name="preferences_debug_settings_use_scroll_data_for_dynamic_toolbar" translatable="false">Animate dynamic toolbars based on website scroll data</string>
     <!-- Label for a longer description of the redesigned toolbar depending on the redesigned toolbar options feature -->
@@ -106,9 +100,11 @@
     <!-- Label for enabling the Debug Drawer -->
     <string name="preferences_debug_settings_debug_drawer" translatable="false">Enable Debug Drawer</string>
     <!-- Label for enabling the Crash Dialog Preview -->
-    <string name="preferences_debug_crash_dialog_preview" translatable="false">Enable New Crash Dialog</string>
+    <string name="preferences_debug_crash_dialog_preview" translatable="false">Enable New Crash Flow</string>
     <!-- Label for enabling the microsurvey feature -->
     <string name="preferences_debug_settings_microsurvey_feature" translatable="false">Enable Microsurvey Feature</string>
+    <!-- Label for enabling shake to summarize -->
+    <string name="preferences_key_enable_shake_to_summarize" translatable="false">Enable Shake to Summarize Feature</string>
     <!-- Label for enabling Unified Trust Panel -->
     <string name="preferences_debug_settings_unified_trust_panel" translatable="false">Enable Unified Trust Panel</string>
     <!-- Label for enabling remote search configuration -->
@@ -119,14 +115,26 @@
     <string name="preferences_debug_settings_settings_search" translatable="false">Enable Settings Search</string>
     <!-- Label for enabling the DNS over HTTPS settings -->
     <string name="preferences_debug_settings_enable_doh_settings" translatable="false">Enable DNS over HTTPS settings</string>
+    <!-- Label for enabling the persistent onboarding -->
+    <string name="preferences_debug_settings_enable_persistent_onboarding" translatable="false">Show onboarding on each app cold open</string>
 
-    <!-- Label for toggling the Tab Manager enhancements -->
-    <string name="preferences_tab_manager_enhancements" translatable="false">Enable Tab Manager enhancements</string>
+    <!-- Search Optimization Secret Settings -->
+    <string name="preferences_debug_settings_enable_search_optimization" translatable="false">Enable Search Optimization Feature</string>
+    <string name="preferences_debug_settings_enable_search_optimization_stock" translatable="false">Show Search Optimization Stock cards</string>
+    <string name="preferences_debug_settings_search_optimization_stock_summary" translatable="false">This needs the Search Optimization Feature enabled</string>
+
+    <!-- Label for toggling the native android share sheet feature -->
+    <string name="preferences_debug_settings_native_android_share_sheet" translatable="false">Enable Native Android Share Sheet</string>
+
+    <!-- Label for toggling the Tab Search feature -->
+    <string name="preferences_tab_search_feature" translatable="false">Enable Tab Search</string>
+
     <!-- Label for toggling the Tab Manager opening animation -->
     <string name="preferences_tab_manager_opening_animation" translatable="false">Enable Tab Manager opening animation</string>
 
     <string name="preferences_terms_of_use_accepted" translatable="false">Terms of Use accepted</string>
     <string name="preferences_terms_of_use_debug_timer" translatable="false">30s ToU timer enabled</string>
+    <string name="preferences_terms_of_use_latest_update_date" translatable="false">Set latest ToU update date to now</string>
 
     <!-- Label for enabling LNA blocking -->
     <string name="preferences_debug_settings_enable_lna_blocking" translatable="false">Enable LNA request blocking</string>
@@ -137,8 +145,6 @@
     <string name="preferences_debug_settings_isolated_process" translatable="false">Enable Isolated Content Process (requires restart)</string>
     <string name="preferences_debug_settings_app_zygote" translatable="false">Enable Isolated Processes with Zygote Preloading (requires restart)</string>
 
-    <!-- A secret menu option in the tabs tray for making a tab inactive for testing. -->
-    <string name="inactive_tabs_menu_item">Make inactive</string>
     <!-- A secret menu option in the tabs tray for making a tab inactive for testing. -->
     <string name="inactive_tabs_menu_item_2">Make tabs inactive</string>
 
@@ -184,6 +190,8 @@
     <string name="profiler_error">Something went wrong with the profiler</string>
     <string name="profiler_io_error">Something went wrong contacting the Profiler server.</string>
     <string name="profiler_uploaded_url_to_clipboard">URL copied to clipboard successfully</string>
+    <string name="profiler_service_notification_channel_name" translatable="false">App Profiling Status</string>
+    <string name="profiler_service_description" translatable="false">App Profiling Status</string>
 
     <!-- Debug drawer "contextual feature recommendation" (CFR) tools -->
     <!-- The description of the reset CFR section in CFR Tools -->
@@ -244,6 +252,14 @@
 
     <!-- The title of the debug drawer tab to help debug the crash reporter-->
     <string name="crash_debug_tools_title">Crash Debug Tools</string>
+    <!-- The title of the debug drawer tab to help debug google play integrity-->
+    <string name="integrity_debug_tools_title">Play Integrity Tools</string>
+    <!-- The title of the debug drawer tab to help debug MLPA-->
+    <string name="llm_debug_tools_title">LLM Tools</string>
+    <!-- The title of the button to prepare an LLM in the debug menu-->
+    <string name="llm_debug_tools_prepare_button">Prepare</string>
+    <!-- The title of the button to prepare an LLM in the debug menu-->
+    <string name="llm_debug_tools_prompt_button">Test Prompt</string>
     <!-- Button text to trigger a app parent process crash -->
     <string name="crash_debug_generic_crash_trigger">Trigger Crash Report</string>
     <!-- Button text to reset crash deferral period (the deferral period is set after clicking close on the dialog to 5 days in the settings) from it's future value to 0 -->
@@ -260,6 +276,37 @@
     <!-- Subtitle warning text for crash button -->
     <string name="crash_debug_startup_crash_warning">This will start the startup crash activity in a new process and terminate the current process.</string>
 
-    <!-- Label for enabling Relay email masks -->
-    <string name="preferences_enable_relay_email_masks">Enable Relay email masks</string>
+    <!-- Label for enabling Email Masks -->
+    <string name="preferences_enable_email_masks">Enable Email Masks</string>
+
+    <!-- Firefox Labs -->
+    <!-- Firefox Labs is the name of a screen in Settings to allow users to learn about
+        experimental and in-development features, and turn those features on and off.
+        The "Labs" portion can be localized, "Firefox" must be treated as a brand and kept
+        in English. -->
+    <string name="firefox_labs_title" tools:ignore="BrandUsage">Firefox Labs</string>
+    <!-- Description text displayed in the Firefox Labs screen. %s is the name of the app (for example "Firefox"). -->
+    <string name="firefox_labs_experimental_description">Give our experimental features a try! They’re in development and evolving, which could impact how %s works.</string>
+    <!-- Button text for restoring the default settings by turning off any experimental features in the Firefox Labs screen. -->
+    <string name="firefox_labs_restore_default_button_text">Restore Defaults</string>
+    <!-- Text displayed when no experimental features are available in the Firefox Labs screen. -->
+    <string name="firefox_labs_no_labs_available_description">No experimental features available</string>
+    <!-- The name of an experimental feature displayed in theFirefox Labs screen. This features allows the user to open the homepage as a new tab. -->
+    <string name="firefox_labs_homepage_as_a_new_tab">Homepage as a New Tab</string>
+    <!-- The description of the "Homepage as a New Tab" feature in the Firefox Labs screen. -->
+    <string name="firefox_labs_homepage_as_a_new_tab_description">With this feature enabled, Homepage will behave as a tab.</string>
+    <!-- The title used in a confirmation dialog when toggling on an experimental feature. -->
+    <string name="firefox_labs_enable_feature_dialog_title">Enable experimental feature?</string>
+    <!-- The title used in a confirmation dialog when toggling off an experimental feature. -->
+    <string name="firefox_labs_disable_feature_dialog_title">Disable experimental feature?</string>
+    <!-- The description that is displayed in the confirmation dialog for toggling on and off experimental features. -->
+    <string name="firefox_labs_enable_feature_dialog_message">Toggling this feature will restart %s.</string>
+    <!-- The text for the positive button in the dialog for toggling on and off experimental features. This prompts the user to confirm that they want to restart the app. -->
+    <string name="firefox_labs_dialog_restart_button">Restart</string>
+    <!-- The text for the negative button in the dialog for toggling on and off experimental features. -->
+    <string name="firefox_labs_dialog_cancel_button">Cancel</string>
+    <!-- The title used in a confirmation dialog when restoring the application to its defaults by turning off any experimental features. -->
+    <string name="firefox_labs_restore_defaults_dialog_title">Restore defaults?</string>
+    <!-- The description used in a confirmation dialog when restoring the application to its defaults by turning off any experimental features. -->
+    <string name="firefox_labs_restore_defaults_dialog_message">Resetting experimental features will restart %s.</string>
 </resources>

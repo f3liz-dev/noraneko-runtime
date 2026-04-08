@@ -21,12 +21,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.tooling.preview.PreviewParameter
 import androidx.compose.ui.unit.dp
 import androidx.navigation.findNavController
 import androidx.preference.Preference
 import androidx.preference.PreferenceViewHolder
-import mozilla.components.compose.base.annotation.FlexibleWindowLightDarkPreview
+import mozilla.components.compose.base.annotation.FlexibleWindowPreview
 import org.mozilla.fenix.GleanMetrics.CustomizationSettings
 import org.mozilla.fenix.R
 import org.mozilla.fenix.iconpicker.AppIcon
@@ -35,6 +35,7 @@ import org.mozilla.fenix.iconpicker.DefaultAppIconRepository
 import org.mozilla.fenix.iconpicker.DefaultPackageManagerWrapper
 import org.mozilla.fenix.settings.CustomizationFragmentDirections
 import org.mozilla.fenix.theme.FirefoxTheme
+import org.mozilla.fenix.theme.PreviewThemeProvider
 import org.mozilla.fenix.theme.Theme
 
 private val IconSize = 40.dp
@@ -118,18 +119,12 @@ private fun SelectAppIcon(
     }
 }
 
-@FlexibleWindowLightDarkPreview
+@FlexibleWindowPreview
 @Composable
-private fun SelectAppIconPreview() {
-    FirefoxTheme {
-        SelectAppIcon(AppIcon.AppDefault) {}
-    }
-}
-
-@Preview
-@Composable
-private fun SelectAppIconPrivatePreview() {
-    FirefoxTheme(theme = Theme.Private) {
+private fun SelectAppIconPreview(
+    @PreviewParameter(PreviewThemeProvider::class) theme: Theme,
+) {
+    FirefoxTheme(theme) {
         SelectAppIcon(AppIcon.AppDefault) {}
     }
 }

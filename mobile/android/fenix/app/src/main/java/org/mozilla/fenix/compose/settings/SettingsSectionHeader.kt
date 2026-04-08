@@ -12,8 +12,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.tooling.preview.Preview
-import androidx.compose.ui.tooling.preview.PreviewLightDark
+import androidx.compose.ui.tooling.preview.PreviewParameter
 import org.mozilla.fenix.theme.FirefoxTheme
+import org.mozilla.fenix.theme.PreviewThemeProvider
 import org.mozilla.fenix.theme.Theme
 
 /**
@@ -32,20 +33,12 @@ fun SettingsSectionHeader(text: String, modifier: Modifier = Modifier) {
     )
 }
 
-@Composable
-@PreviewLightDark
-private fun SettingsSectionHeaderPreview() {
-    FirefoxTheme {
-        Surface {
-            SettingsSectionHeader("Settings")
-        }
-    }
-}
-
-@Composable
 @Preview
-private fun SettingsSectionHeaderPrivatePreview() {
-    FirefoxTheme(theme = Theme.Private) {
+@Composable
+private fun SettingsSectionHeaderPreview(
+    @PreviewParameter(PreviewThemeProvider::class) theme: Theme,
+) {
+    FirefoxTheme(theme) {
         Surface {
             SettingsSectionHeader("Settings")
         }

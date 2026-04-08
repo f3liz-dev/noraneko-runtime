@@ -279,7 +279,8 @@ class DataChannelConnection : public net::NeckoTargetHolder {
                         nsISerialEventTarget* aTarget,
                         MediaTransportHandler* aHandler);
 
-  void SendDataMessage(uint16_t aStream, nsACString&& aMsg, bool aIsBinary);
+  void SendDataMessage(DataChannel& aChannel, nsACString&& aMsg,
+                       bool aIsBinary);
 
   DataChannelConnectionState GetState() const {
     MOZ_ASSERT(mSTS->IsOnCurrentThread());
@@ -464,6 +465,7 @@ class DataChannel {
   dom::RTCDataChannel* mMainthreadDomDataChannel = nullptr;
   bool mHasWorkerDomDataChannel = false;
   bool mEverOpened = false;
+  bool mAnnouncedOpen = false;
   bool mAnnouncedClosed = false;
   uint16_t mStream;
   RefPtr<GenericNonExclusivePromise> mMessagesSentPromise;

@@ -115,9 +115,8 @@ var gMoreFromMozillaPane = {
       {
         id: "mozilla-monitor",
         title_string_id: "more-from-moz-mozilla-monitor-title",
-        description_string_id: isRegionUS
-          ? "more-from-moz-mozilla-monitor-us-description"
-          : "more-from-moz-mozilla-monitor-global-description",
+        description_string_id:
+          "more-from-moz-mozilla-monitor-global-description",
         region: isRegionUS ? "us" : "global",
         button: {
           id: "mozillaMonitor",
@@ -171,7 +170,7 @@ var gMoreFromMozillaPane = {
 
     products.push({
       id: "mdn",
-      title_string_id: "more-from-moz-mdn-title",
+      title_string_id: "more-from-moz-mdn-title2",
       description_string_id: "more-from-moz-mdn-description",
       region: "global",
       button: {

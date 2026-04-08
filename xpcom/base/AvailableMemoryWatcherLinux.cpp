@@ -6,6 +6,7 @@
 #include "AvailableMemoryWatcher.h"
 #include "AvailableMemoryWatcherUtils.h"
 #include "mozilla/FileUtils.h"
+#include "mozilla/TimeStamp.h"
 #include "mozilla/Services.h"
 #include "mozilla/StaticPrefs_browser.h"
 #include "nsAppRunner.h"
@@ -18,24 +19,14 @@
 #include "nsString.h"
 #include <cstring>
 #include <cstdio>
+#if !defined(ANDROID)
+#  include "nsIPSIProvider.h"
+#  include "mozilla/glean/XpcomMetrics.h"
+#endif
+
+#define NON_OOM_DELAY_SEC 120
 
 namespace mozilla {
-
-/* PSIInfo struct holds parsed data from /proc/pressure/memory
- *
- * The values in /proc/pressure/memory are floating point numbers, but
- * PSIInfo has integer members.
- */
-struct PSIInfo {
-  unsigned long some_avg10 = 0;
-  unsigned long some_avg60 = 0;
-  unsigned long some_avg300 = 0;
-  unsigned long some_total = 0;
-  unsigned long full_avg10 = 0;
-  unsigned long full_avg60 = 0;
-  unsigned long full_avg300 = 0;
-  unsigned long full_total = 0;
-};
 
 // Read PSI (Pressure Stall Information) data from /proc/pressure/memory
 static nsresult ReadPSIFile(const char* aPSIPath, PSIInfo& aResult) {
@@ -96,6 +87,8 @@ static nsresult ReadPSIFile(const char* aPSIPath, PSIInfo& aResult) {
     return NS_ERROR_FAILURE;
   }
 
+  aResult.psi_available = true;
+
   return NS_OK;
 }
 
@@ -106,6 +99,9 @@ class nsAvailableMemoryWatcher final
     : public nsITimerCallback,
       public nsINamed,
       public nsAvailableMemoryWatcherBase,
+#if !defined(ANDROID)
+      public nsIPSIProvider,
+#endif
       public nsIAvailableMemoryWatcherTestingLinux {
  public:
   NS_DECL_ISUPPORTS_INHERITED
@@ -119,6 +115,21 @@ class nsAvailableMemoryWatcher final
 
   void HandleLowMemory();
   void MaybeHandleHighMemory();
+
+#if !defined(ANDROID)
+  NS_IMETHOD GetCachedPSIInfo(mozilla::PSIInfo& aResult) override;
+
+  void RecordNonOOMPSI(const PSIInfo& aPsi);
+  void StartNonOOMPSISampling() override {
+    MutexAutoLock lock(mMutex);
+
+    // This function is only used for handling OOM killed content
+    // processes. We record the time of the last OOM kill to make sure
+    // non-OOM PSI values are sampled without interference of OOM
+    // kills.
+    mLastOOMTime = TimeStamp::Now();
+  }
+#endif
 
  private:
   ~nsAvailableMemoryWatcher();
@@ -135,6 +146,9 @@ class nsAvailableMemoryWatcher final
   bool mPolling MOZ_GUARDED_BY(mMutex);
   bool mUnderMemoryPressure MOZ_GUARDED_BY(mMutex);
   PSIInfo mPSIInfo MOZ_GUARDED_BY(mMutex);
+
+  // Time of the last OOM kill handled
+  TimeStamp mLastOOMTime MOZ_GUARDED_BY(mMutex);
 
   // PSI file path - can be overridden for testing
   nsCString mPSIPath MOZ_GUARDED_BY(mMutex);
@@ -162,10 +176,51 @@ nsAvailableMemoryWatcher::nsAvailableMemoryWatcher()
     : mPolling(false),
       mUnderMemoryPressure(false),
       mPSIInfo{},
+      mLastOOMTime(),
       mPSIPath(kPSIPath),
       mIsTesting(false) {}
 
 nsAvailableMemoryWatcher::~nsAvailableMemoryWatcher() {}
+
+NS_IMETHODIMP
+nsAvailableMemoryWatcher::GetCachedPSIInfo(mozilla::PSIInfo& aResult) {
+  MutexAutoLock lock(mMutex);
+  aResult = mPSIInfo;
+  return NS_OK;
+}
+
+// Public API to get latest cached PSI snapshot from the singleton
+// This returns the PSI data that was last collected by the watcher
+nsresult GetLastPSISnapshot(PSIInfo& aResult) {
+  RefPtr<nsIAvailableMemoryWatcherBase> watcher =
+      nsAvailableMemoryWatcherBase::GetSingleton();
+  if (!watcher) {
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+
+  nsCOMPtr<nsIPSIProvider> provider = do_QueryInterface(watcher);
+
+  if (!provider) {
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+
+  return provider->GetCachedPSIInfo(aResult);
+}
+
+#if !defined(ANDROID)
+void StartNonOOMPSISampling() {
+  RefPtr<nsIAvailableMemoryWatcherBase> watcher =
+      nsAvailableMemoryWatcherBase::GetSingleton();
+  if (!watcher) {
+    return;
+  }
+
+  nsCOMPtr<nsIPSIProvider> provider = do_QueryInterface(watcher);
+  if (provider) {
+    provider->StartNonOOMPSISampling();
+  }
+}
+#endif
 
 nsresult nsAvailableMemoryWatcher::Init() {
   nsresult rv = nsAvailableMemoryWatcherBase::Init();
@@ -184,7 +239,7 @@ nsresult nsAvailableMemoryWatcher::Init() {
     // to our memory watcher thread.
     return rv;
   }
-  mThread = thread;
+  mThread = std::move(thread);
 
   // Set the crash annotation to its initial state.
   UpdatePSIInfo(lock);
@@ -207,7 +262,7 @@ already_AddRefed<nsAvailableMemoryWatcherBase> CreateAvailableMemoryWatcher() {
 
 NS_IMPL_ISUPPORTS_INHERITED(nsAvailableMemoryWatcher,
                             nsAvailableMemoryWatcherBase, nsITimerCallback,
-                            nsIObserver, nsINamed,
+                            nsIObserver, nsINamed, nsIPSIProvider,
                             nsIAvailableMemoryWatcherTestingLinux);
 
 void nsAvailableMemoryWatcher::StopPolling(const MutexAutoLock&)
@@ -338,8 +393,39 @@ void nsAvailableMemoryWatcher::UpdateCrashAnnotation(const MutexAutoLock&)
       CrashReporter::Annotation::LinuxMemoryPSI, psiValues);
 }
 
+#if !defined(ANDROID)
+void nsAvailableMemoryWatcher::RecordNonOOMPSI(const mozilla::PSIInfo& aPsi) {
+  const mozilla::PSIInfo& psi = aPsi;
+
+  // Record Glean event with PSI metrics
+  mozilla::glean::memory_watcher::NonOomSampleExtra extra;
+  extra.psiSomeAvg10 = mozilla::Some(nsPrintfCString("%lu", psi.some_avg10));
+  extra.psiSomeAvg60 = mozilla::Some(nsPrintfCString("%lu", psi.some_avg60));
+  extra.psiFullAvg10 = mozilla::Some(nsPrintfCString("%lu", psi.full_avg10));
+  extra.psiFullAvg60 = mozilla::Some(nsPrintfCString("%lu", psi.full_avg60));
+  mozilla::glean::memory_watcher::non_oom_sample.Record(mozilla::Some(extra));
+}
+#endif
+
 void nsAvailableMemoryWatcher::UpdatePSIInfo(const MutexAutoLock&)
     MOZ_REQUIRES(mMutex) {
+#if !defined(ANDROID)
+  if ((mPSIInfo.full_avg10 || mPSIInfo.full_avg60) && !mLastOOMTime.IsNull() &&
+      (TimeStamp::Now() >
+       mLastOOMTime + TimeDuration::FromSeconds(NON_OOM_DELAY_SEC))) {
+    // Collect non-zero PSI values that doesn't trigger OOM
+    // killer. These enable us to learn the edge of OOM killer in
+    // real world. This is done only if we have seen an OOM kill
+    // recently to avoid collecting too much data.
+    NS_DispatchToMainThread(
+        NS_NewRunnableFunction("nsAvailableMemoryWatcher::RecordNonOOMPSI",
+                               [self = RefPtr{this}, info = mPSIInfo]() {
+                                 self->RecordNonOOMPSI(info);
+                               }));
+    mLastOOMTime = TimeStamp();
+  }
+#endif
+
   nsresult rv = ReadPSIFile(mPSIPath.get(), mPSIInfo);
   if (NS_FAILED(rv)) {
     mPSIInfo = {};

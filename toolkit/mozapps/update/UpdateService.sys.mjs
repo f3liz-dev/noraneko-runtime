@@ -252,6 +252,11 @@ const HTTP_ERROR_OFFSET = 1000;
 // attempting to access a job created by a different user.
 const HRESULT_E_ACCESSDENIED = -2147024891;
 
+// HRESULT for HTTP 406 defined in bitsmsg.rs as:
+// pub const BG_E_HTTP_ERROR_406: DWORD = 0x80190196;
+// Represented in JavaScript as signed 32-bit integer
+const BG_E_HTTP_ERROR_406 = -2145844842;
+
 const DOWNLOAD_CHUNK_SIZE = 300000; // bytes
 
 // The number of consecutive failures when updating using the service before
@@ -2111,7 +2116,7 @@ class UpdatePatch {
    * @param   patch
    *          A <patch> element to initialize this object with
    * @throws if patch has a size of 0
-   * @constructor
+   * @class
    */
   constructor(patch) {
     this._properties = {};
@@ -2324,7 +2329,7 @@ class Update {
    * @param   update
    *          An <update> element to initialize this object with
    * @throws if the update contains no patches
-   * @constructor
+   * @class
    */
   constructor(update) {
     this._patches = [];
@@ -2701,7 +2706,7 @@ export class UpdateService {
    * UpdateService
    * A Service for managing the discovery and installation of software updates.
    *
-   * @constructor
+   * @class
    */
   constructor() {
     LOG("Creating UpdateService");
@@ -4623,7 +4628,7 @@ export class UpdateManager {
   /**
    * A service to manage active and past updates.
    *
-   * @constructor
+   * @class
    */
   constructor() {
     this.internal = {
@@ -5973,7 +5978,7 @@ class Downloader {
    *          update mode.
    * @param   updateService
    *          The update service that created this downloader.
-   * @constructor
+   * @class
    */
   constructor(updateService) {
     LOG("Creating Downloader");
@@ -7084,6 +7089,11 @@ class Downloader {
           error = request.transferError;
           if (!error) {
             error = new BitsUnknownError();
+          } else if (
+            error.codeType == Ci.nsIBits.ERROR_CODE_TYPE_HRESULT &&
+            error.code == BG_E_HTTP_ERROR_406
+          ) {
+            Glean.update.blocked.add();
           }
         }
         AUSTLMY.pingBitsError(this.isCompleteUpdate, error);

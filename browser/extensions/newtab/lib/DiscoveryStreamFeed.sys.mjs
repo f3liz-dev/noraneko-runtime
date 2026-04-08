@@ -5,7 +5,7 @@
 const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   ContextId: "moz-src:///browser/modules/ContextId.sys.mjs",
-  DEFAULT_SECTION_LAYOUT: "resource://newtab/lib/SectionsLayoutManager.sys.mjs",
+  SectionsLayoutManager: "resource://newtab/lib/SectionsLayoutManager.sys.mjs",
   NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
   NewTabUtils: "resource://gre/modules/NewTabUtils.sys.mjs",
   ObliviousHTTP: "resource://gre/modules/ObliviousHTTP.sys.mjs",
@@ -247,18 +247,13 @@ export class DiscoveryStreamFeed {
     );
   }
 
-  get personalized() {
-    return this.recommendationProvider.personalized;
-  }
-
-  get recommendationProvider() {
-    if (this._recommendationProvider) {
-      return this._recommendationProvider;
-    }
-    this._recommendationProvider = this.store.feeds.get(
-      "feeds.recommendationprovider"
-    );
-    return this._recommendationProvider;
+  get sectionLayoutConfig() {
+    const prefs = this.store.getState().Prefs.values;
+    const trainhopConfig = prefs?.trainhopConfig || {};
+    const sectionlayoutPrefs = prefs?.["discoverystream.sections.layout"];
+    const layoutString =
+      trainhopConfig?.clientLayout?.layoutConfig || sectionlayoutPrefs;
+    return layoutString.split(",").map(s => s.trim());
   }
 
   setupConfig(isStartup = false) {
@@ -452,6 +447,17 @@ export class DiscoveryStreamFeed {
           );
           return null;
         }
+
+        // ObliviousHTTP.ohttpRequest only accepts a key/value object, and not
+        // a Headers instance. We normalize any headers to a key/value object.
+        //
+        // We use instanceof here since isInstance isn't available for node
+        // tests like DiscoveryStreamFeed.test.js.
+        // eslint-disable-next-line mozilla/use-isInstance
+        if (options.headers && options.headers instanceof Headers) {
+          options.headers = Object.fromEntries(options.headers);
+        }
+
         fetchPromise = lazy.ObliviousHTTP.ohttpRequest(
           ohttpRelayURL,
           config,
@@ -987,6 +993,7 @@ export class DiscoveryStreamFeed {
           sponsor: spoc.sponsor,
           title: spoc.title,
           url: spoc.url,
+          attribution: spoc.attributions || null,
         })),
       };
     }
@@ -1065,22 +1072,20 @@ export class DiscoveryStreamFeed {
     // In this situation, we don't fill iabPlacements,
     // and go with the non IAB default contextual placement prefs.
     if (recsFeed) {
-      iabSections = recsFeed.data.sections
-        .filter(section => section.iab)
-        .sort((a, b) => a.receivedRank - b.receivedRank);
+      iabSections = recsFeed.data.sections.sort(
+        (a, b) => a.receivedRank - b.receivedRank
+      );
 
-      // An array of all iab placement, flattened, sorted, and filtered.
-      iabPlacements = iabSections
-        // .filter(section => section.iab)
-        // .sort((a, b) => a.receivedRank - b.receivedRank)
-        .reduce((acc, section) => {
-          const iabArray = section.layout.responsiveLayouts[0].tiles
-            .filter(tile => tile.hasAd)
-            .map(() => {
-              return section.iab;
-            });
-          return [...acc, ...iabArray];
-        }, []);
+      // Array of IAB placements, sorted by receivedRank.
+      // Placements may be undefined for sections without IAB data.
+      iabPlacements = iabSections.reduce((acc, section) => {
+        const iabArray = section.layout.responsiveLayouts[0].tiles
+          .filter(tile => tile.hasAd)
+          .map(() => {
+            return section.iab;
+          });
+        return [...acc, ...iabArray];
+      }, []);
     }
 
     const spocPlacements = placementSpocsArray.map((placement, index) => ({
@@ -1093,7 +1098,7 @@ export class DiscoveryStreamFeed {
       bannerPlacements = bannerPlacementsArray.map((placement, index) => ({
         placement,
         count: bannerCountsArray[index],
-        ...(iabSections[billboardPosition - 2]
+        ...(iabSections[billboardPosition - 2]?.iab
           ? { content: iabSections[billboardPosition - 2].iab }
           : {}),
       }));
@@ -1101,7 +1106,7 @@ export class DiscoveryStreamFeed {
       bannerPlacements = bannerPlacementsArray.map((placement, index) => ({
         placement,
         count: bannerCountsArray[index],
-        ...(iabSections[leaderboardPosition - 2]
+        ...(iabSections[leaderboardPosition - 2]?.iab
           ? { content: iabSections[leaderboardPosition - 2].iab }
           : {}),
       }));
@@ -1189,6 +1194,8 @@ export class DiscoveryStreamFeed {
           ...(placements.length ? { placements } : {}),
         };
 
+        const marsOhttpEnabled = state.Prefs.values[PREF_UNIFIED_ADS_OHTTP];
+
         // Bug 1964715: Remove this logic when AdsFeed is 100% enabled
         if (unifiedAdsEnabled && !adsFeedEnabled) {
           const endpointBaseUrl = state.Prefs.values[PREF_UNIFIED_ADS_ENDPOINT];
@@ -1196,13 +1203,11 @@ export class DiscoveryStreamFeed {
           unifiedAdsPlacements = this.getAdsPlacements();
           const blockedSponsors =
             state.Prefs.values[PREF_UNIFIED_ADS_BLOCKED_LIST];
-          const preFlightConfig =
-            state.Prefs.values?.trainhopConfig?.marsPreFlight || {};
 
           // We need some basic data that we can pass along to the ohttp request.
           // We purposefully don't use ohttp on this request. We also expect to
           // mostly hit the HTTP cache rather than the network with these requests.
-          if (preFlightConfig.enabled) {
+          if (marsOhttpEnabled) {
             const preFlight = await this.fetchFromEndpoint(
               `${endpointBaseUrl}v1/ads-preflight`,
               {
@@ -1227,8 +1232,6 @@ export class DiscoveryStreamFeed {
             blocks: blockedSponsors.split(","),
           };
         }
-
-        const marsOhttpEnabled = state.Prefs.values[PREF_UNIFIED_ADS_OHTTP];
 
         let spocsResponse;
         // Logic decision point: Query ads servers in this file or utilize AdsFeed method
@@ -1265,17 +1268,6 @@ export class DiscoveryStreamFeed {
               ...spocsResponse,
             },
           };
-
-          if (spocsResponse.settings && spocsResponse.settings.feature_flags) {
-            this.store.dispatch(
-              ac.OnlyToMain({
-                type: at.DISCOVERY_STREAM_PERSONALIZATION_OVERRIDE,
-                data: {
-                  override: !spocsResponse.settings.feature_flags.spoc_v2,
-                },
-              })
-            );
-          }
 
           const spocsResultPromises = this.getPlacements().map(
             async placement => {
@@ -1347,16 +1339,16 @@ export class DiscoveryStreamFeed {
               );
 
               let items = spocsWithFetchTimestamp;
-              let personalized = false;
 
               // We only need to rank if we don't have contextual ads.
               if (!this.isContextualAds) {
-                const scoreResults = await this.scoreItems(
-                  spocsWithFetchTimestamp,
-                  "spocs"
-                );
-                items = scoreResults.data;
-                personalized = scoreResults.personalized;
+                items = (
+                  await Promise.all(
+                    items.map(item => this.normalizeScore(item))
+                  )
+                )
+                  // Sort by highest scores.
+                  .sort(this.sortItem);
               }
 
               spocsState.spocs = {
@@ -1366,7 +1358,6 @@ export class DiscoveryStreamFeed {
                   context,
                   sponsor,
                   sponsored_by_override,
-                  personalized,
                   items,
                 },
               };
@@ -1496,17 +1487,11 @@ export class DiscoveryStreamFeed {
     return a.priority - b.priority;
   }
 
-  async scoreItems(items, type) {
-    const spocsPersonalized =
-      this.store.getState().Prefs.values?.pocketConfig?.spocsPersonalized;
-    const recsPersonalized =
-      this.store.getState().Prefs.values?.pocketConfig?.recsPersonalized;
-    const personalizedByType =
-      type === "feed" ? recsPersonalized : spocsPersonalized;
+  async scoreItemsInferred(items) {
     // If this is initialized, we are ready to go.
-    let personalized = this.store.getState().Personalization.initialized;
+    let personalized = false;
     let data = null;
-    if (type === "feed" && this.doLocalInferredRerank) {
+    if (this.doLocalInferredRerank) {
       // make a flag for this
       const { inferredInterests = {} } =
         this.store.getState().InferredPersonalization ?? {};
@@ -1532,11 +1517,7 @@ export class DiscoveryStreamFeed {
         .sort(this.sortItem);
       personalized = true;
     } else {
-      data = (
-        await Promise.all(
-          items.map(item => this.scoreItem(item, personalizedByType))
-        )
-      )
+      data = (await Promise.all(items.map(item => this.normalizeScore(item))))
         // Sort by highest scores.
         .sort(this.sortItem);
     }
@@ -1544,13 +1525,10 @@ export class DiscoveryStreamFeed {
     return { data, personalized };
   }
 
-  async scoreItem(item, personalizedByType) {
+  async normalizeScore(item) {
     item.score = item.item_score;
     if (item.score !== 0 && !item.score) {
       item.score = 1;
-    }
-    if (this.personalized && personalizedByType) {
-      await this.recommendationProvider.calculateItemRelevanceScore(item);
     }
     return item;
   }
@@ -1765,13 +1743,32 @@ export class DiscoveryStreamFeed {
 
         if (sectionsEnabled) {
           const useClientLayout =
-            this.store.getState().Prefs.values[PREF_CLIENT_LAYOUT_ENABLED];
+            prefs.trainhopConfig?.clientLayout?.enabled ||
+            prefs[PREF_CLIENT_LAYOUT_ENABLED];
+          const dailyBriefEnabled =
+            prefs.trainhopConfig?.dailyBriefing?.enabled ||
+            this.store.getState().Prefs.values[
+              "discoverystream.dailyBrief.enabled"
+            ];
+          const dailyBriefSectionId =
+            prefs.trainhopConfig?.dailyBriefing?.sectionId ||
+            prefs["discoverystream.dailyBrief.sectionId"] ||
+            "top_stories_section";
 
           for (const [sectionKey, sectionData] of Object.entries(
             feedResponse.feeds
           )) {
             if (sectionData) {
+              let headlineCount = 0;
+              const shouldMarkHeadlines =
+                dailyBriefEnabled && sectionKey === dailyBriefSectionId;
+
               for (const item of sectionData.recommendations) {
+                const isHeadline = shouldMarkHeadlines && headlineCount < 3;
+                if (isHeadline) {
+                  headlineCount++;
+                }
+
                 recommendations.push({
                   id:
                     item.corpusItemId ||
@@ -1787,10 +1784,12 @@ export class DiscoveryStreamFeed {
                   publisher: item.publisher,
                   raw_image_src: item.imageUrl,
                   received_rank: item.receivedRank,
+                  server_score: item.serverScore,
                   recommended_at: feedResponse.recommendedAt,
                   section: sectionKey,
                   icon_src: item.iconUrl,
                   isTimeSensitive: item.isTimeSensitive,
+                  isHeadline,
                 });
               }
 
@@ -1812,19 +1811,31 @@ export class DiscoveryStreamFeed {
 
             sections.forEach((section, index) => {
               if (useClientLayout || !section.layout) {
-                section.layout =
-                  lazy.DEFAULT_SECTION_LAYOUT[
-                    index % lazy.DEFAULT_SECTION_LAYOUT.length
-                  ];
+                // is there a config for the selected index,
+                // otherwise we rotate through default layouts
+                if (this.sectionLayoutConfig[index]) {
+                  const sectionLayoutName = this.sectionLayoutConfig[index];
+                  section.layout =
+                    lazy.SectionsLayoutManager.SECTION_CONFIGS[
+                      sectionLayoutName
+                    ] ||
+                    lazy.SectionsLayoutManager.SECTION_CONFIGS[
+                      "7-double-row-2-ad"
+                    ];
+                } else {
+                  section.layout =
+                    lazy.SectionsLayoutManager.DEFAULT_SECTION_LAYOUT[
+                      index %
+                        lazy.SectionsLayoutManager.DEFAULT_SECTION_LAYOUT.length
+                    ];
+                }
               }
             });
           }
         }
 
-        const { data: scoredItems, personalized } = await this.scoreItems(
-          recommendations,
-          "feed"
-        );
+        const { data: scoredItems, personalized } =
+          await this.scoreItemsInferred(recommendations);
 
         if (sections.length) {
           const visibleSections = sections
@@ -2010,7 +2021,7 @@ export class DiscoveryStreamFeed {
           // Feed was previously personalized then cached, we don't need to do this again.
           return Promise.resolve();
         }
-        const feedPromise = this.scoreItems(feed.data.recommendations, "feed");
+        const feedPromise = this.scoreItemsInferred(feed.data.recommendations);
         feedPromise.then(({ data: scoredItems, personalized }) => {
           feed = {
             ...feed,
@@ -2038,52 +2049,6 @@ export class DiscoveryStreamFeed {
       await Promise.all(feedsPromises);
       await this.cache.set("feeds", feeds);
     }
-  }
-
-  async scoreSpocs(spocsState) {
-    const spocsResultPromises = this.getPlacements().map(async placement => {
-      const nextSpocs = spocsState.data[placement.name] || {};
-      const { items } = nextSpocs;
-
-      if (nextSpocs.personalized || !items || !items.length) {
-        return;
-      }
-
-      const { data: scoreResult, personalized } = await this.scoreItems(
-        items,
-        "spocs"
-      );
-
-      spocsState.data = {
-        ...spocsState.data,
-        [placement.name]: {
-          ...nextSpocs,
-          personalized,
-          items: scoreResult,
-        },
-      };
-    });
-    await Promise.all(spocsResultPromises);
-
-    // Update cache here so we don't need to re calculate scores on loads from cache.
-    // Related Bug 1606276
-    await this.cache.set("spocs", {
-      lastUpdated: spocsState.lastUpdated,
-      spocs: spocsState.data,
-      spocsOnDemand: this.spocsOnDemand,
-      spocsCacheUpdateTime: this.spocsCacheUpdateTime,
-    });
-    this.store.dispatch(
-      ac.AlsoToPreloaded({
-        type: at.DISCOVERY_STREAM_SPOCS_UPDATE,
-        data: {
-          lastUpdated: spocsState.lastUpdated,
-          spocs: spocsState.data,
-          spocsOnDemand: this.spocsOnDemand,
-          spocsCacheUpdateTime: this.spocsCacheUpdateTime,
-        },
-      })
-    );
   }
 
   /**
@@ -2215,6 +2180,7 @@ export class DiscoveryStreamFeed {
     await this.resetContentCache();
     // Reset in-memory caches.
     this._isContextualAds = undefined;
+    this._doLocalInferredRerank = undefined;
     this._spocsCacheUpdateTime = undefined;
     this._spocsOnDemand = undefined;
   }
@@ -2494,6 +2460,7 @@ export class DiscoveryStreamFeed {
       case PREF_USER_INFERRED_PERSONALIZATION:
         this.configReset();
         this._isContextualAds = undefined;
+        this._doLocalInferredRerank = undefined;
         await this.resetContentCache();
         break;
       case PREF_CONTEXTUAL_ADS:
@@ -2636,21 +2603,6 @@ export class DiscoveryStreamFeed {
             })
           )
         );
-        break;
-      case at.DISCOVERY_STREAM_PERSONALIZATION_UPDATED:
-        if (this.personalized) {
-          const { feeds, spocs } = this.store.getState().DiscoveryStream;
-          const spocsPersonalized =
-            this.store.getState().Prefs.values?.pocketConfig?.spocsPersonalized;
-          const recsPersonalized =
-            this.store.getState().Prefs.values?.pocketConfig?.recsPersonalized;
-          if (recsPersonalized && feeds.loaded) {
-            this.scoreFeeds(feeds);
-          }
-          if (spocsPersonalized && spocs.loaded) {
-            this.scoreSpocs(spocs);
-          }
-        }
         break;
       case at.DISCOVERY_STREAM_CONFIG_RESET:
         // This is a generic config reset likely related to an external feed pref.
@@ -2823,7 +2775,6 @@ export class DiscoveryStreamFeed {
       case at.UNINIT:
         // When this feed is shutting down:
         this.uninitPrefs();
-        this._recommendationProvider = null;
         break;
       case at.BLOCK_URL: {
         // If we block a story that also has a flight_id

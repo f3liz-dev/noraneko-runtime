@@ -7,9 +7,11 @@
 #ifndef mozilla_dom_MediaSession_h
 #define mozilla_dom_MediaSession_h
 
+#include "MediaEventSource.h"
 #include "js/TypeDecls.h"
 #include "mozilla/EnumeratedArray.h"
 #include "mozilla/TimeStamp.h"
+#include "mozilla/dom/MediaMetadata.h"
 #include "mozilla/dom/MediaSessionBinding.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsIDocumentActivity.h"
@@ -23,7 +25,6 @@ class ErrorResult;
 namespace dom {
 
 class Document;
-class MediaMetadata;
 
 // https://w3c.github.io/mediasession/#position-state
 struct PositionState {
@@ -113,7 +114,9 @@ class MediaSession final : public nsIDocumentActivity, public nsWrapperCache {
 
   MediaSessionActionHandler* GetActionHandler(MediaSessionAction aAction) const;
 
-  ~MediaSession() = default;
+  void DisconnectRequestAndListener();
+
+  ~MediaSession();
 
   nsCOMPtr<nsPIDOMWindowInner> mParent;
 
@@ -131,6 +134,10 @@ class MediaSession final : public nsIDocumentActivity, public nsWrapperCache {
   Maybe<PositionState> mPositionState;
   RefPtr<Document> mDoc;
   SessionDocStatus mSessionDocState = SessionDocStatus::eInactive;
+
+  MozPromiseRequestHolder<mozilla::dom::MediaMetadataBasePromise>
+      mLoadingArtworkRequest;
+  MediaEventListener mMetadataChangeListener;
 };
 
 }  // namespace dom

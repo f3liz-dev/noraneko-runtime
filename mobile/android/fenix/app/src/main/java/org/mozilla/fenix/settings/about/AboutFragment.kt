@@ -45,7 +45,7 @@ class AboutFragment(
 ) : Fragment(), AboutPageListener {
 
     private lateinit var appName: String
-    private var aboutPageAdapter: AboutPageAdapter? = AboutPageAdapter(this)
+    private var aboutPageAdapter: AboutPageAdapter? = null
     private var _binding: FragmentAboutBinding? = null
 
     private val binding get() = _binding!!
@@ -89,6 +89,7 @@ class AboutFragment(
 
     override fun onDestroyView() {
         super.onDestroyView()
+        binding.aboutList.adapter = null
         aboutPageAdapter = null
         _binding = null
     }
@@ -219,7 +220,7 @@ class AboutFragment(
             AboutPageItem(
                 AboutItem.ExternalLink(
                     PRIVACY_NOTICE,
-                    SupportUtils.getMozillaPageUrl(SupportUtils.MozillaPage.PRIVATE_NOTICE),
+                    SupportUtils.getMozillaPageUrl(SupportUtils.MozillaPage.PRIVACY_NOTICE),
                 ),
                 getString(R.string.about_privacy_notice),
             ),

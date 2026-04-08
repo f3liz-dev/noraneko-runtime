@@ -22,16 +22,6 @@
     inset-inline-end: var(--space-xxlarge);
   }
 
-  // Variant with the weather in the header of a section
-  &.section-weather {
-    position: initial;
-    margin-inline-start: var(--space-medium);
-
-    .weatherInfoLink {
-      max-width: unset;
-    }
-  }
-
   // Edge case: users with weather enabled/search disabled
   .no-search & {
     position: absolute;
@@ -52,13 +42,6 @@
       inset-inline-end: var(--space-xxlarge);
     }
   }
-
-  .context-menu {
-    inset-inline-end: 100%;
-    inset-inline-start: auto;
-    margin-inline-end: var(--space-xsmall);
-  }
-
 }
 
 .weather-placeholder {
@@ -303,8 +286,8 @@
       outline: var(--focus-outline);
 
       &::after {
-        border-bottom: var(--focus-outline);
-        border-right: var(--focus-outline);
+        border-block-end: var(--focus-outline);
+        border-inline-end: var(--focus-outline);
       }
     }
   }
@@ -403,18 +386,20 @@ dialog {
   display: flex;
   gap: var(--space-medium);
   padding: var(--space-small) var(--space-medium);
-  border-start-start-radius: var(--border-radius-medium);
-  border-start-end-radius: 0;
-  border-end-end-radius: 0;
-  border-end-start-radius: var(--border-radius-medium);
+  border-radius: var(--border-radius-medium);
   text-decoration: none;
-  color: var(--text-color);;
+  color: var(--text-color);
   min-width: 130px;
   max-width: 190px;
   text-overflow: ellipsis;
 
   @media(min-width: $break-point-medium) {
     min-width: unset;
+  }
+
+  @media(min-width: $break-point-large) {
+    border-start-end-radius: 0;
+    border-end-end-radius: 0;
   }
 
   &:hover ~.weatherButtonContextMenuWrapper {
@@ -526,13 +511,7 @@ dialog {
 
 .weatherForecastRow {
   text-transform: uppercase;
-
-  /**
-   * @backward-compat { version 146 }
-   *
-   * Replace this with `--font-weight-semibold` once 146 hits release.
-   */
-  font-weight: var(--heading-font-weight);
+  font-weight: var(--font-weight-semibold);
 }
 
 .weatherCityRow {
@@ -747,7 +726,7 @@ dialog {
     border-radius: var(--border-radius-medium);
     background-color: light-dark(var(--color-white), var(--newtab-background-color-secondary));
     padding: var(--space-small) var(--space-xxlarge);
-    border: $border-primary;
+    border: 1px solid var(--border-color);
 
     &:focus-visible {
       outline: var(--focus-outline);

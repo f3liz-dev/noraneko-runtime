@@ -23,6 +23,9 @@ newtab-personalize-dialog-label =
     .aria-label = ਆਪਣਾ ਬਣਾਓ
 newtab-logo-and-wordmark =
     .aria-label = { -brand-full-name }
+newtab-card-dismiss-button =
+    .title = ਖ਼ਾਰਜ ਕਰੋ
+    .aria-label = ਖ਼ਾਰਜ ਕਰੋ
 
 ## Search box component.
 
@@ -328,18 +331,18 @@ newtab-custom-recent-subtitle = ਤਾਜ਼ਾ ਸਾਈਟਾਂ ਤੇ ਸਮੱ
 newtab-custom-weather-toggle =
     .label = ਮੌਸਮ
     .description = ਅੱਜ ਦੇ ਮੌਸਮ ਬਾਰੇ ਝਾਤ
-newtab-custom-trending-search-toggle =
-    .label = ਰੁਝਾਨ ਵਿੱਚ ਖੋਜਾਂ
-    .description = ਹਰਮਨਪਿਆਰੇ ਅਤੇ ਅਕਸਰ ਖੋਜੇ ਗਏ ਵਿਸ਼ੇ
 newtab-custom-widget-weather-toggle =
     .label = ਮੌਸਮ
-newtab-custom-widget-trending-search-toggle =
-    .label = ਰੁਝਾਨ ਵਿੱਚ ਖੋਜਾਂ
 newtab-custom-widget-lists-toggle =
     .label = ਸੂਚੀਆਂ
 newtab-custom-widget-timer-toggle =
     .label = ਟਾਈਮਰ
 newtab-custom-widget-section-title = ਵਿਜੈੱਟ
+newtab-custom-widget-section-toggle =
+    .label = ਵਿਜੈੱਟ
+newtab-widget-manage-title = ਵਿਜੈੱਟ
+newtab-widget-manage-widget-button =
+    .label = ਵਿਜੈੱਟ ਦਾ ਇੰਤਜ਼ਾਮ ਕਰੋ
 # Tooltip for close button
 newtab-custom-close-menu-button =
     .title = ਬੰਦ ਕਰੋ
@@ -467,6 +470,8 @@ newtab-weather-change-location-search-input-placeholder =
     .placeholder = ਟਿਕਾਣੇ ਨੂੰ ਖੋਜੋ
     .aria-label = ਟਿਕਾਣੇ ਨੂੰ ਖੋਜੋ
 newtab-weather-menu-weather-display = ਮੌਸਮ ਦੀ ਝਲਕ
+newtab-weather-todays-forecast = ਅੱਜ ਦੀ ਭਵਿੱਖਬਾਣੀ
+newtab-weather-see-full-forecast = ਪੂਰੀ ਭਵਿੱਖਬਾਣੀ ਨੂੰ ਵੇਖੋ
 # Display options are:
 # - Simple: Displays a current weather condition icon and the current temperature
 # - Detailed: Include simple information plus a short text summary: e.g. "Mostly cloudy"
@@ -479,6 +484,7 @@ newtab-weather-menu-temperature-option-fahrenheit = ਫਾਹਰਨਹੀਟ
 newtab-weather-menu-temperature-option-celsius = ਸੈਲਸੀਅਸ
 newtab-weather-menu-change-temperature-units-fahrenheit = ਫਾਹਰਨਹੀਟ ਵਿੱਚ ਬਦਲੋ
 newtab-weather-menu-change-temperature-units-celsius = ਸੈਲਸੀਅ ਵਿੱਚ ਬਦਲੋ
+newtab-weather-menu-hide-weather-v2 = ਮੌਸਮ ਨੂੰ ਲੁਕਾਓ
 newtab-weather-menu-hide-weather = ਨਵੀਂ ਟੈਬ ਉੱਤੇ ਮੌਸਮ ਨੂੰ ਲੁਕਾਓ
 newtab-weather-menu-learn-more = ਹੋਰ ਜਾਣੋ
 newtab-weather-menu-detect-my-location = ਮੇਰੇ ਟਿਕਾਣੇ ਨੂੰ ਖੋਜੋ
@@ -491,6 +497,11 @@ newtab-weather-opt-in-yes =
     .label = ਹਾਂ
 # We'll be showing static (fake) weather data if the user has not opted in to using their location
 newtab-weather-static-city = ਅੰਮ੍ਰਿਤਸਰ
+# Variables:
+#   $provider (string) - Service provider for weather data
+newtab-weather-see-forecast-description =
+    .title = { $provider } ਵਿੱਚ ਭਵਿੱਖਬਾਣੀ ਵੇਖੋ
+    .aria-description = { $provider } ∙ ਸਪਾਂਸਰ
 
 ## Topic Labels
 
@@ -595,7 +606,7 @@ newtab-download-mobile-highlight-image =
 newtab-shortcuts-highlight-title = ਤੁਹਾਡੇ ਮਨਪਸੰਦ ਤੁਹਾਡੀਆਂ ਉਂਗਲਾਂ ਉੱਤੇ
 newtab-shortcuts-highlight-subtitle = ਆਪਣੀਆਂ ਮਨਪਸੰਦ ਸਾਈਟਾਂ ਨੂੰ ਕਲਿੱਕ ਨਾਲ ਖੋਲ੍ਹਣ ਲਈ ਸ਼ਾਰਟਕੱਟ ਵਿੱਚ ਜੋੜੋ।
 
-## Strings for reporting ads and content
+## Strings for reporting issues with ads and content
 
 newtab-report-content-why-reporting-this =
     .label = ਤੁਸੀਂ ਇਸ ਬਾਰੇ ਰਿਪੋਰਟ ਕਿਉਂ ਕਰ ਰਹੇ ਹੋ?
@@ -613,21 +624,13 @@ newtab-report-content-inappropriate-offensive =
     .label = ਬੇਤੁਕੀ ਜਾਂ ਅਪਮਾਨਜਨਕ
 newtab-report-content-spam-misleading =
     .label = ਸਪੈਮ ਜਾਂ ਗੁੰਮਰਾਹਕੁੰਨ
+newtab-report-content-requires-payment-subscription =
+    .label = ਭੁਗਤਾਨ ਜਾਂ ਮੈਂਬਰੀ ਚਾਹੀਦੀ ਹੈ
+newtab-report-content-requires-payment-subscription-learn-more = ਹੋਰ ਜਾਣੋ
 newtab-report-cancel = ਰੱਦ ਕਰੋ
 newtab-report-submit = ਭੇਜੋ
 newtab-toast-thanks-for-reporting =
     .message = ਇਸ ਬਾਰੇ ਜਾਣਕਾਰੀ ਦੇਣ ਲਈ ਤੁਹਾਡਾ ਧੰਨਵਾਦ!
-
-## Strings for trending searches
-
-newtab-trending-searches-show-trending =
-    .title = ਰੁਝਾਨ ਵਿੱਚ ਖੋਜਾਂ ਨੂੰ ਵੇਖਾਓ
-newtab-trending-searches-hide-trending =
-    .title = ਰੁਝਾਨ ਵਿੱਚ ਖੋਜਾਂ ਨੂੰ ਲੁਕਾਓ
-newtab-trending-searches-learn-more = ਹੋਰ ਜਾਣੋ
-newtab-trending-searches-dismiss = ਰੁਝਾਨ ਵਿੱਚ ਖੋਜਾਂ ਨੂੰ ਲੁਕਾਓ
-# "Trending searches refers to popular searches from search engines
-newtab-trending-searches-title = ਰੁਝਾਨ ਵਿੱਚ ਖੋਜਾਂ
 
 ## Strings for task / to-do list productivity widget
 
@@ -667,6 +670,17 @@ newtab-widget-lists-name-placeholder-default =
 # The placeholder value of the name field for a newly created list
 newtab-widget-lists-name-placeholder-new =
     .placeholder = ਨਵੀਂ ਸੂਚੀ
+newtab-widget-section-title = ਵਿਜੈੱਟ
+# Tooltip for hide all widgets button
+newtab-widget-section-hide-all-button =
+    .title = ਵਿਜੈੱਟ ਨੂੰ ਲੁਕਾਓ
+    .aria-label = ਸਭ ਵਿਜੈੱਟ ਨੂੰ ਲੁਕਾਓ
+newtab-widget-section-maximize =
+    .title = ਵਿਜੈੱਟ ਨੂੰ ਫੈਲਾਓ
+    .aria-label = ਸਾਰੇ ਵਿਜੈੱਟ ਨੂੰ ਪੂਰੇ ਆਕਾਰ ਲਈ ਫੈਲਾਓ
+newtab-widget-section-minimize =
+    .title = ਵਿਜੈੱਟ ਨੂੰ ਘੱਟੋ-ਘੱਟ ਕਰੋ
+    .aria-label = ਸਾਰੇ ਵਿਜੈੱਟ ਨੂੰ ਸੰਖੇਪ ਆਕਾਰ ਲਈ ਸਮੇਟੋ
 
 ## Strings for timer productivity widget
 ## When the timer ends, a system notification may be shown. Depending on which mode the timer is in, that message would be shown
@@ -689,8 +703,12 @@ newtab-widget-timer-menu-notifications = ਨੋਟੀਫਿਕੇਸ਼ਨਾਂ �
 newtab-widget-timer-menu-notifications-on = ਨੋਟੀਫਿਕੇਸ਼ਨਾਂ ਨੂੰ ਚਾਲੂ ਕਰੋ
 newtab-widget-timer-menu-hide = ਟਾਈਮਰ ਓਹਲੇ ਕਰੋ
 newtab-widget-timer-menu-learn-more = ਹੋਰ ਜਾਣੋ
-# Message that appears when widgets are full-height. This reminds users that there is more New Tab content to see if they scroll
-newtab-widget-keep-scrolling = ਹੋਰ ਲਈ ਸਕਰੋਲ ਕਰੋ
+# The title displays above a set of top news headlines.
+newtab-daily-briefing-card-title = ਚੋਟੀਆਂ ਦੀਆਂ ਸੁਰਖੀਆਂ
+newtab-daily-briefing-card-menu-dismiss = ਖ਼ਾਰਜ ਕਰੋ
+# Variables:
+#   $minutes (number) - Time since the feed has been refreshed
+newtab-daily-briefing-card-timestamp = { $minutes } ਮਿੰਟ ਪਹਿਲਾਂ ਅੱਪਡੇਟ ਕੀਤਾ
 newtab-widget-message-title = ਸੂਚੀਆਂ ਅਤੇ ਵਿੱਚ ਮੌਜੂਦ ਟਾਈਮਰ ਨਾਲ ਫੋਕਸ ਰਹੋ
 # to-dos stands for "things to do".
 newtab-widget-message-copy = ਕਰਨ ਵਾਲੇ ਕੰਮਾਂ, ਫ਼ੋਕਸ ਵਾਲੇ ਸ਼ੈਸ਼ਨਾਂ ਤੋਂ ਲੈ ਕੇ ਛੋਟੀ ਬਰੇਕ ਲੈਣ ਲਈ ਫ਼ੌਰਨ ਯਾਦ ਕਰਵਾਉਣਾ — ਕੰਮ ਸਮੇਂ ਸਿਰ ਪੂਰੇ ਕਰੋ।
@@ -700,3 +718,25 @@ newtab-promo-card-cta = ਹੋਰ ਜਾਣੋ
 newtab-promo-card-dismiss-button =
     .title = ਖ਼ਾਰਜ ਕਰੋ
     .aria-label = ਖ਼ਾਰਜ ਕਰੋ
+
+## Strings for activation window message variants. In certain experiment configurations,
+## the strings from these variants may be displayed in a message below the search input
+## for the first 48 hours of a new profile's lifetime. Some messages include buttons with
+## labels, but not all.
+
+newtab-activation-window-message-dismiss-button =
+    .title = ਖ਼ਾਰਜ ਕਰੋ
+    .aria-label = ਖ਼ਾਰਜ ਕਰੋ
+# "This space" refers to about:newtab. The call to action here ("make it your own")
+# is to customize newtab with a background image or colour, or by tweaking the
+# existing widgetry that appears on it.
+newtab-activation-window-message-customization-focus-header = ਇਸ ਥਾਂ ਨੂੰ ਆਪਣਾ ਬਣਾਓ
+newtab-activation-window-message-customization-focus-message = ਤਾਜ਼ਾ ਵਾਲਪੇਪਰ ਨੂੰ ਚੁਣੋ, ਆਪਣੀਆਂ ਮਨਪਸੰਦ ਸਾਈਟਾਂ ਲਈ ਸ਼ਾਰਟਕੱਟ ਜੋੜੋ ਅਤੇ ਆਪਣੀਆਂ ਦਿਲਚਸਪੀਆਂ ਬਾਰੇ ਕਹਾਣੀਆਂ ਨਾਲ ਅੱਪ ਟੂ ਡੇਟ ਰਹੋ।
+newtab-activation-window-message-customization-focus-primary-button =
+    .label = ਪਸੰਦੀਦਾ ਬਣਾਉਣਾ ਸ਼ੁਰੂ ਕਰੋ
+# "This space" refers to about:newtab. The sentiment of "plays by your rules" is
+# meant to evoke the idea that newtab is malleable and customizable. The call to
+# action is to customize newtab with a background image or colour, or by tweaking
+# the existing widgetry that appears on it.
+newtab-activation-window-message-values-focus-header = ਇਹ ਥਾਂ ਤੁਹਾਡੀ ਮਰਜ਼ੀ ਨਾਲ ਚੱਲਦੀ ਹੈ
+newtab-activation-window-message-values-focus-message = { -brand-product-name } ਤੁਹਾਨੂੰ ਤੁਹਾਡੀ ਮਰਜ਼ੀ ਮੁਤਾਬਕ ਬਰਾਊਜ਼ ਕਰਨ ਦਿੰਦਾ ਹੈ, ਤੁਹਾਡੇ ਆਨਲਾਈਨ ਦਿਨ ਨੂੰ ਤੁਹਾਡੇ ਢੰਗ ਨਾਲ ਬਣਾ ਕੇ। { -brand-product-name } ਨੂੰ ਆਪਣਾ ਬਣਾਓ।

@@ -5,11 +5,10 @@
 Transform the beetmover task into an actual task description.
 """
 
-
 from taskgraph.transforms.base import TransformSequence
 from taskgraph.util.dependencies import get_primary_dependency
 from taskgraph.util.keyed_by import evaluate_keyed_by
-from taskgraph.util.schema import Schema, optionally_keyed_by
+from taskgraph.util.schema import LegacySchema, optionally_keyed_by
 from voluptuous import Optional, Required
 
 from gecko_taskgraph.transforms.beetmover import craft_release_properties
@@ -20,21 +19,19 @@ from gecko_taskgraph.util.scriptworker import (
     generate_beetmover_upstream_artifacts,
 )
 
-beetmover_description_schema = Schema(
-    {
-        Required("label"): str,
-        Required("description"): str,
-        Required("dependencies"): task_description_schema["dependencies"],
-        Required("if-dependencies"): task_description_schema["if-dependencies"],
-        Optional("treeherder"): task_description_schema["treeherder"],
-        Required("run-on-projects"): task_description_schema["run-on-projects"],
-        Optional("attributes"): task_description_schema["attributes"],
-        Optional("task-from"): task_description_schema["task-from"],
-        Required("worker-type"): task_description_schema["worker-type"],
-        Required("scopes"): optionally_keyed_by("project", [str]),
-        Optional("run-on-repo-type"): task_description_schema["run-on-repo-type"],
-    }
-)
+beetmover_description_schema = LegacySchema({
+    Required("label"): str,
+    Required("description"): str,
+    Required("dependencies"): task_description_schema["dependencies"],
+    Required("if-dependencies"): task_description_schema["if-dependencies"],
+    Optional("treeherder"): task_description_schema["treeherder"],
+    Required("run-on-projects"): task_description_schema["run-on-projects"],
+    Optional("attributes"): task_description_schema["attributes"],
+    Optional("task-from"): task_description_schema["task-from"],
+    Required("worker-type"): task_description_schema["worker-type"],
+    Required("scopes"): optionally_keyed_by("project", [str]),
+    Optional("run-on-repo-type"): task_description_schema["run-on-repo-type"],
+})
 
 transforms = TransformSequence()
 

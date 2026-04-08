@@ -29,7 +29,7 @@ namespace mozilla {
 using TimeUnit = media::TimeUnit;
 
 FFmpegAudioDecoder<LIBAV_VER>::FFmpegAudioDecoder(
-    FFmpegLibWrapper* aLib, const CreateDecoderParams& aDecoderParams)
+    const FFmpegLibWrapper* aLib, const CreateDecoderParams& aDecoderParams)
     : FFmpegDataDecoder(aLib,
                         GetCodecId(aDecoderParams.AudioConfig().mMimeType,
                                    aDecoderParams.AudioConfig()),
@@ -94,6 +94,16 @@ FFmpegAudioDecoder<LIBAV_VER>::FFmpegAudioDecoder(
 
 RefPtr<MediaDataDecoder::InitPromise> FFmpegAudioDecoder<LIBAV_VER>::Init() {
   AUTO_PROFILER_LABEL("FFmpegAudioDecoder::Init", MEDIA_PLAYBACK);
+
+  if (mAudioInfo.mChannels == 0 || mAudioInfo.mRate == 0) {
+    FFMPEG_LOG("Invalid audio configuration: channels=%u, rate=%u",
+               mAudioInfo.mChannels, mAudioInfo.mRate);
+    return InitPromise::CreateAndReject(
+        MediaResult(NS_ERROR_DOM_MEDIA_FATAL_ERR,
+                    RESULT_DETAIL("Invalid channel count or sample rate")),
+        __func__);
+  }
+
   AVDictionary* options = nullptr;
   if (mCodecID == AV_CODEC_ID_OPUS) {
     // Opus has a special feature for stereo coding where it represent wide
@@ -290,6 +300,14 @@ MediaResult FFmpegAudioDecoder<LIBAV_VER>::PostProcessOutput(
   if (!samplingRate) {
     samplingRate = mAudioInfo.mRate;
   }
+
+  if (!numChannels || !samplingRate) {
+    FFMPEG_LOG("Invalid audio configuration: channels=%u, rate=%u", numChannels,
+               samplingRate);
+    return MediaResult(NS_ERROR_DOM_MEDIA_DECODE_ERR,
+                       RESULT_DETAIL("Invalid audio configuration"));
+  }
+
   AlignedAudioBuffer audio =
       CopyAndPackAudio(mFrame, numChannels, mFrame->nb_samples);
   if (!audio) {
@@ -451,6 +469,7 @@ MediaResult FFmpegAudioDecoder<LIBAV_VER>::DoDecode(MediaRawData* aSample,
 
   packet->data = const_cast<uint8_t*>(aData);
   packet->size = aSize;
+  packet->pts = aSample->mTime.ToMicroseconds();
 
   if (aGotFrame) {
     *aGotFrame = false;

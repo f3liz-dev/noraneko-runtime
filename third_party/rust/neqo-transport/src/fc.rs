@@ -15,6 +15,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+use enum_map::EnumMap;
 use neqo_common::{qdebug, qtrace, Buffer, Role, MAX_VARINT};
 
 use crate::{
@@ -128,7 +129,7 @@ where
 
     /// Mark flow control as blocked.
     /// This only does something if the current limit exceeds the last reported blocking limit.
-    pub fn blocked(&mut self) {
+    pub const fn blocked(&mut self) {
         if self.limit >= self.blocked_at {
             self.blocked_at = self.limit + 1;
             self.blocked_frame = true;
@@ -144,14 +145,14 @@ where
     }
 
     /// Clear the need to send a blocked frame.
-    fn blocked_sent(&mut self) {
+    const fn blocked_sent(&mut self) {
         self.blocked_frame = false;
     }
 
     /// Mark a blocked frame as having been lost.
     /// Only send again if value of `self.blocked_at` hasn't increased since sending.
     /// That would imply that the limit has since increased.
-    pub fn frame_lost(&mut self, limit: u64) {
+    pub const fn frame_lost(&mut self, limit: u64) {
         if self.blocked_at == limit + 1 {
             self.blocked_frame = true;
         }
@@ -276,7 +277,7 @@ where
 
     /// Retire some items and maybe send flow control
     /// update.
-    pub fn retire(&mut self, retired: u64) {
+    pub const fn retire(&mut self, retired: u64) {
         if retired <= self.retired {
             return;
         }
@@ -289,7 +290,7 @@ where
 
     /// This function is called when `STREAM_DATA_BLOCKED` frame is received.
     /// The flow control will try to send an update if possible.
-    pub fn send_flowc_update(&mut self) {
+    pub const fn send_flowc_update(&mut self) {
         if self.retired + self.max_active > self.max_allowed {
             self.frame_pending = true;
         }
@@ -317,18 +318,18 @@ where
         self.max_active
     }
 
-    pub fn frame_lost(&mut self, maximum_data: u64) {
+    pub const fn frame_lost(&mut self, maximum_data: u64) {
         if maximum_data == self.max_allowed {
             self.frame_pending = true;
         }
     }
 
-    fn frame_sent(&mut self, new_max: u64) {
+    const fn frame_sent(&mut self, new_max: u64) {
         self.max_allowed = new_max;
         self.frame_pending = false;
     }
 
-    pub fn set_max_active(&mut self, max: u64) {
+    pub const fn set_max_active(&mut self, max: u64) {
         // If max_active has been increased, send an update immediately.
         self.frame_pending |= self.max_active < max;
         self.max_active = max;
@@ -418,25 +419,29 @@ where
         };
 
         let prev_max_active = self.max_active;
-        self.max_active = min(
+        let new_max_active = min(
             self.max_active + excess * WINDOW_INCREASE_MULTIPLIER,
             max_window,
         );
 
-        let increase = self.max_active - prev_max_active;
-        if increase > 0 {
-            qdebug!(
-                "Increasing max {subject} receive window by {} B, \
+        if new_max_active <= prev_max_active {
+            // Never decrease max_active, even if max_window is smaller.  This
+            // can happen if max_active was set manually.
+            return;
+        }
+
+        self.max_active = new_max_active;
+        qdebug!(
+            "Increasing max {subject} receive window by {} B, \
                 previous max_active: {} MiB, \
                 new max_active: {} MiB, \
                 last update: {:?}, \
                 rtt: {rtt:?}",
-                increase,
-                prev_max_active / 1024 / 1024,
-                self.max_active / 1024 / 1024,
-                now - max_allowed_sent_at,
-            );
-        }
+            new_max_active - prev_max_active,
+            prev_max_active / 1024 / 1024,
+            self.max_active / 1024 / 1024,
+            now - max_allowed_sent_at,
+        );
     }
 }
 
@@ -603,7 +608,7 @@ impl ReceiverFlowControl<StreamType> {
 
     /// Retire given amount of additional data.
     /// This function will send flow updates immediately.
-    pub fn add_retired(&mut self, count: u64) {
+    pub const fn add_retired(&mut self, count: u64) {
         self.retired += count;
         if count > 0 {
             self.send_flowc_update();
@@ -658,17 +663,15 @@ impl DerefMut for RemoteStreamLimit {
     }
 }
 
-pub struct RemoteStreamLimits {
-    bidirectional: RemoteStreamLimit,
-    unidirectional: RemoteStreamLimit,
-}
+pub struct RemoteStreamLimits(EnumMap<StreamType, RemoteStreamLimit>);
 
 impl RemoteStreamLimits {
     pub const fn new(local_max_stream_bidi: u64, local_max_stream_uni: u64, role: Role) -> Self {
-        Self {
-            bidirectional: RemoteStreamLimit::new(StreamType::BiDi, local_max_stream_bidi, role),
-            unidirectional: RemoteStreamLimit::new(StreamType::UniDi, local_max_stream_uni, role),
-        }
+        // Array order must match StreamType enum order: BiDi, UniDi
+        Self(EnumMap::from_array([
+            RemoteStreamLimit::new(StreamType::BiDi, local_max_stream_bidi, role),
+            RemoteStreamLimit::new(StreamType::UniDi, local_max_stream_uni, role),
+        ]))
     }
 }
 
@@ -676,50 +679,41 @@ impl Index<StreamType> for RemoteStreamLimits {
     type Output = RemoteStreamLimit;
 
     fn index(&self, index: StreamType) -> &Self::Output {
-        match index {
-            StreamType::BiDi => &self.bidirectional,
-            StreamType::UniDi => &self.unidirectional,
-        }
+        &self.0[index]
     }
 }
 
 impl IndexMut<StreamType> for RemoteStreamLimits {
     fn index_mut(&mut self, index: StreamType) -> &mut Self::Output {
-        match index {
-            StreamType::BiDi => &mut self.bidirectional,
-            StreamType::UniDi => &mut self.unidirectional,
-        }
+        &mut self.0[index]
     }
 }
 
 pub struct LocalStreamLimits {
-    bidirectional: SenderFlowControl<StreamType>,
-    unidirectional: SenderFlowControl<StreamType>,
+    limits: EnumMap<StreamType, SenderFlowControl<StreamType>>,
     role_bit: u64,
 }
 
 impl LocalStreamLimits {
     pub const fn new(role: Role) -> Self {
         Self {
-            bidirectional: SenderFlowControl::new(StreamType::BiDi, 0),
-            unidirectional: SenderFlowControl::new(StreamType::UniDi, 0),
+            // Array order must match StreamType enum order: BiDi, UniDi
+            limits: EnumMap::from_array([
+                SenderFlowControl::new(StreamType::BiDi, 0),
+                SenderFlowControl::new(StreamType::UniDi, 0),
+            ]),
             role_bit: StreamId::role_bit(role),
         }
     }
 
     pub fn take_stream_id(&mut self, stream_type: StreamType) -> Option<StreamId> {
-        let fc = match stream_type {
-            StreamType::BiDi => &mut self.bidirectional,
-            StreamType::UniDi => &mut self.unidirectional,
-        };
+        let fc = &mut self.limits[stream_type];
         if fc.available() > 0 {
             let new_stream = fc.used();
             fc.consume(1);
-            let type_bit = match stream_type {
-                StreamType::BiDi => 0,
-                StreamType::UniDi => 2,
-            };
-            Some(StreamId::from((new_stream << 2) + type_bit + self.role_bit))
+            Some(StreamId::from(
+                (new_stream << 2) + stream_type as u64 + self.role_bit,
+            ))
         } else {
             fc.blocked();
             None
@@ -731,19 +725,13 @@ impl Index<StreamType> for LocalStreamLimits {
     type Output = SenderFlowControl<StreamType>;
 
     fn index(&self, index: StreamType) -> &Self::Output {
-        match index {
-            StreamType::BiDi => &self.bidirectional,
-            StreamType::UniDi => &self.unidirectional,
-        }
+        &self.limits[index]
     }
 }
 
 impl IndexMut<StreamType> for LocalStreamLimits {
     fn index_mut(&mut self, index: StreamType) -> &mut Self::Output {
-        match index {
-            StreamType::BiDi => &mut self.bidirectional,
-            StreamType::UniDi => &mut self.unidirectional,
-        }
+        &mut self.limits[index]
     }
 }
 
@@ -1012,7 +1000,7 @@ mod test {
         fc[StreamType::BiDi].send_flowc_update();
         // consume the frame
         let mut builder =
-            packet::Builder::short(Encoder::new(), false, None::<&[u8]>, packet::LIMIT);
+            packet::Builder::short(Encoder::default(), false, None::<&[u8]>, packet::LIMIT);
         let mut tokens = recovery::Tokens::new();
         fc[StreamType::BiDi].write_frames(&mut builder, &mut tokens, &mut FrameStats::default());
         assert_eq!(tokens.len(), 1);
@@ -1120,7 +1108,7 @@ mod test {
 
     fn write_frames(fc: &mut ReceiverFlowControl<StreamId>, rtt: Duration, now: Instant) -> usize {
         let mut builder =
-            packet::Builder::short(Encoder::new(), false, None::<&[u8]>, packet::LIMIT);
+            packet::Builder::short(Encoder::default(), false, None::<&[u8]>, packet::LIMIT);
         let mut tokens = recovery::Tokens::new();
         fc.write_frames(
             &mut builder,
@@ -1234,7 +1222,7 @@ mod test {
         /// Allow auto-tuning algorithm to be off from actual bandwidth-delay
         /// product by up to 1KiB.
         const TOLERANCE: u64 = 1024;
-        const BW_TOLERANCE: f64 = 0.8;
+        const BW_TOLERANCE: f64 = 0.6;
 
         test_fixture::fixture_init();
 
@@ -1381,7 +1369,7 @@ mod test {
         // Helper to write frames
         let write_conn_frames = |fc: &mut ReceiverFlowControl<()>, now: Instant| {
             let mut builder =
-                packet::Builder::short(Encoder::new(), false, None::<&[u8]>, packet::LIMIT);
+                packet::Builder::short(Encoder::default(), false, None::<&[u8]>, packet::LIMIT);
             let mut tokens = recovery::Tokens::new();
             fc.write_frames(
                 &mut builder,
@@ -1421,7 +1409,7 @@ mod test {
         // Helper to write frames
         let write_conn_frames = |fc: &mut ReceiverFlowControl<()>| {
             let mut builder =
-                packet::Builder::short(Encoder::new(), false, None::<&[u8]>, packet::LIMIT);
+                packet::Builder::short(Encoder::default(), false, None::<&[u8]>, packet::LIMIT);
             let mut tokens = recovery::Tokens::new();
             fc.write_frames(
                 &mut builder,
@@ -1462,6 +1450,34 @@ mod test {
         qdebug!(
             "Connection flow control window reached max: {} MiB",
             fc.max_active() / 1024 / 1024
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn auto_tune_never_decreases_large_manually_set_max_active() -> Res<()> {
+        let rtt = Duration::from_millis(40);
+        let now = test_fixture::now();
+        let mut fc = ReceiverFlowControl::new(
+            StreamId::new(0),
+            // Very large manually configured window beyond the maximum auto-tuned window.
+            MAX_LOCAL_MAX_STREAM_DATA * 10,
+        );
+        let initial_max_active = fc.max_active();
+
+        // Consume and retire multiple windows to trigger auto-tuning.
+        // Each iteration: consume a full window, retire it, send update.
+        for _ in 1..11 {
+            let consumed = fc.set_consumed(fc.next_limit())?;
+            fc.add_retired(consumed);
+            write_frames(&mut fc, rtt, now);
+        }
+        let increased_max_active = fc.max_active();
+
+        assert!(
+            initial_max_active == increased_max_active,
+            "expect receive window auto-tuning to not decrease max_active below manually set initial value."
         );
 
         Ok(())

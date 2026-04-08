@@ -83,7 +83,15 @@ class CssLogic {
    *         An array of string selectors.
    */
   static getSelectors(domRule, desugared = false) {
-    if (ChromeUtils.getClassName(domRule) !== "CSSStyleRule") {
+    const className = ChromeUtils.getClassName(domRule);
+
+    if (className === "CSSNestedDeclarations") {
+      // CSSNestedDeclarations don't have selectorText/selectorCount/selectorTextAt.
+      // For now, only set `&`, but maybe we could include the ancestor rules' selectors
+      return ["&"];
+    }
+
+    if (className !== "CSSStyleRule") {
       // Return empty array since CSSRule#selectorCount assumes only STYLE_RULE type.
       return [];
     }
@@ -545,30 +553,24 @@ class CssLogic {
 
   /**
    * Process the CssSelector objects that match the highlighted element and its
-   * parent elements. scope.callback() is executed for each CssSelector
-   * object, being passed the CssSelector object and the match status.
+   * parent elements.
    *
    * This method also includes all of the element.style properties, for each
    * highlighted element parent and for the highlighted element itself.
    *
-   * Note that the matched selectors are cached, such that next time your
-   * callback is invoked for the cached list of CssSelector objects.
-   *
-   * @param {function} callback the function you want to execute for each of
-   * the matched selectors.
-   * @param {object} scope the scope you want for the callback function. scope
-   * will be the this object when callback executes.
+   * @returns {Array} An array of arrays with the following items:
+   *          - 0: {CssSelector} selector
+   *          - 1: {number} status (from STATUS)
+   *          - 2: {number} distance
    */
-  processMatchedSelectors(callback, scope) {
+  processMatchedSelectors() {
     if (this.#matchedSelectors) {
-      if (callback) {
-        this.passId++;
-        this.#matchedSelectors.forEach(function (value) {
-          callback.call(scope, value[0], value[1]);
-          value[0].cssRule.passId = this.passId;
-        }, this);
+      this.passId++;
+      for (const [rule] of this.#matchedRules) {
+        rule.passId = this.passId;
       }
-      return;
+
+      return this.#matchedSelectors;
     }
 
     if (!this.#matchedRules) {
@@ -580,24 +582,28 @@ class CssLogic {
 
     for (const matchedRule of this.#matchedRules) {
       const [rule, status, distance] = matchedRule;
+      const includeAllSelectors =
+        rule.domRule.declarationOrigin === "style-attribute" ||
+        rule.domRule.declarationOrigin === "pres-hints" ||
+        // If we have a CSSNestedDeclaration at this point, we have a single selector
+        // (which should be `&`), and it should be included
+        ChromeUtils.getClassName(rule.domRule) === "CSSNestedDeclarations";
 
-      rule.selectors.forEach(function (selector) {
+      for (const selector of rule.selectors) {
         if (
           selector.matchId !== this.matchId &&
-          (rule.domRule.declarationOrigin === "style-attribute" ||
-            rule.domRule.declarationOrigin === "pres-hints" ||
+          (includeAllSelectors ||
             this.selectorMatchesElement(rule.domRule, selector.selectorIndex))
         ) {
           selector.matchId = this.matchId;
           this.#matchedSelectors.push([selector, status, distance]);
-          if (callback) {
-            callback.call(scope, selector, status, distance);
-          }
         }
-      }, this);
+      }
 
       rule.passId = this.passId;
     }
+
+    return this.#matchedSelectors;
   }
 
   /**
@@ -670,7 +676,7 @@ class CssLogic {
         // the viewedElement (or its parents).
         if (
           // check if the property is assigned
-          (rule.getPropertyValue(property) ||
+          (rule.isPropertyAssigned(property) ||
             // or if this is a css variable, if it's being used in the rule.
             (property.startsWith("--") &&
               // we may have false positive for dashed ident or the variable being
@@ -816,7 +822,7 @@ class CssSheet {
   /**
    * A safe way to access cached bits of information about a stylesheet.
    *
-   * @constructor
+   * @class
    * @param {CssLogic} cssLogic pointer to the CssLogic instance working with
    * this CssSheet object.
    * @param {CSSStyleSheet} domSheet reference to a DOM CSSStyleSheet object.
@@ -1030,7 +1036,7 @@ class CssRule {
    * will be an InspectorDeclaration (object of the form {style: element.style, declarationOrigin: string}).
    * @param {Element} [element] If the rule comes from element.style, then this
    * argument must point to the element.
-   * @constructor
+   * @class
    */
   constructor(cssSheet, domRule, element) {
     this.#cssSheet = cssSheet;
@@ -1114,6 +1120,16 @@ class CssRule {
   }
 
   /**
+   * Returns whether or not the given property is set in the current CSSStyleRule.
+   *
+   * @param {string} property the CSS property name
+   * @return {boolean}
+   */
+  isPropertyAssigned(property) {
+    return this.getStyle().hasLonghandProperty(property);
+  }
+
+  /**
    * Retrieve the style property priority from the current CSSStyleRule.
    *
    * @param {string} property the CSS property name for which you want the
@@ -1135,15 +1151,9 @@ class CssRule {
       return this.#selectors;
     }
 
-    // Parse the CSSStyleRule.selectorText string.
     this.#selectors = [];
 
-    if (!this.domRule.selectorText) {
-      return this.#selectors;
-    }
-
     const selectors = CssLogic.getSelectors(this.domRule);
-
     for (let i = 0, len = selectors.length; i < len; i++) {
       this.#selectors.push(new CssSelector(this, selectors[i], i));
     }
@@ -1161,7 +1171,7 @@ class CssSelector {
    * The CSS selector class allows us to document the ranking of various CSS
    * selectors.
    *
-   * @constructor
+   * @class
    * @param {CssRule} cssRule the CssRule instance from where the selector comes.
    * @param {string} selector The selector that we wish to investigate.
    * @param {number} index The index of the selector within it's rule.
@@ -1317,7 +1327,7 @@ class CssPropertyInfo {
    *
    * @param {CssLogic} cssLogic Reference to the parent CssLogic instance
    * @param {string} property The CSS property we are gathering information for
-   * @constructor
+   * @class
    */
   constructor(cssLogic, property) {
     this.#cssLogic = cssLogic;
@@ -1384,7 +1394,13 @@ class CssPropertyInfo {
     this.#matchedSelectors = [];
     this.needRefilter = false;
 
-    this.#cssLogic.processMatchedSelectors(this.#processMatchedSelector, this);
+    for (const [
+      selector,
+      status,
+      distance,
+    ] of this.#cssLogic.processMatchedSelectors()) {
+      this.#processMatchedSelector(selector, status, distance);
+    }
 
     // Sort the selectors by how well they match the given element.
     this.#matchedSelectors.sort((selectorInfo1, selectorInfo2) =>
@@ -1410,9 +1426,8 @@ class CssPropertyInfo {
    */
   #processMatchedSelector(selector, status, distance) {
     const cssRule = selector.cssRule;
-    const value = cssRule.getPropertyValue(this.property);
     if (
-      value &&
+      cssRule.isPropertyAssigned(this.property) &&
       (status == STATUS.MATCHED ||
         (status == STATUS.PARENT_MATCH &&
           InspectorUtils.isInheritedProperty(
@@ -1423,7 +1438,11 @@ class CssPropertyInfo {
       const selectorInfo = new CssSelectorInfo(
         selector,
         this.property,
-        value,
+        // FIXME: If this is a property that is coming from a longhand property which is
+        // using CSS variables, we would get an empty string at this point.
+        // It would be nice to try to display a value that would make sense to the user.
+        // See Bug 2003264
+        cssRule.getPropertyValue(this.property),
         status,
         distance
       );
@@ -1476,7 +1495,6 @@ class CssSelectorInfo {
    *        the selector.
    * @param {STATUS} status The selector match status.
    * @param {number} distance See CssLogic.#buildMatchedRules for definition.
-   * @constructor
    */
   constructor(selector, property, value, status, distance) {
     this.selector = selector;
@@ -1637,6 +1655,14 @@ class CssSelectorInfo {
   compareTo(that, selectorInfos) {
     const originalOrder =
       selectorInfos.indexOf(this) < selectorInfos.indexOf(that) ? -1 : 1;
+
+    // If rules are applied to different elements, the element that is the closest to the
+    // view element should be displayed before the other
+    if (this.distance !== that.distance) {
+      // Higher distance means we're closest to the viewed element (0 is when the rule is
+      // for the viewed element, -1 when it's for its parent and so on).
+      return this.distance > that.distance ? -1 : 1;
+    }
 
     // If both properties are not important, we can keep the original order
     if (!this.important && !that.important) {

@@ -18,7 +18,7 @@ use crate::{
 impl crate::Instance for super::Instance {
     type A = super::Api;
 
-    unsafe fn init(desc: &crate::InstanceDescriptor) -> Result<Self, crate::InstanceError> {
+    unsafe fn init(desc: &crate::InstanceDescriptor<'_>) -> Result<Self, crate::InstanceError> {
         profiling::scope!("Init DX12 Backend");
         let lib_main = D3D12Lib::new().map_err(|e| {
             crate::InstanceError::with_source(String::from("failed to load d3d12.dll"), e)
@@ -37,7 +37,6 @@ impl crate::Instance for super::Instance {
                     .flags
                     .intersects(wgt::InstanceFlags::GPU_BASED_VALIDATION)
                 {
-                    #[allow(clippy::collapsible_if)]
                     if let Ok(debug1) = debug_controller.cast::<Direct3D12::ID3D12Debug1>() {
                         unsafe { debug1.SetEnableGPUBasedValidation(true) }
                     } else {
@@ -112,6 +111,7 @@ impl crate::Instance for super::Instance {
             memory_budget_thresholds: desc.memory_budget_thresholds,
             compiler_container: Arc::new(compiler_container),
             options: desc.backend_options.dx12.clone(),
+            telemetry: desc.telemetry,
         })
     }
 
@@ -164,6 +164,7 @@ impl crate::Instance for super::Instance {
                     self.memory_budget_thresholds,
                     self.compiler_container.clone(),
                     self.options.clone(),
+                    self.telemetry,
                 )
             })
             .collect()

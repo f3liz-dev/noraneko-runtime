@@ -563,13 +563,23 @@ export const NimbusTestUtils = {
       });
     },
 
+    get SEPARATE_ROLLOUT_OPT_OUT() {
+      const { Phase } = lazy.NimbusMigrations;
+
+      return NimbusTestUtils.makeMigrationState({
+        [Phase.INIT_STARTED]: "separate-rollout-opt-out",
+        [Phase.AFTER_STORE_INITIALIZED]: "graduate-firefox-labs-auto-pip",
+        [Phase.AFTER_REMOTE_SETTINGS_UPDATE]: "firefox-labs-enrollments",
+      });
+    },
+
     /**
      * A migration state that represents all migrations applied.
      *
      * @type {Record<Phase, number>}
      */
     get LATEST() {
-      return NimbusTestUtils.migrationState.GRADUATED_FIREFOX_LABS_AUTO_PIP;
+      return NimbusTestUtils.migrationState.SEPARATE_ROLLOUT_OPT_OUT;
     },
   },
 
@@ -660,7 +670,7 @@ export const NimbusTestUtils = {
    * NB: These features will only be visible to the JS Nimbus client. The native
    * Nimbus client will have no access.
    *
-   * @params {...object} features
+   * @param {...object} features
    *         A list of `_NimbusFeature`s.
    *
    * @returns {function(): void}
@@ -710,12 +720,12 @@ export const NimbusTestUtils = {
   /**
    * Unenroll from all the given slugs and assert that the store is now empty.
    *
-   * @params {string[]} slugs
+   * @param {string[]} slugs
    *         The slugs to unenroll from.
    *
-   * @params {object?} options
+   * @param {object?} options
    *
-   * @params {object?} options.manager
+   * @param {object?} options.manager
    *         The ExperimentManager to clean up. Defaults to the global
    *         ExperimentManager.
    *
@@ -1132,7 +1142,7 @@ export const NimbusTestUtils = {
    * If the store contains active enrollments this function will cause the test
    * to fail.
    *
-   * @params {ExperimentStore} store
+   * @param {ExperimentStore} store
    *         The store to delete.
    */
   async removeStore(store) {
@@ -1193,9 +1203,6 @@ export const NimbusTestUtils = {
    *           An ExperimentManager instance that will validate all enrollments
    *           added to its store.
    *
-   * @property {(function(): void)?} initExperimentAPI
-   *           A function that will complete ExperimentAPI initialization.
-   *
    * @property {function(): Promise<void>} cleanup
    *           A cleanup function that should be called at the end of the test.
    */
@@ -1205,8 +1212,8 @@ export const NimbusTestUtils = {
    * @param {boolean?} options.init
    *        Initialize the Experiment API.
    *
-   *        If false, the returned context will return an `initExperimentAPI` member that
-   *        will complete the initialization.
+   *        If false, the caller must call {@link ExperimentAPI.init} to
+   *        complete initialization.
    *
    * @param {string?} options.storePath
    *        An optional path to an existing ExperimentStore to use for the
@@ -1231,14 +1238,14 @@ export const NimbusTestUtils = {
    *
    * @param {Record<Phase, number>?} options.migrationState
    *        The value that should be set for the Nimbus migration prefs. If
-   *        not provided, the pref will be unset.
+   *        not provided, {@link NimbusTestUtils.migrationState.LATEST} will be used.
    *
    *        Required if {@link options.storePath} is also provided.
    *
    *        Most tests will want to use either
-   *        `NimbusTestUtils.migrationState.UNMIGRATED` or
-   *        `NimbusTestUtils.migrationState.LATEST`, depending on whether or not
-   *        they are writing to the `NimbusEnrollments` database table.
+   *        {@link NimbusTestUtils.migrationState.UNMIGRATED} or
+   *        {@link NimbusTestUtils.migrationState.LATEST}, depending on whether
+   *        or not they are writing to the `NimbusEnrollments` database table.
    *
    * @throws {Error} If the the arguments to this function are not consistent.
    *
@@ -1252,7 +1259,7 @@ export const NimbusTestUtils = {
     secureExperiments,
     clearTelemetry = false,
     features,
-    migrationState,
+    migrationState = undefined,
   } = {}) {
     if (storePath && typeof migrationState === "undefined") {
       throw new Error("setupTest: storePath requires migrationState");
@@ -1289,13 +1296,15 @@ export const NimbusTestUtils = {
       )
       .resolves(0);
 
-    if (migrationState) {
-      for (const [phase, value] of Object.entries(migrationState)) {
-        Services.prefs.setIntPref(
-          lazy.NimbusMigrations.NIMBUS_MIGRATION_PREFS[phase],
-          value
-        );
-      }
+    if (typeof migrationState === "undefined") {
+      migrationState = NimbusTestUtils.migrationState.LATEST;
+    }
+
+    for (const [phase, value] of Object.entries(migrationState)) {
+      Services.prefs.setIntPref(
+        lazy.NimbusMigrations.NIMBUS_MIGRATION_PREFS[phase],
+        value
+      );
     }
 
     const ctx = {
@@ -1327,12 +1336,8 @@ export const NimbusTestUtils = {
       },
     };
 
-    const initExperimentAPI = () => ExperimentAPI.init();
-
     if (init) {
-      await initExperimentAPI();
-    } else {
-      ctx.initExperimentAPI = initExperimentAPI;
+      await ExperimentAPI.init();
     }
 
     return ctx;
@@ -1341,7 +1346,7 @@ export const NimbusTestUtils = {
   /**
    * Validate an enrollment matches the Nimbus enrollment schema.
    *
-   * @params {object} enrollment
+   * @param {object} enrollment
    *         The enrollment to validate.
    *
    * @throws If the enrollment does not validate or its feature configurations

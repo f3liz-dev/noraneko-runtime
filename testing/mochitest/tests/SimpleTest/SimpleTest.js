@@ -624,7 +624,12 @@ SimpleTest._logResult = function (test, passInfo, failInfo, stack) {
   var result = test.result ? passInfo : failInfo;
   var diagnostic = test.diag || null;
   // BUGFIX : coercing test.name to a string, because some a11y tests pass an xpconnect object
-  var subtest = test.name ? String(test.name) : null;
+  var message = test.name ? String(test.name) : null;
+  // Combine assertion name with diagnostic info if present
+  if (diagnostic) {
+    message = message ? message + " - " + diagnostic : diagnostic;
+  }
+
   var isError = !test.result == !test.todo;
 
   if (parentRunner) {
@@ -641,10 +646,10 @@ SimpleTest._logResult = function (test, passInfo, failInfo, stack) {
 
     parentRunner.structuredLogger.testStatus(
       url,
-      subtest,
+      null, // mochitest-plain doesn't have subtests
       result.status,
       result.expected,
-      diagnostic,
+      message,
       stack
     );
   } else if (typeof dump === "function") {
@@ -2162,11 +2167,15 @@ var add_task = (function () {
         // These checks ensure that we are in an HTML document without
         // throwing TypeError; also I am told that readyState in XUL documents
         // are totally bogus so we don't try to do this there.
+        // The readyState of the initial about:blank is stuck at "complete",
+        // so check for "about:blank" separately.
         if (
-          typeof window !== "undefined" &&
-          typeof HTMLDocument !== "undefined" &&
-          window.document instanceof HTMLDocument &&
-          window.document.readyState !== "complete"
+          (typeof window !== "undefined" &&
+            typeof HTMLDocument !== "undefined" &&
+            window.document instanceof HTMLDocument &&
+            window.document.readyState !== "complete") ||
+          (typeof window !== "undefined" &&
+            window.document.location.href === "about:blank")
         ) {
           setTimeout(nextTick);
           return;

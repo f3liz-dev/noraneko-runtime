@@ -8,14 +8,15 @@
 <script src="/resources/testdriver.js"></script>
 <script src="/resources/testdriver-vendor.js"></script>
 <script src="/resources/testdriver-actions.js"></script>
+<script src="/shadow-dom/focus-navigation/resources/focus-utils.js"></script>
 <script src="../resources/focusgroup-utils.js"></script>
 
 <div id=root focusgroup="toolbar">
   <button id=item1 tabindex=0>Item 1</button>
   <div>
-    <button id=item2 tabindex=-1>Item 2 (nested)</button>
+    <button id=item2 tabindex=0>Item 2 (nested)</button>
   </div>
-  <button id=item3 tabindex=-1>Item 3</button>
+  <button id=item3 tabindex=0>Item 3</button>
 </div>
 
 <script>
