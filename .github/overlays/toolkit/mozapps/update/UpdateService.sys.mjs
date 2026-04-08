@@ -16,6 +16,7 @@ import {
 import { FileUtils } from "resource://gre/modules/FileUtils.sys.mjs";
 import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 
+<<<<<<< noraneko
 /**
  * * NORANEKO PATCH - 0.1.0
  * * [UPDATER]
@@ -31,6 +32,8 @@ import { NoranekoConstants } from "resource://noraneko/modules/NoranekoConstants
 
 // MARK: defines
 
+=======
+>>>>>>> upstream
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
@@ -1965,6 +1968,7 @@ function pingStateAndStatusCodes(aUpdate, aStartup, aStatus) {
 }
 
 /**
+<<<<<<< noraneko
  * * NORANEKO PATCH - 0.1.0
  * * [UPDATER]
  * * (add version2 for updating source without rebuilding binary)
@@ -2075,10 +2079,17 @@ function updateIsAtLeastAsOldAs(update, version, buildID
    * * END
    */
 ) {
+=======
+ * This returns true if the passed update is the same version or older than the
+ * version and build ID values passed. Otherwise it returns false.
+ */
+function updateIsAtLeastAsOldAs(update, version, buildID) {
+>>>>>>> upstream
   if (!update || !update.appVersion || !update.buildID) {
     return false;
   }
   let versionComparison = Services.vc.compare(update.appVersion, version);
+<<<<<<< noraneko
   /**
    * * NORANEKO PATCH - 0.1.0
    * * [UPDATER]
@@ -2108,6 +2119,8 @@ function updateIsAtLeastAsOldAs(update, version, buildID
    * * [UPDATER]
    * * END
    */
+=======
+>>>>>>> upstream
   return (
     versionComparison < 0 ||
     (versionComparison == 0 && update.buildID == buildID)
@@ -2123,6 +2136,7 @@ function updateIsAtLeastAsOldAsCurrentVersion(update) {
     update,
     Services.appinfo.version,
     Services.appinfo.appBuildID
+<<<<<<< noraneko
     /**
      * * NORANEKO PATCH - 0.1.0
      * * [UPDATER]
@@ -2136,6 +2150,8 @@ function updateIsAtLeastAsOldAsCurrentVersion(update) {
      * * [UPDATER]
      * * END
      */
+=======
+>>>>>>> upstream
   );
 }
 
@@ -2156,6 +2172,7 @@ function updateIsAtLeastAsOldAsReadyUpdate(update) {
     update,
     lazy.UM.internal.readyUpdate.appVersion,
     lazy.UM.internal.readyUpdate.buildID
+<<<<<<< noraneko
     /**
      * * NORANEKO PATCH - 0.1.0
      * * [UPDATER]
@@ -2169,6 +2186,8 @@ function updateIsAtLeastAsOldAsReadyUpdate(update) {
      * * [UPDATER]
      * * END
      */
+=======
+>>>>>>> upstream
   );
 }
 
@@ -2497,6 +2516,7 @@ class Update {
     "type",
     "unsupported",
     "platformVersion",
+<<<<<<< noraneko
     /**
      * * NORANEKO PATCH - 0.1.0
      * * [UPDATER]
@@ -2510,6 +2530,8 @@ class Update {
      * * [UPDATER]
      * * END
      */
+=======
+>>>>>>> upstream
   ];
 
   /**
@@ -2608,6 +2630,7 @@ class Update {
           case "statusText":
           case "type":
           case "platformVersion":
+<<<<<<< noraneko
           /**
            * * NORANEKO PATCH - 0.1.0
            * * [UPDATER]
@@ -2621,6 +2644,8 @@ class Update {
            * * [UPDATER]
            * * END
            */
+=======
+>>>>>>> upstream
             this[attr.name] = attr.value;
             break;
           default:
@@ -2765,6 +2790,7 @@ class Update {
     if (this.elevationFailure) {
       update.setAttribute("elevationFailure", this.elevationFailure);
     }
+<<<<<<< noraneko
     /**
      * * NORANEKO PATCH - 0.1.0
      * * [UPDATER]
@@ -2782,6 +2808,8 @@ class Update {
      * * [UPDATER]
      * * END
      */
+=======
+>>>>>>> upstream
 
     for (let [name, value] of Object.entries(this._properties)) {
       if (value.present && !this._attrNames.includes(name)) {
@@ -4029,6 +4057,7 @@ export class UpdateService {
           } else if (
             !update.unsupported &&
             vc.compare(majorUpdate.appVersion, update.appVersion) <= 0
+<<<<<<< noraneko
             /**
              * * NORANEKO PATCH - 0.1.0
              * * [UPDATER]
@@ -4041,6 +4070,8 @@ export class UpdateService {
              * * [UPDATER]
              * * END
              */
+=======
+>>>>>>> upstream
           ) {
             majorUpdate = update;
           }
@@ -4051,6 +4082,7 @@ export class UpdateService {
           } else if (
             !update.unsupported &&
             vc.compare(minorUpdate.appVersion, update.appVersion) <= 0
+<<<<<<< noraneko
             /**
              * * NORANEKO PATCH - 0.1.0
              * * [UPDATER]
@@ -4063,6 +4095,8 @@ export class UpdateService {
              * * [UPDATER]
              * * END
              */
+=======
+>>>>>>> upstream
           ) {
             minorUpdate = update;
           }

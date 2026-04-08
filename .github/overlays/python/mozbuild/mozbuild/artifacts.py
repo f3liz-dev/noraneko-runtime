@@ -89,7 +89,11 @@ UNFILTERED_PROJECT_PACKAGE_PROCESSED_SUFFIX = (
 
 class GeckoJobConfiguration:
     trust_domain = "gecko"
+<<<<<<< noraneko
     product = "noraneko"
+=======
+    product = "firefox"
+>>>>>>> upstream
     default_candidate_trees = [
         "releases/mozilla-release",
     ]

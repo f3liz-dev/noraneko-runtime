@@ -227,6 +227,7 @@ interface nsIUpdate : nsISupports
    * @returns The DOM Element created by the serialization process
    */
   Element serialize(in Document updates);
+<<<<<<< noraneko
 
   /**
    * * NORANEKO PATCH - 0.1.0
@@ -247,6 +248,8 @@ interface nsIUpdate : nsISupports
    * * [UPDATER]
    * * END
    */
+=======
+>>>>>>> upstream
 };
 
 /**

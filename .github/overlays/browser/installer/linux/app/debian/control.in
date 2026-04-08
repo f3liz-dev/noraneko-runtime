@@ -1,5 +1,9 @@
 Source: ${PKG_NAME}
+<<<<<<< noraneko
 Maintainer: nyanrus <nyanrus.dev+noraneko@gmail.com>
+=======
+Maintainer: Mozilla <release@mozilla.com>
+>>>>>>> upstream
 Priority: optional
 Section: web
 Build-Depends: debhelper (>= 9)

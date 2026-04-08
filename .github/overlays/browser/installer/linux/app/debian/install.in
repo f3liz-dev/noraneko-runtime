@@ -1,2 +1,6 @@
+<<<<<<< noraneko
 noraneko/* ${PKG_INSTALL_PATH}
+=======
+firefox/* ${PKG_INSTALL_PATH}
+>>>>>>> upstream
 debian/${PKG_NAME}.desktop usr/share/applications

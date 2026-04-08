@@ -267,6 +267,7 @@
 #  include "DBusService.h"
 #endif
 
+<<<<<<< noraneko
 /*
 * NORANEKO PATCH
 * [updater]
@@ -280,6 +281,8 @@
 * END
 */
 
+=======
+>>>>>>> upstream
 extern void InstallSignalHandlers(const char* ProgramName);
 
 #define FILE_COMPATIBILITY_INFO "compatibility.ini"_ns
@@ -3564,6 +3567,7 @@ static bool CheckCompatibility(nsIFile* aProfileDir, const nsCString& aVersion,
     return false;
   }
 
+<<<<<<< noraneko
   /*
   * NORANEKO PATCH
   * [updater]
@@ -3605,6 +3609,8 @@ static bool CheckCompatibility(nsIFile* aProfileDir, const nsCString& aVersion,
   * END
   */
 
+=======
+>>>>>>> upstream
   // If we get here, the version matched, but there may still be other
   // differences between us and the build that the profile last ran under.
 

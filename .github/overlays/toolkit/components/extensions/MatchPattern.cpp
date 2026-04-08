@@ -81,7 +81,11 @@ bool AtomSet::Intersects(const AtomSet& aOther) const {
     return atomSet.forget();                         \
   }
 
+<<<<<<< noraneko
 DEFINE_STATIC_ATOM_SET(PermittedSchemes, nsGkAtoms::http, nsGkAtoms::https, nsGkAtoms::about,
+=======
+DEFINE_STATIC_ATOM_SET(PermittedSchemes, nsGkAtoms::http, nsGkAtoms::https,
+>>>>>>> upstream
                        nsGkAtoms::ws, nsGkAtoms::wss, nsGkAtoms::file,
                        nsGkAtoms::ftp, nsGkAtoms::data);
 
