@@ -281,39 +281,135 @@ jobs:
             --exclude='/.woodpecker.ya?ml' \
             ../upstream_release/ ./
 
-      - name: Normalize patch files
+      - name: 3-way merge overlays with new upstream
+        id: overlay_merge
         run: |
-          echo "Normalizing patch files..."
-          find .github/patches/upstream -name "*.patch" \
-            -exec dos2unix {} \; 2>/dev/null || true
-          for patch_file in .github/patches/upstream/*.patch; do
-            if [ -s "$patch_file" ] && \
-               [ "$(tail -c1 "$patch_file" | wc -l)" -eq 0 ]; then
-              echo "" >> "$patch_file"
+          OVERLAY_DIR=".github/overlays"
+          if [ ! -d "$OVERLAY_DIR" ]; then
+            echo "No overlay directory found, skipping merge"
+            echo "overlay_failed=false" >> $GITHUB_OUTPUT
+            echo "overlay_conflicts=0" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          OLD_BASE=$(cat "$OVERLAY_DIR/UPSTREAM_BASE" 2>/dev/null || echo "")
+          if [ -z "$OLD_BASE" ]; then
+            echo "No UPSTREAM_BASE found. Overlays will be kept as-is."
+            echo "overlay_failed=false" >> $GITHUB_OUTPUT
+            echo "overlay_conflicts=0" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          HAS_CONFLICT=0
+          CONFLICT_COUNT=0
+          MERGED_COUNT=0
+          DELETED_FILES=""
+          OBSOLETE_FILES=""
+          # JSON array of {file, content} for conflict comments
+          echo '[]' > /tmp/conflicts.json
+
+          cd ../upstream_release
+          git fetch --depth=200 origin
+          cd ../noraneko_runtime
+
+          find "$OVERLAY_DIR" -type f ! -name 'UPSTREAM_BASE' | sort | while read overlay; do
+            relpath="${overlay#$OVERLAY_DIR/}"
+
+            # Check if file still exists upstream
+            if [ ! -f "$relpath" ]; then
+              echo "DELETED: $relpath no longer exists upstream"
+              DELETED_FILES="$DELETED_FILES\n- \`$relpath\` (file deleted upstream)"
+              HAS_CONFLICT=1
+              CONFLICT_COUNT=$((CONFLICT_COUNT + 1))
+              # Write state for later steps
+              echo "$HAS_CONFLICT" > /tmp/has_conflict
+              echo "$CONFLICT_COUNT" > /tmp/conflict_count
+              # Add to conflicts JSON
+              jq --arg file "$relpath" \
+                 --arg content "This file was deleted in the new upstream version. Remove the overlay or update the file path." \
+                '. += [{"file": $file, "content": $content, "type": "deleted"}]' \
+                /tmp/conflicts.json > /tmp/conflicts_tmp.json
+              mv /tmp/conflicts_tmp.json /tmp/conflicts.json
+              continue
+            fi
+
+            # Check if overlay is identical to new upstream (became obsolete)
+            if diff -q "$overlay" "$relpath" > /dev/null 2>&1; then
+              echo "OBSOLETE: $relpath overlay is identical to upstream"
+              OBSOLETE_FILES="$OBSOLETE_FILES\n- \`$relpath\`"
+              continue
+            fi
+
+            # Extract base version from old upstream commit
+            git show "$OLD_BASE:$relpath" > /tmp/merge_base 2>/dev/null || echo "" > /tmp/merge_base
+            cp "$overlay" /tmp/merge_ours
+            cp "$relpath" /tmp/merge_theirs
+
+            # 3-way merge: merge_ours is modified in-place
+            if git merge-file -L "noraneko" -L "base" -L "upstream" \
+               /tmp/merge_ours /tmp/merge_base /tmp/merge_theirs; then
+              cp /tmp/merge_ours "$overlay"
+              echo "MERGED: $relpath"
+              MERGED_COUNT=$((MERGED_COUNT + 1))
+            else
+              cp /tmp/merge_ours "$overlay"
+              echo "CONFLICT: $relpath"
+              HAS_CONFLICT=1
+              CONFLICT_COUNT=$((CONFLICT_COUNT + 1))
+              echo "$HAS_CONFLICT" > /tmp/has_conflict
+              echo "$CONFLICT_COUNT" > /tmp/conflict_count
+
+              jq --arg file "$relpath" \
+                 --rawfile content /tmp/merge_ours \
+                '. += [{"file": $file, "content": $content, "type": "conflict"}]' \
+                /tmp/conflicts.json > /tmp/conflicts_tmp.json
+              mv /tmp/conflicts_tmp.json /tmp/conflicts.json
             fi
           done
 
-      - name: Check patches compatibility
+          # Update the upstream base reference
+          echo "${{ steps.new_version.outputs.commit }}" > "$OVERLAY_DIR/UPSTREAM_BASE"
+
+          # Read back state from subshell
+          HAS_CONFLICT=$(cat /tmp/has_conflict 2>/dev/null || echo "0")
+          CONFLICT_COUNT=$(cat /tmp/conflict_count 2>/dev/null || echo "0")
+
+          echo "overlay_conflicts=$CONFLICT_COUNT" >> $GITHUB_OUTPUT
+          if [ "$HAS_CONFLICT" -ne 0 ]; then
+            echo "overlay_failed=true" >> $GITHUB_OUTPUT
+          else
+            echo "overlay_failed=false" >> $GITHUB_OUTPUT
+            echo "All overlays merged cleanly"
+          fi
+
+      - name: Check legacy patches compatibility
         id: patch_check
         run: |
-          echo "Checking patches for compatibility..."
           HAS_FAILED=0
           FAILED_PATCHES=""
 
           if [ -d ".github/patches/upstream" ]; then
+            echo "Normalizing patch files..."
+            find .github/patches/upstream -name "*.patch" \
+              -exec dos2unix {} \; 2>/dev/null || true
             for patch_file in .github/patches/upstream/*.patch; do
               [ -e "$patch_file" ] || continue
+              if [ -s "$patch_file" ] && \
+                 [ "$(tail -c1 "$patch_file" | wc -l)" -eq 0 ]; then
+                echo "" >> "$patch_file"
+              fi
               patch_name=$(basename "$patch_file")
-
               if git apply --check --ignore-space-change \
                  --ignore-whitespace "$patch_file"; then
-                echo "✓ $patch_name applies cleanly"
+                echo "OK: $patch_name"
               else
-                echo "✗ $patch_name failed to apply"
+                echo "FAIL: $patch_name"
                 FAILED_PATCHES="$FAILED_PATCHES\n- $patch_name"
                 HAS_FAILED=1
               fi
             done
+          else
+            echo "No legacy patches directory"
           fi
 
           if [ "$HAS_FAILED" -ne 0 ]; then
@@ -322,7 +418,6 @@ jobs:
             echo "EOF" >> $GITHUB_ENV
             echo "patch_failed=true" >> $GITHUB_OUTPUT
           else
-            echo "All patches are compatible with upstream changes"
             echo "patch_failed=false" >> $GITHUB_OUTPUT
           fi
 
@@ -380,6 +475,8 @@ jobs:
             const changeType = '${{ steps.version_diff.outputs.change_type }}';
             const patchFailed = '${{ steps.patch_check.outputs.patch_failed }}' === 'true';
             const failedPatches = process.env.FAILED_PATCHES || '';
+            const overlayFailed = '${{ steps.overlay_merge.outputs.overlay_failed }}' === 'true';
+            const overlayConflicts = parseInt('${{ steps.overlay_merge.outputs.overlay_conflicts }}') || 0;
 
             const pr = await github.rest.pulls.get({
               owner: context.repo.owner,
@@ -393,10 +490,14 @@ jobs:
 
             let changelogEntry = `\n### ${newVersion}\n`;
             changelogEntry += `- Synced at: ${new Date().toISOString()}\n`;
-            if (patchFailed) {
-              changelogEntry += `- ⚠️ Patch issues detected:\n${failedPatches}\n`;
+
+            if (overlayFailed) {
+              changelogEntry += `- Overlay conflicts: ${overlayConflicts} file(s) need resolution (see comments)\n`;
             } else {
-              changelogEntry += `- ✅ All patches applied successfully\n`;
+              changelogEntry += `- Overlays merged cleanly\n`;
+            }
+            if (patchFailed) {
+              changelogEntry += `- Legacy patch issues:\n${failedPatches}\n`;
             }
 
             const newBody = pr.data.body + changelogEntry;
@@ -409,7 +510,120 @@ jobs:
               body: newBody
             });
 
+      - name: Post overlay conflict comments on existing PR
+        if: steps.overlay_merge.outputs.overlay_failed == 'true' && env.UPDATE_EXISTING == 'true'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const prNumber = parseInt('${{ steps.check_pr.outputs.number }}');
+            const conflicts = JSON.parse(fs.readFileSync('/tmp/conflicts.json', 'utf8'));
+
+            for (const conflict of conflicts) {
+              const ext = conflict.file.split('.').pop();
+              let body;
+
+              if (conflict.type === 'deleted') {
+                body = [
+                  `### Conflict: \`${conflict.file}\``,
+                  '',
+                  'This file was **deleted** in the new upstream version.',
+                  'If this overlay is no longer needed, reply with:',
+                  '',
+                  '```',
+                  `@f3liz-bot resolve file=${conflict.file} action=delete`,
+                  '```',
+                  '',
+                  'If the file was moved/renamed, create a new overlay at the new path.',
+                ].join('\n');
+              } else if (conflict.content.length > 50000) {
+                // Large file: extract only conflicted regions
+                const lines = conflict.content.split('\n');
+                const regions = [];
+                let regionLines = [];
+                let inConflict = false;
+                let regionStart = -1;
+                const CONTEXT = 10;
+
+                for (let i = 0; i < lines.length; i++) {
+                  if (lines[i].startsWith('<<<<<<<')) {
+                    inConflict = true;
+                    regionStart = Math.max(0, i - CONTEXT);
+                    regionLines = lines.slice(regionStart, i);
+                  }
+                  if (inConflict) {
+                    regionLines.push(lines[i]);
+                  }
+                  if (lines[i].startsWith('>>>>>>>')) {
+                    inConflict = false;
+                    const regionEnd = Math.min(lines.length, i + CONTEXT + 1);
+                    regionLines.push(...lines.slice(i + 1, regionEnd));
+                    regions.push({
+                      start: regionStart + 1,
+                      end: regionEnd,
+                      content: regionLines.join('\n')
+                    });
+                    regionLines = [];
+                  }
+                }
+
+                for (let r = 0; r < regions.length; r++) {
+                  const region = regions[r];
+                  body = [
+                    `### Conflict: \`${conflict.file}\` (region ${r + 1} of ${regions.length}, lines ${region.start}-${region.end})`,
+                    '',
+                    '**How to resolve:** Copy the code block below, fix the conflict markers (`<<<<<<<`, `=======`, `>>>>>>>`), and paste as a reply.',
+                    '',
+                    '<details open>',
+                    '<summary><b>Reply template</b> (copy this whole block)</summary>',
+                    '',
+                    '````',
+                    `@f3liz-bot resolve file=${conflict.file} region=${r + 1}`,
+                    '```' + ext,
+                    region.content,
+                    '```',
+                    '````',
+                    '</details>',
+                  ].join('\n');
+
+                  await github.rest.issues.createComment({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    issue_number: prNumber,
+                    body
+                  });
+                }
+                continue;
+              } else {
+                body = [
+                  `### Conflict: \`${conflict.file}\``,
+                  '',
+                  '**How to resolve:** Copy the code block below, fix the conflict markers (`<<<<<<<`, `=======`, `>>>>>>>`), and paste as a reply.',
+                  '',
+                  '<details open>',
+                  '<summary><b>Reply template</b> (copy this whole block)</summary>',
+                  '',
+                  '````',
+                  `@f3liz-bot resolve file=${conflict.file}`,
+                  '```' + ext,
+                  conflict.content,
+                  '```',
+                  '````',
+                  '</details>',
+                ].join('\n');
+              }
+
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: prNumber,
+                body
+              });
+            }
+
       - name: Create new Pull Request
+        id: create_pr
         if: steps.check_changes.outputs.has_changes == 'true' && env.UPDATE_EXISTING == 'false' && env.BRANCH_NAME != ''
         uses: actions/github-script@v7
         with:
@@ -420,25 +634,30 @@ jobs:
             const changeType = '${{ steps.version_diff.outputs.change_type }}';
             const patchFailed = '${{ steps.patch_check.outputs.patch_failed }}' === 'true';
             const failedPatches = process.env.FAILED_PATCHES || '';
+            const overlayFailed = '${{ steps.overlay_merge.outputs.overlay_failed }}' === 'true';
+            const overlayConflicts = parseInt('${{ steps.overlay_merge.outputs.overlay_conflicts }}') || 0;
 
             const title = `sync: ${changeType} upstream ${oldVersion} → ${newVersion}`;
-            
+
             let body = `## Upstream Sync\n\n`;
             body += `- **Previous version**: ${oldVersion}\n`;
             body += `- **New version**: ${newVersion}\n`;
             body += `- **Change type**: ${changeType}\n\n`;
-            
+
             body += `## Version History\n\n`;
             body += `### ${newVersion}\n`;
             body += `- Synced at: ${new Date().toISOString()}\n`;
-            
-            if (patchFailed) {
-              body += `- ⚠️ Patch issues detected:\n${failedPatches}\n`;
+
+            if (overlayFailed) {
+              body += `- Overlay conflicts: ${overlayConflicts} file(s) need resolution (see comments)\n`;
             } else {
-              body += `- ✅ All patches applied successfully\n`;
+              body += `- Overlays merged cleanly\n`;
+            }
+            if (patchFailed) {
+              body += `- Legacy patch issues:\n${failedPatches}\n`;
             }
 
-            await github.rest.pulls.create({
+            const pr = await github.rest.pulls.create({
               owner: context.repo.owner,
               repo: context.repo.repo,
               title: title,
@@ -446,3 +665,115 @@ jobs:
               base: 'main',
               body: body
             });
+            core.setOutput('number', pr.data.number);
+
+      - name: Post overlay conflict comments on new PR
+        if: steps.overlay_merge.outputs.overlay_failed == 'true' && env.UPDATE_EXISTING == 'false' && steps.create_pr.outputs.number
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const prNumber = parseInt('${{ steps.create_pr.outputs.number }}');
+            const conflicts = JSON.parse(fs.readFileSync('/tmp/conflicts.json', 'utf8'));
+
+            for (const conflict of conflicts) {
+              const ext = conflict.file.split('.').pop();
+              let body;
+
+              if (conflict.type === 'deleted') {
+                body = [
+                  `### Conflict: \`${conflict.file}\``,
+                  '',
+                  'This file was **deleted** in the new upstream version.',
+                  'If this overlay is no longer needed, reply with:',
+                  '',
+                  '```',
+                  `@f3liz-bot resolve file=${conflict.file} action=delete`,
+                  '```',
+                  '',
+                  'If the file was moved/renamed, create a new overlay at the new path.',
+                ].join('\n');
+              } else if (conflict.content.length > 50000) {
+                const lines = conflict.content.split('\n');
+                const regions = [];
+                let regionLines = [];
+                let inConflict = false;
+                let regionStart = -1;
+                const CONTEXT = 10;
+
+                for (let i = 0; i < lines.length; i++) {
+                  if (lines[i].startsWith('<<<<<<<')) {
+                    inConflict = true;
+                    regionStart = Math.max(0, i - CONTEXT);
+                    regionLines = lines.slice(regionStart, i);
+                  }
+                  if (inConflict) {
+                    regionLines.push(lines[i]);
+                  }
+                  if (lines[i].startsWith('>>>>>>>')) {
+                    inConflict = false;
+                    const regionEnd = Math.min(lines.length, i + CONTEXT + 1);
+                    regionLines.push(...lines.slice(i + 1, regionEnd));
+                    regions.push({
+                      start: regionStart + 1,
+                      end: regionEnd,
+                      content: regionLines.join('\n')
+                    });
+                    regionLines = [];
+                  }
+                }
+
+                for (let r = 0; r < regions.length; r++) {
+                  const region = regions[r];
+                  body = [
+                    `### Conflict: \`${conflict.file}\` (region ${r + 1} of ${regions.length}, lines ${region.start}-${region.end})`,
+                    '',
+                    '**How to resolve:** Copy the code block below, fix the conflict markers (`<<<<<<<`, `=======`, `>>>>>>>`), and paste as a reply.',
+                    '',
+                    '<details open>',
+                    '<summary><b>Reply template</b> (copy this whole block)</summary>',
+                    '',
+                    '````',
+                    `@f3liz-bot resolve file=${conflict.file} region=${r + 1}`,
+                    '```' + ext,
+                    region.content,
+                    '```',
+                    '````',
+                    '</details>',
+                  ].join('\n');
+
+                  await github.rest.issues.createComment({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    issue_number: prNumber,
+                    body
+                  });
+                }
+                continue;
+              } else {
+                body = [
+                  `### Conflict: \`${conflict.file}\``,
+                  '',
+                  '**How to resolve:** Copy the code block below, fix the conflict markers (`<<<<<<<`, `=======`, `>>>>>>>`), and paste as a reply.',
+                  '',
+                  '<details open>',
+                  '<summary><b>Reply template</b> (copy this whole block)</summary>',
+                  '',
+                  '````',
+                  `@f3liz-bot resolve file=${conflict.file}`,
+                  '```' + ext,
+                  conflict.content,
+                  '```',
+                  '````',
+                  '</details>',
+                ].join('\n');
+              }
+
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: prNumber,
+                body
+              });
+            }

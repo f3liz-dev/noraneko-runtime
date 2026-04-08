@@ -96,12 +96,11 @@ jobs:
           fi
           echo "Valid @f3liz-bot patch command found."
 
-      - name: Get patches to remove from bot commands
-        id: list_rm_patches
+      - name: Get overlays to remove from bot commands
+        id: list_rm_overlays
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          PATCH_DIR=".github/patches/upstream"
           rm -f f3liz_rm_list.txt
 
           gh pr view ${{ steps.pr_info.outputs.pr_number }} \
@@ -110,8 +109,7 @@ jobs:
             | grep -E '@f3liz-bot.*patch' \
             | grep -oE 'rm=[^ ]+' \
             | sed 's/rm=//' \
-            | tr ',' '\n' \
-            | sed 's/$/\.patch/' > f3liz_rm_list.txt || true
+            | tr ',' '\n' > f3liz_rm_list.txt || true
 
           gh pr view ${{ steps.pr_info.outputs.pr_number }} \
             --repo ${{ github.repository }} \
@@ -119,59 +117,32 @@ jobs:
             | grep -E '@f3liz-bot.*patch' \
             | grep -oE 'rm=[^ ]+' \
             | sed 's/rm=//' \
-            | tr ',' '\n' \
-            | sed 's/$/\.patch/' >> f3liz_rm_list.txt || true
+            | tr ',' '\n' >> f3liz_rm_list.txt || true
 
           sort f3liz_rm_list.txt | uniq | grep -v '^$' > f3liz_rm_list_final.txt || touch f3liz_rm_list_final.txt
           mv f3liz_rm_list_final.txt f3liz_rm_list.txt
 
-          echo "Patches to remove:"
-          cat f3liz_rm_list.txt || echo "No patches to remove"
+          echo "Overlays to remove:"
+          cat f3liz_rm_list.txt || echo "None"
 
-      - name: Remove specified patches
+      - name: Remove specified overlays
         run: |
-          PATCH_DIR=".github/patches/upstream"
-          if [ -d "$PATCH_DIR" ]; then
-            while read PATCH_NAME; do
-              [ -z "$PATCH_NAME" ] && continue
-              PATCH_PATH="$PATCH_DIR/$PATCH_NAME"
-              if [ -f "$PATCH_PATH" ]; then
-                rm -f "$PATCH_PATH"
-                echo "Removed $PATCH_PATH"
-              fi
-            done < f3liz_rm_list.txt
-          fi
+          OVERLAY_DIR=".github/overlays"
+          while read ENTRY; do
+            [ -z "$ENTRY" ] && continue
+            # Support both slash-separated paths and dash-separated names
+            OVERLAY_PATH="$OVERLAY_DIR/$ENTRY"
+            if [ -f "$OVERLAY_PATH" ]; then
+              rm -f "$OVERLAY_PATH"
+              echo "Removed overlay: $OVERLAY_PATH"
+            fi
+          done < f3liz_rm_list.txt
+          find "$OVERLAY_DIR" -type d -empty -delete 2>/dev/null || true
 
-      - name: Validate patches compatibility
-        id: patch_check
+      - name: Generate per-file overlays
         run: |
-          PATCH_DIR=".github/patches/upstream"
-          HAS_FAILED=0
-
-          if [ -d "$PATCH_DIR" ]; then
-            for patch in "$PATCH_DIR"/*.patch; do
-              [ -e "$patch" ] || continue
-              PATCH_NAME="$(basename "$patch")"
-
-              if git apply --check "$patch"; then
-                echo "Patch $PATCH_NAME applies cleanly."
-              else
-                echo "ERROR: Patch $PATCH_NAME failed to apply!" >&2
-                HAS_FAILED=1
-              fi
-            done
-          fi
-
-          if [ "$HAS_FAILED" -ne 0 ]; then
-            echo "One or more patches failed to apply cleanly. Aborting."
-            exit 1
-          fi
-
-      - name: Generate per-file patches
-        if: success() && steps.patch_check.conclusion == 'success'
-        run: |
-          PATCH_DIR=".github/patches/upstream"
-          mkdir -p "$PATCH_DIR"
+          OVERLAY_DIR=".github/overlays"
+          mkdir -p "$OVERLAY_DIR"
           BASE=base_branch
 
           git diff --name-only $BASE | \
@@ -180,28 +151,28 @@ jobs:
 
           while read file; do
             [ -z "$file" ] && continue
-            patchfile="$PATCH_DIR/${file//\//-}.patch"
-            git diff $BASE -- "$file" > "$patchfile"
-            if [ ! -s "$patchfile" ]; then
-              rm "$patchfile"
+            if [ -f "$file" ]; then
+              mkdir -p "$OVERLAY_DIR/$(dirname "$file")"
+              cp "$file" "$OVERLAY_DIR/$file"
+              echo "Overlay: $file"
             fi
           done < changed_files.txt
 
-      - name: Stage patch directory changes
-        if: success() && steps.patch_check.conclusion == 'success'
-        run: |
-          git add .github/patches/upstream/
+          # Record the base commit
+          git rev-parse $BASE > "$OVERLAY_DIR/UPSTREAM_BASE"
 
-      - name: Identify new patches
-        if: success() && steps.patch_check.conclusion == 'success'
-        id: new_patches
+      - name: Stage overlay changes
         run: |
-          echo 'patches<<EOF' >> $GITHUB_OUTPUT
-          git diff --cached --name-only --diff-filter=AM ".github/patches/upstream/" >> $GITHUB_OUTPUT
+          git add .github/overlays/
+
+      - name: Identify new overlays
+        id: new_overlays
+        run: |
+          echo 'overlays<<EOF' >> $GITHUB_OUTPUT
+          git diff --cached --name-only --diff-filter=AM ".github/overlays/" >> $GITHUB_OUTPUT
           echo 'EOF' >> $GITHUB_OUTPUT
 
-      - name: Revert source changes (keep only patches)
-        if: success() && steps.patch_check.conclusion == 'success'
+      - name: Revert source changes (keep only overlays)
         run: |
           BASE=base_branch
 
@@ -219,16 +190,14 @@ jobs:
 
           rm -f changed_files.txt files_to_revert.txt f3liz_rm_list.txt
 
-      - name: Commit and push patch files
-        if: success() && steps.patch_check.conclusion == 'success'
+      - name: Commit and push overlay files
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           if git diff --cached --quiet; then
-            echo "No patch changes to commit."
+            echo "No overlay changes to commit."
           else
-            git commit -m "chore: f3liz-bot per file patches (reverted source changes)"
-
+            git commit -m "chore: f3liz-bot per file overlays (reverted source changes)"
             git push origin HEAD:${{ steps.pr_info.outputs.head_ref }}
           fi
 
@@ -241,35 +210,30 @@ jobs:
           github-token: ${{ secrets.F3LIZ_BOT_TOKEN }}
           script: |
             const fs = require('fs');
-            let changelog = "## F3liz Bot Patch Update\n\n";
+            let changelog = "## F3liz Bot Overlay Update\n\n";
 
             try {
-              const removedPatches = fs.readFileSync('f3liz_rm_list.txt', 'utf8').trim().split('\n').filter(p => p);
-              if (removedPatches.length > 0 && removedPatches[0] !== '') {
-                changelog += "### Removed Patches:\n";
-                removedPatches.forEach(patch => {
-                  changelog += `- ${patch}\n`;
-                });
+              const removed = fs.readFileSync('f3liz_rm_list.txt', 'utf8').trim().split('\n').filter(p => p);
+              if (removed.length > 0 && removed[0] !== '') {
+                changelog += "### Removed Overlays:\n";
+                removed.forEach(entry => { changelog += `- ${entry}\n`; });
                 changelog += "\n";
               }
             } catch (e) { }
 
-            const changedPatchesRaw = `${{ steps.new_patches.outputs.patches }}`;
-            const changedPatches = changedPatchesRaw ? changedPatchesRaw.trim().split('\n').filter(p => p) : [];
-            const patchCount = changedPatches.length;
+            const overlaysRaw = `${{ steps.new_overlays.outputs.overlays }}`;
+            const overlays = overlaysRaw ? overlaysRaw.trim().split('\n').filter(p => p) : [];
 
-            if (patchCount > 0) {
-              changelog += `### Generated/Updated Patches: ${patchCount} files\n\n`;
-              changelog += "**Note:** Source files have been reverted to base state - only patch files are kept.\n\n";
-
-              changelog += "### Patch Files Created/Updated For:\n";
-              changedPatches.forEach(patch => {
-                const filename = patch.replace('.github/patches/upstream/', '').replace('.patch', '').replace(/-/g, '/');
-                changelog += `- ${filename}\n`;
+            if (overlays.length > 0) {
+              changelog += `### Generated/Updated Overlays: ${overlays.length} files\n\n`;
+              changelog += "**Note:** Source files have been reverted to base state - only overlay files are kept.\n\n";
+              changelog += "### Overlay Files:\n";
+              overlays.forEach(o => {
+                const filepath = o.replace('.github/overlays/', '');
+                changelog += `- \`${filepath}\`\n`;
               });
-
             } else {
-               changelog += "### No new patches were generated or updated.\n";
+              changelog += "### No new overlays were generated or updated.\n";
             }
 
             await github.rest.issues.createComment({
@@ -288,11 +252,9 @@ jobs:
           github-token: ${{ secrets.F3LIZ_BOT_TOKEN }}
           script: |
             const runUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
-            const failureMessage = `## F3liz Bot Patch Update Failed\n\nThe patch update workflow encountered an error. Please check the [workflow run](${runUrl}) for details.`;
-
             await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: context.payload.issue.number,
-              body: failureMessage
+              body: `## F3liz Bot Overlay Update Failed\n\nCheck the [workflow run](${runUrl}) for details.`
             });

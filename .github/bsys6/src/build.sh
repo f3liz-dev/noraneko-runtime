@@ -8,7 +8,18 @@ source $BSYS6/exports/version.sh
 
 source "$BSYS6/source.sh"
 
-# Apply patches if any exist
+# Apply overlays (full file copies that override upstream)
+OVERLAY_DIR="$SOURCEDIR/.github/overlays"
+if [ -d "$OVERLAY_DIR" ]; then
+  echo "-> Applying overlays" >&2
+  (cd "$OVERLAY_DIR" && find . -type f ! -name 'UPSTREAM_BASE' | while read file; do
+    mkdir -p "$SOURCE/$(dirname "$file")"
+    cp "$file" "$SOURCE/$file"
+    echo "   overlay: $file" >&2
+  done)
+fi
+
+# Legacy: apply patches if any still exist
 PATCH_DIR="$BSYS6/../patches"
 if [ -d "$PATCH_DIR" ]; then
   for patch in "$PATCH_DIR"/*.patch; do
