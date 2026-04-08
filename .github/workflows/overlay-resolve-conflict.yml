@@ -48,9 +48,20 @@ jobs:
             const region = regionMatch ? regionMatch[1] : '';
 
             // Extract code block content (between first ``` pair)
-            const codeMatch = body.match(/```\w*\n([\s\S]*?)\n```/);
+            // Normalize line endings, handle optional trailing spaces on fence lines
+            const normalized = body.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+            // Try multiple fence patterns: ```lang, ```, ````lang, ````
+            const codeMatch = normalized.match(/`{3,}\w*\s*\n([\s\S]*?)\n\s*`{3,}/)
             if (!codeMatch) {
               core.setFailed('No code block found in comment. Wrap resolved content in ``` fences.');
+              // Log chars around first backtick to help debug
+              const idx = normalized.indexOf('`');
+              if (idx >= 0) {
+                core.info('Context around first backtick: ' + JSON.stringify(normalized.substring(Math.max(0, idx - 20), idx + 40)));
+              } else {
+                core.info('No backtick found in body at all');
+              }
+              core.info('Body length: ' + body.length);
               return;
             }
 

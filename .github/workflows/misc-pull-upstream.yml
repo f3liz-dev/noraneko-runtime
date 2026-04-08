@@ -521,7 +521,6 @@ jobs:
             const conflicts = JSON.parse(fs.readFileSync('/tmp/conflicts.json', 'utf8'));
 
             for (const conflict of conflicts) {
-              const ext = conflict.file.split('.').pop();
               let body;
 
               if (conflict.type === 'deleted') {
@@ -575,12 +574,12 @@ jobs:
                     '',
                     '**How to resolve:** Copy the code block below, fix the conflict markers (`<<<<<<<`, `=======`, `>>>>>>>`), and paste as a reply.',
                     '',
-                    '<details open>',
-                    '<summary><b>Reply template</b> (copy this whole block)</summary>',
+                    '<details>',
+                    '<summary><b>Reply template</b> — click to expand, copy, resolve, and paste as reply</summary>',
                     '',
                     '````',
                     `@f3liz-bot resolve file=${conflict.file} region=${r + 1}`,
-                    '```' + ext,
+                    '```diff',
                     region.content,
                     '```',
                     '````',
@@ -606,7 +605,7 @@ jobs:
                   '',
                   '````',
                   `@f3liz-bot resolve file=${conflict.file}`,
-                  '```' + ext,
+                  '```diff',
                   conflict.content,
                   '```',
                   '````',
@@ -678,7 +677,6 @@ jobs:
             const conflicts = JSON.parse(fs.readFileSync('/tmp/conflicts.json', 'utf8'));
 
             for (const conflict of conflicts) {
-              const ext = conflict.file.split('.').pop();
               let body;
 
               if (conflict.type === 'deleted') {
@@ -731,12 +729,12 @@ jobs:
                     '',
                     '**How to resolve:** Copy the code block below, fix the conflict markers (`<<<<<<<`, `=======`, `>>>>>>>`), and paste as a reply.',
                     '',
-                    '<details open>',
-                    '<summary><b>Reply template</b> (copy this whole block)</summary>',
+                    '<details>',
+                    '<summary><b>Reply template</b> — click to expand, copy, resolve, and paste as reply</summary>',
                     '',
                     '````',
                     `@f3liz-bot resolve file=${conflict.file} region=${r + 1}`,
-                    '```' + ext,
+                    '```diff',
                     region.content,
                     '```',
                     '````',
@@ -762,7 +760,7 @@ jobs:
                   '',
                   '````',
                   `@f3liz-bot resolve file=${conflict.file}`,
-                  '```' + ext,
+                  '```diff',
                   conflict.content,
                   '```',
                   '````',
