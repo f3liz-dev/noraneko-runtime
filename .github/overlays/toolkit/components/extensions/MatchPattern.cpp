@@ -82,7 +82,11 @@ bool AtomSet::Intersects(const AtomSet& aOther) const {
   }
 
 <<<<<<< noraneko
+<<<<<<< noraneko
 DEFINE_STATIC_ATOM_SET(PermittedSchemes, nsGkAtoms::http, nsGkAtoms::https, nsGkAtoms::about,
+=======
+DEFINE_STATIC_ATOM_SET(PermittedSchemes, nsGkAtoms::http, nsGkAtoms::https,
+>>>>>>> upstream
 =======
 DEFINE_STATIC_ATOM_SET(PermittedSchemes, nsGkAtoms::http, nsGkAtoms::https,
 >>>>>>> upstream

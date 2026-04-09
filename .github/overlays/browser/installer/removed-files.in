@@ -66,6 +66,7 @@
 # this file.
 
 <<<<<<< noraneko
+<<<<<<< noraneko
 # --- Noraneko Patch Start ---
 # This blocks to package with `ac_add_options --enable-chrome-format=flat`
 # # Remove the toplevel chrome.manifest added by bug 1295542.
@@ -77,6 +78,8 @@
 # #endif
 # --- Noraneko Patch End   ---
 =======
+=======
+>>>>>>> upstream
 # Remove the toplevel chrome.manifest added by bug 1295542.
 #ifndef MOZ_GTK
   @DIR_MACOS@chrome.manifest
@@ -84,6 +87,9 @@
     @DIR_RESOURCES@chrome.manifest
   #endif
 #endif
+<<<<<<< noraneko
+>>>>>>> upstream
+=======
 >>>>>>> upstream
 
 # channel-prefs.js has been removed on macOS.
@@ -97,7 +103,11 @@
 #ifdef XP_MACOSX
 @DIR_RESOURCES@update-settings.ini
 <<<<<<< noraneko
+<<<<<<< noraneko
 #endif
+=======
+#endif
+>>>>>>> upstream
 =======
 #endif
 >>>>>>> upstream

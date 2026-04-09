@@ -86,7 +86,11 @@ src/Makefile
 # Ignore directories gclient syncs.
 src/testing
 <<<<<<< noraneko
+<<<<<<< noraneko
 # src/third_party/lss
+=======
+src/third_party/lss
+>>>>>>> upstream
 =======
 src/third_party/lss
 >>>>>>> upstream

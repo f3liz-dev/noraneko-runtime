@@ -268,6 +268,7 @@
 #endif
 
 <<<<<<< noraneko
+<<<<<<< noraneko
 /*
 * NORANEKO PATCH
 * [updater]
@@ -281,6 +282,8 @@
 * END
 */
 
+=======
+>>>>>>> upstream
 =======
 >>>>>>> upstream
 extern void InstallSignalHandlers(const char* ProgramName);
@@ -3568,6 +3571,7 @@ static bool CheckCompatibility(nsIFile* aProfileDir, const nsCString& aVersion,
   }
 
 <<<<<<< noraneko
+<<<<<<< noraneko
   /*
   * NORANEKO PATCH
   * [updater]
@@ -3609,6 +3613,8 @@ static bool CheckCompatibility(nsIFile* aProfileDir, const nsCString& aVersion,
   * END
   */
 
+=======
+>>>>>>> upstream
 =======
 >>>>>>> upstream
   // If we get here, the version matched, but there may still be other

@@ -539,7 +539,11 @@
       ; Add our subdirectory, this is hardcoded as grandparent of the update directory in
       ; several other places.
 <<<<<<< noraneko
+<<<<<<< noraneko
       StrCpy $0 "$0\Noraneko-1de4eec8-1241-4177-a864-e594e8d1fb38"
+=======
+      StrCpy $0 "$0\Mozilla-1de4eec8-1241-4177-a864-e594e8d1fb38"
+>>>>>>> upstream
 =======
       StrCpy $0 "$0\Mozilla-1de4eec8-1241-4177-a864-e594e8d1fb38"
 >>>>>>> upstream

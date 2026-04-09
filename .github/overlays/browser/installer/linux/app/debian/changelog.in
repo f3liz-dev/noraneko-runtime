@@ -3,7 +3,11 @@ ${PKG_NAME} (${PKG_VERSION}) UNRELEASED; urgency=medium
   * N/A
 
 <<<<<<< noraneko
+<<<<<<< noraneko
  -- nyanrus <nyanrus.dev+noraneko@gmail.com>  ${CHANGELOG_DATE}
+=======
+ -- Mozilla <release@mozilla.com>  ${CHANGELOG_DATE}
+>>>>>>> upstream
 =======
  -- Mozilla <release@mozilla.com>  ${CHANGELOG_DATE}
 >>>>>>> upstream

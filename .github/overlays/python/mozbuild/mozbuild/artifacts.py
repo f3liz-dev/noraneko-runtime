@@ -90,7 +90,11 @@ UNFILTERED_PROJECT_PACKAGE_PROCESSED_SUFFIX = (
 class GeckoJobConfiguration:
     trust_domain = "gecko"
 <<<<<<< noraneko
+<<<<<<< noraneko
     product = "noraneko"
+=======
+    product = "firefox"
+>>>>>>> upstream
 =======
     product = "firefox"
 >>>>>>> upstream

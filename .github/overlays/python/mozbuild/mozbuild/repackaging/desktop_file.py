@@ -336,9 +336,15 @@ def _desktop_entry_attribute(key, value, locale=None, localizations=None):
         return f"{key}={value}"
     if locale and locale == "en-US":
 <<<<<<< noraneko
+<<<<<<< noraneko
         return f"{key}={localizations[locale].format_value(value).replace('Firefox','Noraneko')}"
     else:
         return f"{key}[{locale.replace('-', '_')}]={localizations[locale].format_value(value).replace('Firefox','Noraneko')}"
+=======
+        return f"{key}={localizations[locale].format_value(value)}"
+    else:
+        return f"{key}[{locale.replace('-', '_')}]={localizations[locale].format_value(value)}"
+>>>>>>> upstream
 =======
         return f"{key}={localizations[locale].format_value(value)}"
     else:

@@ -1,6 +1,10 @@
 Source: ${PKG_NAME}
 <<<<<<< noraneko
+<<<<<<< noraneko
 Maintainer: nyanrus <nyanrus.dev+noraneko@gmail.com>
+=======
+Maintainer: Mozilla <release@mozilla.com>
+>>>>>>> upstream
 =======
 Maintainer: Mozilla <release@mozilla.com>
 >>>>>>> upstream
