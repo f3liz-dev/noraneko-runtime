@@ -41,7 +41,11 @@ Make all warnings fatal
 
 <<<<<<< noraneko
 <<<<<<< noraneko
+<<<<<<< noraneko
 .SS "Noraneko options"
+=======
+.SS "Mozilla options"
+>>>>>>> upstream
 =======
 .SS "Mozilla options"
 >>>>>>> upstream
@@ -106,6 +110,7 @@ Load the specified chrome.
 .SH BUGS
 <<<<<<< noraneko
 <<<<<<< noraneko
+<<<<<<< noraneko
 To report a bug, please visit \fIhttp://github.com/f3liz-dev/noraneko/\fR
 
 .SH AUTHORS
@@ -115,6 +120,8 @@ To report a bug, please visit \fIhttp://github.com/f3liz-dev/noraneko/\fR
 =======
 =======
 >>>>>>> upstream
+=======
+>>>>>>> upstream
 To report a bug, please visit \fIhttp://bugzilla.mozilla.org/\fR
 
 .SH AUTHORS
@@ -122,6 +129,9 @@ To report a bug, please visit \fIhttp://bugzilla.mozilla.org/\fR
 .B The Mozilla Organization
 .I https://www.mozilla.org/en-US/about/
 <<<<<<< noraneko
+<<<<<<< noraneko
+>>>>>>> upstream
+=======
 >>>>>>> upstream
 =======
 >>>>>>> upstream

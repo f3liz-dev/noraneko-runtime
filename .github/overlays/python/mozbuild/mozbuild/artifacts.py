@@ -91,7 +91,11 @@ class GeckoJobConfiguration:
     trust_domain = "gecko"
 <<<<<<< noraneko
 <<<<<<< noraneko
+<<<<<<< noraneko
     product = "noraneko"
+=======
+    product = "firefox"
+>>>>>>> upstream
 =======
     product = "firefox"
 >>>>>>> upstream

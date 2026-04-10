@@ -269,6 +269,7 @@
 
 <<<<<<< noraneko
 <<<<<<< noraneko
+<<<<<<< noraneko
 /*
 * NORANEKO PATCH
 * [updater]
@@ -282,6 +283,8 @@
 * END
 */
 
+=======
+>>>>>>> upstream
 =======
 >>>>>>> upstream
 =======
@@ -3572,6 +3575,7 @@ static bool CheckCompatibility(nsIFile* aProfileDir, const nsCString& aVersion,
 
 <<<<<<< noraneko
 <<<<<<< noraneko
+<<<<<<< noraneko
   /*
   * NORANEKO PATCH
   * [updater]
@@ -3613,6 +3617,8 @@ static bool CheckCompatibility(nsIFile* aProfileDir, const nsCString& aVersion,
   * END
   */
 
+=======
+>>>>>>> upstream
 =======
 >>>>>>> upstream
 =======

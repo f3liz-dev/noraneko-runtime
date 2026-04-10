@@ -229,6 +229,7 @@ interface nsIUpdate : nsISupports
   Element serialize(in Document updates);
 <<<<<<< noraneko
 <<<<<<< noraneko
+<<<<<<< noraneko
 
   /**
    * * NORANEKO PATCH - 0.1.0
@@ -249,6 +250,8 @@ interface nsIUpdate : nsISupports
    * * [UPDATER]
    * * END
    */
+=======
+>>>>>>> upstream
 =======
 >>>>>>> upstream
 =======

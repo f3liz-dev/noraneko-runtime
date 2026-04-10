@@ -46,6 +46,7 @@ from mozboot.windows import WindowsBootstrapper
 APPLICATION_CHOICE = """
 <<<<<<< noraneko
 <<<<<<< noraneko
+<<<<<<< noraneko
 Please choose the version of Noraneko you want to build:
 %s
 Your choice: """
@@ -57,6 +58,8 @@ APPLICATIONS = OrderedDict(
     ]
 )
 =======
+=======
+>>>>>>> upstream
 =======
 >>>>>>> upstream
 Note on Artifact Mode:
@@ -81,6 +84,9 @@ APPLICATIONS = OrderedDict([
     ("SpiderMonkey JavaScript engine", "js"),
 ])
 <<<<<<< noraneko
+<<<<<<< noraneko
+>>>>>>> upstream
+=======
 >>>>>>> upstream
 =======
 >>>>>>> upstream
@@ -473,8 +479,12 @@ class Bootstrapper:
             if not self.instance.no_interactive:
 <<<<<<< noraneko
 <<<<<<< noraneko
+<<<<<<< noraneko
                 # ! No need to configure git-cinnabar because of noraneko repo cannot be merged to mozilla-central by compartibility.
                 should_configure_git = False
+=======
+                should_configure_git = self.instance.prompt_yesno(prompt=CONFIGURE_GIT)
+>>>>>>> upstream
 =======
                 should_configure_git = self.instance.prompt_yesno(prompt=CONFIGURE_GIT)
 >>>>>>> upstream
@@ -798,7 +808,11 @@ def _macos_is_running_under_rosetta():
         proc.returncode == 0 and proc.stdout.decode("ascii", "replace").strip() == "1"
 <<<<<<< noraneko
 <<<<<<< noraneko
+<<<<<<< noraneko
     )
+=======
+    )
+>>>>>>> upstream
 =======
     )
 >>>>>>> upstream

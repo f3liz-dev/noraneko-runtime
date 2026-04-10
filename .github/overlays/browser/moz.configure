@@ -6,8 +6,11 @@
 
 <<<<<<< noraneko
 <<<<<<< noraneko
+<<<<<<< noraneko
 include("../.github/assets/config/moz.configure")
 
+=======
+>>>>>>> upstream
 =======
 >>>>>>> upstream
 =======
@@ -23,7 +26,11 @@ imply_option("MOZ_PROFILE_MIGRATOR", True)
 
 <<<<<<< noraneko
 <<<<<<< noraneko
+<<<<<<< noraneko
 # imply_option("MOZ_APP_VENDOR", "Mozilla")
+=======
+imply_option("MOZ_APP_VENDOR", "Mozilla")
+>>>>>>> upstream
 =======
 imply_option("MOZ_APP_VENDOR", "Mozilla")
 >>>>>>> upstream

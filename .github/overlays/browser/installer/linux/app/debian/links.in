@@ -1,6 +1,10 @@
 <<<<<<< noraneko
 <<<<<<< noraneko
+<<<<<<< noraneko
 ${PKG_INSTALL_PATH}/noraneko usr/bin/${PKG_NAME}
+=======
+${PKG_INSTALL_PATH}/firefox usr/bin/${PKG_NAME}
+>>>>>>> upstream
 =======
 ${PKG_INSTALL_PATH}/firefox usr/bin/${PKG_NAME}
 >>>>>>> upstream
