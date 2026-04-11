@@ -19,6 +19,7 @@ import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 <<<<<<< noraneko
 <<<<<<< noraneko
 <<<<<<< noraneko
+<<<<<<< noraneko
 /**
  * * NORANEKO PATCH - 0.1.0
  * * [UPDATER]
@@ -34,6 +35,8 @@ import { NoranekoConstants } from "resource://noraneko/modules/NoranekoConstants
 
 // MARK: defines
 
+=======
+>>>>>>> upstream
 =======
 >>>>>>> upstream
 =======
@@ -1977,6 +1980,7 @@ function pingStateAndStatusCodes(aUpdate, aStartup, aStatus) {
 <<<<<<< noraneko
 <<<<<<< noraneko
 <<<<<<< noraneko
+<<<<<<< noraneko
  * * NORANEKO PATCH - 0.1.0
  * * [UPDATER]
  * * (add version2 for updating source without rebuilding binary)
@@ -2092,12 +2096,17 @@ function updateIsAtLeastAsOldAs(update, version, buildID
 >>>>>>> upstream
 =======
 >>>>>>> upstream
+=======
+>>>>>>> upstream
  * This returns true if the passed update is the same version or older than the
  * version and build ID values passed. Otherwise it returns false.
  */
 function updateIsAtLeastAsOldAs(update, version, buildID) {
 <<<<<<< noraneko
 <<<<<<< noraneko
+<<<<<<< noraneko
+>>>>>>> upstream
+=======
 >>>>>>> upstream
 =======
 >>>>>>> upstream
@@ -2107,6 +2116,7 @@ function updateIsAtLeastAsOldAs(update, version, buildID) {
     return false;
   }
   let versionComparison = Services.vc.compare(update.appVersion, version);
+<<<<<<< noraneko
 <<<<<<< noraneko
 <<<<<<< noraneko
 <<<<<<< noraneko
@@ -2145,6 +2155,8 @@ function updateIsAtLeastAsOldAs(update, version, buildID) {
 >>>>>>> upstream
 =======
 >>>>>>> upstream
+=======
+>>>>>>> upstream
   return (
     versionComparison < 0 ||
     (versionComparison == 0 && update.buildID == buildID)
@@ -2163,6 +2175,7 @@ function updateIsAtLeastAsOldAsCurrentVersion(update) {
 <<<<<<< noraneko
 <<<<<<< noraneko
 <<<<<<< noraneko
+<<<<<<< noraneko
     /**
      * * NORANEKO PATCH - 0.1.0
      * * [UPDATER]
@@ -2176,6 +2189,8 @@ function updateIsAtLeastAsOldAsCurrentVersion(update) {
      * * [UPDATER]
      * * END
      */
+=======
+>>>>>>> upstream
 =======
 >>>>>>> upstream
 =======
@@ -2205,6 +2220,7 @@ function updateIsAtLeastAsOldAsReadyUpdate(update) {
 <<<<<<< noraneko
 <<<<<<< noraneko
 <<<<<<< noraneko
+<<<<<<< noraneko
     /**
      * * NORANEKO PATCH - 0.1.0
      * * [UPDATER]
@@ -2218,6 +2234,8 @@ function updateIsAtLeastAsOldAsReadyUpdate(update) {
      * * [UPDATER]
      * * END
      */
+=======
+>>>>>>> upstream
 =======
 >>>>>>> upstream
 =======
@@ -2555,6 +2573,7 @@ class Update {
 <<<<<<< noraneko
 <<<<<<< noraneko
 <<<<<<< noraneko
+<<<<<<< noraneko
     /**
      * * NORANEKO PATCH - 0.1.0
      * * [UPDATER]
@@ -2568,6 +2587,8 @@ class Update {
      * * [UPDATER]
      * * END
      */
+=======
+>>>>>>> upstream
 =======
 >>>>>>> upstream
 =======
@@ -2675,6 +2696,7 @@ class Update {
 <<<<<<< noraneko
 <<<<<<< noraneko
 <<<<<<< noraneko
+<<<<<<< noraneko
           /**
            * * NORANEKO PATCH - 0.1.0
            * * [UPDATER]
@@ -2688,6 +2710,8 @@ class Update {
            * * [UPDATER]
            * * END
            */
+=======
+>>>>>>> upstream
 =======
 >>>>>>> upstream
 =======
@@ -2841,6 +2865,7 @@ class Update {
 <<<<<<< noraneko
 <<<<<<< noraneko
 <<<<<<< noraneko
+<<<<<<< noraneko
     /**
      * * NORANEKO PATCH - 0.1.0
      * * [UPDATER]
@@ -2858,6 +2883,8 @@ class Update {
      * * [UPDATER]
      * * END
      */
+=======
+>>>>>>> upstream
 =======
 >>>>>>> upstream
 =======
@@ -4114,6 +4141,7 @@ export class UpdateService {
 <<<<<<< noraneko
 <<<<<<< noraneko
 <<<<<<< noraneko
+<<<<<<< noraneko
             /**
              * * NORANEKO PATCH - 0.1.0
              * * [UPDATER]
@@ -4126,6 +4154,8 @@ export class UpdateService {
              * * [UPDATER]
              * * END
              */
+=======
+>>>>>>> upstream
 =======
 >>>>>>> upstream
 =======
@@ -4145,6 +4175,7 @@ export class UpdateService {
 <<<<<<< noraneko
 <<<<<<< noraneko
 <<<<<<< noraneko
+<<<<<<< noraneko
             /**
              * * NORANEKO PATCH - 0.1.0
              * * [UPDATER]
@@ -4157,6 +4188,8 @@ export class UpdateService {
              * * [UPDATER]
              * * END
              */
+=======
+>>>>>>> upstream
 =======
 >>>>>>> upstream
 =======
