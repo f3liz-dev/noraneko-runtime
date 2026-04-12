@@ -93,7 +93,11 @@ class GeckoJobConfiguration:
 <<<<<<< noraneko
 <<<<<<< noraneko
 <<<<<<< noraneko
+<<<<<<< noraneko
     product = "noraneko"
+=======
+    product = "firefox"
+>>>>>>> upstream
 =======
     product = "firefox"
 >>>>>>> upstream

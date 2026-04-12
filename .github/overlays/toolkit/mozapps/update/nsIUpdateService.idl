@@ -231,6 +231,7 @@ interface nsIUpdate : nsISupports
 <<<<<<< noraneko
 <<<<<<< noraneko
 <<<<<<< noraneko
+<<<<<<< noraneko
 
   /**
    * * NORANEKO PATCH - 0.1.0
@@ -251,6 +252,8 @@ interface nsIUpdate : nsISupports
    * * [UPDATER]
    * * END
    */
+=======
+>>>>>>> upstream
 =======
 >>>>>>> upstream
 =======

@@ -48,6 +48,7 @@ APPLICATION_CHOICE = """
 <<<<<<< noraneko
 <<<<<<< noraneko
 <<<<<<< noraneko
+<<<<<<< noraneko
 Please choose the version of Noraneko you want to build:
 %s
 Your choice: """
@@ -59,6 +60,8 @@ APPLICATIONS = OrderedDict(
     ]
 )
 =======
+=======
+>>>>>>> upstream
 =======
 >>>>>>> upstream
 =======
@@ -89,6 +92,9 @@ APPLICATIONS = OrderedDict([
 <<<<<<< noraneko
 <<<<<<< noraneko
 <<<<<<< noraneko
+<<<<<<< noraneko
+>>>>>>> upstream
+=======
 >>>>>>> upstream
 =======
 >>>>>>> upstream
@@ -487,8 +493,12 @@ class Bootstrapper:
 <<<<<<< noraneko
 <<<<<<< noraneko
 <<<<<<< noraneko
+<<<<<<< noraneko
                 # ! No need to configure git-cinnabar because of noraneko repo cannot be merged to mozilla-central by compartibility.
                 should_configure_git = False
+=======
+                should_configure_git = self.instance.prompt_yesno(prompt=CONFIGURE_GIT)
+>>>>>>> upstream
 =======
                 should_configure_git = self.instance.prompt_yesno(prompt=CONFIGURE_GIT)
 >>>>>>> upstream
@@ -820,7 +830,11 @@ def _macos_is_running_under_rosetta():
 <<<<<<< noraneko
 <<<<<<< noraneko
 <<<<<<< noraneko
+<<<<<<< noraneko
     )
+=======
+    )
+>>>>>>> upstream
 =======
     )
 >>>>>>> upstream

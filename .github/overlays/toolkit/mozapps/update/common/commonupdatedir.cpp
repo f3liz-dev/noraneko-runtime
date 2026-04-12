@@ -47,7 +47,11 @@
 <<<<<<< noraneko
 <<<<<<< noraneko
 <<<<<<< noraneko
+<<<<<<< noraneko
 #  define ROOT_UPDATE_DIR_NAME "Noraneko-1de4eec8-1241-4177-a864-e594e8d1fb38"
+=======
+#  define ROOT_UPDATE_DIR_NAME "Mozilla-1de4eec8-1241-4177-a864-e594e8d1fb38"
+>>>>>>> upstream
 =======
 #  define ROOT_UPDATE_DIR_NAME "Mozilla-1de4eec8-1241-4177-a864-e594e8d1fb38"
 >>>>>>> upstream

@@ -69,6 +69,7 @@
 <<<<<<< noraneko
 <<<<<<< noraneko
 <<<<<<< noraneko
+<<<<<<< noraneko
 # --- Noraneko Patch Start ---
 # This blocks to package with `ac_add_options --enable-chrome-format=flat`
 # # Remove the toplevel chrome.manifest added by bug 1295542.
@@ -86,6 +87,8 @@
 >>>>>>> upstream
 =======
 >>>>>>> upstream
+=======
+>>>>>>> upstream
 # Remove the toplevel chrome.manifest added by bug 1295542.
 #ifndef MOZ_GTK
   @DIR_MACOS@chrome.manifest
@@ -96,6 +99,9 @@
 <<<<<<< noraneko
 <<<<<<< noraneko
 <<<<<<< noraneko
+<<<<<<< noraneko
+>>>>>>> upstream
+=======
 >>>>>>> upstream
 =======
 >>>>>>> upstream
@@ -118,7 +124,11 @@
 <<<<<<< noraneko
 <<<<<<< noraneko
 <<<<<<< noraneko
+<<<<<<< noraneko
 #endif
+=======
+#endif
+>>>>>>> upstream
 =======
 #endif
 >>>>>>> upstream
