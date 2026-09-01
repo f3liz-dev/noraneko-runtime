@@ -67,8 +67,9 @@ linux)
   # Install LLVM/Clang
   install_llvm
 
-  # Cross-compilation dependencies
-  if [ "$ARCH" == "aarch64" ]; then
+  # Cross-compilation dependencies (x86_64 ホストから aarch64 を焼くときだけ。
+  # native aarch64 ホストには cross パッケージが無い/不要)
+  if [ "$ARCH" == "aarch64" ] && [ "$(uname -m)" != "aarch64" ]; then
     $BSYS6/utils/dependencies.sh "gcc-aarch64-linux-gnu g++-aarch64-linux-gnu binutils-aarch64-linux-gnu" "aarch64-linux-gnu-gcc aarch64-linux-gnu-binutils"
   fi
 
