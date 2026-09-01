@@ -1,15 +1,22 @@
 # SPDX-License-Identifier: MPL-2.0
 # macOS cross-compilation configuration
 
-# Packaging related
-export DMG_TOOL="$MOZBUILD/dmg/dmg"
-export HFS_TOOL="$MOZBUILD/dmg/hfsplus"
-
-# Build related
 CROSS=$MOZBUILD
-CCTOOLS=$CROSS/cctools
-mk_add_options "export PATH=$MOZBUILD/clang/bin:$CCTOOLS/bin:$CROSS/binutils/bin:$CROSS/dmg:$PATH"
-mk_add_options "export LD_LIBRARY_PATH=$MOZBUILD/clang/lib:$CCTOOLS/lib"
+
+if [ "$(uname -m)" != "aarch64" ]; then
+  # x86_64 ホスト: 従来どおり cctools/binutils/dmg も使う
+  export DMG_TOOL="$MOZBUILD/dmg/dmg"
+  export HFS_TOOL="$MOZBUILD/dmg/hfsplus"
+  CCTOOLS=$CROSS/cctools
+  mk_add_options "export PATH=$MOZBUILD/clang/bin:$CCTOOLS/bin:$CROSS/binutils/bin:$CROSS/dmg:$PATH"
+  mk_add_options "export LD_LIBRARY_PATH=$MOZBUILD/clang/lib:$CCTOOLS/lib"
+else
+  # aarch64 ホスト: linux64-aarch64-clang(darwin rt 同梱)だけで足りる。
+  # リンクは clang 同梱の ld64.lld。dmg は焼かない(package.sh が tar で出す)。
+  mk_add_options "export PATH=$MOZBUILD/clang/bin:$PATH"
+  mk_add_options "export LD_LIBRARY_PATH=$MOZBUILD/clang/lib"
+fi
+
 export CC="$CROSS/clang/bin/clang"
 export CXX="$CROSS/clang/bin/clang++"
 export HOST_CC="$CROSS/clang/bin/clang"
