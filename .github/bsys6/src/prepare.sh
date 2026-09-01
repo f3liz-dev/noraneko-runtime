@@ -111,7 +111,14 @@ macos)
   $BSYS6/utils/rustup_target.sh "x86_64-apple-darwin" "aarch64-apple-darwin"
 
   # Install macOS specific toolchain artifacts
-  $BSYS6/utils/install_toolchain_artifact.sh "sysroot-wasm32-wasi" "linux64-cbindgen" "linux64-clang" "linux64-libdmg" "linux64-cctools-port" "linux64-hfsplus" "linux64-binutils"
+  # ホストの arch で fetch する物を変える。x86_64 は従来どおり。
+  # aarch64 ホスト用には linux64-aarch64-{clang,cbindgen} が公式にある。
+  # dmg/cctools/hfsplus/binutils に aarch64 版は無い(dmg は焼かず tar で出す)。
+  if [ "$(uname -m)" == "aarch64" ]; then
+    $BSYS6/utils/install_toolchain_artifact.sh "sysroot-wasm32-wasi" "linux64-aarch64-cbindgen" "linux64-aarch64-clang"
+  else
+    $BSYS6/utils/install_toolchain_artifact.sh "sysroot-wasm32-wasi" "linux64-cbindgen" "linux64-clang" "linux64-libdmg" "linux64-cctools-port" "linux64-hfsplus" "linux64-binutils"
+  fi
 
   # Install macOS SDK
   $BSYS6/utils/install_macos_sdk.sh

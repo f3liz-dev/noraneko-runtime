@@ -39,3 +39,11 @@ ac_add_options MOZ_TELEMETRY_REPORTING=
 ac_add_options --with-branding=browser/branding/noraneko-unofficial
 # Package js shell.
 export MOZ_PACKAGE_JSSHELL=1
+
+# sccache: 箱(/etc/ci-box/env)では SCCACHE_DIR が入る。GHA では未設定のまま=従来どおり無効。
+if [ -n "${SCCACHE_DIR:-}" ]; then
+  ac_add_options --with-ccache=/usr/local/bin/sccache
+  mk_add_options "export RUSTC_WRAPPER=/usr/local/bin/sccache"
+  mk_add_options "export SCCACHE_DIR=$SCCACHE_DIR"
+  mk_add_options "export SCCACHE_CACHE_SIZE=${SCCACHE_CACHE_SIZE:-50G}"
+fi

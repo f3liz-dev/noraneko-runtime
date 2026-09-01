@@ -1,0 +1,36 @@
+# noraneko-ci: OCI A4 の agent(local backend)で bsys6 を回す。
+# gecko が 2GB あるので Woodpecker には clone させず、
+# /srv/ci/work の持続 clone に fetch して使う。
+# agent は WOODPECKER_MAX_WORKFLOWS=1 で直列(32 コア箱に一本ずつ)。
+skip_clone: true
+
+matrix:
+  include:
+    - BUILD_TARGET: linux
+      BUILD_ARCH: aarch64
+    - BUILD_TARGET: macos
+      BUILD_ARCH: aarch64
+
+when:
+  - event: [manual, cron]
+  - event: push
+    branch: [main, ci-box]
+
+steps:
+  build:
+    image: bash # local backend では中身は使われない
+    commands:
+      - set -a; . /etc/ci-box/env; set +a
+      - REPO_DIR=/srv/ci/work/noraneko-runtime
+      - |
+        if [ ! -d "$REPO_DIR/.git" ]; then
+          git clone https://github.com/f3liz-casa/noraneko-runtime "$REPO_DIR"
+        fi
+      - git -C "$REPO_DIR" fetch origin "$CI_COMMIT_SHA"
+      - git -C "$REPO_DIR" checkout -f "$CI_COMMIT_SHA"
+      - cd "$REPO_DIR/.github/bsys6"
+      # prepare-host は呼ばない(clang/swap/sccache は cloud-init 済み)
+      - TARGET=$BUILD_TARGET ARCH=$BUILD_ARCH SKIP_TESTS=true ./bsys6 prepare build package
+      # TODO(release): main の mac が直ったら、ここに
+      #   gh release create passed-<MOZ_BUILD_DATE> + sha256 添付
+      # を足す(旧 release と同じ資産名で。mac は tar.xz が初)
