@@ -17,20 +17,20 @@ if [ -z "${SOURCE:-}" ]; then
   platform_mozconfig="$SOURCEDIR/.github/workflows/mozconfigs/$TARGET-$ARCH.mozconfig"
   
   # Create mozconfig backup if needed
-  if [ ! -f "$SOURCEDIR/mozconfig.backup" ]; then
+  if [ ! -f "$SOURCEDIR/mozconfig.backup.$TARGET-$ARCH" ]; then
     if [ -f "$platform_mozconfig" ]; then
       echo "-> Using platform mozconfig from $platform_mozconfig" >&2
-      cp "$platform_mozconfig" "$SOURCEDIR/mozconfig.backup"
+      cp "$platform_mozconfig" "$SOURCEDIR/mozconfig.backup.$TARGET-$ARCH"
     elif [ -f "$SOURCEDIR/mozconfig" ]; then
       echo "-> Creating mozconfig backup" >&2
-      cp "$SOURCEDIR/mozconfig" "$SOURCEDIR/mozconfig.backup"
+      cp "$SOURCEDIR/mozconfig" "$SOURCEDIR/mozconfig.backup.$TARGET-$ARCH"
     else
-      touch "$SOURCEDIR/mozconfig.backup"
+      touch "$SOURCEDIR/mozconfig.backup.$TARGET-$ARCH"
     fi
   fi
 
   # Build mozconfig - start with the base
-  mozconfig="$(cat "$SOURCEDIR/mozconfig.backup")"
+  mozconfig="$(cat "$SOURCEDIR/mozconfig.backup.$TARGET-$ARCH")"
 
   # Add platform-specific config from bsys6 assets (additional options)
   if [ -f "$BSYS6/../assets/$TARGET.mozconfig" ]; then
