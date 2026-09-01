@@ -23,4 +23,4 @@ export HOST_CC="$CROSS/clang/bin/clang"
 export HOST_CXX="$CROSS/clang/bin/clang++"
 
 # SDK
-ac_add_options --with-macos-sdk="$MOZBUILD/MacOSX26.1.sdk"
+ac_add_options --with-macos-sdk="$MOZBUILD/MacOSX26.5.sdk"
