@@ -5,6 +5,14 @@ set -eu
 
 source $BSYS6/source.sh
 
+# 冪等ガード: 展開済みなら触らない(unpack-sdk.py は symlink 衝突で死ぬ)。
+# 途中死の食い残しは消してやり直す。
+if [ -f "$MOZBUILD/MacOSX26.5.sdk/SDKSettings.plist" ]; then
+  echo "-> macOS SDK already present, skipping"
+  return 0 2>/dev/null || exit 0
+fi
+rm -rf "$MOZBUILD/MacOSX26.5.sdk"
+
 echo "-> Fetching macOS SDK"
 $SOURCE/mach python --virtualenv build \
   $SOURCE/taskcluster/scripts/misc/unpack-sdk.py \
