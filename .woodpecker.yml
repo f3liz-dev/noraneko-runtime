@@ -1,7 +1,7 @@
-# noraneko-ci: OCI A4 の agent(local backend)で bsys6 を回す。
+# noraneko-ci: OCI の箱の agent(local backend)で bsys6 を回す。
 # gecko が 2GB あるので Woodpecker には clone させず、
 # /srv/ci/work の持続 clone に fetch して使う。
-# agent は WOODPECKER_MAX_WORKFLOWS=1 で直列(32 コア箱に一本ずつ)。
+# agent は WOODPECKER_MAX_WORKFLOWS=1 で直列(一本ずつ)。
 skip_clone: true
 
 matrix:
@@ -30,7 +30,15 @@ steps:
       - git -C "$REPO_DIR" checkout -f "$CI_COMMIT_SHA"
       - cd "$REPO_DIR/.github/bsys6"
       # prepare-host は呼ばない(clang/swap/sccache は cloud-init 済み)
-      - TARGET=$BUILD_TARGET ARCH=$BUILD_ARCH SKIP_TESTS=true ./bsys6 prepare build package
+      # 始終をテレメトリに刻む(コスト分析は heartbeat と突き合わせる)
+      - /usr/local/bin/ci-record build_start target=$BUILD_TARGET arch=$BUILD_ARCH commit=$CI_COMMIT_SHA
+      - |
+        rc=0
+        TARGET=$BUILD_TARGET ARCH=$BUILD_ARCH SKIP_TESTS=true ./bsys6 prepare build package || rc=$?
+        /usr/local/bin/ci-record build_end target=$BUILD_TARGET arch=$BUILD_ARCH rc=$rc dur_s=$SECONDS
+        sccache --show-stats > /srv/ci/telemetry/sccache-$(date +%s)-$BUILD_TARGET-$BUILD_ARCH.txt 2>&1 || true
+        du -sk /srv/ci/sccache /srv/ci/work /home/ci/.mozbuild >> /srv/ci/telemetry/du.log 2>/dev/null || true
+        exit $rc
       # TODO(release): main の mac が直ったら、ここに
       #   gh release create passed-<MOZ_BUILD_DATE> + sha256 添付
       # を足す(旧 release と同じ資産名で。mac は tar.xz が初)
