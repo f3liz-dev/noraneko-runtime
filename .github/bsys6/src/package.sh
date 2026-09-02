@@ -8,6 +8,10 @@ source $BSYS6/exports/require_build.sh
 
 echo "-> Running 'mach package'" >&2
 
+# aarch64 ホストの mac は dmg 道具が無いので TAR(mozconfig の export は mach package に届かないことがあるので env で)
+if [ "$TARGET" == "macos" ] && [ "$(uname -m)" == "aarch64" ]; then
+  export MOZ_PKG_FORMAT=TAR
+fi
 (cd $SOURCE && ./mach package)
 
 if [ "$TARGET" == "windows" ]; then
