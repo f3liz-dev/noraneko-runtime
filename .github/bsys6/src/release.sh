@@ -38,6 +38,7 @@ emit windows x86_64  obj-x86_64-pc-windows-msvc    "$SOURCEDIR/obj-x86_64-pc-win
 (cd "$OUT" && sha256sum * > SHA256SUMS)
 
 TAG="passed-$BUILDID"
+if [ "${RELEASE_DRY_RUN:-}" = "1" ]; then echo "-> dry-run: $TAG に上げる物:" >&2; (cd "$OUT" && ls -la) >&2; exit 0; fi
 REPO="${RELEASE_REPO:-f3liz-casa/noraneko-runtime}"
 if ! gh release view "$TAG" -R "$REPO" >/dev/null 2>&1; then
   gh release create "$TAG" -R "$REPO" --title "Runtime Release - $TAG" --notes "$(cat <<NOTES
