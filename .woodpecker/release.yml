@@ -1,0 +1,21 @@
+# build(matrix)が全部通ったら release。箱に /etc/ci-box/gh.env(GH_TOKEN)が無ければ skip。
+depends_on: [build]
+skip_clone: true
+
+when:
+  - event: [manual, cron]
+  - event: push
+    branch: [main, ci-box]
+
+steps:
+  release:
+    image: bash
+    commands:
+      - export HOME=/home/ci
+      - export PATH=/home/ci/.cargo/bin:/usr/local/bin:/usr/bin:/bin
+      - set -a; . /etc/ci-box/env; set +a
+      - |
+        if [ ! -r /etc/ci-box/gh.env ]; then echo "gh.env が無いので release は skip"; exit 0; fi
+        set -a; . /etc/ci-box/gh.env; set +a
+        cd /srv/ci/work/noraneko-runtime/.github/bsys6
+        ./bsys6 release

@@ -1,0 +1,44 @@
+# noraneko-ci: OCI の箱の agent(local backend)で bsys6 を回す。
+# gecko が 2GB あるので Woodpecker には clone させず、/srv/ci/work の持続 clone に fetch して使う。
+# local backend は偽の HOME(/tmp/woodpecker-local-*/home)で走るので、HOME/PATH は自分で正す。
+skip_clone: true
+
+matrix:
+  include:
+    - BUILD_TARGET: linux
+      BUILD_ARCH: aarch64
+    - BUILD_TARGET: macos
+      BUILD_ARCH: aarch64
+
+when:
+  - event: [manual, cron]
+  - event: push
+    branch: [main, ci-box]
+
+steps:
+  build:
+    image: bash # local backend では中身は使われない
+    commands:
+      # 箱の本当の環境(rustc 1.90 は ~/.cargo、mach の state は ~/.mozbuild、sccache は B2)
+      - export HOME=/home/ci
+      - export PATH=/home/ci/.cargo/bin:/usr/local/bin:/usr/bin:/bin
+      - set -a; . /etc/ci-box/env; [ -r /etc/ci-box/sccache.env ] && . /etc/ci-box/sccache.env; set +a
+      # 同じ pipeline の matrix 全部で BuildID を揃える(旧 CI と同じ)
+      - export MOZ_BUILD_DATE=$(date -u -d @$CI_PIPELINE_CREATED +%Y%m%d%H%M%S)
+      - REPO_DIR=/srv/ci/work/noraneko-runtime
+      - |
+        if [ ! -d "$REPO_DIR/.git" ]; then
+          git clone --recurse-submodules https://github.com/f3liz-casa/noraneko-runtime "$REPO_DIR"
+        fi
+      - git -C "$REPO_DIR" fetch origin "$CI_COMMIT_SHA"
+      - git -C "$REPO_DIR" checkout -f "$CI_COMMIT_SHA"
+      - cd "$REPO_DIR/.github/bsys6"
+      # sccache server は先に起こす(mach configure 中の自動起動は 10 秒で timeout する)
+      - sccache --start-server >/dev/null 2>&1 || true
+      - /usr/local/bin/ci-record build_start target=$BUILD_TARGET arch=$BUILD_ARCH commit=$CI_COMMIT_SHA kind=woodpecker
+      - |
+        rc=0
+        TARGET=$BUILD_TARGET ARCH=$BUILD_ARCH ./bsys6 prepare build package || rc=$?
+        /usr/local/bin/ci-record build_end target=$BUILD_TARGET arch=$BUILD_ARCH rc=$rc dur_s=$SECONDS kind=woodpecker
+        sccache --show-stats > /srv/ci/telemetry/sccache-$(date +%s)-$BUILD_TARGET-$BUILD_ARCH.txt 2>&1 || true
+        exit $rc
