@@ -40,8 +40,10 @@ emit windows x86_64  obj-x86_64-pc-windows-msvc    "$SOURCEDIR/obj-x86_64-pc-win
 TAG="passed-$BUILDID"
 if [ "${RELEASE_DRY_RUN:-}" = "1" ]; then echo "-> dry-run: $TAG に上げる物:" >&2; (cd "$OUT" && ls -la) >&2; exit 0; fi
 REPO="${RELEASE_REPO:-f3liz-casa/noraneko-runtime}"
+# 旧 release の platform 揃い(linux x86_64/aarch64, windows)でなければ prerelease にして latest を動かさない
+PRE=""; for need in noraneko-linux-x86_64-moz-artifact.tar.xz noraneko-linux-aarch64-moz-artifact.tar.xz noraneko-windows-x86_64-moz-artifact.zip; do [ -f "$OUT/$need" ] || PRE="--prerelease"; done
 if ! gh release view "$TAG" -R "$REPO" >/dev/null 2>&1; then
-  gh release create "$TAG" -R "$REPO" --title "Runtime Release - $TAG" --notes "$(cat <<NOTES
+  gh release create "$TAG" -R "$REPO" $PRE --title "Runtime Release - $TAG" --notes "$(cat <<NOTES
 This is a runtime release for Noraneko (built by noraneko-ci, $(uname -m) host).
 
 **WARNING:** This release is not a Noraneko installer. Visit the [releases page](https://github.com/nyanrus/noraneko/releases/) to get Noraneko itself.
