@@ -12,9 +12,11 @@ if [ "$(uname -m)" != "aarch64" ]; then
   mk_add_options "export LD_LIBRARY_PATH=$MOZBUILD/clang/lib:$CCTOOLS/lib"
 else
   # aarch64 ホスト: linux64-aarch64-clang(darwin rt 同梱)だけで足りる。
-  # リンクは clang 同梱の ld64.lld。dmg は焼かない(package.sh が tar で出す)。
+  # リンクは clang 同梱の ld64.lld。dmg 道具が無いので package は TAR で出す
+  # (mach package の staging を通すので symlink の無い本物の bundle になる)。
   mk_add_options "export PATH=$MOZBUILD/clang/bin:$PATH"
   mk_add_options "export LD_LIBRARY_PATH=$MOZBUILD/clang/lib"
+  export MOZ_PKG_FORMAT=TAR
 fi
 
 export CC="$CROSS/clang/bin/clang"
