@@ -17,5 +17,7 @@ steps:
       - |
         if [ ! -r /etc/ci-box/gh.env ]; then echo "gh.env が無いので release は skip"; exit 0; fi
         set -a; . /etc/ci-box/gh.env; set +a
-        cd /srv/ci/work/noraneko-runtime/.github/bsys6
+        # 木は target ごと。産物はそれぞれの木から集める
+        export RELEASE_TREES="/srv/ci/work/noraneko-runtime-linux /srv/ci/work/noraneko-runtime-macos"
+        cd /srv/ci/work/noraneko-runtime-linux/.github/bsys6
         ./bsys6 release
