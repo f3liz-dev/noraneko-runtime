@@ -269,7 +269,19 @@ jobs:
           git fetch origin "$BRANCH_NAME"
           git checkout "$BRANCH_NAME"
 
+      # 追いついている(overlay の base がもう新しい upstream commit)なら、rsync も merge もしない。
+      # ここが無いと、同じ版の日にも overlay を merge し直して PR にコミットを積んでいた。
+      - name: Check if already synced
+        run: |
+          BASE=$(cat .github/overlays/UPSTREAM_BASE 2>/dev/null || echo "")
+          NEW="${{ steps.new_version.outputs.commit }}"
+          if [ -n "$BASE" ] && [ "$BASE" = "$NEW" ]; then
+            echo "Already synced to $NEW. Nothing to do."
+            echo "UP_TO_DATE=true" >> $GITHUB_ENV
+          fi
+
       - name: Sync upstream files
+        if: env.UP_TO_DATE != 'true'
         run: |
           mv ../upstream_release/README.md ../upstream_release/MOZ_README.md
           rsync -a --delete \
@@ -284,6 +296,7 @@ jobs:
 
       - name: 3-way merge overlays with new upstream
         id: overlay_merge
+        if: env.UP_TO_DATE != 'true'
         run: |
           OVERLAY_DIR=".github/overlays"
           if [ ! -d "$OVERLAY_DIR" ]; then
@@ -309,12 +322,35 @@ jobs:
           # JSON array of {file, content} for conflict comments
           echo '[]' > /tmp/conflicts.json
 
-          cd ../upstream_release
-          git fetch --depth=200 origin
-          cd ../noraneko_runtime
+          # base(前回 sync した upstream commit)は upstream 側の repo にしか無い。
+          # clone は release 枝の --depth 200 なので、届いていなければ SHA 指定で足す。
+          # ここで取れないまま空の base で merge すると、全ファイルが丸ごと衝突する。
+          UPSTREAM=../upstream_release
+          if ! git -C "$UPSTREAM" cat-file -e "$OLD_BASE^{commit}" 2>/dev/null; then
+            git -C "$UPSTREAM" fetch -q --depth=1 origin "$OLD_BASE"
+          fi
+          if ! git -C "$UPSTREAM" cat-file -e "$OLD_BASE^{commit}" 2>/dev/null; then
+            echo "::error::UPSTREAM_BASE $OLD_BASE is not reachable in the upstream clone; refusing to merge overlays without a base"
+            exit 1
+          fi
 
           find "$OVERLAY_DIR" -type f ! -name 'UPSTREAM_BASE' | sort | while read overlay; do
             relpath="${overlay#$OVERLAY_DIR/}"
+
+            # 前回の衝突がまだ残っているファイルは触らない(重ねて merge すると入れ子になる)。
+            if grep -q '^<<<<<<< ' "$overlay"; then
+              echo "UNRESOLVED: $relpath still has conflict markers, skipping"
+              HAS_CONFLICT=1
+              CONFLICT_COUNT=$((CONFLICT_COUNT + 1))
+              echo "$HAS_CONFLICT" > /tmp/has_conflict
+              echo "$CONFLICT_COUNT" > /tmp/conflict_count
+              jq --arg file "$relpath" \
+                 --arg content "Still has unresolved conflict markers from a previous sync. Resolve it first; upstream moved again meanwhile." \
+                '. += [{"file": $file, "content": $content, "type": "unresolved"}]' \
+                /tmp/conflicts.json > /tmp/conflicts_tmp.json
+              mv /tmp/conflicts_tmp.json /tmp/conflicts.json
+              continue
+            fi
 
             # Check if file still exists upstream
             if [ ! -f "$relpath" ]; then
@@ -342,7 +378,8 @@ jobs:
             fi
 
             # Extract base version from old upstream commit
-            git show "$OLD_BASE:$relpath" > /tmp/merge_base 2>/dev/null || echo "" > /tmp/merge_base
+            # overlay が新規に足したファイルなら base は空でよい
+            git -C "$UPSTREAM" show "$OLD_BASE:$relpath" > /tmp/merge_base 2>/dev/null || : > /tmp/merge_base
             cp "$overlay" /tmp/merge_ours
             cp "$relpath" /tmp/merge_theirs
 
@@ -368,12 +405,17 @@ jobs:
             fi
           done
 
-          # Update the upstream base reference
-          echo "${{ steps.new_version.outputs.commit }}" > "$OVERLAY_DIR/UPSTREAM_BASE"
-
           # Read back state from subshell
           HAS_CONFLICT=$(cat /tmp/has_conflict 2>/dev/null || echo "0")
           CONFLICT_COUNT=$(cat /tmp/conflict_count 2>/dev/null || echo "0")
+
+          # base を進めるのは衝突が残っていないときだけ。衝突を残したまま進めると、
+          # 次回は base=upstream になって、その衝突が見えなくなる(解決後の merge も狂う)。
+          if [ "$HAS_CONFLICT" -eq 0 ]; then
+            echo "${{ steps.new_version.outputs.commit }}" > "$OVERLAY_DIR/UPSTREAM_BASE"
+          else
+            echo "Conflicts remain; leaving UPSTREAM_BASE at $OLD_BASE"
+          fi
 
           echo "overlay_conflicts=$CONFLICT_COUNT" >> $GITHUB_OUTPUT
           if [ "$HAS_CONFLICT" -ne 0 ]; then
@@ -385,6 +427,7 @@ jobs:
 
       - name: Check legacy patches compatibility
         id: patch_check
+        if: env.UP_TO_DATE != 'true'
         run: |
           HAS_FAILED=0
           FAILED_PATCHES=""
@@ -511,15 +554,76 @@ jobs:
               body: newBody
             });
 
-      - name: Post overlay conflict comments on existing PR
-        if: steps.overlay_merge.outputs.overlay_failed == 'true' && env.UPDATE_EXISTING == 'true'
+      - name: Create new Pull Request
+        id: create_pr
+        if: steps.check_changes.outputs.has_changes == 'true' && env.UPDATE_EXISTING == 'false' && env.BRANCH_NAME != ''
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const oldVersion = '${{ steps.old_version.outputs.version }}';
+            const newVersion = '${{ steps.new_version.outputs.version }}';
+            const changeType = '${{ steps.version_diff.outputs.change_type }}';
+            const patchFailed = '${{ steps.patch_check.outputs.patch_failed }}' === 'true';
+            const failedPatches = process.env.FAILED_PATCHES || '';
+            const overlayFailed = '${{ steps.overlay_merge.outputs.overlay_failed }}' === 'true';
+            const overlayConflicts = parseInt('${{ steps.overlay_merge.outputs.overlay_conflicts }}') || 0;
+
+            const title = `sync: ${changeType} upstream ${oldVersion} → ${newVersion}`;
+
+            let body = `## Upstream Sync\n\n`;
+            body += `- **Previous version**: ${oldVersion}\n`;
+            body += `- **New version**: ${newVersion}\n`;
+            body += `- **Change type**: ${changeType}\n\n`;
+
+            body += `## Version History\n\n`;
+            body += `### ${newVersion}\n`;
+            body += `- Synced at: ${new Date().toISOString()}\n`;
+
+            if (overlayFailed) {
+              body += `- Overlay conflicts: ${overlayConflicts} file(s) need resolution (see comments)\n`;
+            } else {
+              body += `- Overlays merged cleanly\n`;
+            }
+            if (patchFailed) {
+              body += `- Legacy patch issues:\n${failedPatches}\n`;
+            }
+
+            const pr = await github.rest.pulls.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: title,
+              head: process.env.BRANCH_NAME,
+              base: 'main',
+              body: body
+            });
+            core.setOutput('number', pr.data.number);
+
+      # 既存 PR でも新規 PR でも同じ一本。衝突したファイルごとに一件。
+      - name: Post overlay conflict comments
+        if: steps.overlay_merge.outputs.overlay_failed == 'true' && (env.UPDATE_EXISTING == 'true' || steps.create_pr.outputs.number)
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const fs = require('fs');
-            const prNumber = parseInt('${{ steps.check_pr.outputs.number }}');
+            const prNumber = parseInt('${{ steps.check_pr.outputs.number }}' || '${{ steps.create_pr.outputs.number }}');
             const conflicts = JSON.parse(fs.readFileSync('/tmp/conflicts.json', 'utf8'));
+
+            // 本文は 65,536 文字が上限。連投は secondary rate limit に当たるので、間を置く。
+            const post = async (text) => {
+              const limit = 60000;
+              const body = text.length > limit
+                ? text.slice(0, limit) + '\n```\n````\n</details>\n\n_(truncated)_'
+                : text;
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: prNumber,
+                body
+              });
+              await new Promise(r => setTimeout(r, 1500));
+            };
 
             for (const conflict of conflicts) {
               let body;
@@ -536,6 +640,13 @@ jobs:
                   '```',
                   '',
                   'If the file was moved/renamed, create a new overlay at the new path.',
+                ].join('\n');
+              } else if (conflict.type === 'unresolved') {
+                body = [
+                  `### Still unresolved: \`${conflict.file}\``,
+                  '',
+                  conflict.content,
+                  'This file was skipped in this sync so the markers do not nest. Resolve it (`@f3liz-bot resolve file=...`), then re-run **Pull Upstream** to merge the newer upstream into it.',
                 ].join('\n');
               } else if (conflict.content.length > 50000) {
                 // Large file: extract only conflicted regions
@@ -587,12 +698,7 @@ jobs:
                     '</details>',
                   ].join('\n');
 
-                  await github.rest.issues.createComment({
-                    owner: context.repo.owner,
-                    repo: context.repo.repo,
-                    issue_number: prNumber,
-                    body
-                  });
+                  await post(body);
                 }
                 continue;
               } else {
@@ -614,165 +720,5 @@ jobs:
                 ].join('\n');
               }
 
-              await github.rest.issues.createComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: prNumber,
-                body
-              });
-            }
-
-      - name: Create new Pull Request
-        id: create_pr
-        if: steps.check_changes.outputs.has_changes == 'true' && env.UPDATE_EXISTING == 'false' && env.BRANCH_NAME != ''
-        uses: actions/github-script@v7
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            const oldVersion = '${{ steps.old_version.outputs.version }}';
-            const newVersion = '${{ steps.new_version.outputs.version }}';
-            const changeType = '${{ steps.version_diff.outputs.change_type }}';
-            const patchFailed = '${{ steps.patch_check.outputs.patch_failed }}' === 'true';
-            const failedPatches = process.env.FAILED_PATCHES || '';
-            const overlayFailed = '${{ steps.overlay_merge.outputs.overlay_failed }}' === 'true';
-            const overlayConflicts = parseInt('${{ steps.overlay_merge.outputs.overlay_conflicts }}') || 0;
-
-            const title = `sync: ${changeType} upstream ${oldVersion} → ${newVersion}`;
-
-            let body = `## Upstream Sync\n\n`;
-            body += `- **Previous version**: ${oldVersion}\n`;
-            body += `- **New version**: ${newVersion}\n`;
-            body += `- **Change type**: ${changeType}\n\n`;
-
-            body += `## Version History\n\n`;
-            body += `### ${newVersion}\n`;
-            body += `- Synced at: ${new Date().toISOString()}\n`;
-
-            if (overlayFailed) {
-              body += `- Overlay conflicts: ${overlayConflicts} file(s) need resolution (see comments)\n`;
-            } else {
-              body += `- Overlays merged cleanly\n`;
-            }
-            if (patchFailed) {
-              body += `- Legacy patch issues:\n${failedPatches}\n`;
-            }
-
-            const pr = await github.rest.pulls.create({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              title: title,
-              head: process.env.BRANCH_NAME,
-              base: 'main',
-              body: body
-            });
-            core.setOutput('number', pr.data.number);
-
-      - name: Post overlay conflict comments on new PR
-        if: steps.overlay_merge.outputs.overlay_failed == 'true' && env.UPDATE_EXISTING == 'false' && steps.create_pr.outputs.number
-        uses: actions/github-script@v7
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            const fs = require('fs');
-            const prNumber = parseInt('${{ steps.create_pr.outputs.number }}');
-            const conflicts = JSON.parse(fs.readFileSync('/tmp/conflicts.json', 'utf8'));
-
-            for (const conflict of conflicts) {
-              let body;
-
-              if (conflict.type === 'deleted') {
-                body = [
-                  `### Conflict: \`${conflict.file}\``,
-                  '',
-                  'This file was **deleted** in the new upstream version.',
-                  'If this overlay is no longer needed, reply with:',
-                  '',
-                  '```',
-                  `@f3liz-bot resolve file=${conflict.file} action=delete`,
-                  '```',
-                  '',
-                  'If the file was moved/renamed, create a new overlay at the new path.',
-                ].join('\n');
-              } else if (conflict.content.length > 50000) {
-                const lines = conflict.content.split('\n');
-                const regions = [];
-                let regionLines = [];
-                let inConflict = false;
-                let regionStart = -1;
-                const CONTEXT = 10;
-
-                for (let i = 0; i < lines.length; i++) {
-                  if (lines[i].startsWith('<<<<<<<')) {
-                    inConflict = true;
-                    regionStart = Math.max(0, i - CONTEXT);
-                    regionLines = lines.slice(regionStart, i);
-                  }
-                  if (inConflict) {
-                    regionLines.push(lines[i]);
-                  }
-                  if (lines[i].startsWith('>>>>>>>')) {
-                    inConflict = false;
-                    const regionEnd = Math.min(lines.length, i + CONTEXT + 1);
-                    regionLines.push(...lines.slice(i + 1, regionEnd));
-                    regions.push({
-                      start: regionStart + 1,
-                      end: regionEnd,
-                      content: regionLines.join('\n')
-                    });
-                    regionLines = [];
-                  }
-                }
-
-                for (let r = 0; r < regions.length; r++) {
-                  const region = regions[r];
-                  body = [
-                    `### Conflict: \`${conflict.file}\` (region ${r + 1} of ${regions.length}, lines ${region.start}-${region.end})`,
-                    '',
-                    '**How to resolve:** Copy the code block below, fix the conflict markers (`<<<<<<<`, `=======`, `>>>>>>>`), and paste as a reply.',
-                    '',
-                    '<details>',
-                    '<summary><b>Reply template</b> — click to expand, copy, resolve, and paste as reply</summary>',
-                    '',
-                    '````',
-                    `@f3liz-bot resolve file=${conflict.file} region=${r + 1}`,
-                    '```diff',
-                    region.content,
-                    '```',
-                    '````',
-                    '</details>',
-                  ].join('\n');
-
-                  await github.rest.issues.createComment({
-                    owner: context.repo.owner,
-                    repo: context.repo.repo,
-                    issue_number: prNumber,
-                    body
-                  });
-                }
-                continue;
-              } else {
-                body = [
-                  `### Conflict: \`${conflict.file}\``,
-                  '',
-                  '**How to resolve:** Copy the code block below, fix the conflict markers (`<<<<<<<`, `=======`, `>>>>>>>`), and paste as a reply.',
-                  '',
-                  '<details open>',
-                  '<summary><b>Reply template</b> (copy this whole block)</summary>',
-                  '',
-                  '````',
-                  `@f3liz-bot resolve file=${conflict.file}`,
-                  '```diff',
-                  conflict.content,
-                  '```',
-                  '````',
-                  '</details>',
-                ].join('\n');
-              }
-
-              await github.rest.issues.createComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: prNumber,
-                body
-              });
+              await post(body);
             }

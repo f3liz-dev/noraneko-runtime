@@ -50,3 +50,13 @@ Parse `browser/config/version.txt`:
 ## Bot
 
 `@f3liz-bot patch` on PR → generates patches in `.github/patches/upstream/`
+
+## Overlays (3-way merge)
+
+`.github/overlays/<path>` is merged as `ours` against `base` = the file at `UPSTREAM_BASE` in the **upstream** clone, and `theirs` = the new upstream file.
+
+- If `UPSTREAM_BASE` is already the detected release commit, the run stops early (no rsync, no merge, no commit).
+- If the base commit is not reachable, the run fails. Merging without a base makes every file a whole-file conflict.
+- Conflicted files are committed with markers so `@f3liz-bot resolve` can work on them. A file that still has markers is **skipped** on later runs (not re-merged), so markers never nest.
+- `UPSTREAM_BASE` only advances when no conflict remains.
+- One comment per conflicted file (bodies capped at 60,000 chars, 1.5 s apart).
