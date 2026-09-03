@@ -279,6 +279,7 @@ jobs:
             --exclude='/.gitmodules' \
             --exclude='/README.md' \
             --exclude='/.woodpecker.ya?ml' \
+            --exclude='/.woodpecker/' \
             ../upstream_release/ ./
 
       - name: 3-way merge overlays with new upstream

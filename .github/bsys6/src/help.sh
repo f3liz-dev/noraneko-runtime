@@ -18,6 +18,7 @@ Core Commands:
   source      Prepare source code and mozconfig
   build       Build the browser
   package     Create distributable package
+  release       Upload built artifacts to GitHub Release (passed-<BuildID>)
 
 Workflow:
   prepare -> bootstrap -> source -> build -> package
