@@ -4,35 +4,38 @@
 # 資産名は旧 release と同じ形: noraneko-<target>-<arch>-moz-artifact.*,
 # <target>-<arch>-application-ini.zip(nora-application.ini), <target>-<arch>-dist-host.zip
 # 要: gh(GH_TOKEN か gh auth)、zip。RELEASE_REPO で上げ先を変えられる。
+# 木が target ごとに分かれているときは RELEASE_TREES="dir1 dir2" で集める先を並べる(既定はこの木だけ)。
 set -eu
 
 source $BSYS6/exports/version.sh
 
 OUT="$ENTRY_PWD/release-out"
+TREES="${RELEASE_TREES:-$SOURCEDIR}"
 rm -rf "$OUT"; mkdir -p "$OUT"
 BUILDID=""
 
-emit() { # target arch objdir <application.ini の glob> <artifact の glob>
-  local t=$1 a=$2 obj=$3 ini art
-  [ -d "$SOURCEDIR/$obj" ] || return 0
-  ini=$(ls $4 2>/dev/null | head -n1 || true)
-  art=$(ls $ENTRY_PWD/$5 2>/dev/null | head -n1 || true)
+emit() { # target arch objdir <application.ini の glob(木からの相対)> <artifact の glob>
+  local t=$1 a=$2 obj=$3 ini art tree="" d
+  for d in $TREES; do [ -d "$d/$obj" ] && { tree="$d"; break; }; done
+  [ -n "$tree" ] || return 0
+  ini=$(ls $tree/$4 2>/dev/null | head -n1 || true)
+  art=$(ls $tree/.github/bsys6/$5 2>/dev/null | head -n1 || true)
   if [ -z "$ini" ] || [ -z "$art" ]; then echo "-> skip $t-$a (ini=${ini:-無} artifact=${art:-無})" >&2; return 0; fi
   local ext="${art##*.}"; [ "$ext" = "xz" ] && ext="tar.xz"
   cp "$art" "$OUT/$PROJECT_NAME-$t-$a-moz-artifact.$ext"
   cp "$ini" "$OUT/nora-application.ini"
   (cd "$OUT" && zip -q "$t-$a-application-ini.zip" nora-application.ini && rm -f nora-application.ini)
-  if [ -d "$SOURCEDIR/$obj/dist/host/bin" ]; then
-    (cd "$SOURCEDIR" && zip -qr "$OUT/$t-$a-dist-host.zip" "$obj/dist/host/bin")
+  if [ -d "$tree/$obj/dist/host/bin" ]; then
+    (cd "$tree" && zip -qr "$OUT/$t-$a-dist-host.zip" "$obj/dist/host/bin")
   fi
   [ -n "$BUILDID" ] || BUILDID=$(grep -m1 '^BuildID=' "$ini" | cut -d= -f2 | tr -d '\r')
   echo "-> $t-$a: packaged (BuildID $BUILDID)" >&2
 }
 
-emit linux   aarch64 obj-aarch64-unknown-linux-gnu "$SOURCEDIR/obj-aarch64-unknown-linux-gnu/dist/bin/application.ini"            "$PROJECT_NAME-*.linux-aarch64.tar.xz"
-emit linux   x86_64  obj-x86_64-pc-linux-gnu       "$SOURCEDIR/obj-x86_64-pc-linux-gnu/dist/bin/application.ini"                  "$PROJECT_NAME-*.linux-x86_64.tar.xz"
-emit macos   aarch64 obj-aarch64-apple-darwin      "$SOURCEDIR/obj-aarch64-apple-darwin/dist/*.app/Contents/Resources/application.ini" "$PROJECT_NAME-macos-aarch64-moz-artifact.tar.xz"
-emit windows x86_64  obj-x86_64-pc-windows-msvc    "$SOURCEDIR/obj-x86_64-pc-windows-msvc/dist/bin/application.ini"               "$PROJECT_NAME-*.win64.zip"
+emit linux   aarch64 obj-aarch64-unknown-linux-gnu "obj-aarch64-unknown-linux-gnu/dist/bin/application.ini"            "$PROJECT_NAME-*.linux-aarch64.tar.xz"
+emit linux   x86_64  obj-x86_64-pc-linux-gnu       "obj-x86_64-pc-linux-gnu/dist/bin/application.ini"                  "$PROJECT_NAME-*.linux-x86_64.tar.xz"
+emit macos   aarch64 obj-aarch64-apple-darwin      "obj-aarch64-apple-darwin/dist/*.app/Contents/Resources/application.ini" "$PROJECT_NAME-macos-aarch64-moz-artifact.tar.xz"
+emit windows x86_64  obj-x86_64-pc-windows-msvc    "obj-x86_64-pc-windows-msvc/dist/bin/application.ini"               "$PROJECT_NAME-*.win64.zip"
 
 [ -n "$BUILDID" ] || { echo "Error: 上げる物が無い" >&2; exit 1; }
 (cd "$OUT" && sha256sum * > SHA256SUMS)

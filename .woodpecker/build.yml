@@ -1,6 +1,9 @@
-# noraneko-ci: OCI の箱の agent(local backend)で bsys6 を回す。
-# gecko が 2GB あるので Woodpecker には clone させず、/srv/ci/work の持続 clone に fetch して使う。
-# local backend は偽の HOME(/tmp/woodpecker-local-*/home)で走るので、HOME/PATH は自分で正す。
+# noraneko-ci: OCI の箱の agent(docker backend = rootless podman + crun)で bsys6 を回す。
+# workflow ごとに素の ubuntu コンテナが一つ立ち、道具は中で `bsys6 prepare` が入れる(host 直走のときと同じ手順)。
+# 木・objdir・~/.mozbuild・rust は箱の /srv/ci/work/<target> に住むので、箱が生きている間は二回目から速い。
+# mount は agent 側の設定(WOODPECKER_BACKEND_DOCKER_VOLUMES)で全コンテナに付く。yaml に volumes: は書かない。
+# linux と mac は同時に走る(agent は MAX_WORKFLOWS=2)。コンテナが別なので取り合いは無い。
+# gecko が 2GB あるので Woodpecker には clone させず、volume の持続 clone に fetch して使う。
 skip_clone: true
 
 matrix:
@@ -17,15 +20,30 @@ when:
 
 steps:
   build:
-    image: bash # local backend では中身は使われない
+    image: docker.io/library/ubuntu:24.04
     commands:
-      # 箱の本当の環境(rustc 1.90 は ~/.cargo、mach の state は ~/.mozbuild、sccache は B2)
-      - export HOME=/home/ci
-      - export PATH=/home/ci/.cargo/bin:/usr/local/bin:/usr/bin:/bin
+      # 中では root(rootless podman なので host から見れば ci)。HOME は箱側(~/.mozbuild と rust を持続させる)
+      - export WORK=/srv/ci/work/$BUILD_TARGET HOME=/srv/ci/work/$BUILD_TARGET/home; mkdir -p "$HOME/bin"
+      - export PATH=$HOME/.cargo/bin:$HOME/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+      - export DEBIAN_FRONTEND=noninteractive
+      # clone と prepare.sh(sudo apt)に要る最小限。残りは bsys6 prepare が入れる
+      - apt-get update -qq && apt-get install -y -qq --no-install-recommends sudo git ca-certificates curl xz-utils >/dev/null
       - set -a; . /etc/ci-box/env; [ -r /etc/ci-box/sccache.env ] && . /etc/ci-box/sccache.env; set +a
+      - export MOZBUILD_STATE_PATH=$HOME/.mozbuild
+      # linux と mac が同時に走るので -j は半分ずつ(32GB に cold 二本 -j16 は入らない: 空き 2.9G / swap 11G / load 34 を実測)
+      - export BUILD_JOBS=$(( $(nproc) / 2 ))
+      # sccache(公式 musl バイナリ、volume に一回置けば残る)
+      - |
+        if [ ! -x "$HOME/bin/sccache" ]; then
+          v=0.10.0; a="$(uname -m)"
+          curl -fsSL "https://github.com/mozilla/sccache/releases/download/v$v/sccache-v$v-$a-unknown-linux-musl.tar.gz" | tar xz -C /tmp
+          install -m 755 "/tmp/sccache-v$v-$a-unknown-linux-musl/sccache" "$HOME/bin/sccache"
+        fi
+        # mozconfig は /usr/local/bin/sccache を指す(コンテナ側なので毎回置く)
+        install -m 755 "$HOME/bin/sccache" /usr/local/bin/sccache
       # 同じ pipeline の matrix 全部で BuildID を揃える(旧 CI と同じ)
       - export MOZ_BUILD_DATE=$(date -u -d @$CI_PIPELINE_CREATED +%Y%m%d%H%M%S)
-      - REPO_DIR=/srv/ci/work/noraneko-runtime
+      - REPO_DIR=$WORK/noraneko-runtime
       - |
         if [ ! -d "$REPO_DIR/.git" ]; then
           git clone --recurse-submodules https://github.com/f3liz-casa/noraneko-runtime "$REPO_DIR"

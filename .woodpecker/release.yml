@@ -9,13 +9,16 @@ when:
 
 steps:
   release:
-    image: bash
+    image: docker.io/library/ubuntu:24.04
     commands:
-      - export HOME=/home/ci
-      - export PATH=/home/ci/.cargo/bin:/usr/local/bin:/usr/bin:/bin
+      - export HOME=/srv/ci/work/linux/home
       - set -a; . /etc/ci-box/env; set +a
       - |
         if [ ! -r /etc/ci-box/gh.env ]; then echo "gh.env が無いので release は skip"; exit 0; fi
         set -a; . /etc/ci-box/gh.env; set +a
-        cd /srv/ci/work/noraneko-runtime/.github/bsys6
+        export DEBIAN_FRONTEND=noninteractive
+        apt-get update -qq && apt-get install -y -qq --no-install-recommends gh git zip ca-certificates >/dev/null
+        # 木は target ごと。産物はそれぞれから集める
+        export RELEASE_TREES="/srv/ci/work/linux/noraneko-runtime /srv/ci/work/macos/noraneko-runtime"
+        cd /srv/ci/work/linux/noraneko-runtime/.github/bsys6
         ./bsys6 release
