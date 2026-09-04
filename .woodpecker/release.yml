@@ -9,15 +9,20 @@ when:
 
 steps:
   release:
-    image: bash
+    image: docker.io/library/ubuntu:24.04
+    volumes:
+      - /srv/ci/work/linux:/work/linux
+      - /srv/ci/work/macos:/work/macos
+      - /etc/ci-box:/etc/ci-box:ro
     commands:
-      - export HOME=/home/ci
-      - export PATH=/home/ci/.cargo/bin:/usr/local/bin:/usr/bin:/bin
+      - export HOME=/work/linux/home
       - set -a; . /etc/ci-box/env; set +a
       - |
         if [ ! -r /etc/ci-box/gh.env ]; then echo "gh.env が無いので release は skip"; exit 0; fi
         set -a; . /etc/ci-box/gh.env; set +a
-        # 木は target ごと。産物はそれぞれの木から集める
-        export RELEASE_TREES="/srv/ci/work/noraneko-runtime-linux /srv/ci/work/noraneko-runtime-macos"
-        cd /srv/ci/work/noraneko-runtime-linux/.github/bsys6
+        export DEBIAN_FRONTEND=noninteractive
+        apt-get update -qq && apt-get install -y -qq --no-install-recommends gh git zip ca-certificates >/dev/null
+        # 木は target ごとの volume。産物はそれぞれから集める
+        export RELEASE_TREES="/work/linux/noraneko-runtime /work/macos/noraneko-runtime"
+        cd /work/linux/noraneko-runtime/.github/bsys6
         ./bsys6 release

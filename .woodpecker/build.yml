@@ -1,8 +1,8 @@
-# noraneko-ci: OCI の箱の agent(local backend)で bsys6 を回す。
-# gecko が 2GB あるので Woodpecker には clone させず、/srv/ci/work の持続 clone に fetch して使う。
-# local backend は偽の HOME(/tmp/woodpecker-local-*/home)で走るので、HOME/PATH は自分で正す。
-# linux と mac は同時に走る(agent は MAX_WORKFLOWS=2)。木は target ごとに分ける
-# (mozconfig と checkout が一本の木では取り合いになる)。~/.mozbuild と apt を触る prepare だけ共有ロックで直列。
+# noraneko-ci: OCI の箱の agent(docker backend = rootless podman + crun)で bsys6 を回す。
+# workflow ごとに素の ubuntu コンテナが一つ立ち、道具は中で `bsys6 prepare` が入れる(host 直走のときと同じ手順)。
+# 木・objdir・~/.mozbuild・rust は target ごとの host volume(/srv/ci/work/<target>)に住むので、二回目からは速い。
+# linux と mac は同時に走る(agent は MAX_WORKFLOWS=2)。コンテナが別なので取り合いは無い。
+# gecko が 2GB あるので Woodpecker には clone させず、volume の持続 clone に fetch して使う。
 skip_clone: true
 
 matrix:
@@ -19,17 +19,31 @@ when:
 
 steps:
   build:
-    image: bash # local backend では中身は使われない
+    image: docker.io/library/ubuntu:24.04
+    volumes:
+      - /srv/ci/work/${BUILD_TARGET}:/work
+      - /srv/ci/telemetry:/srv/ci/telemetry
+      - /usr/local/bin/ci-record:/usr/local/bin/ci-record:ro
+      - /etc/ci-box:/etc/ci-box:ro
     commands:
-      # 箱の本当の環境(rustc 1.90 は ~/.cargo、mach の state は ~/.mozbuild、sccache は B2)
-      - export HOME=/home/ci
-      - export PATH=/home/ci/.cargo/bin:/usr/local/bin:/usr/bin:/bin
+      # 中では root(rootless podman なので host から見れば ci)。HOME は volume 側(~/.mozbuild と rust を持続させる)
+      - export HOME=/work/home; mkdir -p "$HOME/bin"
+      - export PATH=$HOME/.cargo/bin:$HOME/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+      - export DEBIAN_FRONTEND=noninteractive
+      # clone と prepare.sh(sudo apt)に要る最小限。残りは bsys6 prepare が入れる
+      - apt-get update -qq && apt-get install -y -qq --no-install-recommends sudo git ca-certificates curl xz-utils >/dev/null
       - set -a; . /etc/ci-box/env; [ -r /etc/ci-box/sccache.env ] && . /etc/ci-box/sccache.env; set +a
+      - export MOZBUILD_STATE_PATH=$HOME/.mozbuild
+      # sccache(公式 musl バイナリ、volume に一回置けば残る)
+      - |
+        if [ ! -x "$HOME/bin/sccache" ]; then
+          v=0.10.0; a="$(uname -m)"
+          curl -fsSL "https://github.com/mozilla/sccache/releases/download/v$v/sccache-v$v-$a-unknown-linux-musl.tar.gz" | tar xz -C /tmp
+          install -m 755 "/tmp/sccache-v$v-$a-unknown-linux-musl/sccache" "$HOME/bin/sccache"
+        fi
       # 同じ pipeline の matrix 全部で BuildID を揃える(旧 CI と同じ)
       - export MOZ_BUILD_DATE=$(date -u -d @$CI_PIPELINE_CREATED +%Y%m%d%H%M%S)
-      - REPO_DIR=/srv/ci/work/noraneko-runtime-$BUILD_TARGET
-      # 同じ target の木は一度に一本だけ(別 pipeline が重なっても checkout で壊さない)
-      - mkdir -p /srv/ci/work; exec 9>/srv/ci/work/.lock-$BUILD_TARGET; flock 9
+      - REPO_DIR=/work/noraneko-runtime
       - |
         if [ ! -d "$REPO_DIR/.git" ]; then
           git clone --recurse-submodules https://github.com/f3liz-casa/noraneko-runtime "$REPO_DIR"
@@ -42,9 +56,7 @@ steps:
       - /usr/local/bin/ci-record build_start target=$BUILD_TARGET arch=$BUILD_ARCH commit=$CI_COMMIT_SHA kind=woodpecker
       - |
         rc=0
-        # prepare(apt / mach bootstrap → ~/.mozbuild)は箱で一つずつ。build/package は target ごとに並列
-        TARGET=$BUILD_TARGET ARCH=$BUILD_ARCH flock /srv/ci/work/.lock-prepare ./bsys6 prepare || rc=$?
-        [ $rc -eq 0 ] && { TARGET=$BUILD_TARGET ARCH=$BUILD_ARCH ./bsys6 build package || rc=$?; }
+        TARGET=$BUILD_TARGET ARCH=$BUILD_ARCH ./bsys6 prepare build package || rc=$?
         /usr/local/bin/ci-record build_end target=$BUILD_TARGET arch=$BUILD_ARCH rc=$rc dur_s=$SECONDS kind=woodpecker
         sccache --show-stats > /srv/ci/telemetry/sccache-$(date +%s)-$BUILD_TARGET-$BUILD_ARCH.txt 2>&1 || true
         exit $rc
