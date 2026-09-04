@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -368,6 +366,30 @@ JSONToken JSONTokenizer<CharT, ParserT>::readString() {
    * string directly from the source text.
    */
   CharPtr start = current;
+  {
+    const CharT* cur = current.get();
+    size_t remaining = end - current;
+    // Skip through "simple" string contents: look at the next 4 characters at a
+    // time, skipping ahead if none of them are backslashes, quotes, or control
+    // characters (<= 0x1f). This is a fast scan because clang's autovectorizer
+    // is able to recognize this and convert it to SSE2 instructions.
+    //
+    // clang-format off
+    while (remaining >= 4 &&
+           MOZ_LIKELY(
+            (cur[0] != '\\') & (cur[1] != '\\') &
+            (cur[2] != '\\') & (cur[3] != '\\') &
+            (cur[0] != '"') & (cur[1] != '"') &
+            (cur[2] != '"') & (cur[3] != '"') &
+            (cur[0] > 0x1f) & (cur[1] > 0x1f) &
+            (cur[2] > 0x1f) & (cur[3] > 0x1f)
+          )) {
+      cur += 4;
+      remaining -= 4;
+    }
+    // clang-format on
+    current = cur;
+  }
   for (; current < end; current++) {
     if (*current == '"') {
       size_t length = current - start;
@@ -700,7 +722,8 @@ inline bool JSONFullParseHandlerAnyChar::finishObject(
   }
   // properties is traced in the parser; see JSONParser<CharT>::trace()
   JSObject* obj = NewPlainObjectWithMaybeDuplicateKeys(
-      cx, Handle<IdValueVector>::fromMarkedLocation(properties), newKind);
+      cx, Handle<IdValueVector>::fromMarkedLocation(properties),
+      {.newKind = newKind});
   if (!obj) {
     return false;
   }
@@ -1129,11 +1152,7 @@ inline bool JSONReviveHandler<CharT>::finishObjectMember(
 
   Rooted<ParseRecordObject*> memberRecord(context(),
                                           parseRecordStack.popCopy());
-  // Removes the member's key from the stack
-  parseRecordStack.popBack();
-
   Rooted<JS::PropertyKey> key(context(), (*properties)->back().id);
-
   return parseRecordStack.back()->addEntries(context(), key, memberRecord);
 }
 

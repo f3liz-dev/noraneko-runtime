@@ -1,24 +1,22 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/EventQueue.h"
-#include "mozilla/FlowMarkers.h"
 
 #include "GeckoProfiler.h"
 #include "InputTaskManager.h"
-#include "VsyncTaskManager.h"
-#include "nsIRunnable.h"
 #include "TaskController.h"
+#include "VsyncTaskManager.h"
+#include "mozilla/FlowMarkers.h"
+#include "nsIRunnable.h"
 
 using namespace mozilla;
 using namespace mozilla::detail;
 
 template <size_t ItemsPerPage>
 void EventQueueInternal<ItemsPerPage>::PutEvent(
-    already_AddRefed<nsIRunnable>&& aEvent, EventQueuePriority aPriority,
+    already_AddRefed<nsIRunnable> aEvent, EventQueuePriority aPriority,
     const MutexAutoLock& aProofOfLock, mozilla::TimeDuration* aDelay) {
   nsCOMPtr<nsIRunnable> event(aEvent);
 

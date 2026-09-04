@@ -15,9 +15,10 @@ import {
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
-  UrlbarResult: "moz-src:///browser/components/urlbar/UrlbarResult.sys.mjs",
+  UrlbarResult: "chrome://browser/content/urlbar/UrlbarResult.mjs",
   UrlbarSearchUtils:
     "moz-src:///browser/components/urlbar/UrlbarSearchUtils.sys.mjs",
+  UrlbarShared: "chrome://browser/content/urlbar/UrlbarShared.mjs",
 });
 
 /**
@@ -25,10 +26,10 @@ ChromeUtils.defineESModuleGetters(lazy, {
  */
 export class UrlbarProviderAliasEngines extends UrlbarProvider {
   /**
-   * @returns {Values<typeof UrlbarUtils.PROVIDER_TYPE>}
+   * @returns {Values<typeof lazy.UrlbarShared.PROVIDER_TYPE>}
    */
   get type() {
-    return UrlbarUtils.PROVIDER_TYPE.HEURISTIC;
+    return lazy.UrlbarShared.PROVIDER_TYPE.HEURISTIC;
   }
 
   /**
@@ -41,8 +42,9 @@ export class UrlbarProviderAliasEngines extends UrlbarProvider {
   async isActive(queryContext) {
     return (
       (!queryContext.restrictSource ||
-        queryContext.restrictSource == UrlbarUtils.RESULT_SOURCE.SEARCH) &&
-      !queryContext.searchMode &&
+        queryContext.restrictSource ==
+          lazy.UrlbarShared.RESULT_SOURCE.SEARCH) &&
+      !queryContext.restrictInSearchMode() &&
       !!queryContext.tokens.length
     );
   }
@@ -70,8 +72,8 @@ export class UrlbarProviderAliasEngines extends UrlbarProvider {
       alias
     ).trimStart();
     let result = new lazy.UrlbarResult({
-      type: UrlbarUtils.RESULT_TYPE.SEARCH,
-      source: UrlbarUtils.RESULT_SOURCE.SEARCH,
+      type: lazy.UrlbarShared.RESULT_TYPE.SEARCH,
+      source: lazy.UrlbarShared.RESULT_SOURCE.SEARCH,
       heuristic: true,
       payload: {
         engine: engine.name,

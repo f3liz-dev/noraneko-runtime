@@ -1,31 +1,31 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsAppFileLocationProvider.h"
+
 #include "nsAppDirectoryServiceDefs.h"
+#include "nsAtom.h"
+#include "nsCRT.h"
 #include "nsDirectoryServiceDefs.h"
 #include "nsEnumeratorUtils.h"
-#include "nsAtom.h"
 #include "nsIDirectoryService.h"
 #include "nsIFile.h"
-#include "nsString.h"
 #include "nsSimpleEnumerator.h"
+#include "nsString.h"
 #include "nsXREDirProvider.h"
 #include "prenv.h"
-#include "nsCRT.h"
 #if defined(MOZ_WIDGET_COCOA)
 #  include <Carbon/Carbon.h>
+
 #  include "CocoaFileUtils.h"
 #  include "nsILocalFileMac.h"
 #elif defined(XP_WIN)
-#  include <windows.h>
 #  include <shlobj.h>
+#  include <windows.h>
 #elif defined(XP_UNIX)
-#  include <unistd.h>
 #  include <sys/param.h>
+#  include <unistd.h>
 #endif
 
 // WARNING: These hard coded names need to go away. They need to

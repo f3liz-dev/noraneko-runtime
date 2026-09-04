@@ -1,23 +1,21 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set sw=2 ts=8 et tw=80 : */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "TRRServiceBase.h"
 
-#include "TRRService.h"
-#include "mozilla/Preferences.h"
-#include "nsHostResolver.h"
-#include "nsNetUtil.h"
-#include "nsIOService.h"
-#include "nsIDNSService.h"
-#include "nsIProxyInfo.h"
-#include "nsHttpConnectionInfo.h"
-#include "nsHttpHandler.h"
-#include "mozilla/StaticPrefs_network.h"
 #include "AlternateServices.h"
 #include "ProxyConfigLookup.h"
+#include "TRRService.h"
+#include "mozilla/Preferences.h"
+#include "mozilla/StaticPrefs_network.h"
+#include "nsHostResolver.h"
+#include "nsHttpConnectionInfo.h"
+#include "nsHttpHandler.h"
+#include "nsIDNSService.h"
+#include "nsIOService.h"
+#include "nsIProxyInfo.h"
+#include "nsNetUtil.h"
 // Put DNSLogging.h at the end to avoid LOG being overwritten by other headers.
 #include "DNSLogging.h"
 
@@ -85,7 +83,7 @@ void TRRServiceBase::ProcessURITemplate(nsACString& aURI) {
     }
   } while (true);
 
-  aURI = uri;
+  aURI = std::move(uri);
 }
 
 void TRRServiceBase::CheckURIPrefs() {
@@ -287,9 +285,20 @@ void TRRServiceBase::AsyncCreateTRRConnectionInfoInternal(
     return;
   }
 
+  // Tag this lookup with a generation. Consecutive proxy config changes start
+  // overlapping ProxyConfigLookups that may complete out of order; only the
+  // most recent one is allowed to store its result, so a stale lookup (e.g.
+  // resolved before a PAC took effect) can't overwrite a newer one.
+  uint32_t generation = ++mTRRConnectionInfoGeneration;
+
   rv = ProxyConfigLookup::Create(
-      [self = RefPtr{this}, uri(dnsURI)](nsIProxyInfo* aProxyInfo,
-                                         nsresult aStatus) mutable {
+      [self = RefPtr{this}, uri(dnsURI), generation](nsIProxyInfo* aProxyInfo,
+                                                     nsresult aStatus) mutable {
+        if (generation != self->mTRRConnectionInfoGeneration) {
+          // A newer lookup has been started since; ignore this stale result.
+          return;
+        }
+
         if (NS_FAILED(aStatus)) {
           self->SetDefaultTRRConnectionInfo(nullptr);
           return;
@@ -362,14 +371,15 @@ void TRRServiceBase::UnregisterProxyChangeListener() {
 void TRRServiceBase::SetHttp3FirstForServer(const nsACString& aServer,
                                             bool aEnabled) {
   MutexAutoLock lock(mLock);
-  LOG(("SetHttp3FirstForServer %s %d", nsCString(aServer).get(), aEnabled));
+  LOG(("SetHttp3FirstForServer %s %d", PromiseFlatCString(aServer).get(),
+       aEnabled));
   mHttp3FirstServers.InsertOrUpdate(aServer, aEnabled);
 }
 
 bool TRRServiceBase::GetHttp3FirstForServer(const nsACString& aServer) {
   MutexAutoLock lock(mLock);
   bool res = mHttp3FirstServers.MaybeGet(aServer).valueOr(false);
-  LOG(("GetHttp3FirstForServer %s %d", nsCString(aServer).get(), res));
+  LOG(("GetHttp3FirstForServer %s %d", PromiseFlatCString(aServer).get(), res));
   return res;
 }
 

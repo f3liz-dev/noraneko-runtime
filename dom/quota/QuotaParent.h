@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,6 +5,7 @@
 #ifndef DOM_QUOTA_QUOTAPARENT_H_
 #define DOM_QUOTA_QUOTAPARENT_H_
 
+#include "mozilla/Result.h"
 #include "mozilla/dom/quota/PQuotaParent.h"
 #include "nsISupportsImpl.h"
 
@@ -14,11 +13,11 @@ namespace mozilla::dom::quota {
 
 class Quota final : public PQuotaParent {
 #ifdef DEBUG
-  bool mActorDestroyed;
+  bool mActorDestroyed = false;
 #endif
 
  public:
-  Quota();
+  Quota() = default;
 
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(mozilla::dom::quota::Quota, override)
 
@@ -26,6 +25,16 @@ class Quota final : public PQuotaParent {
   ~Quota();
 
   bool TrustParams() const;
+
+  // Verifies that this actor is managed by the parent process. Operations
+  // which are not scoped to a single origin must never be performed on behalf
+  // of a content process.
+  mozilla::Result<mozilla::Ok, nsresult> VerifyIsParentProcessActor() const;
+
+  // Verifies that the principal info is structurally valid and that the actor
+  // which sent it could actually be hosting the corresponding origin. Content
+  // processes must never be able to act on other origins than their own.
+  bool VerifyPrincipalInfo(const PrincipalInfo& aPrincipalInfo) const;
 
   bool VerifyRequestParams(const RequestParams& aParams) const;
 

@@ -1,4 +1,3 @@
-// -*- indent-tabs-mode: nil; js-indent-level: 2 -*-
 // Any copyright is dedicated to the Public Domain.
 // http://creativecommons.org/publicdomain/zero/1.0/
 "use strict";
@@ -43,7 +42,7 @@ var gWindowWatcher = {
   QueryInterface: ChromeUtils.generateQI(["nsIWindowWatcher"]),
 };
 
-function run_test() {
+add_task(async function run_test() {
   do_get_profile();
 
   let windowWatcherCID = MockRegistrar.register(
@@ -55,12 +54,11 @@ function run_test() {
   });
 
   // Set an initial password.
-  let tokenDB = Cc["@mozilla.org/security/pk11tokendb;1"].getService(
-    Ci.nsIPK11TokenDB
+  let token = Cc["@mozilla.org/security/internalkeytoken;1"].createInstance(
+    Ci.nsIPKCS11Token
   );
-  let token = tokenDB.getInternalKeyToken();
-  token.initPassword("hunter2");
-  token.logoutSimple();
+  await token.changePassword("", "hunter2");
+  await token.logout();
 
   // Try with the correct password.
   gMockPrompter.passwordToTry = "hunter2";
@@ -74,14 +72,14 @@ function run_test() {
 
   // Reset state.
   gMockPrompter.numPrompts = 0;
-  token.logoutSimple();
+  await token.logout();
 
   // Try with an incorrect password.
   gMockPrompter.passwordToTry = "*******";
   throws(
     () => sdr.encryptString("poke2"),
-    /NS_ERROR_FAILURE/,
+    /NS_ERROR_NOT_AVAILABLE/,
     "logging in with the wrong password should fail"
   );
   equal(gMockPrompter.numPrompts, 2, "should have prompted for password twice");
-}
+});

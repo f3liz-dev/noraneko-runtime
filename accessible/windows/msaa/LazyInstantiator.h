@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,13 +5,15 @@
 #ifndef mozilla_a11y_LazyInstantiator_h
 #define mozilla_a11y_LazyInstantiator_h
 
-#include "IUnknownImpl.h"
-#include "mozilla/Maybe.h"
-#include "mozilla/RefPtr.h"
-#include "nsString.h"
-
 #include <oleacc.h>
 #include <uiautomation.h>
+
+#include "IUnknownImpl.h"
+#include "mozilla/Maybe.h"
+#include "mozilla/Mutex.h"
+#include "mozilla/RefPtr.h"
+#include "nsISupportsImpl.h"
+#include "nsString.h"
 
 class nsIFile;
 
@@ -142,10 +142,11 @@ class LazyInstantiator final : public IAccessible,
   static already_AddRefed<T> GetRoot(HWND aHwnd);
 
  private:
-  mozilla::a11y::AutoRefCnt mRefCnt;
+  nsAutoRefCnt mRefCnt;
   HWND mHwnd;
   bool mAllowBlindAggregation;
   RefPtr<IUnknown> mRealRootUnk;
+  Mutex mTransplantLock{"a11y::LazyInstantiator::mTransplantLock"};
   RefPtr<IUnknown> mStdDispatch;
   /**
    * mWeakMsaaRoot, mWeakAccessible and mWeakDispatch are weak because they

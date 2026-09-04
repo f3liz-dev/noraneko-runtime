@@ -296,13 +296,13 @@ dependencies = [
 
 [[package]]
 name = "jxl_simd"
-version = "0.3.0"
+version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3a5ca0c81b4b36136db6cb4832574bdb8bca08532eecf9369aa8b50d99e6ae0a"
+checksum = "4b772b4e3b3cf3af88c7dde9fc2d6b63cbb89f29eb5cf30cb132ec7adfed533e"
 
 [[package]]
 name = "jxl_transforms"
-version = "0.3.0"
+version = "0.5.1"
 dependencies = [
  "criterion",
  "jxl_simd",

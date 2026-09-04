@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -32,11 +31,10 @@ enum class CreateContextFlags : uint16_t {
   NO_VALIDATION = 1 << 4,
   PREFER_ROBUSTNESS = 1 << 5,
   HIGH_POWER = 1 << 6,
-  PROVOKING_VERTEX_DONT_CARE = 1 << 7,
-  PREFER_EXACT_VERSION = 1 << 8,
-  PREFER_MULTITHREADED = 1 << 9,
+  PREFER_EXACT_VERSION = 1 << 7,
+  PREFER_MULTITHREADED = 1 << 8,
 
-  FORBID_HARDWARE = 1 << 10,
+  FORBID_HARDWARE = 1 << 9,
 };
 MOZ_MAKE_ENUM_CLASS_BITWISE_OPERATORS(CreateContextFlags)
 

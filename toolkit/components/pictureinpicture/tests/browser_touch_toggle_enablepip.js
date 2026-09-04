@@ -106,12 +106,12 @@ add_task(async () => {
           await video.play();
 
           info("Hover over the video to show the Picture-in-Picture toggle");
-          await EventUtils.synthesizeMouseAtCenter(
+          EventUtils.synthesizeMouseAtCenter(
             video,
             { type: "mousemove" },
             this.content.window
           );
-          await EventUtils.synthesizeMouseAtCenter(
+          EventUtils.synthesizeMouseAtCenter(
             video,
             { type: "mouseover" },
             this.content.window
@@ -236,7 +236,7 @@ add_task(async () => {
 
       try {
         info("Picture-in-Picture window should open");
-        await BrowserTestUtils.waitForCondition(
+        await TestUtils.waitForCondition(
           () => Services.wm.getEnumerator(WINDOW_TYPE).hasMoreElements(),
           "Found a Picture-in-Picture"
         );

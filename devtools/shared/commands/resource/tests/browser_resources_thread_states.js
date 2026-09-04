@@ -13,6 +13,9 @@ const REMOTE_IFRAME_URL =
   encodeURIComponent("<script>debugger;</script>");
 
 add_task(async function () {
+  // We use a commands object for the main process
+  await pushPref("devtools.chrome.enabled", true);
+
   // Check hitting the "debugger;" statement before and after calling
   // watchResource(THREAD_TYPES). Both should break. First will
   // be a cached resource and second will be a live one.
@@ -59,7 +62,7 @@ async function checkBreakpointBeforeWatchResources() {
 
   info("Run the 'debugger' statement");
   // Note that we do not wait for the resolution of spawn as it will be paused
-  ContentTask.spawn(tab.linkedBrowser, null, () => {
+  SpecialPowers.spawn(tab.linkedBrowser, [], () => {
     content.window.wrappedJSObject.runDebuggerStatement();
   });
 
@@ -135,7 +138,7 @@ async function checkBreakpointAfterWatchResources() {
 
   info("Run the 'debugger' statement");
   // Note that we do not wait for the resolution of spawn as it will be paused
-  ContentTask.spawn(tab.linkedBrowser, null, () => {
+  SpecialPowers.spawn(tab.linkedBrowser, [], () => {
     content.window.wrappedJSObject.runDebuggerStatement();
   });
 
@@ -219,7 +222,7 @@ async function checkRealBreakpoint() {
 
   info("Run the test function where we set a breakpoint");
   // Note that we do not wait for the resolution of spawn as it will be paused
-  ContentTask.spawn(tab.linkedBrowser, null, () => {
+  SpecialPowers.spawn(tab.linkedBrowser, [], () => {
     content.window.wrappedJSObject.testFunction();
   });
 
@@ -365,7 +368,7 @@ async function checkSetBeforeWatch() {
 
   info("Run the test function where we set a breakpoint");
   // Note that we do not wait for the resolution of spawn as it will be paused
-  ContentTask.spawn(tab.linkedBrowser, null, () => {
+  SpecialPowers.spawn(tab.linkedBrowser, [], () => {
     content.window.wrappedJSObject.testFunction();
   });
 
@@ -527,7 +530,7 @@ async function testMultiprocessThreadState() {
 
   info("Run the 'debugger' statement");
   // Note that we do not wait for the resolution of spawn as it will be paused
-  const onResumed = ContentTask.spawn(tab.linkedBrowser, null, () => {
+  const onResumed = SpecialPowers.spawn(tab.linkedBrowser, [], () => {
     content.window.wrappedJSObject.runDebuggerStatement();
   });
 

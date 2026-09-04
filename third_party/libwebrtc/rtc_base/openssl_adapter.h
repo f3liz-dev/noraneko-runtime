@@ -51,13 +51,13 @@ class OpenSSLAdapter final : public SSLAdapter {
   // immutable after the the SSL connection starts.
   explicit OpenSSLAdapter(Socket* socket,
                           OpenSSLSessionCache* ssl_session_cache = nullptr,
-                          SSLCertificateVerifier* ssl_cert_verifier = nullptr);
+                          SSLCertificateVerifier* ssl_cert_verifier = nullptr,
+                          bool dtls = false);
   ~OpenSSLAdapter() override;
 
   void SetIgnoreBadCert(bool ignore) override;
   void SetAlpnProtocols(const std::vector<std::string>& protos) override;
   void SetEllipticCurves(const std::vector<std::string>& curves) override;
-  [[deprecated]] void SetMode(SSLMode mode) override;
   void SetCertVerifier(SSLCertificateVerifier* ssl_cert_verifier) override;
   void SetIdentity(std::unique_ptr<SSLIdentity> identity) override;
   void SetRole(SSLRole role) override;

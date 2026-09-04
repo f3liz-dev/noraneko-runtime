@@ -30,76 +30,10 @@ ChromeUtils.defineLazyGetter(
     )
 );
 
-const MANAGE_ADDRESSES_URL =
-  "chrome://formautofill/content/manageAddresses.xhtml";
 const EDIT_ADDRESS_URL = "chrome://formautofill/content/editAddress.xhtml";
-const MANAGE_CREDITCARDS_URL =
-  "chrome://formautofill/content/manageCreditCards.xhtml";
 const EDIT_CREDIT_CARD_URL =
   "chrome://formautofill/content/editCreditCard.xhtml";
-
-const {
-  MANAGE_ADDRESSES_L10N_IDS,
-  EDIT_ADDRESS_L10N_IDS,
-  MANAGE_CREDITCARDS_L10N_IDS,
-  EDIT_CREDITCARD_L10N_IDS,
-} = FormAutofillUtils;
-
-const { ENABLED_AUTOFILL_ADDRESSES_PREF, ENABLED_AUTOFILL_CREDITCARDS_PREF } =
-  FormAutofill;
-
-const FORM_AUTOFILL_CONFIG = {
-  payments: {
-    l10nId: "payments-group",
-    headingLevel: 2,
-    items: [
-      {
-        id: "saveAndFillPayments",
-        l10nId: "autofill-payment-methods-checkbox-message-2",
-        supportPage: "credit-card-autofill",
-        items: [
-          {
-            id: "requireOSAuthForPayments",
-            l10nId: "autofill-reauth-payment-methods-checkbox-2",
-            supportPage:
-              "credit-card-autofill#w_require-authentication-for-autofill",
-          },
-        ],
-      },
-      {
-        id: "savedPaymentsButton",
-        l10nId: "autofill-payment-methods-manage-payments-button",
-        control: "moz-box-button",
-        controlAttrs: {
-          "search-l10n-ids": MANAGE_CREDITCARDS_L10N_IDS.concat(
-            EDIT_CREDITCARD_L10N_IDS
-          ).join(","),
-        },
-      },
-    ],
-  },
-  addresses: {
-    l10nId: "addresses-group",
-    headingLevel: 2,
-    items: [
-      {
-        id: "saveAndFillAddresses",
-        l10nId: "autofill-addresses-checkbox-message",
-        supportPage: "automatically-fill-your-address-web-forms",
-      },
-      {
-        id: "savedAddressesButton",
-        l10nId: "autofill-addresses-manage-addresses-button",
-        control: "moz-box-button",
-        controlAttrs: {
-          "search-l10n-ids": MANAGE_ADDRESSES_L10N_IDS.concat(
-            EDIT_ADDRESS_L10N_IDS
-          ).join(","),
-        },
-      },
-    ],
-  },
-};
+const EDIT_PASSPORT_URL = "chrome://formautofill/content/editPassport.xhtml";
 
 export class FormAutofillPreferences {
   /**
@@ -119,74 +53,6 @@ export class FormAutofillPreferences {
    */
   createPreferenceGroup(document) {
     const win = document.ownerGlobal;
-    win.Preferences.addAll([
-      // Credit cards and addresses
-      { id: ENABLED_AUTOFILL_ADDRESSES_PREF, type: "bool" },
-      { id: ENABLED_AUTOFILL_CREDITCARDS_PREF, type: "bool" },
-      {
-        id: "extensions.formautofill.creditCards.os-auth.locked.enabled",
-        type: "bool",
-      },
-    ]);
-
-    win.Preferences.addSetting({
-      id: "saveAndFillAddresses",
-      pref: ENABLED_AUTOFILL_ADDRESSES_PREF,
-      visible: () => FormAutofill.isAutofillAddressesAvailable,
-    });
-    win.Preferences.addSetting({
-      id: "savedAddressesButton",
-      pref: null,
-      visible: () => FormAutofill.isAutofillAddressesAvailable,
-      onUserClick: e => {
-        e.preventDefault();
-        if (Services.prefs.getBoolPref("browser.settings-redesign.enabled")) {
-          e.target.ownerGlobal.gotoPref("paneManageAddresses");
-        } else {
-          e.target.ownerGlobal.gSubDialog.open(MANAGE_ADDRESSES_URL);
-        }
-      },
-    });
-
-    win.Preferences.addSetting({
-      id: "saveAndFillPayments",
-      pref: ENABLED_AUTOFILL_CREDITCARDS_PREF,
-      visible: () => FormAutofill.isAutofillCreditCardsAvailable,
-    });
-    win.Preferences.addSetting({
-      id: "savedPaymentsButton",
-      pref: null,
-      visible: () => FormAutofill.isAutofillCreditCardsAvailable,
-      onUserClick: e => {
-        e.preventDefault();
-
-        if (Services.prefs.getBoolPref("browser.settings-redesign.enabled")) {
-          e.target.ownerGlobal.gotoPref("paneManagePayments");
-        } else {
-          e.target.ownerGlobal.gSubDialog.open(MANAGE_CREDITCARDS_URL);
-        }
-      },
-    });
-    win.Preferences.addSetting({
-      id: "requireOSAuthForPayments",
-      visible: () => lazy.OSKeyStore.canReauth(),
-      get: () => FormAutofillUtils.getOSAuthEnabled(),
-      async set(checked) {
-        await FormAutofillPreferences.trySetOSAuthEnabled(win, checked);
-
-        // Trigger change event to keep checkbox UI in sync with pref value
-        Services.obs.notifyObservers(null, "OSAuthEnabledChange");
-      },
-      setup: emitChange => {
-        Services.obs.addObserver(emitChange, "OSAuthEnabledChange");
-        return () =>
-          Services.obs.removeObserver(emitChange, "OSAuthEnabledChange");
-      },
-    });
-
-    win.SettingGroupManager.registerGroups(FORM_AUTOFILL_CONFIG);
-    win.initSettingGroup("payments");
-    win.initSettingGroup("addresses");
     Services.obs.notifyObservers(win, "formautofill-preferences-initialized");
   }
 
@@ -195,6 +61,10 @@ export class FormAutofillPreferences {
   }
 
   async initializeAddressesStorage() {
+    await lazy.formAutofillStorage.initialize();
+  }
+
+  async initializePassportsStorage() {
     await lazy.formAutofillStorage.initialize();
   }
 
@@ -256,7 +126,12 @@ export class FormAutofillPreferences {
       ];
     } else {
       items = records
-        .sort(record => record.timeCreated)
+        .sort((a, b) =>
+          (a.timeLastUsed || a.timeLastModified) <
+          (b.timeLastUsed || b.timeLastModified)
+            ? 1
+            : -1
+        )
         .map(record => {
           const config = {
             id: "payment-item",
@@ -265,7 +140,10 @@ export class FormAutofillPreferences {
             iconSrc: "chrome://browser/skin/payment-methods-16.svg",
             l10nArgs: {
               cardNumber: record["cc-number"].replace(/^(\*+)(\d+)$/, "$1 $2"),
-              expDate: record["cc-exp"].replace(/^(\d{4})-\d{2}$/, "XX/$1"),
+              expDate: (record["cc-exp"] ?? "").replace(
+                /^(\d{4})-(\d{2})$/,
+                "$2/$1"
+              ),
             },
             options: [
               {
@@ -335,14 +213,14 @@ export class FormAutofillPreferences {
           .filter(Boolean)
           .join(", ");
 
+        const label = record.name || record.organization || record.email;
         const config = {
           id: "address-item",
           control: "moz-box-item",
-          l10nId: "address-moz-box-item",
           iconSrc: "chrome://browser/skin/notification-icons/geo.svg",
-          l10nArgs: {
-            name: `${record.name}`,
-            address: addressFormatted,
+          controlAttrs: {
+            label: label || addressFormatted,
+            description: label ? addressFormatted : "",
           },
           options: [
             {
@@ -387,23 +265,104 @@ export class FormAutofillPreferences {
     ];
   }
 
+  async makePassportsListItems() {
+    const passports = await lazy.formAutofillStorage.passports.getAll();
+    const records = passports.slice().reverse();
+
+    let items = [];
+
+    if (!records.length) {
+      items = [
+        {
+          id: "no-passports-stored",
+          l10nId: "passports-no-passports-stored-message",
+          l10nArgs: {},
+          control: "moz-box-item",
+        },
+      ];
+    } else {
+      items = records.map(record => {
+        const maskedNumber = record["passport-number"]
+          ? "****" + record["passport-number"].slice(-4)
+          : "";
+        const pad = value => String(value).padStart(2, "0");
+        const expiry = [
+          record["passport-expiry-date-month"] &&
+            pad(record["passport-expiry-date-month"]),
+          record["passport-expiry-date-day"] &&
+            pad(record["passport-expiry-date-day"]),
+          record["passport-expiry-date-year"],
+        ]
+          .filter(Boolean)
+          .join("/");
+        const description = [maskedNumber, expiry].filter(Boolean).join(", ");
+
+        const config = {
+          id: "passport-item",
+          control: "moz-box-item",
+          iconSrc: "chrome://browser/skin/personal-info-16.svg",
+          controlAttrs: {
+            label: record["passport-name"] || maskedNumber,
+            description,
+          },
+          options: [
+            {
+              id: "delete-passport-button",
+              control: "moz-button",
+              iconSrc: "chrome://global/skin/icons/delete.svg",
+              type: "icon",
+              l10nId: "passports-delete-passport-button-label",
+              controlAttrs: {
+                slot: "actions",
+                action: "remove",
+                guid: record.guid,
+              },
+            },
+            {
+              id: "edit-passport-button",
+              control: "moz-button",
+              iconSrc: "chrome://global/skin/icons/edit.svg",
+              type: "icon",
+              l10nId: "passports-edit-passport-button-label",
+              controlAttrs: {
+                slot: "actions",
+                action: "edit",
+                guid: record.guid,
+              },
+            },
+          ],
+        };
+
+        return config;
+      });
+    }
+
+    return [
+      {
+        id: "passports-list-header",
+        control: "moz-box-item",
+        l10nId: "passports-list-header",
+        slot: "header",
+      },
+      ...items,
+    ];
+  }
+
   /**
-   * Open the browser window modal to prompt the user whether
-   * or they want to remove their payment.
+   * Show a modal prompt asking the user to confirm removing a stored record.
    *
-   * @param  {string} guid
-   *          The guid of the payment item we are prompting to remove.
    * @param  {object} browsingContext
    *          Browsing context to open the prompt in
    * @param  {string} title
    *          The title text displayed in the modal to prompt the user with
    * @param  {string} confirmBtn
-   *        The text for confirming removing a payment method
+   *          The text for the confirm button
    * @param  {string} cancelBtn
-   *        The text for cancelling removing a payment method
+   *          The text for the cancel button
+   * @returns {Promise<boolean>}
+   *          Whether the user confirmed the removal.
    */
-  async openRemovePaymentDialog(
-    guid,
+  static async #confirmRemoveRecordDialog(
     browsingContext,
     title,
     confirmBtn,
@@ -426,8 +385,39 @@ export class FormAutofillPreferences {
     );
 
     const propBag = result.QueryInterface(Ci.nsIPropertyBag2);
-    // Confirmed
-    if (propBag.get("buttonNumClicked") === 0) {
+    return propBag.get("buttonNumClicked") === 0;
+  }
+
+  /**
+   * Open the browser window modal to prompt the user whether
+   * or they want to remove their payment.
+   *
+   * @param  {string} guid
+   *          The guid of the payment item we are prompting to remove.
+   * @param  {object} browsingContext
+   *          Browsing context to open the prompt in
+   * @param  {string} title
+   *          The title text displayed in the modal to prompt the user with
+   * @param  {string} confirmBtn
+   *        The text for confirming removing a payment method
+   * @param  {string} cancelBtn
+   *        The text for cancelling removing a payment method
+   */
+  async openRemovePaymentDialog(
+    guid,
+    browsingContext,
+    title,
+    confirmBtn,
+    cancelBtn
+  ) {
+    if (
+      await FormAutofillPreferences.#confirmRemoveRecordDialog(
+        browsingContext,
+        title,
+        confirmBtn,
+        cancelBtn
+      )
+    ) {
       lazy.formAutofillStorage.creditCards.remove(guid);
     }
   }
@@ -531,26 +521,49 @@ export class FormAutofillPreferences {
     confirmBtn,
     cancelBtn
   ) {
-    const flags =
-      Services.prompt.BUTTON_TITLE_IS_STRING * Services.prompt.BUTTON_POS_0 +
-      Services.prompt.BUTTON_TITLE_CANCEL * Services.prompt.BUTTON_POS_1;
-    const result = await Services.prompt.asyncConfirmEx(
-      browsingContext,
-      Services.prompt.MODAL_TYPE_INTERNAL_WINDOW,
-      title,
-      null,
-      flags,
-      confirmBtn,
-      cancelBtn,
-      null,
-      null,
-      false
-    );
-
-    const propBag = result.QueryInterface(Ci.nsIPropertyBag2);
-    // Confirmed
-    if (propBag.get("buttonNumClicked") === 0) {
+    if (
+      await FormAutofillPreferences.#confirmRemoveRecordDialog(
+        browsingContext,
+        title,
+        confirmBtn,
+        cancelBtn
+      )
+    ) {
       lazy.formAutofillStorage.addresses.remove(guid);
+    }
+  }
+
+  /**
+   * Open the browser window modal to prompt the user whether
+   * or they want to remove their passport.
+   *
+   * @param  {string} guid
+   *          The guid of the passport item we are prompting to remove.
+   * @param  {object} browsingContext
+   *          Browsing context to open the prompt in
+   * @param  {string} title
+   *          The title text displayed in the modal to prompt the user with
+   * @param  {string} confirmBtn
+   *        The text for confirming the removal of a passport
+   * @param  {string} cancelBtn
+   *        The text for cancelling removal of a passport
+   */
+  async openRemovePassportDialog(
+    guid,
+    browsingContext,
+    title,
+    confirmBtn,
+    cancelBtn
+  ) {
+    if (
+      await FormAutofillPreferences.#confirmRemoveRecordDialog(
+        browsingContext,
+        title,
+        confirmBtn,
+        cancelBtn
+      )
+    ) {
+      lazy.formAutofillStorage.passports.remove(guid);
     }
   }
 
@@ -571,6 +584,24 @@ export class FormAutofillPreferences {
       // for autofill purposes. For PaymentRequest addresses get more validation.
       noValidate: true,
       l10nStrings: lazy.ManageAddresses.getAddressL10nStrings(),
+    });
+  }
+
+  async openEditPassportDialog(guid, window) {
+    const passport = guid
+      ? await lazy.formAutofillStorage.passports.get(guid)
+      : undefined;
+    return FormAutofillPreferences.openEditPassportDialog(passport, window);
+  }
+  /**
+   * Open the edit passport dialog to create/edit a passport.
+   *
+   * @param  {object} passport
+   *         The passport we want to edit.
+   */
+  static async openEditPassportDialog(passport, window) {
+    window.gSubDialog.open(EDIT_PASSPORT_URL, undefined, {
+      record: passport ?? undefined,
     });
   }
 

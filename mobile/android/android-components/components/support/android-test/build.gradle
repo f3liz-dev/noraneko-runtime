@@ -3,22 +3,23 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 plugins {
+    id 'com.android.library'
     alias(libs.plugins.dependency.analysis)
 }
-
-apply plugin: 'com.android.library'
-apply plugin: 'kotlin-android'
 
 android {
     namespace = 'mozilla.components.support.android.test'
 }
 
 dependencies {
+    api libs.mockwebserver
+
     implementation libs.androidx.arch.core.common
     implementation libs.androidx.test.core
     implementation libs.androidx.test.espresso.core
     implementation libs.leakcanary.instrumentation
-    implementation libs.mockwebserver
+    implementation libs.okhttp
+    implementation libs.okio
 }
 
 apply from: '../../../common-config.gradle'

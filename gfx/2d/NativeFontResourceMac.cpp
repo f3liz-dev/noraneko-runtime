@@ -1,16 +1,15 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include <unordered_map>
 #include "NativeFontResourceMac.h"
-#include "UnscaledFontMac.h"
-#include "Types.h"
 
-#include "mozilla/RefPtr.h"
+#include <unordered_map>
+
+#include "Types.h"
+#include "UnscaledFontMac.h"
 #include "mozilla/DataMutex.h"
+#include "mozilla/RefPtr.h"
 
 #ifdef MOZ_WIDGET_UIKIT
 #  include <CoreFoundation/CoreFoundation.h>
@@ -76,7 +75,7 @@ class NativeFontResourceMacReporter final : public nsIMemoryReporter {
 NS_IMPL_ISUPPORTS(NativeFontResourceMacReporter, nsIMemoryReporter)
 
 void NativeFontResourceMac::RegisterMemoryReporter() {
-  RegisterStrongMemoryReporter(new NativeFontResourceMacReporter);
+  RegisterStrongMemoryReporter(MakeAndAddRef<NativeFontResourceMacReporter>());
 }
 
 /* static */
@@ -112,12 +111,12 @@ already_AddRefed<NativeFontResourceMac> NativeFontResourceMac::Create(
 
   // creating the CGFontRef via the CTFont avoids the data being held alive
   // in a cache.
-  CTFontRef ctFont = CTFontCreateWithFontDescriptor(ctFontDesc, 0, NULL);
+  CTFontRef ctFont = CTFontCreateWithFontDescriptor(ctFontDesc, 0, nullptr);
 
   // Creating the CGFont from the CTFont prevents the font data from being
   // held in the TDescriptorSource cache. This appears to be true even
   // if we later create a CTFont from the CGFont.
-  CGFontRef fontRef = CTFontCopyGraphicsFont(ctFont, NULL);
+  CGFontRef fontRef = CTFontCopyGraphicsFont(ctFont, nullptr);
   CFRelease(ctFont);
 
   if (!fontRef) {
@@ -163,8 +162,8 @@ already_AddRefed<NativeFontResourceMac> NativeFontResourceMac::Create(
 already_AddRefed<UnscaledFont> NativeFontResourceMac::CreateUnscaledFont(
     uint32_t aIndex, const uint8_t* aInstanceData,
     uint32_t aInstanceDataLength) {
-  RefPtr<UnscaledFont> unscaledFont =
-      new UnscaledFontMac(mFontDescRef, mFontRef, true);
+  RefPtr unscaledFont =
+      MakeRefPtr<UnscaledFontMac>(mFontDescRef, mFontRef, true);
 
   return unscaledFont.forget();
 }

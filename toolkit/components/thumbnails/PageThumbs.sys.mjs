@@ -190,7 +190,7 @@ export var PageThumbs = {
     }
 
     return new Promise(resolve => {
-      let canvas = this.createCanvas(aBrowser.ownerGlobal);
+      let canvas = this.createCanvas(aBrowser.documentGlobal);
       this.captureToCanvas(aBrowser, canvas, aArgs)
         .then(() => {
           canvas.toBlob(blob => {
@@ -363,7 +363,7 @@ export var PageThumbs = {
       thumbnail.width = contentWidth;
       thumbnail.height = contentHeight;
 
-      let imageData = new aBrowser.ownerGlobal.ImageData(
+      let imageData = new aBrowser.documentGlobal.ImageData(
         contentInfo.imageData,
         contentWidth,
         contentHeight
@@ -490,12 +490,21 @@ export var PageThumbs = {
    *
    * @param aBrowser the content window of this browser will be captured.
    * @param aCanvas the thumbnail will be rendered to this canvas.
+   * @returns {Promise<boolean>} false if the browser went away before the
+   *          thumbnail could be drawn, true otherwise.
    */
   async captureTabPreviewThumbnail(aBrowser, aCanvas) {
     let desiredAspectRatio = aCanvas.width / aCanvas.height;
 
-    let thumbnailsActor =
-      aBrowser.browsingContext.currentWindowGlobal.getActor("Thumbnails");
+    // The browser may be torn down at any point while we await below, for
+    // instance when its tab is closed. Bail out rather than drawing a
+    // half-captured thumbnail.
+    let windowGlobal = aBrowser.browsingContext?.currentWindowGlobal;
+    if (!windowGlobal) {
+      return false;
+    }
+
+    let thumbnailsActor = windowGlobal.getActor("Thumbnails");
     let contentInfo = await thumbnailsActor.sendQuery(
       "Browser:Thumbnail:ContentInfo"
     );
@@ -545,9 +554,13 @@ export var PageThumbs = {
       "transparent",
       false
     );
+    if (!snapshotResult) {
+      return false;
+    }
     aCanvas
       .getContext("2d")
       .drawImage(snapshotResult, renderX, renderY, renderWidth, renderHeight);
+    return true;
   },
 
   /**
@@ -672,7 +685,7 @@ export var PageThumbsStorage = {
   // If two thumbnails with the same URL and revision are in cache at the
   // same time, the image loader may pick the stale thumbnail in some cases.
   // Therefore _revisionRange must be large enough to prevent this, e.g.
-  // in the pathological case image.cache.size (5MB by default) could fill
+  // in the pathological case image.cache.size (20MB by default) could fill
   // with (abnormally small) 10KB thumbnail images if the browser session
   // runs long enough (though this is unlikely as thumbnails are usually
   // only updated every MAX_THUMBNAIL_AGE_SECS).

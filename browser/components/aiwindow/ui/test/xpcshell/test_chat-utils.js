@@ -13,6 +13,8 @@ const {
   parseChatHistoryViewRows,
   parseJSONOrNull,
   getRoleLabel,
+  getKeepSidebarOpenState,
+  normalizeChatLog,
 } = ChromeUtils.importESModule(
   "moz-src:///browser/components/aiwindow/ui/modules/ChatUtils.sys.mjs"
 );
@@ -36,9 +38,31 @@ class RowStub {
       return this.data[key];
     }
 
-    throw new Error("NS_ERROR_NOT_AVAILABLE");
+    throw new Error(`NS_ERROR_NOT_AVAILABLE: could not find key: ${key}`);
   }
 }
+
+const MESSAGE_ROW_FIELDS = {
+  message_id: "123456789012",
+  created_date: 0,
+  parent_message_id: "123456",
+  revision_root_message_id: "1234",
+  ordinal: 0,
+  is_active_branch: true,
+  role: 0,
+  model_id: "a model id",
+  params: null,
+  usage: null,
+  content: '{ "some": "content data" }',
+  conv_id: "123456789012",
+  page_url: "https://www.firefox.com",
+  turn_index: 0,
+  memories_enabled: false,
+  memories_flag_source: 0,
+  memories_applied: null,
+  web_search_queries: null,
+  page_history_deleted: false,
+};
 
 add_task(function test_parseConversationRow() {
   const now = Date.now();
@@ -51,6 +75,10 @@ add_task(function test_parseConversationRow() {
     created_date: now,
     updated_date: now,
     status: "a status",
+    security_properties: '{"privateData": false, "untrustedInput": true}',
+    seen_urls: '["https://example.com/page1"]',
+    serp_urls_for_anonymous_fetch: '["https://search-result.example.com/a"]',
+    memories_toggled: true,
   });
 
   const conversation = parseConversationRow(testRow);
@@ -67,6 +95,29 @@ add_task(function test_parseConversationRow() {
     soft.equal(conversation.createdDate, now);
     soft.equal(conversation.updatedDate, now);
     soft.equal(conversation.status, "a status");
+    soft.ok(
+      conversation.securityProperties.untrustedInput,
+      "untrustedInput should be true"
+    );
+    soft.ok(
+      !conversation.securityProperties.privateData,
+      "privateData should be false"
+    );
+    soft.ok(
+      conversation.seenUrls.has("https://example.com/page1"),
+      "seenUrls should contain the persisted URL"
+    );
+    soft.ok(
+      conversation.serpUrlsForAnonymousFetch.has(
+        "https://search-result.example.com/a"
+      ),
+      "serpUrlsForAnonymousFetch ledger should contain the persisted URL"
+    );
+    soft.equal(
+      conversation.memoriesToggled,
+      true,
+      "memoriesToggled should be true"
+    );
   });
 });
 
@@ -89,6 +140,13 @@ add_task(function test_missingField_parseConversationRow() {
 
 add_task(function test_parseConversationRow() {
   const now = Date.now();
+
+  const tool_results = JSON.stringify({
+    0: [{ toolCallId: "t1", uiType: "ai-action-result" }], // 0 == TOOL_RESULT_TYPE.TOOL_UI
+    1: [{ url: "history url 1" }, { url: "history url 2" }], // 1 == TOOL_RESULT_TYPE.HISTORY_RESULTS
+    2: [{ url: "citation url 1", title: "C1" }], // 2 == TOOL_RESULT_TYPE.CITATIONS
+  });
+
   const testRow = new RowStub({
     message_id: "123456789012",
     created_date: now,
@@ -108,6 +166,8 @@ add_task(function test_parseConversationRow() {
     memories_flag_source: 1,
     memories_applied: '{ "some": "memories" }',
     web_search_queries: '{ "some": "web search queries" }',
+    page_history_deleted: false,
+    tool_results,
   });
 
   const rows = parseMessageRows([testRow]);
@@ -135,7 +195,31 @@ add_task(function test_parseConversationRow() {
     soft.equal(message.memoriesFlagSource, 1);
     soft.deepEqual(message.memoriesApplied, { some: "memories" });
     soft.deepEqual(message.webSearchQueries, { some: "web search queries" });
+    soft.deepEqual(message.toolUIData, {
+      toolCallId: "t1",
+      uiType: "ai-action-result",
+    });
+    soft.deepEqual(message.historyResults, [
+      { url: "history url 1" },
+      { url: "history url 2" },
+    ]);
+    soft.deepEqual(message.citations, [{ url: "citation url 1", title: "C1" }]);
   });
+});
+
+add_task(function test_parseConversationRow_withoutCitations() {
+  const testRow = new RowStub({
+    ...MESSAGE_ROW_FIELDS,
+    tool_results: JSON.stringify({ 1: [{ url: "history url 1" }] }),
+  });
+
+  const message = parseMessageRows([testRow])[0];
+
+  Assert.deepEqual(
+    message.citations,
+    [],
+    "citations parses as an empty array when no citation rows exist"
+  );
 });
 
 add_task(function test_missingField_parseConversationRow() {
@@ -159,6 +243,8 @@ add_task(function test_missingField_parseConversationRow() {
     memories_flag_source: 1,
     memories_applied: '{ "some": "memories" }',
     web_search_queries: '{ "some": "web search queries" }',
+    page_history_deleted: false,
+    tool_ui_data: null,
   });
 
   Assert.throws(function () {
@@ -212,7 +298,7 @@ add_task(function test_parseChatHistoryViewRows() {
     title: "conv 1",
     created_date: 116952982,
     updated_date: 116952982,
-    urls: "https://www.firefox.com,https://www.mozilla.com",
+    urls: '["https://www.firefox.com","https://www.mozilla.com"]',
   });
 
   const row2 = new RowStub({
@@ -220,7 +306,7 @@ add_task(function test_parseChatHistoryViewRows() {
     title: "conv 2",
     created_date: 117189198,
     updated_date: 117189198,
-    urls: "https://www.mozilla.org",
+    urls: '["https://www.mozilla.org"]',
   });
 
   const row3 = new RowStub({
@@ -228,10 +314,18 @@ add_task(function test_parseChatHistoryViewRows() {
     title: "conv 3",
     created_date: 168298919,
     updated_date: 168298919,
-    urls: "https://www.firefox.com",
+    urls: '["https://www.firefox.com"]',
   });
 
-  const rows = [row1, row2, row3];
+  const row4 = new RowStub({
+    conv_id: "4",
+    title: "conv 4",
+    created_date: 200000000,
+    updated_date: 200000000,
+    urls: '["https://example.com/#::text=Student,financial%20aid%20workshops%2C%20and%20take%20part%20in"]',
+  });
+
+  const rows = [row1, row2, row3, row4];
 
   const viewRows = parseChatHistoryViewRows(rows);
 
@@ -256,5 +350,136 @@ add_task(function test_parseChatHistoryViewRows() {
     soft.equal(viewRows[2].createdDate, 168298919);
     soft.equal(viewRows[2].updatedDate, 168298919);
     soft.deepEqual(viewRows[2].urls, [new URL("https://www.firefox.com")]);
+
+    soft.equal(viewRows[3].convId, "4");
+    soft.equal(viewRows[3].title, "conv 4");
+    soft.equal(viewRows[3].createdDate, 200000000);
+    soft.equal(viewRows[3].updatedDate, 200000000);
+    soft.deepEqual(viewRows[3].urls, [
+      new URL(
+        "https://example.com/#::text=Student,financial%20aid%20workshops%2C%20and%20take%20part%20in"
+      ),
+    ]);
+  });
+});
+
+// [state, sidebarOpenByDefault, expected, message]
+const keepSidebarPermutations = [
+  [false, false, false, "falsy state, pref false: defers to pref"],
+  [false, true, true, "falsy state, pref true: defers to pref"],
+  [true, false, false, "truthy non-object state, pref false: defers to pref"],
+  [true, true, true, "truthy non-object state, pref true: defers to pref"],
+  [undefined, false, false, "undefined state, pref false: defers to pref"],
+  [undefined, true, true, "undefined state, pref true: defers to pref"],
+  [
+    { keepSidebarOpen: true },
+    false,
+    true,
+    "explicit true overrides pref false",
+  ],
+  [{ keepSidebarOpen: true }, true, true, "explicit true with pref true"],
+  [{ keepSidebarOpen: false }, false, false, "explicit false with pref false"],
+  [
+    { keepSidebarOpen: false },
+    true,
+    false,
+    "explicit false overrides pref true",
+  ],
+  [{}, false, false, "no keepSidebarOpen in state, pref false: defers to pref"],
+  [{}, true, true, "no keepSidebarOpen in state, pref true: defers to pref"],
+];
+
+keepSidebarPermutations.forEach(([state, pref, expected, message]) => {
+  add_task(function () {
+    Assert.equal(getKeepSidebarOpenState(state, pref), expected, message);
+  });
+});
+
+add_task(function test_normalizeChatLog_only_includes_allowlisted_fields() {
+  // These fields pass through normalizeChatLog unchanged, so the same
+  // values apply to both the input message and the expected output.
+  const passthroughFields = {
+    id: "msg1",
+    createdDate: 1700000000000,
+    parentMessageId: "msg0",
+    revisionRootMessageId: "msg1",
+    ordinal: 0,
+    isActiveBranch: true,
+    role: 1,
+    modelId: "test-model",
+    pageUrl: "https://example.com",
+    turnIndex: 0,
+    memoriesEnabled: true,
+    memoriesFlagSource: 1,
+    memoriesApplied: ["memory1"],
+    webSearchQueries: ["query1"],
+    followUpSuggestions: ["suggestion1"],
+    pageHistoryDeleted: false,
+    tokens: { search: ["s1"], existing_memory: ["m1"], followup: ["f1"] },
+    toolUIData: {
+      uiType: "ui1",
+      toolCallId: "tc1",
+      properties: {
+        originalUserPrompt: "prompt",
+        tabs: [
+          {
+            linkedPanel: "p1",
+            url: "u1",
+            title: "t1",
+            iconSrc: "i1",
+            checked: true,
+          },
+        ],
+      },
+    },
+  };
+
+  const normalized = normalizeChatLog({
+    log: [
+      {
+        ...passthroughFields,
+        content: {
+          type: "text",
+          body: "hello",
+          tool_call_id: "tc1",
+          name: "someName",
+          userContext: { realTimeContext: "some context" },
+          contextMentions: [
+            {
+              type: "currentTab",
+              url: "https://example.com",
+              label: "Example",
+              iconSrc: "icon.png",
+            },
+          ],
+          contextPageUrl: "https://example.com",
+        },
+        // convId, params, and usage are real ChatMessage fields that are
+        // not in normalizeChatLog's allowlist, so all three should be dropped.
+        convId: "conv-1",
+        params: { some: "data" },
+        usage: { some: "usage data" },
+      },
+    ],
+  });
+
+  Assert.deepEqual(normalized.log[0], {
+    ...passthroughFields,
+    content: {
+      content_type: "text",
+      tool_call_id: "tc1",
+      body: { text: "hello" },
+      name: "someName",
+      userContext: { realTimeContext: "some context" },
+      contextMentions: [
+        {
+          mention_type: "currentTab",
+          url: "https://example.com",
+          label: "Example",
+          iconSrc: "icon.png",
+        },
+      ],
+      contextPageUrl: "https://example.com",
+    },
   });
 });

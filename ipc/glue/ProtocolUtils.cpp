@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -250,7 +248,12 @@ void SentinelReadError(const char* aClassName) {
   MOZ_CRASH_UNSAFE_PRINTF("incorrect sentinel when reading %s", aClassName);
 }
 
-ActorLifecycleProxy::ActorLifecycleProxy(IProtocol* aActor) : mActor(aActor) {
+ActorLifecycleProxy::ActorLifecycleProxy(IProtocol* aActor)
+#ifdef MOZ_THREAD_SAFETY_OWNERSHIP_CHECKS_SUPPORTED
+    : _mOwningThread(aActor->GetActorEventTarget()), mActor(aActor) {
+#else
+    : mActor(aActor) {
+#endif
   MOZ_ASSERT(mActor);
   MOZ_ASSERT(mActor->CanSend(),
              "Cannot create LifecycleProxy for non-connected actor!");
@@ -293,7 +296,9 @@ ActorLifecycleProxy::~ActorLifecycleProxy() {
 }
 
 WeakActorLifecycleProxy::WeakActorLifecycleProxy(ActorLifecycleProxy* aProxy)
-    : mProxy(aProxy), mActorEventTarget(GetCurrentSerialEventTarget()) {}
+    : mProxy(aProxy), mActorEventTarget(aProxy->Get()->GetActorEventTarget()) {
+  MOZ_ASSERT(mActorEventTarget->IsOnCurrentThread());
+}
 
 WeakActorLifecycleProxy::~WeakActorLifecycleProxy() {
   MOZ_DIAGNOSTIC_ASSERT(!mProxy, "Destroyed before mProxy was cleared?");
@@ -611,9 +616,10 @@ void IProtocol::ActorDisconnected(ActorDestroyReason aWhy) {
 }
 
 void IProtocol::DoomSubtree() {
-  MOZ_ASSERT(
-      mLinkStatus == LinkStatus::Connected || mLinkStatus == LinkStatus::Doomed,
-      "Invalid link status for SetDoomed");
+  // If we're already `Doomed` or `Destroyed`, there's nothing to do.
+  if (mLinkStatus != LinkStatus::Connected) {
+    return;
+  }
   for (ProtocolId id : ManagedProtocolIds()) {
     for (IProtocol* actor : *GetManagedActors(id)) {
       actor->DoomSubtree();
@@ -673,7 +679,7 @@ bool IToplevelProtocol::OpenOnSameThread(IToplevelProtocol* aTarget,
 }
 
 void IToplevelProtocol::NotifyImpendingShutdown() {
-  if (CanRecv()) {
+  if (CanSend()) {
     GetIPCChannel()->NotifyImpendingShutdown();
   }
 }

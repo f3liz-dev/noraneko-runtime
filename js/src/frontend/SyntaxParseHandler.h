@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -445,6 +443,12 @@ class SyntaxParseHandler {
     return NodeUnparenthesizedUnary;
   }
   UnaryNodeResult newOptionalChain(uint32_t begin, Node value) {
+    // Propagate private member access so we can check for it when deleting
+    // unary expressions
+    if (value == NodeOptionalPrivateMemberAccess ||
+        value == NodePrivateMemberAccess) {
+      return NodeOptionalPrivateMemberAccess;
+    }
     return NodeGeneric;
   }
 
@@ -468,17 +472,11 @@ class SyntaxParseHandler {
                                     const TokenPos& pos) {
     return NodeGeneric;
   }
-  BinaryNodeResult newImportDeclaration(Node importSpecSet, Node moduleRequest,
+  BinaryNodeResult newImportDeclaration(Node importClause, Node moduleRequest,
+                                        ImportPhase phase,
                                         const TokenPos& pos) {
     return NodeGeneric;
   }
-#ifdef ENABLE_SOURCE_PHASE_IMPORTS
-  BinaryNodeResult newImportSourceDeclaration(Node importedBinding,
-                                              Node moduleRequest,
-                                              const TokenPos& pos) {
-    return NodeGeneric;
-  }
-#endif
   BinaryNodeResult newImportSpec(Node importNameNode, Node bindingName) {
     return NodeGeneric;
   }
@@ -509,15 +507,10 @@ class SyntaxParseHandler {
                                  NullaryNodeType metaHolder) {
     return NodeGeneric;
   }
-  BinaryNodeResult newCallImport(NullaryNodeType importHolder, Node singleArg) {
+  BinaryNodeResult newCallImport(NullaryNodeType importHolder, Node singleArg,
+                                 ImportPhase phase) {
     return NodeGeneric;
   }
-#ifdef ENABLE_SOURCE_PHASE_IMPORTS
-  BinaryNodeResult newCallImportSource(NullaryNodeType importHolder,
-                                       Node singleArg) {
-    return NodeGeneric;
-  }
-#endif
   BinaryNodeResult newCallImportSpec(Node specifierArg, Node optionalArg) {
     return NodeGeneric;
   }
@@ -700,10 +693,8 @@ class SyntaxParseHandler {
     MOZ_ASSERT(kind != ParseNodeKind::LetDecl);
     MOZ_ASSERT(kind != ParseNodeKind::ConstDecl);
     MOZ_ASSERT(kind != ParseNodeKind::ParamsBody);
-#ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
     MOZ_ASSERT(kind != ParseNodeKind::UsingDecl);
     MOZ_ASSERT(kind != ParseNodeKind::AwaitUsingDecl);
-#endif
     return NodeGeneric;
   }
 
@@ -717,12 +708,9 @@ class SyntaxParseHandler {
       return NodeVarDeclaration;
     }
     MOZ_ASSERT(kind == ParseNodeKind::LetDecl ||
-               kind == ParseNodeKind::ConstDecl
-#ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
-               || kind == ParseNodeKind::UsingDecl ||
-               kind == ParseNodeKind::AwaitUsingDecl
-#endif
-    );
+               kind == ParseNodeKind::ConstDecl ||
+               kind == ParseNodeKind::UsingDecl ||
+               kind == ParseNodeKind::AwaitUsingDecl);
     return NodeLexicalDeclaration;
   }
 
@@ -818,7 +806,8 @@ class SyntaxParseHandler {
 
   bool isPrivateName(Node node) { return node == NodePrivateName; }
   bool isPrivateMemberAccess(Node node) {
-    return node == NodePrivateMemberAccess;
+    return node == NodePrivateMemberAccess ||
+           node == NodeOptionalPrivateMemberAccess;
   }
 
   TaggedParserAtomIndex maybeDottedProperty(Node node) {

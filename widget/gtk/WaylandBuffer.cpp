@@ -1,31 +1,30 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "WaylandBuffer.h"
+
+#include <errno.h>
+#include <fcntl.h>
+#include <sys/mman.h>
+
 #include "WaylandSurface.h"
 #include "WaylandSurfaceLock.h"
-
-#include <sys/mman.h>
-#include <fcntl.h>
-#include <errno.h>
-
 #include "gfx2DGlue.h"
 #include "gfxPlatform.h"
 #include "mozilla/WidgetUtilsGtk.h"
-#include "mozilla/gfx/Tools.h"
 #include "mozilla/gfx/Logging.h"
+#include "mozilla/gfx/Tools.h"
 #include "mozilla/ipc/SharedMemoryHandle.h"
 #include "nsGtkUtils.h"
 #include "nsPrintfCString.h"
 #include "prenv.h"  // For PR_GetEnv
 
 #ifdef MOZ_LOGGING
+#  include "Units.h"
 #  include "mozilla/Logging.h"
 #  include "mozilla/ScopeExit.h"
-#  include "Units.h"
 extern mozilla::LazyLogModule gWidgetWaylandLog;
 #  define LOGWAYLAND(...) \
     MOZ_LOG(gWidgetWaylandLog, mozilla::LogLevel::Debug, (__VA_ARGS__))
@@ -207,6 +206,7 @@ void WaylandBufferSHM::Clear() {
 #ifdef MOZ_LOGGING
 void WaylandBufferSHM::DumpToFile(const char* aHint) {
   if (!mDumpSerial) {
+    NS_WARNING("mDumpSerial is not set!");
     return;
   }
 
@@ -293,6 +293,7 @@ WaylandBufferDMABUF::~WaylandBufferDMABUF() {
 #ifdef MOZ_LOGGING
 void WaylandBufferDMABUF::DumpToFile(const char* aHint) {
   if (!mDumpSerial) {
+    NS_WARNING("mDumpSerial is not set!");
     return;
   }
   nsCString filename;

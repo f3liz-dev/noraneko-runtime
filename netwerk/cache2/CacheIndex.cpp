@@ -4,29 +4,30 @@
 
 #include "CacheIndex.h"
 
-#include "CacheLog.h"
+#include <algorithm>
+#include <limits>
+
+#include "CacheCrypto.h"
 #include "CacheFileIOManager.h"
 #include "CacheFileMetadata.h"
 #include "CacheFileUtils.h"
-#include "CacheIndexIterator.h"
 #include "CacheIndexContextIterator.h"
-#include "nsThreadUtils.h"
-#include "nsPrintfCString.h"
+#include "CacheIndexIterator.h"
+#include "CacheLog.h"
+#include "mozilla/AutoRestore.h"
 #include "mozilla/DebugOnly.h"
-#include "prinrval.h"
+#include "mozilla/StaticPrefs_browser.h"
+#include "mozilla/StaticPrefs_network.h"
+#include "mozilla/glean/NetwerkCache2Metrics.h"
 #include "nsIFile.h"
 #include "nsITimer.h"
 #include "nsNetUtil.h"
-#include "mozilla/AutoRestore.h"
-#include <algorithm>
-#include "mozilla/StaticPrefs_network.h"
-#include "mozilla/glean/NetwerkCache2Metrics.h"
+#include "nsPrintfCString.h"
+#include "nsThreadUtils.h"
+#include "prinrval.h"
 
-#define kMinUnwrittenChanges 300
-#define kMinDumpInterval 20000  // in milliseconds
 #define kMaxBufSize 16384
-#define kIndexVersion 0x0000000A
-#define kUpdateIndexStartDelay 50000  // in milliseconds
+#define kIndexVersion 0x0000000D
 #define kTelemetryReportBytesLimit (2U * 1024U * 1024U * 1024U)  // 2GB
 
 #define INDEX_NAME "index"
@@ -419,6 +420,42 @@ void CacheIndex::PreShutdownInternal() {
 
   // We should end up in READY state
   MOZ_ASSERT(mState == READY);
+}
+
+// static
+void CacheIndex::WriteIndexToDiskNow() {
+  StaticMutexAutoLock lock(sLock);
+
+  RefPtr<CacheIndex> index = gInstance;
+  if (!index || index->mShuttingDown) {
+    return;
+  }
+
+  LOG(("CacheIndex::WriteIndexToDiskNow()"));
+
+  nsCOMPtr<nsIEventTarget> ioTarget = CacheFileIOManager::IOTarget();
+  if (!ioTarget) {
+    return;
+  }
+
+  nsCOMPtr<nsIRunnable> event =
+      NewRunnableMethod("net::CacheIndex::WriteIndexToDiskNowInternal", index,
+                        &CacheIndex::WriteIndexToDiskNowInternal);
+  (void)ioTarget->Dispatch(event, nsIEventTarget::DISPATCH_NORMAL);
+}
+
+void CacheIndex::WriteIndexToDiskNowInternal() {
+  StaticMutexAutoLock lock(sLock);
+
+  LOG(("CacheIndex::WriteIndexToDiskNowInternal() [state=%d, dirty=%u]", mState,
+       mIndexStats.Dirty()));
+
+  if (mState != READY || mShuttingDown || mRWPending ||
+      mIndexStats.Dirty() == 0) {
+    return;
+  }
+
+  WriteIndexToDisk(lock);
 }
 
 // static
@@ -853,14 +890,14 @@ nsresult CacheIndex::RemoveEntry(const SHA1Sum::Hash* aHash,
   // error out - async since removal happens on MainThread.
 
   // TODO XXX There may be a hole here where a dictionary entry can get
-  // referenced for a request before RemoveDictionaryFor can run, but after
+  // referenced for a request before RemoveDictionaryOMT can run, but after
   // the entry is removed here.
 
   // Note: we don't want to (re)clear dictionaries when the
   // CacheFileContextEvictor purges entries; they've already been cleared
   // via CacheIndex::EvictByContext synchronously
   if (aClearDictionary) {
-    DictionaryCache::RemoveDictionaryFor(aKey);
+    DictionaryCache::RemoveDictionaryOMT(aKey);
   }
 
   StaticMutexAutoLock lock(sLock);
@@ -956,18 +993,18 @@ nsresult CacheIndex::RemoveEntry(const SHA1Sum::Hash* aHash,
 nsresult CacheIndex::UpdateEntry(const SHA1Sum::Hash* aHash,
                                  const uint32_t* aFrecency,
                                  const bool* aHasAltData,
-                                 const uint16_t* aOnStartTime,
-                                 const uint16_t* aOnStopTime,
+                                 const uint32_t* aLastFetched,
+                                 const uint32_t* aFetchCount,
                                  const uint8_t* aContentType,
                                  const uint32_t* aSize) {
   LOG(
       ("CacheIndex::UpdateEntry() [hash=%08x%08x%08x%08x%08x, "
-       "frecency=%s, hasAltData=%s, onStartTime=%s, onStopTime=%s, "
+       "frecency=%s, hasAltData=%s, lastFetched=%s, fetchCount=%s, "
        "contentType=%s, size=%s]",
        LOGSHA1(aHash), aFrecency ? nsPrintfCString("%u", *aFrecency).get() : "",
        aHasAltData ? (*aHasAltData ? "true" : "false") : "",
-       aOnStartTime ? nsPrintfCString("%u", *aOnStartTime).get() : "",
-       aOnStopTime ? nsPrintfCString("%u", *aOnStopTime).get() : "",
+       aLastFetched ? nsPrintfCString("%u", *aLastFetched).get() : "",
+       aFetchCount ? nsPrintfCString("%u", *aFetchCount).get() : "",
        aContentType ? nsPrintfCString("%u", *aContentType).get() : "",
        aSize ? nsPrintfCString("%u", *aSize).get() : ""));
 
@@ -1006,8 +1043,8 @@ nsresult CacheIndex::UpdateEntry(const SHA1Sum::Hash* aHash,
         return NS_ERROR_UNEXPECTED;
       }
 
-      if (!HasEntryChanged(entry, aFrecency, aHasAltData, aOnStartTime,
-                           aOnStopTime, aContentType, aSize)) {
+      if (!HasEntryChanged(entry, aFrecency, aHasAltData, aLastFetched,
+                           aFetchCount, aContentType, aSize)) {
         return NS_OK;
       }
 
@@ -1023,12 +1060,12 @@ nsresult CacheIndex::UpdateEntry(const SHA1Sum::Hash* aHash,
         entry->SetHasAltData(*aHasAltData);
       }
 
-      if (aOnStartTime) {
-        entry->SetOnStartTime(*aOnStartTime);
+      if (aLastFetched) {
+        entry->SetLastFetched(*aLastFetched);
       }
 
-      if (aOnStopTime) {
-        entry->SetOnStopTime(*aOnStopTime);
+      if (aFetchCount) {
+        entry->SetFetchCount(*aFetchCount);
       }
 
       if (aContentType) {
@@ -1073,12 +1110,12 @@ nsresult CacheIndex::UpdateEntry(const SHA1Sum::Hash* aHash,
         updated->SetHasAltData(*aHasAltData);
       }
 
-      if (aOnStartTime) {
-        updated->SetOnStartTime(*aOnStartTime);
+      if (aLastFetched) {
+        updated->SetLastFetched(*aLastFetched);
       }
 
-      if (aOnStopTime) {
-        updated->SetOnStopTime(*aOnStopTime);
+      if (aFetchCount) {
+        updated->SetFetchCount(*aFetchCount);
       }
 
       if (aContentType) {
@@ -1363,6 +1400,21 @@ nsresult CacheIndex::GetEntryForEviction(EvictionSortedSnapshot& aSnapshot,
       continue;
     }
 
+    // Skip entries with active (non-doomed) file handles. These are
+    // currently being read from or written to. Evicting them would doom
+    // the in-progress I/O — in particular, a newly-created entry being
+    // written always has the lowest frecency and would otherwise be
+    // selected as the first eviction candidate, preventing it from ever
+    // being stored. See bug 2031577.
+    {
+      RefPtr<CacheFileHandle> handle;
+      if (CacheFileIOManager::gInstance &&
+          NS_SUCCEEDED(CacheFileIOManager::gInstance->mHandles.GetHandle(
+              &hash, getter_AddRefs(handle)))) {
+        continue;
+      }
+    }
+
     if (CacheIndexEntry::IsPinned(rec)) {
       continue;
     }
@@ -1634,7 +1686,7 @@ bool CacheIndex::IsCollision(CacheIndexEntry* aEntry,
 // static
 bool CacheIndex::HasEntryChanged(
     CacheIndexEntry* aEntry, const uint32_t* aFrecency, const bool* aHasAltData,
-    const uint16_t* aOnStartTime, const uint16_t* aOnStopTime,
+    const uint32_t* aLastFetched, const uint32_t* aFetchCount,
     const uint8_t* aContentType, const uint32_t* aSize) {
   if (aFrecency && *aFrecency != aEntry->GetFrecency()) {
     return true;
@@ -1644,11 +1696,11 @@ bool CacheIndex::HasEntryChanged(
     return true;
   }
 
-  if (aOnStartTime && *aOnStartTime != aEntry->GetOnStartTime()) {
+  if (aLastFetched && *aLastFetched != aEntry->GetLastFetched()) {
     return true;
   }
 
-  if (aOnStopTime && *aOnStopTime != aEntry->GetOnStopTime()) {
+  if (aFetchCount && *aFetchCount != aEntry->GetFetchCount()) {
     return true;
   }
 
@@ -1726,13 +1778,28 @@ bool CacheIndex::WriteIndexToDiskIfNeeded(
     return false;
   }
 
-  if (!mLastDumpTime.IsNull() &&
-      (TimeStamp::NowLoRes() - mLastDumpTime).ToMilliseconds() <
-          kMinDumpInterval) {
+  if (mIndexStats.Dirty() == 0) {
     return false;
   }
 
-  if (mIndexStats.Dirty() < kMinUnwrittenChanges) {
+  double sinceLastDump =
+      mLastDumpTime.IsNull()
+          ? std::numeric_limits<double>::infinity()
+          : (TimeStamp::NowLoRes() - mLastDumpTime).ToMilliseconds();
+
+  if (sinceLastDump <
+      StaticPrefs::browser_cache_disk_index_min_dump_interval_ms()) {
+    return false;
+  }
+
+  // Write either once enough changes have accumulated, or once the maximum
+  // interval has elapsed with any dirty entry. The latter is a safety net so
+  // that recently-updated frecency is not lost on a crash or process kill under
+  // light browsing, where the dirty-count threshold may never be reached.
+  if (mIndexStats.Dirty() <
+          StaticPrefs::browser_cache_disk_index_min_unwritten_changes() &&
+      sinceLastDump <
+          StaticPrefs::browser_cache_disk_index_max_dump_interval_ms()) {
     return false;
   }
 
@@ -1788,6 +1855,13 @@ void CacheIndex::WriteIndexToDisk(const StaticMutexAutoLock& aProofOfLock) {
   // amount of data written to the cache
   NetworkEndian::writeUint32(mRWBuf + mRWBufPos,
                              static_cast<uint32_t>(mTotalBytesWritten >> 10));
+  mRWBufPos += sizeof(uint32_t);
+  // Whether the entries on disk are encrypted at rest. This reflects the
+  // session's actual encryption state (fixed at startup when CacheCrypto is
+  // initialized), not the live pref, so that a mid-session pref flip -- which
+  // only takes effect on the next restart -- is not masked here.
+  NetworkEndian::writeUint32(mRWBuf + mRWBufPos,
+                             CacheCrypto::IsActive() ? 1 : 0);
   mRWBufPos += sizeof(uint32_t);
 
   mSkipEntries = 0;
@@ -2267,6 +2341,24 @@ void CacheIndex::ParseRecords(const StaticMutexAutoLock& aProofOfLock) {
     pos += sizeof(uint32_t);
     dataWritten <<= 10;
     mTotalBytesWritten += dataWritten;
+
+    bool wasEncrypted = !!NetworkEndian::readUint32(mRWBuf + pos);
+    pos += sizeof(uint32_t);
+    bool nowEncrypted = CacheCrypto::IsActive();
+    if (wasEncrypted != nowEncrypted) {
+      // The at-rest encryption setting changed since the cache was written, so
+      // the entries on disk no longer match the current setting. Purge the
+      // whole cache rather than keep a mix of encrypted and plaintext entries.
+      // EvictAll() dooms open handles, trashes the entries directory and drives
+      // the index back to a clean (empty) state via RemoveAll(), so we just
+      // hand off and return.
+      LOG(
+          ("CacheIndex::ParseRecords() - Encryption setting changed "
+           "[wasEncrypted=%d, nowEncrypted=%d], purging cache",
+           wasEncrypted, nowEncrypted));
+      CacheFileIOManager::EvictAll();
+      return;
+    }
   }
 
   uint32_t hashOffset = pos;
@@ -2737,20 +2829,8 @@ nsresult CacheIndex::InitEntryFromDiskData(CacheIndexEntry* aEntry,
   }
   aEntry->SetHasAltData(hasAltData);
 
-  static auto toUint16 = [](const char* aUint16String) -> uint16_t {
-    if (!aUint16String) {
-      return kIndexTimeNotAvailable;
-    }
-    nsresult rv;
-    uint64_t n64 = nsDependentCString(aUint16String).ToInteger64(&rv);
-    MOZ_ASSERT(NS_SUCCEEDED(rv));
-    return n64 <= kIndexTimeOutOfBound ? n64 : kIndexTimeOutOfBound;
-  };
-
-  aEntry->SetOnStartTime(
-      toUint16(aMetaData->GetElement("net-response-time-onstart")));
-  aEntry->SetOnStopTime(
-      toUint16(aMetaData->GetElement("net-response-time-onstop")));
+  aEntry->SetLastFetched(aMetaData->GetLastFetched());
+  aEntry->SetFetchCount(aMetaData->GetFetchCount());
 
   const char* contentTypeStr = aMetaData->GetElement("ctid");
   uint8_t contentType = nsICacheEntry::CONTENT_TYPE_UNKNOWN;
@@ -2981,12 +3061,14 @@ void CacheIndex::StartUpdatingIndex(bool aRebuild,
   }
 
   uint32_t elapsed = (TimeStamp::NowLoRes() - mStartTime).ToMilliseconds();
-  if (elapsed < kUpdateIndexStartDelay) {
+  uint32_t startDelay =
+      StaticPrefs::browser_cache_disk_index_update_start_delay_ms();
+  if (elapsed < startDelay) {
     LOG(
         ("CacheIndex::StartUpdatingIndex() - %u ms elapsed since startup, "
          "scheduling timer to fire in %u ms.",
-         elapsed, kUpdateIndexStartDelay - elapsed));
-    rv = ScheduleUpdateTimer(kUpdateIndexStartDelay - elapsed);
+         elapsed, startDelay - elapsed));
+    rv = ScheduleUpdateTimer(startDelay - elapsed);
     if (NS_SUCCEEDED(rv)) {
       return;
     }

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -77,7 +75,7 @@ class DOMSVGTransformList final : public nsISupports, public nsWrapperCache {
   }
 
  public:
-  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
+  NS_DECL_CYCLE_COLLECTING_ISUPPORTS_FINAL
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(DOMSVGTransformList)
 
   DOMSVGTransformList(dom::DOMSVGAnimatedTransformList* aAList,
@@ -98,10 +96,11 @@ class DOMSVGTransformList final : public nsISupports, public nsWrapperCache {
 
   /**
    * This will normally be the same as InternalList().Length(), except if we've
-   * hit OOM in which case our length will be zero.
+   * hit OOM in which case our length will be zero or we've hit the maximum
+   * list length for the DOM list at some point in which case it may be smaller.
    */
   uint32_t LengthNoFlush() const {
-    MOZ_ASSERT(mItems.IsEmpty() || mItems.Length() == InternalList().Length(),
+    MOZ_ASSERT(mItems.IsEmpty() || mItems.Length() <= InternalList().Length(),
                "DOM wrapper's list length is out of sync");
     return mItems.Length();
   }
@@ -127,12 +126,6 @@ class DOMSVGTransformList final : public nsISupports, public nsWrapperCache {
     return mAList->mAnimVal && !mAList->IsAnimating();
   }
 
-  uint32_t NumberOfItems() const {
-    if (IsAnimValList()) {
-      Element()->FlushAnimations();
-    }
-    return LengthNoFlush();
-  }
   void Clear(ErrorResult& error);
   already_AddRefed<dom::DOMSVGTransform> Initialize(
       dom::DOMSVGTransform& newItem, ErrorResult& error);
@@ -154,7 +147,14 @@ class DOMSVGTransformList final : public nsISupports, public nsWrapperCache {
   already_AddRefed<dom::DOMSVGTransform> CreateSVGTransformFromMatrix(
       const DOMMatrix2DInit& aMatrix, ErrorResult& aRv);
   already_AddRefed<dom::DOMSVGTransform> Consolidate(ErrorResult& error);
-  uint32_t Length() const { return NumberOfItems(); }
+  void IndexedSetter(uint32_t aIndex, DOMSVGTransform& aNewValue,
+                     ErrorResult& aRv);
+  uint32_t Length() const {
+    if (IsAnimValList()) {
+      Element()->FlushAnimations();
+    }
+    return LengthNoFlush();
+  }
 
  private:
   dom::SVGElement* Element() const { return mAList->mElement; }
@@ -179,7 +179,7 @@ class DOMSVGTransformList final : public nsISupports, public nsWrapperCache {
   /// Returns the DOMSVGTransform at aIndex, creating it if necessary.
   already_AddRefed<dom::DOMSVGTransform> GetItemAt(uint32_t aIndex);
 
-  void MaybeInsertNullInAnimValListAt(uint32_t aIndex);
+  bool MaybeInsertNullInAnimValListAt(uint32_t aIndex);
   void MaybeRemoveItemFromAnimValListAt(uint32_t aIndex);
 
   // Weak refs to our DOMSVGTransform items. The items are friends and take care

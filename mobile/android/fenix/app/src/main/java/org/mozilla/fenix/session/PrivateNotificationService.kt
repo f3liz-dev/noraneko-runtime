@@ -19,6 +19,7 @@ import org.mozilla.fenix.R
 import org.mozilla.fenix.customtabs.ExternalAppBrowserActivity
 import org.mozilla.fenix.ext.components
 import java.util.Locale
+import mozilla.components.ui.icons.R as iconsR
 
 /**
  * Manages notifications for private tabs.
@@ -37,7 +38,7 @@ class PrivateNotificationService : AbstractPrivateNotificationService() {
     override val notificationsDelegate: NotificationsDelegate by lazy { components.notificationsDelegate }
 
     override fun NotificationCompat.Builder.buildNotification() {
-        setSmallIcon(R.drawable.ic_private_browsing)
+        setSmallIcon(iconsR.drawable.mozac_ic_private_mode_fill_24)
 
         val contentTitle = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             applicationContext.getString(R.string.notification_erase_title_android_14)
@@ -81,6 +82,17 @@ class PrivateNotificationService : AbstractPrivateNotificationService() {
         // If the app is in normal mode there's no reason to direct the user away to
         // private mode as all private tabs have been deleted.
         if (inPrivateMode) {
+            if (components.settings.enableHomepageAsNewTab) {
+                // When Homepage as a New Tab is enabled, there must always be at least one tab, so reopen a
+                // new private homepage tab only if the user is in private browsing mode.
+                components.useCases.fenixBrowserUseCases.addNewHomepageTab(private = true)
+
+                // The reopened private tab keeps the notifications alive, so the
+                // one-shot erase action is never rebuilt by a service restart. Refresh the
+                // notification to ensure the erase action works for subsequent taps.
+                refreshNotification()
+            }
+
             val homeScreenIntent = Intent(this, HomeActivity::class.java).apply {
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
                 putExtra(HomeActivity.PRIVATE_BROWSING_MODE, true)

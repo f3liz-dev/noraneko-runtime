@@ -1,20 +1,18 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "AccessibleNode.h"
+
+#include "DocAccessible.h"
+#include "LocalAccessible-inl.h"
+#include "mozilla/StaticPrefs_accessibility.h"
 #include "mozilla/dom/AccessibleNodeBinding.h"
 #include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/dom/DOMStringList.h"
-#include "mozilla/StaticPrefs_accessibility.h"
-#include "nsContentUtils.h"
-
-#include "LocalAccessible-inl.h"
-#include "nsAccessibilityService.h"
-#include "DocAccessible.h"
-
 #include "mozilla/dom/ToJSValue.h"
+#include "nsAccessibilityService.h"
+#include "nsContentUtils.h"
 
 using namespace mozilla;
 using namespace mozilla::a11y;
@@ -55,7 +53,7 @@ AccessibleNode::AccessibleNode(nsINode* aNode)
   }
 }
 
-AccessibleNode::~AccessibleNode() {}
+AccessibleNode::~AccessibleNode() = default;
 
 /* virtual */
 JSObject* AccessibleNode::WrapObject(JSContext* aCx,

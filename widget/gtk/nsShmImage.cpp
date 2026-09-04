@@ -1,5 +1,4 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,19 +6,19 @@
 #include "nsShmImage.h"
 
 #ifdef MOZ_HAVE_SHMIMAGE
-#  include "mozilla/X11Util.h"
-#  include "mozilla/PodOperations.h"
-#  include "mozilla/gfx/gfxVars.h"
-#  include "mozilla/ipc/SharedMemoryMapping.h"
-#  include "gfxPlatform.h"
-#  include "nsPrintfCString.h"
-#  include "nsTArray.h"
-
 #  include <dlfcn.h>
 #  include <errno.h>
 #  include <string.h>
 #  include <sys/ipc.h>
 #  include <sys/shm.h>
+
+#  include "gfxPlatform.h"
+#  include "mozilla/PodOperations.h"
+#  include "mozilla/X11Util.h"
+#  include "mozilla/gfx/gfxVars.h"
+#  include "mozilla/ipc/SharedMemoryMapping.h"
+#  include "nsPrintfCString.h"
+#  include "nsTArray.h"
 
 extern "C" {
 #  include <X11/ImUtil.h>

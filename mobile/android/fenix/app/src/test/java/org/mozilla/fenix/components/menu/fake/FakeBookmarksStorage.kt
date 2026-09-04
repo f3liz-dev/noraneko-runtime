@@ -8,6 +8,7 @@ import mozilla.components.concept.storage.BookmarkInfo
 import mozilla.components.concept.storage.BookmarkNode
 import mozilla.components.concept.storage.BookmarkNodeType
 import mozilla.components.concept.storage.BookmarksStorage
+import mozilla.components.concept.storage.bookmarks.InsertableBookmarkTreeRoot
 import java.util.UUID
 
 class FakeBookmarksStorage() : BookmarksStorage {
@@ -31,7 +32,6 @@ class FakeBookmarksStorage() : BookmarksStorage {
     override suspend fun getRecentBookmarks(
         limit: Int,
         maxAge: Long?,
-        currentTime: Long,
     ): Result<List<BookmarkNode>> {
         return Result.runCatching {
             bookmarkMap.values.toList()
@@ -116,6 +116,10 @@ class FakeBookmarksStorage() : BookmarksStorage {
     }
 
     override fun cancelReads(nextQuery: String) {
+        throw NotImplementedError()
+    }
+
+    override suspend fun insertTree(tree: InsertableBookmarkTreeRoot): Result<String> {
         throw NotImplementedError()
     }
 }

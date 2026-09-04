@@ -1,5 +1,3 @@
-# -*- Mode: python; indent-tabs-mode: nil; tab-width: 40 -*-
-# vim: set filetype=python:
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -123,13 +121,16 @@ def RustLibrary(name, features=None, output_category=None, is_gkrust=False):
 
 
 @template
-def RustProgram(name, features=None):
+def RustProgram(name, features=None, output_category=None):
     """Template for Rust programs."""
     RUST_PROGRAMS += [name]
     DisableWarningsForRust()
 
     if features:
         RUST_PROGRAM_FEATURES = features
+
+    if output_category:
+        RUST_PROGRAM_OUTPUT_CATEGORY = output_category
 
 
 @template
@@ -205,13 +206,16 @@ def HostRustLibrary(name, features=None):
 
 
 @template
-def HostRustProgram(name, features=None):
+def HostRustProgram(name, features=None, output_category=None):
     """Template for host Rust programs."""
     HOST_RUST_PROGRAMS += [name]
     DisableWarningsForRust()
 
     if features:
         HOST_RUST_PROGRAM_FEATURES = features
+
+    if output_category:
+        HOST_RUST_PROGRAM_OUTPUT_CATEGORY = output_category
 
 
 @template
@@ -244,6 +248,7 @@ def GeneratedFile(name, *names, **kwargs):
     script = kwargs.pop("script", None)
     entry_point = kwargs.pop("entry_point", None)
     inputs = kwargs.pop("inputs", [])
+    extra_deps = kwargs.pop("extra_deps", [])
     flags = kwargs.pop("flags", [])
     force = kwargs.pop("force", False)
     if kwargs:
@@ -265,8 +270,70 @@ def GeneratedFile(name, *names, **kwargs):
     if script and entry_point:
         generated_file.script = script + ":" + entry_point
     generated_file.inputs = inputs
+    generated_file.extra_deps = extra_deps
     generated_file.flags = flags
     generated_file.force = force
+
+
+@template
+def MacOSBundle(output, **kwargs):
+    """Assemble a macOS ``.app`` bundle.
+
+    ``output`` is the bundle path. A ``skeleton`` directory is copied into
+    ``Contents``. Optionally generated ``info_plist`` and ``strings`` are
+    placed in ``Contents`` and ``Contents/Resources/<lproj>``. ``binaries``
+    (``(source, dest_name)`` pairs) are installed into ``Contents/MacOS``.
+
+    ``lproj`` names the localized resources directory under
+    ``Contents/Resources`` (default ``English.lproj``).
+
+    ``extra_files`` is a list of ``(source, dest)`` pairs installed relative
+    to ``Contents``.
+
+    ``stage`` is a directory whose entries are split between
+    ``Contents/MacOS`` and ``Contents/Resources``: ``macos_files`` lists the
+    entries that belong in ``MacOS`` (kept as symlinks) and
+    ``macos_copy_files`` those that must be deep-copied there instead.
+
+    ``moves`` lists ``(name, dest)`` pairs, each moving ``Contents/Resources/name``
+    to ``Contents/dest``.
+
+    ``pkginfo``, if set, is written verbatim to ``Contents/PkgInfo``.
+
+    ``copies`` lists additional paths the assembled bundle is copied to, so an
+    identical bundle needed in several locations is only assembled once."""
+    skeleton = kwargs.pop("skeleton", None)
+    info_plist = kwargs.pop("info_plist", None)
+    strings = kwargs.pop("strings", None)
+    lproj = kwargs.pop("lproj", "English.lproj")
+    binaries = kwargs.pop("binaries", [])
+    extra_files = kwargs.pop("extra_files", [])
+    stage = kwargs.pop("stage", None)
+    macos_files = kwargs.pop("macos_files", None)
+    macos_copy_files = kwargs.pop("macos_copy_files", None)
+    moves = kwargs.pop("moves", [])
+    pkginfo = kwargs.pop("pkginfo", None)
+    copies = kwargs.pop("copies", [])
+    if kwargs:
+        error(f"Unrecognized argument(s) to MacOSBundle: {', '.join(kwargs)}")
+
+    MACOS_BUNDLES += [
+        {
+            "bundle": output,
+            "skeleton": skeleton,
+            "info_plist": info_plist,
+            "strings": strings,
+            "lproj": lproj,
+            "binaries": binaries,
+            "extra_files": extra_files,
+            "stage": stage,
+            "macos_files": macos_files,
+            "macos_copy_files": macos_copy_files,
+            "moves": moves,
+            "pkginfo": pkginfo,
+            "copies": copies,
+        }
+    ]
 
 
 @template

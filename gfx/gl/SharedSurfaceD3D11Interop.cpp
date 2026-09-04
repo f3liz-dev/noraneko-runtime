@@ -1,4 +1,3 @@
-/* -*- Mode: c++; c-basic-offset: 2; indent-tabs-mode: nil; tab-width: 4; -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,17 +6,18 @@
 
 #include <d3d11.h>
 #include <d3d11_1.h>
-#include "GLContext.h"
+
 #include "GLBlitHelper.h"
+#include "GLContext.h"
 #include "MozFramebuffer.h"
 #include "ScopedGLHelpers.h"
 #include "WGLLibrary.h"
-#include "nsPrintfCString.h"
+#include "mozilla/StaticPrefs_webgl.h"
 #include "mozilla/gfx/DeviceManagerDx.h"
 #include "mozilla/gfx/FileHandleWrapper.h"
 #include "mozilla/gfx/Logging.h"
 #include "mozilla/layers/LayersSurfaces.h"
-#include "mozilla/StaticPrefs_webgl.h"
+#include "nsPrintfCString.h"
 
 namespace mozilla {
 namespace gl {
@@ -151,7 +151,7 @@ class DXInterop2Device : public RefCounted<DXInterop2Device> {
   WGLLibrary* const mWGL;
   const RefPtr<ID3D11Device> mD3D;  // Only needed for lifetime guarantee.
   const HANDLE mInteropDevice;
-  GLContext* const mGL;
+  const WeakPtr<GLContext> mGL;
 
   // AMD workaround.
   const RefPtr<ID3D11DeviceContext1> mD3DContext;
@@ -211,6 +211,10 @@ class DXInterop2Device : public RefCounted<DXInterop2Device> {
         mContextState(contextState) {}
 
   ~DXInterop2Device() {
+    if (!mGL) {
+      return;
+    }
+
     const auto isCurrent = mGL->MakeCurrent();
 
     if (mWGL->mSymbols.fDXCloseDeviceNV(mInteropDevice)) return;
@@ -222,13 +226,15 @@ class DXInterop2Device : public RefCounted<DXInterop2Device> {
           "wglDXCloseDevice(0x%p) failed:"
           " GetLastError(): %u\n",
           mInteropDevice, error);
-      gfxCriticalError() << errorMessage.BeginReading();
+      gfxCriticalError() << errorMessage.get();
     }
   }
 
   HANDLE RegisterObject(void* d3dObject, GLuint name, GLenum type,
                         GLenum access) const {
-    if (!mGL->MakeCurrent()) return nullptr;
+    if (!mGL || !mGL->MakeCurrent()) {
+      return nullptr;
+    }
 
     const ScopedContextState autoCS(mD3DContext, mContextState);
     const auto ret = mWGL->mSymbols.fDXRegisterObjectNV(
@@ -240,11 +246,15 @@ class DXInterop2Device : public RefCounted<DXInterop2Device> {
         "wglDXRegisterObject(0x%p, 0x%p, %u, 0x%04x,"
         " 0x%04x) failed: GetLastError(): %u\n",
         mInteropDevice, d3dObject, name, type, access, error);
-    gfxCriticalNote << errorMessage.BeginReading();
+    gfxCriticalNote << errorMessage.get();
     return nullptr;
   }
 
   bool UnregisterObject(HANDLE lockHandle) const {
+    if (!mGL) {
+      return false;
+    }
+
     const auto isCurrent = mGL->MakeCurrent();
 
     const ScopedContextState autoCS(mD3DContext, mContextState);
@@ -258,12 +268,16 @@ class DXInterop2Device : public RefCounted<DXInterop2Device> {
           "wglDXUnregisterObject(0x%p, 0x%p) failed:"
           " GetLastError(): %u\n",
           mInteropDevice, lockHandle, error);
-      gfxCriticalError() << errorMessage.BeginReading();
+      gfxCriticalError() << errorMessage.get();
     }
     return false;
   }
 
   bool LockObject(HANDLE lockHandle) const {
+    if (!mGL) {
+      return false;
+    }
+
     MOZ_ASSERT(mGL->IsCurrent());
 
     if (mWGL->mSymbols.fDXLockObjectsNV(mInteropDevice, 1, &lockHandle))
@@ -282,11 +296,15 @@ class DXInterop2Device : public RefCounted<DXInterop2Device> {
         "wglDXLockObjects(0x%p, 1, {0x%p}) failed:"
         " GetLastError(): %u\n",
         mInteropDevice, lockHandle, error);
-    gfxCriticalError() << errorMessage.BeginReading();
+    gfxCriticalError() << errorMessage.get();
     return false;
   }
 
   bool UnlockObject(HANDLE lockHandle) const {
+    if (!mGL) {
+      return false;
+    }
+
     MOZ_ASSERT(mGL->IsCurrent());
 
     if (mWGL->mSymbols.fDXUnlockObjectsNV(mInteropDevice, 1, &lockHandle))
@@ -305,7 +323,7 @@ class DXInterop2Device : public RefCounted<DXInterop2Device> {
         "wglDXUnlockObjects(0x%p, 1, {0x%p}) failed:"
         " GetLastError(): %u\n",
         mInteropDevice, lockHandle, error);
-    gfxCriticalError() << errorMessage.BeginReading();
+    gfxCriticalError() << errorMessage.get();
     return false;
   }
 };
@@ -367,7 +385,7 @@ UniquePtr<SharedSurface_D3D11Interop> SharedSurface_D3D11Interop::Create(
   }
 
   auto fbForDrawing = MozFramebuffer::CreateForBacking(
-      gl, size, 0, false, LOCAL_GL_RENDERBUFFER, data.interopRb->name);
+      gl, size, 0, false, false, LOCAL_GL_RENDERBUFFER, data.interopRb->name);
   if (!fbForDrawing) return nullptr;
 
   // -
@@ -387,7 +405,7 @@ UniquePtr<SharedSurface_D3D11Interop> SharedSurface_D3D11Interop::Create(
 
       // Our ShSurf tex or rb must be single-sampled.
       data.interopFbIfNeedsIndirect = std::move(fbForDrawing);
-      fbForDrawing = MozFramebuffer::Create(gl, size, 0, false);
+      fbForDrawing = MozFramebuffer::Create(gl, size, 0, false, false);
     }
   }
 
@@ -451,7 +469,9 @@ SharedSurface_D3D11Interop::ToSurfaceDescriptor() {
   return Some(layers::SurfaceDescriptorD3D10(
       mData.dxgiHandle, /* gpuProcessTextureId */ Nothing(),
       /* arrayIndex */ 0, format, mDesc.size, mDesc.colorSpace,
-      gfx::ColorRange::FULL, /* hasKeyedMutex */ true,
+      gfx::ColorRange::FULL, mDesc.transferFunction,
+      /* hdrMetadata */ Nothing(),
+      /* hasKeyedMutex */ true,
       /* fencesHolderId */ Nothing()));
 }
 

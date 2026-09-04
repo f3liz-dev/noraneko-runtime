@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,13 +6,13 @@
 #define widget_windows_WinCompositorWidget_h
 
 #include "CompositorWidget.h"
+#include "FxROutputHandler.h"
 #include "mozilla/Atomics.h"
+#include "mozilla/Mutex.h"
 #include "mozilla/gfx/CriticalSection.h"
 #include "mozilla/gfx/Point.h"
 #include "mozilla/layers/LayersTypes.h"
-#include "mozilla/Mutex.h"
 #include "mozilla/widget/WinCompositorWindowThread.h"
-#include "FxROutputHandler.h"
 #include "nsIWidget.h"
 
 class nsWindow;

@@ -1,18 +1,17 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/layers/FocusTarget.h"
+
+#include "mozilla/EventDispatcher.h"  // for EventDispatcher
+#include "mozilla/PresShell.h"        // For PresShell
+#include "mozilla/StaticPrefs_apz.h"
 #include "mozilla/dom/BrowserBridgeChild.h"  // for BrowserBridgeChild
 #include "mozilla/dom/EventTarget.h"         // for EventTarget
 #include "mozilla/dom/RemoteBrowser.h"       // For RemoteBrowser
-#include "mozilla/EventDispatcher.h"         // for EventDispatcher
-#include "mozilla/PresShell.h"               // For PresShell
-#include "mozilla/StaticPrefs_apz.h"
-#include "nsIContentInlines.h"  // for nsINode::IsEditable()
-#include "nsLayoutUtils.h"      // for nsLayoutUtils
+#include "nsIContentInlines.h"               // for nsINode::IsEditable()
+#include "nsLayoutUtils.h"                   // for nsLayoutUtils
 
 static mozilla::LazyLogModule sApzFtgLog("apz.focustarget");
 #define FT_LOG(...) MOZ_LOG(sApzFtgLog, LogLevel::Debug, (__VA_ARGS__))

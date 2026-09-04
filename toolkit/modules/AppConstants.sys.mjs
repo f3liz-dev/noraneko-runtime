@@ -14,8 +14,6 @@ export var AppConstants = Object.freeze({
   // defines: https://wiki.mozilla.org/Platform/Channel-specific_build_defines
   NIGHTLY_BUILD: @NIGHTLY_BUILD_BOOL@,
 
-  ENABLE_EXPLICIT_RESOURCE_MANAGEMENT: @ENABLE_EXPLICIT_RESOURCE_MANAGEMENT_BOOL@,
-
   RELEASE_OR_BETA: @RELEASE_OR_BETA_BOOL@,
 
   EARLY_BETA_OR_EARLIER: @EARLY_BETA_OR_EARLIER_BOOL@,
@@ -157,8 +155,6 @@ export var AppConstants = Object.freeze({
 
   MOZ_GECKOVIEW_HISTORY: @MOZ_GECKOVIEW_HISTORY_BOOL@,
 
-  MOZ_GECKO_PROFILER: @MOZ_GECKO_PROFILER_BOOL@,
-
   DLL_PREFIX: "@DLL_PREFIX@",
   DLL_SUFFIX: "@DLL_SUFFIX@",
 
@@ -181,7 +177,7 @@ export var AppConstants = Object.freeze({
 
   MOZ_BING_API_CLIENTID: "@MOZ_BING_API_CLIENTID@",
   MOZ_BING_API_KEY: "@MOZ_BING_API_KEY@",
-#ifndef MOZ_WIDGET_ANDROID
+#if !defined(MOZ_WIDGET_ANDROID) && !defined(XP_WIN)
   MOZ_GOOGLE_LOCATION_SERVICE_API_KEY: "@MOZ_GOOGLE_LOCATION_SERVICE_API_KEY@",
 #endif
   MOZ_GOOGLE_SAFEBROWSING_API_KEY: "@MOZ_GOOGLE_SAFEBROWSING_API_KEY@",
@@ -218,7 +214,7 @@ export var AppConstants = Object.freeze({
 #ifdef MOZ_THUNDERBIRD
     [ "https://thunderbird-settings.thunderbird.net/v1" ],
 #else
-    [ "https://firefox.settings.services.mozilla.com/v1", "https://firefox.settings.services.mozilla.com/v2" ],
+    [ "https://firefox.settings.services.mozilla.com/v2" ],
 #endif
 
   REMOTE_SETTINGS_VERIFY_SIGNATURE:

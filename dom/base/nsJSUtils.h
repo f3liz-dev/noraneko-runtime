@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -88,8 +86,8 @@ class nsJSUtils {
       mozilla::UniquePtr<uint8_t[], JS::FreePolicy> aBuffer);
 };
 
-template <typename T, typename std::enable_if_t<std::is_same<
-                          typename T::char_type, char16_t>::value>* = nullptr>
+template <typename T, typename std::enable_if_t<std::is_same_v<
+                          typename T::char_type, char16_t>>* = nullptr>
 inline bool AssignJSString(JSContext* cx, T& dest, JSString* s) {
   size_t len = JS::GetStringLength(s);
   static_assert(JS::MaxStringLength < (1 << 30),
@@ -110,8 +108,8 @@ inline bool AssignJSString(JSContext* cx, T& dest, JSString* s) {
 }
 
 // Specialization for UTF8String.
-template <typename T, typename std::enable_if_t<std::is_same<
-                          typename T::char_type, char>::value>* = nullptr>
+template <typename T, typename std::enable_if_t<std::is_same_v<
+                          typename T::char_type, char>>* = nullptr>
 inline bool AssignJSString(JSContext* cx, T& dest, JSString* s) {
   using namespace mozilla;
   CheckedInt<size_t> bufLen(JS::GetStringLength(s));

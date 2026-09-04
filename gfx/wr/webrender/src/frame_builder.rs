@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use api::{ColorF, DebugFlags, ExternalScrollId, FontRenderMode, ImageKey, MinimapData, PremultipliedColorF};
+use api::{ColorF, DebugFlags, ExternalScrollId, FontRenderMode, ImageKey, MinimapData};
 use api::units::*;
 use plane_split::BspSplitter;
 use crate::batch::{BatchBuilder, AlphaBatchBuilder, AlphaBatchContainer};
@@ -13,20 +13,22 @@ use crate::spatial_node::SpatialNodeType;
 use crate::spatial_tree::{SpatialTree, SpatialNodeIndex};
 use crate::composite::{CompositorKind, CompositeState, CompositeStatePreallocator};
 use crate::debug_item::DebugItem;
-use crate::gpu_types::{ImageBrushPrimitiveData, PrimitiveHeaders, ZBufferIdGenerator};
+use crate::gpu_types::{PrimitiveHeaders, ZBufferIdGenerator};
 use crate::gpu_types::QuadSegment;
 use crate::internal_types::{FastHashMap, PlaneSplitter, FrameStamp};
 use crate::invalidation::DirtyRegion;
 use crate::tile_cache::{SliceId, TileCacheInstance};
-use crate::picture::PicturePrimitive;
-use crate::picture::{SurfaceInfo, SurfaceIndex, ResolvedSurfaceTexture};
-use crate::picture::{SubpixelMode, RasterConfig, PictureCompositeMode};
+use crate::picture::PictureInstance;
+use crate::picture::ResolvedSurfaceTexture;
+use crate::picture::{RasterConfig, PictureScratch};
+use crate::picture_composite_mode::PictureCompositeMode;
 use crate::prepare::prepare_picture;
 use crate::prim_store::{PictureIndex, PrimitiveScratchBuffer};
 use crate::prim_store::{DeferredResolve, PrimitiveInstance};
+use crate::prim_store::storage;
 use crate::profiler::{self, TransactionProfile};
 use crate::render_backend::{DataStores, ScratchBuffer};
-use crate::renderer::{GpuBufferAddress, GpuBufferBuilder, GpuBufferBuilderF, GpuBufferBuilderI, GpuBufferF, GpuBufferI, GpuBufferDataF};
+use crate::renderer::{GpuBufferBuilder, GpuBufferBuilderF, GpuBufferBuilderI, GpuBufferF, GpuBufferI};
 use crate::render_target::{PictureCacheTarget, PictureCacheTargetKind};
 use crate::render_target::{RenderTargetContext, RenderTargetKind, RenderTarget};
 use crate::render_task_graph::{Pass, RenderTaskGraph, RenderTaskId, SubPassSurface};
@@ -35,8 +37,7 @@ use crate::render_task::{RenderTaskKind, StaticRenderTaskSurface};
 use crate::resource_cache::ResourceCache;
 use crate::scene::{BuiltScene, SceneProperties};
 use crate::space::SpaceMapper;
-use crate::segment::SegmentBuilder;
-use crate::surface::SurfaceBuilder;
+use crate::surface::{SubpixelMode, SurfaceBuilder, SurfaceIndex, SurfaceInfo};
 use crate::transform::{TransformPalette, TransformData};
 use std::sync::Arc;
 use std::{f32, mem};
@@ -71,42 +72,6 @@ pub struct FrameBuilderConfig {
     pub low_quality_pinch_zoom: bool,
     pub max_shared_surface_size: i32,
     pub enable_dithering: bool,
-    pub precise_linear_gradients: bool,
-}
-
-/// A set of default / global resources that are re-built each frame.
-#[cfg_attr(feature = "capture", derive(Serialize))]
-pub struct FrameGlobalResources {
-    /// The image shader block for the most common / default
-    /// set of image parameters (color white, stretch == rect.size).
-    pub default_image_data: GpuBufferAddress,
-
-    /// A GPU cache config for drawing cut-out rectangle primitives.
-    /// This is used to 'cut out' overlay tiles where a compositor
-    /// surface exists.
-    pub default_black_rect_address: GpuBufferAddress,
-}
-
-impl FrameGlobalResources {
-    pub fn new(gpu_buffers: &mut GpuBufferBuilder) -> Self {
-        let mut writer = gpu_buffers.f32.write_blocks(ImageBrushPrimitiveData::NUM_BLOCKS);
-        writer.push(&ImageBrushPrimitiveData {
-            color: PremultipliedColorF::WHITE,
-            background_color: PremultipliedColorF::WHITE,
-            // -ve means use prim rect for stretch size
-            stretch_size: LayoutSize::new(-1.0, 0.0),
-        });
-        let default_image_data = writer.finish();
-
-        let mut writer = gpu_buffers.f32.write_blocks(1);
-        writer.push_one(PremultipliedColorF::BLACK);
-        let default_black_rect_address = writer.finish();
-
-        FrameGlobalResources {
-            default_image_data,
-            default_black_rect_address,
-        }
-    }
 }
 
 pub struct FrameScratchBuffer {
@@ -142,9 +107,8 @@ pub struct FrameBuilder {
 }
 
 pub struct FrameBuildingContext<'a> {
-    pub global_device_pixel_scale: DevicePixelScale,
     pub scene_properties: &'a SceneProperties,
-    pub global_screen_world_rect: WorldRect,
+    pub global_screen_device_rect: DeviceRect,
     pub spatial_tree: &'a SpatialTree,
     pub max_local_clip: LayoutRect,
     pub debug_flags: DebugFlags,
@@ -157,11 +121,18 @@ pub struct FrameBuildingState<'a> {
     pub clip_store: &'a mut ClipStore,
     pub resource_cache: &'a mut ResourceCache,
     pub transforms: &'a mut TransformPalette,
-    pub segment_builder: SegmentBuilder,
     pub surfaces: &'a mut Vec<SurfaceInfo>,
     pub dirty_region_stack: Vec<DirtyRegion>,
     pub composite_state: &'a mut CompositeState,
     pub num_visible_primitives: u32,
+    /// Primitives visited by the prepare traversal, whether or not they
+    /// produced a draw. Accumulated here and reported once per frame, in the
+    /// same way as `num_visible_primitives`.
+    pub num_visited_primitives: u32,
+    /// Total (primitive, command buffer) pairs emitted.
+    pub num_cmd_targets: u32,
+    /// Pictures that obtained a context this frame.
+    pub num_pictures: u32,
     pub plane_splitters: &'a mut [PlaneSplitter],
     pub surface_builder: SurfaceBuilder,
     pub cmd_buffers: &'a mut CommandBufferList,
@@ -177,7 +148,14 @@ pub struct FrameBuildingState<'a> {
     /// traversed before the image that displays it (in other words, the
     /// picture must appear before the image in the display list).
     pub image_dependencies: FastHashMap<ImageKey, RenderTaskId>,
-    pub visited_pictures: &'a mut [bool],
+    /// Per-picture scratch-index slot used by the prepare pass. `None`
+    /// means "not yet visited this frame"; `Some(handle)` means the
+    /// picture was visited and `handle` indexes into
+    /// `PrimitiveFrameScratch.pictures` (or is `INVALID` if take_context
+    /// failed). Replaces the prepare pass's earlier `visited_pictures`
+    /// bool slice — visibility keeps its own bool slice on
+    /// `FrameVisibilityState`.
+    pub picture_scratch_handles: &'a mut [Option<storage::Index<PictureScratch>>],
 }
 
 impl<'a> FrameBuildingState<'a> {
@@ -269,13 +247,12 @@ impl FrameBuilder {
         &mut self,
         scene: &mut BuiltScene,
         present: bool,
-        global_screen_world_rect: WorldRect,
+        global_screen_device_rect: DeviceRect,
         resource_cache: &mut ResourceCache,
         rg_builder: &mut RenderTaskGraphBuilder,
-        global_device_pixel_scale: DevicePixelScale,
         scene_properties: &SceneProperties,
         transform_palette: &mut TransformPalette,
-        data_stores: &mut DataStores,
+        data_stores: &DataStores,
         scratch: &mut ScratchBuffer,
         debug_flags: DebugFlags,
         composite_state: &mut CompositeState,
@@ -286,7 +263,7 @@ impl FrameBuilder {
         frame_memory: &FrameMemory,
         profile: &mut TransactionProfile,
     ) {
-        profile_scope!("build_layer_screen_rects_and_cull_layers");
+        tracy_rs::profile_scope!("build_layer_screen_rects_and_cull_layers");
 
         let render_picture_cache_slices = present;
 
@@ -302,9 +279,8 @@ impl FrameBuilder {
         }
 
         let frame_context = FrameBuildingContext {
-            global_device_pixel_scale,
             scene_properties,
-            global_screen_world_rect,
+            global_screen_device_rect,
             spatial_tree,
             max_local_clip: LayoutRect {
                 min: LayoutPoint::new(-MAX_CLIP_COORD, -MAX_CLIP_COORD),
@@ -334,7 +310,7 @@ impl FrameBuilder {
         scene.surfaces.push(SurfaceInfo::new(
             root_spatial_node,
             root_spatial_node,
-            WorldRect::max_rect(),
+            DeviceRect::max_rect(),
             &frame_context.spatial_tree,
             euclid::Scale::new(1.0),
             (1.0, 1.0),
@@ -343,6 +319,17 @@ impl FrameBuilder {
             false,
         ));
 
+        // Empty the per-frame draw storage. The visibility pass pushes into it
+        // as it finds drawn primitives; the scene's primitive count only sizes
+        // the instance-to-draw side table.
+        scratch.primitive.frame.reset_draws(scene.prim_instances.len());
+
+        // Cluster, prim, and clip-leaf rects are snapped to the device pixel
+        // grid as they are produced by the in-frame picture-graph passes:
+        // `propagate_bounding_rects` snaps each cluster bounding rect, and the
+        // visibility pass snaps each prim's `snapped_pattern_rect` and clip-leaf
+        // rect. Both snap against the consuming surface's raster node, so only
+        // pictures reachable this frame are touched.
         scene.picture_graph.propagate_bounding_rects(
             &mut scene.prim_store.pictures,
             &mut scene.surfaces,
@@ -364,14 +351,12 @@ impl FrameBuilder {
         }
 
         {
-            profile_scope!("UpdateVisibility");
             profile_marker!("UpdateVisibility");
             profile.start_time(profiler::FRAME_VISIBILITY_TIME);
 
             let visibility_context = FrameVisibilityContext {
-                global_device_pixel_scale,
                 spatial_tree,
-                global_screen_world_rect,
+                global_screen_device_rect,
                 debug_flags,
                 scene_properties,
                 config: scene.config,
@@ -395,8 +380,6 @@ impl FrameBuilder {
                     visited_pictures: &mut visited_pictures,
                 };
 
-                let world_culling_rect = WorldRect::max_rect();
-
                 // For now, snapshots are updated every frame. For the
                 // pictures displaying the snapshot via images pick up
                 // the changes, we have to make sure that the image's
@@ -412,10 +395,12 @@ impl FrameBuilder {
                 if let Some(node) = pic.clip_root {
                     visibility_state.clip_tree.push_clip_root_node(node);
                 }
+
+                let culling_rect = DeviceRect::max_rect();
                 update_prim_visibility(
                     *pic_index,
                     None,
-                    &world_culling_rect,
+                    &culling_rect,
                     &scene.prim_store,
                     true,
                     &visibility_context,
@@ -458,7 +443,7 @@ impl FrameBuilder {
                         // If we have a tile cache for this picture, see if any of the
                         // relative transforms have changed, which means we need to
                         // re-map the dependencies of any child primitives.
-                        let world_culling_rect = tile_cache.pre_update(
+                        let culling_rect = tile_cache.pre_update(
                             surface_index,
                             &visibility_context,
                             &mut visibility_state,
@@ -475,7 +460,7 @@ impl FrameBuilder {
                         update_prim_visibility(
                             *pic_index,
                             None,
-                            &world_culling_rect,
+                            &culling_rect,
                             &scene.prim_store,
                             true,
                             &visibility_context,
@@ -486,8 +471,10 @@ impl FrameBuilder {
                         // Build the dirty region(s) for this tile cache.
                         tile_cache.post_update(
                             &visibility_context,
+                            &mut visibility_state.prim_instances,
                             &mut visibility_state.composite_state,
                             &mut visibility_state.resource_cache,
+                            &mut visibility_state.scratch.primitive,
                         );
 
                         visibility_state.clip_tree.pop_clip_root();
@@ -499,6 +486,8 @@ impl FrameBuilder {
                     }
                 }
             }
+
+            scratch.primitive.frame.assert_draws_resolved();
 
             profile.end_time(profiler::FRAME_VISIBILITY_TIME);
         }
@@ -512,28 +501,29 @@ impl FrameBuilder {
 
         profile.start_time(profiler::FRAME_PREPARE_TIME);
 
-        // Reset the visited pictures for the prepare pass.
-        visited_pictures.clear();
+        let mut picture_scratch_handles = frame_memory.new_vec_with_capacity(n_pics);
         for _ in 0..n_pics {
-            visited_pictures.push(false);
+            picture_scratch_handles.push(None);
         }
         let mut frame_state = FrameBuildingState {
             rg_builder,
             clip_store: &mut scene.clip_store,
             resource_cache,
             transforms: transform_palette,
-            segment_builder: SegmentBuilder::new(),
             surfaces: &mut scene.surfaces,
             dirty_region_stack: scratch.frame.dirty_region_stack.take(),
             composite_state,
             num_visible_primitives: 0,
+            num_visited_primitives: 0,
+            num_cmd_targets: 0,
+            num_pictures: 0,
             plane_splitters: &mut self.plane_splitters,
             surface_builder: SurfaceBuilder::new(),
             cmd_buffers,
             clip_tree: &mut scene.clip_tree,
             frame_gpu_data,
             image_dependencies: FastHashMap::default(),
-            visited_pictures: &mut visited_pictures,
+            picture_scratch_handles: &mut picture_scratch_handles,
         };
 
 
@@ -589,7 +579,7 @@ impl FrameBuilder {
             root_spatial_node_index,
         );
         default_dirty_region.add_dirty_region(
-            frame_context.global_screen_world_rect.cast_unit(),
+            frame_context.global_screen_device_rect.cast_unit(),
             frame_context.spatial_tree,
         );
         frame_state.push_dirty_region(default_dirty_region);
@@ -617,6 +607,9 @@ impl FrameBuilder {
         frame_state.surface_builder.finalize();
         profile.end_time(profiler::FRAME_PREPARE_TIME);
         profile.set(profiler::VISIBLE_PRIMITIVES, frame_state.num_visible_primitives);
+        profile.set(profiler::PREPARE_VISITED_PRIMS, frame_state.num_visited_primitives);
+        profile.set(profiler::PREPARE_CMD_TARGETS, frame_state.num_cmd_targets);
+        profile.set(profiler::PREPARE_PICTURES, frame_state.num_pictures);
 
         scratch.frame.dirty_region_stack = frame_state.dirty_region_stack.take();
 
@@ -639,7 +632,7 @@ impl FrameBuilder {
         stamp: FrameStamp,
         device_origin: DeviceIntPoint,
         scene_properties: &SceneProperties,
-        data_stores: &mut DataStores,
+        data_stores: &DataStores,
         scratch: &mut ScratchBuffer,
         debug_flags: DebugFlags,
         tile_caches: &mut FastHashMap<SliceId, Box<TileCacheInstance>>,
@@ -649,7 +642,6 @@ impl FrameBuilder {
         minimap_data: FastHashMap<ExternalScrollId, MinimapData>,
         chunk_pool: Arc<ChunkPool>,
     ) -> Frame {
-        profile_scope!("build");
         profile_marker!("BuildFrame");
 
         let mut frame_memory = FrameMemory::new(chunk_pool, stamp.frame_id());
@@ -668,19 +660,14 @@ impl FrameBuilder {
         //           statically during scene building.
         scene.surfaces.clear();
 
-        let globals = FrameGlobalResources::new(&mut gpu_buffer_builder);
-
         spatial_tree.update_tree(scene_properties);
         let mut transform_palette = spatial_tree.build_transform_palette(&frame_memory);
         scene.clip_store.begin_frame(&mut scratch.clip_store);
 
         rg_builder.begin_frame(stamp.frame_id());
 
-        // TODO(dp): Remove me completely!!
-        let global_device_pixel_scale = DevicePixelScale::new(1.0);
-
         let output_size = scene.output_rect.size();
-        let screen_world_rect = (scene.output_rect.to_f32() / global_device_pixel_scale).round_out();
+        let screen_device_rect = scene.output_rect.to_f32().round_out();
 
         let mut composite_state = CompositeState::new(
             scene.config.compositor_kind,
@@ -697,10 +684,9 @@ impl FrameBuilder {
         self.build_layer_screen_rects_and_cull_layers(
             scene,
             present,
-            screen_world_rect,
+            screen_device_rect,
             resource_cache,
             rg_builder,
-            global_device_pixel_scale,
             scene_properties,
             &mut transform_palette,
             data_stores,
@@ -745,19 +731,15 @@ impl FrameBuilder {
 
             for pass in render_tasks.passes.iter().rev() {
                 let mut ctx = RenderTargetContext {
-                    global_device_pixel_scale,
                     prim_store: &scene.prim_store,
                     resource_cache,
                     use_dual_source_blending,
-                    use_advanced_blending: scene.config.gpu_supports_advanced_blend,
                     break_advanced_blend_batches: !scene.config.advanced_blend_is_coherent,
                     batch_lookback_count: scene.config.batch_lookback_count,
                     spatial_tree,
                     data_stores,
-                    surfaces: &scene.surfaces,
                     scratch: &mut scratch.primitive,
-                    screen_world_rect,
-                    globals: &globals,
+                    screen_device_rect,
                     tile_caches,
                     root_spatial_node_index: spatial_tree.root_reference_frame_index(),
                     frame_memory: &mut frame_memory,
@@ -769,11 +751,9 @@ impl FrameBuilder {
                     &mut ctx,
                     &mut gpu_buffer_builder,
                     &render_tasks,
-                    &scene.clip_store,
                     &mut transform_palette,
                     &mut prim_headers,
                     &mut z_generator,
-                    scene.config.gpu_supports_fast_clears,
                     &scene.prim_instances,
                     &cmd_buffers,
                 );
@@ -786,19 +766,15 @@ impl FrameBuilder {
 
             if present {
                 let mut ctx = RenderTargetContext {
-                    global_device_pixel_scale,
                     prim_store: &scene.prim_store,
                     resource_cache,
                     use_dual_source_blending,
-                    use_advanced_blending: scene.config.gpu_supports_advanced_blend,
                     break_advanced_blend_batches: !scene.config.advanced_blend_is_coherent,
                     batch_lookback_count: scene.config.batch_lookback_count,
                     spatial_tree,
                     data_stores,
-                    surfaces: &scene.surfaces,
                     scratch: &mut scratch.primitive,
-                    screen_world_rect,
-                    globals: &globals,
+                    screen_device_rect,
                     tile_caches,
                     root_spatial_node_index: spatial_tree.root_reference_frame_index(),
                     frame_memory: &mut frame_memory,
@@ -841,7 +817,7 @@ impl FrameBuilder {
             has_been_rendered: false,
             has_texture_cache_tasks,
             prim_headers,
-            debug_items: mem::replace(&mut scratch.primitive.debug_items, Vec::new()),
+            debug_items: mem::replace(&mut scratch.primitive.frame.debug_items, Vec::new()),
             composite_state,
             gpu_buffer_f,
             gpu_buffer_i,
@@ -885,7 +861,7 @@ impl FrameBuilder {
 
       // This is the main walk over the spatial tree. For every scroll frame node which
       // has minimap data, compute the rects we want to render for that minimap in world
-      // coordinates and add them to `scratch.debug_items`.
+      // coordinates and add them to `scratch.frame.debug_items`.
       spatial_tree.visit_nodes(|index, node| {
         if let SpatialNodeType::ScrollFrame(ref scroll_frame_info) = node.node_type {
           if let Some(minimap_data) = minimap_data_store.get(&scroll_frame_info.external_id) {
@@ -960,7 +936,7 @@ impl FrameBuilder {
 
               scratch.push_debug_rect_with_stroke_width(world_rect, border, STROKE_WIDTH);
 
-              // Add world coordinate rects to scratch.debug_items
+              // Add world coordinate rects to scratch.frame.debug_items
               if let Some(fill_color) = fill {
                 let interior_world_rect = WorldRect::new(
                     world_rect.min + WorldVector2D::new(STROKE_WIDTH, STROKE_WIDTH),
@@ -994,7 +970,7 @@ impl FrameBuilder {
     fn skip_occluded_pictures_with_clips(
         &self,
         tile_cache_pictures: &Vec<PictureIndex>,
-        pictures: &mut [PicturePrimitive],
+        pictures: &mut [PictureInstance],
         tile_caches: &mut FastHashMap<SliceId, Box<TileCacheInstance>>,
         frame_context: &FrameBuildingContext,
         composite_state: &mut CompositeState,
@@ -1043,13 +1019,15 @@ impl FrameBuilder {
                         let map_local_to_world = SpaceMapper::new_with_target(
                             frame_context.root_spatial_node_index,
                             tile_cache.spatial_node_index,
-                            frame_context.global_screen_world_rect,
+                            frame_context.global_screen_device_rect,
                             frame_context.spatial_tree,
                         );
                         let world_backdrop_rect = map_local_to_world
                             .map(&backdrop_rect)
-                            .expect("bug: unable to map backdrop rect");
-                        let device_backdrop_rect = (world_backdrop_rect * frame_context.global_device_pixel_scale).round();
+                            .expect("bug: unable to map backdrop rect")
+                            .round()
+                            .cast_unit::<DevicePixel>();
+                        let device_backdrop_rect = world_backdrop_rect;
 
                         if device_backdrop_rect.contains_box(&rounded_clip_rect) {
                             // Save compositor clip for checking against subsequent slices
@@ -1081,16 +1059,16 @@ impl FrameBuilder {
                     // directly added to batches. This allows them to be drawn with various
                     // present modes during render, such as partial present etc.
                     let tile_cache = &ctx.tile_caches[&slice_id];
-                    let map_local_to_world = SpaceMapper::new_with_target(
+                    let map_local_to_device = SpaceMapper::new_with_target(
                         ctx.root_spatial_node_index,
                         tile_cache.spatial_node_index,
-                        ctx.screen_world_rect,
+                        ctx.screen_device_rect,
                         ctx.spatial_tree,
                     );
-                    let world_clip_rect = map_local_to_world
+                    let device_clip_rect = map_local_to_device
                         .map(&tile_cache.local_clip_rect)
-                        .expect("bug: unable to map clip rect");
-                    let device_clip_rect = (world_clip_rect * ctx.global_device_pixel_scale).round();
+                        .expect("bug: unable to map clip rect")
+                        .round();
 
                     composite_state.push_surface(
                         tile_cache,
@@ -1119,15 +1097,13 @@ pub fn build_render_pass(
     ctx: &mut RenderTargetContext,
     gpu_buffer_builder: &mut GpuBufferBuilder,
     render_tasks: &RenderTaskGraph,
-    clip_store: &ClipStore,
     transforms: &mut TransformPalette,
     prim_headers: &mut PrimitiveHeaders,
     z_generator: &mut ZBufferIdGenerator,
-    gpu_supports_fast_clears: bool,
     prim_instances: &[PrimitiveInstance],
     cmd_buffers: &CommandBufferList,
 ) -> RenderPass {
-    profile_scope!("build_render_pass");
+    tracy_rs::profile_scope!("build_render_pass");
 
     // TODO(gw): In this initial frame graph work, we try to maintain the existing
     //           build_render_pass code as closely as possible, to make the review
@@ -1145,7 +1121,6 @@ pub fn build_render_pass(
                             false,
                             texture_id,
                             screen_size,
-                            gpu_supports_fast_clears,
                             Some(used_rect),
                             &ctx.frame_memory,
                         );
@@ -1156,7 +1131,6 @@ pub fn build_render_pass(
                                 ctx,
                                 gpu_buffer_builder,
                                 render_tasks,
-                                clip_store,
                                 transforms,
                             );
                         }
@@ -1169,7 +1143,6 @@ pub fn build_render_pass(
                             false,
                             texture_id,
                             screen_size,
-                            gpu_supports_fast_clears,
                             Some(used_rect),
                             &ctx.frame_memory,
                         );
@@ -1180,7 +1153,6 @@ pub fn build_render_pass(
                                 ctx,
                                 gpu_buffer_builder,
                                 render_tasks,
-                                clip_store,
                                 transforms,
                             );
                         }
@@ -1305,7 +1277,6 @@ pub fn build_render_pass(
                             true,
                             texture,
                             screen_size,
-                            gpu_supports_fast_clears,
                             None,
                             &ctx.frame_memory
                         )
@@ -1316,7 +1287,6 @@ pub fn build_render_pass(
                         ctx,
                         gpu_buffer_builder,
                         render_tasks,
-                        clip_store,
                         transforms,
                     );
                 }

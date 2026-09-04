@@ -2,7 +2,12 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-import { html, repeat } from "chrome://global/content/vendor/lit.all.mjs";
+import {
+  html,
+  nothing,
+  repeat,
+  styleMap,
+} from "chrome://global/content/vendor/lit.all.mjs";
 import { MozLitElement } from "chrome://global/content/lit-utils.mjs";
 // eslint-disable-next-line import/no-unassigned-import
 import "chrome://global/content/elements/moz-button.mjs";
@@ -22,7 +27,10 @@ import "chrome://global/content/elements/moz-button.mjs";
  *
  * @typedef {"" | "chat" | "search" | "navigate"} SmartbarAction
  * @property {SmartbarAction} action - Current action or empty string for initial state.
- * @property {SearchEngineInfo} searchEngine - The current search engine display info.
+ * @property {SearchEngineInfo} searchEngineInfo - The current search engine display info.
+ * @property {SearchEngineInfo[]} searchEngines - The list of visible search engines.
+ * @property {boolean} submitDisabled - When true, the primary button is inert
+ *   (used for the "Go" guardrail) while the action dropdown stays usable.
  */
 export class InputCta extends MozLitElement {
   static shadowRootOptions = {
@@ -33,15 +41,24 @@ export class InputCta extends MozLitElement {
   static properties = {
     action: { type: String, reflect: true },
     searchEngineInfo: { type: Object },
+    searchEngines: { type: Array },
+    submitDisabled: {
+      type: Boolean,
+      reflect: true,
+      attribute: "submit-disabled",
+    },
   };
 
-  static ACTIONS = ["chat", "navigate", "search"];
+  static ACTIONS = ["chat", "navigate", "search", "stop"];
 
   constructor() {
     super();
     this.action = "";
+    this.submitDisabled = false;
     this.searchEngineInfo = { name: "", icon: "" };
     this._menuId = `actions-menu-${crypto.randomUUID()}`;
+    this._searchSubpanelId = `search-submenu-${crypto.randomUUID()}`;
+    this.searchEngines = [];
   }
 
   get actionLabelId() {
@@ -49,6 +66,9 @@ export class InputCta extends MozLitElement {
   }
 
   get buttonIconSrc() {
+    if (this.action == "stop") {
+      return "chrome://browser/content/aiwindow/assets/stop-generation.svg";
+    }
     return this.action ? undefined : "chrome://browser/skin/forward.svg";
   }
 
@@ -58,12 +78,27 @@ export class InputCta extends MozLitElement {
       : "chrome://global/skin/icons/search-glass.svg";
   }
 
+  get #mainPanel() {
+    return this.shadowRoot?.getElementById(this._menuId);
+  }
+
+  get #searchSubpanel() {
+    return this.shadowRoot?.getElementById(this._searchSubpanelId);
+  }
+
+  get #mozButton() {
+    return this.shadowRoot?.querySelector("moz-button");
+  }
+
   #setAction(key) {
-    if (key === this.action || !InputCta.ACTIONS.includes(key)) {
+    if (!InputCta.ACTIONS.includes(key)) {
       return;
     }
 
-    this.action = key;
+    if (key !== this.action) {
+      this.action = key;
+    }
+
     this.dispatchEvent(
       new CustomEvent("aiwindow-input-cta:on-action-change", {
         detail: { action: key },
@@ -74,13 +109,43 @@ export class InputCta extends MozLitElement {
   }
 
   #onAction() {
+    if (this.submitDisabled && this.action != "stop") {
+      return;
+    }
+    const eventType = `aiwindow-input-cta:${this.action == "stop" ? "on-stop" : "on-action"}`;
     this.dispatchEvent(
-      new CustomEvent("aiwindow-input-cta:on-action", {
+      new CustomEvent(eventType, {
         detail: { action: this.action },
         bubbles: true,
         composed: true,
       })
     );
+  }
+
+  #onSearchEngineSelect(engine) {
+    this.dispatchEvent(
+      new CustomEvent("aiwindow-input-cta:on-search-engine-select", {
+        detail: { action: "search", engineName: engine.name },
+        bubbles: true,
+        composed: true,
+      })
+    );
+  }
+
+  #onSearchItemClick(event) {
+    event.stopPropagation();
+    this.#mainPanel?.hide(event, { force: true });
+    requestAnimationFrame(() => {
+      this.#searchSubpanel?.show(null, this.#mozButton.chevronButtonEl);
+    });
+  }
+
+  #onBackClick(event) {
+    event.stopPropagation();
+    this.#searchSubpanel?.hide(event, { force: true });
+    requestAnimationFrame(() => {
+      this.#mainPanel?.show(null, this.#mozButton.chevronButtonEl);
+    });
   }
 
   willUpdate(changedProps) {
@@ -104,23 +169,75 @@ export class InputCta extends MozLitElement {
     }
   }
 
+  async updated(changedProps) {
+    if (!changedProps.has("submitDisabled") && !changedProps.has("action")) {
+      return;
+    }
+    // moz-button has no per-part disabled state, so expose the "Go" guardrail to
+    // assistive technology by toggling aria-disabled on its inner main button
+    // while leaving the chevron/dropdown live.
+    await this.#mozButton?.updateComplete;
+    const mainButton = this.#mozButton?.buttonEl;
+    if (!mainButton) {
+      return;
+    }
+    if (this.submitDisabled && this.action != "stop") {
+      mainButton.setAttribute("aria-disabled", "true");
+    } else {
+      mainButton.removeAttribute("aria-disabled");
+    }
+  }
+
   render() {
-    const panelListTemplate = this.action
-      ? html`<panel-list id=${this._menuId}>
+    const isStop = this.action == "stop";
+    const menuActions = InputCta.ACTIONS.filter(a => a !== "stop");
+
+    const panelListTemplate =
+      this.action && !isStop
+        ? html`<panel-list id=${this._menuId}>
+            ${repeat(
+              menuActions,
+              key => key,
+              key =>
+                html`<panel-item
+                  @click=${() => this.#setAction(key)}
+                  data-l10n-id=${`aiwindow-input-cta-menu-label-${key}`}
+                  data-l10n-args=${key == "search"
+                    ? JSON.stringify({
+                        searchEngineName: this.searchEngineInfo.name,
+                      })
+                    : undefined}
+                  icon=${key}
+                ></panel-item>`
+            )}
+            <panel-item
+              @click=${e => this.#onSearchItemClick(e)}
+              data-l10n-id="aiwindow-input-cta-menu-label-search-with"
+              icon="search-with"
+            ></panel-item>
+          </panel-list>`
+        : null;
+
+    const searchSubpanelTemplate = this.action
+      ? html`<panel-list id=${this._searchSubpanelId}>
+          <panel-item
+            @click=${e => this.#onBackClick(e)}
+            data-l10n-id="aiwindow-input-cta-search-submenu-header"
+            icon="back"
+          ></panel-item>
           ${repeat(
-            InputCta.ACTIONS,
-            key => key,
-            key =>
+            this.searchEngines,
+            engine => engine.name,
+            engine =>
               html`<panel-item
-                @click=${() => this.#setAction(key)}
-                data-l10n-id=${`aiwindow-input-cta-menu-label-${key}`}
-                data-l10n-args=${key === "search"
-                  ? JSON.stringify({
-                      searchEngineName: this.searchEngineInfo.name,
-                    })
-                  : undefined}
-                icon=${key}
-              ></panel-item>`
+                @click=${() => this.#onSearchEngineSelect(engine)}
+                icon="engine"
+                style=${styleMap(
+                  engine.icon ? { "--engine-icon": `url(${engine.icon})` } : {}
+                )}
+              >
+                ${engine.name}
+              </panel-item>`
           )}
         </panel-list>`
       : null;
@@ -131,19 +248,23 @@ export class InputCta extends MozLitElement {
         href="chrome://browser/content/aiwindow/components/input-cta.css"
       />
       <moz-button
-        type=${this.action ? "split" : "default"}
+        type=${this.action && !isStop ? "split" : "ghost"}
         class="input-cta"
-        .menuId=${this.action ? this._menuId : undefined}
+        .menuId=${this.action && !isStop ? this._menuId : undefined}
         .iconSrc=${this.buttonIconSrc}
         @click=${this.#onAction}
         ?disabled=${!this.action}
+        data-l10n-id=${isStop ? "aiwindow-input-cta-stop-button" : nothing}
+        data-l10n-attrs=${isStop ? "aria-label title" : nothing}
       >
-        <slot>
-          ${this.action &&
-          html`<span data-l10n-id=${this.actionLabelId}></span>`}
-        </slot>
+        ${isStop
+          ? ""
+          : html`<slot>
+              ${this.action &&
+              html`<span data-l10n-id=${this.actionLabelId}></span>`}
+            </slot>`}
       </moz-button>
-      ${panelListTemplate}
+      ${panelListTemplate} ${searchSubpanelTemplate}
     `;
   }
 }

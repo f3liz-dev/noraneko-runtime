@@ -1,31 +1,30 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "MsaaAccessible.h"
+
+#include "ARIAMap.h"
 #include "EnumVariant.h"
+#include "HyperTextAccessible-inl.h"
+#include "LocalAccessible-inl.h"
+#include "MsaaDocAccessible.h"
+#include "MsaaRootAccessible.h"
+#include "MsaaXULMenuAccessible.h"
+#include "Relation.h"
+#include "ServiceProvider.h"
 #include "ia2AccessibleApplication.h"
 #include "ia2AccessibleHypertext.h"
 #include "ia2AccessibleImage.h"
 #include "ia2AccessibleTable.h"
 #include "ia2AccessibleTableCell.h"
-#include "LocalAccessible-inl.h"
+#include "mozilla/PresShell.h"
 #include "mozilla/a11y/AccessibleWrap.h"
 #include "mozilla/a11y/Compatibility.h"
 #include "mozilla/a11y/DocAccessibleParent.h"
-#include "MsaaAccessible.h"
-#include "MsaaDocAccessible.h"
-#include "MsaaRootAccessible.h"
-#include "MsaaXULMenuAccessible.h"
 #include "nsEventMap.h"
 #include "nsWinUtils.h"
-#include "Relation.h"
 #include "sdnAccessible.h"
-#include "HyperTextAccessible-inl.h"
-#include "ServiceProvider.h"
-#include "ARIAMap.h"
-#include "mozilla/PresShell.h"
 
 using namespace mozilla;
 using namespace mozilla::a11y;
@@ -573,7 +572,7 @@ MsaaAccessible::QueryInterface(REFIID iid, void** ppv) {
 // IAccessible methods
 
 STDMETHODIMP
-MsaaAccessible::get_accParent(IDispatch __RPC_FAR* __RPC_FAR* ppdispParent) {
+MsaaAccessible::get_accParent(IDispatch __RPC_FAR * __RPC_FAR * ppdispParent) {
   if (!ppdispParent) return E_INVALIDARG;
 
   *ppdispParent = nullptr;
@@ -619,7 +618,7 @@ MsaaAccessible::get_accChildCount(long __RPC_FAR* pcountChildren) {
 STDMETHODIMP
 MsaaAccessible::get_accChild(
     /* [in] */ VARIANT varChild,
-    /* [retval][out] */ IDispatch __RPC_FAR* __RPC_FAR* ppdispChild) {
+    /* [retval][out] */ IDispatch __RPC_FAR * __RPC_FAR * ppdispChild) {
   if (!ppdispChild) return E_INVALIDARG;
 
   *ppdispChild = nullptr;
@@ -919,10 +918,16 @@ MsaaAccessible::get_accFocus(
 class AccessibleEnumerator final : public IEnumVARIANT {
  public:
   explicit AccessibleEnumerator(const nsTArray<Accessible*>& aArray)
-      : mArray(aArray.Clone()), mCurIndex(0) {}
+      : mCurIndex(0) {
+    mArray.SetCapacity(aArray.Length());
+    for (Accessible* acc : aArray) {
+      mArray.AppendElement(MsaaAccessible::GetFrom(acc));
+    }
+  }
+
   AccessibleEnumerator(const AccessibleEnumerator& toCopy)
       : mArray(toCopy.mArray.Clone()), mCurIndex(toCopy.mCurIndex) {}
-  ~AccessibleEnumerator() {}
+  ~AccessibleEnumerator() = default;
 
   // IUnknown
   DECL_IUNKNOWN
@@ -935,10 +940,10 @@ class AccessibleEnumerator final : public IEnumVARIANT {
     mCurIndex = 0;
     return S_OK;
   }
-  STDMETHODIMP Clone(IEnumVARIANT FAR* FAR* ppenum);
+  STDMETHODIMP Clone(IEnumVARIANT FAR * FAR * ppenum);
 
  private:
-  nsTArray<Accessible*> mArray;
+  nsTArray<RefPtr<MsaaAccessible>> mArray;
   uint32_t mCurIndex;
 };
 
@@ -973,8 +978,9 @@ AccessibleEnumerator::Next(unsigned long celt, VARIANT FAR* rgvar,
 
   // Copy the elements of the array into rgvar.
   for (uint32_t i = 0; i < celt; ++i, ++mCurIndex) {
+    RefPtr<IDispatch> disp = mArray[mCurIndex];
     rgvar[i].vt = VT_DISPATCH;
-    rgvar[i].pdispVal = MsaaAccessible::NativeAccessible(mArray[mCurIndex]);
+    disp.forget(&rgvar[i].pdispVal);
   }
 
   if (pceltFetched) *pceltFetched = celt;
@@ -983,9 +989,9 @@ AccessibleEnumerator::Next(unsigned long celt, VARIANT FAR* rgvar,
 }
 
 STDMETHODIMP
-AccessibleEnumerator::Clone(IEnumVARIANT FAR* FAR* ppenum) {
-  *ppenum = new AccessibleEnumerator(*this);
-  NS_ADDREF(*ppenum);
+AccessibleEnumerator::Clone(IEnumVARIANT FAR * FAR * ppenum) {
+  auto newEnum = MakeRefPtr<AccessibleEnumerator>(*this);
+  newEnum.forget(ppenum);
   return S_OK;
 }
 
@@ -1041,8 +1047,7 @@ MsaaAccessible::get_accSelection(VARIANT __RPC_FAR* pvarChildren) {
     pvarChildren->vt = VT_DISPATCH;
     pvarChildren->pdispVal = NativeAccessible(selectedItems[0]);
   } else if (count > 1) {
-    RefPtr<AccessibleEnumerator> pEnum =
-        new AccessibleEnumerator(selectedItems);
+    auto pEnum = MakeRefPtr<AccessibleEnumerator>(selectedItems);
     pvarChildren->vt =
         VT_UNKNOWN;  // this must be VT_UNKNOWN for an IEnumVARIANT
     NS_ADDREF(pvarChildren->punkVal = pEnum);
@@ -1244,19 +1249,6 @@ MsaaAccessible::accHitTest(
 
   // if we got a child
   if (accessible) {
-    if (accessible != mAcc && accessible->IsTextLeaf()) {
-      Accessible* parent = accessible->Parent();
-      if (parent != mAcc && parent->Role() == roles::LINK) {
-        // Bug 1843832: The UI Automation -> IAccessible2 proxy barfs if we
-        // return the text leaf child of a link when hit testing an ancestor of
-        // the link. Therefore, we return the link instead. MSAA clients which
-        // call AccessibleObjectFromPoint will still get to the text leaf, since
-        // AccessibleObjectFromPoint keeps calling accHitTest until it can't
-        // descend any further. We should remove this tragic hack once we have
-        // a native UIA implementation.
-        accessible = parent;
-      }
-    }
     if (accessible == mAcc) {
       pvarChild->vt = VT_I4;
       pvarChild->lVal = CHILDID_SELF;

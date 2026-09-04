@@ -366,7 +366,7 @@ class WebPlatformTest(TestingMixin, MercurialScript, CodeCoverageMixin, AndroidM
 
         mozinfo.find_and_update_from_json(dirs["abs_test_install_dir"])
 
-        raw_log_file, error_summary_file = self.get_indexed_logs(
+        raw_log_file, error_summary_file, _test_summary_file = self.get_indexed_logs(
             dirs["abs_blob_upload_dir"], "wpt"
         )
 
@@ -502,7 +502,7 @@ class WebPlatformTest(TestingMixin, MercurialScript, CodeCoverageMixin, AndroidM
 
         options = list(c.get("options", []))
 
-        if "wdspec" in test_types:
+        if "wdspec" in test_types or "aamtest" in test_types:
             geckodriver_path = self._query_geckodriver()
             if not geckodriver_path or not os.path.isfile(geckodriver_path):
                 self.fatal(
@@ -511,25 +511,9 @@ class WebPlatformTest(TestingMixin, MercurialScript, CodeCoverageMixin, AndroidM
                 )
             cmd.append("--webdriver-binary=%s" % geckodriver_path)
             cmd.append("--webdriver-arg=-vv")  # enable trace logs
+            cmd.append("--log-raw-unexpectedonly")
 
-        test_type_suite = {
-            "testharness": "web-platform-tests",
-            "crashtest": "web-platform-tests-crashtest",
-            "print-reftest": "web-platform-tests-print-reftest",
-            "reftest": "web-platform-tests-reftest",
-            "wdspec": "web-platform-tests-wdspec",
-        }
-        for test_type in test_types:
-            try_options, try_tests = self.try_args(test_type_suite[test_type])
-
-            cmd.extend(
-                self.query_options(
-                    options, try_options, str_format_values=str_format_values
-                )
-            )
-            cmd.extend(
-                self.query_tests_args(try_tests, str_format_values=str_format_values)
-            )
+        cmd.extend(self.query_options(options, str_format_values=str_format_values))
 
         for url_prefix in c["include"]:
             cmd.append(f"--include={url_prefix}")

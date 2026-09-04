@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,13 +6,14 @@
  * WinPointerEvents - Helper functions to retrieve PointerEvent's attributes
  */
 
-#include "nscore.h"
-#include "nsWindowDefs.h"
 #include "WinPointerEvents.h"
+
 #include "WinUtils.h"
 #include "mozilla/MouseEvents.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/dom/MouseEventBinding.h"
+#include "nsWindowDefs.h"
+#include "nscore.h"
 
 using namespace mozilla;
 using namespace mozilla::widget;

@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -176,17 +174,11 @@ void DebugAPI::onNewWasmInstance(JSContext* cx,
 }
 
 /* static */
-void DebugAPI::onNewPromise(JSContext* cx, Handle<PromiseObject*> promise) {
+bool DebugAPI::onNewPromise(JSContext* cx, Handle<PromiseObject*> promise) {
   if (MOZ_UNLIKELY(cx->realm()->isDebuggee())) {
-    slowPathOnNewPromise(cx, promise);
+    return slowPathOnNewPromise(cx, promise);
   }
-}
-
-/* static */
-void DebugAPI::onPromiseSettled(JSContext* cx, Handle<PromiseObject*> promise) {
-  if (MOZ_UNLIKELY(promise->realm()->isDebuggee())) {
-    slowPathOnPromiseSettled(cx, promise);
-  }
+  return true;
 }
 
 /* static */

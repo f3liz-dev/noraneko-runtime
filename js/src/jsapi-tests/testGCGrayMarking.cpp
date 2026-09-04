@@ -1,6 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -284,7 +281,7 @@ bool TestJSWeakMapWithGrayUnmarking(MarkKeyOrDelegate markKey,
     // Start an incremental GC and run until gray roots have been pushed onto
     // the mark stack.
     JS::PrepareForFullGC(cx);
-    JS::SliceBudget budget(JS::TimeBudget(1000000));
+    JS::SliceBudget budget(mozilla::TimeDuration::FromMilliseconds(1000000));
     JS::StartIncrementalGC(cx, JS::GCOptions::Normal, JS::GCReason::DEBUG_GC,
                            budget);
     MOZ_ASSERT(cx->runtime()->gc.state() == gc::State::Sweep);
@@ -417,7 +414,7 @@ bool TestInternalWeakMapWithGrayUnmarking(CellColor keyMarkColor,
     // Start an incremental GC and run until gray roots have been pushed onto
     // the mark stack.
     JS::PrepareForFullGC(cx);
-    JS::SliceBudget budget(JS::TimeBudget(1000000));
+    JS::SliceBudget budget(mozilla::TimeDuration::FromMilliseconds(1000000));
     JS::StartIncrementalGC(cx, JS::GCOptions::Normal, JS::GCReason::DEBUG_GC,
                            budget);
     MOZ_ASSERT(cx->runtime()->gc.state() == gc::State::Sweep);

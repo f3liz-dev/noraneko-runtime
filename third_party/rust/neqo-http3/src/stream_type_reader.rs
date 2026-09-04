@@ -6,14 +6,14 @@
 
 use std::{cmp::min, time::Instant};
 
-use neqo_common::{qtrace, Decoder, IncrementalDecoderUint, Role};
+use neqo_common::{Decoder, IncrementalDecoderUint, Role, qtrace};
 use neqo_qpack::{decoder::QPACK_UNI_STREAM_TYPE_DECODER, encoder::QPACK_UNI_STREAM_TYPE_ENCODER};
 use neqo_transport::{Connection, StreamId, StreamType};
 
 use crate::{
-    control_stream_local::HTTP3_UNI_STREAM_TYPE_CONTROL,
-    frames::{hframe::HFrameType, reader::FrameDecoder, HFrame},
     CloseType, Error, Http3StreamType, PushId, ReceiveOutput, RecvStream, Res, Stream,
+    control_stream_local::HTTP3_UNI_STREAM_TYPE_CONTROL,
+    frames::{HFrame, hframe::HFrameType, reader::FrameDecoder},
 };
 
 pub const HTTP3_UNI_STREAM_TYPE_PUSH: u64 = 0x1;
@@ -56,8 +56,11 @@ impl NewStreamType {
                 // The "stream_type" for a bidirectional stream is a frame type. We accept
                 // WEBTRANSPORT_STREAM (above), and HEADERS, and we have to ignore unknown types,
                 // but any other frame type is bad if we know about it.
-                if <HFrame as FrameDecoder<HFrame>>::is_known_type(HFrameType(stream_type))
-                    && HFrameType(stream_type) != HFrameType::HEADERS
+                let frame_type = HFrameType(stream_type);
+                // This checks for reserved frame types here, which are not allowed.
+                <HFrame as FrameDecoder<HFrame>>::frame_type_allowed(frame_type)?;
+                if <HFrame as FrameDecoder<HFrame>>::is_known_type(frame_type)
+                    && frame_type != HFrameType::HEADERS
                 {
                     Err(Error::HttpFrame)
                 } else {
@@ -125,9 +128,8 @@ impl NewStreamHeadReader {
                     }
                 }
             }
-        } else {
-            Ok((None, false))
         }
+        Ok((None, false))
     }
 
     pub fn get_type(&mut self, conn: &mut Connection) -> Res<Option<NewStreamType>> {
@@ -250,12 +252,12 @@ mod tests {
     use test_fixture::{connect, now};
 
     use super::{
-        NewStreamHeadReader, HTTP3_UNI_STREAM_TYPE_PUSH, WEBTRANSPORT_STREAM,
+        HTTP3_UNI_STREAM_TYPE_PUSH, NewStreamHeadReader, WEBTRANSPORT_STREAM,
         WEBTRANSPORT_UNI_STREAM,
     };
     use crate::{
-        control_stream_local::HTTP3_UNI_STREAM_TYPE_CONTROL, frames::HFrameType, CloseType, Error,
-        NewStreamType, PushId, ReceiveOutput, RecvStream as _, Res,
+        CloseType, Error, NewStreamType, PushId, ReceiveOutput, RecvStream as _, Res,
+        control_stream_local::HTTP3_UNI_STREAM_TYPE_CONTROL, frames::HFrameType,
     };
 
     struct Test {
@@ -444,6 +446,22 @@ mod tests {
             &Err(Error::HttpFrame),
             true,
         );
+    }
+
+    #[test]
+    fn decode_stream_reserved_frame_type() {
+        // A reserved (HTTP/2) frame type that starts a request stream is a connection error of
+        // type H3_FRAME_UNEXPECTED, the same as when it arrives as a later frame, rather than
+        // being discharged like an unknown type (RFC 9114, Sections 7.1 and 11.2.1).
+        for reserved in HFrameType::RESERVED {
+            let mut t = Test::new(StreamType::BiDi, Role::Server);
+            t.decode(
+                &[u64::from(*reserved)],
+                false,
+                &Err(Error::HttpFrameUnexpected),
+                true,
+            );
+        }
     }
 
     #[test]

@@ -1,6 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:expandtab:shiftwidth=2:tabstop=2:
- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,10 +5,10 @@
 #include "ia2AccessibleTextSelectionContainer.h"
 
 #include "AccessibleTextSelectionContainer_i.c"
+#include "TextLeafRange.h"
+#include "TextRange.h"
 #include "ia2AccessibleHypertext.h"
 #include "mozilla/a11y/HyperTextAccessibleBase.h"
-#include "TextRange.h"
-#include "TextLeafRange.h"
 
 using namespace mozilla::a11y;
 

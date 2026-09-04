@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -6,12 +5,10 @@
 #ifndef nsAccUtils_h_
 #define nsAccUtils_h_
 
-#include "mozilla/a11y/LocalAccessible.h"
 #include "mozilla/a11y/DocManager.h"
-
+#include "mozilla/a11y/LocalAccessible.h"
 #include "nsAccessibilityService.h"
 #include "nsCoreUtils.h"
-
 #include "nsIDocShell.h"
 #include "nsPoint.h"
 

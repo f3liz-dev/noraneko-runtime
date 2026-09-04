@@ -1,5 +1,3 @@
-/* vim: set sw=2 ts=8 et tw=80 : */
-
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,8 +8,8 @@
 #include "mozilla/ipc/ProtocolUtils.h"
 #include "mozilla/net/DocumentChannel.h"
 #include "mozilla/net/DocumentLoadListener.h"
-#include "nsIObserver.h"
 #include "nsIAsyncVerifyRedirectCallback.h"
+#include "nsIObserver.h"
 
 namespace mozilla {
 namespace net {

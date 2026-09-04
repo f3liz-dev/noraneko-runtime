@@ -1,5 +1,3 @@
-/* -*- Mode: indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set sts=2 sw=2 et tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,7 +8,7 @@ const lazy = XPCOMUtils.declareLazy({
   AsyncShutdown: "resource://gre/modules/AsyncShutdown.sys.mjs",
   DeferredTask: "resource://gre/modules/DeferredTask.sys.mjs",
   FileUtils: "resource://gre/modules/FileUtils.sys.mjs",
-  KeyValueService: "resource://gre/modules/kvstore.sys.mjs",
+  KeyValueService: "moz-src:///toolkit/components/kvstore/kvstore.sys.mjs",
   MENU_STORE_WRITE_DEBOUNCE_TIME: {
     pref: "extensions.webextensions.menus.writeDebounceTime",
     // Minimum 0ms, max 1min

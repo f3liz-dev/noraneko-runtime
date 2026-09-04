@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -105,11 +103,11 @@ nsresult Serialize(BlobImpl* aBlobImpl, IPCBlob& aIPCBlob) {
     if (NS_WARN_IF(rv.Failed())) {
       return rv.StealNSResult();
     }
-    file.fullPath() = value;
+    file.fullPath() = std::move(value);
 
     file.isDirectory() = aBlobImpl->IsDirectory();
 
-    aIPCBlob.file() = Some(file);
+    aIPCBlob.file() = Some(std::move(file));
   }
 
   aIPCBlob.fileId() = aBlobImpl->GetFileId();
@@ -136,7 +134,7 @@ nsresult Serialize(BlobImpl* aBlobImpl, IPCBlob& aIPCBlob) {
                                         /* aAllowLazy */ true)) {
     return NS_ERROR_FAILURE;
   }
-  aIPCBlob.inputStream() = stream;
+  aIPCBlob.inputStream() = std::move(stream);
   return NS_OK;
 }
 

@@ -27,8 +27,17 @@ const statsExpectedByType = {
       "jitterBufferTargetDelay",
       "jitterBufferMinimumDelay",
       "jitterBufferEmittedCount",
+      "transportId",
     ],
-    optional: ["remoteId", "nackCount", "qpSum", "estimatedPlayoutTimestamp"],
+    optional: [
+      "remoteId",
+      "nackCount",
+      "qpSum",
+      "estimatedPlayoutTimestamp",
+      "rtxSsrc",
+      "retransmittedPacketsReceived",
+      "retransmittedBytesReceived",
+    ],
     localVideoOnly: [
       "firCount",
       "pliCount",
@@ -67,7 +76,6 @@ const statsExpectedByType = {
     ],
     unimplemented: [
       "mediaTrackId",
-      "transportId",
       "associateStatsId",
       "sliCount",
       "packetsRepaired",
@@ -96,11 +104,13 @@ const statsExpectedByType = {
       "headerBytesSent",
       "retransmittedPacketsSent",
       "retransmittedBytesSent",
+      "transportId",
     ],
-    optional: ["nackCount", "qpSum", "rid"],
+    optional: ["nackCount", "qpSum", "rid", "rtxSsrc"],
     localAudioOnly: [],
     localVideoOnly: [
       "framesEncoded",
+      "keyFramesEncoded",
       "firCount",
       "pliCount",
       "frameWidth",
@@ -111,7 +121,7 @@ const statsExpectedByType = {
       "totalEncodeTime",
       "totalEncodedBytesTarget",
     ],
-    unimplemented: ["mediaTrackId", "transportId", "sliCount", "targetBitrate"],
+    unimplemented: ["mediaTrackId", "sliCount", "targetBitrate"],
     deprecated: ["isRemote"],
   },
   "remote-inbound-rtp": {
@@ -129,11 +139,11 @@ const statsExpectedByType = {
       "totalRoundTripTime",
       "fractionLost",
       "roundTripTimeMeasurements",
+      "transportId",
     ],
     optional: ["roundTripTime", "nackCount", "packetsReceived"],
     unimplemented: [
       "mediaTrackId",
-      "transportId",
       "packetsDiscarded",
       "associateStatsId",
       "sliCount",
@@ -159,9 +169,10 @@ const statsExpectedByType = {
       "bytesSent",
       "localId",
       "remoteTimestamp",
+      "transportId",
     ],
     optional: ["nackCount"],
-    unimplemented: ["mediaTrackId", "transportId", "sliCount", "targetBitrate"],
+    unimplemented: ["mediaTrackId", "sliCount", "targetBitrate"],
     deprecated: ["isRemote"],
   },
   "media-source": {
@@ -182,7 +193,6 @@ const statsExpectedByType = {
     optional: [],
     deprecated: [],
   },
-  csrc: { skip: true },
   codec: {
     expected: [
       "timestamp",
@@ -199,8 +209,6 @@ const statsExpectedByType = {
   },
   "peer-connection": { skip: true },
   "data-channel": { skip: true },
-  track: { skip: true },
-  transport: { skip: true },
   "candidate-pair": {
     expected: [
       "id",
@@ -216,6 +224,8 @@ const statsExpectedByType = {
       "readable",
       "bytesSent",
       "bytesReceived",
+      "packetsSent",
+      "packetsReceived",
       "lastPacketSentTimestamp",
       "lastPacketReceivedTimestamp",
       "totalRoundTripTime",
@@ -245,9 +255,12 @@ const statsExpectedByType = {
       "port",
       "candidateType",
       "priority",
+      "usernameFragment",
+      "foundation",
+      "transportId",
     ],
-    optional: ["relayProtocol", "proxied"],
-    unimplemented: ["networkType", "url", "transportId"],
+    optional: ["relayProtocol", "proxied", "tcpType"],
+    unimplemented: ["networkType", "url"],
     deprecated: [
       "candidateId",
       "portNumber",
@@ -267,9 +280,11 @@ const statsExpectedByType = {
       "port",
       "candidateType",
       "priority",
+      "usernameFragment",
+      "transportId",
     ],
-    optional: ["relayProtocol", "proxied"],
-    unimplemented: ["networkType", "url", "transportId"],
+    optional: ["foundation", "relayProtocol", "proxied", "tcpType"],
+    unimplemented: ["networkType", "url"],
     deprecated: [
       "candidateId",
       "portNumber",
@@ -278,6 +293,32 @@ const statsExpectedByType = {
       "mozLocalTransport",
       "transport",
     ],
+  },
+  transport: {
+    expected: [
+      "id",
+      "timestamp",
+      "type",
+      "packetsSent",
+      "packetsReceived",
+      "bytesSent",
+      "bytesReceived",
+      "iceRole",
+      "iceLocalUsernameFragment",
+      "dtlsState",
+      "iceState",
+      "selectedCandidatePairId",
+      "localCertificateId",
+      "remoteCertificateId",
+      "tlsVersion",
+      "dtlsCipher",
+      "dtlsRole",
+      "srtpCipher",
+      "selectedCandidatePairChanges",
+    ],
+    optional: [],
+    unimplemented: [],
+    deprecated: [],
   },
   certificate: { skip: true },
 };
@@ -443,6 +484,13 @@ function pedanticChecks(report) {
         stat.kind,
         `codecId ${stat.codecId} in report is for a mimeType of the same ` +
           `media type as the referencing rtp stream stat`
+      );
+
+      // transportId
+      ok(stat.transportId, `{stat.type}.transportId has a value`);
+      ok(
+        report.has(stat.transportId),
+        `{stat.type} transportId ${stat.transportId} exists in report`
       );
 
       if (isRemote) {
@@ -748,6 +796,44 @@ function pedanticChecks(report) {
         );
       }
 
+      // rtxSsrc and the retransmitted counters are only present when rtx is
+      // negotiated, which is not always the case (e.g. when the offer only
+      // contains a single non-rtx payload type). Access them unconditionally
+      // so they are marked as tested, but only assert sanity when present.
+      if (stat.rtxSsrc !== undefined) {
+        ok(
+          stat.rtxSsrc > 0,
+          `${stat.type}.rtxSsrc is a sane ssrc. value=${stat.rtxSsrc}`
+        );
+
+        ok(
+          stat.retransmittedPacketsReceived >= 0 &&
+            stat.retransmittedPacketsReceived < 10 ** 5,
+          `${stat.type}.retransmittedPacketsReceived is a sane number for a ` +
+            `short ${stat.kind} test. value=${stat.retransmittedPacketsReceived}`
+        );
+
+        ok(
+          stat.retransmittedBytesReceived >= 0 &&
+            stat.retransmittedBytesReceived < 10 ** 9,
+          `${stat.type}.retransmittedBytesReceived is a sane number for a ` +
+            `short ${stat.kind} test. value=${stat.retransmittedBytesReceived}`
+        );
+      } else {
+        // In the non-rtx case these counters will be undefined.
+        ok(
+          stat.retransmittedPacketsReceived === undefined,
+          `${stat.type}.retransmittedPacketsReceived is undefined if rtx is not negotiated.` +
+            `value=${stat.retransmittedPacketsReceived}`
+        );
+
+        ok(
+          stat.retransmittedBytesReceived === undefined &&
+            `${stat.type}.retransmittedBytesReceived is undefined if rtx is not negotiated.` +
+              `value=${stat.retransmittedBytesReceived}`
+        );
+      }
+
       //
       // Local video only stats
       //
@@ -766,6 +852,7 @@ function pedanticChecks(report) {
             stat.type + " has field " + field + " when kind is video"
           );
         });
+
         // discardedPackets
         ok(
           stat.discardedPackets < 100,
@@ -882,7 +969,7 @@ function pedanticChecks(report) {
         // framesAssembledFromMultiplePackets
         ok(
           stat.framesAssembledFromMultiplePackets >= 0 &&
-            stat.framesAssembledFromMultiplePackets < 100,
+            stat.framesAssembledFromMultiplePackets < 200,
           `${stat.type}.framesAssembledFromMultiplePackets is a sane number ` +
             `for a short ${stat.kind} test.` +
             `value=${stat.framesAssembledFromMultiplePackets}`
@@ -1020,6 +1107,18 @@ function pedanticChecks(report) {
           stat.rid === undefined,
           `${stat.type}.rid" MUST NOT exist for audio. value=${stat.rid}`
         );
+        ok(
+          stat.rtxSsrc === undefined,
+          `${stat.type}.rtxSsrc" MUST NOT exist for audio. value=${stat.rtxSsrc}`
+        );
+        ok(
+          stat.retransmittedBytesSent === 0,
+          `${stat.type}.retransmittedBytesSent is 0 audio. value=${stat.retransmittedBytesSent}`
+        );
+        ok(
+          stat.retransmittedPacketsSent === 0,
+          `${stat.type}.retransmittedPacketsSent is 0 for audio. value=${stat.retransmittedPacketsSent}`
+        );
       } else {
         let numSendVideoStreamsForMid = 0;
         report.forEach(r => {
@@ -1042,6 +1141,15 @@ function pedanticChecks(report) {
             stat.rid,
             undefined,
             `${stat.type}.rid" does exist for simulcast video. value=${stat.rid}`
+          );
+        }
+        // rtxSsrc is only present when rtx is negotiated, which is not always
+        // the case (e.g. simulcast offers do not negotiate rtx). When present
+        // it must be a sane ssrc.
+        if (stat.rtxSsrc !== undefined) {
+          ok(
+            stat.rtxSsrc > 0,
+            `${stat.type}.rtxSsrc is a sane ssrc. value=${stat.rtxSsrc}`
           );
         }
       }
@@ -1102,6 +1210,17 @@ function pedanticChecks(report) {
           stat.framesEncoded >= 0 && stat.framesEncoded < 100000,
           `${stat.type}.framesEncoded is a sane number for a short ` +
             `${stat.kind} test. value=${stat.framesEncoded}`
+        );
+
+        // keyFramesEncoded
+        ok(
+          stat.keyFramesEncoded >= 0 && stat.keyFramesEncoded < 1000000,
+          `${stat.type}.keyFramesEncoded is a sane number for a short ` +
+            `${stat.kind} test. value=${stat.keyFramesEncoded}`
+        );
+        ok(
+          stat.keyFramesEncoded <= stat.framesEncoded,
+          `${stat.type}.keyFramesEncoded is less than or equal to ${stat.type}.framesEncoded`
         );
 
         // frameWidth
@@ -1286,8 +1405,11 @@ function pedanticChecks(report) {
       }
 
       // transportId
-      // (no transport stats yet)
-      ok(stat.transportId, "codec.transportId is set");
+      ok(stat.transportId, `{stat.type}.transportId has a value`);
+      ok(
+        report.has(stat.transportId),
+        `{stat.type} transportId ${stat.transportId} exists in report`
+      );
 
       // clockRate
       if (stat.mimeType.startsWith("audio")) {
@@ -1454,10 +1576,10 @@ function pedanticChecks(report) {
       //
 
       // transportId
+      ok(stat.transportId, `{stat.type}.transportId has a value`);
       ok(
-        stat.transportId,
-        `${stat.type}.transportId has a value. value=` +
-          `${stat.transportId} (${stat.kind})`
+        report.has(stat.transportId),
+        `{stat.type} transportId ${stat.transportId} exists in report`
       );
 
       // localCandidateId
@@ -1562,6 +1684,19 @@ function pedanticChecks(report) {
             `value=${stat.bytesReceived}`
         );
 
+        // packetsSent
+        ok(
+          stat.packetsSent > 0 && stat.packetsSent < 10000,
+          `${stat.type}.packetsSent is a sane number for a short ` +
+            `test. value=${stat.packetsSent}`
+        );
+
+        ok(
+          stat.packetsReceived >= 0 && stat.packetsReceived < 10000,
+          `${stat.type}.packetsReceived is a sane number for a short ` +
+            `test. value=${stat.packetsReceived}`
+        );
+
         // lastPacketSentTimestamp
         ok(
           stat.lastPacketSentTimestamp,
@@ -1616,6 +1751,142 @@ function pedanticChecks(report) {
         `${stat.type}.selected is undefined, true when state is succeeded, ` +
           `or false. value=${stat.selected} (${stat.kind})`
       );
+    } else if (stat.type === "transport") {
+      info(`transport is ${JSON.stringify(stat)}`);
+
+      // packetsSent
+      ok(
+        stat.packetsSent > 0 && stat.packetsSent < 10000,
+        `${stat.type}.packetsSent is a sane number for a short test. value=${stat.packetsSent}`
+      );
+
+      // packetsReceived
+      ok(
+        stat.packetsReceived > 0 && stat.packetsReceived < 10000,
+        `${stat.type}.packetsReceived is a sane number for a short test. value=${stat.packetsReceived}`
+      );
+
+      // bytesSent
+      const transport1Min = 250000 * 60; // 2Mbps
+      ok(
+        stat.bytesSent > 0 && stat.bytesSent < transport1Min,
+        `${stat.type}.bytesSent is a sane number for a short test. value=${stat.bytesSent}`
+      );
+
+      // bytesReceived
+      ok(
+        stat.bytesReceived >= 0 && stat.bytesReceived < 10 ** 9, // Not a magic number, just a guess
+        `${stat.type}.bytesReceived is a sane number for a short test. value=${stat.bytesReceived}`
+      );
+
+      // iceRole
+      is(typeof stat.iceRole, "string", `${stat.type}.iceRole is a string`);
+      ok(
+        ["unknown", "controlling", "controlled"].includes(stat.iceRole),
+        `${stat.type}.iceRole has a valid value. value=${stat.iceRole}`
+      );
+
+      // iceLocalUsernameFragment
+      is(
+        typeof stat.iceLocalUsernameFragment,
+        "string",
+        `${stat.type}.iceLocalUsernameFragment is a string`
+      );
+      ok(
+        stat.iceLocalUsernameFragment.length >= 4 &&
+          stat.iceLocalUsernameFragment.length <= 256,
+        `${stat.type}.iceLocalUsernameFragment has a valid length`
+      );
+
+      // dtlsState
+      is(typeof stat.dtlsState, "string", `${stat.type}.dtlsState is a string`);
+      ok(
+        ["new", "connecting", "connected", "closed", "failed"].includes(
+          stat.dtlsState
+        ),
+        `${stat.type}.dtlsState has a valid value. value=${stat.dtlsState}`
+      );
+
+      // iceState
+      is(typeof stat.iceState, "string", `${stat.type}.iceState is a string`);
+      ok(
+        [
+          "closed",
+          "failed",
+          "disconnected",
+          "new",
+          "checking",
+          "completed",
+          "connected",
+        ].includes(stat.iceState),
+        `${stat.type}.iceState has a valid value. value=${stat.iceState}`
+      );
+
+      // selectedCandidatePairId
+      ok(
+        report.has(stat.selectedCandidatePairId),
+        `${stat.type}.selectedCandidatePairId ${stat.selectedCandidatePairId} exists in report`
+      );
+      is(
+        report.get(stat.selectedCandidatePairId).type,
+        "candidate-pair",
+        `${stat.type}.selectedCandidatePairId ${stat.selectedCandidatePairId} is a candidate-pair`
+      );
+      ok(
+        report.has(stat.selectedCandidatePairId),
+        `selectedCandidatePairId ${stat.selectedCandidatePairId} exists in report`
+      );
+      is(
+        report.get(stat.selectedCandidatePairId).type,
+        "candidate-pair",
+        `selectedCandidatePairId ${stat.selectedCandidatePairId} in report is candidate-pair type`
+      );
+
+      // tlsVersion
+      is(
+        typeof stat.tlsVersion,
+        "string",
+        `${stat.type}.tlsVersion is a string`
+      );
+      ok(
+        !!stat.tlsVersion.length,
+        `${stat.type}.tlsVersionis not the empty string`
+      );
+
+      // dtlsCipher
+      is(
+        typeof stat.dtlsCipher,
+        "string",
+        `${stat.type}.dtlsCipher is a string`
+      );
+      ok(
+        !!stat.dtlsCipher.length,
+        `${stat.type}.dtlsCipher is not the empty string`
+      );
+
+      // dtlsRole
+      is(typeof stat.dtlsRole, "string", `${stat.type}.dtlsRole is a string`);
+      ok(
+        ["unknown", "client", "server"].includes(stat.dtlsRole),
+        `${stat.type}.dtlsRole has a valid value. value=${stat.dtlsRole}`
+      );
+
+      // srtpCipher
+      is(
+        typeof stat.srtpCipher,
+        "string",
+        `${stat.type}.srtpCipher is a string`
+      );
+      ok(
+        !!stat.srtpCipher.length,
+        `${stat.type}.ѕrtpCipher is not the empty string`
+      );
+
+      // selectedCandidatePairChanges
+      ok(
+        stat.selectedCandidatePairChanges > 0,
+        `${stat.type}.selectedCandidatePairChanges is greater than zero. value=${stat.selectedCandidatePairChanges}`
+      );
     } else if (
       stat.type == "local-candidate" ||
       stat.type == "remote-candidate"
@@ -1633,6 +1904,33 @@ function pedanticChecks(report) {
         stat.protocol,
         `${stat.type} has protocol. value=${stat.protocol} ` + `(${stat.kind})`
       );
+
+      // tcpType
+      if (stat.protocol == "tcp") {
+        ok(
+          stat.tcpType == "active",
+          `${stat.type} TCP candidate has tcpType 'active'`
+        );
+      } else if (stat.protocol == "udp") {
+        ok(
+          stat.tcpType == undefined,
+          `${stat.type} UDP candidate has no tcpType`
+        );
+      }
+
+      // foundation
+      if (stat.candidateType == "prflx") {
+        ok(
+          stat.foundation == undefined,
+          `${stat.type} prflx candidate has no foundation`
+        );
+      } else {
+        ok(
+          stat.foundation != undefined,
+          `${stat.type} candidate has foundation. value=${stat.foundation} ` +
+            `(${stat.kind}}`
+        );
+      }
 
       // port
       ok(

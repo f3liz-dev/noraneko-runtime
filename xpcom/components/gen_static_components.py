@@ -11,10 +11,6 @@ from perfecthash import PerfectHash
 
 NO_CONTRACT_ID = 0xFFFFFFFF
 
-PHF_SIZE = 512
-
-TINY_PHF_SIZE = 16
-
 # In tests, we might not have a (complete) buildconfig.
 ENDIAN = (
     "<" if buildconfig.substs.get("TARGET_ENDIANNESS", "little") == "little" else ">"
@@ -298,6 +294,7 @@ class ModuleEntry:
         )
         self.singleton = data.get("singleton", False)
         self.overridable = data.get("overridable", False)
+        self.serializable = data.get("serializable", False)
 
         self.protocol_config = data.get("protocol_config", None)
 
@@ -369,6 +366,7 @@ class ModuleEntry:
           {self.cid.to_cxx()},
           {contract_id},
           {lower_processes(self.processes)},
+          {"true" if self.serializable else "false"},
         }}"""
 
     # Generates the C++ code for a JSServiceEntry representing this module.
@@ -442,7 +440,7 @@ class ModuleEntry:
           std::is_same_v<already_AddRefed<T>, decltype(%(constructor)s())>,
           "Singleton constructor must return already_AddRefed");
       static_assert(
-          std::is_base_of<%(type)s, T>::value,
+          std::is_base_of_v<%(type)s, T>,
           "Singleton constructor must return correct already_AddRefed");
 
 """ % {
@@ -878,19 +876,16 @@ def gen_substs(manifests):
             raise Exception("Duplicate cid: %s" % str(mod.cid))
         cids.add(str(mod.cid))
 
-    cid_phf = PerfectHash(modules, PHF_SIZE, key=lambda module: module.cid.bytes)
+    cid_phf = PerfectHash(modules, key=lambda module: module.cid.bytes)
 
-    contract_phf = PerfectHash(
-        contracts, PHF_SIZE, key=lambda entry: entry.contract.encode()
-    )
+    contract_phf = PerfectHash(contracts, key=lambda entry: entry.contract.encode())
 
     js_services_phf = PerfectHash(
-        list(js_services.values()), PHF_SIZE, key=lambda entry: entry.js_name.encode()
+        list(js_services.values()), key=lambda entry: entry.js_name.encode()
     )
 
     protocol_handlers_phf = PerfectHash(
         list(protocol_handlers.values()),
-        TINY_PHF_SIZE,
         key=lambda entry: entry.scheme.encode(),
     )
 

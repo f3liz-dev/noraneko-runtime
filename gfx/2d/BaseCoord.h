@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,6 +6,7 @@
 #define MOZILLA_GFX_BASECOORD_H_
 
 #include <ostream>
+#include <tuple>
 
 #include "mozilla/MathAlgorithms.h"
 
@@ -86,6 +85,8 @@ struct BaseCoord {
   friend constexpr T operator+(T aA, Sub aB) { return aA + aB.value; }
   friend constexpr T operator-(Sub aA, T aB) { return aA.value - aB; }
   friend constexpr T operator-(T aA, Sub aB) { return aA - aB.value; }
+
+  auto MutTiedFields() { return std::tie(value); }
 
   constexpr Sub operator-() const { return Sub(-value); }
 

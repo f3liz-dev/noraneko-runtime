@@ -9,6 +9,17 @@ const { AddonTestUtils } = ChromeUtils.importESModule(
 
 AddonTestUtils.initMochitest(this);
 
+const AMO_TEST_HOST = "addons.allizom.org";
+// eslint-disable-next-line sdl/no-insecure-url
+const AMO_TEST_URL = `http://${AMO_TEST_HOST}/`;
+
+const amoServer = AddonTestUtils.createHttpServer({
+  hosts: [AMO_TEST_HOST],
+});
+amoServer.registerPrefixHandler("/", (request, response) => {
+  response.write("");
+});
+
 function makeResult({ guid, type }) {
   return {
     addon: {
@@ -50,10 +61,20 @@ add_setup(async function () {
   });
 });
 
+const PROMO_L10N_IDS = {
+  extension: [
+    "find-more-extensions-promo",
+    "find-more-extensions-promo-open-amo-button",
+  ],
+  theme: ["find-more-themes-promo", "find-more-themes-promo-open-amo-button"],
+};
+
 function checkExtraContents(doc, type, opts = {}) {
   let { showThemeRecommendationFooter = type === "theme" } = opts;
   let footer = doc.querySelector("footer");
-  let amoButton = footer.querySelector('[action="open-amo"]');
+  let amoButton = footer.querySelector('button[action="open-amo"]');
+  let footerPromo = footer.querySelector("addons-promo");
+  let promoAmoBtn = footer.querySelector('moz-button[action="open-amo"]');
   let privacyPolicyLink = footer.querySelector(".privacy-policy-link");
   let themeRecommendationFooter = footer.querySelector(".theme-recommendation");
   let themeRecommendationLink =
@@ -64,17 +85,55 @@ function checkExtraContents(doc, type, opts = {}) {
 
   if (type == "extension") {
     ok(taarNotice, "There is a TAAR notice");
-    is_element_visible(amoButton, "The AMO button is shown");
     is_element_visible(privacyPolicyLink, "The privacy policy is visible");
   } else if (type == "theme") {
     ok(!taarNotice, "There is no TAAR notice");
-    ok(amoButton, "AMO button is shown");
     ok(!privacyPolicyLink, "There is no privacy policy");
   } else {
-    throw new Error(`Unknown type ${type}`);
+    throw new Error(`Unexpected type ${type}`);
   }
 
-  if (showThemeRecommendationFooter) {
+  if (Services.prefs.getBoolPref("browser.nova.enabled")) {
+    // An addons-promo element is expected to be shown in both
+    // the extensions and themes list view.
+    is_element_visible(footerPromo, "The promo card is shown");
+    is_element_visible(
+      promoAmoBtn,
+      "The promo card slotted AMO button is shown"
+    );
+    // The legacy AMO button that has been replaced with the addons-promo
+    // should be hidden when Nova is enabled.
+    is_element_hidden(amoButton, "The AMO button is hidden");
+
+    let [promoId, promoButtonId] = PROMO_L10N_IDS[type];
+    is(
+      footerPromo.getAttribute("data-l10n-id"),
+      promoId,
+      "The promo card has the expected l10n id"
+    );
+    is(
+      promoAmoBtn.getAttribute("data-l10n-id"),
+      promoButtonId,
+      "The promo card AMO button has the expected l10n id"
+    );
+  } else {
+    // With Nova disabled the addons-promo are expected to be hidden
+    // and the previously shown Nova button to be visible.
+    is_element_visible(amoButton, "The AMO button is shown");
+    is_element_hidden(footerPromo, "The promo card is hidden");
+  }
+
+  if (
+    Services.prefs.getBoolPref("browser.nova.enabled") ||
+    !showThemeRecommendationFooter
+  ) {
+    ok(
+      !themeRecommendationFooter ||
+        BrowserTestUtils.isHidden(themeRecommendationFooter),
+      "There's no theme recommendation"
+    );
+  } else {
+    // Additional pre-Nova assertion for the legacy themes list view footer.
     is_element_visible(
       themeRecommendationFooter,
       "There's a theme recommendation footer"
@@ -90,11 +149,6 @@ function checkExtraContents(doc, type, opts = {}) {
       doc.l10n.getAttributes(themeRecommendationFooter).id,
       "recommended-theme-1",
       "The recommendation has the right l10n-id"
-    );
-  } else {
-    ok(
-      !themeRecommendationFooter || themeRecommendationFooter.hidden,
-      "There's no theme recommendation"
     );
   }
 }
@@ -150,7 +204,7 @@ async function testListRecommendations({ type }) {
   installButton.click();
   await failPromise;
   // Wait for the installing popup to be hidden and leave just the error popup.
-  await BrowserTestUtils.waitForCondition(() => {
+  await TestUtils.waitForCondition(() => {
     return panel.children.length == 1 && panel.firstElementChild.id == popupId;
   });
 
@@ -286,6 +340,77 @@ add_task(async function testRecommendationsDisabled() {
     let recommendedList = doc.querySelector("recommended-addon-list");
     ok(!recommendedList, `There are no recommendations on the ${type} page`);
 
+    await closeView(win);
+  }
+
+  await SpecialPowers.popPrefEnv();
+});
+
+add_task(async function testRecommendationsFooterAmoButtonUtmContent() {
+  await SpecialPowers.pushPrefEnv({
+    set: [["extensions.getAddons.link.url", AMO_TEST_URL]],
+  });
+
+  async function clickAndCheckUtm(win, selector, expectedUtmContent) {
+    let button = win.document.querySelector(selector);
+    ok(button, `Found button: ${selector}`);
+    let tabbrowser = win.windowRoot.window.gBrowser;
+    let tabPromise = BrowserTestUtils.waitForNewTab(tabbrowser, url =>
+      url.startsWith(AMO_TEST_URL)
+    );
+    button.click();
+    let tab = await tabPromise;
+    let tabUrl = new URL(tab.linkedBrowser.currentURI.spec);
+    Assert.deepEqual(
+      tabUrl.searchParams.getAll("utm_content"),
+      [expectedUtmContent],
+      `utm_content should be "${expectedUtmContent}" and only have one entry`
+    );
+    BrowserTestUtils.removeTab(tab);
+    return tabUrl;
+  }
+
+  // Extension list: Nova promo button vs legacy AMO button.
+  {
+    let win = await loadInitialView("extension");
+    if (Services.prefs.getBoolPref("browser.nova.enabled")) {
+      await clickAndCheckUtm(
+        win,
+        'footer moz-button[action="open-amo"]',
+        "find-more-promo-bottom"
+      );
+    } else {
+      await clickAndCheckUtm(
+        win,
+        'footer button[action="open-amo"]',
+        "find-more-link-bottom"
+      );
+    }
+    await closeView(win);
+  }
+
+  // Theme list: footer AMO button opens themes path with correct utm_content,
+  // Nova promo button vs legacy AMO button.
+  {
+    let win = await loadInitialView("theme");
+    let tabUrl;
+    if (Services.prefs.getBoolPref("browser.nova.enabled")) {
+      tabUrl = await clickAndCheckUtm(
+        win,
+        'footer moz-button[action="open-amo"]',
+        "find-more-promo-bottom"
+      );
+    } else {
+      tabUrl = await clickAndCheckUtm(
+        win,
+        'footer button[action="open-amo"]',
+        "find-more-link-bottom"
+      );
+    }
+    ok(
+      tabUrl.pathname.includes("/themes"),
+      "AMO URL includes the /themes path"
+    );
     await closeView(win);
   }
 

@@ -3,6 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/net/BackgroundDataBridgeChild.h"
+
 #include "mozilla/net/HttpBackgroundChannelChild.h"
 
 namespace mozilla {
@@ -21,7 +22,7 @@ void BackgroundDataBridgeChild::ActorDestroy(ActorDestroyReason aWhy) {
 }
 
 mozilla::ipc::IPCResult BackgroundDataBridgeChild::RecvOnTransportAndData(
-    const uint64_t& offset, const uint32_t& count, const nsACString& data,
+    const uint64_t& offset, const nsACString& data,
     const TimeStamp& aOnDataAvailableStartTime) {
   if (!mBgChild) {
     return IPC_OK();
@@ -33,7 +34,7 @@ mozilla::ipc::IPCResult BackgroundDataBridgeChild::RecvOnTransportAndData(
   }
 
   return mBgChild->RecvOnTransportAndData(NS_OK, NS_NET_STATUS_RECEIVING_FROM,
-                                          offset, count, data, true,
+                                          offset, data, true,
                                           aOnDataAvailableStartTime);
 }
 

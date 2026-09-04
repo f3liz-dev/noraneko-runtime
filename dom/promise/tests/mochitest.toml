@@ -38,6 +38,11 @@ skip-if = [
   "tsan",
 ]
 
+["test_promise_safe_resolve.html"]
+skip-if = [
+  "!nightly_build",
+]
+
 ["test_promise_uncatchable_exception.html"]
 skip-if = [
   "asan",
@@ -55,6 +60,9 @@ skip-if = [
 ["test_species_getter.html"]
 
 ["test_thenable_vs_promise_ordering.html"]
+
+["test_unhandledrejection_preventDefault.html"]
+support-files = ["worker_unhandledrejection_shutdown.js"]
 
 ["test_webassembly_compile.html"]
 support-files = [

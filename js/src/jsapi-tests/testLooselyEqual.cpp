@@ -11,7 +11,7 @@
 
 using namespace std;
 
-struct LooseEqualityFixture : public JSAPIRuntimeTest {
+struct LooseEqualityFixture : public jsapitest::RuntimeTest {
   virtual ~LooseEqualityFixture() {}
 
   bool leq(JS::HandleValue x, JS::HandleValue y) {
@@ -50,9 +50,8 @@ struct LooseEqualityData {
         obj(cx),
         poszero(cx),
         negzero(cx) {
-    qNaN = JS::CanonicalizedDoubleValue(numeric_limits<double>::quiet_NaN());
-    sNaN =
-        JS::CanonicalizedDoubleValue(numeric_limits<double>::signaling_NaN());
+    qNaN = JS::DoubleValue(numeric_limits<double>::quiet_NaN());
+    sNaN = JS::DoubleValue(numeric_limits<double>::signaling_NaN());
     d42 = JS::DoubleValue(42.0);
     i42 = JS::Int32Value(42);
     undef = JS::UndefinedValue();

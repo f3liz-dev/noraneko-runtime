@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -11,6 +10,7 @@
 #include "mozilla/ComputedStyle.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/PresShell.h"
+#include "mozilla/ReflowInput.h"
 #include "mozilla/StaticPrefs_layout.h"
 #include "nsCSSRendering.h"
 #include "nsDisplayList.h"
@@ -264,14 +264,13 @@ void nsTableRowFrame::RemoveFrame(DestroyContext& aContext, ChildListID aListID,
   // remove the cell from the cell map
   nsTableFrame* tableFrame = GetTableFrame();
   tableFrame->RemoveCell(cellFrame, GetRowIndex());
-
-  // Remove the frame and destroy it
-  mFrames.DestroyFrame(aContext, aOldFrame);
+  tableFrame->SetGeometryDirty();
 
   PresShell()->FrameNeedsReflow(this, IntrinsicDirty::FrameAndAncestors,
                                 NS_FRAME_HAS_DIRTY_CHILDREN);
 
-  tableFrame->SetGeometryDirty();
+  // Remove the frame and destroy it
+  nsContainerFrame::RemoveFrame(aContext, aListID, aOldFrame);
 }
 
 /* virtual */
@@ -392,9 +391,6 @@ Maybe<nscoord> nsTableRowFrame::GetRowBaseline(WritingMode aWM) {
   }
 
   // If we get here, we don't have a baseline on any of the cells in this row.
-  if (aWM.IsCentralBaseline()) {
-    return Nothing{};
-  }
   nscoord ascent = 0;
   for (nsIFrame* childFrame : mFrames) {
     MOZ_ASSERT(childFrame->IsTableCellFrame());
@@ -1225,19 +1221,37 @@ void nsTableRowFrame::InsertCellFrame(nsTableCellFrame* aFrame,
 }
 
 nsTableRowFrame* nsTableRowFrame::GetPrevRow() const {
-  nsIFrame* prevSibling = GetPrevSibling();
-  MOZ_ASSERT(
-      !prevSibling || static_cast<nsTableRowFrame*>(do_QueryFrame(prevSibling)),
-      "How do we have a non-row sibling?");
-  return static_cast<nsTableRowFrame*>(prevSibling);
+  if (nsIFrame* prevSibling = GetPrevSibling()) {
+    MOZ_ASSERT(static_cast<nsTableRowFrame*>(do_QueryFrame(prevSibling)),
+               "How do we have a non-row sibling?");
+    return static_cast<nsTableRowFrame*>(prevSibling);
+  }
+  for (auto* pif = GetParent()->GetPrevInFlow(); pif;
+       pif = pif->GetPrevInFlow()) {
+    if (auto* sibling = pif->PrincipalChildList().LastChild()) {
+      MOZ_ASSERT(static_cast<nsTableRowFrame*>(do_QueryFrame(sibling)),
+                 "How do we have a non-row sibling?");
+      return static_cast<nsTableRowFrame*>(sibling);
+    }
+  }
+  return nullptr;
 }
 
 nsTableRowFrame* nsTableRowFrame::GetNextRow() const {
-  nsIFrame* nextSibling = GetNextSibling();
-  MOZ_ASSERT(
-      !nextSibling || static_cast<nsTableRowFrame*>(do_QueryFrame(nextSibling)),
-      "How do we have a non-row sibling?");
-  return static_cast<nsTableRowFrame*>(nextSibling);
+  if (nsIFrame* sibling = GetNextSibling()) {
+    MOZ_ASSERT(static_cast<nsTableRowFrame*>(do_QueryFrame(sibling)),
+               "How do we have a non-row sibling?");
+    return static_cast<nsTableRowFrame*>(sibling);
+  }
+  for (auto* nif = GetParent()->GetNextInFlow(); nif;
+       nif = nif->GetNextInFlow()) {
+    if (auto* sibling = nif->PrincipalChildList().FirstChild()) {
+      MOZ_ASSERT(static_cast<nsTableRowFrame*>(do_QueryFrame(sibling)),
+                 "How do we have a non-row sibling?");
+      return static_cast<nsTableRowFrame*>(sibling);
+    }
+  }
+  return nullptr;
 }
 
 // This property is only set on the first-in-flow of nsTableRowFrame.

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -20,7 +18,7 @@ class CookieStoreParent final : public PCookieStoreParent {
 
  public:
   using GetRequestPromise =
-      MozPromise<CopyableTArray<CookieStruct>, nsresult, true>;
+      MozPromise<CopyableTArray<CookieStoreGetItem>, nsresult, true>;
   using SetDeleteRequestPromise = MozPromise<bool, bool, true>;
   using GetSubscriptionsRequestPromise =
       MozPromise<CopyableTArray<CookieSubscription>, nsresult, true>;
@@ -72,13 +70,13 @@ class CookieStoreParent final : public PCookieStoreParent {
   mozilla::ipc::IPCResult RecvClose();
 
   void GetRequestOnMainThread(
-      const RefPtr<nsIURI> aCookieURI,
+      ThreadsafeContentParentHandle* aParent, const RefPtr<nsIURI> aCookieURI,
       const OriginAttributes& aOriginAttributes,
       const Maybe<OriginAttributes>& aPartitionedOriginAttributes,
       bool aThirdPartyContext, bool aPartitionForeign, bool aUsingStorageAccess,
       bool aIsOn3PCBExceptionList, bool aMatchName, const nsAString& aName,
       const nsACString& aPath, bool aOnlyFirstMatch,
-      nsTArray<CookieStruct>& aResults);
+      nsTArray<CookieStoreGetItem>& aResults);
 
   enum SetReturnType {
     eFailure,

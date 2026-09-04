@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 // Copyright (c) 2011-2016 Google Inc.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the gfx/skia/LICENSE file.
@@ -9,8 +7,10 @@
 
 #include <cfloat>
 #include <cmath>
-#include "mozilla/Vector.h"
+#include <numbers>
+
 #include "Types.h"
+#include "mozilla/Vector.h"
 
 namespace skia {
 
@@ -46,7 +46,7 @@ class SkLanczosFilter final : public SkBitmapFilter {
     if (x > -FLT_EPSILON && x < FLT_EPSILON) {
       return 1.0f;  // Special case the discontinuity at the origin.
     }
-    float xpi = x * float(M_PI);
+    float xpi = x * std::numbers::pi_v<float>;
     return (sinf(xpi) / xpi) *                   // sinc(x)
            sinf(xpi / fWidth) / (xpi / fWidth);  // sinc(x/fWidth)
   }
@@ -68,7 +68,7 @@ class SkConvolutionFilter1D {
   enum { kShiftBits = 14 };
 
   SkConvolutionFilter1D();
-  ~SkConvolutionFilter1D();
+  ~SkConvolutionFilter1D() = default;
 
   // Convert between floating point and our ConvolutionFixed point
   // representation.

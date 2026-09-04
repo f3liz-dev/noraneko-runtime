@@ -51,10 +51,11 @@ Assertions are provided courtesy of [unittest].  For example:
 ```python
 from marionette_harness import MarionetteTestCase
 
+
 class TestSomething(MarionetteTestCase):
     def test_foo(self):
-        self.assertEqual(9, 3 * 3, '3 x 3 should be 9')
-        self.assertTrue(type(2) == int, '2 should be an integer')
+        self.assertEqual(9, 3 * 3, "3 x 3 should be 9")
+        self.assertTrue(type(2) == int, "2 should be an integer")
 ```
 
 ## The API
@@ -98,4 +99,4 @@ created Marionette manifest file needs to be referenced in the folder's related
 Marionette's own [master manifest file]. This ensures that the test packaging step
 will find the tests and include them as well in the test package.
 
-[master manifest file]: https://searchfox.org/mozilla-central/source/testing/marionette/harness/marionette_harness/tests/unit-tests.toml
+[master manifest file]: https://searchfox.org/firefox-main/source/testing/marionette/harness/marionette_harness/tests/unit-tests.toml

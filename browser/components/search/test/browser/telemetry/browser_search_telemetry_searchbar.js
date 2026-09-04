@@ -1,5 +1,10 @@
 "use strict";
 
+/**
+ * This tests the old searchbar. The new searchbar is tested in
+ * /browser/components/urlbar/tests/browser/searchbar/browser_searchbar_telemetry.js.
+ */
+
 const SCALAR_SEARCHBAR = "browser.engagement.navigation.searchbar";
 
 ChromeUtils.defineESModuleGetters(this, {
@@ -39,7 +44,7 @@ function clickSearchbarSuggestion(entryName, clickOptions = {}) {
   let richlistbox = searchBar.textbox.popup.richlistbox;
   let richlistitem = Array.prototype.find.call(
     richlistbox.children,
-    item => item.getAttribute("ac-value") == entryName
+    item => item.querySelector("autocomplete-row-item")?.value == entryName
   );
 
   // Make sure the suggestion is visible and simulate the click.
@@ -48,6 +53,10 @@ function clickSearchbarSuggestion(entryName, clickOptions = {}) {
 }
 
 add_setup(async function () {
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.search.widget.new", false]],
+  });
+
   searchBar = await gCUITestUtils.addSearchBar();
   const url = getRootDirectory(gTestPath) + "telemetrySearchSuggestions.xml";
   suggestionEngine = await SearchTestUtils.installOpenSearchEngine({ url });
@@ -350,7 +359,7 @@ add_task(async function test_suggestion_middle_click() {
   await checkSuggestionClick({ button: 1 }, () => {
     return BrowserTestUtils.waitForNewTab(
       gBrowser,
-      // eslint-disable-next-line @microsoft/sdl/no-insecure-url
+      // eslint-disable-next-line sdl/no-insecure-url
       "http://example.com/"
     ).then(tab => (openedTab = tab));
   });

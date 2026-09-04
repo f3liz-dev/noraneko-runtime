@@ -1,5 +1,4 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -8,7 +7,7 @@ import { AppConstants } from "resource://gre/modules/AppConstants.sys.mjs";
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
-  CrashSubmit: "resource://gre/modules/CrashSubmit.sys.mjs",
+  CrashSubmit: "moz-src:///toolkit/crashreporter/CrashSubmit.sys.mjs",
 });
 
 ChromeUtils.defineLazyGetter(lazy, "gNavigatorBundle", function () {

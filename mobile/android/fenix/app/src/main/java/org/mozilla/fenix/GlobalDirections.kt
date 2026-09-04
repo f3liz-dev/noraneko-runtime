@@ -7,6 +7,7 @@ package org.mozilla.fenix
 import androidx.navigation.NavDirections
 import mozilla.appservices.places.BookmarkRoot
 import org.mozilla.fenix.components.accounts.FenixFxAEntryPoint
+import org.mozilla.fenix.trackingprotection.ProtectionsDashboardFragment
 
 /**
  * Used with [HomeActivity] global navigation to indicate which fragment is being opened.
@@ -48,6 +49,17 @@ enum class GlobalDirections(val navDirections: NavDirections, val destinationId:
         NavGraphDirections.actionGlobalAddonsManagementFragment(),
         R.id.addonsManagementFragment,
     ),
+    SettingsAIControls(
+        NavGraphDirections.actionGlobalAiControlsFragment(),
+        R.id.aiControlsFragment,
+    ),
+    SettingsIpProtection(
+        NavGraphDirections.actionGlobalIpProtectionFragment(
+            entrypoint = FenixFxAEntryPoint.DeepLink,
+            startAuthFlow = false,
+        ),
+        R.id.ipProtectionFragment,
+    ),
     SettingsLogins(
         NavGraphDirections.actionGlobalSavedLoginsAuthFragment(),
         R.id.saveLoginSettingFragment,
@@ -67,5 +79,12 @@ enum class GlobalDirections(val navDirections: NavDirections, val destinationId:
     SettingsAppIcon(
         NavGraphDirections.actionGlobalAppIconSelectionFragment(),
         R.id.appIconSelectionFragment,
+    ),
+    ProtectionsDashboard(
+        NavGraphDirections.actionGlobalProtectionsDashboard(
+            customTabSessionId = null,
+            source = ProtectionsDashboardFragment.SOURCE_DEEPLINK,
+        ),
+        R.id.global_protections_dashboard,
     ),
 }

@@ -68,6 +68,13 @@ add_setup(async function setup() {
 });
 
 add_task(async function testHTTPSSVC() {
+  // Initialize FOG before the DNS lookup so that server knobs (which enable
+  // metrics disabled by default in non-Firefox builds) are applied before the
+  // metric recording runs.
+  if (!inChildProcess()) {
+    Services.fog.initializeFOG();
+  }
+
   // use the h2 server as DOH provider
   await setTRRURI("https://foo.example.com:" + h2Port + "/doh?httpssvc=1");
 
@@ -152,7 +159,7 @@ add_task(async function testHTTPSSVC() {
   Assert.equal(
     answer[1].values[3].QueryInterface(Ci.nsISVCParamIPv6Hint).ipv6Hint[1]
       .address,
-    "fe80::794f:6d2c:3d5e:7836",
+    "2001:db8::1",
     "got correct answer"
   );
   Assert.equal(
@@ -163,6 +170,13 @@ add_task(async function testHTTPSSVC() {
   Assert.equal(answer[2].priority, 3);
   Assert.equal(answer[2].name, "hello");
   Assert.equal(answer[2].values.length, 0);
+
+  // The HTTPS RR was resolved over DoH/TRR, so https_rr_lookup_time should
+  // have a sample under the "doh" key.
+  if (!inChildProcess()) {
+    let doh = Glean.dns.httpsRrLookupTime.doh.testGetValue();
+    Assert.ok(doh, "https_rr_lookup_time(doh) was recorded");
+  }
 });
 
 add_task(async function test_aliasform() {
@@ -642,6 +656,219 @@ add_task(async function test_aliasform() {
   answer = inRecord.QueryInterface(Ci.nsIDNSHTTPSSVCRecord).records;
   Assert.equal(answer[0].priority, 1);
   Assert.equal(answer[0].name, "service.com");
+});
+
+// Real recursive resolvers set the Recursion-Available (RA) flag but do not
+// chase HTTPS AliasMode targets themselves, so Firefox must query the
+// TargetName. Regression test for bug 1869075.
+add_task(async function test_aliasform_recursion_available() {
+  await setTRRURI(`https://foo.example.com:${trrServer.port()}/dns-query`);
+  await clearCache();
+
+  // RECURSION_AVAILABLE flag (1 << 7) as encoded by dns-packet.
+  const RECURSION_AVAILABLE = 1 << 7;
+
+  await trrServer.registerDoHAnswers("ra-alias.com", "HTTPS", {
+    flags: RECURSION_AVAILABLE,
+    answers: [
+      {
+        name: "ra-alias.com",
+        ttl: 55,
+        type: "HTTPS",
+        flush: false,
+        data: {
+          priority: 0,
+          name: "ra-target.com",
+          values: [],
+        },
+      },
+    ],
+  });
+  await trrServer.registerDoHAnswers("ra-target.com", "HTTPS", {
+    flags: RECURSION_AVAILABLE,
+    answers: [
+      {
+        name: "ra-target.com",
+        ttl: 55,
+        type: "HTTPS",
+        flush: false,
+        data: {
+          priority: 1,
+          name: "h3pool",
+          values: [{ key: "alpn", value: ["h2", "h3"] }],
+        },
+      },
+    ],
+  });
+
+  let { inStatus, inRecord } = await new TRRDNSListener("ra-alias.com", {
+    type: Ci.nsIDNSService.RESOLVE_TYPE_HTTPSSVC,
+    expectedSuccess: false,
+  });
+  Assert.ok(
+    Components.isSuccessCode(inStatus),
+    `${inStatus} should follow the alias even when RA is set`
+  );
+  let answer = inRecord.QueryInterface(Ci.nsIDNSHTTPSSVCRecord).records;
+  Assert.equal(answer[0].priority, 1);
+  Assert.equal(answer[0].name, "h3pool");
+});
+
+// When an HTTPS AliasMode target has no HTTPS record of its own, TRR must still
+// succeed and return the AliasMode record carrying the target name, so the
+// connection is routed to the target. Regression test for bug 2056195.
+add_task(async function test_aliasform_target_without_record() {
+  await setTRRURI(`https://foo.example.com:${trrServer.port()}/dns-query`);
+  await clearCache();
+
+  await trrServer.registerDoHAnswers("alias-noh.com", "HTTPS", {
+    answers: [
+      {
+        name: "alias-noh.com",
+        ttl: 55,
+        type: "HTTPS",
+        flush: false,
+        data: {
+          priority: 0,
+          name: "target-noh.com",
+          values: [],
+        },
+      },
+    ],
+  });
+  // The target resolves, but has no HTTPS record (NODATA).
+  await trrServer.registerDoHAnswers("target-noh.com", "HTTPS", {
+    answers: [],
+  });
+
+  let { inStatus, inRecord } = await new TRRDNSListener("alias-noh.com", {
+    type: Ci.nsIDNSService.RESOLVE_TYPE_HTTPSSVC,
+    expectedSuccess: false,
+  });
+  Assert.ok(
+    Components.isSuccessCode(inStatus),
+    `${inStatus} should follow the alias even when the target has no record`
+  );
+  let record = inRecord.QueryInterface(Ci.nsIDNSHTTPSSVCRecord);
+  let answer = record.records;
+  Assert.equal(answer.length, 1, "should return a single AliasMode record");
+  Assert.equal(
+    answer[0].priority,
+    0,
+    "record should be AliasMode (priority 0)"
+  );
+  Assert.equal(
+    answer[0].name,
+    "target-noh.com",
+    "AliasMode record should carry the target name"
+  );
+
+  // The AliasMode record is not a ServiceMode record; routing to the target is
+  // handled by the connection layer (HTTPSRecordResolver), not here.
+  Assert.throws(
+    () => record.GetServiceModeRecord(false, false),
+    /NS_ERROR_NOT_AVAILABLE/,
+    "an AliasMode record must not be exposed as a ServiceMode record"
+  );
+});
+
+// A chain of HTTPS AliasMode records ending at a target with no HTTPS record
+// must resolve to the final TargetName as an AliasMode record. Bug 2056195.
+add_task(async function test_aliasform_alias_chain_no_record() {
+  await setTRRURI(`https://foo.example.com:${trrServer.port()}/dns-query`);
+  await clearCache();
+
+  await trrServer.registerDoHAnswers("chain-a.com", "HTTPS", {
+    answers: [
+      {
+        name: "chain-a.com",
+        ttl: 55,
+        type: "HTTPS",
+        flush: false,
+        data: { priority: 0, name: "chain-b.com", values: [] },
+      },
+    ],
+  });
+  await trrServer.registerDoHAnswers("chain-b.com", "HTTPS", {
+    answers: [
+      {
+        name: "chain-b.com",
+        ttl: 55,
+        type: "HTTPS",
+        flush: false,
+        data: { priority: 0, name: "chain-c.com", values: [] },
+      },
+    ],
+  });
+  // chain-c.com resolves but has no HTTPS record (NODATA).
+  await trrServer.registerDoHAnswers("chain-c.com", "HTTPS", { answers: [] });
+
+  let { inStatus, inRecord } = await new TRRDNSListener("chain-a.com", {
+    type: Ci.nsIDNSService.RESOLVE_TYPE_HTTPSSVC,
+    expectedSuccess: false,
+  });
+  Assert.ok(
+    Components.isSuccessCode(inStatus),
+    `${inStatus} alias->alias->no-record should succeed`
+  );
+  let answer = inRecord.QueryInterface(Ci.nsIDNSHTTPSSVCRecord).records;
+  Assert.equal(answer.length, 1, "should return a single AliasMode record");
+  Assert.equal(
+    answer[0].priority,
+    0,
+    "record should be AliasMode (priority 0)"
+  );
+  Assert.equal(answer[0].name, "chain-c.com", "record carries final target");
+});
+
+// A chain mixing an HTTPS AliasMode record and a CNAME ending at a target with
+// no HTTPS record must resolve to the final TargetName. Bug 2056195.
+add_task(async function test_aliasform_cname_chain_no_record() {
+  await setTRRURI(`https://foo.example.com:${trrServer.port()}/dns-query`);
+  await clearCache();
+
+  await trrServer.registerDoHAnswers("cchain-a.com", "HTTPS", {
+    answers: [
+      {
+        name: "cchain-a.com",
+        ttl: 55,
+        type: "HTTPS",
+        flush: false,
+        data: { priority: 0, name: "cchain-b.com", values: [] },
+      },
+    ],
+  });
+  await trrServer.registerDoHAnswers("cchain-b.com", "HTTPS", {
+    answers: [
+      {
+        name: "cchain-b.com",
+        type: "CNAME",
+        ttl: 55,
+        class: "IN",
+        flush: false,
+        data: "cchain-c.com",
+      },
+    ],
+  });
+  // cchain-c.com resolves but has no HTTPS record (NODATA).
+  await trrServer.registerDoHAnswers("cchain-c.com", "HTTPS", { answers: [] });
+
+  let { inStatus, inRecord } = await new TRRDNSListener("cchain-a.com", {
+    type: Ci.nsIDNSService.RESOLVE_TYPE_HTTPSSVC,
+    expectedSuccess: false,
+  });
+  Assert.ok(
+    Components.isSuccessCode(inStatus),
+    `${inStatus} alias->cname->no-record should succeed`
+  );
+  let answer = inRecord.QueryInterface(Ci.nsIDNSHTTPSSVCRecord).records;
+  Assert.equal(answer.length, 1, "should return a single AliasMode record");
+  Assert.equal(
+    answer[0].priority,
+    0,
+    "record should be AliasMode (priority 0)"
+  );
+  Assert.equal(answer[0].name, "cchain-c.com", "record carries final target");
 });
 
 add_task(async function testNegativeResponse() {

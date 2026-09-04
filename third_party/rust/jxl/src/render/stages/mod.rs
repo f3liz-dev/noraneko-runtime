@@ -5,7 +5,6 @@
 
 mod blending;
 mod chroma_upsample;
-mod cms;
 mod convert;
 mod epf;
 mod extend;
@@ -17,7 +16,7 @@ mod premultiply_alpha;
 mod splines;
 mod spot;
 mod to_linear;
-mod upsample;
+pub mod upsample;
 mod xyb;
 mod ycbcr;
 
@@ -26,7 +25,6 @@ mod nearest_neighbor;
 
 pub use blending::*;
 pub use chroma_upsample::*;
-pub use cms::*;
 pub use convert::*;
 pub use epf::*;
 pub use extend::*;

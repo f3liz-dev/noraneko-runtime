@@ -9,6 +9,7 @@ let server;
 add_setup(async function test_setup() {
   do_get_profile();
   Services.prefs.setBoolPref("network.http.http2.enabled", true);
+  // TODO: Happy Eyeballs doesn't support connection coalescing yet.
   Services.prefs.setCharPref(
     "network.dns.localDomains",
     "foo.example.com, alt1.example.com"

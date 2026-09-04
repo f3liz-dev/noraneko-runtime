@@ -57,7 +57,7 @@
     {
       'target_name': 'gcm-nodepend',
       'conditions': [
-        [ '(OS=="win" and cc_use_gnu_ld!=1 and (target_arch=="ia32" or target_arch=="x64")) or (target_arch=="x64" and OS!="win")', {
+        [ '(OS=="win" and cc_use_gnu_ld!=1 and (target_arch=="ia32" or target_arch=="x64")) or (target_arch=="x64" and OS!="win" and OS!="ios")', {
           'dependencies': [
             'intel-gcm-wrap.gyp:intel-gcm-wrap-nodepend_c_lib',
           ],
@@ -73,12 +73,20 @@
             'HAVE_PLATFORM_GCM'
           ],
         }],
+        [ '(target_arch=="arm64" or target_arch=="aarch64") and OS!="win"', {
+          'dependencies': [
+            'aarch64-gcm-wrap.gyp:aarch64-gcm-wrap-nodepend_c_lib',
+          ],
+          'defines': [
+            'HAVE_PLATFORM_GCM'
+          ],
+        }],
       ],
     },
     {
       'target_name': 'gcm',
       'conditions': [
-        [ '(OS=="win" and cc_use_gnu_ld!=1 and (target_arch=="ia32" or target_arch=="x64")) or (target_arch=="x64" and OS!="win")', {
+        [ '(OS=="win" and cc_use_gnu_ld!=1 and (target_arch=="ia32" or target_arch=="x64")) or (target_arch=="x64" and OS!="win" and OS!="ios")', {
           'dependencies': [
             'intel-gcm-wrap.gyp:intel-gcm-wrap_c_lib',
           ],
@@ -89,6 +97,14 @@
         [ 'disable_altivec==0 and target_arch=="ppc64le"', {
           'dependencies': [
             'ppc-gcm-wrap.gyp:ppc-gcm-wrap_c_lib',
+          ],
+          'defines': [
+            'HAVE_PLATFORM_GCM'
+          ],
+        }],
+        [ '(target_arch=="arm64" or target_arch=="aarch64") and OS!="win"', {
+          'dependencies': [
+            'aarch64-gcm-wrap.gyp:aarch64-gcm-wrap_c_lib',
           ],
           'defines': [
             'HAVE_PLATFORM_GCM'

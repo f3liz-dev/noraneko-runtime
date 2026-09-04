@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -23,7 +21,11 @@ using namespace mozilla::dom;
 
 // Column class that caches all the info about our column.
 nsTreeColumn::nsTreeColumn(nsTreeColumns* aColumns, dom::Element* aElement)
-    : mContent(aElement), mColumns(aColumns), mIndex(0), mPrevious(nullptr) {
+    : mContent(aElement),
+      mColumns(aColumns),
+      mIndex(0),
+      mTextAlignment(StyleTextAlign::Start),
+      mPrevious(nullptr) {
   NS_ASSERTION(aElement && aElement->NodeInfo()->Equals(nsGkAtoms::treecol,
                                                         kNameSpaceID_XUL),
                "nsTreeColumn's content must be a <xul:treecol>");
@@ -244,7 +246,7 @@ nsTreeColumns::nsTreeColumns(nsTreeBodyFrame* aTree) : mTree(aTree) {}
 
 nsTreeColumns::~nsTreeColumns() { nsTreeColumns::InvalidateColumns(); }
 
-NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE_0(nsTreeColumns)
+NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(nsTreeColumns, mFirstColumn)
 
 // QueryInterface implementation for nsTreeColumns
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(nsTreeColumns)

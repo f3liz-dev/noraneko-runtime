@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -52,10 +50,12 @@ class Platform {
    * This is used when handles are read from IPC.
    *
    * @param aHandle The handle to check.
+   * @param aSize The claimed size of the handle, as read from IPC.  Mappings
+   * that extend past this point could misbehave or fail.
    *
    * @returns Whether the handle is safe to map.
    */
-  static bool IsSafeToMap(const PlatformHandle& aHandle);
+  static bool IsSafeToMap(const PlatformHandle& aHandle, uint64_t aSize);
 
   /**
    * Clone a handle.

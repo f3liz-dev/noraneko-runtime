@@ -1,17 +1,16 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "ProxyAutoConfigChild.h"
 
+#include "ProxyAutoConfig.h"
+#include "mozilla/SpinEventLoopUntil.h"
 #include "mozilla/ipc/Endpoint.h"
 #include "mozilla/net/SocketProcessChild.h"
-#include "mozilla/SpinEventLoopUntil.h"
 #include "nsIObserver.h"
 #include "nsIObserverService.h"
 #include "nsThreadUtils.h"
-#include "ProxyAutoConfig.h"
 
 namespace mozilla::net {
 

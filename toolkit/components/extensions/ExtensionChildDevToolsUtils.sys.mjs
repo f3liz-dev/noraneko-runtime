@@ -1,5 +1,3 @@
-/* -*- Mode: indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set sts=2 sw=2 et tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -83,7 +81,7 @@ export var ExtensionChildDevToolsUtils = {
    * destroyed when all of the contexts added to it are closed.
    *
    * @param {string} themeName The name of the current devtools theme.
-   * @param {import("ExtensionPageChild.sys.mjs").DevToolsContextChild} context
+   * @param {import("./ExtensionPageChild.sys.mjs").DevToolsContextChild} context
    *        The newly created devtools page context.
    */
   initThemeChangeObserver(themeName, context) {

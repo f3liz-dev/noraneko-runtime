@@ -12,11 +12,11 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import androidx.annotation.AttrRes
 import androidx.annotation.ColorInt
-import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.core.view.updateLayoutParams
 import androidx.preference.Preference
 import androidx.preference.PreferenceViewHolder
 import com.google.android.material.color.MaterialColors
+import mozilla.components.support.ktx.android.content.pixelSizeFor
 import org.mozilla.fenix.GleanMetrics.CustomizationSettings
 import org.mozilla.fenix.R
 import org.mozilla.fenix.ext.isWideWindow
@@ -47,40 +47,60 @@ internal abstract class ToolbarShortcutPreference @JvmOverloads constructor(
     }
 
     protected abstract val options: List<ShortcutOption>
+
+    /**
+     * Returns whether [option] can be selected.
+     * A disabled option is still shown but greyed out and non-clickable.
+     * Defaults to `true`.
+     */
+    protected open fun isOptionEnabled(option: ShortcutOption): Boolean = true
+
     protected abstract fun readSelectedKey(): String
     protected abstract fun writeSelectedKey(key: String)
     protected abstract fun getToolbarType(): String
-    protected abstract fun getSelectedIconImageView(holder: PreferenceViewHolder): ImageView
+    protected abstract fun getSelectedIconImageView(holder: PreferenceViewHolder): ImageView?
+
+    /**
+     * The toolbar type reported in telemetry. Separate from [getToolbarType] so a preference can reuse
+     * another type's preview layout but still be reported on its own.
+     */
+    protected open fun getTelemetryToolbarType(): String = when (getToolbarType()) {
+        EXPANDED_TOOLBAR_TYPE -> EXPANDED_TOOLBAR_TYPE
+        else -> SIMPLE_TOOLBAR_TYPE
+    }
 
     override fun onBindViewHolder(holder: PreferenceViewHolder) {
         super.onBindViewHolder(holder)
 
         configureShortcutPreview(holder)
 
-        val selectedIcon = getSelectedIconImageView(holder)
+        getSelectedIconImageView(holder)?.let { imageView ->
+            getSelectedOption().icon?.let { iconResource ->
+                colorTertiary = holder.itemView.getMaterialColor(materialR.attr.colorTertiary)
+                colorOnSurface = holder.itemView.getMaterialColor(materialR.attr.colorOnSurface)
+                colorOnSurfaceVariant = holder.itemView.getMaterialColor(materialR.attr.colorOnSurfaceVariant)
 
-        colorTertiary = holder.itemView.getMaterialColor(materialR.attr.colorTertiary)
-        colorOnSurface = holder.itemView.getMaterialColor(materialR.attr.colorOnSurface)
-        colorOnSurfaceVariant = holder.itemView.getMaterialColor(materialR.attr.colorOnSurfaceVariant)
-
-        selectedIcon.setImageResource(getSelectedOption().icon)
+                imageView.setImageResource(iconResource)
+            }
+        }
     }
 
     private fun configureShortcutPreview(holder: PreferenceViewHolder) {
         val shortcutPreviewId = when (getToolbarType()) {
             EXPANDED_TOOLBAR_TYPE -> R.id.toolbar_expanded_shortcut_preview
+            NO_SHORTCUT_SIMPLE_TOOLBAR_TYPE -> R.id.toolbar_simple_no_shortcut_preview
             else -> R.id.toolbar_simple_shortcut_preview
         }
-        val shortcutPreview = holder.itemView.findViewById<ConstraintLayout>(shortcutPreviewId)
+        val shortcutPreview = holder.itemView.findViewById<View>(shortcutPreviewId)
 
         shortcutPreview?.updateLayoutParams<LinearLayout.LayoutParams> {
             if (context.isWideWindow()) {
                 gravity = Gravity.NO_GRAVITY
-                marginStart = context.resources.getDimensionPixelSize(R.dimen.top_bar_alignment_margin_start)
+                marginStart = context.pixelSizeFor(R.dimen.top_bar_alignment_margin_start)
                 marginEnd = 0
             } else {
                 gravity = Gravity.CENTER_HORIZONTAL
-                val horizontalMargin = context.resources.getDimensionPixelSize(
+                val horizontalMargin = context.pixelSizeFor(
                     R.dimen.radiobutton_preference_margin_start,
                 )
                 marginStart = horizontalMargin
@@ -117,11 +137,12 @@ internal abstract class ToolbarShortcutPreference @JvmOverloads constructor(
     ): RadioButtonPreference = RadioButtonPreference(context).apply {
         key = newOption.key.value
         title = context.getString(newOption.label)
+        isEnabled = isOptionEnabled(newOption)
         setCheckedWithoutClickListener(newOption == selectedOption)
         onClickListener {
             CustomizationSettings.toolbarShortcutSelection.record(
                 CustomizationSettings.ToolbarShortcutSelectionExtra(
-                    toolbarType = getToolbarType(),
+                    toolbarType = getTelemetryToolbarType(),
                     item = newOption.key.value,
                 ),
             )

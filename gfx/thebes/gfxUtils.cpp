@@ -1,26 +1,37 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "gfxUtils.h"
 
+#include <numbers>
+
+#include "ImageContainer.h"
+#include "ImageRegion.h"
 #include "cairo.h"
+#include "gfx2DGlue.h"
 #include "gfxContext.h"
+#include "gfxDrawable.h"
 #include "gfxEnv.h"
 #include "gfxImageSurface.h"
 #include "gfxPlatform.h"
-#include "gfxDrawable.h"
 #include "gfxQuad.h"
 #include "imgIEncoder.h"
 #include "mozilla/Base64.h"
-#include "mozilla/StyleColorInlines.h"
 #include "mozilla/Components.h"
+#include "mozilla/Maybe.h"
+#include "mozilla/Preferences.h"
+#include "mozilla/ProfilerLabels.h"
+#include "mozilla/RefPtr.h"
+#include "mozilla/ServoStyleConsts.h"
+#include "mozilla/StaticPrefs_gfx.h"
+#include "mozilla/StaticPrefs_layout.h"
+#include "mozilla/StyleColorInlines.h"
+#include "mozilla/UniquePtrExtensions.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/ImageEncoder.h"
 #include "mozilla/dom/WorkerPrivate.h"
 #include "mozilla/dom/WorkerRunnable.h"
-#include "mozilla/ipc/CrossProcessSemaphore.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/gfx/DataSurfaceHelpers.h"
 #include "mozilla/gfx/Logging.h"
@@ -31,15 +42,8 @@
 #include "mozilla/image/nsICOEncoder.h"
 #include "mozilla/image/nsJPEGEncoder.h"
 #include "mozilla/image/nsPNGEncoder.h"
+#include "mozilla/ipc/CrossProcessSemaphore.h"
 #include "mozilla/layers/SynchronousTask.h"
-#include "mozilla/Maybe.h"
-#include "mozilla/Preferences.h"
-#include "mozilla/ProfilerLabels.h"
-#include "mozilla/RefPtr.h"
-#include "mozilla/ServoStyleConsts.h"
-#include "mozilla/StaticPrefs_gfx.h"
-#include "mozilla/StaticPrefs_layout.h"
-#include "mozilla/UniquePtrExtensions.h"
 #include "mozilla/webrender/webrender_ffi.h"
 #include "nsAppRunner.h"
 #include "nsComponentManagerUtils.h"
@@ -48,12 +52,9 @@
 #include "nsIGfxInfo.h"
 #include "nsMimeTypes.h"
 #include "nsPresContext.h"
+#include "nsRFPService.h"
 #include "nsRegion.h"
 #include "nsServiceManagerUtils.h"
-#include "nsRFPService.h"
-#include "ImageContainer.h"
-#include "ImageRegion.h"
-#include "gfx2DGlue.h"
 
 #ifdef XP_WIN
 #  include "gfxWindowsPlatform.h"
@@ -229,8 +230,7 @@ already_AddRefed<DataSourceSurface> gfxUtils::CreatePremultipliedDataSurface(
   DataSourceSurface::MappedSurface destMap;
   if (!MapSrcAndCreateMappedDest(srcSurf, &destSurf, &srcMap, &destMap)) {
     MOZ_ASSERT(false, "MapSrcAndCreateMappedDest failed.");
-    RefPtr<DataSourceSurface> surface(srcSurf);
-    return surface.forget();
+    return nullptr;
   }
 
   PremultiplyData(srcMap.mData, srcMap.mStride, srcSurf->GetFormat(),
@@ -248,8 +248,7 @@ already_AddRefed<DataSourceSurface> gfxUtils::CreateUnpremultipliedDataSurface(
   DataSourceSurface::MappedSurface destMap;
   if (!MapSrcAndCreateMappedDest(srcSurf, &destSurf, &srcMap, &destMap)) {
     MOZ_ASSERT(false, "MapSrcAndCreateMappedDest failed.");
-    RefPtr<DataSourceSurface> surface(srcSurf);
-    return surface.forget();
+    return nullptr;
   }
 
   UnpremultiplyData(srcMap.mData, srcMap.mStride, srcSurf->GetFormat(),
@@ -566,7 +565,7 @@ float gfxUtils::ClampToScaleFactor(float aVal, bool aRoundDown) {
     aVal = 1 / aVal;
   }
 
-  float power = logf(aVal) / logf(kScaleResolution);
+  float power = logf(aVal) / std::numbers::ln2_v<float>;
 
   // If power is within 1e-5 of an integer, round to nearest to
   // prevent floating point errors, otherwise round up to the
@@ -1179,10 +1178,11 @@ nsresult gfxUtils::EncodeSourceSurface(SourceSurface* aSurface,
   NS_ENSURE_SUCCESS(rv, rv);
 
   if (aFile) {
+    nsPromiseFlatCString flatURI(dataURI);
 #ifdef ANDROID
     if (aFile == stdout || aFile == stderr) {
       // ADB logcat cuts off long strings so we will break it down
-      const char* cStr = dataURI.BeginReading();
+      const char* cStr = flatURI.get();
       size_t len = strlen(cStr);
       while (true) {
         printf_stderr("IMG: %.140s\n", cStr);
@@ -1192,7 +1192,7 @@ nsresult gfxUtils::EncodeSourceSurface(SourceSurface* aSurface,
       }
     }
 #endif
-    fprintf(aFile, "%s", dataURI.BeginReading());
+    fprintf(aFile, "%s", flatURI.get());
   } else if (!aStrOut) {
     nsCOMPtr<nsIClipboardHelper> clipboard(
         do_GetService("@mozilla.org/widget/clipboardhelper;1", &rv));
@@ -1256,7 +1256,10 @@ const float kIdentityNarrowYCbCrToRGB_RowMajor[16] = {
 
 /* static */ const float* gfxUtils::YuvToRgbMatrix3x3ColumnMajor(
     gfx::YUVColorSpace aYUVColorSpace) {
-#define X(x) {x[0], x[4], x[8], x[1], x[5], x[9], x[2], x[6], x[10]}
+#define X(x)                                              \
+  {                                                       \
+    x[0], x[4], x[8], x[1], x[5], x[9], x[2], x[6], x[10] \
+  }
 
   static const float rec601[9] = X(kBT601NarrowYCbCrToRGB_RowMajor);
   static const float rec709[9] = X(kBT709NarrowYCbCrToRGB_RowMajor);
@@ -1281,9 +1284,11 @@ const float kIdentityNarrowYCbCrToRGB_RowMajor[16] = {
 
 /* static */ const float* gfxUtils::YuvToRgbMatrix4x4ColumnMajor(
     YUVColorSpace aYUVColorSpace) {
-#define X(x)                                           \
-  {x[0], x[4], x[8],  x[12], x[1], x[5], x[9],  x[13], \
-   x[2], x[6], x[10], x[14], x[3], x[7], x[11], x[15]}
+#define X(x)                                                             \
+  {                                                                      \
+    x[0], x[4], x[8], x[12], x[1], x[5], x[9], x[13], x[2], x[6], x[10], \
+        x[14], x[3], x[7], x[11], x[15]                                  \
+  }
 
   static const float rec601[16] = X(kBT601NarrowYCbCrToRGB_RowMajor);
   static const float rec709[16] = X(kBT709NarrowYCbCrToRGB_RowMajor);
@@ -1575,6 +1580,7 @@ nsresult gfxUtils::GetInputStream(gfx::DataSourceSurface* aSurface,
                                   bool aIsAlphaPremultiplied,
                                   const char* aMimeType,
                                   const nsAString& aEncoderOptions,
+                                  const nsACString& aRandomizationKey,
                                   nsIInputStream** outStream) {
   nsCString enccid("@mozilla.org/image/encoder;2?type=");
   enccid += aMimeType;
@@ -1588,7 +1594,7 @@ nsresult gfxUtils::GetInputStream(gfx::DataSourceSurface* aSurface,
 
   return dom::ImageEncoder::GetInputStream(
       aSurface->GetSize().width, aSurface->GetSize().height, imageBuffer.get(),
-      format, encoder, aEncoderOptions, VoidCString(), outStream);
+      format, encoder, aEncoderOptions, aRandomizationKey, outStream);
 }
 
 /* static */

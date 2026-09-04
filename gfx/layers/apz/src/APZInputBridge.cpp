@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,25 +5,23 @@
 #include "mozilla/layers/APZInputBridge.h"
 
 #include "AsyncPanZoomController.h"
-#include "InputData.h"               // for MouseInput, etc
 #include "InputBlockState.h"         // for InputBlockState
+#include "InputData.h"               // for MouseInput, etc
 #include "OverscrollHandoffState.h"  // for OverscrollHandoffState
-#include "nsLayoutUtils.h"           // for IsSmoothScrollingEnabled
 #include "mozilla/EventForwards.h"
-#include "mozilla/dom/WheelEventBinding.h"  // for WheelEvent constants
-#include "mozilla/EventStateManager.h"      // for EventStateManager
-#include "mozilla/layers/APZThreadUtils.h"  // for AssertOnControllerThread, etc
-#include "mozilla/MouseEvents.h"            // for WidgetMouseEvent
-#include "mozilla/StaticPrefs_apz.h"
+#include "mozilla/EventStateManager.h"  // for EventStateManager
+#include "mozilla/MouseEvents.h"        // for WidgetMouseEvent
 #include "mozilla/StaticPrefs_general.h"
 #include "mozilla/StaticPrefs_test.h"
-#include "mozilla/TextEvents.h"           // for WidgetKeyboardEvent
-#include "mozilla/TouchEvents.h"          // for WidgetTouchEvent
-#include "mozilla/WheelHandlingHelper.h"  // for WheelDeltaHorizontalizer,
-                                          //     WheelDeltaAdjustmentStrategy
+#include "mozilla/TextEvents.h"             // for WidgetKeyboardEvent
+#include "mozilla/TouchEvents.h"            // for WidgetTouchEvent
+#include "mozilla/WheelHandlingHelper.h"    // for WheelDeltaHorizontalizer,
+                                            //     WheelDeltaAdjustmentStrategy
+#include "mozilla/dom/WheelEventBinding.h"  // for WheelEvent constants
+#include "mozilla/layers/APZThreadUtils.h"  // for AssertOnControllerThread, etc
+#include "nsLayoutUtils.h"                  // for IsSmoothScrollingEnabled
 
-namespace mozilla {
-namespace layers {
+namespace mozilla::layers {
 
 APZHandledResult::APZHandledResult(APZHandledPlace aPlace,
                                    const AsyncPanZoomController* aTarget,
@@ -484,5 +480,4 @@ std::ostream& operator<<(std::ostream& aOut,
   return aOut;
 }
 
-}  // namespace layers
-}  // namespace mozilla
+}  // namespace mozilla::layers

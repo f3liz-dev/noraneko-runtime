@@ -88,7 +88,7 @@
 
 #if defined(MOZ_SANDBOX) && defined(XP_WIN)
 #  include "mozilla/sandboxTarget.h"
-#  include "mozilla/sandboxing/loggingCallbacks.h"
+#  include "mozilla/sandboxing/TargetGeckoServicesImpl.h"
 #endif
 
 #if defined(MOZ_SANDBOX)
@@ -112,7 +112,6 @@
 
 #if defined(XP_WIN) && defined(MOZ_SANDBOX)
 #  include "mozilla/sandboxing/SandboxInitialization.h"
-#  include "mozilla/sandboxing/sandboxLogging.h"
 #endif
 
 #if defined(MOZ_ENABLE_FORKSERVER)
@@ -124,6 +123,7 @@
 #endif
 
 #include "VRProcessChild.h"
+#include "nsTraceRefcnt.h"
 
 using namespace mozilla;
 
@@ -283,27 +283,30 @@ nsresult XRE_InitChildProcess(int aArgc, char* aArgv[],
   // It will succeed when the parent process is a command line,
   // so that stdio will be displayed in it.
   UseParentConsole();
-
-#  if defined(MOZ_SANDBOX)
-  if (aChildData->sandboxTargetServices) {
-    SandboxTarget::Instance()->SetTargetServices(
-        aChildData->sandboxTargetServices);
-  }
-#  endif
 #endif
 
   // NB: This must be called before profiler_init
   ScopedLogging logger;
 
   mozilla::LogModule::Init(aArgc, aArgv);
+  nsTraceRefcnt::EarlyInit();
 
   AUTO_BASE_PROFILER_LABEL("XRE_InitChildProcess (around Gecko Profiler)",
                            OTHER);
   AUTO_PROFILER_INIT;
   AUTO_PROFILER_LABEL("XRE_InitChildProcess", OTHER);
 
+#if defined(XP_WIN) && defined(MOZ_SANDBOX)
+  mozilla::sandboxing::InitTargetGeckoServices(
+      aChildData->setTargetGeckoServices);
+  if (aChildData->sandboxTargetServices) {
+    SandboxTarget::Instance()->SetTargetServices(
+        aChildData->sandboxTargetServices);
+  }
+#endif
+
 #ifdef XP_MACOSX
-  gfxPlatformMac::RegisterSupplementalFonts();
+  auto _supplementalFontThread = gfxPlatformMac::RegisterSupplementalFonts();
 #endif
 
   // Ensure AbstractThread is minimally setup, so async IPC messages
@@ -351,12 +354,14 @@ nsresult XRE_InitChildProcess(int aArgc, char* aArgv[],
 
   bool exceptionHandlerIsSet = false;
   if (!CrashReporter::IsDummy()) {
-    exceptionHandlerIsSet =
-        CrashReporter::SetRemoteExceptionHandler(aArgc, aArgv);
+    if (geckoargs::sCrashReporter.IsPresent(aArgc, aArgv)) {
+      exceptionHandlerIsSet =
+          CrashReporter::SetRemoteExceptionHandler(aArgc, aArgv);
 
-    if (!exceptionHandlerIsSet) {
-      // Bug 684322 will add better visibility into this condition
-      NS_WARNING("Could not setup crash reporting");
+      if (!exceptionHandlerIsSet) {
+        // Bug 684322 will add better visibility into this condition
+        NS_WARNING("Could not setup crash reporting");
+      }
     } else {
       // We might have registered a runtime exception module very early in
       // process startup to catch early crashes. This is before we process the
@@ -447,7 +452,8 @@ nsresult XRE_InitChildProcess(int aArgc, char* aArgv[],
   }
 
   nsID messageChannelId{};
-  if (NS_WARN_IF(!messageChannelId.Parse(*initialChannelIdString))) {
+  if (NS_WARN_IF(!messageChannelId.Parse(
+          nsDependentCString(*initialChannelIdString)))) {
     return NS_ERROR_FAILURE;
   }
 
@@ -573,12 +579,6 @@ nsresult XRE_InitChildProcess(int aArgc, char* aArgv[],
           MakeScopeExit([&dllSvc]() { dllSvc->DisableFull(); });
 #endif
 
-#if defined(MOZ_SANDBOX) && defined(XP_WIN)
-      // We need to do this after the process has been initialised, as
-      // InitLoggingIfRequired may need access to prefs.
-      mozilla::sandboxing::InitLoggingIfRequired(
-          aChildData->ProvideLogFunction);
-#endif
       mozilla::FilePreferences::InitDirectoriesAllowlist();
       mozilla::FilePreferences::InitPrefs();
 
@@ -680,12 +680,13 @@ void XRE_ShutdownChildProcess() {
 }
 
 namespace {
+
 UniqueContentParentKeepAlive& TestShellContentParent() {
   static NeverDestroyed<UniqueContentParentKeepAlive> sContentParent;
   return *sContentParent;
 }
 
-TestShellParent* GetOrCreateTestShellParent() {
+already_AddRefed<TestShellParent> GetOrCreateTestShellParent() {
   if (!TestShellContentParent()) {
     // Use a "web" child process by default.  File a bug if you don't like
     // this and you're sure you wouldn't be better off writing a "browser"
@@ -696,11 +697,13 @@ TestShellParent* GetOrCreateTestShellParent() {
   } else if (TestShellContentParent()->IsShuttingDown()) {
     return nullptr;
   }
-  TestShellParent* tsp = TestShellContentParent()->GetTestShellSingleton();
+
+  RefPtr<TestShellParent> tsp =
+      TestShellContentParent()->GetTestShellSingleton();
   if (!tsp) {
     tsp = TestShellContentParent()->CreateTestShell();
   }
-  return tsp;
+  return tsp.forget();
 }
 
 }  // namespace
@@ -708,7 +711,7 @@ TestShellParent* GetOrCreateTestShellParent() {
 bool XRE_SendTestShellCommand(JSContext* aCx, JSString* aCommand,
                               JS::Value* aCallback) {
   JS::Rooted<JSString*> cmd(aCx, aCommand);
-  TestShellParent* tsp = GetOrCreateTestShellParent();
+  RefPtr<TestShellParent> tsp = GetOrCreateTestShellParent();
   NS_ENSURE_TRUE(tsp, false);
 
   nsAutoJSString command;
@@ -733,8 +736,9 @@ bool XRE_ShutdownTestShell() {
   }
   bool ret = true;
   if (TestShellContentParent()->IsAlive()) {
-    ret = TestShellContentParent()->DestroyTestShell(
-        TestShellContentParent()->GetTestShellSingleton());
+    RefPtr<TestShellParent> tsp =
+        TestShellContentParent()->GetTestShellSingleton();
+    ret = TestShellContentParent()->DestroyTestShell(tsp);
   }
   TestShellContentParent().reset();
   return ret;

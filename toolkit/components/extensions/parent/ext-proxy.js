@@ -1,5 +1,3 @@
-/* -*- Mode: indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set sts=2 sw=2 et tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -103,6 +101,9 @@ function registerProxyFilterEvent(
   let listener = data => {
     if (isEarlyWakeupOnRequestEnabled && fire.wakeup) {
       // Starts the background script if it has not started, no-op otherwise.
+      // The default behavior of waking up via fire.sync() is insufficient
+      // because that awaits ExtensionParent.browserPaintedPromise, but it is
+      // possible to intercept system requests before that (bug 1870760).
       extension.emit("start-background-script");
     }
     return fire.sync(data);

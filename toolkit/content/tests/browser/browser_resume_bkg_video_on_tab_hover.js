@@ -41,7 +41,7 @@ async function check_should_send_unselected_tab_hover_msg(browser) {
     );
     return true;
   }
-  return BrowserTestUtils.waitForCondition(
+  return TestUtils.waitForCondition(
     () => browser.shouldHandleUnselectedTabHover,
     "Should send unselected tab hover msg, someone is listening for it."
   );
@@ -49,7 +49,7 @@ async function check_should_send_unselected_tab_hover_msg(browser) {
 
 async function check_should_not_send_unselected_tab_hover_msg(browser) {
   info("did not update the value now, wait until it changes.");
-  return BrowserTestUtils.waitForCondition(
+  return TestUtils.waitForCondition(
     () => !browser.shouldHandleUnselectedTabHover,
     "Should not send unselected tab hover msg, no one is listening for it."
   );
@@ -67,6 +67,8 @@ function get_video_decoding_suspend_promise(browser, reload) {
 function get_video_decoding_resume_promise(browser) {
   let suspend = false;
   let reload = false;
+  // TODO: Switch to SpecialPowers.spawn
+  // eslint-disable-next-line mozilla/reject-contenttask-spawn
   return ContentTask.spawn(
     browser,
     { suspend, reload },

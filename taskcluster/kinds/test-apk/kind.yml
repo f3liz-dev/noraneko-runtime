@@ -5,7 +5,7 @@
 loader: taskgraph.loader.transform:loader
 
 transforms:
-    - gecko_taskgraph.transforms.test_apk:transforms
+    - taskgraph.transforms.task_context
     # While not a build, the build optimization works well for these tasks.
     - gecko_taskgraph.transforms.build_schedules:transforms
     - gecko_taskgraph.transforms.job:transforms
@@ -32,6 +32,7 @@ task-defaults:
         build-fat-aar:
             - target.maven.zip
     run:
+        clone-with: hg
         using: gradlew
     treeherder:
         kind: test
@@ -45,8 +46,8 @@ tasks:
         description: Focus unit tests
         attributes:
             build-type: focus-debug
-            shipping-product: focus
         run:
+            clone-with: hg
             pre-gradlew:
                 - ["cd", "mobile/android/focus-android"]
             gradlew: ['clean', 'test']
@@ -59,19 +60,16 @@ tasks:
             tier: 1
         worker:
             artifacts:
-                - name: public/reports/index.html
-                  path: /builds/worker/workspace/obj-build/gradle/build/mobile/android/focus-android/app/reports/tests/testFocusDebugUnitTest/index.html
+                - name: public/reports/test-reports.zip
+                  path: /builds/worker/workspace/obj-build/gradle/build/mobile/android/focus-android/app/reports/test-reports.zip
                   type: file
-                - name: public/reports/test
-                  path: /builds/worker/workspace/obj-build/gradle/build/mobile/android/focus-android/app/reports/tests
-                  type: directory
 
     fenix-debug:
         description: Fenix unit tests
         attributes:
             build-type: fenix-debug
-            shipping-product: fenix
         run:
+            clone-with: hg
             pre-gradlew:
                 - ["cd", "mobile/android/fenix"]
                 - ['java', '-version']
@@ -82,12 +80,16 @@ tasks:
             tier: 1
         worker:
             artifacts:
-                - name: public/reports/index.html
-                  path: /builds/worker/workspace/obj-build/gradle/build/mobile/android/fenix/app/reports/tests/testDebugUnitTest/index.html
+                - name: public/reports/test-reports.zip
+                  path: /builds/worker/workspace/obj-build/gradle/build/mobile/android/fenix/app/reports/test-reports.zip
                   type: file
-                - name: public/reports/test
-                  path: /builds/worker/workspace/obj-build/gradle/build/mobile/android/fenix/app/reports/tests
-                  type: directory
+        task-context:
+            from-parameters:
+                level: level
+            substitution-fields:
+                - routes
+                - scopes
+                - extra.notify
         routes:
             by-level:
                 '3':
@@ -105,55 +107,55 @@ tasks:
                     '3':
                         slackBlocks: |
                             [
-                              {
+                              {{
                                 "type": "header",
-                                "text": {
+                                "text": {{
                                   "type": "plain_text",
-                                  "text": "firefox-android :firefox: ${task.metadata.name} :x:\n "
-                                }
-                              },
-                              {
+                                  "text": "firefox-android :firefox: ${{task.metadata.name}} :x:\n "
+                                }}
+                              }},
+                              {{
                                 "type": "divider"
-                              },
-                              {
+                              }},
+                              {{
                                  "type": "section",
-                                 "text": {
+                                 "text": {{
                                      "type": "mrkdwn",
-                                     "text": "*Task*: <https://firefox-ci-tc.services.mozilla.com/tasks/${status.taskId}|Taskcluster>"
-                                }
-                              },
-                              {
+                                     "text": "*Task*: <https://firefox-ci-tc.services.mozilla.com/tasks/${{status.taskId}}|Taskcluster>"
+                                }}
+                              }},
+                              {{
                                 "type": "section",
-                                "text": {
+                                "text": {{
                                   "type": "mrkdwn",
-                                  "text": "*Owner*: ${task.metadata.owner}"
-                                }
-                              },
-                              {
+                                  "text": "*Owner*: ${{task.metadata.owner}}"
+                                }}
+                              }},
+                              {{
                                 "type": "section",
-                                "text": {
+                                "text": {{
                                   "type": "mrkdwn",
-                                  "text": "*Source*: <${task.payload.env.GECKO_HEAD_REPOSITORY}/rev/${task.payload.env.GECKO_HEAD_REV}|Commit> :hg:"
-                                }
-                              },
-                              {
+                                  "text": "*Source*: <${{task.payload.env.GECKO_HEAD_REPOSITORY}}/rev/${{task.payload.env.GECKO_HEAD_REV}}|Commit> :hg:"
+                                }}
+                              }},
+                              {{
                                 "type": "section",
-                                "text": {
+                                "text": {{
                                   "type": "mrkdwn",
-                                  "text": "*Test Summary*: <https://firefoxci.taskcluster-artifacts.net/${status.taskId}/0/public/reports/index.html|Results> :debug:"
-                                }
-                              },
-                              {
+                                  "text": "*Test Log*: <https://firefox-ci-tc.services.mozilla.com/tasks/${{status.taskId}}/runs/0/logs/public/logs/live_backing.log|Build Log> :debug:"
+                                }}
+                              }},
+                              {{
                                 "type": "divider"
-                              },
-                              {
+                              }},
+                              {{
                                 "type": "context",
                                 "elements": [
-                                    {
+                                    {{
                                         "type": "mrkdwn",
                                         "text": ":testops-notify: created by <https://mozilla-hub.atlassian.net/wiki/spaces/MTE/overview|Mobile Test Engineering>"
-                                    }
+                                    }}
                                 ]
-                              }
+                              }}
                             ]
                     'default': {}

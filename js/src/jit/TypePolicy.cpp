@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -1058,9 +1056,7 @@ bool ClampPolicy::adjustInputs(TempAllocator& alloc, MInstruction* ins) const {
   _(TruncateToInt32OrToInt64Policy<2>)                                        \
   _(MixPolicy<ObjectPolicy<0>, StringPolicy<1>, BoxPolicy<2>>)                \
   _(MixPolicy<ObjectPolicy<0>, BoxPolicy<1>, BoxPolicy<2>>)                   \
-  IF_EXPLICIT_RESOURCE_MANAGEMENT(                                            \
-      _(MixPolicy<ObjectPolicy<0>, BoxPolicy<1>, BoxPolicy<2>,                \
-                  BooleanPolicy<3>>))                                         \
+  _(MixPolicy<ObjectPolicy<0>, BoxPolicy<1>, BoxPolicy<2>, BooleanPolicy<3>>) \
   _(MixPolicy<ObjectPolicy<0>, BoxPolicy<1>, ObjectPolicy<2>>)                \
   _(MixPolicy<ObjectPolicy<0>, BoxPolicy<1>, UnboxedInt32Policy<2>>)          \
   _(MixPolicy<ObjectPolicy<0>, UnboxedInt32Policy<1>, BoxPolicy<2>>)          \

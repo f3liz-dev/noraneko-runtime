@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -36,6 +34,7 @@ using gfx::IntSize;
 
 using layers::FrameMetrics;
 using layers::ScrollableLayerGuid;
+using NonZeroScrollRangeOnly = ScrollContainerFrame::NonZeroScrollRangeOnly;
 
 typedef ScrollableLayerGuid::ViewID ViewID;
 
@@ -824,7 +823,7 @@ bool DisplayPortUtils::MaybeCreateDisplayPort(
   // will get a displayport.
   MOZ_ASSERT(nsLayoutUtils::AsyncPanZoomEnabled(aScrollContainerFrame));
   if (!aBuilder->HaveScrollableDisplayPort() &&
-      aScrollContainerFrame->WantAsyncScroll()) {
+      aScrollContainerFrame->WantAsyncScroll(NonZeroScrollRangeOnly::Yes)) {
     bool haveDisplayPort = HasNonMinimalNonZeroDisplayPort(content);
     // If we don't already have a displayport, calculate and set one.
     if (!haveDisplayPort) {
@@ -838,6 +837,7 @@ bool DisplayPortUtils::MaybeCreateDisplayPort(
           ("Setting DP on first-encountered scrollId=%" PRIu64 "\n", viewId));
 
       CalculateAndSetDisplayPortMargins(aScrollContainerFrame, aRepaintMode);
+      SetZeroMarginDisplayPortOnAsyncScrollableAncestors(aScrollContainerFrame);
 #ifdef DEBUG
       haveDisplayPort = HasNonMinimalDisplayPort(content);
       MOZ_ASSERT(haveDisplayPort,
@@ -880,10 +880,29 @@ void DisplayPortUtils::SetZeroMarginDisplayPortOnAsyncScrollableAncestors(
 
 bool DisplayPortUtils::MaybeCreateDisplayPortInFirstScrollFrameEncountered(
     nsIFrame* aFrame, nsDisplayListBuilder* aBuilder) {
-  // Don't descend into the tab bar in chrome, it can be very large and does not
-  // contain any async scrollable elements.
+  // Don't descend into the tab bar in chrome, it can be very large. The only
+  // async scrollable element it contains is its own scroll container, which
+  // arrowscrollbox.js puts directly inside the host, so we can give that a
+  // displayport without ever walking the tabs inside it. See also the comment
+  // in navigator-toolbox.inc.xhtml.
+  //
+  // Once bug 1970536 gives the horizontal strip a scroll container too, the
+  // code below will find the scroller on its own whenever the strip is
+  // overflowing, and this may be able to go away.
   if (XRE_IsParentProcess() && aFrame->GetContent() &&
       aFrame->GetContent()->GetID() == nsGkAtoms::tabbrowser_arrowscrollbox) {
+    for (nsIFrame* child : aFrame->PrincipalChildList()) {
+      if (!child->IsScrollContainerOrSubclass()) {
+        continue;
+      }
+      ScrollContainerFrame* sf = static_cast<ScrollContainerFrame*>(child);
+      if (MaybeCreateDisplayPort(aBuilder, sf, RepaintMode::Repaint)) {
+        // See the comment on the same call below.
+        sf->SetIsFirstScrollableFrameSequenceNumber(
+            Some(nsDisplayListBuilder::GetPaintSequenceNumber()));
+        return true;
+      }
+    }
     return false;
   }
   if (aFrame->IsScrollContainerOrSubclass()) {
@@ -1258,12 +1277,8 @@ const ActiveScrolledRoot* DisplayPortUtils::ActivateDisplayportOnASRAncestors(
              : FrameAndASRKind::default_value()) ==
         GetASRAncestorFrame(OneStepInASRChain(asrFrame, aBuilder), aBuilder));
 
-    asr = (asrFrame.mASRKind == ActiveScrolledRoot::ASRKind::Scroll)
-              ? aBuilder->GetOrCreateActiveScrolledRoot(
-                    asr, static_cast<ScrollContainerFrame*>(
-                             do_QueryFrame(asrFrame.mFrame)))
-              : aBuilder->GetOrCreateActiveScrolledRootForSticky(
-                    asr, asrFrame.mFrame);
+    asr = aBuilder->GetOrCreateActiveScrolledRoot(asr, asrFrame.mFrame,
+                                                  asrFrame.mASRKind);
   }
   return asr;
 }

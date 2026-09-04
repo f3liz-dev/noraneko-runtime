@@ -7,6 +7,7 @@
 const { require } = ChromeUtils.importESModule(
   "resource://devtools/shared/loader/Loader.sys.mjs"
 );
+
 const {
   CommandsFactory,
 } = require("resource://devtools/shared/commands/commands-factory.js");
@@ -21,9 +22,9 @@ const {
 } = require("resource://devtools/server/actors/inspector/document-walker.js");
 
 // Always log packets when running tests.
-Services.prefs.setBoolPref("devtools.debugger.log", true);
+Services.prefs.setIntPref("logging.devtools_rdp", 5);
 SimpleTest.registerCleanupFunction(function () {
-  Services.prefs.clearUserPref("devtools.debugger.log");
+  Services.prefs.clearUserPref("logging.devtools_rdp");
 });
 
 if (!DevToolsServer.initialized) {
@@ -60,7 +61,12 @@ async function attachURL(url) {
   // event to its opener (the test page). This window reference is used within
   // the test tab, to reference the webpage being tested against, which is in another
   // tab.
-  const windowOpened = BrowserTestUtils.waitForNewTab(gBrowser, url);
+  const windowOpened = BrowserTestUtils.waitForNewTab(
+    gBrowser,
+    url,
+    // waitForLoad = true
+    true
+  );
   const win = window.open(url, "_blank");
   await windowOpened;
 

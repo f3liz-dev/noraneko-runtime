@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 sw=2 tw=80 et: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,17 +7,16 @@
  * to generate (one or more) ocsp responses.
  */
 
+#include "OCSPCommon.h"
+#include "ScopedNSSTypes.h"
+#include "TLSServer.h"
 #include "cert.h"
 #include "nspr.h"
 #include "nss.h"
 #include "plarenas.h"
 #include "prerror.h"
-#include "ssl.h"
 #include "secerr.h"
-
-#include "OCSPCommon.h"
-#include "ScopedNSSTypes.h"
-#include "TLSServer.h"
+#include "ssl.h"
 
 using namespace mozilla;
 using namespace mozilla::test;

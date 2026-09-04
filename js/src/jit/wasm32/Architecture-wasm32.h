@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -10,7 +8,6 @@
 // JitSpewer.h is included through MacroAssembler implementations for other
 // platforms, so include it here to avoid inadvertent build bustage.
 #include "jit/JitSpewer.h"
-
 #include "jit/shared/Architecture-shared.h"
 
 namespace js::jit {
@@ -158,7 +155,6 @@ struct FloatRegister {
   }
 };
 
-inline bool hasUnaliasedDouble() { MOZ_CRASH(); }
 inline bool hasMultiAlias() { MOZ_CRASH(); }
 
 static constexpr uint32_t ShadowStackSpace = 0;

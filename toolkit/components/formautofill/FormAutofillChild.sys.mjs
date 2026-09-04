@@ -7,12 +7,13 @@ import { AppConstants } from "resource://gre/modules/AppConstants.sys.mjs";
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
-  AddressResult: "resource://autofill/ProfileAutoCompleteResult.sys.mjs",
+  AutofillDataTypes: "resource://gre/modules/shared/AutofillDataTypes.sys.mjs",
   AutofillFormFactory:
     "resource://gre/modules/shared/AutofillFormFactory.sys.mjs",
   AutofillTelemetry: "resource://gre/modules/shared/AutofillTelemetry.sys.mjs",
-  CreditCardResult: "resource://autofill/ProfileAutoCompleteResult.sys.mjs",
   GenericAutocompleteItem: "resource://gre/modules/FillHelpers.sys.mjs",
+  ProfileAutoCompleteResult:
+    "resource://autofill/ProfileAutoCompleteResult.sys.mjs",
   InsecurePasswordUtils: "resource://gre/modules/InsecurePasswordUtils.sys.mjs",
   FieldDetail: "resource://gre/modules/shared/FieldScanner.sys.mjs",
   FormAutofill: "resource://autofill/FormAutofill.sys.mjs",
@@ -34,7 +35,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
 class FormFillFocusListener {
   handleFocus(element) {
     let actor =
-      element.ownerGlobal?.windowGlobalChild?.getActor("FormAutofill");
+      element.documentGlobal.windowGlobalChild?.getActor("FormAutofill");
     return actor?.handleFocus(element);
   }
 
@@ -129,26 +130,36 @@ export class FormAutofillChild extends JSWindowActorChild {
       handler.setIdentifiedFieldDetails(fieldDetails);
       handler.setUpDynamicFormChangeObserver();
 
-      let addressFields = [];
-      let creditcardFields = [];
-
-      handler.fieldDetails.forEach(fd => {
-        if (lazy.FormAutofillUtils.isAddressField(fd.fieldName)) {
-          addressFields.push(fd);
-        } else if (lazy.FormAutofillUtils.isCreditCardField(fd.fieldName)) {
-          creditcardFields.push(fd);
+      // Collect every detected field, plus the address fields separately for
+      // the address-specific handling below.
+      let fields = [];
+      const addressFields = [];
+      for (const fd of handler.fieldDetails) {
+        const typeId = lazy.AutofillDataTypes.typeIdForFieldName(fd.fieldName);
+        if (!typeId) {
+          continue;
         }
-      });
+        fields.push(fd);
+        if (typeId == lazy.AutofillDataTypes.ADDRESS) {
+          addressFields.push(fd);
+        }
+      }
 
-      // Bug 1905040. This is only a temporarily workaround for now to skip marking address fields
-      // autocompletable whenever we detect an address field. We only mark address field when
-      // it is a valid address section (This is done in the parent)
-      if (!lazy.FormAutofillUtils.isValidSection(addressFields)) {
-        addressFields = [];
+      // Bug 1905040. This is only a temporarily workaround for now to skip
+      // marking address fields autocompletable whenever we detect an address
+      // field. We only mark address field when it is a valid address section
+      // (This is done in the parent). Drop the address fields when they don't
+      // yet form a valid section; other data types are offered as soon as they
+      // are detected.
+      if (
+        addressFields.length &&
+        !lazy.FormAutofillUtils.isValidSection(addressFields)
+      ) {
+        fields = fields.filter(field => !addressFields.includes(field));
       }
 
       // Inform the autocomplete controller these fields are autofillable
-      [...addressFields, ...creditcardFields].forEach(fieldDetail => {
+      for (const fieldDetail of fields) {
         this.#markAsAutofillField(fieldDetail);
 
         if (
@@ -157,7 +168,7 @@ export class FormAutofillChild extends JSWindowActorChild {
         ) {
           this.showPopupIfEmpty(fieldDetail.element, fieldDetail.fieldName);
         }
-      });
+      }
 
       if (isUpdate) {
         // The fields detection was re-run because of a form change, this means
@@ -166,20 +177,22 @@ export class FormAutofillChild extends JSWindowActorChild {
         return;
       }
 
-      // Do not need to listen to form submission event because if the address fields do not contain
-      // 'street-address' or `address-linx`, we will not save the address.
-      if (
-        creditcardFields.length ||
-        (addressFields.length &&
-          [
-            "street-address",
-            "address-line1",
-            "address-line2",
-            "address-line3",
-          ].some(fieldName =>
-            addressFields.some(fd => fd.fieldName == fieldName)
-          ))
-      ) {
+      // Listen for form submission only if a remaining field is worth saving.
+      // An address is saved only when it has a 'street-address'/'address-linex'
+      // field; any other data type is saved as soon as one of its fields is
+      // present.
+      const STREET_ADDRESS_FIELDS = [
+        "street-address",
+        "address-line1",
+        "address-line2",
+        "address-line3",
+      ];
+      const worthCapturing = fields.some(field =>
+        addressFields.includes(field)
+          ? STREET_ADDRESS_FIELDS.includes(field.fieldName)
+          : true
+      );
+      if (worthCapturing) {
         this.manager
           .getActor("FormHandler")
           .registerFormSubmissionInterest(this, {
@@ -285,17 +298,18 @@ export class FormAutofillChild extends JSWindowActorChild {
         handler.form
       );
 
-      // If none of the detected fields are credit card or address fields,
-      // there's no need to notify the parent because nothing will change.
-      if (
-        !detectedFields.some(
-          fd =>
-            lazy.FormAutofillUtils.isCreditCardField(fd.fieldName) ||
-            lazy.FormAutofillUtils.isAddressField(fd.fieldName)
-        )
-      ) {
-        handler.setIdentifiedFieldDetails(detectedFields);
-        return null;
+      if (!lazy.FormAutofillUtils.useMLInference) {
+        // If none of the detected fields belong to a known data type, there's
+        // no need to notify the parent because nothing will change.
+        if (
+          !detectedFields.some(
+            fd =>
+              lazy.AutofillDataTypes.typeIdForFieldName(fd.fieldName) != null
+          )
+        ) {
+          handler.setIdentifiedFieldDetails(detectedFields);
+          return null;
+        }
       }
 
       return new Promise(resolve => {
@@ -364,6 +378,20 @@ export class FormAutofillChild extends JSWindowActorChild {
   showPopupIfEmpty(element, fieldName) {
     if (element?.value?.length !== 0) {
       this.debug(`Not opening popup because field is not empty.`);
+      return;
+    }
+
+    const method = Services.focus.getLastFocusMethod(this.contentWindow);
+    const isProgrammatic = !!(method & Ci.nsIFocusManager.FLAG_BYJS);
+    const skipCheck = Services.prefs.getBoolPref(
+      "extensions.formautofill.skipProgrammaticCheckForTests",
+      false
+    );
+
+    if (isProgrammatic && !skipCheck) {
+      this.debug(
+        "showPopupIfEmpty: Suppressing automated popup due to programmatic focus."
+      );
       return;
     }
 
@@ -444,10 +472,7 @@ export class FormAutofillChild extends JSWindowActorChild {
       return true;
     }
 
-    if (
-      !lazy.FormAutofill.isAutofillCreditCardsAvailable &&
-      !lazy.FormAutofill.isAutofillAddressesAvailable
-    ) {
+    if (!lazy.FormAutofill.isAnyAutofillFeatureAvailable) {
       return true;
     }
 
@@ -478,7 +503,6 @@ export class FormAutofillChild extends JSWindowActorChild {
 
         if (!gFormFillFocusListener) {
           gFormFillFocusListener = new FormFillFocusListener();
-
           const formFillController = Cc[
             "@mozilla.org/satchel/form-fill-controller;1"
           ].getService(Ci.nsIFormFillController);
@@ -783,7 +807,14 @@ export class FormAutofillChild extends JSWindowActorChild {
           this._fieldDetailsManager.getFormHandlerByRootElementId(
             rootElementId
           );
-        return handler?.collectFormFilledData();
+        if (!handler) {
+          return undefined;
+        }
+        // The fields may not have been identified yet when a subframe is asked
+        // for its filled data, in which case nothing was filled in it.
+        return handler.hasIdentifiedFields()
+          ? handler.collectFormFilledData()
+          : new Map();
       }
       case "FormAutofill:InspectFields": {
         const fieldDetails = this.inspectFields();
@@ -839,7 +870,7 @@ export class FormAutofillChild extends JSWindowActorChild {
     }
 
     // The `domWin` truthiness test is used by unit tests to bypass this check.
-    const domWin = formElement.ownerGlobal;
+    const domWin = formElement.documentGlobal;
     if (!domWin) {
       return;
     }
@@ -856,6 +887,13 @@ export class FormAutofillChild extends JSWindowActorChild {
     }
 
     if (this.#handlerWaitingForFormSubmissionComplete.has(handler)) {
+      return;
+    }
+
+    // The form can be submitted before the parent replies with the identified
+    // fields, in which case nothing was filled and there is nothing to record.
+    if (!handler.hasIdentifiedFields()) {
+      this.debug("Fields have not been identified yet");
       return;
     }
 
@@ -1093,12 +1131,9 @@ export class FormAutofillChild extends JSWindowActorChild {
       return false;
     }
     const fieldName = fieldDetail.fieldName;
-    const isAddressField = lazy.FormAutofillUtils.isAddressField(fieldName);
-    const searchPermitted = isAddressField
-      ? lazy.FormAutofill.isAutofillAddressesEnabled
-      : lazy.FormAutofill.isAutofillCreditCardsEnabled;
-    // If the specified autofill feature is pref off, do not search
-    if (!searchPermitted) {
+    const typeId = lazy.AutofillDataTypes.typeIdForFieldName(fieldName);
+    // If the field's autofill feature is pref off, do not search.
+    if (!lazy.FormAutofill.isAutofillTypeEnabled(typeId)) {
       return false;
     }
 
@@ -1139,13 +1174,11 @@ export class FormAutofillChild extends JSWindowActorChild {
     const isInputAutofilled =
       input.autofillState == lazy.FormAutofillUtils.FIELD_STATES.AUTO_FILLED;
 
-    const AutocompleteResult = lazy.FormAutofillUtils.isAddressField(
+    const typeId = lazy.AutofillDataTypes.typeIdForFieldName(
       fieldDetail.fieldName
-    )
-      ? lazy.AddressResult
-      : lazy.CreditCardResult;
-
-    const acResult = new AutocompleteResult(
+    );
+    const acResult = lazy.ProfileAutoCompleteResult.createResult(
+      typeId,
       searchString,
       fieldDetail,
       records.allFieldNames,

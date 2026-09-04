@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -28,13 +27,16 @@ class nsAlertsIconListener : public nsISupports {
                        nsIAlertNotification* aAlertNotification,
                        const nsAString& aAlertName);
 
-  nsresult InitAlert(nsIAlertNotification* aAlert, nsIObserver* aAlertListener);
+  nsresult InitAlert(nsIAlertNotification* aAlert,
+                     nsIAlertCallbacks* aAlertCallbacks);
   nsresult Close();
 
   void SendCallback();
   void SendActionCallback(const nsAString& aActionName);
   void SendClosed();
   void Disconnect();
+
+  static void MaybeSetActivationToken(NotifyNotification* aNotification);
 
  protected:
   virtual ~nsAlertsIconListener();
@@ -64,13 +66,14 @@ class nsAlertsIconListener : public nsISupports {
   using notify_notification_set_hint_t = void (*)(NotifyNotification*,
                                                   const char*, GVariant*);
   using notify_notification_set_timeout_t = void (*)(NotifyNotification*, gint);
+  using notify_notification_get_activation_token_t =
+      const char* (*)(NotifyNotification*);
 
   nsCOMPtr<nsICancelable> mIconRequest;
   nsCString mAlertTitle;
   nsCString mAlertText;
 
-  nsCOMPtr<nsIObserver> mAlertListener;
-  nsString mAlertCookie;
+  nsCOMPtr<nsIAlertCallbacks> mAlertCallbacks;
   nsString mAlertName;
 
   RefPtr<nsSystemAlertsService> mBackend;
@@ -94,6 +97,8 @@ class nsAlertsIconListener : public nsISupports {
   static notify_notification_close_t notify_notification_close;
   static notify_notification_set_hint_t notify_notification_set_hint;
   static notify_notification_set_timeout_t notify_notification_set_timeout;
+  static notify_notification_get_activation_token_t
+      notify_notification_get_activation_token;
   NotifyNotification* mNotification = nullptr;
   gulong mClosureHandler = 0;
 

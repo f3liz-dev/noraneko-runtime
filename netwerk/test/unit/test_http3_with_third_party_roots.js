@@ -64,6 +64,11 @@ add_setup(async function setup() {
 });
 
 async function do_test(host, expectedVersion) {
+  let nssComponent = Cc["@mozilla.org/network/ssl-tokens-cache;1"].getService(
+    Ci.nsISSLTokensCache
+  );
+  await nssComponent.asyncClearSSLExternalAndInternalSessionCache();
+
   Services.obs.notifyObservers(null, "net:cancel-all-connections");
   // eslint-disable-next-line mozilla/no-arbitrary-setTimeout
   await new Promise(resolve => setTimeout(resolve, 3000));

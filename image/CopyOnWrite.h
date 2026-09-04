@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -11,8 +10,8 @@
 #ifndef mozilla_image_CopyOnWrite_h
 #define mozilla_image_CopyOnWrite_h
 
-#include "mozilla/RefPtr.h"
 #include "MainThreadUtils.h"
+#include "mozilla/RefPtr.h"
 #include "nsISupportsImpl.h"
 
 namespace mozilla {
@@ -33,12 +32,12 @@ class CopyOnWriteValue final {
       : mValue(aValue), mReaders(0), mWriter(false) {}
   explicit CopyOnWriteValue(already_AddRefed<T>& aValue)
       : mValue(aValue), mReaders(0), mWriter(false) {}
-  explicit CopyOnWriteValue(already_AddRefed<T>&& aValue)
+  explicit CopyOnWriteValue(already_AddRefed<T> aValue)
       : mValue(aValue), mReaders(0), mWriter(false) {}
   explicit CopyOnWriteValue(const RefPtr<T>& aValue)
       : mValue(aValue), mReaders(0), mWriter(false) {}
   explicit CopyOnWriteValue(RefPtr<T>&& aValue)
-      : mValue(aValue), mReaders(0), mWriter(false) {}
+      : mValue(std::move(aValue)), mReaders(0), mWriter(false) {}
 
   T* get() { return mValue.get(); }
   const T* get() const { return mValue.get(); }
@@ -118,19 +117,20 @@ class CopyOnWrite final {
   typedef detail::CopyOnWriteValue<T> CopyOnWriteValue;
 
  public:
-  explicit CopyOnWrite(T* aValue) : mValue(new CopyOnWriteValue(aValue)) {}
+  explicit CopyOnWrite(T* aValue)
+      : mValue(MakeRefPtr<CopyOnWriteValue>(aValue)) {}
 
   explicit CopyOnWrite(already_AddRefed<T>& aValue)
-      : mValue(new CopyOnWriteValue(aValue)) {}
+      : mValue(MakeRefPtr<CopyOnWriteValue>(aValue)) {}
 
-  explicit CopyOnWrite(already_AddRefed<T>&& aValue)
-      : mValue(new CopyOnWriteValue(aValue)) {}
+  explicit CopyOnWrite(already_AddRefed<T> aValue)
+      : mValue(MakeRefPtr<CopyOnWriteValue>(aValue)) {}
 
   explicit CopyOnWrite(const RefPtr<T>& aValue)
-      : mValue(new CopyOnWriteValue(aValue)) {}
+      : mValue(MakeRefPtr<CopyOnWriteValue>(aValue)) {}
 
   explicit CopyOnWrite(RefPtr<T>&& aValue)
-      : mValue(new CopyOnWriteValue(aValue)) {}
+      : mValue(MakeRefPtr<CopyOnWriteValue>(std::move(aValue))) {}
 
   /// @return true if it's safe to read at this time.
   bool CanRead() const { return !mValue->HasWriter(); }
@@ -199,7 +199,7 @@ class CopyOnWrite final {
 
     // If there are readers, we need to copy first.
     if (mValue->HasReaders()) {
-      mValue = new CopyOnWriteValue(new T(*mValue->get()));
+      mValue = MakeRefPtr<CopyOnWriteValue>(MakeRefPtr<T>(*mValue->get()));
     }
 
     // Run the provided function while holding a write lock.

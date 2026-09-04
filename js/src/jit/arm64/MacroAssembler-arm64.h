@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -8,7 +6,6 @@
 #define jit_arm64_MacroAssembler_arm64_h
 
 #include "jit/arm64/Assembler-arm64.h"
-#include "jit/arm64/vixl/Debugger-vixl.h"
 #include "jit/arm64/vixl/MacroAssembler-vixl.h"
 #include "jit/AtomicOp.h"
 #include "jit/MoveResolver.h"
@@ -75,10 +72,13 @@ class MacroAssemblerCompat : public vixl::MacroAssembler {
     return ARMRegister(AsRegister(r), size);
   }
   static MemOperand toMemOperand(const Address& a) {
+    MOZ_ASSERT(a.base.code != Registers::xzr, "Unexpected XZR");
     return MemOperand(toARMRegister(a.base, 64), a.offset);
   }
-  FaultingCodeOffset doBaseIndex(const vixl::CPURegister& rt,
-                                 const BaseIndex& addr, vixl::LoadStoreOp op) {
+  FaultingCodeRange doBaseIndex(const vixl::CPURegister& rt,
+                                const BaseIndex& addr, vixl::LoadStoreOp op) {
+    MOZ_ASSERT(addr.base.code != Registers::xzr, "Unexpected XZR");
+    MOZ_ASSERT(addr.index.code() != Registers::xzr, "Unexpected XZR");
     const ARMRegister base = toARMRegister(addr.base, 64);
     const ARMRegister index = ARMRegister(addr.index, 64);
     const unsigned scale = addr.scale;
@@ -239,7 +239,7 @@ class MacroAssemblerCompat : public vixl::MacroAssembler {
 #endif
   }
   // In debug builds only, add a marker that doesn't change the machine's
-  // state.  Note these markers are x16-based, as opposed to the x28-based
+  // state.  Note these markers are x16-based, as opposed to the x20-based
   // ones made by `assertStackPtrsSynced`.
   void addMarker(uint32_t id) {
 #ifdef DEBUG
@@ -619,6 +619,13 @@ class MacroAssemblerCompat : public vixl::MacroAssembler {
     Fcmp(scratch64, fsrc64);
     B(fail, Assembler::NotEqual);
 
+    // Fcvtzs saturates, and INT64_MAX isn't representable as a double, so Scvtf
+    // rounds it back up to exactly 2^63 and the round-trip check above can't
+    // tell a saturated result apart from an exact one.  The negative direction
+    // needs no such check because INT64_MIN is exactly representable.
+    Cmn(dest64, 1);  // Overflow iff dest64 == INT64_MAX.
+    B(fail, Assembler::Overflow);
+
     if (negativeZeroCheck) {
       Label nonzero;
       Cbnz(dest64, &nonzero);
@@ -657,9 +664,11 @@ class MacroAssemblerCompat : public vixl::MacroAssembler {
   void jump(Label* label) { B(label); }
   void jump(JitCode* code) { branch(code); }
   void jump(ImmPtr ptr) {
+    // CodeFromJump doesn't support nop sequences.
+    AutoForbidNops afn(this);
+
     // It is unclear why this sync is necessary:
-    // * PSP and SP have been observed to be different in testcase
-    //   tests/asm.js/testBug1046688.js.
+    // * PSP and SP have been observed to be different. See bug 1046688.
     // * Removing the sync causes no failures in all of jit-tests.
     //
     // Also see branch(JitCode*) below. This version of jump() is called only
@@ -737,10 +746,12 @@ class MacroAssemblerCompat : public vixl::MacroAssembler {
     movePtr(ImmWord((uintptr_t)address.addr), scratch.asUnsized());
     Ldr(ARMRegister(dest, 64), MemOperand(scratch));
   }
-  FaultingCodeOffset loadPtr(const Address& address, Register dest) {
+  FaultingCodeRange loadPtr(const Address& address, Register dest) {
     return Ldr(ARMRegister(dest, 64), MemOperand(address));
   }
-  FaultingCodeOffset loadPtr(const BaseIndex& src, Register dest) {
+  FaultingCodeRange loadPtr(const BaseIndex& src, Register dest) {
+    MOZ_ASSERT(src.base.code != Registers::xzr, "Unexpected XZR");
+    MOZ_ASSERT(src.index.code() != Registers::xzr, "Unexpected XZR");
     ARMRegister base = toARMRegister(src.base, 64);
     uint32_t scale = Imm32::ShiftOf(src.scale).value;
     ARMRegister dest64(dest, 64);
@@ -761,20 +772,28 @@ class MacroAssemblerCompat : public vixl::MacroAssembler {
   }
   void loadPrivate(const Address& src, Register dest);
 
-  FaultingCodeOffset store8(Register src, const Address& address) {
+  FaultingCodeRange store8(Register src, const Address& address) {
     return Strb(ARMRegister(src, 32), toMemOperand(address));
   }
   void store8(Imm32 imm, const Address& address) {
+    if (imm.value == 0) {
+      Strb(vixl::wzr, toMemOperand(address));
+      return;
+    }
     vixl::UseScratchRegisterScope temps(this);
     const ARMRegister scratch32 = temps.AcquireW();
     MOZ_ASSERT(scratch32.asUnsized() != address.base);
     move32(imm, scratch32.asUnsized());
     Strb(scratch32, toMemOperand(address));
   }
-  FaultingCodeOffset store8(Register src, const BaseIndex& address) {
+  FaultingCodeRange store8(Register src, const BaseIndex& address) {
     return doBaseIndex(ARMRegister(src, 32), address, vixl::STRB_w);
   }
   void store8(Imm32 imm, const BaseIndex& address) {
+    if (imm.value == 0) {
+      doBaseIndex(vixl::wzr, address, vixl::STRB_w);
+      return;
+    }
     vixl::UseScratchRegisterScope temps(this);
     const ARMRegister scratch32 = temps.AcquireW();
     MOZ_ASSERT(scratch32.asUnsized() != address.base);
@@ -783,20 +802,28 @@ class MacroAssemblerCompat : public vixl::MacroAssembler {
     doBaseIndex(scratch32, address, vixl::STRB_w);
   }
 
-  FaultingCodeOffset store16(Register src, const Address& address) {
+  FaultingCodeRange store16(Register src, const Address& address) {
     return Strh(ARMRegister(src, 32), toMemOperand(address));
   }
   void store16(Imm32 imm, const Address& address) {
+    if (imm.value == 0) {
+      Strh(vixl::wzr, toMemOperand(address));
+      return;
+    }
     vixl::UseScratchRegisterScope temps(this);
     const ARMRegister scratch32 = temps.AcquireW();
     MOZ_ASSERT(scratch32.asUnsized() != address.base);
     move32(imm, scratch32.asUnsized());
     Strh(scratch32, toMemOperand(address));
   }
-  FaultingCodeOffset store16(Register src, const BaseIndex& address) {
+  FaultingCodeRange store16(Register src, const BaseIndex& address) {
     return doBaseIndex(ARMRegister(src, 32), address, vixl::STRH_w);
   }
   void store16(Imm32 imm, const BaseIndex& address) {
+    if (imm.value == 0) {
+      doBaseIndex(vixl::wzr, address, vixl::STRH_w);
+      return;
+    }
     vixl::UseScratchRegisterScope temps(this);
     const ARMRegister scratch32 = temps.AcquireW();
     MOZ_ASSERT(scratch32.asUnsized() != address.base);
@@ -809,12 +836,15 @@ class MacroAssemblerCompat : public vixl::MacroAssembler {
     store16(src, dest);
   }
 
-  void storePtr(ImmWord imm, const Address& address) {
+  FaultingCodeRange storePtr(ImmWord imm, const Address& address) {
+    if (imm.value == 0) {
+      return Str(vixl::xzr, toMemOperand(address));
+    }
     vixl::UseScratchRegisterScope temps(this);
     const Register scratch = temps.AcquireX().asUnsized();
     MOZ_ASSERT(scratch != address.base);
     movePtr(imm, scratch);
-    storePtr(scratch, address);
+    return storePtr(scratch, address);
   }
   void storePtr(ImmPtr imm, const Address& address) {
     vixl::UseScratchRegisterScope temps(this);
@@ -830,17 +860,20 @@ class MacroAssemblerCompat : public vixl::MacroAssembler {
     movePtr(imm, scratch);
     storePtr(scratch, address);
   }
-  FaultingCodeOffset storePtr(Register src, const Address& address) {
+  FaultingCodeRange storePtr(Register src, const Address& address) {
     return Str(ARMRegister(src, 64), toMemOperand(address));
   }
 
-  void storePtr(ImmWord imm, const BaseIndex& address) {
+  FaultingCodeRange storePtr(ImmWord imm, const BaseIndex& address) {
+    if (imm.value == 0) {
+      return doBaseIndex(vixl::xzr, address, vixl::STR_x);
+    }
     vixl::UseScratchRegisterScope temps(this);
     const ARMRegister scratch64 = temps.AcquireX();
     MOZ_ASSERT(scratch64.asUnsized() != address.base);
     MOZ_ASSERT(scratch64.asUnsized() != address.index);
     Mov(scratch64, Operand(imm.value));
-    doBaseIndex(scratch64, address, vixl::STR_x);
+    return doBaseIndex(scratch64, address, vixl::STR_x);
   }
   void storePtr(ImmGCPtr imm, const BaseIndex& address) {
     vixl::UseScratchRegisterScope temps(this);
@@ -850,7 +883,7 @@ class MacroAssemblerCompat : public vixl::MacroAssembler {
     movePtr(imm, scratch);
     doBaseIndex(ARMRegister(scratch, 64), address, vixl::STR_x);
   }
-  FaultingCodeOffset storePtr(Register src, const BaseIndex& address) {
+  FaultingCodeRange storePtr(Register src, const BaseIndex& address) {
     return doBaseIndex(ARMRegister(src, 64), address, vixl::STR_x);
   }
 
@@ -868,16 +901,24 @@ class MacroAssemblerCompat : public vixl::MacroAssembler {
     Str(ARMRegister(src, 32), MemOperand(scratch64));
   }
   void store32(Imm32 imm, const Address& address) {
+    if (imm.value == 0) {
+      Str(vixl::wzr, toMemOperand(address));
+      return;
+    }
     vixl::UseScratchRegisterScope temps(this);
     const ARMRegister scratch32 = temps.AcquireW();
     MOZ_ASSERT(scratch32.asUnsized() != address.base);
     Mov(scratch32, uint64_t(imm.value));
     Str(scratch32, toMemOperand(address));
   }
-  FaultingCodeOffset store32(Register r, const Address& address) {
+  FaultingCodeRange store32(Register r, const Address& address) {
     return Str(ARMRegister(r, 32), toMemOperand(address));
   }
   void store32(Imm32 imm, const BaseIndex& address) {
+    if (imm.value == 0) {
+      doBaseIndex(vixl::wzr, address, vixl::STR_w);
+      return;
+    }
     vixl::UseScratchRegisterScope temps(this);
     const ARMRegister scratch32 = temps.AcquireW();
     MOZ_ASSERT(scratch32.asUnsized() != address.base);
@@ -885,7 +926,7 @@ class MacroAssemblerCompat : public vixl::MacroAssembler {
     Mov(scratch32, imm.value);
     doBaseIndex(scratch32, address, vixl::STR_w);
   }
-  FaultingCodeOffset store32(Register r, const BaseIndex& address) {
+  FaultingCodeRange store32(Register r, const BaseIndex& address) {
     return doBaseIndex(ARMRegister(r, 32), address, vixl::STR_w);
   }
 
@@ -894,11 +935,11 @@ class MacroAssemblerCompat : public vixl::MacroAssembler {
     store32(src, dest);
   }
 
-  FaultingCodeOffset store64(Register64 src, Address address) {
+  FaultingCodeRange store64(Register64 src, Address address) {
     return storePtr(src.reg, address);
   }
 
-  FaultingCodeOffset store64(Register64 src, const BaseIndex& address) {
+  FaultingCodeRange store64(Register64 src, const BaseIndex& address) {
     return storePtr(src.reg, address);
   }
 
@@ -1038,10 +1079,10 @@ class MacroAssemblerCompat : public vixl::MacroAssembler {
     cmpPtr(scratch, rhs);
   }
 
-  FaultingCodeOffset loadDouble(const Address& src, FloatRegister dest) {
+  FaultingCodeRange loadDouble(const Address& src, FloatRegister dest) {
     return Ldr(ARMFPRegister(dest, 64), MemOperand(src));
   }
-  FaultingCodeOffset loadDouble(const BaseIndex& src, FloatRegister dest) {
+  FaultingCodeRange loadDouble(const BaseIndex& src, FloatRegister dest) {
     ARMRegister base = toARMRegister(src.base, 64);
     ARMRegister index(src.index, 64);
 
@@ -1059,10 +1100,10 @@ class MacroAssemblerCompat : public vixl::MacroAssembler {
     return Ldr(ARMFPRegister(dest, 64), MemOperand(scratch64, src.offset));
   }
 
-  FaultingCodeOffset loadFloat32(const Address& addr, FloatRegister dest) {
+  FaultingCodeRange loadFloat32(const Address& addr, FloatRegister dest) {
     return Ldr(ARMFPRegister(dest, 32), toMemOperand(addr));
   }
-  FaultingCodeOffset loadFloat32(const BaseIndex& src, FloatRegister dest) {
+  FaultingCodeRange loadFloat32(const BaseIndex& src, FloatRegister dest) {
     ARMRegister base = toARMRegister(src.base, 64);
     ARMRegister index(src.index, 64);
     if (src.offset == 0) {
@@ -1079,13 +1120,13 @@ class MacroAssemblerCompat : public vixl::MacroAssembler {
     }
   }
 
-  FaultingCodeOffset loadFloat16(const Address& addr, FloatRegister dest,
-                                 Register) {
+  FaultingCodeRange loadFloat16(const Address& addr, FloatRegister dest,
+                                Register) {
     return Ldr(ARMFPRegister(dest, 16), toMemOperand(addr));
   }
 
-  FaultingCodeOffset loadFloat16(const BaseIndex& src, FloatRegister dest,
-                                 Register) {
+  FaultingCodeRange loadFloat16(const BaseIndex& src, FloatRegister dest,
+                                Register) {
     ARMRegister base = toARMRegister(src.base, 64);
     ARMRegister index(src.index, 64);
     if (src.offset == 0) {
@@ -1136,10 +1177,10 @@ class MacroAssemblerCompat : public vixl::MacroAssembler {
   inline void splitTagForTest(const ValueOperand& value, ScratchTagScope& tag);
   void cmpTag(const ValueOperand& operand, ImmTag tag) { MOZ_CRASH("cmpTag"); }
 
-  FaultingCodeOffset load32(const Address& address, Register dest) {
+  FaultingCodeRange load32(const Address& address, Register dest) {
     return Ldr(ARMRegister(dest, 32), toMemOperand(address));
   }
-  FaultingCodeOffset load32(const BaseIndex& src, Register dest) {
+  FaultingCodeRange load32(const BaseIndex& src, Register dest) {
     return doBaseIndex(ARMRegister(dest, 32), src, vixl::LDR_w);
   }
   void load32(AbsoluteAddress address, Register dest) {
@@ -1152,10 +1193,10 @@ class MacroAssemblerCompat : public vixl::MacroAssembler {
   void load32Unaligned(const S& src, Register dest) {
     load32(src, dest);
   }
-  FaultingCodeOffset load64(const Address& address, Register64 dest) {
+  FaultingCodeRange load64(const Address& address, Register64 dest) {
     return loadPtr(address, dest.reg);
   }
-  FaultingCodeOffset load64(const BaseIndex& address, Register64 dest) {
+  FaultingCodeRange load64(const BaseIndex& address, Register64 dest) {
     return loadPtr(address, dest.reg);
   }
   template <typename S>
@@ -1163,24 +1204,24 @@ class MacroAssemblerCompat : public vixl::MacroAssembler {
     load64(src, dest);
   }
 
-  FaultingCodeOffset load8SignExtend(const Address& address, Register dest) {
+  FaultingCodeRange load8SignExtend(const Address& address, Register dest) {
     return Ldrsb(ARMRegister(dest, 32), toMemOperand(address));
   }
-  FaultingCodeOffset load8SignExtend(const BaseIndex& src, Register dest) {
+  FaultingCodeRange load8SignExtend(const BaseIndex& src, Register dest) {
     return doBaseIndex(ARMRegister(dest, 32), src, vixl::LDRSB_w);
   }
 
-  FaultingCodeOffset load8ZeroExtend(const Address& address, Register dest) {
+  FaultingCodeRange load8ZeroExtend(const Address& address, Register dest) {
     return Ldrb(ARMRegister(dest, 32), toMemOperand(address));
   }
-  FaultingCodeOffset load8ZeroExtend(const BaseIndex& src, Register dest) {
+  FaultingCodeRange load8ZeroExtend(const BaseIndex& src, Register dest) {
     return doBaseIndex(ARMRegister(dest, 32), src, vixl::LDRB_w);
   }
 
-  FaultingCodeOffset load16SignExtend(const Address& address, Register dest) {
+  FaultingCodeRange load16SignExtend(const Address& address, Register dest) {
     return Ldrsh(ARMRegister(dest, 32), toMemOperand(address));
   }
-  FaultingCodeOffset load16SignExtend(const BaseIndex& src, Register dest) {
+  FaultingCodeRange load16SignExtend(const BaseIndex& src, Register dest) {
     return doBaseIndex(ARMRegister(dest, 32), src, vixl::LDRSH_w);
   }
   template <typename S>
@@ -1188,10 +1229,10 @@ class MacroAssemblerCompat : public vixl::MacroAssembler {
     load16SignExtend(src, dest);
   }
 
-  FaultingCodeOffset load16ZeroExtend(const Address& address, Register dest) {
+  FaultingCodeRange load16ZeroExtend(const Address& address, Register dest) {
     return Ldrh(ARMRegister(dest, 32), toMemOperand(address));
   }
-  FaultingCodeOffset load16ZeroExtend(const BaseIndex& src, Register dest) {
+  FaultingCodeRange load16ZeroExtend(const BaseIndex& src, Register dest) {
     return doBaseIndex(ARMRegister(dest, 32), src, vixl::LDRH_w);
   }
   template <typename S>
@@ -1275,6 +1316,9 @@ class MacroAssemblerCompat : public vixl::MacroAssembler {
 
   void branch(Condition cond, Label* label) { B(label, cond); }
   void branch(JitCode* target) {
+    // CodeFromJump doesn't support nop sequences.
+    AutoForbidNops afn(this);
+
     // It is unclear why this sync is necessary:
     // * PSP and SP have been observed to be different in testcase
     //   tests/async/debugger-reject-after-fulfill.js
@@ -1408,10 +1452,6 @@ class MacroAssemblerCompat : public vixl::MacroAssembler {
   }
 
   // Like unboxGCThingForGCBarrier, but loads the GC thing's chunk base.
-  void getGCThingValueChunk(Register src, Register dest) {
-    And(ARMRegister(src, 64), ARMRegister(dest, 64),
-        Operand(JS::detail::ValueGCThingPayloadChunkMask));
-  }
   void getGCThingValueChunk(const Address& src, Register dest) {
     loadPtr(src, dest);
     And(ARMRegister(dest, 64), ARMRegister(dest, 64),
@@ -1986,6 +2026,9 @@ class MacroAssemblerCompat : public vixl::MacroAssembler {
   // Emit a BLR or NOP instruction. ToggleCall can be used to patch
   // this instruction.
   CodeOffset toggledCall(JitCode* target, bool enabled) {
+    // CodeFromJump doesn't support nop sequences.
+    AutoForbidNops afn(this);
+
     // The returned offset must be to the first instruction generated,
     // for the debugger to match offset with Baseline's pcMappingEntries_.
     BufferOffset offset = nextOffset();

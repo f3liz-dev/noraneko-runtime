@@ -1,5 +1,4 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,7 +8,7 @@
 #include "WebBrowserPersistRemoteDocument.h"
 #include "WebBrowserPersistResourcesParent.h"
 #include "WebBrowserPersistSerializeParent.h"
-#include "mozilla/dom/PContentParent.h"
+#include "mozilla/dom/ContentParent.h"
 #include "mozilla/ipc/IPCStreamUtils.h"
 #include "nsIInputStream.h"
 #include "nsThreadUtils.h"
@@ -53,14 +52,15 @@ WebBrowserPersistDocumentParent::~WebBrowserPersistDocumentParent() {
 }
 
 mozilla::ipc::IPCResult WebBrowserPersistDocumentParent::RecvAttributes(
-    const Attrs& aAttrs, const Maybe<IPCStream>& aPostStream) {
-  // Deserialize the postData unconditionally so that fds aren't leaked.
-  nsCOMPtr<nsIInputStream> postData =
-      mozilla::ipc::DeserializeIPCStream(aPostStream);
-  if (!mOnReady || mReflection) {
-    return IPC_FAIL_NO_REASON(this);
+    Attrs&& aAttrs, NotNull<nsIPrincipal*> aPrincipal,
+    nsIInputStream* aPostStream) {
+  auto* contentParent = dom::ContentParent::Cast(Manager());
+  if (!contentParent->ValidatePrincipal(aPrincipal, {})) {
+    return IPC_FAIL(this, "invalid principal");
   }
-  mReflection = new WebBrowserPersistRemoteDocument(this, aAttrs, postData);
+
+  mReflection = new WebBrowserPersistRemoteDocument(this, std::move(aAttrs),
+                                                    aPrincipal, aPostStream);
   RefPtr<WebBrowserPersistRemoteDocument> reflection = mReflection;
   mOnReady->OnDocumentReady(reflection);
   mOnReady = nullptr;

@@ -7,11 +7,13 @@ package mozilla.components.support.ktx.android.content
 import android.Manifest.permission.WRITE_EXTERNAL_STORAGE
 import android.app.Activity
 import android.app.ActivityManager
+import android.app.Application
 import android.content.ActivityNotFoundException
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.Intent.ACTION_SEND
+import android.content.Intent.EXTRA_CHOOSER_CUSTOM_ACTIONS
 import android.content.Intent.EXTRA_INTENT
 import android.content.Intent.EXTRA_STREAM
 import android.content.Intent.EXTRA_SUBJECT
@@ -24,6 +26,7 @@ import android.content.pm.PackageManager.PERMISSION_GRANTED
 import android.hardware.camera2.CameraManager
 import android.net.Uri
 import android.os.Build
+import android.service.chooser.ChooserAction
 import androidx.core.content.FileProvider
 import androidx.core.content.getSystemService
 import androidx.core.net.toUri
@@ -54,7 +57,6 @@ import org.robolectric.annotation.Implementation
 import org.robolectric.annotation.Implements
 import org.robolectric.shadows.ShadowApplication
 import org.robolectric.shadows.ShadowCameraCharacteristics
-import org.robolectric.shadows.ShadowProcess
 import java.io.File
 
 @RunWith(AndroidJUnit4::class)
@@ -185,6 +187,52 @@ class ContextTest {
     }
 
     @Test
+    @Config(sdk = [Build.VERSION_CODES.UPSIDE_DOWN_CAKE])
+    fun `shareWithChooserActions attaches a thumbnail preview when a thumbnailUri is provided`() {
+        val context = spy(testContext)
+        val argCaptor = argumentCaptor<Intent>()
+
+        val result = context.shareWithChooserActions(
+            text = "https://mozilla.org",
+            subject = "subject",
+            actions = emptyArray<ChooserAction>(),
+            thumbnailUri = "fakeUri".toUri(),
+        )
+
+        verify(context).startActivity(argCaptor.capture())
+        assertTrue(result)
+
+        @Suppress("DEPRECATION")
+        val shareIntent = argCaptor.value.extras!!.get(EXTRA_INTENT) as Intent
+        assertEquals("subject", shareIntent.extras!!.getString(EXTRA_TITLE))
+        assertEquals(1, shareIntent.clipData!!.itemCount)
+        assertEquals("fakeUri".toUri(), shareIntent.clipData!!.getItemAt(0).uri)
+        assertTrue(shareIntent.flags and Intent.FLAG_GRANT_READ_URI_PERMISSION != 0)
+    }
+
+    @Test
+    @Config(sdk = [Build.VERSION_CODES.UPSIDE_DOWN_CAKE])
+    fun `shareWithChooserActions does not attach a thumbnail preview when thumbnailUri is null`() {
+        val context = spy(testContext)
+        val argCaptor = argumentCaptor<Intent>()
+
+        val result = context.shareWithChooserActions(
+            text = "https://mozilla.org",
+            subject = "subject",
+            actions = emptyArray<ChooserAction>(),
+        )
+
+        verify(context).startActivity(argCaptor.capture())
+        assertTrue(result)
+
+        @Suppress("DEPRECATION")
+        val shareIntent = argCaptor.value.extras!!.get(EXTRA_INTENT) as Intent
+        assertNull(shareIntent.extras!!.getString(EXTRA_TITLE))
+        assertNull(shareIntent.clipData?.getItemAt(0)?.uri)
+        assertTrue(shareIntent.flags and Intent.FLAG_GRANT_READ_URI_PERMISSION == 0)
+    }
+
+    @Test
     @Config(shadows = [ShadowFileProvider::class])
     fun `copyImage will copy the file URI to the clipboard & invoke the confirmation action`() {
         val context = spy(testContext)
@@ -228,20 +276,20 @@ class ContextTest {
     }
 
     @Test
+    @Config(shadows = [ShadowApplicationProcessName::class])
     fun `isMainProcess must only return true if we are in the main process`() {
-        val myPid = Int.MAX_VALUE
-
+        ShadowApplicationProcessName.processName = testContext.packageName
         assertTrue(testContext.isMainProcess())
 
-        ShadowProcess.setPid(myPid)
+        ShadowApplicationProcessName.processName = "${testContext.packageName}:notmain"
         isMainProcess = null
-
         assertFalse(testContext.isMainProcess())
     }
 
     @Test
+    @Config(shadows = [ShadowApplicationProcessName::class])
     fun `runOnlyInMainProcess must only run if we are in the main process`() {
-        val myPid = Int.MAX_VALUE
+        ShadowApplicationProcessName.processName = testContext.packageName
         var wasExecuted = false
 
         testContext.runOnlyInMainProcess {
@@ -251,8 +299,8 @@ class ContextTest {
         assertTrue(wasExecuted)
 
         wasExecuted = false
-        ShadowProcess.setPid(myPid)
-        isMainProcess = false
+        ShadowApplicationProcessName.processName = "${testContext.packageName}:notmain"
+        isMainProcess = null
 
         testContext.runOnlyInMainProcess {
             wasExecuted = true
@@ -328,6 +376,14 @@ class ContextTest {
         val versionName = context.appVersionName
         assertEquals("", versionName)
     }
+
+    @Test
+    fun `pixelSizeFor returns the same as getDimensionPixelSize`() {
+        assertEquals(
+            testContext.resources.getDimensionPixelSize(android.R.dimen.app_icon_size),
+            testContext.pixelSizeFor(android.R.dimen.app_icon_size),
+        )
+    }
 }
 
 @Implements(FileProvider::class)
@@ -342,4 +398,16 @@ object ShadowFileProvider {
         authority: String?,
         file: File,
     ) = FAKE_URI_RESULT
+}
+
+@Implements(Application::class)
+class ShadowApplicationProcessName : ShadowApplication() {
+    companion object {
+        @JvmField
+        var processName: String = ""
+
+        @JvmStatic
+        @Implementation(minSdk = Build.VERSION_CODES.P)
+        fun getProcessName(): String = processName
+    }
 }

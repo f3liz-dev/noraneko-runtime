@@ -1,4 +1,3 @@
-/* -*- Mode: c++; c-basic-offset: 2; indent-tabs-mode: nil; tab-width: 4; -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -11,13 +10,13 @@
 #include "GLLibraryEGL.h"
 #include "GLReadTexImageHelper.h"
 #include "MozFramebuffer.h"
-#include "mozilla/layers/LayersSurfaces.h"  // for SurfaceDescriptor, etc
 #include "SharedSurface.h"
+#include "mozilla/layers/LayersSurfaces.h"  // for SurfaceDescriptor, etc
 
 #if defined(MOZ_WIDGET_ANDROID)
 #  include "AndroidNativeWindow.h"
-#  include "mozilla/java/SurfaceAllocatorWrappers.h"
 #  include "mozilla/java/GeckoSurfaceTextureWrappers.h"
+#  include "mozilla/java/SurfaceAllocatorWrappers.h"
 #endif  // defined(MOZ_WIDGET_ANDROID)
 
 namespace mozilla {
@@ -38,7 +37,9 @@ UniquePtr<SurfaceFactory_EGLImage> SurfaceFactory_EGLImage::Create(
   if (!HasEglImageExtensions(gl)) return nullptr;
 
   const auto partialDesc = PartialSharedSurfaceDesc{
-      &gl, SharedSurfaceType::EGLImageShare, layers::TextureType::EGLImage,
+      &gl,
+      SharedSurfaceType::EGLImageShare,
+      layers::TextureType::EGLImage,
       false,  // Can't recycle, as mSync changes never update TextureHost.
   };
   return AsUnique(new SurfaceFactory_EGLImage(partialDesc));
@@ -53,7 +54,7 @@ UniquePtr<SharedSurface_EGLImage> SharedSurface_EGLImage::Create(
   const auto& context = gle->mContext;
   const auto& egl = *(gle->mEgl);
 
-  auto fb = MozFramebuffer::Create(desc.gl, desc.size, 0, false);
+  auto fb = MozFramebuffer::Create(desc.gl, desc.size, 0, false, false);
   if (!fb) return nullptr;
 
   const auto buffer = reinterpret_cast<EGLClientBuffer>(fb->ColorTex());
@@ -95,10 +96,10 @@ void SharedSurface_EGLImage::ProducerReleaseImpl() {
       gl->IsExtensionSupported(GLContext::OES_EGL_sync)) {
     if (mSync) {
       MOZ_ALWAYS_TRUE(egl->fDestroySync(mSync));
-      mSync = 0;
+      mSync = nullptr;
     }
 
-    mSync = egl->fCreateSync(LOCAL_EGL_SYNC_FENCE, nullptr);
+    mSync = egl->fCreateSyncKHR(LOCAL_EGL_SYNC_FENCE, nullptr);
     if (mSync) {
       gl->fFlush();
       return;

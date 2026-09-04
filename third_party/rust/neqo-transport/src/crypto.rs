@@ -4,6 +4,16 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+#![cfg_attr(
+    feature = "bench",
+    expect(
+        clippy::missing_errors_doc,
+        clippy::missing_panics_doc,
+        clippy::must_use_candidate,
+        reason = "These items are only public API when the `bench` feature is enabled."
+    )
+)]
+
 use std::{
     cell::RefCell,
     cmp::{max, min},
@@ -15,17 +25,23 @@ use std::{
 };
 
 use enum_map::EnumMap;
-use neqo_common::{hex, hex_snip_middle, qdebug, qinfo, qtrace, Buffer, Encoder, Role};
-pub use neqo_crypto::Epoch;
-use neqo_crypto::{
-    hkdf, hp, random, Aead, AeadTrait as _, Agent, AntiReplay, Cipher, Error as CryptoError,
-    HandshakeState, PrivateKey, PublicKey, Record, RecordList, ResumptionToken, SymKey,
-    ZeroRttChecker, TLS_AES_128_GCM_SHA256, TLS_AES_256_GCM_SHA384, TLS_CHACHA20_POLY1305_SHA256,
+use neqo_common::{
+    Buffer, Encoder, Role,
+    hex::{Hex, HexSnipMiddle},
+    qdebug, qinfo, qtrace, to_u64,
+};
+pub use nss::Epoch;
+use nss::{
+    Agent, AntiReplay, Cipher, Error as CryptoError, HandshakeState, Mode, PrivateKey, PublicKey,
+    Record, RecordList, RecordProtection as Aead, RecordProtectionOps as _, ResumptionToken,
+    SymKey, TLS_AES_128_GCM_SHA256, TLS_AES_256_GCM_SHA384, TLS_CHACHA20_POLY1305_SHA256,
     TLS_CT_HANDSHAKE, TLS_GRP_EC_SECP256R1, TLS_GRP_EC_SECP384R1, TLS_GRP_EC_SECP521R1,
-    TLS_GRP_EC_X25519, TLS_GRP_KEM_MLKEM768X25519, TLS_VERSION_1_3,
+    TLS_GRP_EC_X25519, TLS_GRP_KEM_MLKEM768X25519, TLS_VERSION_1_3, ZeroRttChecker, hkdf, hp,
+    random,
 };
 
 use crate::{
+    ConnectionParameters, Error, Res,
     cid::ConnectionIdRef,
     frame::{FrameEncoder as _, FrameType},
     packet::{self},
@@ -37,7 +53,6 @@ use crate::{
     tparams::{TpZeroRttChecker, TransportParameters, TransportParametersHandler},
     tracking::PacketNumberSpace,
     version::Version,
-    ConnectionParameters, Error, Res,
 };
 
 /// The number of invocations remaining on a write cipher before we try
@@ -222,10 +237,9 @@ impl Crypto {
         let info = self.tls.preinfo()?;
         // `info.early_data()` returns false for a server,
         // so use `early_data_cipher()` to tell if 0-RTT is enabled.
-        let cipher = info.early_data_cipher();
-        if cipher.is_none() {
+        let Some(cipher) = info.early_data_cipher() else {
             return Ok(false);
-        }
+        };
         let (dir, secret) = match role {
             Role::Client => (
                 CryptoDxDirection::Write,
@@ -237,8 +251,7 @@ impl Crypto {
             ),
         };
         let secret = secret.ok_or(Error::Internal)?;
-        self.states
-            .set_0rtt_keys(version, dir, &secret, cipher.ok_or(Error::Internal)?)?;
+        self.states.set_0rtt_keys(version, dir, &secret, cipher)?;
         Ok(true)
     }
 
@@ -378,7 +391,7 @@ impl Crypto {
     ) -> Option<ResumptionToken> {
         if let Agent::Client(ref mut c) = self.tls {
             c.resumption_token().as_ref().map(|t| {
-                qtrace!("TLS token {}", hex(t.as_ref()));
+                qtrace!("TLS token {}", Hex::new(t.as_ref()));
                 let mut enc = Encoder::default();
                 enc.encode_uint(4, version.wire_version());
                 enc.encode_varint(rtt);
@@ -387,7 +400,7 @@ impl Crypto {
                 });
                 enc.encode_vvec(new_token.unwrap_or(&[]));
                 enc.encode(t.as_ref());
-                qdebug!("resumption token {}", hex_snip_middle(enc.as_ref()));
+                qdebug!("resumption token {}", HexSnipMiddle::new(enc.as_ref()));
                 ResumptionToken::new(enc.into(), t.expiration_time())
             })
         } else {
@@ -446,6 +459,15 @@ pub enum CryptoDxDirection {
     Write,
 }
 
+impl From<CryptoDxDirection> for Mode {
+    fn from(dir: CryptoDxDirection) -> Self {
+        match dir {
+            CryptoDxDirection::Read => Self::Decrypt,
+            CryptoDxDirection::Write => Self::Encrypt,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct CryptoDxState {
     /// The QUIC version.
@@ -483,13 +505,21 @@ impl CryptoDxState {
         cipher: Cipher,
         min_pn: packet::Number,
     ) -> Res<Self> {
-        qdebug!("Making {direction:?} {epoch:?} CryptoDxState, v={version:?} cipher={cipher} min_pn={min_pn}",);
+        qdebug!(
+            "Making {direction:?} {epoch:?} CryptoDxState, v={version:?} cipher={cipher} min_pn={min_pn}",
+        );
         let hplabel = String::from(version.label_prefix()) + "hp";
         Ok(Self {
             version,
             direction,
             epoch: usize::from(epoch),
-            aead: Aead::new(TLS_VERSION_1_3, cipher, secret, version.label_prefix())?,
+            aead: Aead::new(
+                TLS_VERSION_1_3,
+                cipher,
+                secret,
+                version.label_prefix(),
+                Mode::from(direction),
+            )?,
             hpkey: hp::Key::extract(TLS_VERSION_1_3, cipher, secret, &hplabel)?,
             used_pn: min_pn..min_pn,
             min_pn,
@@ -544,7 +574,7 @@ impl CryptoDxState {
         #[cfg(test)]
         OVERWRITE_INVOCATIONS.with(|v| {
             if let Some(i) = v.borrow_mut().take() {
-                log::warn!("Setting {:?} invocations to {}", self.direction, i);
+                log::warn!("Setting {:?} invocations to {i}", self.direction);
                 self.invocations = i;
             }
         });
@@ -581,8 +611,9 @@ impl CryptoDxState {
                 cipher,
                 next_secret,
                 self.version.label_prefix(),
+                Mode::from(self.direction),
             )?,
-            hpkey: self.hpkey.clone(),
+            hpkey: self.hpkey.try_clone()?,
             used_pn: pn..pn,
             min_pn: pn,
             invocations,
@@ -662,7 +693,11 @@ impl CryptoDxState {
         sample: &[u8; hp::Key::SAMPLE_SIZE],
     ) -> Res<[u8; hp::Key::SAMPLE_SIZE]> {
         let mask = self.hpkey.mask(sample)?;
-        qtrace!("[{self}] HP sample={} mask={}", hex(sample), hex(mask));
+        qtrace!(
+            "[{self}] HP sample={} mask={}",
+            Hex::new(sample),
+            Hex::new(mask)
+        );
         Ok(mask)
     }
 
@@ -680,8 +715,8 @@ impl CryptoDxState {
         debug_assert_eq!(self.direction, CryptoDxDirection::Write);
         qtrace!(
             "[{self}] encrypt_in_place pn={pn} hdr={} body={}",
-            hex(data[hdr.clone()].as_ref()),
-            hex(data[hdr.end..].as_ref())
+            Hex::new(data[hdr.clone()].as_ref()),
+            Hex::new(data[hdr.end..].as_ref())
         );
 
         // The numbers in `Self::limit` assume a maximum packet size of `LIMIT`.
@@ -701,7 +736,7 @@ impl CryptoDxState {
         // Use only the actual current header for AAD.
         let len = self.aead.encrypt_in_place(pn, &prev[hdr], data)?;
 
-        qtrace!("[{self}] encrypt ct={}", hex(&data[..len]));
+        qtrace!("[{self}] encrypt ct={}", Hex::new(&data[..len]));
         debug_assert_eq!(pn, self.next_pn());
         self.used(pn)?;
         Ok(len)
@@ -721,8 +756,8 @@ impl CryptoDxState {
         debug_assert_eq!(self.direction, CryptoDxDirection::Read);
         qtrace!(
             "[{self}] decrypt_in_place pn={pn} hdr={} body={}",
-            hex(data[hdr.clone()].as_ref()),
-            hex(data[hdr.end..].as_ref())
+            Hex::new(data[hdr.clone()].as_ref()),
+            Hex::new(data[hdr.end..].as_ref())
         );
         self.invoked()?;
         let (hdr, data) = data.split_at_mut(hdr.end);
@@ -731,19 +766,22 @@ impl CryptoDxState {
         Ok(len)
     }
 
-    #[cfg(not(feature = "disable-encryption"))]
-    #[cfg(test)]
-    pub(crate) fn test_default() -> Self {
+    #[cfg(all(not(feature = "disable-encryption"), any(test, feature = "bench")))]
+    pub fn test_default_write() -> Self {
+        Self::test_default_with_direction(CryptoDxDirection::Write)
+    }
+
+    #[cfg(all(not(feature = "disable-encryption"), any(test, feature = "bench")))]
+    pub fn test_default_read() -> Self {
+        Self::test_default_with_direction(CryptoDxDirection::Read)
+    }
+
+    #[cfg(all(not(feature = "disable-encryption"), any(test, feature = "bench")))]
+    fn test_default_with_direction(direction: CryptoDxDirection) -> Self {
         // This matches the value in packet.rs
         const CLIENT_CID: &[u8] = &[0x83, 0x94, 0xc8, 0xf0, 0x3e, 0x51, 0x57, 0x08];
-        Self::new_initial(
-            Version::default(),
-            CryptoDxDirection::Write,
-            "server in",
-            CLIENT_CID,
-            0,
-        )
-        .unwrap()
+        Self::new_initial(Version::default(), direction, "server in", CLIENT_CID, 0)
+            .expect("state created")
     }
 
     /// Get the amount of extra padding packets protected with this profile need.
@@ -1046,7 +1084,7 @@ impl CryptoStates {
         for v in versions {
             qdebug!(
                 "[{self}] Creating initial cipher state v={v:?}, role={role:?} dcid={}",
-                hex(dcid)
+                Hex::new(dcid)
             );
 
             let mut initial = CryptoState {
@@ -1176,10 +1214,10 @@ impl CryptoStates {
         debug_assert!(self.app_write.is_none());
         debug_assert_ne!(self.cipher, 0);
         let mut app = CryptoDxAppData::new(version, CryptoDxDirection::Write, secret, self.cipher)?;
-        if let Some(z) = &self.zero_rtt {
-            if z.direction == CryptoDxDirection::Write {
-                app.dx.continuation(z)?;
-            }
+        if let Some(z) = &self.zero_rtt
+            && z.direction == CryptoDxDirection::Write
+        {
+            app.dx.continuation(z)?;
         }
         self.zero_rtt = None;
         self.app_write = Some(app);
@@ -1249,12 +1287,12 @@ impl CryptoStates {
     /// If that is close, update them if possible.  Failing to update at
     /// this stage is cause for a fatal error.
     pub fn auto_update(&mut self) -> Res<()> {
-        if let Some(app_write) = self.app_write.as_ref() {
-            if app_write.dx.should_update() {
-                qinfo!("[{self}] Initiating automatic key update");
-                if !self.maybe_update_write()? {
-                    return Err(Error::KeysExhausted);
-                }
+        if let Some(app_write) = self.app_write.as_ref()
+            && app_write.dx.should_update()
+        {
+            qinfo!("[{self}] Initiating automatic key update");
+            if !self.maybe_update_write()? {
+                return Err(Error::KeysExhausted);
             }
         }
         Ok(())
@@ -1263,8 +1301,7 @@ impl CryptoStates {
     fn has_0rtt_read(&self) -> bool {
         self.zero_rtt
             .as_ref()
-            .filter(|z| z.direction == CryptoDxDirection::Read)
-            .is_some()
+            .is_some_and(|z| z.direction == CryptoDxDirection::Read)
     }
 
     /// Prepare to update read keys.  This doesn't happen immediately as
@@ -1337,28 +1374,24 @@ impl CryptoStates {
     }
 
     /// Make some state for removing protection in tests.
-    #[cfg(not(feature = "disable-encryption"))]
-    #[cfg(test)]
-    pub(crate) fn test_default() -> Self {
+    #[cfg(all(not(feature = "disable-encryption"), any(test, feature = "bench")))]
+    pub fn test_default() -> Self {
         let read = |epoch| {
-            let mut dx = CryptoDxState::test_default();
-            dx.direction = CryptoDxDirection::Read;
+            let mut dx = CryptoDxState::test_default_read();
             dx.epoch = epoch;
             dx
         };
         let app_read = |epoch| CryptoDxAppData {
             dx: read(epoch),
             cipher: TLS_AES_128_GCM_SHA256,
-            next_secret: hkdf::import_key(TLS_VERSION_1_3, &[0xaa; 32]).unwrap(),
+            next_secret: hkdf::import_key(TLS_VERSION_1_3, &[0xaa; 32]).expect("key is valid"),
         };
-        let initials = EnumMap::from_array([
-            None,
-            Some(CryptoState {
-                tx: CryptoDxState::test_default(),
+        let initials = EnumMap::from_fn(|v| {
+            (v == Version::Version1).then(|| CryptoState {
+                tx: CryptoDxState::test_default_write(),
                 rx: read(0),
-            }),
-            None,
-        ]);
+            })
+        });
         Self {
             initials,
             handshake: None,
@@ -1391,6 +1424,7 @@ impl CryptoStates {
                     TLS_CHACHA20_POLY1305_SHA256,
                     &secret,
                     "quic ", // This is a v1 test so hard-code the label.
+                    Mode::Decrypt,
                 )
                 .unwrap(),
                 hpkey: hp::Key::extract(
@@ -1529,10 +1563,10 @@ impl CryptoStreams {
     /// Resend any Initial or Handshake CRYPTO frames that might be outstanding.
     /// This can help speed up handshake times.
     pub fn resend_unacked(&mut self, space: PacketNumberSpace) {
-        if space != PacketNumberSpace::ApplicationData {
-            if let Some(cs) = self.get_mut(space) {
-                cs.tx.unmark_sent();
-            }
+        if space != PacketNumberSpace::ApplicationData
+            && let Some(cs) = self.get_mut(space)
+        {
+            cs.tx.unmark_sent();
         }
     }
 
@@ -1604,8 +1638,7 @@ impl CryptoStreams {
             // - remaining space, less the header, which counts only one byte for the length at
             //   first to avoid underestimating length
             let length = min(data.len(), builder.remaining() - header_len);
-            header_len +=
-                Encoder::varint_len(u64::try_from(length).expect("usize fits in u64")) - 1;
+            header_len += Encoder::varint_len(to_u64(length)) - 1;
             let length = min(data.len(), builder.remaining() - header_len);
 
             builder.encode_frame(FrameType::Crypto, |b| {
@@ -1648,7 +1681,7 @@ impl CryptoStreams {
                 // `left` is short enough to fit into this packet. So send from the *end*
                 // of `right`, so that the second half of the SNI is in another packet.
                 let right_len = right.len() + left.len() - limit;
-                right_offset += right_len as u64;
+                right_offset += to_u64(right_len);
                 (_, right) = right.split_at(right_len);
             } else if right.len() <= limit {
                 // `right` is short enough to fit into this packet. So only send a part of `left`.
@@ -1680,7 +1713,7 @@ impl CryptoStreams {
                     let packets_needed = data.len().div_ceil(builder.limit());
                     let limit = data.len() / packets_needed;
                     let ((left_offset, left), (right_offset, right)) =
-                        limit_chunks((offset, left), (offset + mid as u64, right), limit);
+                        limit_chunks((offset, left), (offset + to_u64(mid), right), limit);
                     (
                         write_chunk(right_offset, right, builder),
                         write_chunk(left_offset, left, builder),
@@ -1738,7 +1771,7 @@ mod tests {
     #[test]
     fn crypto_dx_state_display() {
         fixture_init();
-        let dx = CryptoDxState::test_default();
+        let dx = CryptoDxState::test_default_write();
         assert_eq!(dx.to_string(), "epoch 0 Write");
     }
 }

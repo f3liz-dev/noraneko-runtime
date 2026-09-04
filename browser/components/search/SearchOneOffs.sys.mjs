@@ -13,7 +13,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
 });
 
 /**
- * @import { UrlbarUtils } from "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs"
+ * @import { UrlbarShared } from "chrome://browser/content/urlbar/UrlbarShared.mjs"
  * @import { SearchEngine } from "moz-src:///toolkit/components/search/SearchEngine.sys.mjs"
  */
 
@@ -21,7 +21,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
  * @typedef {object} LegacySearchButton
  * @property {boolean} open
  *   Whether the button is in an open state.
- * @property {Values<typeof UrlbarUtils.RESULT_SOURCE>} [source]
+ * @property {Values<typeof UrlbarShared.RESULT_SOURCE>} [source]
  *   The result source of the button. Only appropriate for one-off buttons
  *   on the urlbar.
  * @property {SearchEngine} engine
@@ -43,7 +43,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
 export class SearchOneOffs {
   constructor(container) {
     this.container = container;
-    this.window = container.ownerGlobal;
+    this.window = container.documentGlobal;
     this.document = container.ownerDocument;
 
     this.container.appendChild(
@@ -180,11 +180,11 @@ export class SearchOneOffs {
     }
     let engineInfo = await this.getEngineInfo();
     let oneOffCount = engineInfo.engines.length;
-    this._engineInfo.willHide =
+    engineInfo.willHide =
       !oneOffCount ||
       (oneOffCount == 1 &&
         engineInfo.engines[0].name == engineInfo.default.name);
-    return this._engineInfo.willHide;
+    return engineInfo.willHide;
   }
 
   /**
@@ -357,21 +357,19 @@ export class SearchOneOffs {
       return this._engineInfo;
     }
 
-    this._engineInfo = {};
+    let defaultEngine;
     if (lazy.PrivateBrowsingUtils.isWindowPrivate(this.window)) {
-      this._engineInfo.default = await lazy.SearchService.getDefaultPrivate();
+      defaultEngine = await lazy.SearchService.getDefaultPrivate();
     } else {
-      this._engineInfo.default = await lazy.SearchService.getDefault();
+      defaultEngine = await lazy.SearchService.getDefault();
     }
 
     let currentEngineNameToIgnore;
     if (!this.getAttribute("includecurrentengine")) {
-      currentEngineNameToIgnore = this._engineInfo.default.name;
+      currentEngineNameToIgnore = defaultEngine.name;
     }
 
-    this._engineInfo.engines = (
-      await lazy.SearchService.getVisibleEngines()
-    ).filter(e => {
+    let engines = (await lazy.SearchService.getVisibleEngines()).filter(e => {
       let name = e.name;
       return (
         (!currentEngineNameToIgnore || name != currentEngineNameToIgnore) &&
@@ -379,6 +377,7 @@ export class SearchOneOffs {
       );
     });
 
+    this._engineInfo = { default: defaultEngine, engines };
     return this._engineInfo;
   }
 
@@ -441,7 +440,7 @@ export class SearchOneOffs {
       return;
     }
 
-    const addEngines = lazy.OpenSearchManager.getEngines(
+    const addEngines = lazy.OpenSearchManager.getInstallableEngines(
       this.window.gBrowser.selectedBrowser
     );
 

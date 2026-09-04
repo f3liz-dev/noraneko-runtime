@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -28,10 +26,10 @@ using namespace js;
   MOZ_ASSERT_IF(initialDisposeCapability.isObject(),
                 initialDisposeCapability.toObject().is<ArrayObject>());
 
-  obj->initReservedSlot(
+  obj->initReservedSlotTyped(
       AsyncDisposableStackObject::DISPOSABLE_RESOURCE_STACK_SLOT,
       initialDisposeCapability);
-  obj->initReservedSlot(
+  obj->initReservedSlotTyped(
       AsyncDisposableStackObject::STATE_SLOT,
       JS::Int32Value(
           int32_t(AsyncDisposableStackObject::DisposableState::Pending)));
@@ -190,7 +188,7 @@ using namespace js;
   // Step 6. Set newAsyncDisposableStack.[[DisposeCapability]] to
   // asyncDisposableStack.[[DisposeCapability]].
   JS::Rooted<JS::Value> existingDisposeCapability(
-      cx, asyncDisposableStack->getReservedSlot(
+      cx, asyncDisposableStack->getReservedSlotTyped(
               AsyncDisposableStackObject::DISPOSABLE_RESOURCE_STACK_SLOT));
   AsyncDisposableStackObject* newAsyncDisposableStack =
       AsyncDisposableStackObject::create(cx, nullptr,

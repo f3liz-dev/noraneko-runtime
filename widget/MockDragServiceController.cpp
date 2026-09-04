@@ -1,17 +1,17 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "MockDragServiceController.h"
+
+#include "mozilla/MouseEvents.h"
+#include "mozilla/SpinEventLoopUntil.h"
 #include "mozilla/dom/CanonicalBrowsingContext.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/DragEvent.h"
-#include "mozilla/MouseEvents.h"
-#include "mozilla/SpinEventLoopUntil.h"
+#include "nsBaseDragService.h"
 #include "nsIFrame.h"
 #include "nsPresContext.h"
-#include "nsBaseDragService.h"
 
 namespace mozilla::test {
 
@@ -67,7 +67,7 @@ class MockDragService : public nsBaseDragService {
 
  protected:
   already_AddRefed<nsIDragSession> CreateDragSession() override {
-    RefPtr<nsIDragSession> session = new MockDragSession();
+    auto session = MakeRefPtr<MockDragSession>();
     return session.forget();
   }
 };

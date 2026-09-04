@@ -19,7 +19,11 @@ AddonTestUtils.createAppInfo(
 
 // This pref is not set in Thunderbird, and needs to be true for the test to pass.
 Services.prefs.setBoolPref("extensions.postDownloadThirdPartyPrompt", true);
-let server = AddonTestUtils.createHttpServer({
+// We test installations with http:-principals.
+Services.prefs.setBoolPref("extensions.install.requireSecureOrigin", false);
+Services.prefs.setBoolPref("dom.security.https_first", false);
+
+const server = AddonTestUtils.createHttpServer({
   hosts: ["example.com", "example.org", "amo.example.com", "github.io"],
 });
 
@@ -123,33 +127,22 @@ server.registerFile(
   })
 );
 
+let lastContentPage;
+
 add_setup(() => {
   do_get_profile();
   Services.fog.initializeFOG();
+  registerCleanupFunction(async () => lastContentPage?.close());
 });
 
+async function getBrowserWithPrincipal(principal) {
+  lastContentPage = await ExtensionTestUtils.loadContentPage(
+    principal.isNullPrincipal ? "about:blank" : principal.originNoSuffix + "/"
+  );
+  return lastContentPage.browser;
+}
+
 function testInstallEvent(expectTelemetry) {
-  const snapshot = Services.telemetry.snapshotEvents(
-    Ci.nsITelemetry.DATASET_PRERELEASE_CHANNELS,
-    true
-  );
-
-  ok(
-    snapshot.parent && !!snapshot.parent.length,
-    "Got parent telemetry events in the snapshot"
-  );
-
-  let events = snapshot.parent
-    .filter(
-      ([, category, method, , , extra]) =>
-        category === "addonsManager" &&
-        method == "install" &&
-        extra.step == expectTelemetry.step
-    )
-    .map(event => event[5]);
-  equal(events.length, 1, "one event for install completion");
-  Assert.deepEqual(events[0], expectTelemetry, "telemetry matches");
-
   let gleanEvents = AddonTestUtils.getAMGleanEvents("install", {
     step: expectTelemetry.step,
   });
@@ -160,11 +153,12 @@ function testInstallEvent(expectTelemetry) {
   Assert.deepEqual(gleanEvents[0], expectTelemetry, "Glean telemetry matches.");
 }
 
-function promiseCompleteWebInstall(
+async function promiseCompleteWebInstall(
   install,
   triggeringPrincipal,
   expectPrompts = true
 ) {
+  const browser = await getBrowserWithPrincipal(triggeringPrincipal);
   let listener;
   return new Promise(_resolve => {
     let resolve = () => {
@@ -208,7 +202,7 @@ function promiseCompleteWebInstall(
 
     AddonManager.installAddonFromWebpage(
       "application/x-xpinstall",
-      null /* aBrowser */,
+      browser,
       triggeringPrincipal,
       install
     );
@@ -248,7 +242,7 @@ async function testAddonInstall(test) {
 
 let ssm = Services.scriptSecurityManager;
 const PRINCIPAL_AMO = ssm.createContentPrincipalFromOrigin(
-  "https://amo.example.com"
+  "http://amo.example.com"
 );
 const PRINCIPAL_COM =
   ssm.createContentPrincipalFromOrigin("http://example.com");

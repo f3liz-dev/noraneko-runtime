@@ -1,57 +1,48 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 sw=2 et tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/BasePrincipal.h"
 
-#include "nsDocShell.h"
-
-#include "ExpandedPrincipal.h"
-#include "nsNetUtil.h"
-#include "nsContentUtils.h"
-#include "nsIOService.h"
-#include "nsIURIWithSpecialOrigin.h"
-#include "nsScriptSecurityManager.h"
-#include "nsServiceManagerUtils.h"
-#include "nsAboutProtocolUtils.h"
-#include "ThirdPartyUtil.h"
-#include "mozilla/ContentPrincipal.h"
-#include "mozilla/ExtensionPolicyService.h"
-#include "mozilla/NullPrincipal.h"
-#include "mozilla/dom/BlobURLProtocolHandler.h"
-#include "mozilla/dom/ChromeUtils.h"
-#include "mozilla/dom/ReferrerInfo.h"
-#include "mozilla/dom/ToJSValue.h"
-#include "mozilla/dom/nsMixedContentBlocker.h"
-#include "mozilla/Components.h"
-#include "mozilla/dom/StorageUtils.h"
-#include "mozilla/dom/StorageUtils.h"
-#include "mozilla/JSONStringWriteFuncs.h"
-#include "mozilla/JSONWriter.h"
-#include "nsIEffectiveTLDService.h"
-#include "nsIURL.h"
-#include "nsIURIMutator.h"
-#include "mozilla/StaticPrefs_permissions.h"
-#include "nsIURIMutator.h"
-#include "nsMixedContentBlocker.h"
-#include "prnetdb.h"
-#include "nsIURIFixup.h"
-#include "mozilla/dom/StorageUtils.h"
-#include "mozilla/StorageAccess.h"
-#include "nsPIDOMWindow.h"
-#include "nsIURIMutator.h"
-#include "mozilla/PermissionManager.h"
-
-#include "nsSerializationHelper.h"
-
-#include "js/JSON.h"
 #include "ContentPrincipalJSONHandler.h"
+#include "ExpandedPrincipal.h"
 #include "ExpandedPrincipalJSONHandler.h"
 #include "NullPrincipalJSONHandler.h"
 #include "PrincipalJSONHandler.h"
 #include "SubsumedPrincipalJSONHandler.h"
+#include "ThirdPartyUtil.h"
+#include "js/JSON.h"
+#include "mozilla/Components.h"
+#include "mozilla/ContentPrincipal.h"
+#include "mozilla/ExtensionPolicyService.h"
+#include "mozilla/JSONStringWriteFuncs.h"
+#include "mozilla/JSONWriter.h"
+#include "mozilla/NullPrincipal.h"
+#include "mozilla/PermissionManager.h"
+#include "mozilla/StaticPrefs_permissions.h"
+#include "mozilla/StorageAccess.h"
+#include "mozilla/dom/BlobURLProtocolHandler.h"
+#include "mozilla/dom/ChromeUtils.h"
+#include "mozilla/dom/ReferrerInfo.h"
+#include "mozilla/dom/StorageUtils.h"
+#include "mozilla/dom/ToJSValue.h"
+#include "mozilla/dom/nsMixedContentBlocker.h"
+#include "nsAboutProtocolUtils.h"
+#include "nsContentUtils.h"
+#include "nsDocShell.h"
+#include "nsIEffectiveTLDService.h"
+#include "nsIOService.h"
+#include "nsIURIFixup.h"
+#include "nsIURIMutator.h"
+#include "nsIURIWithSpecialOrigin.h"
+#include "nsIURL.h"
+#include "nsMixedContentBlocker.h"
+#include "nsNetUtil.h"
+#include "nsPIDOMWindow.h"
+#include "nsScriptSecurityManager.h"
+#include "nsSerializationHelper.h"
+#include "nsServiceManagerUtils.h"
+#include "prnetdb.h"
 
 namespace mozilla {
 
@@ -345,7 +336,8 @@ already_AddRefed<BasePrincipal> BasePrincipal::FromJSON(
           reinterpret_cast<const JS::Latin1Char*>(aJSON.BeginReading()),
           aJSON.Length(), &handler)) {
     NS_WARNING(
-        nsPrintfCString("Unable to parse: %s", aJSON.BeginReading()).get());
+        nsPrintfCString("Unable to parse: %s", PromiseFlatCString(aJSON).get())
+            .get());
     MOZ_ASSERT(false,
                "Unable to parse string as JSON to deserialize as a principal");
     return nullptr;
@@ -971,6 +963,12 @@ BasePrincipal::GetIsSystemPrincipal(bool* aResult) {
 }
 
 NS_IMETHODIMP
+BasePrincipal::GetIsAddonPrincipal(bool* aResult) {
+  *aResult = !!AddonPolicyCore();
+  return NS_OK;
+}
+
+NS_IMETHODIMP
 BasePrincipal::GetIsAddonOrExpandedAddonPrincipal(bool* aResult) {
   *aResult = AddonPolicyCore() || ContentScriptAddonPolicyCore();
   return NS_OK;
@@ -1260,6 +1258,21 @@ already_AddRefed<BasePrincipal> BasePrincipal::CreateContentPrincipal(
     nsIURI* aURI, const OriginAttributes& aAttrs, nsIURI* aInitialDomain) {
   MOZ_ASSERT(aURI);
 
+  // Blob URLs don't derive the principal directly from the URL in the same way
+  // as normal content principals, and may have a non-content principal.
+  nsCOMPtr<nsIURI> innermost = NS_GetInnermostURI(aURI);
+  if (innermost && innermost->SchemeIs(BLOBURI_SCHEME)) {
+    MOZ_ASSERT(!aInitialDomain,
+               "an initial domain for a blob URI makes no sense");
+    nsCOMPtr<nsIPrincipal> blobPrincipal;
+    if (!dom::BlobURLProtocolHandler::GetBlobURLPrincipal(
+            innermost, aAttrs, getter_AddRefs(blobPrincipal))) {
+      // This isn't a valid Blob URL, give up and return a null principal.
+      return NullPrincipal::Create(aAttrs);
+    }
+    return blobPrincipal.forget().downcast<BasePrincipal>();
+  }
+
   nsAutoCString originNoSuffix;
   nsresult rv =
       ContentPrincipal::GenerateOriginNoSuffixFromURI(aURI, originNoSuffix);
@@ -1305,16 +1318,6 @@ already_AddRefed<BasePrincipal> BasePrincipal::CreateContentPrincipal(
     return principal.forget();
   }
 #endif
-
-  nsCOMPtr<nsIPrincipal> blobPrincipal;
-  if (dom::BlobURLProtocolHandler::GetBlobURLPrincipal(
-          aURI, getter_AddRefs(blobPrincipal))) {
-    MOZ_ASSERT(blobPrincipal);
-    MOZ_ASSERT(!aInitialDomain,
-               "an initial domain for a blob URI makes no sense");
-    RefPtr<BasePrincipal> principal = Cast(blobPrincipal);
-    return principal.forget();
-  }
 
   // Mint a content principal.
   RefPtr<ContentPrincipal> principal =
@@ -1429,7 +1432,7 @@ BasePrincipal::GetLocalStorageQuotaKey(nsACString& aKey) {
     nsAutoCString eTLDplusOne;
     rv = eTLDService->GetBaseDomain(uri, 0, eTLDplusOne);
     if (NS_SUCCEEDED(rv)) {
-      baseDomain = eTLDplusOne;
+      baseDomain = std::move(eTLDplusOne);
     } else if (rv == NS_ERROR_HOST_IS_IP_ADDRESS ||
                rv == NS_ERROR_INSUFFICIENT_DOMAIN_LEVELS) {
       rv = NS_OK;

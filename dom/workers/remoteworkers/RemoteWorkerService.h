@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -84,6 +82,15 @@ class RemoteWorkerService final : public nsIObserver {
   static void RegisterRemoteDebugger(
       RemoteWorkerDebuggerInfo aDebuggerInfo,
       mozilla::ipc::Endpoint<PRemoteWorkerDebuggerParent> aDebuggerParentEp);
+
+  // Returns true once the RemoteWorkerService singleton is initialized in this
+  // process, i.e. RegisterRemoteDebugger can be called safely. Content
+  // processes always have it (it backs every remote worker), but a
+  // parent-process worker may be constructed before the service is set up, or
+  // in a process that never sets it up (e.g. xpcshell). Callers that route
+  // parent-process workers through the RemoteWorkerDebugger must check this and
+  // fall back to the local WorkerDebugger otherwise.
+  static bool IsInitialized();
 
   // Called by RemoteWorkerChild instances on the "Worker Launcher" thread at
   // their creation to assist in tracking when it's safe to shutdown the

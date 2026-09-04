@@ -5,9 +5,9 @@
 #ifndef AccGroupInfo_h_
 #define AccGroupInfo_h_
 
-#include "nsISupportsImpl.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/a11y/Role.h"
+#include "nsISupportsImpl.h"
 
 namespace mozilla {
 namespace a11y {
@@ -24,6 +24,9 @@ class AccGroupInfo {
   AccGroupInfo() = default;
   AccGroupInfo(AccGroupInfo&&) = default;
   AccGroupInfo& operator=(AccGroupInfo&&) = default;
+
+  AccGroupInfo(const AccGroupInfo&) = delete;
+  AccGroupInfo& operator=(const AccGroupInfo&) = delete;
 
   /**
    * Return 1-based position in the group.
@@ -73,9 +76,6 @@ class AccGroupInfo {
   AccGroupInfo(const Accessible* aItem, a11y::role aRole);
 
  private:
-  AccGroupInfo(const AccGroupInfo&) = delete;
-  AccGroupInfo& operator=(const AccGroupInfo&) = delete;
-
   /**
    * Return true if the given parent and child roles should have their node
    * relations reported.

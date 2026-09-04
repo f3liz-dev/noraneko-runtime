@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,6 +6,7 @@
 
 #include "mozilla/dom/UnderlyingSinkCallbackHelpers.h"
 #include "mozilla/dom/WebTransport.h"
+#include "mozilla/dom/WebTransportSendGroup.h"
 #include "mozilla/dom/WebTransportSendReceiveStreamBinding.h"
 #include "mozilla/dom/WritableStream.h"
 #include "mozilla/ipc/DataPipe.h"
@@ -17,7 +16,7 @@ using namespace mozilla::ipc;
 namespace mozilla::dom {
 
 NS_IMPL_CYCLE_COLLECTION_INHERITED(WebTransportSendStream, WritableStream,
-                                   mTransport)
+                                   mTransport, mSendGroup)
 NS_IMPL_ADDREF_INHERITED(WebTransportSendStream, WritableStream)
 NS_IMPL_RELEASE_INHERITED(WebTransportSendStream, WritableStream)
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(WebTransportSendStream)
@@ -40,7 +39,8 @@ JSObject* WebTransportSendStream::WrapObject(
 /* static */
 already_AddRefed<WebTransportSendStream> WebTransportSendStream::Create(
     WebTransport* aWebTransport, nsIGlobalObject* aGlobal, uint64_t aStreamId,
-    DataPipeSender* aSender, Maybe<int64_t> aSendOrder, ErrorResult& aRv) {
+    DataPipeSender* aSender, int64_t aSendOrder,
+    WebTransportSendGroup* aSendGroup, ErrorResult& aRv) {
   // https://w3c.github.io/webtransport/#webtransportsendstream-create
   AutoJSAPI jsapi;
   if (!jsapi.Init(aGlobal)) {
@@ -51,14 +51,13 @@ already_AddRefed<WebTransportSendStream> WebTransportSendStream::Create(
   auto stream = MakeRefPtr<WebTransportSendStream>(aGlobal, aWebTransport);
 
   nsCOMPtr<nsIAsyncOutputStream> outputStream = aSender;
-  auto algorithms = MakeRefPtr<WritableStreamToOutput>(
+  auto algorithms = MakeRefPtr<WritableStreamToOutputAlgorithms>(
       stream->GetParentObject(), outputStream);
 
   stream->mStreamId = aStreamId;
+  stream->mSendGroup = aSendGroup;
 
-  if (aSendOrder.isSome()) {
-    stream->mSendOrder.SetValue(aSendOrder.value());
-  }
+  stream->mSendOrder = aSendOrder;
 
   // Steps 2-5
   RefPtr<QueuingStrategySize> writableSizeAlgorithm;
@@ -80,10 +79,29 @@ already_AddRefed<WebTransportSendStream> WebTransportSendStream::Create(
   return stream.forget();
 }
 
-void WebTransportSendStream::SetSendOrder(Nullable<int64_t> aSendOrder) {
+void WebTransportSendStream::SetSendOrder(int64_t aSendOrder) {
   mSendOrder = aSendOrder;
-  mTransport->SendSetSendOrder(
-      mStreamId, aSendOrder.IsNull() ? Nothing() : Some(aSendOrder.Value()));
+  mTransport->SendSetSendOrder(mStreamId, aSendOrder);
+}
+
+void WebTransportSendStream::SetSendGroup(WebTransportSendGroup* aSendGroup,
+                                          ErrorResult& aRv) {
+  // https://w3c.github.io/webtransport/#send-stream-attributes (sendGroup
+  // setter)
+
+  // Step 1: If value is non-null and value.[[Transport]] ≠
+  // this.[[Transport]], throw an "InvalidStateError" DOMException.
+  if (aSendGroup && aSendGroup->GetTransport() != mTransport) {
+    aRv.ThrowInvalidStateError("SendGroup belongs to different transport");
+    return;
+  }
+  // Step 2: Set this.[[SendGroup]] to value.
+  mSendGroup = aSendGroup;
+  // Propagate the new send group to the network process so the neqo scheduler
+  // sees the updated group assignment. groupId 0 means no group (null
+  // sendGroup).
+  uint64_t groupId = aSendGroup ? aSendGroup->GetGroupId() : 0;
+  mTransport->SendSetSendGroup(mStreamId, groupId);
 }
 
 already_AddRefed<Promise> WebTransportSendStream::GetStats() {

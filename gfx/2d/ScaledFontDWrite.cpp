@@ -1,30 +1,25 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "ScaledFontDWrite.h"
-#include "gfxDWriteCommon.h"
-#include "UnscaledFontDWrite.h"
-#include "gfxFont.h"
-#include "Logging.h"
-#include "mozilla/FontPropertyTypes.h"
-#include "mozilla/webrender/WebRenderTypes.h"
-#include "StackArray.h"
-
-#include "dwrite_3.h"
-
-#include "PathSkia.h"
-#include "skia/include/core/SkPaint.h"
-#include "skia/include/core/SkPath.h"
-#include "skia/include/ports/SkTypeface_win.h"
 
 #include <vector>
 
-#include "cairo-dwrite.h"
-
 #include "HelpersWinFonts.h"
+#include "Logging.h"
+#include "PathSkia.h"
+#include "StackArray.h"
+#include "UnscaledFontDWrite.h"
+#include "cairo-dwrite.h"
+#include "dwrite_3.h"
+#include "gfxDWriteCommon.h"
+#include "gfxFont.h"
+#include "mozilla/FontPropertyTypes.h"
+#include "mozilla/webrender/WebRenderTypes.h"
+#include "skia/include/core/SkPaint.h"
+#include "skia/include/core/SkPath.h"
+#include "skia/include/ports/SkTypeface_win.h"
 
 namespace mozilla {
 namespace gfx {
@@ -85,7 +80,7 @@ ScaledFontDWrite::ScaledFontDWrite(IDWriteFontFace* aFontFace,
       mGDIForced(aGDIForced) {
   if (aStyle) {
     mStyle = SkFontStyle(aStyle->weight.ToIntRounded(),
-                         DWriteFontStretchFromStretch(aStyle->stretch),
+                         DWriteFontStretchFromWidth(aStyle->width),
                          // FIXME(jwatt): also use kOblique_Slant
                          aStyle->style == FontSlantStyle::NORMAL
                              ? SkFontStyle::kUpright_Slant
@@ -652,8 +647,11 @@ void ScaledFontDWrite::PrepareCairoScaledFont(cairo_scaled_font_t* aFont) {
 already_AddRefed<UnscaledFont> UnscaledFontDWrite::CreateFromFontDescriptor(
     const uint8_t* aData, uint32_t aDataLength, uint32_t aIndex) {
   // Note that despite the type of aData here, it actually points to a 16-bit
-  // Windows font file path (hence the cast to WCHAR* below).
-  if (aDataLength == 0) {
+  // Windows font file path (hence the cast to WCHAR* below) and must be null-
+  // terminated.
+  const WCHAR* path = (const WCHAR*)aData;
+  size_t pathLen = aDataLength / sizeof(WCHAR);
+  if (pathLen < 1 || path[pathLen - 1] != 0) {
     gfxWarning() << "DWrite font descriptor is truncated.";
     return nullptr;
   }
@@ -665,7 +663,7 @@ already_AddRefed<UnscaledFont> UnscaledFontDWrite::CreateFromFontDescriptor(
 
   MOZ_SEH_TRY {
     RefPtr<IDWriteFontFile> fontFile;
-    HRESULT hr = factory->CreateFontFileReference((const WCHAR*)aData, nullptr,
+    HRESULT hr = factory->CreateFontFileReference(path, nullptr,
                                                   getter_AddRefs(fontFile));
     if (FAILED(hr)) {
       return nullptr;
@@ -690,8 +688,9 @@ already_AddRefed<UnscaledFont> UnscaledFontDWrite::CreateFromFontDescriptor(
     return unscaledFont.forget();
   }
   MOZ_SEH_EXCEPT(EXCEPTION_EXECUTE_HANDLER) {
-    gfxCriticalNote << "Exception occurred creating unscaledFont for "
-                    << NS_ConvertUTF16toUTF8((const char16_t*)aData).get();
+    gfxCriticalNote
+        << "Exception occurred creating UnscaledFont for "
+        << NS_ConvertUTF16toUTF8((const char16_t*)path, pathLen - 1).get();
     return nullptr;
   }
 }

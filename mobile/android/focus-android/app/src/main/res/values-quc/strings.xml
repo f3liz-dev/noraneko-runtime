@@ -27,6 +27,7 @@
   <string name="teaser">Nik\'onem rech echeb\'alil pa utukelam.\nUtzukuxik. Uyujik. Ukamulixik.</string>
   <!-- "Snackbar" shown after the user has pressed the 'erase' button at the end of a browsing session -->
   <string name="feedback_erase">Le atzukub\'al rech b\'anatal kanoq xchupisaxik.</string>
+  <!-- "Snackbar" shown after the user has pressed the 'erase' button at the end of a browsing session -->
   <string name="feedback_erase2">Xchupisax le xajtanem rech nik´onem</string>
   <!-- "Snackbar" shown after the user has pressed the 'erase' button at the end of a custom tab browsing session -->
   <string name="feedback_erase_custom_tab">Le xajtajem rech nik´onel rech woktz´ib´anel xchupisaxik.</string>
@@ -129,6 +130,9 @@
   -->
   <string name="shortcut_erase_and_open_long_label">Chachupu´ k´ate k´u ri´ chatzija´ %1$s</string>
   <!--
+    These labels are selected per variant through manifestPlaceholders in build.gradle, so
+    UnusedResources does not see the ones for the variants it is not analyzing.
+
     This is the label of an action we offer when the user selects text in other third-party apps.
     Focus is hard coded since we can't use variables in this context.
     Do not translate or transliterate Focus.
@@ -139,24 +143,24 @@
     Klar is hard coded since we can't use variables in this context.
     Do not translate or transliterate Klar.
   -->
-  <string name="text_selection_search_action_klar" tools:ignore="BrandUsage">Chatzukuj pa Klar</string>
+  <string name="text_selection_search_action_klar" tools:ignore="BrandUsage,UnusedResources">Chatzukuj pa Klar</string>
   <!--
     This is the label of an action we offer when the user selects text in other third-party apps.
     Focus Beta is hard coded since we can't use variables in this context.
     Do not translate or transliterate Focus Beta.
   -->
-  <string name="text_selection_search_action_focus_beta" tools:ignore="BrandUsage">Chatzukuj pa Focus Beta</string>
+  <string name="text_selection_search_action_focus_beta" tools:ignore="BrandUsage,UnusedResources">Chatzukuj pa Focus Beta</string>
   <!--
     This is the label of an action we offer when the user selects text in other third-party apps.
     Focus Nightly is hard coded since we can't use variables in this context.
     Do not translate or transliterate Focus Nightly.
   -->
-  <string name="text_selection_search_action_focus_nightly" tools:ignore="BrandUsage">Chatzukuj pa Focus Nightly</string>
+  <string name="text_selection_search_action_focus_nightly" tools:ignore="BrandUsage,UnusedResources">Chatzukuj pa Focus Nightly</string>
   <!--
     Content of about focus. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     %2$s is the url for the learn-more link.
   -->
-  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s kuya´ rilawachixik chi awech.</p>\n<p>Chakojo´ pacha´ nik´ob´al rech echeb´alil:\n<ul>\n<li>Chatzukuj chi´l chanik´oj pa le kojkemchak:</li>\n<li>Che´aq´atej taq tzukub´al (on chak´ak´arisaj taq wiqitajem chech uya´ik b´e chi kech taq tzukub´al)</li>\n<li>Chayuju´ chech kichupik cookies chi´l utzukuxik chi´l unik´oxik b´antal kanoq</li>\n</ul> </p>\n<p>%1$s are b´anowinaq le Mozilla. Le qachak are uya´ik jun utzalaj, ujaqik kemk´atz.<br/>\n<a href=\"%2$s\">Chaweta´maj nik´aj chik</a></p>]]></string>
+  <string name="about_content" tools:ignore="BrandUsage,IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s kuya´ rilawachixik chi awech.</p>\n<p>Chakojo´ pacha´ nik´ob´al rech echeb´alil:\n<ul>\n<li>Chatzukuj chi´l chanik´oj pa le kojkemchak:</li>\n<li>Che´aq´atej taq tzukub´al (on chak´ak´arisaj taq wiqitajem chech uya´ik b´e chi kech taq tzukub´al)</li>\n<li>Chayuju´ chech kichupik cookies chi´l utzukuxik chi´l unik´oxik b´antal kanoq</li>\n</ul> </p>\n<p>%1$s are b´anowinaq le Mozilla. Le qachak are uya´ik jun utzalaj, ujaqik kemk´atz.<br/>\n<a href=\"%2$s\">Chaweta´maj nik´aj chik</a></p>]]></string>
   <!-- A link to SUMO at the bottom of About Focus screen. -->
   <string name="about_screen_learn_more">Chaweta\'maj nik\'aj chik</string>
   <!-- Header for the Privacy and Security settings menu -->
@@ -251,7 +255,7 @@
   <!-- "Hint" text for the "custom autocomplete URL" input field. Shown when the field is empty. -->
   <string name="preference_autocomplete_add_hint">Chanak\'a\' on chatz\'ib\'aj URL</string>
   <!-- Example how a custom domain autocomplete URL be added (e.g. without http://) -->
-  <string name="preference_autocomplete_add_example2">K\'utb\'al: mozilla.org</string>
+  <string name="preference_autocomplete_add_example2" tools:ignore="BrandUsage">K\'utb\'al: mozilla.org</string>
   <!-- To be removed once the new hint has been translated -->
   <string name="preference_autocomplete_add_example">K\'utb\'al: example.com</string>
   <!-- Confirmation "snackbar" shown after a new custom autocomplete URL has been added. -->
@@ -323,15 +327,15 @@
     %1$s will be replaced by the app name (e.g. Firefox Focus)
   -->
   <string name="preference_default_browser2">Chab\'ana\' %1$s nik\'ob\'al ya\'om chi uloq</string>
-  <string name="preference_category_mozilla">Mozilla</string>
+  <string name="preference_category_mozilla" tools:ignore="BrandUsage">Mozilla</string>
   <string name="preference_mozilla_telemetry2">Utaqik taq juq\'attzij rech ukojik</string>
   <!-- A link to SUMO at the end of the summary (preference_mozilla_telemetry_summary2) of the "Send anonymous usage data" setting. -->
   <string name="preference_mozilla_telemetry_summary">Chaweta\'maj nik\'aj chik</string>
   <!-- %1$s will be replaced with the name of the app (e.g. Firefox Focus) -->
-  <string name="preference_mozilla_telemetry_summary2">Le Mozilla kukoj uchuq\'ab\' chech umulixik xew le rajawaxik kya\'ik chi\'l uk\'exsuk\'umaxik %1$s chi kech konojel.</string>
+  <string name="preference_mozilla_telemetry_summary2" tools:ignore="BrandUsage">Le Mozilla kukoj uchuq\'ab\' chech umulixik xew le rajawaxik kya\'ik chi\'l uk\'exsuk\'umaxik %1$s chi kech konojel.</string>
   <!-- Preference switch for daily usage ping data collection -->
   <string name="preference_daily_usage_ping_title">Chakub\'al qas kkojik</string>
-  <string name="preference_daily_usage_ping_description">Wa\' ktob\'an chech Mozilla chech uyakik kik\'u\'x taq e k\'ask\'atel kojonelab\'.</string>
+  <string name="preference_daily_usage_ping_description" tools:ignore="BrandUsage">Wa\' ktob\'an chech Mozilla chech uyakik kik\'u\'x taq e k\'ask\'atel kojonelab\'.</string>
   <string name="preference_daily_usage_ping_learn_more">Chaweta\'maj nik\'aj chik</string>
   <!-- In-app link (in settings) to Focus privacy notice. -->
   <string name="preference_privacy_notice">Ub\'ixikil rech echeb\'alil</string>
@@ -562,6 +566,8 @@
   <string name="tabs_tray_action_erase">Uchupik b\'antal kanoq rech nik\'onel</string>
   <!-- Label for the option in the Focus "tabs tray" to clos the other tabs except the current tab. -->
   <string name="tabs_tray_action_erase_other">Chacha\' nik\'aj chi taq q\'etb\'al</string>
+  <!-- Label for the option in the Focus "tabs tray" to add a new tab. -->
+  <string name="tabs_tray_action_add_new_tab">Chaya\' jun k\'ak\' k\'utjaqb\'al</string>
   <!--
     If the user decides to open the current page in another browser and if Firefox is not installed then we show this
     item in the list of browsers. Clicking it will open the app store installed on the device (usually that's Google Play).
@@ -582,6 +588,23 @@
   <string name="security_popup_security_verified">Q\'atum rumal: %1$s</string>
   <!-- Content Description of Security Icon in toolbar -->
   <string name="site_security_icon_content_description">Chajital wokk\'olib\'al web\'</string>
+  <!--
+    Text shown in Security Information Popup
+
+    %1$s will be replaced with the organization for which the certificate
+    used by the site was issued. For example, the certificate in use by
+    the site https://eidas.ec.europa.eu/ was issued to "The European
+    Commission".
+  -->
+  <string name="qualified_identity">Wujil ya\'om chech %1$s</string>
+  <!--
+    The European Union eIDAS Regulation specifies a type of certificate
+    called a "qualified website authentication certificate" (QWAC) and
+    requires that browsers identify and indicate such certificates. This
+    text was paraphrased from ETSI TS 119 411-5 V2.1.1 section 6.3 and
+    indicates that the website uses a QWAC.
+  -->
+  <string name="qualified_text">Wujil pacha\' ya\'om ub\'ixik pa le taqanik (EU) 2024/1183.</string>
   <string name="preference_autocomplete_duplicate_url_error">URL k\'o chik</string>
   <!-- Label for the Find in page button -->
   <string name="find_in_page">Uriqik pa uxaq wuj</string>
@@ -812,7 +835,7 @@
   <!-- Label for button to close the tab -->
   <string name="tab_crash_report_close_tab_button_label">Chatz\'apij K\'utjaqb\'al</string>
   <!-- Label for the checkbox to send the tab crash report to Mozilla -->
-  <string name="crash_report_send_crash_label">Utaqik uk\'axk\'olil chech Mozilla</string>
+  <string name="crash_report_send_crash_label" tools:ignore="BrandUsage">Utaqik uk\'axk\'olil chech Mozilla</string>
   <!-- Tracking protection bottom sheet -->
 
   <!-- Label for the total number of trackers blocked. %s is the app install date. -->
@@ -877,12 +900,16 @@
     %2$s is a URL to a support article. Contains a button that will redirect the user to Privacy & Security Screen.
   -->
   <string name="errorpage_httpsonly_message2" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[%1$s Utz kakoj jun t\'iqonem HTTPS we kkowinb\'exik, chech nim ucholajil chajinem. <a href=\"%2$s\">Chaweta\'maj nik\'aj chik</a> <br/><br/>\nChak\'exa\' we jeq\'eb\'anem pa taq jeq\'eb\'anem > Echeb\'alil &amp; Chajinem > Echeb\'alil.]]></string>
-  <!-- The document title and heading of the error page shown when a website has an invalid or expired SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_bad_cert_title">Le t\'iqonem man qas ta uq\'alb\'al k\'u\'x</string>
+  <!--
+    The strings below override AC defaults and are only referenced from there.
+
+    The document title and heading of the error page shown when a website has an invalid or expired SSL certificate.
+  -->
+  <string name="mozac_browser_errorpages_security_bad_cert_title" tools:ignore="UnusedResources">Le t\'iqonem man qas ta uq\'alb\'al k\'u\'x</string>
   <!-- The error message shown when a website has an invalid or expired SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_bad_cert_message"><![CDATA[Wene kuya\' k\'axk\'olil ruk\' le ujeq\'eb\'axik pataninel, on k\'o jun alachinaq le ktajin kraj kujalwachij le ub\'antajik le kempatanel. <br/><br/>\nWe at\'iqom kanoq chech we pataninel xuquje\' utz ub\'anom, wene xaq ch\'ikital uq\'ijol le uk\'axk\'olil.]]></string>
+  <string name="mozac_browser_errorpages_security_bad_cert_message" tools:ignore="UnusedResources"><![CDATA[Wene kuya\' k\'axk\'olil ruk\' le ujeq\'eb\'axik pataninel, on k\'o jun alachinaq le ktajin kraj kujalwachij le ub\'antajik le kempatanel. <br/><br/>\nWe at\'iqom kanoq chech we pataninel xuquje\' utz ub\'anom, wene xaq ch\'ikital uq\'ijol le uk\'axk\'olil.]]></string>
   <!-- The advanced certificate information shown when a website has an invalid SSL certificate. The %1$s will be replaced by the app name and %2$s will be replaced by website URL. It's only shown when a website has an invalid SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>Wene k\'o alachinaq ktajin kraj kujalwachij ub\'antajik le uk\'olib\'al web\', wa\' k\'o uk\'axk\'olil chi rij.</label> <br><br>\n<label>%1$s maq\'a\'i\' ak\'u\'x chi rij <b>%2$s</b> rumal le uwujil man eta\'matal taj, le uwujil juch\'utal pa utukelam on le kempatanel man are ta kutaq loq le utz uwujil.</label>]]></string>
+  <string name="mozac_browser_errorpages_security_bad_cert_techInfo" tools:ignore="UnusedResources"><![CDATA[<label>Wene k\'o alachinaq ktajin kraj kujalwachij ub\'antajik le uk\'olib\'al web\', wa\' k\'o uk\'axk\'olil chi rij.</label> <br><br>\n<label>%1$s maq\'a\'i\' ak\'u\'x chi rij <b>%2$s</b> rumal le uwujil man eta\'matal taj, le uwujil juch\'utal pa utukelam on le kempatanel man are ta kutaq loq le utz uwujil.</label>]]></string>
   <!--
     Sessions List
 

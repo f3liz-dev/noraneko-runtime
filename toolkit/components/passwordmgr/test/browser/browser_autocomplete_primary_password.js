@@ -31,10 +31,11 @@ add_setup(async function () {
     password: "password",
   });
   await Services.logins.addLoginAsync(login);
-  LoginTestUtils.primaryPassword.enable();
+  await LoginTestUtils.primaryPassword.enable();
 
-  registerCleanupFunction(function () {
-    LoginTestUtils.primaryPassword.disable();
+  registerCleanupFunction(async function () {
+    await LoginTestUtils.primaryPassword.disable();
+    await SpecialPowers.flushPrefEnv();
   });
 
   // Set primary password prompt timeout to 3s.

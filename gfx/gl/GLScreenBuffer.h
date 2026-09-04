@@ -1,4 +1,3 @@
-/* -*- Mode: c++; c-basic-offset: 2; indent-tabs-mode: nil; tab-width: 4; -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -15,13 +14,13 @@
 #ifndef SCREEN_BUFFER_H_
 #define SCREEN_BUFFER_H_
 
-#include "GLTypes.h"
-#include "mozilla/gfx/Point.h"
-#include "mozilla/UniquePtr.h"
-
 #include <functional>
-#include <queue>
 #include <memory>
+#include <queue>
+
+#include "GLTypes.h"
+#include "mozilla/UniquePtr.h"
+#include "mozilla/gfx/Point.h"
 
 namespace mozilla {
 namespace gl {
@@ -81,7 +80,8 @@ class SwapChain final {
   void ClearPool();
   bool StoreRecycledSurface(const std::shared_ptr<SharedSurface>& surf);
   const auto& FrontBuffer() const { return mFrontBuffer; }
-  UniquePtr<SwapChainPresenter> Acquire(const gfx::IntSize&, gfx::ColorSpace2);
+  UniquePtr<SwapChainPresenter> Acquire(const gfx::IntSize&, gfx::ColorSpace2,
+                                        gfx::TransferFunction);
 
   void SetDestroyedCallback(std::function<void()>&& aDestroyedCallback) {
     MOZ_ASSERT(!mDestroyedCallback);

@@ -14,9 +14,9 @@ const TEST_PRINCIPAL =
   );
 const TEST_CLEAR_DATA_FLAGS = Services.clearData.CLEAR_AUTH_TOKENS;
 
-const pk11db = Cc["@mozilla.org/security/pk11tokendb;1"].getService(
-  Ci.nsIPK11TokenDB
-);
+const internalKeyToken = Cc[
+  "@mozilla.org/security/internalkeytoken;1"
+].createInstance(Ci.nsIPKCS11Token);
 
 const { LoginTestUtils } = ChromeUtils.importESModule(
   "resource://testing-common/LoginTestUtils.sys.mjs"
@@ -24,11 +24,10 @@ const { LoginTestUtils } = ChromeUtils.importESModule(
 
 function testLoggedIn(isLoggedIn) {
   Assert.equal(
-    pk11db.getInternalKeyToken().isLoggedIn(),
+    internalKeyToken.isLoggedIn,
     isLoggedIn,
     `Should ${isLoggedIn ? "" : "not "}be logged in`
   );
-  pk11db.getInternalKeyToken().isLoggedIn();
 }
 
 function clearData({ deleteBy = "all", hasUserInput = false } = {}) {
@@ -63,11 +62,11 @@ function clearData({ deleteBy = "all", hasUserInput = false } = {}) {
   });
 }
 
-function runTest({ deleteBy, hasUserInput }) {
+async function runTest({ deleteBy, hasUserInput }) {
   testLoggedIn(false);
 
   info("Setup primary password and login");
-  LoginTestUtils.primaryPassword.enable(true);
+  await LoginTestUtils.primaryPassword.enable(true);
   testLoggedIn(true);
 
   info(
@@ -89,21 +88,21 @@ function runTest({ deleteBy, hasUserInput }) {
     Ci.nsISecretDecoderRing
   );
   sdr.logoutAndTeardown();
-  LoginTestUtils.primaryPassword.disable();
+  await LoginTestUtils.primaryPassword.disable();
 }
 
 add_task(async function test_deleteAll() {
-  runTest({ deleteBy: "all" });
+  await runTest({ deleteBy: "all" });
 });
 
 add_task(async function test_deleteByPrincipal() {
   for (let hasUserInput of [false, true]) {
-    runTest({ deleteBy: "principal", hasUserInput });
+    await runTest({ deleteBy: "principal", hasUserInput });
   }
 });
 
 add_task(async function test_deleteByBaseDomain() {
   for (let hasUserInput of [false, true]) {
-    runTest({ deleteBy: "baseDomain", hasUserInput });
+    await runTest({ deleteBy: "baseDomain", hasUserInput });
   }
 });

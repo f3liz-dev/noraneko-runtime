@@ -1,4 +1,4 @@
-# Testing
+# Remote protocol testing
 
 The Remote Protocol has unit- and functional tests located under different folders:
 
@@ -24,7 +24,7 @@ chatty, it can sometimes be useful to run the tests in sequence:
 The unit tests will appear as part of the `X` (for _xpcshell_) jobs
 on Treeherder.
 
-[xpcshell]: /testing/xpcshell/index.rst
+[xpcshell]: /testing/xpcshell/index.md
 
 ## Browser Chrome Mochitests
 
@@ -122,5 +122,5 @@ But you can also schedule tests by selecting relevant jobs yourself:
 [exclusive tests]: https://mochajs.org/#exclusive-tests
 [track progress]: https://puppeteer.github.io/ispuppeteerfirefoxready/
 [try preset]: /tools/try/presets
-[TestExpectations.json]: https://searchfox.org/mozilla-central/source/remote/test/puppeteer/test/TestExpectations.json
-[CanaryTestExpectations.json]: https://searchfox.org/mozilla-central/source/remote/test/puppeteer/test/CanaryTestExpectations.json
+[TestExpectations.json]: https://searchfox.org/firefox-main/source/remote/test/puppeteer/test/TestExpectations.json
+[CanaryTestExpectations.json]: https://searchfox.org/firefox-main/source/remote/test/puppeteer/test/CanaryTestExpectations.json

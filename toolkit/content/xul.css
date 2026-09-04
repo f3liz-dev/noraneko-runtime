@@ -141,16 +141,6 @@ label html|span.accesskey {
   text-decoration-skip-ink: none;
 }
 
-description:where([value]) {
-  /* Preserves legacy behavior, maybe could be removed */
-  display: flex;
-}
-
-label:where([value]) {
-  /* Preserves legacy behavior, maybe could be removed */
-  display: inline-flex;
-}
-
 :is(label, description)[value] {
   white-space: nowrap;
 }
@@ -159,7 +149,6 @@ label:where([value]) {
   /* This displays the value attribute, along with the underlined
    * accesskey if needed */
   content: -moz-label-content;
-  display: block;
 }
 
 label[value=""]::before {
@@ -168,11 +157,6 @@ label[value=""]::before {
 
 :is(label, description)[value][crop] {
   min-width: 0;
-}
-
-:is(label, description)[value][crop]::before {
-  min-width: 0;
-  max-width: 100%;
   /* This implements crop=end */
   overflow: hidden;
   text-overflow: ellipsis;
@@ -379,9 +363,17 @@ tooltip {
   pointer-events: none;
 
   /**
-   * It's important that these styles are in a UA sheet, because the default
-   * tooltip is native anonymous content
+   * Enforce wrapping and some per-platform styles in the UA sheet so these
+   * rules apply in native anonymous content tooltips which lack author styles.
    */
+
+  > .tooltip-label {
+    word-wrap: break-word;
+    /* We must specify a min-width, otherwise word-wrap:break-word doesn't work.
+     * See Bug 630864. */
+    min-width: 1px;
+  }
+
   @media (-moz-platform: linux) {
     padding: 6px 10px; /* Matches Adwaita. */
     line-height: 1.4; /* For Noto Sans; note that 1.2 may clip descenders. */
@@ -436,7 +428,9 @@ treecol {
 
 treecol[hidden] {
   visibility: collapse;
-  display: flex;
+  /* `!important` to keep the column laid out (collapsed, not removed) over the
+     global `[hidden] { display: none !important }` rule. */
+  display: flex !important;
 }
 
 /* ::::: lines connecting cells ::::: */

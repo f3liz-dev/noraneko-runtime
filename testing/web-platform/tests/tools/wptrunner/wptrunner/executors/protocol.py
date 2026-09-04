@@ -353,6 +353,18 @@ class AccessibilityProtocolPart(ProtocolPart):
         :param element: A protocol-specific handle to an element."""
         pass
 
+    def get_accessibility_properties_for_element(self, element):
+        """Return the accessibility properties for a specific element.
+
+        :param element: A protocol-specific handle to an element."""
+        raise NotImplementedError
+
+    def get_accessibility_properties_for_accessibility_node(self, id):
+        """Return the properties for a specific accessibility node.
+
+        :param id: The id of the accessibility node."""
+        raise NotImplementedError
+
 
 class WebExtensionsProtocolPart(ProtocolPart):
     """Protocol part for managing WebExtensions"""
@@ -876,7 +888,13 @@ class TestDriverProtocolPart(ProtocolPart):
 
             if isinstance(item, str):
                 if not first or item != initial_window:
-                    self.parent.base.set_window(item)
+                    try:
+                        self.parent.base.set_window(item)
+                    except Exception as e:
+                        if e.__class__.__name__ == "NoSuchWindowException":
+                            # This window has been closed since we got the handles, so continue
+                            continue
+                        raise
                 first = False
             else:
                 assert first is False
@@ -1127,6 +1145,22 @@ class FedCMProtocolPart(ProtocolPart):
         pass
 
 
+class DigitalCredentialsProtocolPart(ProtocolPart):
+    """Protocol part for Digital Credentials"""
+    __metaclass__ = ABCMeta
+
+    name = "digital_credentials"
+
+    @abstractmethod
+    async def set_virtual_wallet_behavior(self, action, protocol=None, response=None, context=None):
+        """Set the virtual wallet behavior
+
+        :param str action: The action to take ("decline", "respond", "wait", "clear")
+        :param str protocol: The protocol requested (required for "respond")
+        :param dict response: The response data (optional for "respond")"""
+        pass
+
+
 class PrintProtocolPart(ProtocolPart):
     """Protocol part for rendering to a PDF."""
     __metaclass__ = ABCMeta
@@ -1198,7 +1232,7 @@ class ConnectionlessProtocol(Protocol):
         pass
 
 
-class WdspecProtocol(ConnectionlessProtocol):
+class PytestProtocol(ConnectionlessProtocol):
     implements = [ConnectionlessBaseProtocolPart]
 
     def __init__(self, executor, browser):

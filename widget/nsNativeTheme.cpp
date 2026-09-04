@@ -1,35 +1,36 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsNativeTheme.h"
-#include "nsIWidget.h"
-#include "mozilla/dom/Document.h"
-#include "nsIContent.h"
-#include "nsIFrame.h"
-#include "nsLayoutUtils.h"
-#include "nsNumberControlFrame.h"
-#include "nsPresContext.h"
-#include "nsString.h"
-#include "nsNameSpaceManager.h"
-#include "nsStyleConsts.h"
-#include "nsPIDOMWindow.h"
-#include "nsProgressFrame.h"
-#include "nsRangeFrame.h"
-#include "nsCSSRendering.h"
+
+#include <algorithm>
+
 #include "ImageContainer.h"
 #include "mozilla/ComputedStyle.h"
+#include "mozilla/PresShell.h"
+#include "mozilla/ScrollContainerFrame.h"
+#include "mozilla/StaticPrefs_layout.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/DocumentInlines.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/HTMLBodyElement.h"
 #include "mozilla/dom/HTMLInputElement.h"
 #include "mozilla/dom/HTMLProgressElement.h"
-#include "mozilla/PresShell.h"
-#include "mozilla/ScrollContainerFrame.h"
-#include "mozilla/StaticPrefs_layout.h"
-#include "mozilla/dom/DocumentInlines.h"
+#include "nsCSSRendering.h"
+#include "nsIContent.h"
+#include "nsIContentInlines.h"
+#include "nsIFrame.h"
+#include "nsIWidget.h"
+#include "nsLayoutUtils.h"
+#include "nsNameSpaceManager.h"
+#include "nsPIDOMWindow.h"
+#include "nsPresContext.h"
+#include "nsProgressFrame.h"
+#include "nsRangeFrame.h"
+#include "nsString.h"
+#include "nsStyleConsts.h"
 #include "nsXULElement.h"
-#include <algorithm>
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -37,6 +38,18 @@ using namespace mozilla::dom;
 nsNativeTheme::nsNativeTheme() : mAnimatedContentTimeout(UINT32_MAX) {}
 
 NS_IMPL_ISUPPORTS(nsNativeTheme, nsITimerCallback, nsINamed)
+
+static HTMLInputElement* GetContainingNumberInput(nsIContent* aContent) {
+  auto* nacHost = aContent->GetClosestNativeAnonymousSubtreeRootParentOrHost();
+  if (!nacHost) {
+    return nullptr;
+  }
+  auto* input = HTMLInputElement::FromNode(nacHost);
+  if (!input || input->ControlType() != FormControlType::InputNumber) {
+    return nullptr;
+  }
+  return input;
+}
 
 /* static */ ElementState nsNativeTheme::GetContentState(
     nsIFrame* aFrame, StyleAppearance aAppearance) {
@@ -61,12 +74,13 @@ NS_IMPL_ISUPPORTS(nsNativeTheme, nsITimerCallback, nsINamed)
   MOZ_ASSERT(frameContent && frameContent->IsElement());
 
   ElementState flags = frameContent->AsElement()->StyleState();
-  nsNumberControlFrame* numberControlFrame =
-      nsNumberControlFrame::GetNumberControlFrameForSpinButton(aFrame);
-  if (numberControlFrame &&
-      numberControlFrame->GetContent()->AsElement()->StyleState().HasState(
-          ElementState::DISABLED)) {
-    flags |= ElementState::DISABLED;
+  if (aAppearance == StyleAppearance::SpinnerDownbutton ||
+      aAppearance == StyleAppearance::SpinnerUpbutton) {
+    if (HTMLInputElement* numberInput = GetContainingNumberInput(frameContent);
+        numberInput &&
+        numberInput->StyleState().HasState(ElementState::DISABLED)) {
+      flags |= ElementState::DISABLED;
+    }
   }
 
   if (!isXULElement) {

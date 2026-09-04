@@ -81,6 +81,24 @@ struct nsTArray_RelocationStrategy<mozilla::detail::InputImageData> {
 
 namespace mozilla {
 
+class EncoderConfig;
+class MediaExtendedMIMEType;
+struct SupportDecoderParams;
+
+// Whether the OpenH264 GMP can decode/encode the given H264 configuration.
+// aParams unused but kept to mirror PDM/PEM Supports calls.
+[[nodiscard]] media::DecodeSupportSet WebrtcGmpDecoderSupports(
+    const MediaExtendedMIMEType& aMime, const SupportDecoderParams& aParams);
+[[nodiscard]] media::EncodeSupportSet WebrtcGmpEncoderSupports(
+    const EncoderConfig& aConfig);
+
+// Removes H.264 Access Unit Delimiter (NALU type 9) units from an Annex-B
+// buffer, normalizing the first kept NALU to a 4-byte start code. Returns true
+// filling aOut only when an AUD was present. Exposed for GTests.
+[[nodiscard]] bool StripH264AccessUnitDelimiters(const uint8_t* aData,
+                                                 size_t aSize,
+                                                 nsTArray<uint8_t>& aOut);
+
 static void NotifyGmpInitDone(const std::string& aPCHandle, int32_t aResult,
                               const std::string& aError = "") {
   if (!NS_IsMainThread()) {

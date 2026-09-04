@@ -8,8 +8,18 @@ menu-view-genai-chat =
 menu-view-contextual-password-manager =
   .label = Passwords
 
+# Label for the Open Tabs entry in the View > Sidebars menu bar menu.
+# "Open Tabs" is a noun phrase referring to the tabs currently open in
+# the browser, not an instruction to open tabs.
+menu-view-open-tabs =
+  .label = Open Tabs
+
 sidebar-options-menu-button =
   .title = Open menu
+
+# Accessible label for the splitter used to resize the sidebar.
+sidebar-resize-splitter =
+  .aria-label = Resize sidebar
 
 ## Labels for sidebar history panel
 
@@ -57,16 +67,18 @@ sidebar-search-results-header =
 
 ## Labels for sidebar customize panel
 
-sidebar-customize-extensions-header = Sidebar extensions
-sidebar-customize-firefox-tools-header =
-  .label = { -brand-product-name } tools
+sidebar-customize-extensions-header2 = Extensions
+sidebar-customize-firefox-tools-header2 =
+  .label = Tools
 sidebar-customize-firefox-settings = Manage { -brand-short-name } settings
 sidebar-vertical-tabs =
   .label = Vertical tabs
-sidebar-settings =
-  .label = Sidebar settings
+sidebar-settings2 =
+  .label = Settings
 sidebar-hide-tabs-and-sidebar =
   .label = Hide tabs and sidebar
+sidebar-open-tools-from-sidebar =
+  .label = Open tools from sidebar
 sidebar-show-on-the-right =
   .label = Move sidebar to the right
 sidebar-show-on-the-left =
@@ -75,7 +87,7 @@ sidebar-show-on-the-left =
 # hovers over it.
 expand-sidebar-on-hover =
   .label = Expand sidebar on hover
-sidebar-manage-extensions = Manage Extensions
+sidebar-manage-extensions2 = Manage all extensions
 
 ## Labels for sidebar context menu items
 
@@ -121,6 +133,58 @@ sidebar-history-context-menu-bookmark-page =
 sidebar-history-context-menu-delete-pages =
   .label = Delete Pages from History
 
+## Labels for sidebar bookmarks context menu items
+
+sidebar-bookmarks-context-menu-edit-bookmark =
+  .label = Edit Bookmark…
+sidebar-bookmarks-context-menu-delete-bookmark =
+  .label = Delete Bookmark
+sidebar-bookmarks-context-menu-delete-separator =
+  .label = Delete
+
+## Labels for sidebar open tabs context menu items
+
+# Label for the context menu item that closes the tab the user
+# right-clicked in the Open Tabs sidebar panel.
+sidebar-opentabs-context-close-tab =
+  .label = Close Tab
+
+## Labels for the open tabs panel options menu
+
+# Heading in the Open Tabs panel options menu for the group of
+# tab sorting options, which appear directly beneath this heading.
+sidebar-opentabs-sort-by-heading =
+  .label = Sort by
+
+# Sort option that lists tabs in the order they appear on the tab strip.
+sidebar-opentabs-sort-option-order =
+  .label = Tab order
+
+# Sort option that lists tabs by most recent activity, newest first.
+sidebar-opentabs-sort-option-recency =
+  .label = Recently active
+
+## Labels for the open tabs hover preview
+
+# Heading at the top of the preview shown when hovering the Open Tabs button
+# in the sidebar. "Recent tabs" refers to the tabs that were active most
+# recently, not to tabs that were recently opened.
+sidebar-opentabs-preview-heading = Recent tabs
+
+# Tooltip for the button that closes a tab from the Open Tabs hover preview.
+# Variables:
+#   $tabTitle (String) - Title of tab being closed
+sidebar-opentabs-preview-close-tab =
+  .title = Close { $tabTitle }
+
+# Tooltip for the button that mutes a tab from the Open Tabs hover preview.
+sidebar-opentabs-preview-mute-tab =
+  .title = Mute tab
+
+# Tooltip for the button that unmutes a tab from the Open Tabs hover preview.
+sidebar-opentabs-preview-unmute-tab =
+  .title = Unmute tab
+
 ## Labels for sidebar menu items.
 
 sidebar-menu-genai-chat-label =
@@ -129,6 +193,11 @@ sidebar-menu-history-label =
   .label = History
 sidebar-menu-synced-tabs-label =
   .label = Tabs from other devices
+# Label for the Open Tabs panel in the sidebar tools list and customize
+# menu. "Open tabs" is a noun phrase referring to the tabs currently open
+# in the browser, not an instruction to open tabs.
+sidebar-menu-open-tabs-label =
+  .label = Open tabs
 sidebar-menu-bookmarks-label =
   .label = Bookmarks
 sidebar-menu-customize-label =
@@ -181,14 +250,50 @@ sidebar-menu-history-header =
   .heading = History
 sidebar-menu-syncedtabs-header =
   .heading = Tabs from other devices
+# Heading shown at the top of the Open Tabs sidebar panel. "Open tabs"
+# refers to the tabs currently open in the browser.
+sidebar-menu-open-tabs-header =
+  .heading = Open tabs
 sidebar-menu-cpm-header =
   .heading = Passwords
+sidebar-menu-bookmarks-header =
+  .heading = Bookmarks
+
+## Labels for sidebar bookmarks panel folder names.
+
+sidebar-bookmarks-folder-menu = Bookmarks Menu
+sidebar-bookmarks-folder-toolbar = Bookmarks Toolbar
+sidebar-bookmarks-folder-other = Other Bookmarks
+sidebar-bookmarks-folder-mobile = Mobile Bookmarks
 
 ## Titles for sidebar menu panels.
 
+sidebar-bookmarks-title = Bookmarks
 sidebar-customize-title = Customize sidebar
 sidebar-history-title = History
 sidebar-syncedtabs-title = Tabs from other devices
+# Title of the Open Tabs sidebar panel. "Open tabs" refers to the tabs
+# currently open in the browser.
+sidebar-opentabs-title = Open tabs
+
+# Title attribute for the pinned tabs section in the Open Tabs sidebar
+# panel.
+sidebar-opentabs-pinned-tabs =
+  .title = Pinned tabs
+
+# Heading shown above the tab list for the currently focused window
+# in the Open Tabs sidebar panel.
+# Variables:
+#   $winID (Number) - The position of the window in the open windows list.
+sidebar-opentabs-current-window-header =
+  .heading = Window { $winID } (current)
+
+# Heading shown above the tab list for a non-focused window in the
+# Open Tabs sidebar panel.
+# Variables:
+#   $winID (Number) - The position of the window in the open windows list.
+sidebar-opentabs-window-header =
+  .heading = Window { $winID }
 
 ## Context for closing synced tabs when hovering over the items
 

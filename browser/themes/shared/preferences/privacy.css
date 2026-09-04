@@ -41,8 +41,8 @@
   list-style-image: url(chrome://browser/skin/notification-icons/camera.svg);
 }
 
-.localhost-icon {
-  list-style-image: url(chrome://browser/skin/notification-icons/local-host.svg);
+.loopback-network-icon {
+  list-style-image: url(chrome://global/skin/icons/local-host.svg);
 }
 
 .local-network-icon {
@@ -67,6 +67,10 @@
 
 .midi-icon {
   list-style-image: url(chrome://browser/skin/notification-icons/midi.svg);
+}
+
+.serial-icon {
+  list-style-image: url(chrome://browser/skin/notification-icons/serial.svg);
 }
 
 /* Content Blocking */
@@ -147,7 +151,7 @@
   display: none;
 }
 
-.content-blocking-warning.reload-tabs:not([hidden]) {
+.content-blocking-warning.reload-tabs {
   display: flex;
   flex-wrap: wrap;
 }
@@ -292,11 +296,6 @@
   margin: 0;
 }
 
-#telemetry-container {
-  margin-block: 4px;
-  width: 100%;
-}
-
 .privacy-detailedoption-description {
   font-size: 90%;
   opacity: 0.6;
@@ -325,16 +324,21 @@
   margin-inline-end: 32px;
 }
 
-#submitHealthReportBox {
-  display: inline-flex;
-}
-
 /* Logins and Passwords */
 
 #openWindowsPasskeySettings {
   margin-block-start: 2em;
 }
 
-#statusPrimaryPassword {
-  --box-icon-fill: var(--icon-color-success);
+#statusPrimaryPassword .primary-pw-status {
+  display: flex;
+  align-items: center;
+  gap: var(--space-small);
+}
+
+#statusPrimaryPassword .primary-pw-status-icon {
+  width: var(--size-item-small);
+  height: var(--size-item-small);
+  -moz-context-properties: fill;
+  fill: var(--icon-color-success);
 }

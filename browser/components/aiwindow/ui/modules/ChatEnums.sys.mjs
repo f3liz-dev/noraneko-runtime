@@ -19,18 +19,21 @@ export const CONVERSATION_STATUS = Object.freeze({
   DELETED: 2,
 });
 
+export { MESSAGE_ROLE } from "moz-src:///browser/components/aiwindow/models/Conversation.sys.mjs";
+
 /**
- * @typedef {0 | 1 | 2 | 3} MessageRole
+ * @typedef {0 | 1 | 2} ToolResultType
  */
 
 /**
- * @enum {MessageRole}
+ * Type of tool call result data.
+ *
+ * @type {ToolResultType}
  */
-export const MESSAGE_ROLE = Object.freeze({
-  USER: 0,
-  ASSISTANT: 1,
-  SYSTEM: 2,
-  TOOL: 3,
+export const TOOL_RESULT_TYPE = Object.freeze({
+  TOOL_UI: 0,
+  HISTORY_RESULTS: 1,
+  CITATIONS: 2,
 });
 
 /**

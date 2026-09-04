@@ -1,13 +1,11 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "util/CompleteFile.h"
 
 #include <cstring>     // std::strcmp
-#include <stdio.h>     // FILE, fileno, fopen, getc, getc_unlocked, _getc_nolock
+#include <stdio.h>     // FILE, fileno, fopen, fread
 #include <sys/stat.h>  // stat, fstat
 
 #ifdef __wasi__
@@ -40,33 +38,22 @@ bool js::ReadCompleteFile(JSContext* cx, FILE* fp, FileContents& buffer) {
     }
   }
 
-  /* Use the fastest available getc. */
-  auto fast_getc =
-#if defined(HAVE_GETC_UNLOCKED)
-      getc_unlocked
-#elif defined(HAVE__GETC_NOLOCK)
-      _getc_nolock
-#else
-      getc
-#endif
-      ;
-
   // Read in the whole file. Note that we can't assume the data's length
   // is actually st.st_size, because 1) some files lie about their size
   // (/dev/zero and /dev/random), and 2) reading files in text mode on
   // Windows collapses "\r\n" pairs to single \n characters.
   for (;;) {
-    int c = fast_getc(fp);
-    if (c == EOF) {
+    uint8_t chunk[4096];
+    size_t nread = fread(chunk, 1, sizeof(chunk), fp);
+    if (nread == 0) {
       break;
     }
-    if (!buffer.append(c)) {
+    if (!buffer.append(chunk, nread)) {
       return false;
     }
   }
 
   if (ferror(fp)) {
-    // getc failed
     JS_ReportErrorLatin1(cx, "error reading file: %s", strerror(errno));
     errno = 0;
     return false;

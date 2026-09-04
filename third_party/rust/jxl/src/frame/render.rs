@@ -3,8 +3,6 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-use crate::api::JxlCms;
-use crate::api::JxlColorEncoding;
 use crate::api::JxlColorProfile;
 use crate::api::JxlColorType;
 use crate::api::JxlDataFormat;
@@ -12,16 +10,27 @@ use crate::api::JxlOutputBuffer;
 use crate::bit_reader::BitReader;
 use crate::error::{Error, Result};
 use crate::features::epf::SigmaSource;
+use crate::features::noise::Noise;
+use crate::features::patches::PatchesDictionary;
+use crate::features::spline::Splines;
+use crate::frame::DataStatus;
+use crate::frame::color_correlation_map::ColorCorrelationParams;
+use crate::frame::quantizer::LfQuantFactors;
 use crate::headers::frame_header::Encoding;
+use crate::headers::frame_header::FrameType;
 use crate::headers::{Orientation, color_encoding::ColorSpace, extra_channels::ExtraChannel};
+use crate::image::Image;
 use crate::image::Rect;
+use crate::util::AtomicRefCell;
+use std::sync::Arc;
+
 #[cfg(test)]
 use crate::render::SimpleRenderPipeline;
 use crate::render::buffer_splitter::BufferSplitter;
 use crate::render::{LowMemoryRenderPipeline, RenderPipeline, RenderPipelineBuilder, stages::*};
 use crate::{
     api::JxlPixelFormat,
-    frame::{DecoderState, Frame, LfGlobalState},
+    frame::{DecoderState, Frame},
     headers::frame_header::FrameHeader,
 };
 
@@ -66,7 +75,8 @@ impl Frame {
         mut pipeline: RenderPipelineBuilder<P>,
         channels: &[usize],
         data_format: JxlDataFormat,
-    ) -> Result<RenderPipelineBuilder<P>> {
+        clamp_range_for_f16: Option<(f32, f32)>,
+    ) -> RenderPipelineBuilder<P> {
         use crate::render::stages::{
             ConvertF32ToF16Stage, ConvertF32ToU8Stage, ConvertF32ToU16Stage,
         };
@@ -75,63 +85,49 @@ impl Frame {
             JxlDataFormat::U8 { bit_depth } => {
                 for &channel in channels {
                     pipeline =
-                        pipeline.add_inout_stage(ConvertF32ToU8Stage::new(channel, bit_depth))?;
+                        pipeline.add_inout_stage(ConvertF32ToU8Stage::new(channel, bit_depth));
                 }
             }
             JxlDataFormat::U16 { bit_depth, .. } => {
                 for &channel in channels {
                     pipeline =
-                        pipeline.add_inout_stage(ConvertF32ToU16Stage::new(channel, bit_depth))?;
+                        pipeline.add_inout_stage(ConvertF32ToU16Stage::new(channel, bit_depth));
                 }
             }
             JxlDataFormat::F16 { .. } => {
                 for &channel in channels {
-                    pipeline = pipeline.add_inout_stage(ConvertF32ToF16Stage::new(channel))?;
+                    pipeline = pipeline.add_inout_stage(
+                        ConvertF32ToF16Stage::new_with_clamp_range(channel, clamp_range_for_f16),
+                    );
                 }
             }
             // F32 doesn't need conversion - the pipeline already uses f32
             JxlDataFormat::F32 { .. } => {}
         }
-        Ok(pipeline)
+        pipeline
     }
 
-    /// Check if CMS will consume a black channel that the user requested in the output.
-    fn check_cms_consumed_black_channel(
-        black_channel: Option<usize>,
-        in_channels: usize,
-        out_channels: usize,
-        pixel_format: &JxlPixelFormat,
-    ) -> Result<()> {
-        if let Some(k_pipeline_idx) = black_channel
-            && out_channels < in_channels
-        {
-            // K channel is consumed (4->3 conversion)
-            let k_ec_idx = k_pipeline_idx - 3;
-            if pixel_format
-                .extra_channel_format
-                .get(k_ec_idx)
-                .is_some_and(|f| f.is_some())
-            {
-                return Err(Error::CmsConsumedChannelRequested {
-                    channel_index: k_ec_idx,
-                    channel_type: "Black".to_string(),
-                });
-            }
-        }
-        Ok(())
-    }
-
+    /// Returns `true` if any pixels were written to the output buffers during
+    /// this call, `false` if the call was a no-op for the buffers (e.g. no new
+    /// HF groups, no flush work, or the render pipeline was not yet ready).
     pub fn decode_and_render_hf_groups(
         &mut self,
         api_buffers: &mut Option<&mut [JxlOutputBuffer<'_>]>,
         pixel_format: &JxlPixelFormat,
         groups: Vec<(usize, Vec<(usize, BitReader)>)>,
-    ) -> Result<()> {
-        if self.render_pipeline.is_none() {
+        do_flush: bool,
+        output_profile: &JxlColorProfile,
+    ) -> Result<bool> {
+        if !do_flush && groups.is_empty() {
+            // Nothing to do.
+            return Ok(false);
+        }
+
+        if self.render_pipeline.is_none() || self.lf_global.is_none() {
             assert_eq!(groups.iter().map(|x| x.1.len()).sum::<usize>(), 0);
             // We don't yet have any output ready (as the pipeline would be initialized otherwise),
             // so exit without doing anything.
-            return Ok(());
+            return Ok(false);
         }
 
         let mut buffers: Vec<Option<JxlOutputBuffer>> = Vec::new();
@@ -194,53 +190,200 @@ impl Frame {
 
         pipeline!(self, p, p.render_outside_frame(&mut buffer_splitter)?);
 
-        // Render data from the lf global section, if we didn't do so already, before rendering HF.
-        if !self.lf_global_was_rendered {
-            self.lf_global_was_rendered = true;
-            let lf_global = self.lf_global.as_mut().unwrap();
-            let mut pass_to_pipeline = |chan, group, num_passes, image| {
-                pipeline!(
-                    self,
-                    p,
-                    p.set_buffer_for_group(chan, group, num_passes, image, &mut buffer_splitter)?
-                );
-                Ok(())
-            };
-            lf_global
-                .modular_global
-                .process_output(0, 0, &self.header, &mut pass_to_pipeline)?;
-            for group in 0..self.header.num_lf_groups() {
-                lf_global.modular_global.process_output(
-                    1,
-                    group,
-                    &self.header,
-                    &mut pass_to_pipeline,
-                )?;
+        let should_render_non_final = self.allow_rendering_before_last_pass() && do_flush;
+
+        let modular_global = &mut self.lf_global.as_mut().unwrap().modular_global;
+
+        modular_global.set_pipeline_used_channels(pipeline!(self, p, p.used_channel_mask()));
+
+        // STEP 1: figure out what modular buffers will be finalized during this decode, and mark them
+        // as such.
+        for (group, passes) in groups.iter() {
+            self.group_status.need_vardct_flush.insert(*group);
+            self.group_status.need_modular_flush.insert(*group);
+            if self.header.encoding == Encoding::VarDCT {
+                let status = if passes
+                    .last()
+                    .is_some_and(|x| x.0 + 1 >= self.header.passes.num_passes as usize)
+                {
+                    DataStatus::Final
+                } else {
+                    DataStatus::Partial
+                };
+                for c in 0..3 {
+                    self.group_status.update_status(*group, c, status);
+                }
+            }
+            for (pass, _) in passes.iter() {
+                modular_global.mark_final(2 + *pass, *group);
             }
         }
 
-        for (group, passes) in groups {
-            // TODO(veluca): render all the available passes at once.
-            for (pass, br) in passes {
-                self.decode_hf_group(group, pass, br, &mut buffer_splitter)?;
+        // STEP 2: mark all the groups that will need a progressive re-render if
+        // we are flushing.
+
+        // Request re-renders in updated LF groups if those contain meaningful
+        // data and we are decoding a Modular image.
+        if modular_global.can_do_early_partial_render()
+            && self.section0_render_up_to_date
+            && self.header.encoding == Encoding::Modular
+        {
+            for lg in std::mem::take(&mut self.dirty_lf_groups) {
+                let lgx = lg % self.header.size_lf_groups().0;
+                let lgy = lg / self.header.size_lf_groups().0;
+                let (sgx, sgy) = self.header.size_groups();
+                for iy in 0..10 {
+                    let gy = (lgy * 8 + iy).saturating_sub(1);
+                    if gy >= sgy {
+                        continue;
+                    }
+                    for ix in 0..10 {
+                        let gx = (lgx * 8 + ix).saturating_sub(1);
+                        if gx >= sgx {
+                            continue;
+                        }
+                        self.group_status.need_modular_flush.insert(gy * sgx + gx);
+                    }
+                }
             }
         }
+
+        let has_decoded_data = match self.header.encoding {
+            Encoding::VarDCT => self.hf_global.is_some() || self.header.has_lf_frame(),
+            Encoding::Modular => modular_global.has_decoded_data(),
+        };
+
+        // If section0 data is dirty, re-render everything.
+        if !self.section0_render_up_to_date && has_decoded_data {
+            self.section0_render_up_to_date = true;
+            for g in 0..self.header.num_groups() {
+                self.group_status.need_vardct_flush.insert(g);
+                self.group_status.need_modular_flush.insert(g);
+            }
+        }
+
+        if should_render_non_final {
+            if self.header.encoding == Encoding::VarDCT {
+                for group in self.group_status.need_vardct_flush.iter() {
+                    pipeline!(self, p, p.mark_group_to_rerender(*group));
+                    modular_global.request_rerender(&self.header, *group);
+                }
+            }
+            for group in std::mem::take(&mut self.group_status.need_modular_flush) {
+                if self.header.lf_level != 0 {
+                    let (gsx, gsy) = self.header.size_groups();
+                    let gx = group % gsx;
+                    let gy = group / gsx;
+                    let gxm = gx.saturating_sub(1);
+                    let gxp = (gx + 1).min(gsx - 1);
+                    let gym = gy.saturating_sub(1);
+                    let gyp = (gy + 1).min(gsy - 1);
+                    modular_global.request_rerender(&self.header, gym * gsx + gxm);
+                    modular_global.request_rerender(&self.header, gym * gsx + gx);
+                    modular_global.request_rerender(&self.header, gym * gsx + gxp);
+                    modular_global.request_rerender(&self.header, gy * gsx + gxm);
+                    modular_global.request_rerender(&self.header, gy * gsx + gx);
+                    modular_global.request_rerender(&self.header, gy * gsx + gxp);
+                    modular_global.request_rerender(&self.header, gyp * gsx + gxm);
+                    modular_global.request_rerender(&self.header, gyp * gsx + gx);
+                    modular_global.request_rerender(&self.header, gyp * gsx + gxp);
+                } else {
+                    modular_global.request_rerender(&self.header, group);
+                }
+            }
+        }
+
+        // STEP 3: Run all the transforms that could be run already.
+        // We do this because some modular images might not have coded channels in HF, so
+        // all the coded channels were already decoded and the modular decoder does not
+        // automatically call run_all_transforms unless a new channel is decoded.
+
+        // ... but first, make sure modular_global is ready to run.
+        modular_global.prepare_render(&self.header, |g, c, is_final| {
+            self.group_status.update_status(
+                g,
+                c,
+                if is_final {
+                    DataStatus::Final
+                } else {
+                    DataStatus::Partial
+                },
+            );
+            self.group_status.need_vardct_flush.insert(g);
+            if should_render_non_final {
+                pipeline!(self, p, p.mark_group_to_rerender(g));
+            }
+        });
+
+        let mut pass_to_pipeline = |chan, group, complete, image: Image<i32>| {
+            pipeline!(
+                self,
+                p,
+                p.set_buffer_for_group(chan, group, complete, image, &mut buffer_splitter)?
+            );
+            Ok(())
+        };
+
+        modular_global.run_all_transforms(&self.header, &mut pass_to_pipeline)?;
+
+        // STEP 4: decode the groups, eagerly decoding all the data.
+        for (group, mut passes) in groups {
+            self.decode_hf_group(group, &mut passes, &mut buffer_splitter, do_flush)?;
+        }
+
+        self.lf_global
+            .as_ref()
+            .unwrap()
+            .modular_global
+            .validate_state_after_transforms();
+
+        // STEP 5: re-render VarDCT/noise data in rendered groups for which it was
+        // not rendered.
+        if should_render_non_final || self.group_status.incomplete_groups == 0 {
+            for g in std::mem::take(&mut self.group_status.need_vardct_flush) {
+                self.decode_hf_group(g, &mut [], &mut buffer_splitter, true)?;
+            }
+        }
+
+        let regions = buffer_splitter.into_changed_regions();
+        let rendered = !regions.is_empty() && self.header.frame_type == FrameType::RegularFrame;
 
         self.reference_frame_data = reference_frame_data;
         self.lf_frame_data = lf_frame_data;
 
-        Ok(())
+        if self.header.frame_type == FrameType::LFFrame
+            && self.header.lf_level == 1
+            && has_decoded_data
+        {
+            if do_flush && let Some(buffers) = api_buffers {
+                return self.maybe_preview_lf_frame(
+                    pixel_format,
+                    buffers,
+                    &regions[..],
+                    output_profile,
+                );
+            } else if self.group_status.incomplete_groups == 0 {
+                // If we are not requesting another flush at the end of the LF frame, we
+                // probably have a partial render. Ensure we re-render the LF frame when
+                // decoding the actual frame.
+                self.decoder_state.lf_frame_was_rendered = false;
+            }
+        }
+
+        Ok(rendered)
     }
 
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn build_render_pipeline<T: RenderPipeline>(
         decoder_state: &DecoderState,
         frame_header: &FrameHeader,
-        lf_global: &LfGlobalState,
-        epf_sigma: &Option<SigmaSource>,
+        patches: Arc<AtomicRefCell<PatchesDictionary>>,
+        splines: Arc<AtomicRefCell<Splines>>,
+        noise: Arc<AtomicRefCell<Noise>>,
+        lf_quant: Arc<AtomicRefCell<LfQuantFactors>>,
+        color_correlation_params: Arc<AtomicRefCell<ColorCorrelationParams>>,
+        epf_sigma: Arc<AtomicRefCell<SigmaSource>>,
         pixel_format: &JxlPixelFormat,
-        cms: Option<&dyn JxlCms>,
-        input_profile: &JxlColorProfile,
         output_profile: &JxlColorProfile,
     ) -> Result<Box<T>> {
         let num_channels = frame_header.num_extra_channels as usize + 3;
@@ -251,31 +394,35 @@ impl Frame {
             frame_header.size_upsampled(),
             frame_header.upsampling.ilog2() as usize,
             frame_header.log_group_dim(),
-            frame_header.passes.num_passes as usize,
+            // TODO(veluca): we should instead have modular mode participate in buffer reuse.
+            if frame_header.encoding == Encoding::Modular {
+                Some(0)
+            } else {
+                None
+            },
         );
 
         if frame_header.encoding == Encoding::Modular {
             if decoder_state.file_header.image_metadata.xyb_encoded {
-                pipeline = pipeline
-                    .add_inout_stage(ConvertModularXYBToF32Stage::new(0, &lf_global.lf_quant))?
+                pipeline = pipeline.add_inout_stage(ConvertModularXYBToF32Stage::new(0, lf_quant))
             } else {
                 for i in 0..3 {
                     pipeline = pipeline
-                        .add_inout_stage(ConvertModularToF32Stage::new(i, metadata.bit_depth))?;
+                        .add_inout_stage(ConvertModularToF32Stage::new(i, metadata.bit_depth));
                 }
             }
         }
         for i in 3..num_channels {
             let ec_bit_depth = metadata.extra_channel_info[i - 3].bit_depth();
-            pipeline = pipeline.add_inout_stage(ConvertModularToF32Stage::new(i, ec_bit_depth))?;
+            pipeline = pipeline.add_inout_stage(ConvertModularToF32Stage::new(i, ec_bit_depth));
         }
 
         for c in 0..3 {
             if frame_header.hshift(c) != 0 {
-                pipeline = pipeline.add_inout_stage(HorizontalChromaUpsample::new(c))?;
+                pipeline = pipeline.add_inout_stage(HorizontalChromaUpsample::new(c));
             }
             if frame_header.vshift(c) != 0 {
-                pipeline = pipeline.add_inout_stage(VerticalChromaUpsample::new(c))?;
+                pipeline = pipeline.add_inout_stage(VerticalChromaUpsample::new(c));
             }
         }
 
@@ -286,17 +433,17 @@ impl Frame {
                     0,
                     filters.gab_x_weight1,
                     filters.gab_x_weight2,
-                ))?
+                ))
                 .add_inout_stage(GaborishStage::new(
                     1,
                     filters.gab_y_weight1,
                     filters.gab_y_weight2,
-                ))?
+                ))
                 .add_inout_stage(GaborishStage::new(
                     2,
                     filters.gab_b_weight1,
                     filters.gab_b_weight2,
-                ))?;
+                ));
         }
 
         let rf = &frame_header.restoration_filter;
@@ -305,24 +452,24 @@ impl Frame {
                 rf.epf_pass0_sigma_scale,
                 rf.epf_border_sad_mul,
                 rf.epf_channel_scale,
-                epf_sigma.clone().unwrap(),
-            ))?
+                epf_sigma.clone(),
+            ))
         }
         if rf.epf_iters >= 1 {
             pipeline = pipeline.add_inout_stage(Epf1Stage::new(
                 1.0,
                 rf.epf_border_sad_mul,
                 rf.epf_channel_scale,
-                epf_sigma.clone().unwrap(),
-            ))?
+                epf_sigma.clone(),
+            ))
         }
         if rf.epf_iters >= 2 {
             pipeline = pipeline.add_inout_stage(Epf2Stage::new(
                 rf.epf_pass2_sigma_scale,
                 rf.epf_border_sad_mul,
                 rf.epf_channel_scale,
-                epf_sigma.clone().unwrap(),
-            ))?
+                epf_sigma.clone(),
+            ))
         }
 
         let late_ec_upsample = frame_header.upsampling > 1
@@ -340,26 +487,21 @@ impl Frame {
                         4 => pipeline.add_inout_stage(Upsample4x::new(transform_data, 3 + ec)),
                         8 => pipeline.add_inout_stage(Upsample8x::new(transform_data, 3 + ec)),
                         _ => unreachable!(),
-                    }?;
+                    };
                 }
             }
         }
 
         if frame_header.has_patches() {
-            pipeline = pipeline.add_inplace_stage(PatchesStage {
-                patches: lf_global.patches.clone().unwrap(),
-                extra_channels: metadata.extra_channel_info.clone(),
-                decoder_state: decoder_state.reference_frames.clone(),
-            })?
+            pipeline = pipeline.add_inplace_stage(PatchesStage::new(
+                patches,
+                metadata.extra_channel_info.clone(),
+                decoder_state.reference_frames.clone(),
+            ))
         }
 
         if frame_header.has_splines() {
-            pipeline = pipeline.add_inplace_stage(SplinesStage::new(
-                lf_global.splines.clone().unwrap(),
-                frame_header.size(),
-                &lf_global.color_correlation_params.unwrap_or_default(),
-                decoder_state.high_precision,
-            )?)?
+            pipeline = pipeline.add_inplace_stage(SplinesStage::new(splines))
         }
 
         if frame_header.upsampling > 1 {
@@ -375,20 +517,20 @@ impl Frame {
                     4 => pipeline.add_inout_stage(Upsample4x::new(transform_data, c)),
                     8 => pipeline.add_inout_stage(Upsample8x::new(transform_data, c)),
                     _ => unreachable!(),
-                }?;
+                };
             }
         }
 
         if frame_header.has_noise() {
             pipeline = pipeline
-                .add_inout_stage(ConvolveNoiseStage::new(num_channels))?
-                .add_inout_stage(ConvolveNoiseStage::new(num_channels + 1))?
-                .add_inout_stage(ConvolveNoiseStage::new(num_channels + 2))?
+                .add_inout_stage(ConvolveNoiseStage::new(num_channels))
+                .add_inout_stage(ConvolveNoiseStage::new(num_channels + 1))
+                .add_inout_stage(ConvolveNoiseStage::new(num_channels + 2))
                 .add_inplace_stage(AddNoiseStage::new(
-                    *lf_global.noise.as_ref().unwrap(),
-                    lf_global.color_correlation_params.unwrap_or_default(),
+                    noise,
+                    color_correlation_params,
                     num_channels,
-                ))?;
+                ));
         }
 
         // Calculate the actual number of API-provided buffers based on pixel_format.
@@ -414,7 +556,7 @@ impl Frame {
                     JxlColorType::Grayscale,
                     JxlDataFormat::f32(),
                     false,
-                )?;
+                );
             }
         }
         if frame_header.can_be_referenced && frame_header.save_before_ct {
@@ -426,7 +568,7 @@ impl Frame {
                     JxlColorType::Grayscale,
                     JxlDataFormat::f32(),
                     false,
-                )?;
+                );
             }
         }
 
@@ -446,117 +588,29 @@ impl Frame {
             })
             .unwrap_or_else(|| output_color_info.tf.clone());
 
-        // Find the Black (K) extra channel if present.
-        // In JXL, CMYK is stored as 3 color channels (CMY) + K as extra channel.
-        // Pipeline index of K = extra_channel_index + 3
-        let black_channel: Option<usize> = decoder_state
-            .file_header
-            .image_metadata
-            .extra_channel_info
-            .iter()
-            .enumerate()
-            .find(|x| x.1.ec_type == ExtraChannel::Black)
-            .map(|(k_idx, _)| k_idx + 3);
+        // Clamp transfer-domain values while converting to f16 so we don't
+        // emit wild out-of-range values to downstream consumers.
+        //
+        // PQ has a bounded signal domain [0,1].
+        // HLG may carry modest overshoot/undershoot (e.g. from narrow-range
+        // workflows), so preserve headroom with a looser clamp.
+        let clamp_range_for_f16 = match &output_tf {
+            TransferFunction::Pq { .. } => Some((0.0, 1.0)),
+            TransferFunction::Hlg { .. } => Some((-0.074, 1.1)),
+            _ => None,
+        };
 
         let xyb_encoded = decoder_state.file_header.image_metadata.xyb_encoded;
 
         if frame_header.do_ycbcr {
-            pipeline = pipeline.add_inplace_stage(YcbcrToRgbStage::new(0))?;
+            pipeline = pipeline.add_inplace_stage(YcbcrToRgbStage::new(0));
         } else if xyb_encoded {
-            pipeline = pipeline.add_inplace_stage(XybStage::new(0, output_color_info.clone()))?;
+            pipeline = pipeline.add_inplace_stage(XybStage::new(0, output_color_info.clone()));
         }
 
-        // Insert CMS stage if profiles differ.
-        // Following libjxl: use EITHER CMS OR FromLinearStage, never both.
-        // - If output matches original encoding: only FromLinearStage is needed
-        // - If output differs: CMS handles everything including TF conversion
-        //
-        // For XYB images, XybStage outputs LINEAR data in the embedded profile's primaries,
-        // so the CMS input should be the LINEAR version of the embedded profile.
-        // For ICC embedded profiles with XYB, XybStage outputs linear sRGB (see xyb.rs).
-        let cms_input_profile = if xyb_encoded {
-            // XYB outputs linear, so use linear version of input profile for CMS
-            input_profile.with_linear_tf().or_else(|| {
-                // For ICC profiles with XYB, XybStage outputs linear sRGB
-                Some(JxlColorProfile::Simple(JxlColorEncoding::linear_srgb(
-                    false,
-                )))
-            })
-        } else {
-            // Non-XYB: data is in the embedded profile's space including TF
-            Some(input_profile.clone())
-        };
-
-        // Compare ORIGINAL input profile (not linearized cms_input_profile) with output.
-        // This matches libjxl (53042ec5) dec_xyb.cc:184:
-        //   color_encoding_is_original = orig_color_encoding.SameColorEncoding(c_desired);
-        let color_encoding_is_original = input_profile.same_color_encoding(output_profile);
-        let mut cms_used = false;
-
-        // Skip CMS if channel counts differ (grayscale↔RGB) - like libjxl's not_mixing_color_and_grey.
-        // Exception: CMYK (4) → RGB (3) is allowed via CMS.
-        let src_channels = cms_input_profile
-            .as_ref()
-            .map(|p| p.channels())
-            .unwrap_or(3);
-        let dst_channels = output_profile.channels();
-        let channel_counts_compatible =
-            src_channels == dst_channels || (src_channels == 4 && dst_channels == 3);
-
-        if !color_encoding_is_original
-            && channel_counts_compatible
-            && let Some(cms) = cms
-            && let Some(cms_input) = cms_input_profile
-        {
-            // Use frame width as max_pixels since rows can be that wide
-            let max_pixels = frame_header.size_upsampled().0;
-            // Use CMS input profile's channel count, matching libjxl's c_src_.Channels()
-            // For CMYK, channels() returns 4; for RGB, 3; for grayscale, 1.
-            let in_channels = cms_input.channels();
-            let (out_channels, transformers) = cms.initialize_transforms(
-                1, // num transforms (1 for single-threaded)
-                max_pixels,
-                cms_input,
-                output_profile.clone(),
-                output_color_info.intensity_target,
-            )?;
-            // CMS cannot add channels - reject transforms that would
-            if out_channels > in_channels {
-                return Err(Error::CmsChannelCountIncrease {
-                    in_channels,
-                    out_channels,
-                });
-            }
-            // Only pass black_channel to CmsStage if CMS is actually processing CMYK input.
-            // For XYB images, even if original was CMYK, CMS input is linear RGB.
-            let cms_black_channel = if in_channels == 4 {
-                black_channel
-            } else {
-                None
-            };
-            Self::check_cms_consumed_black_channel(
-                cms_black_channel,
-                in_channels,
-                out_channels,
-                pixel_format,
-            )?;
-            if !transformers.is_empty() {
-                pipeline = pipeline.add_inplace_stage(CmsStage::new(
-                    transformers,
-                    in_channels,
-                    out_channels,
-                    cms_black_channel,
-                    max_pixels,
-                ))?;
-                cms_used = true;
-            }
-        }
-
-        // XYB output is linear, so apply transfer function:
-        // - Only if output is non-linear AND
-        // - CMS was not used (CMS already handles the full conversion including TF)
-        if xyb_encoded && !output_tf.is_linear() && !cms_used {
-            pipeline = pipeline.add_inplace_stage(FromLinearStage::new(0, output_tf.clone()))?;
+        // XYB output is linear, so apply transfer function, but only if output is not linear itself
+        if xyb_encoded && !output_tf.is_linear() {
+            pipeline = pipeline.add_inplace_stage(FromLinearStage::new(0, output_tf.clone()));
         }
 
         if frame_header.needs_blending() {
@@ -564,14 +618,14 @@ impl Frame {
                 frame_header,
                 &decoder_state.file_header,
                 decoder_state.reference_frames.clone(),
-            )?)?;
+            )?);
             // TODO(veluca): we might not need to add an extend stage if the image size is
             // compatible with the frame size.
             pipeline = pipeline.add_extend_stage(ExtendToImageDimensionsStage::new(
                 frame_header,
                 &decoder_state.file_header,
                 decoder_state.reference_frames.clone(),
-            )?)?;
+            )?);
         }
 
         if frame_header.can_be_referenced && !frame_header.save_before_ct {
@@ -583,7 +637,7 @@ impl Frame {
                     JxlColorType::Grayscale,
                     JxlDataFormat::f32(),
                     false,
-                )?;
+                );
             }
         }
 
@@ -597,7 +651,7 @@ impl Frame {
             {
                 if info.ec_type == ExtraChannel::SpotColor {
                     pipeline = pipeline
-                        .add_inplace_stage(SpotColorStage::new(i, info.spot_color.unwrap()))?;
+                        .add_inplace_stage(SpotColorStage::new(i, info.spot_color.unwrap()));
                 }
             }
         }
@@ -659,10 +713,15 @@ impl Frame {
                         0,
                         num_color_channels,
                         alpha_channel,
-                    ))?;
+                    ));
                 }
                 // Add conversion stages for non-float output formats
-                pipeline = Self::add_conversion_stages(pipeline, color_source_channels, *df)?;
+                pipeline = Self::add_conversion_stages(
+                    pipeline,
+                    color_source_channels,
+                    *df,
+                    clamp_range_for_f16,
+                );
                 pipeline = pipeline.add_save_stage(
                     color_source_channels,
                     metadata.orientation,
@@ -670,20 +729,26 @@ impl Frame {
                     pixel_format.color_type,
                     *df,
                     fill_opaque_alpha,
-                )?;
+                );
             }
+            let mut save_idx = if pixel_format.color_data_format.is_some() {
+                1
+            } else {
+                0
+            };
             for i in 0..frame_header.num_extra_channels as usize {
                 if let Some(df) = &pixel_format.extra_channel_format[i] {
                     // Add conversion stages for non-float output formats
-                    pipeline = Self::add_conversion_stages(pipeline, &[3 + i], *df)?;
+                    pipeline = Self::add_conversion_stages(pipeline, &[3 + i], *df, None);
                     pipeline = pipeline.add_save_stage(
                         &[3 + i],
                         metadata.orientation,
-                        1 + i,
+                        save_idx,
                         JxlColorType::Grayscale,
                         *df,
                         false,
-                    )?;
+                    );
+                    save_idx += 1;
                 }
             }
         }
@@ -693,38 +758,33 @@ impl Frame {
     pub fn prepare_render_pipeline(
         &mut self,
         pixel_format: &JxlPixelFormat,
-        cms: Option<&dyn JxlCms>,
-        input_profile: &JxlColorProfile,
         output_profile: &JxlColorProfile,
     ) -> Result<()> {
-        let lf_global = self.lf_global.as_mut().unwrap();
-        let epf_sigma = if self.header.restoration_filter.epf_iters > 0 {
-            Some(SigmaSource::new(&self.header, lf_global, &self.hf_meta)?)
-        } else {
-            None
-        };
-
         #[cfg(test)]
         let render_pipeline = if self.use_simple_pipeline {
             Self::build_render_pipeline::<SimpleRenderPipeline>(
                 &self.decoder_state,
                 &self.header,
-                lf_global,
-                &epf_sigma,
+                self.patches.clone(),
+                self.splines.clone(),
+                self.noise.clone(),
+                self.lf_quant.clone(),
+                self.color_correlation_params.clone(),
+                self.epf_sigma.clone(),
                 pixel_format,
-                cms,
-                input_profile,
                 output_profile,
             )? as Box<dyn std::any::Any>
         } else {
             Self::build_render_pipeline::<LowMemoryRenderPipeline>(
                 &self.decoder_state,
                 &self.header,
-                lf_global,
-                &epf_sigma,
+                self.patches.clone(),
+                self.splines.clone(),
+                self.noise.clone(),
+                self.lf_quant.clone(),
+                self.color_correlation_params.clone(),
+                self.epf_sigma.clone(),
                 pixel_format,
-                cms,
-                input_profile,
                 output_profile,
             )? as Box<dyn std::any::Any>
         };
@@ -732,15 +792,17 @@ impl Frame {
         let render_pipeline = Self::build_render_pipeline::<LowMemoryRenderPipeline>(
             &self.decoder_state,
             &self.header,
-            lf_global,
-            &epf_sigma,
+            self.patches.clone(),
+            self.splines.clone(),
+            self.noise.clone(),
+            self.lf_quant.clone(),
+            self.color_correlation_params.clone(),
+            self.epf_sigma.clone(),
             pixel_format,
-            cms,
-            input_profile,
             output_profile,
         )?;
         self.render_pipeline = Some(render_pipeline);
-        self.lf_global_was_rendered = false;
+        self.section0_render_up_to_date = false;
         Ok(())
     }
 }

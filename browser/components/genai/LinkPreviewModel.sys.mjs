@@ -416,21 +416,18 @@ export const LinkPreviewModel = {
     try {
       engine = await this.createEngine(
         {
-          backend: "best-llama",
+          backend: "llama.cpp",
           engineId: this.engineId,
           featureId: this.id,
-          kvCacheDtype: "q8_0",
           modelFile: "smollm2-360m-instruct-q8_0.gguf",
           modelHubRootUrl: "https://model-hub.mozilla.org",
           modelId: "HuggingFaceTB/SmolLM2-360M-Instruct-GGUF",
           modelRevision: "main",
-          numBatch: numContext,
           numContext,
-          numUbatch: numContext,
-          taskName: "wllama-text-generation",
+          taskName: "llama-text-generation",
           timeoutMS: -1,
           useMlock: false,
-          useMmap: true,
+          useMmap: false,
           ...JSON.parse(lazy.config),
         },
         data => {

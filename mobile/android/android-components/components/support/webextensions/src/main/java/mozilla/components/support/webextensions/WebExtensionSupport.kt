@@ -42,6 +42,7 @@ import mozilla.components.support.ktx.kotlin.isExtensionUrl
 import mozilla.components.support.ktx.kotlinx.coroutines.flow.filterChanged
 import mozilla.components.support.webextensions.WebExtensionSupport.initialize
 import mozilla.components.support.webextensions.facts.emitWebExtensionsInitializedFact
+import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -149,12 +150,14 @@ object WebExtensionSupport {
      * @param store the application's [BrowserStore].
      * @param openPopupInTab (optional) flag to determine whether a browser or page action would
      * display a web extension popup in a tab or not. Defaults to false.
+     * @param isInPrivateBrowsingMode (optional) override to express the
+     * preferred private browsing mode for a new tab when it is about to open.
      * @param onNewTabOverride (optional) override of behaviour that should
      * be triggered when web extensions open a new tab e.g. when dispatching
      * to the store isn't sufficient while migrating from browser-session
      * to browser-state. This is a lambda accepting the [WebExtension], the
-     * [EngineSession] to use, as well as the URL to load, return the ID of
-     * the created session.
+     * [EngineSession] to use, the URL to load, and whether the new tab
+     * should be selected/active, returning the ID of the created session.
      * @param onCloseTabOverride (optional) override of behaviour that should
      * be triggered when web extensions close tabs e.g. when dispatching
      * to the store isn't sufficient while migrating from browser-session
@@ -177,7 +180,8 @@ object WebExtensionSupport {
         store: BrowserStore,
         openPopupInTab: Boolean = false,
         mainDispatcher: CoroutineDispatcher = Dispatchers.Main,
-        onNewTabOverride: ((WebExtension?, EngineSession, String) -> String)? = null,
+        isInPrivateBrowsingMode: () -> Boolean = { false },
+        onNewTabOverride: ((WebExtension?, EngineSession, String, Boolean, Boolean) -> String)? = null,
         onCloseTabOverride: ((WebExtension?, String) -> Unit)? = null,
         onSelectTabOverride: ((WebExtension?, String) -> Unit)? = null,
         onUpdatePermissionRequest: onUpdatePermissionRequest? = { _, _, _, _, _ -> },
@@ -196,13 +200,25 @@ object WebExtensionSupport {
 
         runtime.registerWebExtensionDelegate(
             object : WebExtensionDelegate {
+                override fun isInPrivateBrowsing(): Boolean = isInPrivateBrowsingMode()
+
                 override fun onNewTab(
                     extension: WebExtension,
                     engineSession: EngineSession,
                     active: Boolean,
                     url: String,
+                    isPrivate: Boolean,
                 ) {
-                    openTab(store, onNewTabOverride, onSelectTabOverride, extension, engineSession, url, active)
+                    openTab(
+                        store,
+                        onNewTabOverride,
+                        onSelectTabOverride,
+                        extension,
+                        engineSession,
+                        url,
+                        active,
+                        isPrivate,
+                    )
                 }
 
                 override fun onBrowserActionDefined(extension: WebExtension, action: Action) {
@@ -213,10 +229,30 @@ object WebExtensionSupport {
                     store.dispatch(WebExtensionAction.UpdatePageAction(extension.id, action))
                 }
 
+                override fun onOpenOptionsPage(
+                    extension: WebExtension,
+                ) {
+                    val metaData = extension.getMetadata() ?: return
+                    if (metaData.openOptionsPageInTab) {
+                        logger.error("The case where |open_in_tab| is true should be handled in the API script.")
+                    } else {
+                        val optionsPageUrl = metaData.optionsPageUrl ?: return
+                        store.dispatch(
+                            WebExtensionAction.UpdateOptionsPageSessionAction(
+                                extensionId = extension.id,
+                                optionsPageInstanceId = UUID.randomUUID().toString(),
+                                optionsPageUrl = optionsPageUrl,
+                                extensionTranslatedName = metaData.name ?: "",
+                            ),
+                        )
+                    }
+                }
+
                 override fun onToggleActionPopup(
                     extension: WebExtension,
                     engineSession: EngineSession,
                     action: Action,
+                    isPrivate: Boolean,
                 ): EngineSession? {
                     return if (!openPopupInTab) {
                         store.dispatch(WebExtensionAction.UpdatePopupSessionAction(extension.id, null, engineSession))
@@ -238,6 +274,7 @@ object WebExtensionSupport {
                                 onSelectTabOverride,
                                 extension,
                                 engineSession,
+                                isPrivate = isPrivate,
                             )
                             store.dispatch(WebExtensionAction.UpdatePopupSessionAction(extension.id, sessionId))
                             engineSession
@@ -520,21 +557,22 @@ object WebExtensionSupport {
 
     private fun openTab(
         store: BrowserStore,
-        onNewTabOverride: ((WebExtension?, EngineSession, String) -> String)? = null,
+        onNewTabOverride: ((WebExtension?, EngineSession, String, Boolean, Boolean) -> String)? = null,
         onSelectTabOverride: ((WebExtension?, String) -> Unit)? = null,
         webExtension: WebExtension?,
         engineSession: EngineSession,
         url: String = "",
         selected: Boolean = true,
+        isPrivate: Boolean = false,
     ): String {
         return if (onNewTabOverride != null) {
-            val sessionId = onNewTabOverride.invoke(webExtension, engineSession, url)
+            val sessionId = onNewTabOverride.invoke(webExtension, engineSession, url, selected, isPrivate)
             if (selected) {
                 onSelectTabOverride?.invoke(webExtension, sessionId)
             }
             sessionId
         } else {
-            val tab = createTab(url)
+            val tab = createTab(url, private = isPrivate)
             store.dispatch(TabListAction.AddTabAction(tab, selected))
             store.dispatch(EngineAction.LinkEngineSessionAction(tab.id, engineSession))
             tab.id

@@ -1,5 +1,4 @@
-/* -*- Mode: Java; c-basic-offset: 4; tab-width: 4; indent-tabs-mode: nil; -*-
- * Any copyright is dedicated to the Public Domain.
+/* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
 package org.mozilla.geckoview.test
@@ -79,6 +78,61 @@ class MediaSessionTest : BaseSessionTest() {
 
     @After
     fun teardown() {
+    }
+
+    // Bug 2047296: a tab playing a given kind of audio reports the matching W3C
+    // audio-session type to the embedder via onAudioSessionTypeChanged, so the
+    // embedder can request the right platform audio focus. The first reported
+    // type for a single-source page is the source's type.
+    private fun checkAudioSessionType(path: String, expectedType: String) {
+        sessionRule.setPrefsUntilTestEnd(
+            mapOf(
+                "dom.audio_session.enabled" to true,
+                "media.geckoview.audio_session_type.enabled" to true,
+                "media.autoplay.default" to 0,
+                "media.webspeech.synth.enabled" to true,
+                "media.webspeech.synth.test" to true,
+            ),
+        )
+
+        val session = sessionRule.createOpenSession()
+        val typeResult = GeckoResult<String>()
+        var reported = false
+        session.delegateUntilTestEnd(object : MediaSession.Delegate {
+            override fun onAudioSessionTypeChanged(
+                session: GeckoSession,
+                mediaSession: MediaSession,
+                type: String,
+            ) {
+                if (!reported) {
+                    reported = true
+                    typeResult.complete(type)
+                }
+            }
+        })
+
+        session.loadTestPath(path)
+
+        assertThat(
+            "Audio-session type forwarded to the embedder",
+            sessionRule.waitForResult(typeResult),
+            equalTo(expectedType),
+        )
+    }
+
+    @Test
+    fun audioSessionTypeMediaElementIsPlayback() {
+        checkAudioSessionType(MEDIA_SESSION_DEFAULT1_PATH, "playback")
+    }
+
+    @Test
+    fun audioSessionTypeWebAudioIsAmbient() {
+        checkAudioSessionType(AUDIO_SESSION_TYPE_WEBAUDIO_PATH, "ambient")
+    }
+
+    @Test
+    fun audioSessionTypeWebSpeechIsTransient() {
+        checkAudioSessionType(AUDIO_SESSION_TYPE_WEBSPEECH_PATH, "transient")
     }
 
     @Ignore("https://bugzilla.mozilla.org/show_bug.cgi?id=1988041")

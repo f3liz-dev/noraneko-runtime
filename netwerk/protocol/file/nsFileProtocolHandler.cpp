@@ -1,25 +1,25 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-// vim:ts=4 sw=2 sts=2 et cin:
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "nsIFile.h"
 #include "nsFileProtocolHandler.h"
-#include "nsFileChannel.h"
-#include "nsStandardURL.h"
-#include "nsURLHelper.h"
-#include "nsIURIMutator.h"
-
-#include "nsNetUtil.h"
 
 #include "mozilla/net/NeckoCommon.h"
+#include "nsFileChannel.h"
+#include "nsIFile.h"
+#include "nsIURIMutator.h"
+#include "nsNetUtil.h"
+#include "nsStandardURL.h"
+#include "nsURLHelper.h"
 
 // URL file handling, copied and modified from
 // xpfe/components/bookmarks/src/nsBookmarksService.cpp
 #ifdef XP_WIN
+// clang-format off
 #  include <shlobj.h>
 #  include <intshcut.h>
+// clang-format on
+
 #  include "nsIFileURL.h"
 #  ifdef CompareString
 #    undef CompareString

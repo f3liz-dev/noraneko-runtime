@@ -1,5 +1,4 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -9,8 +8,10 @@
 
 #include "ReferrerInfo.h"
 #include "WebBrowserPersistLocalDocument.h"
+#include "mozilla/Base64.h"
 #include "mozilla/Mutex.h"
 #include "mozilla/Printf.h"
+#include "mozilla/RandomNum.h"
 #include "mozilla/TextUtils.h"
 #include "mozilla/WebBrowserPersistDocumentParent.h"
 #include "mozilla/dom/BrowserParent.h"
@@ -52,6 +53,10 @@
 #include "nsNetUtil.h"
 #include "nsStreamUtils.h"
 #include "nspr.h"
+
+#ifdef XP_WIN
+#  include "WinUtils.h"
+#endif  // XP_WIN
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -279,6 +284,36 @@ const uint32_t kDefaultPersistFlags =
 const char* kWebBrowserPersistStringBundle =
     "chrome://global/locale/nsWebBrowserPersist.properties";
 
+namespace {
+
+nsCString GenerateRandomSeed() {
+  constexpr size_t SEED_LEN = 3;
+  uint8_t buffer[SEED_LEN];
+  if (!mozilla::GenerateRandomBytesFromOS(buffer, SEED_LEN)) {
+    for (uint8_t& entry : buffer) {
+      Maybe<uint64_t> maybeSeed = mozilla::RandomUint64();
+      if (maybeSeed.isNothing()) {
+        return EmptyCString();
+      }
+      entry = static_cast<uint8_t>(maybeSeed.value());
+    }
+  }
+
+  nsAutoCString seed;
+  nsresult rv = Base64URLEncode(SEED_LEN, buffer,
+                                Base64URLEncodePaddingPolicy::Omit, seed);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return EmptyCString();
+  }
+
+  // 3 bytes produce exactly 4 base64url chars (no padding needed); keep all
+  // 4 so the seed is distinguishable from the 3-digit uniqueness counter.
+  seed.Insert('_', 0);
+  return seed;
+}
+
+}  // namespace
+
 nsWebBrowserPersist::nsWebBrowserPersist()
     : mCurrentDataPathIsRelative(false),
       mCurrentThingsToPersist(0),
@@ -297,7 +332,12 @@ nsWebBrowserPersist::nsWebBrowserPersist()
       mTotalCurrentProgress(0),
       mTotalMaxProgress(0),
       mWrapColumn(72),
-      mEncodingFlags(0) {}
+      mEncodingFlags(0),
+      mFilenameRandomSeed(GenerateRandomSeed()) {
+  MOZ_ASSERT(
+      !mFilenameRandomSeed.IsEmpty(),
+      "Failed to generate random seed; saved filenames will be predictable");
+}
 
 nsWebBrowserPersist::~nsWebBrowserPersist() { Cleanup(); }
 
@@ -692,8 +732,13 @@ void nsWebBrowserPersist::SerializeNextFile() {
       return;
     }
   }
+  nsAutoCString docURISpec;
+  nsCOMPtr<nsIURI> docURI;
+  if (NS_SUCCEEDED(docData->mDocument->GetDocumentURI(docURISpec))) {
+    NS_NewURI(getter_AddRefs(docURI), docURISpec);
+  }
   nsCOMPtr<nsIOutputStream> outputStream;
-  rv = MakeOutputStream(docData->mFile, getter_AddRefs(outputStream));
+  rv = MakeOutputStream(docData->mFile, docURI, getter_AddRefs(outputStream));
   if (NS_SUCCEEDED(rv) && !outputStream) {
     rv = NS_ERROR_FAILURE;
   }
@@ -818,14 +863,14 @@ NS_IMETHODIMP nsWebBrowserPersist::OnStartRequest(nsIRequest* request) {
       nsresult rv = CalculateAndAppendFileExt(
           data->mFile, channel, data->mOriginalLocation, uriWithExt);
       if (NS_SUCCEEDED(rv)) {
-        data->mFile = uriWithExt;
+        data->mFile = std::move(uriWithExt);
       }
 
       // now make filename conformant and unique
       nsCOMPtr<nsIURI> uniqueFilenameURI;
       rv = CalculateUniqueFilename(data->mFile, uniqueFilenameURI);
       if (NS_SUCCEEDED(rv)) {
-        data->mFile = uniqueFilenameURI;
+        data->mFile = std::move(uniqueFilenameURI);
       }
 
       // The URIData entry is pointing to the old unfixed URI, so we need
@@ -962,7 +1007,8 @@ nsWebBrowserPersist::OnDataAvailable(nsIRequest* request,
     MutexAutoLock streamLock(data->mStreamMutex);
     // Make the output stream
     if (!data->mStream) {
-      rv = MakeOutputStream(data->mFile, getter_AddRefs(data->mStream));
+      rv = MakeOutputStream(data->mFile, data->mOriginalLocation,
+                            getter_AddRefs(data->mStream));
       if (NS_FAILED(rv)) {
         readError = false;
         cancel = true;
@@ -1310,6 +1356,7 @@ nsresult nsWebBrowserPersist::SaveURIInternal(
   nsresult rv = NS_OK;
 
   mURI = aURI;
+  mReferrerInfo = aReferrerInfo;
 
   nsLoadFlags loadFlags = nsIRequest::LOAD_NORMAL;
   if (mPersistFlags & PERSIST_FLAGS_BYPASS_CACHE) {
@@ -1517,6 +1564,7 @@ nsresult nsWebBrowserPersist::SaveDocumentDeferred(
 nsresult nsWebBrowserPersist::SaveDocumentInternal(
     nsIWebBrowserPersistDocument* aDocument, nsIURI* aFile, nsIURI* aDataPath) {
   mURI = nullptr;
+  mReferrerInfo = nullptr;
   NS_ENSURE_ARG_POINTER(aDocument);
   NS_ENSURE_ARG_POINTER(aFile);
 
@@ -1524,6 +1572,9 @@ nsresult nsWebBrowserPersist::SaveDocumentInternal(
   NS_ENSURE_SUCCESS(rv, rv);
 
   rv = aDocument->GetIsPrivate(&mIsPrivate);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  rv = aDocument->GetReferrerInfo(getter_AddRefs(mReferrerInfo));
   NS_ENSURE_SUCCESS(rv, rv);
 
   // See if we can get the local file representation of this URI
@@ -1922,16 +1973,33 @@ nsresult nsWebBrowserPersist::CalculateUniqueFilename(
   nsCOMPtr<nsIURL> url(do_QueryInterface(aURI));
   NS_ENSURE_TRUE(url, NS_ERROR_FAILURE);
 
-  bool nameHasChanged = false;
-  nsresult rv;
-
   // Get the old filename
   nsAutoCString filename;
-  rv = url->GetFileName(filename);
+  nsresult rv = url->GetFileName(filename);
   NS_ENSURE_SUCCESS(rv, NS_ERROR_FAILURE);
   nsAutoCString directory;
   rv = url->GetDirectory(directory);
   NS_ENSURE_SUCCESS(rv, NS_ERROR_FAILURE);
+
+  // URL-decode and sanitize the filename to prevent dangerous characters
+  // (path separators, control characters, bidi marks, etc.).
+  NS_UnescapeURL(filename);
+  if (!mMIMEService) {
+    mMIMEService = do_GetService(NS_MIMESERVICE_CONTRACTID, &rv);
+  }
+  if (mMIMEService) {
+    nsAutoString filenameU16;
+    CopyUTF8toUTF16(filename, filenameU16);
+    nsAutoString sanitized;
+    if (NS_SUCCEEDED(mMIMEService->ValidateFileNameForSaving(
+            filenameU16, EmptyCString(),
+            nsIMIMEService::VALIDATE_SANITIZE_ONLY |
+                nsIMIMEService::VALIDATE_DONT_TRUNCATE |
+                nsIMIMEService::VALIDATE_NO_DEFAULT_FILENAME,
+            sanitized))) {
+      CopyUTF16toUTF8(sanitized, filename);
+    }
+  }
 
   // Split the filename into a base and an extension.
   // e.g. "foo.html" becomes "foo" & ".html"
@@ -1949,6 +2017,11 @@ nsresult nsWebBrowserPersist::CalculateUniqueFilename(
     // filename contains no dot
     base = filename;
   }
+
+  // Add random seed suffix to file names.
+  filename.Assign(base);
+  filename.Append(mFilenameRandomSeed);
+  filename.Append(ext);
 
   // Test if the filename is longer than allowed by the OS
   int32_t needToChop = filename.Length() - kDefaultMaxFilenameLength;
@@ -1970,8 +2043,8 @@ nsresult nsWebBrowserPersist::CalculateUniqueFilename(
     }
 
     filename.Assign(base);
+    filename.Append(mFilenameRandomSeed);
     filename.Append(ext);
-    nameHasChanged = true;
   }
 
   // Ensure the filename is unique
@@ -1990,6 +2063,9 @@ nsresult nsWebBrowserPersist::CalculateUniqueFilename(
       if (base.IsEmpty() || duplicateCounter > 1) {
         SmprintfPointer tmp = mozilla::Smprintf("_%03d", duplicateCounter);
         NS_ENSURE_TRUE(tmp, NS_ERROR_OUT_OF_MEMORY);
+        // filename already includes the 5-char seed, so the threshold
+        // kDefaultMaxFilenameLength - 4 correctly leaves room for the
+        // 4-char counter suffix (_001) without exceeding the limit.
         if (filename.Length() < kDefaultMaxFilenameLength - 4) {
           tmpBase = base;
         } else {
@@ -2002,14 +2078,15 @@ nsresult nsWebBrowserPersist::CalculateUniqueFilename(
 
       tmpPath.Assign(directory);
       tmpPath.Append(tmpBase);
+      tmpPath.Append(mFilenameRandomSeed);
       tmpPath.Append(ext);
 
       // Test if the name is a duplicate
       if (!mFilenameList.Contains(tmpPath)) {
         if (!base.Equals(tmpBase)) {
           filename.Assign(tmpBase);
+          filename.Append(mFilenameRandomSeed);
           filename.Append(ext);
-          nameHasChanged = true;
         }
         break;
       }
@@ -2020,39 +2097,33 @@ nsresult nsWebBrowserPersist::CalculateUniqueFilename(
   // Add name to list of those already used
   nsAutoCString newFilepath(directory);
   newFilepath.Append(filename);
-  mFilenameList.AppendElement(newFilepath);
+  mFilenameList.AppendElement(std::move(newFilepath));
 
-  // Update the uri accordingly if the filename actually changed
-  if (nameHasChanged) {
-    // Final sanity test
-    if (filename.Length() > kDefaultMaxFilenameLength) {
-      NS_WARNING(
-          "Filename wasn't truncated less than the max file length - how can "
-          "that be?");
-      return NS_ERROR_FAILURE;
-    }
-
-    nsCOMPtr<nsIFile> localFile;
-    GetLocalFileFromURI(aURI, getter_AddRefs(localFile));
-
-    if (localFile) {
-      nsAutoString filenameAsUnichar;
-      CopyASCIItoUTF16(filename, filenameAsUnichar);
-      localFile->SetLeafName(filenameAsUnichar);
-
-      // Resync the URI with the file after the extension has been appended
-      return NS_MutateURI(aURI)
-          .Apply(&nsIFileURLMutator::SetFile, localFile)
-          .Finalize(aOutURI);
-    }
-    return NS_MutateURI(url)
-        .Apply(&nsIURLMutator::SetFileName, filename, nullptr)
-        .Finalize(aOutURI);
+  // Update the uri accordingly since the filename changed.
+  // Final sanity test
+  if (filename.Length() > kDefaultMaxFilenameLength) {
+    NS_WARNING(
+        "Filename wasn't truncated less than the max file length - how can "
+        "that be?");
+    return NS_ERROR_FAILURE;
   }
 
-  // TODO (:valentin) This method should always clone aURI
-  aOutURI = aURI;
-  return NS_OK;
+  nsCOMPtr<nsIFile> localFile;
+  GetLocalFileFromURI(aURI, getter_AddRefs(localFile));
+
+  if (localFile) {
+    nsAutoString filenameAsUnichar;
+    CopyUTF8toUTF16(filename, filenameAsUnichar);
+    localFile->SetLeafName(filenameAsUnichar);
+
+    // Resync the URI with the file after the extension has been appended
+    return NS_MutateURI(aURI)
+        .Apply(&nsIFileURLMutator::SetFile, localFile)
+        .Finalize(aOutURI);
+  }
+  return NS_MutateURI(url)
+      .Apply(&nsIURLMutator::SetFileName, filename, nullptr)
+      .Finalize(aOutURI);
 }
 
 nsresult nsWebBrowserPersist::MakeFilenameFromURI(nsIURI* aURI,
@@ -2104,7 +2175,7 @@ nsresult nsWebBrowserPersist::MakeFilenameFromURI(nsIURI* aURI,
     fileName.Append(char16_t('a'));  // 'a' is for arbitrary
   }
 
-  aFilename = fileName;
+  aFilename = std::move(fileName);
   return NS_OK;
 }
 
@@ -2160,13 +2231,13 @@ nsresult nsWebBrowserPersist::CalculateAndAppendFileExt(
 
 // Note: the MakeOutputStream helpers can be called from a background thread.
 nsresult nsWebBrowserPersist::MakeOutputStream(
-    nsIURI* aURI, nsIOutputStream** aOutputStream) {
+    nsIURI* aURI, nsIURI* aSourceURI, nsIOutputStream** aOutputStream) {
   nsresult rv;
 
   nsCOMPtr<nsIFile> localFile;
   GetLocalFileFromURI(aURI, getter_AddRefs(localFile));
   if (localFile)
-    rv = MakeOutputStreamFromFile(localFile, aOutputStream);
+    rv = MakeOutputStreamFromFile(localFile, aSourceURI, aOutputStream);
   else
     rv = MakeOutputStreamFromURI(aURI, aOutputStream);
 
@@ -2174,7 +2245,7 @@ nsresult nsWebBrowserPersist::MakeOutputStream(
 }
 
 nsresult nsWebBrowserPersist::MakeOutputStreamFromFile(
-    nsIFile* aFile, nsIOutputStream** aOutputStream) {
+    nsIFile* aFile, nsIURI* aSourceURI, nsIOutputStream** aOutputStream) {
   nsresult rv = NS_OK;
 
   nsCOMPtr<nsIFileOutputStream> fileOutputStream =
@@ -2187,6 +2258,13 @@ nsresult nsWebBrowserPersist::MakeOutputStreamFromFile(
     ioFlags = PR_APPEND | PR_CREATE_FILE | PR_WRONLY;
   rv = fileOutputStream->Init(aFile, ioFlags, -1, 0);
   NS_ENSURE_SUCCESS(rv, rv);
+
+#ifdef XP_WIN
+  // Mark the file as coming from the correct zone for the URL, so the Windows
+  // UAC prompt shows for untrusted origins when the user opens it.
+  (void)mozilla::widget::WinUtils::MaybeWriteFileZoneIdSync(
+      aFile, aSourceURI, mReferrerInfo, !mIsPrivate);
+#endif
 
   rv = NS_NewBufferedOutputStream(aOutputStream, fileOutputStream.forget(),
                                   BUFFERED_OUTPUT_SIZE);
@@ -2284,6 +2362,72 @@ void nsWebBrowserPersist::EndDownloadInternal(nsresult aResult) {
   if (NS_FAILED(aResult) &&
       (mPersistFlags & PERSIST_FLAGS_CLEANUP_ON_FAILURE)) {
     CleanupLocalFiles();
+  }
+
+  // Since filenames are randomized per save session, re-saving a page to the
+  // same location leaves behind files from the previous save that now have
+  // different names. Remove any entry in the data directory that was not
+  // written in this session.
+  if (NS_SUCCEEDED(aResult) && mCurrentDataPath) {
+    nsCOMPtr<nsIFile> localDataPath;
+    if (NS_SUCCEEDED(GetLocalFileFromURI(mCurrentDataPath,
+                                         getter_AddRefs(localDataPath)))) {
+      bool exists = false;
+      localDataPath->Exists(&exists);
+      nsCOMPtr<nsIURL> dataPathURL(do_QueryInterface(mCurrentDataPath));
+      nsAutoCString dataDir;
+      if (exists && dataPathURL &&
+          NS_SUCCEEDED(dataPathURL->GetFilePath(dataDir))) {
+        if (!dataDir.IsEmpty() && dataDir.Last() != '/') {
+          dataDir.Append('/');
+        }
+        nsCOMPtr<nsIDirectoryEnumerator> entries;
+        if (NS_SUCCEEDED(
+                localDataPath->GetDirectoryEntries(getter_AddRefs(entries)))) {
+          // Collect stale entries synchronously, then delete asynchronously to
+          // avoid blocking the main thread on I/O. Enumeration must be
+          // synchronous so that files created by a concurrent new save (after
+          // this point) are not included in the deletion list.
+          nsTArray<std::pair<nsString, bool>> toDelete;
+          nsCOMPtr<nsIFile> entry;
+          while (NS_SUCCEEDED(entries->GetNextFile(getter_AddRefs(entry))) &&
+                 entry) {
+            nsAutoString leafNameU16;
+            entry->GetLeafName(leafNameU16);
+            nsAutoCString leafName;
+            CopyUTF16toUTF8(leafNameU16, leafName);
+            // entryPath is built from GetFilePath() (URL path, forward
+            // slashes) + nsIFile leaf name (UTF-8), matching the format used
+            // by CalculateUniqueFilename and SaveSubframeContent when they
+            // insert entries into mFilenameList.
+            nsAutoCString entryPath(dataDir);
+            entryPath.Append(leafName);
+            if (!mFilenameList.Contains(entryPath)) {
+              bool isDir = false;
+              entry->IsDirectory(&isDir);
+              nsAutoString path;
+              entry->GetPath(path);
+              toDelete.AppendElement(std::pair{nsString(path), isDir});
+            }
+          }
+          if (!toDelete.IsEmpty()) {
+            NS_DispatchBackgroundTask(
+                NS_NewRunnableFunction(
+                    "nsWebBrowserPersist::CleanupStaleFiles",
+                    [paths = std::move(toDelete)]() {
+                      for (const auto& [path, isDir] : paths) {
+                        nsCOMPtr<nsIFile> file;
+                        if (NS_SUCCEEDED(
+                                NS_NewLocalFile(path, getter_AddRefs(file)))) {
+                          file->Remove(isDir);
+                        }
+                      }
+                    }),
+                NS_DISPATCH_EVENT_MAY_BLOCK);
+          }
+        }
+      }
+    }
   }
 
   // Cleanup the channels
@@ -2533,7 +2677,9 @@ nsresult nsWebBrowserPersist::SaveSubframeContent(
   rv = AppendPathToURI(frameURI, filenameWithExt, frameURI);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  // Work out the path for the subframe data
+  // Work out the path for the subframe data. The _data directory is a local
+  // organizational folder never fetched from the server, and the files inside
+  // it will be randomized individually, so its name does not need seeding.
   nsCOMPtr<nsIURI> frameDataURI = mCurrentDataPath;
   nsAutoString newFrameDataPath(aData->mFilename);
 
@@ -2542,15 +2688,24 @@ nsresult nsWebBrowserPersist::SaveSubframeContent(
   rv = AppendPathToURI(frameDataURI, newFrameDataPath, frameDataURI);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  // Make frame document & data path conformant and unique
+  // Register the data directory in mFilenameList so the stale-file cleanup
+  // in EndDownloadInternal does not remove it after a successful save.
+  nsCOMPtr<nsIURL> dataURL(do_QueryInterface(frameDataURI));
+  if (dataURL) {
+    nsAutoCString directory, filename;
+    if (NS_SUCCEEDED(dataURL->GetDirectory(directory)) &&
+        NS_SUCCEEDED(dataURL->GetFileName(filename))) {
+      NS_UnescapeURL(filename);
+      directory.Append(filename);
+      mFilenameList.AppendElement(directory);
+    }
+  }
+
+  // Make frame document path conformant and unique
   nsCOMPtr<nsIURI> out;
   rv = CalculateUniqueFilename(frameURI, out);
   NS_ENSURE_SUCCESS(rv, rv);
   frameURI = out;
-
-  rv = CalculateUniqueFilename(frameDataURI, out);
-  NS_ENSURE_SUCCESS(rv, rv);
-  frameDataURI = out;
 
   mCurrentThingsToPersist++;
 
@@ -2575,7 +2730,7 @@ nsresult nsWebBrowserPersist::SaveSubframeContent(
   NS_ENSURE_SUCCESS(rv, rv);
 
   // Store the updated uri to the frame
-  aData->mFile = frameURI;
+  aData->mFile = std::move(frameURI);
   aData->mSubFrameExt.Truncate();  // we already put this in frameURI
 
   return NS_OK;
@@ -2633,7 +2788,7 @@ nsresult nsWebBrowserPersist::MakeAndStoreLocalFilenameInURIMap(
   data->mContentPolicyType = aContentPolicyType;
   data->mNeedsPersisting = aNeedsPersisting;
   data->mNeedsFixup = true;
-  data->mFilename = filename;
+  data->mFilename = std::move(filename);
   data->mSaved = false;
   data->mIsSubFrame = false;
   data->mDataPath = mCurrentDataPath;

@@ -6,24 +6,32 @@
 
 //! Parsing for CSS colors.
 
+use std::fmt::Write;
+
 use super::{
     color_function::ColorFunction,
     component::{ColorComponent, ColorComponentType},
     AbsoluteColor,
 };
 use crate::derives::*;
+use crate::typed_om::{NumericBaseType, NumericType};
 use crate::{
     parser::{Parse, ParserContext},
     values::{
-        generics::{calc::CalcUnits, Optional},
-        specified::{angle::Angle as SpecifiedAngle, calc::Leaf, color::Color as SpecifiedColor},
+        computed::Color as ComputedColor,
+        generics::{calc::CalcType, Optional},
+        specified::{
+            angle::NoCalcAngle,
+            calc::{Leaf, PercentageContext},
+            color::Color as SpecifiedColor,
+        },
     },
 };
 use cssparser::{
     color::{parse_hash_color, PredefinedColorSpace, OPAQUE},
     match_ignore_ascii_case, CowRcStr, Parser, Token,
 };
-use style_traits::{ParseError, StyleParseErrorKind};
+use style_traits::{CssWriter, ParseError, StyleParseErrorKind, ToCss};
 
 /// Returns true if the relative color syntax pref is enabled.
 #[inline]
@@ -32,35 +40,138 @@ pub fn rcs_enabled() -> bool {
 }
 
 /// Represents a channel keyword inside a color.
-#[derive(Clone, Copy, Debug, MallocSizeOf, Parse, PartialEq, PartialOrd, ToCss, ToShmem)]
-#[repr(u8)]
-pub enum ChannelKeyword {
-    /// alpha
-    Alpha,
-    /// a
-    A,
-    /// b, blackness, blue
-    B,
-    /// chroma
-    C,
-    /// green
-    G,
-    /// hue
-    H,
-    /// lightness
-    L,
-    /// red
-    R,
-    /// saturation
-    S,
-    /// whiteness
-    W,
-    /// x
-    X,
-    /// y
-    Y,
-    /// z
-    Z,
+#[derive(Clone, Copy, Debug, MallocSizeOf, PartialEq, PartialOrd, ToShmem)]
+#[repr(C)]
+pub struct ChannelKeyword(u16);
+bitflags! {
+    impl ChannelKeyword: u16 {
+        /// alpha
+        const ALPHA = 1 << 0;
+        /// a
+        const A = 1 << 1;
+        /// b, blackness, blue
+        const B = 1 << 2;
+        /// chroma
+        const C = 1 << 3;
+        /// green
+        const G = 1 << 4;
+        /// hue
+        const H = 1 << 5;
+        /// lightness
+        const L = 1 << 6;
+        /// red
+        const R = 1 << 7;
+        /// saturation
+        const S = 1 << 8;
+        /// whiteness
+        const W = 1 << 9;
+        /// x
+        const X = 1 << 10;
+        /// y
+        const Y = 1 << 11;
+        /// z
+        const Z = 1 << 12;
+    }
+}
+
+impl ChannelKeyword {
+    /// Channel keywords allowed in sRGB colors.
+    /// https://drafts.csswg.org/css-color-5/#relative-RGB
+    pub fn rgb() -> Self {
+        Self::R | Self::G | Self::B | Self::ALPHA
+    }
+
+    /// Channel keywords allowed in HSL colors.
+    /// https://drafts.csswg.org/css-color-5/#relative-HSL
+    pub fn hsl() -> Self {
+        Self::H | Self::S | Self::L | Self::ALPHA
+    }
+
+    /// Channel keywords allowed in HWB colors.
+    /// https://drafts.csswg.org/css-color-5/#relative-HWB
+    pub fn hwb() -> Self {
+        Self::H | Self::W | Self::B | Self::ALPHA
+    }
+
+    /// Channel keywords allowed in Lab and Oklab colors.
+    /// https://drafts.csswg.org/css-color-5/#relative-Lab
+    pub fn lab() -> Self {
+        Self::L | Self::A | Self::B | Self::ALPHA
+    }
+
+    /// Channel keywords allowed in LCH and OkLCh colors.
+    /// https://drafts.csswg.org/css-color-5/#relative-LCH
+    pub fn lch() -> Self {
+        Self::L | Self::C | Self::H | Self::ALPHA
+    }
+
+    /// Channel keywords allowed in XYZ colors.
+    /// https://drafts.csswg.org/css-color-5/#relative-color-function
+    pub fn xyz() -> Self {
+        Self::X | Self::Y | Self::Z | Self::ALPHA
+    }
+
+    /// Parse a channel keyword from an ident.
+    pub fn from_ident(ident: &str) -> Result<Self, ()> {
+        Ok(match_ignore_ascii_case! { ident,
+            "alpha" => Self::ALPHA,
+            "a" => Self::A,
+            "b" => Self::B,
+            "c" => Self::C,
+            "g" => Self::G,
+            "h" => Self::H,
+            "l" => Self::L,
+            "r" => Self::R,
+            "s" => Self::S,
+            "w" => Self::W,
+            "x" => Self::X,
+            "y" => Self::Y,
+            "z" => Self::Z,
+            _ => return Err(())
+        })
+    }
+}
+
+impl Parse for ChannelKeyword {
+    fn parse<'i, 't>(
+        _: &ParserContext,
+        input: &mut Parser<'i, 't>,
+    ) -> Result<Self, ParseError<'i>> {
+        let location = input.current_source_location();
+        let ident = input.expect_ident()?;
+        Self::from_ident(ident.as_ref())
+            .map_err(|()| location.new_unexpected_token_error(Token::Ident(ident.clone())))
+    }
+}
+
+impl ToCss for ChannelKeyword {
+    fn to_css<W>(&self, dest: &mut CssWriter<W>) -> std::fmt::Result
+    where
+        W: std::fmt::Write,
+    {
+        dest.write_str(match *self {
+            Self::ALPHA => "alpha",
+            Self::A => "a",
+            Self::B => "b",
+            Self::C => "c",
+            Self::G => "g",
+            Self::H => "h",
+            Self::L => "l",
+            Self::R => "r",
+            Self::S => "s",
+            Self::W => "w",
+            Self::X => "x",
+            Self::Y => "y",
+            Self::Z => "z",
+            _ => {
+                debug_assert!(
+                    false,
+                    "tried to serialize unexpected multi-value ChannelKeyword"
+                );
+                ""
+            },
+        })
+    }
 }
 
 /// Return the named color with the given name.
@@ -100,19 +211,15 @@ pub fn parse_color_with<'i, 't>(
             let name = name.clone();
             return input.parse_nested_block(|arguments| {
                 let color_function = parse_color_function(context, name, arguments)?;
-
-                if color_function.has_origin_color() {
-                    // Preserve the color as it was parsed.
-                    Ok(SpecifiedColor::ColorFunction(Box::new(color_function)))
-                } else if let Ok(resolved) = color_function.resolve_to_absolute() {
-                    Ok(SpecifiedColor::from_absolute_color(resolved))
-                } else {
-                    // This will only happen when the parsed color contains errors like calc units
-                    // that cannot be resolved at parse time, but will fail when trying to resolve
-                    // them, etc. This should be rare, but for now just failing the color value
-                    // makes sense.
-                    Err(location.new_custom_error(StyleParseErrorKind::UnspecifiedError))
+                if !color_function.has_origin_color() {
+                    if let Ok(ComputedColor::Absolute(resolved)) =
+                        color_function.to_computed_color(None)
+                    {
+                        return Ok(SpecifiedColor::from_absolute_color(resolved));
+                    }
                 }
+                // Preserve the color as it was parsed.
+                Ok(SpecifiedColor::ColorFunction(Box::new(color_function)))
             });
         },
         _ => Err(()),
@@ -128,8 +235,6 @@ fn parse_color_function<'i, 't>(
     arguments: &mut Parser<'i, 't>,
 ) -> Result<ColorFunction<SpecifiedColor>, ParseError<'i>> {
     let origin_color = parse_origin_color(context, arguments)?;
-    let has_origin_color = origin_color.is_some();
-
     let color = match_ignore_ascii_case! { &name,
         "rgb" | "rgba" => parse_rgb(context, arguments, origin_color),
         "hsl" | "hsla" => parse_hsl(context, arguments, origin_color),
@@ -139,21 +244,16 @@ fn parse_color_function<'i, 't>(
         "oklab" => parse_lab_like(context, arguments, origin_color, ColorFunction::Oklab),
         "oklch" => parse_lch_like(context, arguments, origin_color, ColorFunction::Oklch),
         "color" => parse_color_with_color_space(context, arguments, origin_color),
+        "alpha" if static_prefs::pref!("layout.css.alpha-color-function.enabled") => {
+            parse_relative_alpha(
+                context,
+                arguments,
+                origin_color.ok_or_else(|| arguments.new_custom_error(StyleParseErrorKind::UnspecifiedError))?
+            )
+        },
         _ => return Err(arguments.new_unexpected_token_error(Token::Ident(name))),
     }?;
-
-    if has_origin_color {
-        // Validate the channels and calc expressions by trying to resolve them against
-        // transparent.
-        // FIXME(emilio, bug 1925572): This could avoid cloning, or be done earlier.
-        let abs = color.map_origin_color(|_| Some(AbsoluteColor::TRANSPARENT_BLACK));
-        if abs.resolve_to_absolute().is_err() {
-            return Err(arguments.new_custom_error(StyleParseErrorKind::UnspecifiedError));
-        }
-    }
-
     arguments.expect_exhausted()?;
-
     Ok(color)
 }
 
@@ -184,7 +284,12 @@ fn parse_rgb<'i, 't>(
     arguments: &mut Parser<'i, 't>,
     origin_color: Option<SpecifiedColor>,
 ) -> Result<ColorFunction<SpecifiedColor>, ParseError<'i>> {
-    let maybe_red = parse_number_or_percentage(context, arguments, true)?;
+    let allowed_channel_keywords = if origin_color.is_some() {
+        ChannelKeyword::rgb()
+    } else {
+        ChannelKeyword::empty()
+    };
+    let maybe_red = parse_number_or_percentage(context, arguments, true, allowed_channel_keywords)?;
 
     // If the first component is not "none" and is followed by a comma, then we
     // are parsing the legacy syntax.  Legacy syntax also doesn't support an
@@ -195,14 +300,14 @@ fn parse_rgb<'i, 't>(
 
     Ok(if is_legacy_syntax {
         let (green, blue) = if maybe_red.could_be_percentage() {
-            let green = parse_percentage(context, arguments, false)?;
+            let green = parse_percentage(context, arguments, false, allowed_channel_keywords)?;
             arguments.expect_comma()?;
-            let blue = parse_percentage(context, arguments, false)?;
+            let blue = parse_percentage(context, arguments, false, allowed_channel_keywords)?;
             (green, blue)
         } else {
-            let green = parse_number(context, arguments, false)?;
+            let green = parse_number(context, arguments, false, allowed_channel_keywords)?;
             arguments.expect_comma()?;
-            let blue = parse_number(context, arguments, false)?;
+            let blue = parse_number(context, arguments, false, allowed_channel_keywords)?;
             (green, blue)
         };
 
@@ -210,10 +315,10 @@ fn parse_rgb<'i, 't>(
 
         ColorFunction::Rgb(origin_color.into(), maybe_red, green, blue, alpha)
     } else {
-        let green = parse_number_or_percentage(context, arguments, true)?;
-        let blue = parse_number_or_percentage(context, arguments, true)?;
+        let green = parse_number_or_percentage(context, arguments, true, allowed_channel_keywords)?;
+        let blue = parse_number_or_percentage(context, arguments, true, allowed_channel_keywords)?;
 
-        let alpha = parse_modern_alpha(context, arguments)?;
+        let alpha = parse_modern_alpha(context, arguments, allowed_channel_keywords)?;
 
         ColorFunction::Rgb(origin_color.into(), maybe_red, green, blue, alpha)
     })
@@ -228,7 +333,12 @@ fn parse_hsl<'i, 't>(
     arguments: &mut Parser<'i, 't>,
     origin_color: Option<SpecifiedColor>,
 ) -> Result<ColorFunction<SpecifiedColor>, ParseError<'i>> {
-    let hue = parse_number_or_angle(context, arguments, true)?;
+    let allowed_channel_keywords = if origin_color.is_some() {
+        ChannelKeyword::hsl()
+    } else {
+        ChannelKeyword::empty()
+    };
+    let hue = parse_number_or_angle(context, arguments, true, allowed_channel_keywords)?;
 
     // If the hue is not "none" and is followed by a comma, then we are parsing
     // the legacy syntax. Legacy syntax also doesn't support an origin color.
@@ -237,15 +347,17 @@ fn parse_hsl<'i, 't>(
         && arguments.try_parse(|p| p.expect_comma()).is_ok();
 
     let (saturation, lightness, alpha) = if is_legacy_syntax {
-        let saturation = parse_percentage(context, arguments, false)?;
+        let saturation = parse_percentage(context, arguments, false, allowed_channel_keywords)?;
         arguments.expect_comma()?;
-        let lightness = parse_percentage(context, arguments, false)?;
+        let lightness = parse_percentage(context, arguments, false, allowed_channel_keywords)?;
         let alpha = parse_legacy_alpha(context, arguments)?;
         (saturation, lightness, alpha)
     } else {
-        let saturation = parse_number_or_percentage(context, arguments, true)?;
-        let lightness = parse_number_or_percentage(context, arguments, true)?;
-        let alpha = parse_modern_alpha(context, arguments)?;
+        let saturation =
+            parse_number_or_percentage(context, arguments, true, allowed_channel_keywords)?;
+        let lightness =
+            parse_number_or_percentage(context, arguments, true, allowed_channel_keywords)?;
+        let alpha = parse_modern_alpha(context, arguments, allowed_channel_keywords)?;
         (saturation, lightness, alpha)
     };
 
@@ -267,11 +379,16 @@ fn parse_hwb<'i, 't>(
     arguments: &mut Parser<'i, 't>,
     origin_color: Option<SpecifiedColor>,
 ) -> Result<ColorFunction<SpecifiedColor>, ParseError<'i>> {
-    let hue = parse_number_or_angle(context, arguments, true)?;
-    let whiteness = parse_number_or_percentage(context, arguments, true)?;
-    let blackness = parse_number_or_percentage(context, arguments, true)?;
+    let allowed_channel_keywords = if origin_color.is_some() {
+        ChannelKeyword::hwb()
+    } else {
+        ChannelKeyword::empty()
+    };
+    let hue = parse_number_or_angle(context, arguments, true, allowed_channel_keywords)?;
+    let whiteness = parse_number_or_percentage(context, arguments, true, allowed_channel_keywords)?;
+    let blackness = parse_number_or_percentage(context, arguments, true, allowed_channel_keywords)?;
 
-    let alpha = parse_modern_alpha(context, arguments)?;
+    let alpha = parse_modern_alpha(context, arguments, allowed_channel_keywords)?;
 
     Ok(ColorFunction::Hwb(
         origin_color.into(),
@@ -297,11 +414,16 @@ fn parse_lab_like<'i, 't>(
     origin_color: Option<SpecifiedColor>,
     into_color: IntoLabFn<ColorFunction<SpecifiedColor>>,
 ) -> Result<ColorFunction<SpecifiedColor>, ParseError<'i>> {
-    let lightness = parse_number_or_percentage(context, arguments, true)?;
-    let a = parse_number_or_percentage(context, arguments, true)?;
-    let b = parse_number_or_percentage(context, arguments, true)?;
+    let allowed_channel_keywords = if origin_color.is_some() {
+        ChannelKeyword::lab()
+    } else {
+        ChannelKeyword::empty()
+    };
+    let lightness = parse_number_or_percentage(context, arguments, true, allowed_channel_keywords)?;
+    let a = parse_number_or_percentage(context, arguments, true, allowed_channel_keywords)?;
+    let b = parse_number_or_percentage(context, arguments, true, allowed_channel_keywords)?;
 
-    let alpha = parse_modern_alpha(context, arguments)?;
+    let alpha = parse_modern_alpha(context, arguments, allowed_channel_keywords)?;
 
     Ok(into_color(origin_color.into(), lightness, a, b, alpha))
 }
@@ -321,11 +443,16 @@ fn parse_lch_like<'i, 't>(
     origin_color: Option<SpecifiedColor>,
     into_color: IntoLchFn<ColorFunction<SpecifiedColor>>,
 ) -> Result<ColorFunction<SpecifiedColor>, ParseError<'i>> {
-    let lightness = parse_number_or_percentage(context, arguments, true)?;
-    let chroma = parse_number_or_percentage(context, arguments, true)?;
-    let hue = parse_number_or_angle(context, arguments, true)?;
+    let allowed_channel_keywords = if origin_color.is_some() {
+        ChannelKeyword::lch()
+    } else {
+        ChannelKeyword::empty()
+    };
+    let lightness = parse_number_or_percentage(context, arguments, true, allowed_channel_keywords)?;
+    let chroma = parse_number_or_percentage(context, arguments, true, allowed_channel_keywords)?;
+    let hue = parse_number_or_angle(context, arguments, true, allowed_channel_keywords)?;
 
-    let alpha = parse_modern_alpha(context, arguments)?;
+    let alpha = parse_modern_alpha(context, arguments, allowed_channel_keywords)?;
 
     Ok(into_color(
         origin_color.into(),
@@ -344,12 +471,26 @@ fn parse_color_with_color_space<'i, 't>(
     origin_color: Option<SpecifiedColor>,
 ) -> Result<ColorFunction<SpecifiedColor>, ParseError<'i>> {
     let color_space = PredefinedColorSpace::parse(arguments)?;
+    let allowed_channel_keywords = if origin_color.is_some() {
+        match color_space {
+            PredefinedColorSpace::Srgb
+            | PredefinedColorSpace::SrgbLinear
+            | PredefinedColorSpace::DisplayP3
+            | PredefinedColorSpace::DisplayP3Linear
+            | PredefinedColorSpace::A98Rgb
+            | PredefinedColorSpace::ProphotoRgb
+            | PredefinedColorSpace::Rec2020 => ChannelKeyword::rgb(),
+            PredefinedColorSpace::XyzD50 | PredefinedColorSpace::XyzD65 => ChannelKeyword::xyz(),
+        }
+    } else {
+        ChannelKeyword::empty()
+    };
 
-    let c1 = parse_number_or_percentage(context, arguments, true)?;
-    let c2 = parse_number_or_percentage(context, arguments, true)?;
-    let c3 = parse_number_or_percentage(context, arguments, true)?;
+    let c1 = parse_number_or_percentage(context, arguments, true, allowed_channel_keywords)?;
+    let c2 = parse_number_or_percentage(context, arguments, true, allowed_channel_keywords)?;
+    let c3 = parse_number_or_percentage(context, arguments, true, allowed_channel_keywords)?;
 
-    let alpha = parse_modern_alpha(context, arguments)?;
+    let alpha = parse_modern_alpha(context, arguments, allowed_channel_keywords)?;
 
     Ok(ColorFunction::Color(
         origin_color.into(),
@@ -359,6 +500,21 @@ fn parse_color_with_color_space<'i, 't>(
         alpha,
         color_space.into(),
     ))
+}
+
+/// Parse the alpha() function.
+#[inline]
+fn parse_relative_alpha<'i, 't>(
+    context: &ParserContext,
+    arguments: &mut Parser<'i, 't>,
+    origin_color: SpecifiedColor,
+) -> Result<ColorFunction<SpecifiedColor>, ParseError<'i>> {
+    let alpha = parse_modern_alpha(context, arguments, ChannelKeyword::ALPHA)?;
+    if matches!(alpha, ColorComponent::AlphaOmitted) {
+        // An alpha is required as it is the only controllable component.
+        return Err(arguments.new_custom_error(StyleParseErrorKind::UnspecifiedError));
+    }
+    Ok(ColorFunction::Alpha(origin_color.into(), alpha))
 }
 
 /// Either a percentage or a number.
@@ -388,8 +544,9 @@ impl ColorComponentType for NumberOrPercentageComponent {
         Self::Number(value)
     }
 
-    fn units() -> CalcUnits {
-        CalcUnits::PERCENTAGE
+    fn is_valid_type(ty: &NumericType) -> bool {
+        ty.as_calc_type()
+            .is_ok_and(|ty| ty == CalcType::Number || ty == CalcType::Percentage)
     }
 
     fn try_from_token(token: &Token) -> Result<Self, ()> {
@@ -404,8 +561,8 @@ impl ColorComponentType for NumberOrPercentageComponent {
 
     fn try_from_leaf(leaf: &Leaf) -> Result<Self, ()> {
         Ok(match *leaf {
-            Leaf::Percentage(unit_value) => Self::Percentage(unit_value),
-            Leaf::Number(value) => Self::Number(value),
+            Leaf::Percentage(ref p) => Self::Percentage(p.get()),
+            Leaf::Number(n) => Self::Number(n.value()),
             _ => return Err(()),
         })
     }
@@ -438,8 +595,9 @@ impl ColorComponentType for NumberOrAngleComponent {
         Self::Number(value)
     }
 
-    fn units() -> CalcUnits {
-        CalcUnits::ANGLE
+    fn is_valid_type(ty: &NumericType) -> bool {
+        ty.as_calc_type()
+            .is_ok_and(|ty| ty == CalcType::Number || ty == CalcType::Angle)
     }
 
     fn try_from_token(token: &Token) -> Result<Self, ()> {
@@ -448,10 +606,7 @@ impl ColorComponentType for NumberOrAngleComponent {
             Token::Dimension {
                 value, ref unit, ..
             } => {
-                let degrees =
-                    SpecifiedAngle::parse_dimension(value, unit, /* from_calc = */ false)
-                        .map(|angle| angle.degrees())?;
-
+                let degrees = NoCalcAngle::parse_dimension(value, unit)?.degrees();
                 NumberOrAngleComponent::Angle(degrees)
             },
             _ => {
@@ -463,7 +618,7 @@ impl ColorComponentType for NumberOrAngleComponent {
     fn try_from_leaf(leaf: &Leaf) -> Result<Self, ()> {
         Ok(match *leaf {
             Leaf::Angle(angle) => Self::Angle(angle.degrees()),
-            Leaf::Number(value) => Self::Number(value),
+            Leaf::Number(n) => Self::Number(n.value()),
             _ => return Err(()),
         })
     }
@@ -475,8 +630,8 @@ impl ColorComponentType for f32 {
         value
     }
 
-    fn units() -> CalcUnits {
-        CalcUnits::empty()
+    fn is_valid_type(ty: &NumericType) -> bool {
+        matches!(ty.as_calc_type(), Ok(CalcType::Number))
     }
 
     fn try_from_token(token: &Token) -> Result<Self, ()> {
@@ -488,8 +643,8 @@ impl ColorComponentType for f32 {
     }
 
     fn try_from_leaf(leaf: &Leaf) -> Result<Self, ()> {
-        if let Leaf::Number(value) = *leaf {
-            Ok(value)
+        if let Leaf::Number(n) = *leaf {
+            Ok(n.value())
         } else {
             Err(())
         }
@@ -501,8 +656,15 @@ fn parse_number_or_angle<'i, 't>(
     context: &ParserContext,
     input: &mut Parser<'i, 't>,
     allow_none: bool,
+    allowed_channel_keywords: ChannelKeyword,
 ) -> Result<ColorComponent<NumberOrAngleComponent>, ParseError<'i>> {
-    ColorComponent::parse(context, input, allow_none)
+    ColorComponent::parse(
+        context,
+        input,
+        allow_none,
+        allowed_channel_keywords,
+        PercentageContext::not_allowed(),
+    )
 }
 
 /// Parse a `<percentage>` value.
@@ -510,10 +672,17 @@ fn parse_percentage<'i, 't>(
     context: &ParserContext,
     input: &mut Parser<'i, 't>,
     allow_none: bool,
+    allowed_channel_keywords: ChannelKeyword,
 ) -> Result<ColorComponent<NumberOrPercentageComponent>, ParseError<'i>> {
     let location = input.current_source_location();
 
-    let value = ColorComponent::<NumberOrPercentageComponent>::parse(context, input, allow_none)?;
+    let value = ColorComponent::<NumberOrPercentageComponent>::parse(
+        context,
+        input,
+        allow_none,
+        allowed_channel_keywords,
+        PercentageContext::allowed_with_hint(NumericBaseType::Percent),
+    )?;
     if !value.could_be_percentage() {
         return Err(location.new_custom_error(StyleParseErrorKind::UnspecifiedError));
     }
@@ -526,10 +695,17 @@ fn parse_number<'i, 't>(
     context: &ParserContext,
     input: &mut Parser<'i, 't>,
     allow_none: bool,
+    allowed_channel_keywords: ChannelKeyword,
 ) -> Result<ColorComponent<NumberOrPercentageComponent>, ParseError<'i>> {
     let location = input.current_source_location();
 
-    let value = ColorComponent::<NumberOrPercentageComponent>::parse(context, input, allow_none)?;
+    let value = ColorComponent::<NumberOrPercentageComponent>::parse(
+        context,
+        input,
+        allow_none,
+        allowed_channel_keywords,
+        PercentageContext::not_allowed(),
+    )?;
 
     if !value.could_be_number() {
         return Err(location.new_custom_error(StyleParseErrorKind::UnspecifiedError));
@@ -543,8 +719,15 @@ fn parse_number_or_percentage<'i, 't>(
     context: &ParserContext,
     input: &mut Parser<'i, 't>,
     allow_none: bool,
+    allowed_channel_keywords: ChannelKeyword,
 ) -> Result<ColorComponent<NumberOrPercentageComponent>, ParseError<'i>> {
-    ColorComponent::parse(context, input, allow_none)
+    ColorComponent::parse(
+        context,
+        input,
+        allow_none,
+        allowed_channel_keywords,
+        PercentageContext::allowed_with_hint(NumericBaseType::Percent),
+    )
 }
 
 fn parse_legacy_alpha<'i, 't>(
@@ -553,7 +736,7 @@ fn parse_legacy_alpha<'i, 't>(
 ) -> Result<ColorComponent<NumberOrPercentageComponent>, ParseError<'i>> {
     if !arguments.is_exhausted() {
         arguments.expect_comma()?;
-        parse_number_or_percentage(context, arguments, false)
+        parse_number_or_percentage(context, arguments, false, ChannelKeyword::empty())
     } else {
         Ok(ColorComponent::AlphaOmitted)
     }
@@ -562,10 +745,11 @@ fn parse_legacy_alpha<'i, 't>(
 fn parse_modern_alpha<'i, 't>(
     context: &ParserContext,
     arguments: &mut Parser<'i, 't>,
+    allowed_channel_keywords: ChannelKeyword,
 ) -> Result<ColorComponent<NumberOrPercentageComponent>, ParseError<'i>> {
     if !arguments.is_exhausted() {
         arguments.expect_delim('/')?;
-        parse_number_or_percentage(context, arguments, true)
+        parse_number_or_percentage(context, arguments, true, allowed_channel_keywords)
     } else {
         Ok(ColorComponent::AlphaOmitted)
     }
@@ -582,13 +766,9 @@ impl ColorComponent<NumberOrPercentageComponent> {
                 // Channel keywords always resolve to numbers.
                 true
             },
-            Self::Calc(node) => {
-                if let Ok(unit) = node.unit() {
-                    unit.is_empty()
-                } else {
-                    false
-                }
-            },
+            Self::Calc(node) => node
+                .numeric_type_as_calc_type()
+                .is_ok_and(|ty| ty == CalcType::Number),
         }
     }
 
@@ -602,13 +782,9 @@ impl ColorComponent<NumberOrPercentageComponent> {
                 // Channel keywords always resolve to numbers.
                 false
             },
-            Self::Calc(node) => {
-                if let Ok(unit) = node.unit() {
-                    unit == CalcUnits::PERCENTAGE
-                } else {
-                    false
-                }
-            },
+            Self::Calc(node) => node
+                .numeric_type_as_calc_type()
+                .is_ok_and(|ty| ty == CalcType::Percentage),
         }
     }
 }

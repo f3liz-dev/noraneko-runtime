@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -16,8 +14,8 @@
 #include "mozilla/layers/LayersSurfaces.h"  // for SurfaceDescriptor
 #include "mozilla/layers/TextureClient.h"   // for TextureClient, etc
 #ifdef MOZ_WIDGET_ANDROID
-#  include "AndroidSurfaceTexture.h"
 #  include "AndroidNativeWindow.h"
+#  include "AndroidSurfaceTexture.h"
 #  include "mozilla/java/GeckoSurfaceWrappers.h"
 #  include "mozilla/layers/AndroidHardwareBuffer.h"
 #endif
@@ -158,6 +156,43 @@ class AndroidHardwareBufferTextureData : public TextureData {
 
   // Keeps track of whether the underlying NativeWindow is actually locked.
   bool mIsLocked;
+};
+
+class AndroidImageReaderImageTextureData : public TextureData {
+ public:
+  static already_AddRefed<TextureClient> CreateTextureClient(
+      const layers::GpuProcessAndroidImageReaderId aImageReaderId,
+      const layers::AndroidMediaCodecFrameId aFrameId, gfx::IntSize aSize,
+      gl::OriginPos aOriginPos, bool aHasAlpha, LayersIPCChannel* aAllocator,
+      TextureFlags aFlags);
+
+  virtual ~AndroidImageReaderImageTextureData();
+
+  void FillInfo(TextureData::Info& aInfo) const override;
+
+  bool Serialize(SurfaceDescriptor& aOutDescriptor) override;
+
+  void GetSubDescriptor(
+      RemoteDecoderVideoSubDescriptor* const aOutDesc) override;
+
+  // Useless functions.
+  bool Lock(OpenMode) override { return true; }
+
+  void Unlock() override {}
+
+  // Our data is always owned externally.
+  void Deallocate(LayersIPCChannel*) override {}
+
+ protected:
+  AndroidImageReaderImageTextureData(
+      const layers::GpuProcessAndroidImageReaderId aImageReaderId,
+      const layers::AndroidMediaCodecFrameId aFrameId, gfx::IntSize aSize,
+      bool aHasAlpha);
+
+  const layers::GpuProcessAndroidImageReaderId mImageReaderId;
+  const layers::AndroidMediaCodecFrameId mFrameId;
+  const gfx::IntSize mSize;
+  const bool mHasAlpha;
 };
 
 #endif  // MOZ_WIDGET_ANDROID

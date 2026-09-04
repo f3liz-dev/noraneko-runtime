@@ -15,16 +15,20 @@ use std::{
     rc::Rc,
 };
 
-use neqo_common::{hex, hex_with_len, qdebug, qinfo, Buffer, Decoder, Encoder};
-use neqo_crypto::{random, randomize};
-use smallvec::{smallvec, SmallVec};
+use neqo_common::{
+    Buffer, Decoder, Encoder, expect_usize,
+    hex::{Hex, HexWithLen},
+    qdebug, qinfo, to_u64,
+};
+use nss::{random, randomize};
+use smallvec::{SmallVec, smallvec};
 
 use crate::{
+    Error, Res,
     frame::{FrameEncoder as _, FrameType},
     packet, recovery,
     stateless_reset::Token as Srt,
     stats::FrameStats,
-    Error, Res,
 };
 
 #[derive(Clone, Default, Eq, Hash, PartialEq)]
@@ -100,13 +104,14 @@ impl Deref for ConnectionId {
 
 impl Debug for ConnectionId {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        write!(f, "CID {}", hex_with_len(&self.cid))
+        f.write_str("CID ")?;
+        HexWithLen::fmt(f, &self.cid)
     }
 }
 
 impl Display for ConnectionId {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        write!(f, "{}", hex(&self.cid))
+        Hex::fmt(f, &self.cid)
     }
 }
 
@@ -123,13 +128,14 @@ pub struct ConnectionIdRef<'a> {
 
 impl Debug for ConnectionIdRef<'_> {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        write!(f, "CID {}", hex_with_len(self.cid))
+        f.write_str("CID ")?;
+        HexWithLen::fmt(f, self.cid)
     }
 }
 
 impl Display for ConnectionIdRef<'_> {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        write!(f, "{}", hex(self.cid))
+        Hex::fmt(f, self.cid)
     }
 }
 
@@ -451,6 +457,11 @@ pub struct ConnectionIdManager {
 impl ConnectionIdManager {
     pub const ACTIVE_LIMIT: usize = 8;
 
+    /// The maximum number of connection IDs that may be pending retirement.
+    /// RFC 9000, Section 5.1.2 recommends allowing for at least twice
+    /// `active_connection_id_limit`.
+    pub const MAX_RETIRE_QUEUE: usize = 2 * Self::ACTIVE_LIMIT;
+
     /// A special value.  See `ConnectionIdManager::add_odcid`.
     const SEQNO_ODCID: u64 = u64::MAX;
 
@@ -470,7 +481,7 @@ impl ConnectionIdManager {
             // it is first possible to send `NEW_CONNECTION_ID` is 2.  One is the client-generated
             // destination connection (stored with a sequence number of `HANDSHAKE_SEQNO`); the
             // other being the handshake value (seqno 0).  As a result, `NEW_CONNECTION_ID`
-            // won't be sent until until after the handshake completes, because this initial
+            // won't be sent until after the handshake completes, because this initial
             // value remains until the connection completes and transport parameters are handled.
             limit: 2,
             next_seqno: 1,
@@ -493,15 +504,19 @@ impl ConnectionIdManager {
         if self.generator.deref().borrow().generates_empty_cids() {
             return Err(Error::ConnectionIdsExhausted);
         }
-        if let Some(cid) = self.generator.borrow_mut().generate_cid() {
-            assert_ne!(cid.len(), 0);
-            debug_assert_eq!(self.next_seqno, Self::SEQNO_PREFERRED);
-            self.connection_ids
-                .add_local(ConnectionIdEntry::new(self.next_seqno, cid.clone(), ()));
-            self.next_seqno += 1;
-            Ok((cid, Srt::random()))
-        } else {
-            Err(Error::ConnectionIdsExhausted)
+        match self.generator.borrow_mut().generate_cid() {
+            Some(cid) => {
+                assert_ne!(cid.len(), 0);
+                debug_assert_eq!(self.next_seqno, Self::SEQNO_PREFERRED);
+                self.connection_ids.add_local(ConnectionIdEntry::new(
+                    self.next_seqno,
+                    cid.clone(),
+                    (),
+                ));
+                self.next_seqno += 1;
+                Ok((cid, Srt::random()))
+            }
+            None => Err(Error::ConnectionIdsExhausted),
         }
     }
 
@@ -509,7 +524,14 @@ impl ConnectionIdManager {
         self.connection_ids.contains(cid)
     }
 
-    pub fn retire(&mut self, seqno: u64) {
+    pub fn retire(&mut self, seqno: u64) -> Res<()> {
+        // RFC 9000, Section 19.16: receipt of a RETIRE_CONNECTION_ID frame whose
+        // sequence number is greater than any we have issued (i.e. not below the
+        // next sequence number to be used) is a connection error.
+        if seqno >= self.next_seqno {
+            return Err(Error::ProtocolViolation);
+        }
+
         // TODO(mt) - consider keeping connection IDs around for a short while.
 
         let empty_cid = seqno == Self::SEQNO_EMPTY
@@ -524,6 +546,7 @@ impl ConnectionIdManager {
             self.connection_ids.retire(seqno);
             self.lost_new_connection_id.retain(|cid| cid.seqno != seqno);
         }
+        Ok(())
     }
 
     /// During the handshake, a server needs to regard the client's choice of destination
@@ -542,10 +565,8 @@ impl ConnectionIdManager {
 
     pub fn set_limit(&mut self, limit: u64) {
         debug_assert!(limit >= 2);
-        self.limit = min(
-            Self::ACTIVE_LIMIT,
-            usize::try_from(limit).unwrap_or(Self::ACTIVE_LIMIT),
-        );
+        // ACTIVE_LIMIT is usize and we use min, so this fits usize.
+        self.limit = expect_usize(min(to_u64(Self::ACTIVE_LIMIT), limit));
     }
 
     pub fn write_frames<B: Buffer>(
@@ -613,10 +634,10 @@ mod tests {
     use test_fixture::fixture_init;
 
     use crate::{
-        cid::{ConnectionId, ConnectionIdEntry},
+        Token as Srt,
+        cid::{ConnectionId, ConnectionIdEntry, ConnectionIdManager},
         packet,
         stats::FrameStats,
-        Token as Srt,
     };
 
     #[test]
@@ -631,16 +652,35 @@ mod tests {
         }
     }
 
+    fn new_connection_id_frame_len(entry: &ConnectionIdEntry<Srt>) -> usize {
+        1 + Encoder::varint_len(entry.sequence_number())
+            + 1
+            + 1
+            + entry.connection_id().len()
+            + Srt::LEN
+    }
+
+    /// A write with exactly the right remaining space must succeed.
+    #[test]
+    fn write_succeeds_with_exact_remaining() {
+        fixture_init();
+        let entry = ConnectionIdEntry::new(1, ConnectionId::from(&[0xab]), Srt::random());
+        let len = new_connection_id_frame_len(&entry);
+        // Capacity = len + 1 so that Builder::short (which consumes 1 byte) leaves exactly `len`.
+        let enc = Encoder::with_capacity(len + 1);
+        let mut builder = packet::Builder::short(enc, false, Some(&[]), len + 1);
+        assert_eq!(builder.remaining(), len, "exactly `len` bytes remaining");
+        assert!(
+            entry.write(&mut builder, &mut FrameStats::default()),
+            "write must succeed when remaining == len"
+        );
+    }
+
     #[test]
     fn write_checks_length_correctly() {
         fixture_init();
         let entry = ConnectionIdEntry::new(1, ConnectionId::from(&[]), Srt::random());
-        let limit = 1
-            + Encoder::varint_len(entry.sequence_number())
-            + 1
-            + 1
-            + entry.connection_id().len()
-            + Srt::LEN;
+        let limit = new_connection_id_frame_len(&entry);
         let enc = Encoder::with_capacity(limit);
         let mut builder = packet::Builder::short(enc, false, Some(&[]), limit);
         assert_eq!(
@@ -652,6 +692,59 @@ mod tests {
             !entry.write(&mut builder, &mut FrameStats::default()),
             "couldn't write frame into too-short builder",
         );
+    }
+
+    #[test]
+    fn connection_id_debug_format() {
+        let cid = ConnectionId::from(&[0x01, 0x02]);
+        assert_eq!(format!("{cid:?}"), "CID [2]: 0102");
+    }
+
+    #[test]
+    fn connection_id_ref_debug_format() {
+        let bytes = [0xde, 0xad];
+        let cid_ref = crate::cid::ConnectionIdRef::from(&bytes[..]);
+        assert_eq!(format!("{cid_ref:?}"), "CID [2]: dead");
+    }
+
+    #[test]
+    fn empty_connection_id_generator() {
+        use crate::cid::{ConnectionIdGenerator as _, EmptyConnectionIdGenerator};
+        let mut g = EmptyConnectionIdGenerator::default();
+        assert!(g.generates_empty_cids());
+        let cid = g.generate_cid().expect("generates Some");
+        assert!(cid.is_empty());
+    }
+
+    #[test]
+    fn is_stateless_reset_seqno_boundary() {
+        fixture_init();
+        let srt = Srt::random();
+        // Sequence number < 2^62 should match SRT.
+        let entry = ConnectionIdEntry::new((1 << 62) - 1, ConnectionId::from(&[1]), srt.clone());
+        assert!(entry.is_stateless_reset(&srt));
+        // Sequence number >= 2^62 has no valid SRT (should return false).
+        let entry_high = ConnectionIdEntry::new(1 << 62, ConnectionId::from(&[1]), srt.clone());
+        assert!(!entry_high.is_stateless_reset(&srt));
+    }
+
+    #[test]
+    fn connection_id_entry_is_empty() {
+        fixture_init();
+        let srt = Srt::random();
+        // SEQNO_EMPTY makes it empty.
+        let empty_seqno = ConnectionIdEntry::new(
+            ConnectionIdManager::SEQNO_EMPTY,
+            ConnectionId::from(&[1]),
+            srt.clone(),
+        );
+        assert!(empty_seqno.is_empty());
+        // Empty CID also makes it empty.
+        let empty_cid = ConnectionIdEntry::new(42, ConnectionId::from(&[]), srt.clone());
+        assert!(empty_cid.is_empty());
+        // Non-empty seqno and CID is not empty.
+        let non_empty = ConnectionIdEntry::new(1, ConnectionId::from(&[1]), srt);
+        assert!(!non_empty.is_empty());
     }
 
     #[test]

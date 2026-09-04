@@ -21,7 +21,7 @@ add_task(async function test_side_component_navigation_by_click() {
     await SimpleTest.promiseFocus(browser);
 
     const { document } = browser.contentWindow;
-    let win = browser.ownerGlobal;
+    let win = browser.documentGlobal;
     const pageNavButtons = document.querySelectorAll("moz-page-nav-button");
 
     for (let element of pageNavButtons) {
@@ -52,7 +52,7 @@ add_task(async function test_side_component_navigation_by_keyboard() {
     await SimpleTest.promiseFocus(browser);
 
     const { document } = browser.contentWindow;
-    let win = browser.ownerGlobal;
+    let win = browser.documentGlobal;
     const pageNavButtons = document.querySelectorAll("moz-page-nav-button");
     const firstButton = pageNavButtons[0].buttonEl;
 
@@ -99,7 +99,7 @@ add_task(async function test_direct_navigation_to_correct_view() {
 
       info(`Navigating to ${URL_BASE + view}`);
       document.location.assign(URL_BASE + view);
-      await BrowserTestUtils.waitForCondition(() => {
+      await TestUtils.waitForCondition(() => {
         return namedDeck.selectedViewName === view;
       }, "Wait for navigation to complete");
 

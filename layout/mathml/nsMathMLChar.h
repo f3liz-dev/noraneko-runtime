@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -70,6 +68,7 @@ class nsMathMLChar {
  public:
   typedef gfxTextRun::Range Range;
   typedef mozilla::gfx::DrawTarget DrawTarget;
+  using imgDrawingParams = mozilla::image::imgDrawingParams;
 
   // constructor and destructor
   nsMathMLChar() : mDirection(StretchDirection::Default) {
@@ -89,7 +88,8 @@ class nsMathMLChar {
                const nsRect* aSelectedRect = nullptr);
 
   void PaintForeground(nsIFrame* aForFrame, gfxContext& aRenderingContext,
-                       nsPoint aPt, bool aIsSelected);
+                       imgDrawingParams& aImgParams, nsPoint aPt,
+                       bool aIsSelected);
 
   // This is the method called to ask the char to stretch itself.
   // @param aContainerSize - IN - suggested size for the stretched char
@@ -207,11 +207,13 @@ class nsMathMLChar {
                            bool aMaxSizeIsAbsolute = false);
 
   nsresult PaintVertically(nsPresContext* aPresContext,
-                           gfxContext* aThebesContext, nsRect& aRect,
+                           gfxContext* aThebesContext,
+                           imgDrawingParams& aImgParams, nsRect& aRect,
                            nscolor aColor);
 
   nsresult PaintHorizontally(nsPresContext* aPresContext,
-                             gfxContext* aThebesContext, nsRect& aRect,
+                             gfxContext* aThebesContext,
+                             imgDrawingParams& aImgParams, nsRect& aRect,
                              nscolor aColor);
 
   void ApplyTransforms(gfxContext* aThebesContext, int32_t aAppUnitsPerGfxUnit,

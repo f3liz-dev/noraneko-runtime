@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,13 +5,13 @@
 #ifndef mozilla_ClearOnShutdown_h
 #define mozilla_ClearOnShutdown_h
 
+#include <functional>
+
+#include "MainThreadUtils.h"
+#include "ShutdownPhase.h"
+#include "mozilla/Array.h"
 #include "mozilla/LinkedList.h"
 #include "mozilla/StaticPtr.h"
-#include "mozilla/Array.h"
-#include "ShutdownPhase.h"
-#include "MainThreadUtils.h"
-
-#include <functional>
 
 /*
  * This header exports two public methods in the mozilla namespace:

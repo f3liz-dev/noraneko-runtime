@@ -1,14 +1,12 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "RenderTextureHostSWGL.h"
 
+#include "RenderThread.h"
 #include "mozilla/gfx/Logging.h"
 #include "mozilla/layers/TextureHost.h"
-#include "RenderThread.h"
 
 namespace mozilla {
 namespace wr {
@@ -113,11 +111,11 @@ wr::WrExternalImage RenderTextureHostSWGL::LockSWGL(
   if (!SetContext(aContext)) {
     return InvalidToWrExternalImage();
   }
-  if (!mLocked) {
+  if (!HasLockedSWGL()) {
     if (!UpdatePlanes(aCompositor)) {
       return InvalidToWrExternalImage();
     }
-    mLocked = true;
+    mLockedSWGL = true;
   }
   if (aChannelIndex >= mPlanes.size()) {
     return InvalidToWrExternalImage();
@@ -138,8 +136,8 @@ wr::WrExternalImage RenderTextureHostSWGL::LockSWGL(
 }
 
 void RenderTextureHostSWGL::UnlockSWGL() {
-  if (mLocked) {
-    mLocked = false;
+  if (mLockedSWGL) {
+    mLockedSWGL = false;
     UnmapPlanes();
   }
 }
@@ -166,11 +164,11 @@ bool RenderTextureHostSWGL::LockSWGLCompositeSurface(
   if (!SetContext(aContext)) {
     return false;
   }
-  if (!mLocked) {
+  if (!HasLockedSWGL()) {
     if (!UpdatePlanes(nullptr)) {
       return false;
     }
-    mLocked = true;
+    mLockedSWGLCompositeSurface = true;
   }
   MOZ_ASSERT(mPlanes.size() <= 3);
   for (size_t i = 0; i < mPlanes.size(); i++) {
@@ -202,6 +200,13 @@ bool RenderTextureHostSWGL::LockSWGLCompositeSurface(
   return true;
 }
 
+void RenderTextureHostSWGL::UnlockSWGLCompositeSurface() {
+  if (mLockedSWGLCompositeSurface) {
+    mLockedSWGLCompositeSurface = false;
+    UnmapPlanes();
+  }
+}
+
 bool wr_swgl_lock_composite_surface(void* aContext, wr::ExternalImageId aId,
                                     wr::SWGLCompositeSurfaceInfo* aInfo) {
   RenderTextureHost* texture = RenderThread::Get()->GetRenderTexture(aId);
@@ -224,7 +229,7 @@ void wr_swgl_unlock_composite_surface(void* aContext, wr::ExternalImageId aId) {
   if (!swglTex) {
     return;
   }
-  swglTex->UnlockSWGL();
+  swglTex->UnlockSWGLCompositeSurface();
 }
 
 }  // namespace wr

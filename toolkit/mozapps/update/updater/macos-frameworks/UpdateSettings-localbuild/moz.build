@@ -1,5 +1,3 @@
-# -*- Mode: python; indent-tabs-mode: nil; tab-width: 40 -*-
-# vim: set filetype=python:
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -16,3 +14,16 @@ UNIFIED_SOURCES += [
 OS_LIBS += [
     "-framework Foundation",
 ]
+
+# In a compile build, assemble the `UpdateSettings-localbuild.framework`
+# artifact (its binary renamed to `UpdateSettings`) that artifact builds
+# consume. An artifact build already has the binary from upstream.
+if CONFIG["MOZ_WIDGET_TOOLKIT"] == "cocoa":
+    framework = OBJDIR_FILES.dist.update_framework_artifacts[
+        "UpdateSettings-localbuild.framework"
+    ]
+    if CONFIG["COMPILE_ENVIRONMENT"]:
+        framework += [
+            (f"!/{FINAL_TARGET}/UpdateSettings-localbuild", "UpdateSettings")
+        ]
+    framework.Resources += ["../UpdateSettings/Info.plist"]

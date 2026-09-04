@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -6,9 +5,9 @@
 #ifndef mozilla_image_decoders_icon_android_nsIconChannel_h
 #define mozilla_image_decoders_icon_android_nsIconChannel_h
 
+#include "nsCOMPtr.h"
 #include "nsIChannel.h"
 #include "nsIURI.h"
-#include "nsCOMPtr.h"
 
 /**
  * This class is the Android implementation of nsIconChannel.

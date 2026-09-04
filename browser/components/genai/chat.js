@@ -106,7 +106,13 @@ ChromeUtils.defineLazyGetter(
 const node = {};
 
 function closeSidebar() {
-  topChromeWindow.SidebarController.hide();
+  const controller = topChromeWindow.SidebarController;
+  // In "hide-launcher" mode there is no launcher to return to, so keep the
+  // panel remembered rather than revealing the launcher (matching the close
+  // button in other panels' headers).
+  controller.hide({
+    dismissPanel: !controller._state.launcherHiddenWithPanel,
+  });
 }
 
 function openLink(url) {
@@ -132,6 +138,7 @@ function renderChat() {
   const browserContainer = document.getElementById("browser-container");
   browser.setAttribute("disableglobalhistory", "true");
   browser.setAttribute("maychangeremoteness", "true");
+  browser.setAttribute("messagemanagergroup", "chatbot-browser");
   browser.setAttribute("nodefaultsrc", "true");
   browser.setAttribute("remote", "true");
   browser.setAttribute("type", "content");
@@ -409,6 +416,7 @@ function showOnboarding(length) {
         })),
         // Default to nothing selected
         selected: " ",
+        subtitle: { string_id: "genai-onboarding-choose-header" },
         type: "single-select",
       };
       // Insert provider tiles on the first screen

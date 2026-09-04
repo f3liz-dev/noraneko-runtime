@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -19,5 +17,6 @@
 #define BUILDFLAG_INTERNAL_ENABLE_PROFILING() (0)
 #define BUILDFLAG_INTERNAL_CAN_UNWIND_WITH_FRAME_POINTERS() (0)
 #define BUILDFLAG_INTERNAL_EXPENSIVE_DCHECKS_ARE_ON() (1)
+#define BUILDFLAG_INTERNAL_ENABLE_COMMANDLINE_SEQUENCE_CHECKS() (0)
 
 #endif  // BASE_DEBUG_DEBUGGING_BUILDFLAGS_H_

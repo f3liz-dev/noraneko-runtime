@@ -64,6 +64,25 @@ function add_autofill_task(callback) {
   add_task(func);
 }
 
+// Variant of `add_autofill_task` for tests that rely on the pre-adaptive
+// bookmark-driven autofill path (an unvisited bookmark becoming an autofill
+// candidate). That path is gated on the adaptive autofill pref being off.
+function add_nonadaptive_autofill_task(callback) {
+  add_autofill_task(async () => {
+    Services.prefs.setBoolPref(
+      "browser.urlbar.autoFill.adaptiveHistory.enabled",
+      false
+    );
+    try {
+      await callback();
+    } finally {
+      Services.prefs.clearUserPref(
+        "browser.urlbar.autoFill.adaptiveHistory.enabled"
+      );
+    }
+  });
+}
+
 // "ex" should match http://example.com/.
 add_autofill_task(async function basic() {
   await PlacesTestUtils.addVisits([
@@ -174,7 +193,7 @@ add_autofill_task(async function wwwShouldNotMatchNoWWW() {
       context,
       matches: [
         makeVisitResult(context, {
-          source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+          source: UrlbarShared.RESULT_SOURCE.OTHER_LOCAL,
           uri: "http://www." + search + "/",
           title: "www." + search + "/",
           heuristic: true,
@@ -191,7 +210,7 @@ add_autofill_task(async function wwwShouldNotMatchNoWWW() {
       context,
       matches: [
         makeVisitResult(context, {
-          source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+          source: UrlbarShared.RESULT_SOURCE.OTHER_LOCAL,
           uri: "http://www." + search,
           title: "www." + search,
           iconUri: `page-icon:http://www.${host}/`,
@@ -314,7 +333,7 @@ add_autofill_task(async function prefixWWWShouldNotMatchNoWWW() {
     context,
     matches: [
       makeVisitResult(context, {
-        source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+        source: UrlbarShared.RESULT_SOURCE.OTHER_LOCAL,
         uri: prefixedUrl,
         title: prefixedUrl,
         heuristic: true,
@@ -340,7 +359,7 @@ add_autofill_task(async function httpPrefixShouldNotMatchHTTPS() {
     context,
     matches: [
       makeVisitResult(context, {
-        source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+        source: UrlbarShared.RESULT_SOURCE.OTHER_LOCAL,
         uri: prefixedUrl,
         title: prefixedUrl,
         heuristic: true,
@@ -419,7 +438,7 @@ add_autofill_task(async function httpsWWWShouldNotMatchNoWWW() {
       context,
       matches: [
         makeVisitResult(context, {
-          source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+          source: UrlbarShared.RESULT_SOURCE.OTHER_LOCAL,
           uri: "http://www." + search + "/",
           title: "www." + search + "/",
           heuristic: true,
@@ -436,7 +455,7 @@ add_autofill_task(async function httpsWWWShouldNotMatchNoWWW() {
       context,
       matches: [
         makeVisitResult(context, {
-          source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+          source: UrlbarShared.RESULT_SOURCE.OTHER_LOCAL,
           uri: "http://www." + search,
           title: "www." + search,
           iconUri: `page-icon:http://www.${host}/`,
@@ -512,7 +531,7 @@ add_autofill_task(async function httpsPrefixWWWShouldNotMatchNoWWW() {
     context,
     matches: [
       makeVisitResult(context, {
-        source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+        source: UrlbarShared.RESULT_SOURCE.OTHER_LOCAL,
         uri: prefixedUrl,
         title: prefixedUrl,
         heuristic: true,
@@ -537,7 +556,7 @@ add_autofill_task(async function httpsPrefixShouldNotMatchHTTP() {
     context,
     matches: [
       makeVisitResult(context, {
-        source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+        source: UrlbarShared.RESULT_SOURCE.OTHER_LOCAL,
         uri: prefixedUrl,
         title: prefixedUrl,
         heuristic: true,
@@ -915,7 +934,7 @@ add_autofill_task(async function frecency() {
       context,
       matches: [
         makeVisitResult(context, {
-          source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+          source: UrlbarShared.RESULT_SOURCE.OTHER_LOCAL,
           uri: "http://" + search,
           title: search,
           iconUri: `page-icon:http://${host}/`,
@@ -931,7 +950,7 @@ add_autofill_task(async function frecency() {
 
 // Bookmarked places should always be autofilled, even when they don't meet
 // the threshold.
-add_autofill_task(async function bookmarkBelowThreshold() {
+add_nonadaptive_autofill_task(async function bookmarkBelowThreshold() {
   // Add some visits to a URL so that the origin autofill threshold is large.
   for (let i = 0; i < 3; i++) {
     await PlacesTestUtils.addVisits([
@@ -1058,7 +1077,7 @@ add_autofill_task(async function bookmarkAboveThreshold() {
 
 // Bookmark a page and then clear history.
 // The bookmarked origin/URL should still be autofilled.
-add_autofill_task(async function zeroThreshold() {
+add_nonadaptive_autofill_task(async function zeroThreshold() {
   const pageUrl = "http://" + url;
   await PlacesTestUtils.addBookmarkWithDetails({
     uri: pageUrl,
@@ -1151,7 +1170,7 @@ add_autofill_task(async function suggestHistoryFalse_visit() {
       context,
       matches: [
         makeVisitResult(context, {
-          source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+          source: UrlbarShared.RESULT_SOURCE.OTHER_LOCAL,
           uri: "http://" + search,
           title: search,
           iconUri: `page-icon:http://${host}/`,
@@ -1212,7 +1231,7 @@ add_autofill_task(async function suggestHistoryFalse_visit_prefix() {
       context,
       matches: [
         makeVisitResult(context, {
-          source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+          source: UrlbarShared.RESULT_SOURCE.OTHER_LOCAL,
           uri: "http://" + search,
           title: search,
           iconUri: `page-icon:http://${host}/`,
@@ -1319,7 +1338,7 @@ add_autofill_task(async function suggestHistoryFalse_bookmark_1() {
   } else {
     matches.unshift(
       makeVisitResult(context, {
-        source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+        source: UrlbarShared.RESULT_SOURCE.OTHER_LOCAL,
         uri: "http://" + search,
         title: search,
         iconUri: `page-icon:http://${host}/`,
@@ -1420,7 +1439,7 @@ add_autofill_task(async function suggestHistoryFalse_bookmark_prefix_1() {
     context,
     matches: [
       makeVisitResult(context, {
-        source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+        source: UrlbarShared.RESULT_SOURCE.OTHER_LOCAL,
         uri: prefixedUrl,
         title: prefixedUrl,
         heuristic: true,
@@ -1460,7 +1479,7 @@ add_autofill_task(async function suggestHistoryFalse_bookmark_prefix_2() {
     context,
     matches: [
       makeVisitResult(context, {
-        source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+        source: UrlbarShared.RESULT_SOURCE.OTHER_LOCAL,
         uri: prefixedUrl,
         title: prefixedUrl,
         heuristic: true,
@@ -1500,7 +1519,7 @@ add_autofill_task(async function suggestHistoryFalse_bookmark_prefix_3() {
     context,
     matches: [
       makeVisitResult(context, {
-        source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+        source: UrlbarShared.RESULT_SOURCE.OTHER_LOCAL,
         uri: prefixedUrl,
         title: prefixedUrl,
         heuristic: true,
@@ -1588,9 +1607,9 @@ add_autofill_task(async function suggestBookmarkFalse_visit_1() {
   } else {
     matches.unshift(
       makeVisitResult(context, {
-        source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+        source: UrlbarShared.RESULT_SOURCE.OTHER_LOCAL,
         uri: prefixedUrl,
-        title: UrlbarUtils.stripPrefixAndTrim(prefixedUrl, {
+        title: UrlbarShared.stripPrefixAndTrim(prefixedUrl, {
           stripHttp: true,
           stripHttps: true,
         })[0],
@@ -1665,7 +1684,7 @@ add_autofill_task(async function suggestBookmarkFalse_visit_prefix_1() {
     context,
     matches: [
       makeVisitResult(context, {
-        source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+        source: UrlbarShared.RESULT_SOURCE.OTHER_LOCAL,
         uri: prefixedUrl,
         title: prefixedUrl,
         heuristic: true,
@@ -1706,7 +1725,7 @@ add_autofill_task(async function suggestBookmarkFalse_visit_prefix_2() {
     context,
     matches: [
       makeVisitResult(context, {
-        source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+        source: UrlbarShared.RESULT_SOURCE.OTHER_LOCAL,
         uri: prefixedUrl,
         title: prefixedUrl,
         heuristic: true,
@@ -1747,7 +1766,7 @@ add_autofill_task(async function suggestBookmarkFalse_visit_prefix_3() {
     context,
     matches: [
       makeVisitResult(context, {
-        source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+        source: UrlbarShared.RESULT_SOURCE.OTHER_LOCAL,
         uri: prefixedUrl,
         title: prefixedUrl,
         heuristic: true,
@@ -1776,54 +1795,56 @@ add_autofill_task(async function suggestBookmarkFalse_visit_prefix_3() {
 //
 // Expected result:
 //   should autofill: no
-add_autofill_task(async function suggestBookmarkFalse_unvisitedBookmark() {
-  await PlacesTestUtils.addBookmarkWithDetails({
-    uri: "http://" + url,
-  });
-  await PlacesFrecencyRecalculator.recalculateAnyOutdatedFrecencies();
-  let context = createContext(search, { isPrivate: false });
-  await check_results({
-    context,
-    autofilled: url,
-    completed: "http://" + url,
-    matches: [
-      makeVisitResult(context, {
-        uri: "http://" + url,
-        title: "A bookmark",
-        heuristic: true,
-      }),
-    ],
-  });
-  Services.prefs.setBoolPref("browser.urlbar.suggest.bookmark", false);
-  context = createContext(search, { isPrivate: false });
-  if (origins) {
-    await check_results({
-      context,
-      matches: [
-        makeSearchResult(context, {
-          engineName: SUGGESTIONS_ENGINE_NAME,
-          heuristic: true,
-          providerName: HEURISTIC_FALLBACK_PROVIDERNAME,
-        }),
-      ],
+add_nonadaptive_autofill_task(
+  async function suggestBookmarkFalse_unvisitedBookmark() {
+    await PlacesTestUtils.addBookmarkWithDetails({
+      uri: "http://" + url,
     });
-  } else {
+    await PlacesFrecencyRecalculator.recalculateAnyOutdatedFrecencies();
+    let context = createContext(search, { isPrivate: false });
     await check_results({
       context,
+      autofilled: url,
+      completed: "http://" + url,
       matches: [
         makeVisitResult(context, {
-          source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
-          uri: "http://" + search,
-          title: search,
-          iconUri: `page-icon:http://${host}/`,
+          uri: "http://" + url,
+          title: "A bookmark",
           heuristic: true,
-          providerName: HEURISTIC_FALLBACK_PROVIDERNAME,
         }),
       ],
     });
+    Services.prefs.setBoolPref("browser.urlbar.suggest.bookmark", false);
+    context = createContext(search, { isPrivate: false });
+    if (origins) {
+      await check_results({
+        context,
+        matches: [
+          makeSearchResult(context, {
+            engineName: SUGGESTIONS_ENGINE_NAME,
+            heuristic: true,
+            providerName: HEURISTIC_FALLBACK_PROVIDERNAME,
+          }),
+        ],
+      });
+    } else {
+      await check_results({
+        context,
+        matches: [
+          makeVisitResult(context, {
+            source: UrlbarShared.RESULT_SOURCE.OTHER_LOCAL,
+            uri: "http://" + search,
+            title: search,
+            iconUri: `page-icon:http://${host}/`,
+            heuristic: true,
+            providerName: HEURISTIC_FALLBACK_PROVIDERNAME,
+          }),
+        ],
+      });
+    }
+    await cleanup();
   }
-  await cleanup();
-});
+);
 
 // Tests interaction between the suggest.history and suggest.bookmark prefs.
 //
@@ -1837,7 +1858,7 @@ add_autofill_task(async function suggestBookmarkFalse_unvisitedBookmark() {
 //
 // Expected result:
 //   should autofill: no
-add_autofill_task(
+add_nonadaptive_autofill_task(
   async function suggestBookmarkFalse_unvisitedBookmark_prefix_0() {
     await PlacesTestUtils.addBookmarkWithDetails({
       uri: "http://" + url,
@@ -1863,7 +1884,7 @@ add_autofill_task(
       context,
       matches: [
         makeVisitResult(context, {
-          source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+          source: UrlbarShared.RESULT_SOURCE.OTHER_LOCAL,
           uri: prefixedUrl,
           title: prefixedUrl,
           heuristic: true,
@@ -1901,7 +1922,7 @@ add_autofill_task(
       context,
       matches: [
         makeVisitResult(context, {
-          source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+          source: UrlbarShared.RESULT_SOURCE.OTHER_LOCAL,
           uri: prefixedUrl,
           title: prefixedUrl,
           heuristic: true,
@@ -1939,7 +1960,7 @@ add_autofill_task(
       context,
       matches: [
         makeVisitResult(context, {
-          source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+          source: UrlbarShared.RESULT_SOURCE.OTHER_LOCAL,
           uri: prefixedUrl,
           title: prefixedUrl,
           heuristic: true,
@@ -1977,7 +1998,7 @@ add_autofill_task(
       context,
       matches: [
         makeVisitResult(context, {
-          source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+          source: UrlbarShared.RESULT_SOURCE.OTHER_LOCAL,
           uri: prefixedUrl,
           title: prefixedUrl,
           heuristic: true,
@@ -2097,7 +2118,7 @@ add_autofill_task(
       context,
       matches: [
         makeVisitResult(context, {
-          source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+          source: UrlbarShared.RESULT_SOURCE.OTHER_LOCAL,
           uri: prefixedUrl,
           title: prefixedUrl,
           heuristic: true,
@@ -2105,7 +2126,7 @@ add_autofill_task(
           providerName: HEURISTIC_FALLBACK_PROVIDERNAME,
         }),
         makeBookmarkResult(context, {
-          source: UrlbarUtils.RESULT_SOURCE.HISTORY,
+          source: UrlbarShared.RESULT_SOURCE.HISTORY,
           uri: "ftp://" + url,
           title: "A bookmark",
         }),
@@ -2144,7 +2165,7 @@ add_autofill_task(
       context,
       matches: [
         makeVisitResult(context, {
-          source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+          source: UrlbarShared.RESULT_SOURCE.OTHER_LOCAL,
           uri: prefixedUrl,
           title: prefixedUrl,
           heuristic: true,
@@ -2152,7 +2173,7 @@ add_autofill_task(
           providerName: HEURISTIC_FALLBACK_PROVIDERNAME,
         }),
         makeBookmarkResult(context, {
-          source: UrlbarUtils.RESULT_SOURCE.HISTORY,
+          source: UrlbarShared.RESULT_SOURCE.HISTORY,
           uri: "http://non-matching-" + url,
           title: "A bookmark",
         }),
@@ -2191,7 +2212,7 @@ add_autofill_task(
       context,
       matches: [
         makeVisitResult(context, {
-          source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+          source: UrlbarShared.RESULT_SOURCE.OTHER_LOCAL,
           uri: prefixedUrl,
           title: prefixedUrl,
           heuristic: true,
@@ -2199,7 +2220,7 @@ add_autofill_task(
           providerName: HEURISTIC_FALLBACK_PROVIDERNAME,
         }),
         makeBookmarkResult(context, {
-          source: UrlbarUtils.RESULT_SOURCE.HISTORY,
+          source: UrlbarShared.RESULT_SOURCE.HISTORY,
           uri: "ftp://non-matching-" + url,
           title: "A bookmark",
         }),
@@ -2337,7 +2358,7 @@ add_autofill_task(
       context,
       matches: [
         makeVisitResult(context, {
-          source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+          source: UrlbarShared.RESULT_SOURCE.OTHER_LOCAL,
           uri: `http://${search}/`,
           title: `http://${search}/`,
           heuristic: true,
@@ -2367,7 +2388,7 @@ add_autofill_task(
       context,
       matches: [
         makeVisitResult(context, {
-          source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+          source: UrlbarShared.RESULT_SOURCE.OTHER_LOCAL,
           uri: `http://${search}/`,
           title: `http://${search}/`,
           heuristic: true,
@@ -2424,7 +2445,7 @@ add_autofill_task(
       context,
       matches: [
         makeVisitResult(context, {
-          source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+          source: UrlbarShared.RESULT_SOURCE.OTHER_LOCAL,
           uri: `http://${search}/`,
           title: `http://${search}/`,
           heuristic: true,
@@ -2454,7 +2475,7 @@ add_autofill_task(
       context,
       matches: [
         makeVisitResult(context, {
-          source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+          source: UrlbarShared.RESULT_SOURCE.OTHER_LOCAL,
           uri: `http://${search}/`,
           title: `http://${search}/`,
           heuristic: true,
@@ -2511,7 +2532,7 @@ add_autofill_task(
       context,
       matches: [
         makeVisitResult(context, {
-          source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+          source: UrlbarShared.RESULT_SOURCE.OTHER_LOCAL,
           uri: `http://${search}/`,
           title: `http://${search}/`,
           heuristic: true,
@@ -2541,7 +2562,7 @@ add_autofill_task(
       context,
       matches: [
         makeVisitResult(context, {
-          source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+          source: UrlbarShared.RESULT_SOURCE.OTHER_LOCAL,
           uri: `http://${search}/`,
           title: `http://${search}/`,
           heuristic: true,
@@ -2598,7 +2619,7 @@ add_autofill_task(
       context,
       matches: [
         makeVisitResult(context, {
-          source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+          source: UrlbarShared.RESULT_SOURCE.OTHER_LOCAL,
           uri: `http://${search}/`,
           title: `http://${search}/`,
           heuristic: true,
@@ -2628,7 +2649,7 @@ add_autofill_task(
       context,
       matches: [
         makeVisitResult(context, {
-          source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+          source: UrlbarShared.RESULT_SOURCE.OTHER_LOCAL,
           uri: `http://${search}/`,
           title: `http://${search}/`,
           heuristic: true,

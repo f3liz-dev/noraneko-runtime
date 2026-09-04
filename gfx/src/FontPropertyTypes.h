@@ -1,5 +1,4 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -10,10 +9,7 @@
 
 #include <algorithm>
 #include <cstdint>
-#include <cmath>
 #include <utility>
-
-#include <ctype.h>
 
 #include "mozilla/Assertions.h"
 #include "mozilla/ServoStyleConsts.h"
@@ -28,7 +24,7 @@ namespace mozilla {
 
 using FontSlantStyle = StyleFontStyle;
 using FontWeight = StyleFontWeight;
-using FontStretch = StyleFontStretch;
+using FontWidth = StyleFontWidth;
 
 /**
  * Convenience type to hold a <min, max> pair representing a range of values.
@@ -119,14 +115,13 @@ class WeightRange : public FontPropertyRange<FontWeight, WeightRange> {
   }
 };
 
-class StretchRange : public FontPropertyRange<FontStretch, StretchRange> {
+class WidthRange : public FontPropertyRange<FontWidth, WidthRange> {
  public:
-  StretchRange(FontStretch aMin, FontStretch aMax)
-      : FontPropertyRange(aMin, aMax) {}
+  WidthRange(FontWidth aMin, FontWidth aMax) : FontPropertyRange(aMin, aMax) {}
 
-  explicit StretchRange(FontStretch aStretch) : FontPropertyRange(aStretch) {}
+  explicit WidthRange(FontWidth aWidth) : FontPropertyRange(aWidth) {}
 
-  StretchRange(const StretchRange& aOther) = default;
+  WidthRange(const WidthRange& aOther) = default;
 
   void ToString(nsACString& aOutString, const char* aDelim = "..") const {
     aOutString.AppendFloat(Min().ToFloat());

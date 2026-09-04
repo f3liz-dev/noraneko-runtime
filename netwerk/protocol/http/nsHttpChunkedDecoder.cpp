@@ -1,15 +1,16 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 // HttpLog.h should generally be included first
-#include "HttpLog.h"
+#include "nsHttpChunkedDecoder.h"
 
 #include <errno.h>
-#include "nsHttpChunkedDecoder.h"
-#include <algorithm>
 #include <string.h>
+
+#include <algorithm>
+
+#include "HttpLog.h"
 
 namespace mozilla {
 namespace net {
@@ -104,8 +105,15 @@ nsresult nsHttpChunkedDecoder::ParseChunkRemaining(char* buf, uint32_t count,
       count = mLineBuf.Length();
     }
 
+    // NUL is illegal in a chunk-size or trailer field line (RFC 9110 section
+    // 5.5).
+    if (memchr(buf, '\0', count)) {
+      LOG(("chunked line contains embedded NUL; rejecting\n"));
+      return NS_ERROR_UNEXPECTED;
+    }
+
     if (mWaitEOF) {
-      if (*buf) {
+      if (count) {
         LOG(("got trailer: %s\n", buf));
         // allocate a header array for the trailers on demand
         if (!mTrailers) {
@@ -128,7 +136,7 @@ nsresult nsHttpChunkedDecoder::ParseChunkRemaining(char* buf, uint32_t count,
         mReachedEOF = true;
         LOG(("reached end of chunked-body\n"));
       }
-    } else if (*buf) {
+    } else if (count) {
       char* endptr;
       unsigned long parsedval;  // could be 64 bit, could be 32
 

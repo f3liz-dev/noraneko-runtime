@@ -1,5 +1,4 @@
-/* -*- Mode: IDL; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -66,6 +65,12 @@ interface nsIReferrerInfo;
 
 #define kPDFJSMime "application/pdfjs"
 
+// The web custom format prefix
+#define kWebCustomFormatPrefix "web "
+
+// The web custom format map type
+// This is used to query the web custom format map from clipboard.
+#define kWebCustomFormatMapType "application/x-moz-web-custom-format-map"
 %}
 
 

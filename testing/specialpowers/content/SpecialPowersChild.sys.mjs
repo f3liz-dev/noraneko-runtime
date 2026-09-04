@@ -871,6 +871,13 @@ export class SpecialPowersChild extends JSWindowActorChild {
     }
   }
 
+  async prefEnv(inPrefs) {
+    await this.pushPrefEnv(inPrefs);
+    return {
+      [Symbol.asyncDispose]: () => this.popPrefEnv(),
+    };
+  }
+
   /*
     Collect a snapshot of all preferences in Firefox (i.e. about:prefs).
     From this, store the results within specialpowers for later reference.
@@ -1647,11 +1654,7 @@ export class SpecialPowersChild extends JSWindowActorChild {
   }
 
   async evictAllDocumentViewers() {
-    if (Services.appinfo.sessionHistoryInParent) {
-      await this.sendQuery("EvictAllDocumentViewers");
-    } else {
-      this.browsingContext.top.childSessionHistory.legacySHistory.evictAllDocumentViewers();
-    }
+    await this.sendQuery("EvictAllDocumentViewers");
   }
 
   /**
@@ -2130,25 +2133,6 @@ export class SpecialPowersChild extends JSWindowActorChild {
     return this._pu;
   }
 
-  createDOMWalker(node, showAnonymousContent) {
-    node = lazy.WrapPrivileged.unwrap(node);
-    let walker = Cc["@mozilla.org/inspector/deep-tree-walker;1"].createInstance(
-      Ci.inIDeepTreeWalker
-    );
-    walker.showAnonymousContent = showAnonymousContent;
-    walker.init(node.ownerDocument, NodeFilter.SHOW_ALL);
-    walker.currentNode = node;
-    let contentWindow = this.contentWindow;
-    return {
-      get firstChild() {
-        return lazy.WrapPrivileged.wrap(walker.firstChild(), contentWindow);
-      },
-      get lastChild() {
-        return lazy.WrapPrivileged.wrap(walker.lastChild(), contentWindow);
-      },
-    };
-  }
-
   /**
    * Which commands are available can be determined by checking which commands
    * are registered. See \ref
@@ -2161,12 +2145,19 @@ export class SpecialPowersChild extends JSWindowActorChild {
       case "cmd_fontColor":
       case "cmd_fontFace":
       case "cmd_fontSize":
+      case "cmd_formatBlock":
       case "cmd_highlight":
       case "cmd_insertImageNoUI":
       case "cmd_insertLinkNoUI":
       case "cmd_paragraphState": {
         const params = Cu.createCommandParams();
         params.setStringValue("state_attribute", param);
+        return window.docShell.doCommandWithParams(cmd, params);
+      }
+      case "cmd_insertHTML":
+      case "cmd_insertText": {
+        const params = Cu.createCommandParams();
+        params.setStringValue("state_data", param);
         return window.docShell.doCommandWithParams(cmd, params);
       }
       case "cmd_pasteTransferable": {
@@ -2271,6 +2262,21 @@ export class SpecialPowersChild extends JSWindowActorChild {
       win = win.parent;
     }
     return Promise.resolve();
+  }
+
+  /**
+   * Gets the privileged button inside an <input> element
+   * (clear / reveal / number spinner).
+   *
+   * @param {HTMLInputElement} input
+   * @returns {HTMLButtonElement?} the privileged button, if any.
+   */
+  getInputButton(input) {
+    if (ChromeUtils.getClassName(input) != "HTMLInputElement") {
+      throw new Error("Not an <input> element");
+    }
+    let children = InspectorUtils.getChildrenForNode(input, true, false);
+    return children.find(e => e.localName == "button");
   }
 }
 

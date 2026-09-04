@@ -7,6 +7,8 @@
 package org.mozilla.fenix.ui.robots
 
 import android.util.Log
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.ComposeTimeoutException
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assert
@@ -14,7 +16,9 @@ import androidx.compose.ui.test.assertAny
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotDisplayed
+import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasContentDescription
+import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.ComposeTestRule
@@ -30,17 +34,20 @@ import androidx.compose.ui.test.performTouchInput
 import androidx.test.espresso.Espresso.closeSoftKeyboard
 import androidx.test.espresso.Espresso.onView
 import androidx.test.espresso.action.ViewActions.pressImeActionButton
-import androidx.test.espresso.assertion.PositionAssertions
 import androidx.test.espresso.intent.Intents
 import androidx.test.espresso.intent.matcher.IntentMatchers
 import androidx.test.espresso.matcher.ViewMatchers.withId
 import androidx.test.uiautomator.By
-import androidx.test.uiautomator.UiScrollable
+import androidx.test.uiautomator.By.textContains
 import androidx.test.uiautomator.UiSelector
+import androidx.test.uiautomator.Until
+import mozilla.components.compose.browser.toolbar.concept.BrowserToolbarTestTags.ADDRESSBAR_EDIT_MODE
+import mozilla.components.compose.browser.toolbar.concept.BrowserToolbarTestTags.ADDRESSBAR_EDIT_MODE_HORIZONTAL_DIVIDER
 import mozilla.components.compose.browser.toolbar.concept.BrowserToolbarTestTags.ADDRESSBAR_SEARCH_BOX
 import mozilla.components.compose.browser.toolbar.concept.BrowserToolbarTestTags.SEARCH_SELECTOR
 import org.junit.Assert.assertTrue
 import org.mozilla.fenix.R
+import org.mozilla.fenix.bookmarks.BookmarksTestTag.BOOKMARK_PLACEHOLDER
 import org.mozilla.fenix.helpers.AppAndSystemHelper.grantSystemPermission
 import org.mozilla.fenix.helpers.AppAndSystemHelper.isPackageInstalled
 import org.mozilla.fenix.helpers.Constants.PackageName.GOOGLE_QUICK_SEARCH
@@ -48,6 +55,7 @@ import org.mozilla.fenix.helpers.Constants.RETRY_COUNT
 import org.mozilla.fenix.helpers.Constants.SPEECH_RECOGNITION
 import org.mozilla.fenix.helpers.Constants.TAG
 import org.mozilla.fenix.helpers.DataGenerationHelper.getStringResource
+import org.mozilla.fenix.helpers.MatcherHelper.itemContainingText
 import org.mozilla.fenix.helpers.MatcherHelper.itemWithDescription
 import org.mozilla.fenix.helpers.MatcherHelper.itemWithResId
 import org.mozilla.fenix.helpers.SessionLoadedIdlingResource
@@ -57,7 +65,7 @@ import org.mozilla.fenix.helpers.TestHelper.appContext
 import org.mozilla.fenix.helpers.TestHelper.appName
 import org.mozilla.fenix.helpers.TestHelper.mDevice
 import org.mozilla.fenix.helpers.TestHelper.packageName
-import org.mozilla.fenix.helpers.TestHelper.waitForAppWindowToBeUpdated
+import org.mozilla.fenix.helpers.ext.waitNotNull
 import mozilla.components.browser.toolbar.R as toolbarR
 import mozilla.components.feature.qr.R as qrR
 
@@ -201,30 +209,38 @@ class SearchRobot(private val composeTestRule: ComposeTestRule) {
      */
     @OptIn(ExperimentalTestApi::class)
     fun verifySearchSuggestionsAreDisplayed(vararg searchSuggestions: String) {
-        this@SearchRobot.composeTestRule.waitForIdle()
+        composeTestRule.waitForIdle()
         for (searchSuggestion in searchSuggestions) {
-            Log.i(
-                TAG,
-                "verifySearchSuggestionsAreDisplayed: Trying to perform \"Close soft keyboard\" action.",
-            )
+            Log.i(TAG, "verifySearchSuggestionsAreDisplayed: Trying to perform \"Close soft keyboard\" action.")
             closeSoftKeyboard()
-            Log.i(
-                TAG,
-                "verifySearchSuggestionsAreDisplayed: Performed \"Close soft keyboard\" action.",
+            Log.i(TAG, "verifySearchSuggestionsAreDisplayed: Performed \"Close soft keyboard\" action.")
+            Log.i(TAG, "verifySearchSuggestionsAreDisplayed: Waiting for $waitingTime ms until $searchSuggestion search suggestion exists.")
+            composeTestRule.waitUntilAtLeastOneExists(
+                hasTestTag("mozac.awesomebar.suggestion") and hasText(searchSuggestion, substring = true),
+                waitingTime,
             )
-            Log.i(
-                TAG,
-                "verifySearchSuggestionsAreDisplayed: Waiting for $waitingTime ms until $searchSuggestion search suggestion exists.",
+            composeTestRule.onAllNodesWithTag("mozac.awesomebar.suggestion")
+                .assertAny(hasText(searchSuggestion, substring = true))
+            Log.i(TAG, "verifySearchSuggestionsAreDisplayed: Verified $searchSuggestion search suggestion exists.")
+        }
+    }
+
+    @OptIn(ExperimentalTestApi::class)
+    fun verifyBookmarkSearchSuggestionsAreDisplayed(vararg searchSuggestions: String) {
+        composeTestRule.waitForIdle()
+        for (searchSuggestion in searchSuggestions) {
+            Log.i(TAG, "verifyBookmarkSearchSuggestionsAreDisplayed: Trying to perform \"Close soft keyboard\" action.")
+            closeSoftKeyboard()
+            Log.i(TAG, "verifyBookmarkSearchSuggestionsAreDisplayed: Performed \"Close soft keyboard\" action.")
+            Log.i(TAG, "verifyBookmarkSearchSuggestionsAreDisplayed: Waiting for $waitingTime ms until $searchSuggestion search suggestion exists.")
+            composeTestRule.waitUntilAtLeastOneExists(
+                hasText(searchSuggestion, substring = true),
+                waitingTime,
             )
-            this@SearchRobot.composeTestRule.waitUntilExactlyOneExists(hasText(searchSuggestion), waitingTime)
-            this@SearchRobot.composeTestRule.onAllNodesWithTag("mozac.awesomebar.suggestion")
-                .assertAny(
-                    hasText(searchSuggestion, substring = true),
-                )
-            Log.i(
-                TAG,
-                "verifySearchSuggestionsAreDisplayed: Verified $searchSuggestion search suggestion exists.",
-            )
+            composeTestRule
+                .onNode(hasText(searchSuggestion, substring = true))
+                .assertIsDisplayed()
+            Log.i(TAG, "verifyBookmarkSearchSuggestionsAreDisplayed: Verified $searchSuggestion search suggestion exists.")
         }
     }
 
@@ -240,6 +256,19 @@ class SearchRobot(private val composeTestRule: ComposeTestRule) {
                         .not(),
                 )
             Log.i(TAG, "verifySuggestionsAreNotDisplayed: Verified that there are no $searchSuggestion related search suggestions")
+        }
+    }
+
+    fun verifyBookmarkSuggestionsAreNotDisplayed(vararg searchSuggestions: String) {
+        Log.i(TAG, "verifyBookmarkSuggestionsAreNotDisplayed: Waiting for compose test rule to be idle")
+        this@SearchRobot.composeTestRule.waitForIdle()
+        Log.i(TAG, "verifyBookmarkSuggestionsAreNotDisplayed: Waited for compose test rule to be idle")
+        for (searchSuggestion in searchSuggestions) {
+            Log.i(TAG, "verifyBookmarkSuggestionsAreNotDisplayed: Trying to verify that there are no $searchSuggestion related search suggestions")
+            this@SearchRobot.composeTestRule
+                .onNodeWithText(searchSuggestion)
+                .assertIsNotDisplayed()
+            Log.i(TAG, "verifyBookmarkSuggestionsAreNotDisplayed: Verified that there are no $searchSuggestion related search suggestions")
         }
     }
 
@@ -338,6 +367,14 @@ class SearchRobot(private val composeTestRule: ComposeTestRule) {
         Log.i(TAG, "verifySearchBarPlaceholder: Verification successful")
     }
 
+    fun verifyBookmarkSearchBarPlaceholder() {
+        Log.i(TAG, "verifyBookmarkSearchBarPlaceholder: Verify placeholder is shown")
+        this@SearchRobot.composeTestRule
+            .onNodeWithTag(BOOKMARK_PLACEHOLDER, useUnmergedTree = true)
+            .assertIsDisplayed()
+        Log.i(TAG, "verifyBookmarkSearchBarPlaceholder: Verification successful")
+    }
+
     @OptIn(ExperimentalTestApi::class)
     fun verifySearchShortcutList(vararg searchEngineNames: String, isSearchEngineDisplayed: Boolean) {
         for (searchEngineName in searchEngineNames) {
@@ -422,30 +459,55 @@ class SearchRobot(private val composeTestRule: ComposeTestRule) {
         Log.i(TAG, "typeSearch: Compose is now idle")
     }
 
+    fun typeBookmarkSearch(searchTerm: String) {
+        Log.i(TAG, "typeBookmarkSearch: Waiting for search box to appear")
+        composeTestRule.waitUntil(waitingTime) {
+            composeTestRule.onAllNodesWithTag(ADDRESSBAR_SEARCH_BOX)
+                .fetchSemanticsNodes().isNotEmpty()
+        }
+        Log.i(TAG, "typeBookmarkSearch: Search box is ready")
+
+        Log.i(TAG, "typeBookmarkSearch: Performing text replacement with '$searchTerm'")
+        composeTestRule
+            .onNode(
+                hasSetTextAction() and hasAnyAncestor(hasTestTag(ADDRESSBAR_SEARCH_BOX)),
+            ).performTextReplacement(searchTerm)
+
+        Log.i(TAG, "typeBookmarkSearch: Text replacement done")
+
+        Log.i(TAG, "typeBookmarkSearch: Waiting for Compose to be idle")
+        composeTestRule.waitForIdle()
+        Log.i(TAG, "typeBookmarkSearch: Compose is now idle")
+    }
+
+    @OptIn(ExperimentalTestApi::class)
     fun clickClearButton() {
+        Log.i(TAG, "openSearch: Waiting for $waitingTime until the clear toolbar button exists")
+        composeTestRule.waitUntilAtLeastOneExists(hasContentDescription(getStringResource(toolbarR.string.mozac_clear_button_description)), waitingTime)
+        Log.i(TAG, "openSearch: Waited for $waitingTime until the clear toolbar button exists")
         Log.i(TAG, "clickClearButton: Trying to click the clear button")
-        composeTestRule.onNodeWithContentDescription(getStringResource(toolbarR.string.mozac_clear_button_description)).performClick()
+        itemWithDescription(getStringResource(toolbarR.string.mozac_clear_button_description)).click()
         Log.i(TAG, "clickClearButton: Clicked the clear button")
         Log.i(TAG, "clickClearButton: Waiting for compose test rule to be idle")
         composeTestRule.waitForIdle()
         Log.i(TAG, "clickClearButton: Waited for compose test rule to be idle")
     }
 
-    fun tapOutsideToDismissSearchBar() {
-        Log.i(TAG, "tapOutsideToDismissSearchBar: Trying to perform a backward scroll action")
-        // After updating UIAutomator to 2.3.0 the click action doesn't seem to dismiss anymore the awesome bar
-        // On the other hand, the scroll action seems to be working properly and dismisses the awesome bar
-        UiScrollable(UiSelector().resourceId("$packageName:id/search_wrapper")).scrollBackward()
-        Log.i(TAG, "tapOutsideToDismissSearchBar: Performed a backward scroll action")
-        Log.i(TAG, "tapOutsideToDismissSearchBar: Waiting for $waitingTime ms for the edit mode toolbar to be gone")
-        browserToolbarEditView().waitUntilGone(waitingTime)
-        Log.i(TAG, "tapOutsideToDismissSearchBar: Waited for $waitingTime ms for the edit mode toolbar to be gone")
+    fun tapOutsideToDismissSearchBar(libraryItem: String) {
+        Log.i(TAG, "tapOutsideToDismissSearchBar: Trying to click outside the search bar")
+        itemContainingText(libraryItem).click()
+        Log.i(TAG, "tapOutsideToDismissSearchBar: Clicked outside the search bar")
     }
 
+    @OptIn(ExperimentalTestApi::class)
     fun longClickToolbar() {
+        Log.i(TAG, "longClickToolbar: Trying to perform \"Close soft keyboard\" action")
+        closeSoftKeyboard()
+        Log.i(TAG, "longClickToolbar: Performed \"Close soft keyboard\" action")
         composeTestRule.waitForIdle()
+        mDevice.waitForIdle()
         Log.i(TAG, "longClickToolbar: Trying to perform long click on the toolbar")
-        composeTestRule.onNodeWithTag("ADDRESSBAR_SEARCH_BOX").performTouchInput { longClick() }
+        composeTestRule.onNodeWithTag(ADDRESSBAR_SEARCH_BOX).performTouchInput { longClick() }
         Log.i(TAG, "longClickToolbar: Performed long click on the toolbar")
     }
 
@@ -486,33 +548,67 @@ class SearchRobot(private val composeTestRule: ComposeTestRule) {
         Log.i(TAG, "verifyTranslatedNavigationToolbarHint: Verified that the translated toolbar has: $toolbarHintString as a hint")
     }
 
+    @OptIn(ExperimentalTestApi::class)
     fun verifyTypedToolbarText(expectedText: String, exists: Boolean) {
+        Log.i(TAG, "verifyTypedToolbarText: Waiting for $waitingTime until the edit mode toolbar search box exists")
+        composeTestRule.waitUntilAtLeastOneExists(hasTestTag(ADDRESSBAR_SEARCH_BOX), waitingTime)
+        Log.i(TAG, "verifyTypedToolbarText: Waited for $waitingTime until the edit mode toolbar search box exists")
         Log.i(TAG, "verifyTypedToolbarText: Verifying that text '$expectedText' exists?: $exists")
+        val normalizedExpectedText = normalizeWhitespace(expectedText)
+        val actualText = composeTestRule.onNodeWithTag(ADDRESSBAR_SEARCH_BOX)
+            .fetchSemanticsNode()
+            .config
+            .toNormalizedToolbarText()
 
-        val editToolbar = this@SearchRobot.composeTestRule.onNode(
-            hasTestTag(ADDRESSBAR_SEARCH_BOX) and hasText(expectedText),
-            useUnmergedTree = true,
+        assertTrue(
+            "Expected toolbar text '$normalizedExpectedText' to ${if (exists) "exist" else "not exist"} in '$actualText'",
+            if (exists) {
+                actualText.contains(normalizedExpectedText)
+            } else {
+                !actualText.contains(normalizedExpectedText)
+            },
         )
-
-        when (exists) {
-            true -> editToolbar.assertIsDisplayed()
-            false -> editToolbar.assertIsNotDisplayed()
-        }
-
         Log.i(TAG, "verifyTypedToolbarText: Verification successful.")
     }
 
-    fun verifySearchBarPosition(bottomPosition: Boolean) {
-        Log.i(TAG, "verifySearchBarPosition: Trying to verify that the search bar is set to bottom: $bottomPosition")
-        onView(withId(R.id.toolbar))
-            .check(
-                if (bottomPosition) {
-                    PositionAssertions.isCompletelyBelow(withId(R.id.keyboard_divider))
-                } else {
-                    PositionAssertions.isCompletelyAbove(withId(R.id.keyboard_divider))
-                },
-            )
-        Log.i(TAG, "verifySearchBarPosition: Verified that the search bar is set to bottom: $bottomPosition")
+    private fun normalizeWhitespace(text: String): String = text.replace(Regex("\\s+"), " ").trim()
+
+    private fun androidx.compose.ui.semantics.SemanticsConfiguration.toNormalizedToolbarText(): String {
+        val textParts = buildList {
+            getOrNull(SemanticsProperties.Text)?.let { annotations ->
+                addAll(annotations.map { it.text })
+            }
+            getOrNull(SemanticsProperties.EditableText)?.let { editableText ->
+                add(editableText.text)
+            }
+        }
+
+        return normalizeWhitespace(textParts.joinToString(" "))
+    }
+
+    fun verifySearchBarPosition() {
+        Log.i(TAG, "verifySearchBarPosition: Waiting for compose test rule to be idle")
+        composeTestRule.waitForIdle()
+        Log.i(TAG, "verifySearchBarPosition: Waited for compose test rule to be idle")
+
+        val editModeToolbar = mDevice.findObject(By.res(ADDRESSBAR_EDIT_MODE))
+        val horizontalDivider = mDevice.findObject(By.res(ADDRESSBAR_EDIT_MODE_HORIZONTAL_DIVIDER))
+
+        val editModeToolbarBottom = editModeToolbar.visibleBounds.bottom
+        val horizontalDividerTop = horizontalDivider.visibleBounds.top
+        // Allow small pixel differences due to measurement rounding
+        val roundingTolerancePx = 5
+
+        Log.i(TAG, "verifySearchBarPosition: Trying to click the edit mode toolbar")
+        editModeToolbar.click()
+        Log.i(TAG, "verifySearchBarPosition: Clicked the edit mode toolbar")
+
+        Log.i(TAG, "verifySearchBarPosition: Trying to verify that the edit mode toolbar is above the horizontal divider")
+        assert(editModeToolbarBottom <= horizontalDividerTop + roundingTolerancePx) {
+            "($TAG, ADDRESSBAR_EDIT_MODE is not above ADDRESSBAR_HORIZONTAL_DIVIDER: " +
+                "editBottom=$editModeToolbarBottom, dividerTop=$horizontalDividerTop"
+        }
+        Log.i(TAG, "verifySearchBarPosition: Verified that the edit mode toolbar is above the horizontal divider")
     }
 
     fun deleteSearchKeywordCharacters(numberOfDeletionSteps: Int) {
@@ -523,6 +619,12 @@ class SearchRobot(private val composeTestRule: ComposeTestRule) {
             Log.i(TAG, "deleteSearchKeywordCharacters: Waiting for $waitingTimeShort ms for $appName window to be updated")
             mDevice.waitForWindowUpdate(appName, waitingTimeShort)
             Log.i(TAG, "deleteSearchKeywordCharacters: Waited for $waitingTimeShort ms for $appName window to be updated")
+        }
+    }
+
+    fun verifyTextSelectionOptions(vararg textSelectionOptions: String) {
+        for (textSelectionOption in textSelectionOptions) {
+            mDevice.waitNotNull(Until.findObject(textContains(textSelectionOption)), waitingTime)
         }
     }
 
@@ -540,16 +642,32 @@ class SearchRobot(private val composeTestRule: ComposeTestRule) {
         }
 
         fun submitQuery(query: String, interact: BrowserRobot.() -> Unit): BrowserRobot.Transition {
-            Log.i(TAG, "submitQuery: Trying to set toolbar text to: $query and pressing IME action")
-            composeTestRule.onNodeWithTag(ADDRESSBAR_SEARCH_BOX).apply {
-                performTextReplacement(query)
-                performImeAction()
-            }
-            Log.i(TAG, "submitQuery: Toolbar text was set to: $query and IME action performed")
-
-            Log.i(TAG, "submitQuery: Waiting for compose test rule to be idle")
+            Log.i(TAG, "submitQuery: Waiting for compose rule to be idle")
             composeTestRule.waitForIdle()
-            Log.i(TAG, "submitQuery: Waiting for compose test rule to be idle")
+            Log.i(TAG, "submitQuery: Waited for compose rule to be idle")
+
+            Log.i(TAG, "submitQuery: Trying to set toolbar text to: $query")
+            itemWithResId("ADDRESSBAR_SEARCH_BOX").setText(query)
+            Log.i(TAG, "submitQuery: Toolbar text was set to: $query")
+
+            Log.i(TAG, "submitQuery: Waiting for compose rule to be idle")
+            composeTestRule.waitForIdle()
+            Log.i(TAG, "submitQuery: Waited for compose rule to be idle")
+
+            runCatching {
+                Log.i(TAG, "submitQuery: Trying to perform Compose IME action perform on the toolbar")
+                composeTestRule.onNodeWithTag(ADDRESSBAR_SEARCH_BOX).performImeAction()
+                Log.i(TAG, "submitQuery: Compose IME action performed on the toolbar")
+            }.onFailure { throwable ->
+                Log.e(TAG, "submitQuery: Compose IME action failed with: ${throwable::class.java.simpleName} - ${throwable.message}")
+                Log.d(TAG, "submitQuery: Falling back to UiDevice pressEnter()")
+                mDevice.pressEnter()
+                Log.d(TAG, "submitQuery: Fallback UiDevice pressEnter() completed")
+            }
+
+            Log.i(TAG, "submitQuery: Waiting for compose rule to be idle")
+            composeTestRule.waitForIdle()
+            Log.i(TAG, "submitQuery: Waited for compose rule to be idle")
 
             BrowserRobot(composeTestRule).interact()
             return BrowserRobot.Transition(composeTestRule)
@@ -618,8 +736,6 @@ private fun clearButton() =
     mDevice.findObject(UiSelector().resourceId("$packageName:id/mozac_browser_toolbar_clear_view"))
 
 private fun searchWrapper() = mDevice.findObject(UiSelector().resourceId("$packageName:id/search_wrapper"))
-
-private fun searchSelectorButton() = itemWithResId("$packageName:id/search_selector")
 
 private fun searchShortcutList() =
     mDevice.findObject(UiSelector().resourceId("$packageName:id/mozac_browser_menu_recyclerView"))

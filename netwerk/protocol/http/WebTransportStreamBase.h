@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -6,13 +5,13 @@
 #ifndef mozilla_net_WebTransportStreamBase_h
 #define mozilla_net_WebTransportStreamBase_h
 
-#include "nsISupportsImpl.h"
-#include "mozilla/net/neqo_glue_ffi_generated.h"
 #include "mozilla/Atomics.h"
 #include "mozilla/Mutex.h"
+#include "mozilla/net/neqo_glue_ffi_generated.h"
 #include "nsCOMPtr.h"
 #include "nsIAsyncInputStream.h"
 #include "nsIAsyncOutputStream.h"
+#include "nsISupportsImpl.h"
 
 class nsIWebTransportSendStreamStats;
 class nsIWebTransportReceiveStreamStats;
@@ -86,7 +85,8 @@ class WebTransportStreamBase : public nsIInputStreamCallback,
   virtual already_AddRefed<nsIWebTransportReceiveStreamStats>
   GetReceiveStreamStats() = 0;
   virtual bool RecvDone() const = 0;
-  virtual void SetSendOrder(Maybe<int64_t> aSendOrder) = 0;
+  virtual void SetSendOrder(int64_t aSendOrder) = 0;
+  virtual void SetSendGroup(uint64_t aSendGroupId) = 0;
   // Used only for testing.
   virtual SenderFlowControlBase* SenderFc() { return nullptr; }
   virtual ReceiverFlowControlBase* ReceiverFc() { return nullptr; }

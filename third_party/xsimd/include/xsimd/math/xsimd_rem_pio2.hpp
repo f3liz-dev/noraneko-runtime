@@ -47,17 +47,6 @@ namespace xsimd
          * ====================================================
          */
 
-#if defined(__GNUC__) && defined(__BYTE_ORDER__)
-#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
-#define XSIMD_LITTLE_ENDIAN
-#endif
-#elif defined(_WIN32)
-        // We can safely assume that Windows is always little endian
-#define XSIMD_LITTLE_ENDIAN
-#elif defined(i386) || defined(i486) || defined(intel) || defined(x86) || defined(i86pc) || defined(__alpha) || defined(__osf__)
-#define XSIMD_LITTLE_ENDIAN
-#endif
-
 #ifdef XSIMD_LITTLE_ENDIAN
 #define LOW_WORD_IDX 0
 #define HIGH_WORD_IDX sizeof(std::uint32_t)
@@ -141,14 +130,14 @@ namespace xsimd
          *			z    = (z-x[i])*2**24
          *
          *
-         *	y[]	ouput result in an array of double precision numbers.
+         *	y[]	output result in an array of double precision numbers.
          *		The dimension of y[] is:
          *			24-bit  precision	1
          *			53-bit  precision	2
          *			64-bit  precision	2
          *			113-bit precision	3
          *		The actual value is the sum of them. Thus for 113-bit
-         *		precison, one may have to do something like:
+         *		precision, one may have to do something like:
          *
          *		long double t,w,r_head, r_tail;
          *		t = (long double)y[2] + (long double)y[1];
@@ -708,7 +697,6 @@ namespace xsimd
         }
     }
 
-#undef XSIMD_LITTLE_ENDIAN
 #undef SET_LOW_WORD
 #undef SET_HIGH_WORD
 #undef GET_LOW_WORD

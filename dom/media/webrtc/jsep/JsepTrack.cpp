@@ -4,8 +4,11 @@
 
 #include "jsep/JsepTrack.h"
 
+#include <fmt/format.h>
+
 #include <algorithm>
 
+#include "common/RtpHeaderExtensions.h"
 #include "jsep/JsepCodecDescription.h"
 #include "jsep/JsepTrackEncoding.h"
 #include "transport/logging.h"
@@ -175,7 +178,8 @@ void JsepTrack::SetMaxEncodings(size_t aMax) {
 }
 
 void JsepTrack::RecvTrackSetRemote(const Sdp& aSdp,
-                                   const SdpMediaSection& aMsection) {
+                                   const SdpMediaSection& aMsection,
+                                   const std::vector<uint32_t>& aOwnSendSsrcs) {
   mInHaveRemote = true;
   if (mDirection != sdp::kRecv) {
     MOZ_MTLOG(ML_ERROR, "RecvTrackSetRemote called on non-receive track");
@@ -206,24 +210,22 @@ void JsepTrack::RecvTrackSetRemote(const Sdp& aSdp,
   SetCNAME(helper.GetCNAME(aMsection));
   mSsrcs.clear();
   // Storage of mSsrcs and mSsrcToRtxSsrc could be improved, see Bug 1990364
-  // Each `a=ssrc ssrc-attr:value` line can contain the same SSRC. We should
-  // only add unique SSRCs to mSsrcs.
-  std::set<uint32_t> ssrcsSet;
+  mSsrcToRtxSsrc.clear();
+
   if (aMsection.GetAttributeList().HasAttribute(SdpAttribute::kSsrcAttribute)) {
+    std::set<uint32_t> seen;
     for (const auto& s : aMsection.GetAttributeList().GetSsrc().mSsrcs) {
-      if (ssrcsSet.find(s.ssrc) != ssrcsSet.end()) {
-        continue;
+      // Each a=ssrc line carries one attribute (cname, msid, etc.) for the
+      // same SSRC; only add each unique SSRC value once.
+      if (seen.insert(s.ssrc).second) {
+        mSsrcs.push_back(s.ssrc);
       }
-      ssrcsSet.insert(s.ssrc);
-      // Preserve order of ssrcs as they appear in the m-section
-      mSsrcs.push_back(s.ssrc);
     }
   }
 
   // Use FID ssrc-group to associate rtx ssrcs with "regular" ssrcs. Despite
   // not being part of RFC 4588, this is how rtx is negotiated by libwebrtc
   // and jitsi.
-  mSsrcToRtxSsrc.clear();
   if (aMsection.GetAttributeList().HasAttribute(
           SdpAttribute::kSsrcGroupAttribute)) {
     for (const auto& group :
@@ -242,6 +244,17 @@ void JsepTrack::RecvTrackSetRemote(const Sdp& aSdp,
           mSsrcs.erase(res, mSsrcs.end());
         }
       }
+    }
+  }
+
+  // Remove any extracted SSRCs that duplicate our own send SSRCs, to prevent
+  // EnsureLocalSSRC() from regenerating our send SSRC to a value the peer
+  // never negotiated.
+  for (uint32_t sendSsrc : aOwnSendSsrcs) {
+    auto it = std::find(mSsrcs.begin(), mSsrcs.end(), sendSsrc);
+    if (it != mSsrcs.end()) {
+      mSsrcToRtxSsrc.erase(sendSsrc);
+      mSsrcs.erase(it);
     }
   }
 }
@@ -406,25 +419,25 @@ void JsepTrack::AddToMsection(const std::vector<std::string>& aRids,
                               SsrcGenerator& ssrcGenerator, bool rtxEnabled,
                               SdpMediaSection* msection) {
   if (aRids.size() > 1) {
-    UniquePtr<SdpSimulcastAttribute> simulcast(new SdpSimulcastAttribute);
-    UniquePtr<SdpRidAttributeList> ridAttrs(new SdpRidAttributeList);
+    auto simulcast = MakeUnique<SdpSimulcastAttribute>();
+    auto ridAttrs = MakeUnique<SdpRidAttributeList>();
     for (const std::string& rid : aRids) {
       SdpRidAttributeList::Rid ridAttr;
       ridAttr.id = rid;
       ridAttr.direction = direction;
-      ridAttrs->mRids.push_back(ridAttr);
+      ridAttrs->mRids.push_back(std::move(ridAttr));
 
       SdpSimulcastAttribute::Version version;
       version.choices.push_back(SdpSimulcastAttribute::Encoding(rid, false));
       if (direction == sdp::kSend) {
-        simulcast->sendVersions.push_back(version);
+        simulcast->sendVersions.push_back(std::move(version));
       } else {
-        simulcast->recvVersions.push_back(version);
+        simulcast->recvVersions.push_back(std::move(version));
       }
     }
 
-    msection->GetAttributeList().SetAttribute(simulcast.release());
-    msection->GetAttributeList().SetAttribute(ridAttrs.release());
+    msection->GetAttributeList().SetAttribute(std::move(simulcast));
+    msection->GetAttributeList().SetAttribute(std::move(ridAttrs));
   }
 
   bool requireRtxSsrcs = rtxEnabled && msection->IsSending();
@@ -440,7 +453,7 @@ void JsepTrack::AddToMsection(const std::vector<std::string>& aRids,
         return;
       }
       std::vector<uint32_t> allSsrcs;
-      UniquePtr<SdpSsrcGroupAttributeList> group(new SdpSsrcGroupAttributeList);
+      auto group = MakeUnique<SdpSsrcGroupAttributeList>();
       for (const auto& ssrc : mSsrcs) {
         const auto rtxSsrc = mSsrcToRtxSsrc[ssrc];
         allSsrcs.push_back(ssrc);
@@ -448,7 +461,7 @@ void JsepTrack::AddToMsection(const std::vector<std::string>& aRids,
         group->PushEntry(SdpSsrcGroupAttributeList::kFid, {ssrc, rtxSsrc});
       }
       msection->SetSsrcs(allSsrcs, mCNAME);
-      msection->GetAttributeList().SetAttribute(group.release());
+      msection->GetAttributeList().SetAttribute(std::move(group));
     } else {
       msection->SetSsrcs(mSsrcs, mCNAME);
     }
@@ -529,7 +542,7 @@ void JsepTrack::CreateEncodings(
   // For each stream make sure we have an encoding, and configure
   // that encoding appropriately.
   for (size_t i = 0; i < numEncodings; ++i) {
-    UniquePtr<JsepTrackEncoding> encoding(new JsepTrackEncoding);
+    auto encoding = MakeUnique<JsepTrackEncoding>();
     if (mRids.size() > i) {
       encoding->mRid = mRids[i];
     }
@@ -542,6 +555,7 @@ void JsepTrack::CreateEncodings(
 
 std::vector<UniquePtr<JsepCodecDescription>> JsepTrack::GetCodecClones() const {
   std::vector<UniquePtr<JsepCodecDescription>> clones;
+  clones.reserve(mPrototypeCodecs.size());
   for (const auto& codec : mPrototypeCodecs) {
     clones.emplace_back(codec->Clone());
   }
@@ -793,6 +807,8 @@ nsresult JsepTrack::Negotiate(const SdpMediaSection& answer,
 
   CreateEncodings(remote, negotiatedCodecs, negotiatedDetails.get());
 
+  const bool extmapAllowMixed =
+      negotiatedDetails->mRtpRtcpConf.GetExtmapAllowMixed();
   if (answer.GetAttributeList().HasAttribute(SdpAttribute::kExtmapAttribute)) {
     for (auto& extmapAttr : answer.GetAttributeList().GetExtmap().mExtmaps) {
       SdpDirectionAttribute::Direction direction = extmapAttr.direction;
@@ -802,6 +818,23 @@ nsresult JsepTrack::Negotiate(const SdpMediaSection& answer,
       }
 
       if (direction & mDirection) {
+        // For historical reasons extamp-allow-mixed gates sending any two-byte
+        // headers, even if zero one byte headers are used.
+        //
+        // The peer must signal extmap-allow-mixed before we may send a two-byte
+        // header. Otherwise we drop extensions that would need two bytes from
+        // send tracks (which would would crash libwebrtc's packetizer, weee).
+        // Receiving two-byte extensions is always safe.
+        if (mDirection == sdp::kSend && !extmapAllowMixed &&
+            RequiresTwoByteForm(extmapAttr.entry, extmapAttr.extensionname)) {
+          MOZ_MTLOG(ML_WARNING,
+                    fmt::format("Sending multibyte RTP Header extention {} "
+                                "with id {} requires that "
+                                "extmap-allow-mixed be negotiated.",
+                                extmapAttr.extensionname, extmapAttr.entry));
+          continue;
+        }
+
         negotiatedDetails->mExtmap[extmapAttr.extensionname] = extmapAttr;
       }
     }

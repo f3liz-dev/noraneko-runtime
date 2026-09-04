@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -11,9 +9,9 @@
 #include "mozilla/Casting.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/Sprintf.h"
-#include "nss.h"
 #include "mozpkix/pkixtypes.h"
 #include "mozpkix/test/pkixtestutil.h"
+#include "nss.h"
 #include "prerr.h"
 #include "secerr.h"
 
@@ -27,7 +25,7 @@ inline Input LiteralInput(const char (&valueString)[N]) {
   // Ideally we would use mozilla::BitwiseCast() here rather than
   // reinterpret_cast for better type checking, but the |N - 1| part trips
   // static asserts.
-  return Input(reinterpret_cast<const uint8_t(&)[N - 1]>(valueString));
+  return Input(reinterpret_cast<const uint8_t (&)[N - 1]>(valueString));
 }
 
 const int MaxCacheEntries = 1024;
@@ -305,13 +303,8 @@ TEST_F(psm_OCSPCacheTest, NetworkFailure) {
 TEST_F(psm_OCSPCacheTest, TestOriginAttributes) {
   CertID certID(fakeIssuer1, fakeKey000, fakeSerial0000);
 
-  // We test two attributes, firstPartyDomain and partitionKey, respectively
-  // because we don't have entries that have both attributes set because the two
-  // features that use these attributes are mutually exclusive.
-
-  // Set pref for OCSP cache network partitioning.
-  mozilla::Preferences::SetBool("privacy.partition.network_state.ocsp_cache",
-                                true);
+  // We test firstPartyDomain, partitionKey, userContextId, and
+  // privateBrowsingId as independent isolation dimensions.
 
   SCOPED_TRACE("");
   OriginAttributes attrs;
@@ -320,11 +313,19 @@ TEST_F(psm_OCSPCacheTest, TestOriginAttributes) {
 
   Result resultOut;
   Time timeOut(Time::uninitialized);
+
+  // OCSP cache entry should not exist for the other firstPartyDomain.
   attrs.mFirstPartyDomain.AssignLiteral("bar.com");
   ASSERT_FALSE(cache.Get(certID, attrs, resultOut, timeOut));
 
-  // OCSP cache should not be isolated by containers for firstPartyDomain.
+  // OCSP cache should be isolated by containers for firstPartyDomain.
   attrs.mUserContextId = 1;
+  attrs.mFirstPartyDomain.AssignLiteral("foo.com");
+  ASSERT_FALSE(cache.Get(certID, attrs, resultOut, timeOut));
+
+  // OCSP cache entry should exist for the original firstPartyDomain and
+  // container.
+  attrs.mUserContextId = 0;
   attrs.mFirstPartyDomain.AssignLiteral("foo.com");
   ASSERT_TRUE(cache.Get(certID, attrs, resultOut, timeOut));
 
@@ -344,14 +345,58 @@ TEST_F(psm_OCSPCacheTest, TestOriginAttributes) {
   attrs.mPartitionKey.AssignLiteral("(https,bar.com)");
   ASSERT_FALSE(cache.Get(certID, attrs, resultOut, timeOut));
 
-  // OCSP cache should not be isolated by containers for partitonKey.
+  // OCSP cache should be isolated by containers for partitionKey.
   attrs.mUserContextId = 1;
   attrs.mPartitionKey.AssignLiteral("(https,foo.com)");
-  ASSERT_TRUE(cache.Get(certID, attrs, resultOut, timeOut));
+  ASSERT_FALSE(cache.Get(certID, attrs, resultOut, timeOut));
 
   // OCSP cache should not exist for the OAs which has both attributes set.
   attrs.mUserContextId = 0;
   attrs.mFirstPartyDomain.AssignLiteral("foo.com");
   attrs.mPartitionKey.AssignLiteral("(https,foo.com)");
   ASSERT_FALSE(cache.Get(certID, attrs, resultOut, timeOut));
+
+  // OCSP cache should be isolated by private browsing mode.
+  attrs.mUserContextId = 0;
+  attrs.mFirstPartyDomain.Truncate();
+  attrs.mPartitionKey.Truncate();
+  PutAndGet(cache, certID, Success, now, attrs);
+  attrs.mPrivateBrowsingId = 1;
+  ASSERT_FALSE(cache.Get(certID, attrs, resultOut, timeOut));
+}
+
+TEST_F(psm_OCSPCacheTest, TestClearPrivateBrowsing) {
+  // Insert entries in the order p, n, p, p, n, p to exercise removal at the
+  // beginning, end, and middle of the vector, including consecutive privates.
+  CertID certID0(fakeIssuer1, fakeKey000, LiteralInput("s0"));
+  CertID certID1(fakeIssuer1, fakeKey000, LiteralInput("s1"));
+  CertID certID2(fakeIssuer1, fakeKey000, LiteralInput("s2"));
+  CertID certID3(fakeIssuer1, fakeKey000, LiteralInput("s3"));
+
+  OriginAttributes normalAttrs;
+  OriginAttributes pbAttrs;
+  pbAttrs.mPrivateBrowsingId = 1;
+
+  SCOPED_TRACE("");
+  PutAndGet(cache, certID0, Success, now, pbAttrs);
+  PutAndGet(cache, certID0, Success, now, normalAttrs);
+  PutAndGet(cache, certID1, Success, now, pbAttrs);
+  PutAndGet(cache, certID2, Success, now, pbAttrs);
+  PutAndGet(cache, certID1, Success, now, normalAttrs);
+  PutAndGet(cache, certID3, Success, now, pbAttrs);
+
+  cache.ClearPrivateBrowsing();
+
+  Result resultOut;
+  Time timeOut(Time::uninitialized);
+
+  // Normal entries should still be present.
+  ASSERT_TRUE(cache.Get(certID0, normalAttrs, resultOut, timeOut));
+  ASSERT_TRUE(cache.Get(certID1, normalAttrs, resultOut, timeOut));
+
+  // All private browsing entries should have been removed.
+  ASSERT_FALSE(cache.Get(certID0, pbAttrs, resultOut, timeOut));
+  ASSERT_FALSE(cache.Get(certID1, pbAttrs, resultOut, timeOut));
+  ASSERT_FALSE(cache.Get(certID2, pbAttrs, resultOut, timeOut));
+  ASSERT_FALSE(cache.Get(certID3, pbAttrs, resultOut, timeOut));
 }

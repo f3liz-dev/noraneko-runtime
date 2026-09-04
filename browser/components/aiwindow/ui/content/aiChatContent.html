@@ -23,7 +23,10 @@
       rel="stylesheet"
       href="chrome://browser/content/aiwindow/ai-window-content.css"
     />
+    <link rel="localization" href="browser/aiWindow.ftl" />
     <link rel="localization" href="preview/aiWindow.ftl" />
+    <link rel="localization" href="toolkit/branding/brandings.ftl" />
+    <link rel="localization" href="branding/brand.ftl" />
     <script src="chrome://browser/content/contentTheme.js"></script>
     <script
       type="module"
@@ -33,7 +36,8 @@
       type="module"
       src="chrome://browser/content/aiwindow/components/ai-chat-message.mjs"
     ></script>
-    <link rel="localization" href="preview/aiWindowContent.ftl" />
+    <link rel="localization" href="browser/aiWindowContent.ftl" />
+    <link rel="localization" href="preview/aiWindow.ftl" />
     <script
       type="module"
       src="chrome://browser/content/aiwindow/components/ai-website-chip.mjs"
@@ -41,6 +45,22 @@
     <script
       type="module"
       src="chrome://browser/content/aiwindow/components/smartwindow-prompts.mjs"
+    ></script>
+    <script
+      type="module"
+      src="chrome://browser/content/aiwindow/components/ai-website-confirmation.mjs"
+    ></script>
+    <script
+      type="module"
+      src="chrome://browser/content/aiwindow/components/ai-website-select.mjs"
+    ></script>
+    <script
+      type="module"
+      src="chrome://browser/content/aiwindow/components/ai-action-result.mjs"
+    ></script>
+    <script
+      type="module"
+      src="chrome://browser/content/aiwindow/components/ai-action-confirmation.mjs"
     ></script>
   </head>
   <body id="ai-window-wrapper">

@@ -1,59 +1,68 @@
 From: Michael Froman <mfroman@mozilla.com>
-Date: Fri, 21 Jun 2024 16:28:00 -0500
-Subject: Bug 1903098 - (fix-cd09858f4a) disable perfetto usage to avoid new
- third_party library.
+Date: Thu, 10 Oct 2024 13:42:00 +0000
+Subject: Bug 1921707 - libwebrtc preprocessor, .json, .gni, and *.gn changes
+ r=ng,webrtc-reviewers
 
-Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/b050c455caa1d24a0cfa4933ac8cd82c9cd3c347
+Differential Revision: https://phabricator.services.mozilla.com/D224076
+Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/7017edc7cfc880bb19f94115d4f48a8c58920a9b
 ---
- BUILD.gn                                |  2 ++
- modules/video_coding/generic_decoder.cc | 10 +++++-----
- 2 files changed, 7 insertions(+), 5 deletions(-)
+ .gn                           | 2 +-
+ media/BUILD.gn                | 2 +-
+ modules/video_coding/BUILD.gn | 2 +-
+ webrtc.gni                    | 4 ++--
+ 4 files changed, 5 insertions(+), 5 deletions(-)
 
-diff --git a/BUILD.gn b/BUILD.gn
-index fdfcc347db..862f22e41d 100644
---- a/BUILD.gn
-+++ b/BUILD.gn
-@@ -281,6 +281,7 @@ config("rtc_prod_config") {
- }
+diff --git a/.gn b/.gn
+index 1d9b371ee0..44447d3a34 100644
+--- a/.gn
++++ b/.gn
+@@ -18,7 +18,7 @@ script_executable = "python3"
+ # The secondary source root is a parallel directory tree where
+ # GN build files are placed when they can not be placed directly
+ # in the source tree, e.g. for third party source trees.
+-secondary_source = "//build/secondary/"
++secondary_source = "//libwebrtc/"
  
- group("tracing") {
-+if (!build_with_mozilla) {
-   all_dependent_configs = [ "//third_party/perfetto/gn:public_config" ]
-   if (rtc_use_perfetto) {
-     if (build_with_chromium) {
-@@ -297,6 +298,7 @@ group("tracing") {
-         [ "//third_party/perfetto/include/perfetto/tracing" ]
-   }
- }
-+}
+ # These are the targets to skip header checking by default. The files in targets
+ # matching these patterns (see "gn help label_pattern" for format) will not have
+diff --git a/media/BUILD.gn b/media/BUILD.gn
+index 83e774f680..61d46cebde 100644
+--- a/media/BUILD.gn
++++ b/media/BUILD.gn
+@@ -7,7 +7,7 @@
+ # be found in the AUTHORS file in the root of the source tree.
  
- if (rtc_use_perfetto) {
-   rtc_library("webrtc_libperfetto") {
-diff --git a/modules/video_coding/generic_decoder.cc b/modules/video_coding/generic_decoder.cc
-index 613e77397e..109faa945e 100644
---- a/modules/video_coding/generic_decoder.cc
-+++ b/modules/video_coding/generic_decoder.cc
-@@ -120,9 +120,9 @@ void VCMDecodedFrameCallback::Decoded(VideoFrame& decodedImage,
-                                       std::optional<int32_t> decode_time_ms,
-                                       std::optional<uint8_t> qp) {
-   RTC_DCHECK(receive_callback_) << "Callback must not be null at this point";
--  TRACE_EVENT(
--      "webrtc", "VCMDecodedFrameCallback::Decoded",
--      perfetto::TerminatingFlow::ProcessScoped(decodedImage.rtp_timestamp()));
-+  TRACE_EVENT_INSTANT1("webrtc", "VCMDecodedFrameCallback::Decoded",
-+                       TRACE_EVENT_SCOPE_GLOBAL, "timestamp",
-+                       decodedImage.rtp_timestamp());
-   // TODO(holmer): We should improve this so that we can handle multiple
-   // callbacks from one call to Decode().
-   std::optional<FrameInfo> frame_info;
-@@ -325,8 +325,8 @@ int32_t VCMGenericDecoder::Decode(
-     Timestamp now,
-     int64_t render_time_ms,
-     const std::optional<FrameInstrumentationData>& frame_instrumentation_data) {
--  TRACE_EVENT("webrtc", "VCMGenericDecoder::Decode",
--              perfetto::Flow::ProcessScoped(frame.RtpTimestamp()));
-+  TRACE_EVENT1("webrtc", "VCMGenericDecoder::Decode", "timestamp",
-+               frame.RtpTimestamp());
-   FrameInfo frame_info;
-   frame_info.rtp_timestamp = frame.RtpTimestamp();
-   frame_info.decode_start = now;
+ import("//build/config/linux/pkg_config.gni")
+-import("//third_party/libaom/options.gni")
++import("//libwebrtc/third_party/libaom/options.gni")
+ import("../webrtc.gni")
+ 
+ group("media") {
+diff --git a/modules/video_coding/BUILD.gn b/modules/video_coding/BUILD.gn
+index af9ef7e7e3..1dab555764 100644
+--- a/modules/video_coding/BUILD.gn
++++ b/modules/video_coding/BUILD.gn
+@@ -7,7 +7,7 @@
+ # be found in the AUTHORS file in the root of the source tree.
+ 
+ import("//build/config/linux/pkg_config.gni")
+-import("//third_party/libaom/options.gni")
++import("//libwebrtc/third_party/libaom/options.gni")
+ import("../../webrtc.gni")
+ 
+ rtc_library("encoded_frame") {
+diff --git a/webrtc.gni b/webrtc.gni
+index a55d909007..11e9c0c5a2 100644
+--- a/webrtc.gni
++++ b/webrtc.gni
+@@ -496,8 +496,8 @@ all_poison_types = [
+   "default_neural_residual_echo_estimator",
+ ]
+ 
+-absl_include_config = "//third_party/abseil-cpp:absl_include_config"
+-absl_define_config = "//third_party/abseil-cpp:absl_define_config"
++absl_include_config = "//libwebrtc/third_party/abseil-cpp:absl_include_config"
++absl_define_config = "//libwebrtc/third_party/abseil-cpp:absl_define_config"
+ 
+ # Abseil Flags are testonly, so this config will only be applied to WebRTC
+ # targets that are testonly.

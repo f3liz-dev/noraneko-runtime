@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -962,11 +960,18 @@ class ProfileChunkedBuffer {
     // `RequestedChunkHolder`, so it's guaranteed to live until it's invoked,
     // even if this `ProfileChunkedBuffer` changes its `ChunkManager` or is
     // destroyed.
-    mChunkManager->RequestChunk(
+    auto chunkReceiver =
         [requestedChunkHolder = RefPtr<RequestedChunkRefCountedHolder>(
              mRequestedChunkHolder)](UniquePtr<ProfileBufferChunk> aChunk) {
           requestedChunkHolder->AddRequestedChunk(std::move(aChunk));
-        });
+        };
+    // Requesting a chunk must not allocate, see
+    // `ProfileBufferChunkManager::RequestChunk()`, so the receiver must fit in
+    // `MoveOnlyFunction`'s inline storage, which holds two pointers. Requiring
+    // that it stays within one keeps some margin.
+    static_assert(sizeof(chunkReceiver) <= sizeof(void*),
+                  "The chunk receiver should only capture one RefPtr");
+    mChunkManager->RequestChunk(std::move(chunkReceiver));
   }
 
   [[nodiscard]] bool HandleRequestedChunk_IsPending(

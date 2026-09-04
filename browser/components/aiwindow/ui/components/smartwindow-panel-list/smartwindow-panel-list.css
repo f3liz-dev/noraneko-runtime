@@ -12,32 +12,95 @@
 }
 
 panel-list {
+  --panel-inline-margin: 0;
   --panel-list-border-radius: var(--space-medium);
-  --panel-list-background-color: light-dark(color-mix(in srgb, var(--color-violet-30) 5%, white), var(--color-violet-110));
-  --panel-list-border-color: light-dark(var(--color-purple-20), var(--color-gray-70));
   --panel-list-box-shadow: var(--box-shadow-level-3);
-  --panel-list-color: light-dark(var(--color-violet-110), var(--color-violet-0));
   --panel-max-width: 392px;
   --panel-section-header-color: var(--text-color-deemphasized);
   --panel-section-header-font-size: var(--font-size-small);
   --panel-item-padding: calc(var(--size-item-small) / 2);
+  --panel-section-header-padding-inline-start: calc(var(--size-item-small) / 2);
   --panel-item-icon-size: var(--icon-size-small);
+  --panel-item-button-border-radius: var(--border-radius-medium);
+  --icon-fill: light-dark(var(--color-violet-50), var(--color-violet-40));
+  margin-inline: var(--panel-inline-margin);
   /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
   max-width: var(--panel-max-width);
   white-space: normal;
+
+  @media (not (forced-colors)) and (not -moz-pref("browser.nova.enabled")) {
+    --panel-list-background-color: light-dark(color-mix(in srgb, var(--color-violet-30) 5%, white), var(--color-violet-110));
+    --panel-list-border-color: light-dark(var(--color-purple-20), var(--color-gray-70));
+    --panel-list-text-color: light-dark(var(--color-violet-110), var(--color-violet-0));
+    --button-background-color-hover: light-dark(var(--color-violet-0), var(--color-violet-100));
+  }
+}
+
+:host([sidebarmode]) panel-list {
+  --panel-inline-margin: var(--space-medium);
+  --panel-max-width: min(392px, calc(100% - 2 * var(--panel-inline-margin)));
+}
+
+@media -moz-pref("browser.nova.enabled") {
+  /* TODO: Bug 2033070 -  Nova tokens were implemented as the default value for the custom properties, and the fallbacks (and lint exceptions) will need to be removed after launch */
+  panel-list {
+    /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+    --panel-list-border-radius: var(--smartwindow-panel-item-border-radius);
+    --panel-section-header-padding-inline-start: var(--size-item-small);
+    /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+    --panel-item-button-border-radius: var(--smartwindow-panel-item-border-radius);
+
+    @media not (forced-colors) {
+      --panel-list-border-color: light-dark(var(--color-violet-desaturated-20), var(--color-violet-desaturated-50));
+      --panel-list-text-color: light-dark(var(--color-violet-90), var(--color-gray-0));
+      --panel-section-header-color: light-dark(
+        color-mix(in srgb, var(--color-violet-desaturated-90) 70%, transparent),
+        color-mix(in srgb, var(--color-violet-desaturated-0) 70%, transparent)
+      );
+      --button-background-color-hover: var(--smartwindow-panel-item-background-color-hover);
+      --button-background-color-active: var(--smartwindow-panel-item-background-color-active);
+    }
+  }
+}
+
+panel-list[valign="bottom"] {
+  /* Override hook: a consumer can set this custom property on its host to change the gap */
+  margin-block-start: var(--smartwindow-panel-list-valign-bottom-margin-block-start, var(--space-small));
+}
+
+panel-list[valign="top"] {
+  margin-block-start: calc(-1 * var(--space-small));
 }
 
 panel-item.panel-section-header::part(button) {
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
   color: var(--panel-section-header-color);
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
   font-size: var(--panel-section-header-font-size);
   opacity: 1;
   /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
-  padding: var(--panel-item-padding);
+  padding-block: var(--panel-item-padding);
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  padding-inline: var(--panel-section-header-padding-inline-start) var(--panel-item-padding);
+}
+
+panel-item.panel-command-footer::part(button) {
+  border: none;
 }
 
 panel-item:not(.panel-section-header)::part(button) {
   /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  border-radius: var(--panel-item-button-border-radius);
+  cursor: pointer;
+  margin-inline: var(--space-small);
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  max-width: calc(100% - 2 * var(--space-small));
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
   padding: var(--panel-item-padding);
+}
+
+panel-item.selected:not(.panel-section-header)::part(button) {
+  background-color: var(--button-background-color-hover);
 }
 
 panel-item[icon]::part(button) {
@@ -60,4 +123,151 @@ panel-item::part(label) {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Style `ai-website-chip` to behave like a `panel-item`. */
+/* stylelint-disable-next-line stylelint-plugin-mozilla/no-has-selector */
+panel-list:has(ai-website-chip) {
+  padding-block: 0;
+}
+
+panel-list ai-website-chip {
+  box-sizing: border-box;
+  display: flex;
+  padding: var(--space-xsmall);
+  width: 100%;
+}
+
+panel-list ai-website-chip::part(chip) {
+  --background-color-hover: light-dark(color-mix(in srgb, var(--color-violet-50) 15%, transparent), var(--color-violet-110));
+  --background-color-box: transparent;
+
+  max-width: none;
+  min-width: 0;
+  width: 100%;
+}
+
+panel-list ai-website-chip::part(chip):hover {
+  --background-color-box: var(--background-color-hover);
+}
+
+panel-list ai-website-chip::part(chip):focus-visible {
+  outline: var(--focus-outline);
+  outline-offset: var(--focus-outline-inset);
+}
+
+@media -moz-pref("browser.nova.enabled") {
+  panel-list ai-website-chip::part(chip) {
+    --background-color-hover: light-dark(color-mix(in srgb, var(--color-violet-desaturated-10) 70%, transparent), var(--color-violet-desaturated-60));
+  }
+}
+
+.panel-item-container {
+  border-radius: var(--border-radius-small);
+  cursor: pointer;
+  margin-inline: var(--space-small);
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  padding-inline: var(--panel-item-padding);
+
+  &:hover,
+  &:focus-within,
+  &.selected {
+    background-color: var(--button-background-color-hover);
+  }
+
+  &:focus-within {
+    outline: var(--focus-outline);
+    outline-offset: var(--focus-outline-inset);
+  }
+
+  panel-item::part(button) {
+    background-color: transparent;
+    margin-inline: 0;
+    /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+    max-width: 100%;
+    padding-block: 0;
+    padding-inline: 0;
+  }
+
+  panel-item::part(button):hover,
+  panel-item::part(button):hover:active {
+    background-color: transparent;
+  }
+
+  panel-item::part(button):focus-visible {
+    outline: none;
+  }
+
+  panel-item::part(label) {
+    font-size: var(--panel-section-header-font-size);
+    font-weight: var(--font-weight-heading);
+  }
+
+  .panel-item-description {
+    margin-inline: 0;
+    padding-inline: 0;
+    padding-block: 0 var(--space-small);
+    opacity: var(--opacity-deemphasized);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    pointer-events: none;
+  }
+}
+
+/* Command palette */
+:host([data-triggered-by="inline-command"]) {
+  panel-list {
+    --panel-inline-margin: 0;
+    --panel-max-width: none;
+  }
+
+  .panel-item-container {
+    align-items: center;
+    column-gap: var(--space-small);
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+    padding: var(--panel-item-padding);
+  }
+
+  .panel-item-icon {
+    grid-column: 1;
+    align-items: center;
+    border-radius: var(--border-radius-xsmall);
+    display: flex;
+    justify-content: center;
+    pointer-events: none;
+    width: var(--size-item-medium);
+    height: var(--size-item-medium);
+
+    @media not (forced-colors) {
+      /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+      background: var(--color-white);
+    }
+  }
+
+  .panel-item-icon-image {
+    -moz-context-properties: fill;
+    fill: var(--icon-fill);
+    width: var(--panel-item-icon-size);
+    height: var(--panel-item-icon-size);
+  }
+
+  .panel-item-text {
+    grid-column: 2;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+
+  .panel-item-description {
+    padding-block-end: 0;
+  }
+
+  panel-item.panel-section-header::part(button) {
+    /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+    color: var(--panel-list-text-color);
+    font-weight: var(--font-weight-heading);
+  }
 }

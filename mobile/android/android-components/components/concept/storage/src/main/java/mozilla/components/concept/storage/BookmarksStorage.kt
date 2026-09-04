@@ -4,10 +4,12 @@
 
 package mozilla.components.concept.storage
 
+import mozilla.components.concept.storage.bookmarks.BookmarkInserter
+
 /**
  * An interface which defines read/write operations for bookmarks data.
  */
-interface BookmarksStorage : Storage {
+interface BookmarksStorage : Storage, BookmarkInserter {
 
     /**
      * Produces a bookmarks tree for the given guid string.
@@ -39,13 +41,11 @@ interface BookmarksStorage : Storage {
      *
      * @param limit The maximum number of entries to return.
      * @param maxAge Optional parameter used to filter out entries older than this number of milliseconds.
-     * @param currentTime Optional parameter for current time. Defaults toSystem.currentTimeMillis()
      * @return The list of bookmarks that have been recently added up to the limit number of items.
      */
     suspend fun getRecentBookmarks(
         limit: Int,
         maxAge: Long? = null,
-        currentTime: Long = System.currentTimeMillis(),
     ): Result<List<BookmarkNode>>
 
     /**

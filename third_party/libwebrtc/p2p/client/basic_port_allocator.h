@@ -27,8 +27,10 @@
 #include "api/local_network_access_permission.h"
 #include "api/packet_socket_factory.h"
 #include "api/task_queue/pending_task_safety_flag.h"
+#include "api/task_queue/task_queue_base.h"
 #include "api/transport/enums.h"
 #include "api/turn_customizer.h"
+#include "api/units/time_delta.h"
 #include "p2p/base/port.h"
 #include "p2p/base/port_allocator.h"
 #include "p2p/base/port_interface.h"
@@ -40,11 +42,11 @@
 #include "rtc_base/checks.h"
 #include "rtc_base/ip_address.h"
 #include "rtc_base/memory/always_valid_pointer.h"
+#include "rtc_base/net_helper.h"
 #include "rtc_base/network.h"
 #include "rtc_base/network/received_packet.h"
 #include "rtc_base/socket_address.h"
 #include "rtc_base/system/rtc_export.h"
-#include "rtc_base/thread.h"
 #include "rtc_base/thread_annotations.h"
 
 namespace webrtc {
@@ -143,7 +145,7 @@ class RTC_EXPORT BasicPortAllocatorSession : public PortAllocatorSession {
   ~BasicPortAllocatorSession() override;
 
   virtual BasicPortAllocator* allocator();
-  Thread* network_thread() { return network_thread_; }
+  TaskQueueBase* network_thread() { return network_thread_; }
   PacketSocketFactory* socket_factory() { return socket_factory_; }
 
   // If the new filter allows new types of candidates compared to the previous
@@ -290,7 +292,7 @@ class RTC_EXPORT BasicPortAllocatorSession : public PortAllocatorSession {
   bool PruneNewlyPairableTurnPort(PortData* newly_pairable_turn_port);
 
   BasicPortAllocator* allocator_;
-  Thread* network_thread_;
+  TaskQueueBase* network_thread_;
   PacketSocketFactory* socket_factory_;
   bool allocation_started_;
   bool network_manager_started_;
@@ -341,6 +343,10 @@ struct RTC_EXPORT PortConfiguration {
   // Helper method returns the server addresses for the matching RelayType and
   // Protocol type.
   ServerAddresses GetRelayServerAddresses(ProtocolType type) const;
+
+  // Insert into stun_servers extra TURN servers that could be used as STUN
+  // servers
+  void InsertStunServersForProtocol(ProtocolType type);
 };
 
 // Performs the allocation of ports, in a sequenced (timed) manner, for a given

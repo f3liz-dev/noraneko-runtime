@@ -4,20 +4,26 @@ use objc2::{
 };
 use objc2_foundation::{NSRange, NSString, NSUInteger};
 use objc2_metal::{
-    MTLBlitCommandEncoder, MTLBlitPassDescriptor, MTLBuffer, MTLCommandBuffer, MTLCommandEncoder,
+    MTLAccelerationStructure, MTLAccelerationStructureCommandEncoder, MTLBlitCommandEncoder,
+    MTLBlitPassDescriptor, MTLBuffer, MTLCommandBuffer, MTLCommandBufferStatus, MTLCommandEncoder,
     MTLCommandQueue, MTLComputeCommandEncoder, MTLComputePassDescriptor, MTLCounterDontSample,
-    MTLIndexType, MTLLoadAction, MTLPrimitiveType, MTLRenderCommandEncoder,
-    MTLRenderPassDescriptor, MTLSamplerState, MTLScissorRect, MTLSize, MTLStoreAction, MTLTexture,
-    MTLVertexAmplificationViewMapping, MTLViewport, MTLVisibilityResultMode,
+    MTLDevice, MTLLoadAction, MTLPrimitiveType, MTLRenderCommandEncoder, MTLRenderPassDescriptor,
+    MTLResidencySet, MTLResidencySetDescriptor, MTLSamplerState, MTLScissorRect, MTLSize,
+    MTLStoreAction, MTLTexture, MTLVertexAmplificationViewMapping, MTLViewport,
+    MTLVisibilityResultMode,
 };
 
-use super::{conv, TimestampQuerySupport};
+use super::{
+    adapter::{self, MAX_BUFFERS},
+    conv, TimestampQuerySupport,
+};
 use crate::CommandEncoder as _;
 use alloc::{
     borrow::{Cow, ToOwned as _},
+    sync::Arc,
     vec::Vec,
 };
-use core::{ops::Range, ptr::NonNull};
+use core::{ops::Range, ptr::NonNull, sync::atomic};
 use smallvec::SmallVec;
 
 // has to match `Temp::binding_sizes`
@@ -27,6 +33,7 @@ impl Default for super::CommandState {
     fn default() -> Self {
         Self {
             blit: None,
+            acceleration_structure_builder: None,
             render: None,
             compute: None,
             raw_primitive_type: MTLPrimitiveType::Point,
@@ -80,6 +87,30 @@ impl Encoder<'_> {
         }
     }
 
+    fn set_acceleration_structure(
+        &self,
+        buffer: Option<&ProtocolObject<dyn MTLAccelerationStructure>>,
+        index: NSUInteger,
+    ) {
+        unsafe {
+            match *self {
+                Self::Vertex(enc) => {
+                    enc.setVertexAccelerationStructure_atBufferIndex(buffer, index)
+                }
+                Self::Fragment(enc) => {
+                    enc.setFragmentAccelerationStructure_atBufferIndex(buffer, index)
+                }
+                Self::Task(_) => {
+                    unreachable!("Acceleration structures are not allowed in task shaders")
+                }
+                Self::Mesh(_) => {
+                    unreachable!("Acceleration structures are not allowed in mesh shaders")
+                }
+                Self::Compute(enc) => enc.setAccelerationStructure_atBufferIndex(buffer, index),
+            }
+        }
+    }
+
     fn set_bytes(&self, bytes: NonNull<core::ffi::c_void>, length: NSUInteger, index: NSUInteger) {
         unsafe {
             match *self {
@@ -128,9 +159,13 @@ impl super::CommandEncoder {
 
     fn enter_blit(&mut self) -> Retained<ProtocolObject<dyn MTLBlitCommandEncoder>> {
         if self.state.blit.is_none() {
+            self.leave_acceleration_structure_builder();
             debug_assert!(self.state.render.is_none() && self.state.compute.is_none());
             let cmd_buf = self.raw_cmd_buf.as_ref().unwrap();
 
+            // This code path is currently unused since the written timestamp is always 0.
+            // We should see if we can get it working again, if not remove the code.
+            //
             // Take care of pending timer queries.
             // If we can't use `sample_counters_in_buffer` we have to create a dummy blit encoder!
             //
@@ -201,6 +236,7 @@ impl super::CommandEncoder {
                 self.state.blit = Some(cmd_buf.blitCommandEncoder().unwrap());
             });
 
+            #[allow(clippy::panicking_unwrap, reason = "false positive (fixed by 1.93.1)")]
             let encoder = self.state.blit.as_ref().unwrap();
 
             // UNTESTED:
@@ -225,8 +261,35 @@ impl super::CommandEncoder {
         }
     }
 
+    fn enter_acceleration_structure_builder(
+        &mut self,
+    ) -> Retained<ProtocolObject<dyn MTLAccelerationStructureCommandEncoder>> {
+        if self.state.acceleration_structure_builder.is_none() {
+            self.leave_blit();
+            debug_assert!(
+                self.state.render.is_none()
+                    && self.state.compute.is_none()
+                    && self.state.blit.is_none()
+            );
+            let cmd_buf = self.raw_cmd_buf.as_ref().unwrap();
+            autoreleasepool(|_| {
+                self.state.acceleration_structure_builder =
+                    cmd_buf.accelerationStructureCommandEncoder().to_owned();
+            });
+        }
+        self.state.acceleration_structure_builder.clone().unwrap()
+    }
+
+    pub(super) fn leave_acceleration_structure_builder(&mut self) {
+        if let Some(encoder) = self.state.acceleration_structure_builder.take() {
+            encoder.endEncoding();
+        }
+    }
+
     fn active_encoder(&mut self) -> Option<&ProtocolObject<dyn MTLCommandEncoder>> {
         if let Some(ref encoder) = self.state.render {
+            Some(ProtocolObject::from_ref(&**encoder))
+        } else if let Some(ref encoder) = self.state.acceleration_structure_builder {
             Some(ProtocolObject::from_ref(&**encoder))
         } else if let Some(ref encoder) = self.state.compute {
             Some(ProtocolObject::from_ref(&**encoder))
@@ -240,6 +303,7 @@ impl super::CommandEncoder {
     fn begin_pass(&mut self) {
         self.state.reset();
         self.leave_blit();
+        self.leave_acceleration_structure_builder();
     }
 
     /// Updates the bindings for a single shader stage, called in `set_bind_group`.
@@ -259,6 +323,7 @@ impl super::CommandEncoder {
             S::Task => &bg_info.base_resource_indices.ts,
             S::Mesh => &bg_info.base_resource_indices.ms,
             S::Compute => &bg_info.base_resource_indices.cs,
+            S::RayGeneration | S::AnyHit | S::ClosestHit | S::Miss => unimplemented!(),
         };
         let buffers = match encoder.stage() {
             S::Vertex => group.counters.vs.buffers,
@@ -266,24 +331,58 @@ impl super::CommandEncoder {
             S::Task => group.counters.ts.buffers,
             S::Mesh => group.counters.ms.buffers,
             S::Compute => group.counters.cs.buffers,
+            S::RayGeneration | S::AnyHit | S::ClosestHit | S::Miss => unimplemented!(),
         };
         let mut changes_sizes_buffer = false;
         for index in 0..buffers {
-            let buf = &group.buffers[(index_base.buffers + index) as usize];
-            let buffer = Some(unsafe { buf.ptr.as_ref() });
-            let mut offset = buf.offset;
-            if let Some(dyn_index) = buf.dynamic_index {
-                offset += dynamic_offsets[dyn_index as usize] as wgt::BufferAddress;
-            }
-            let index = (resource_indices.buffers + index) as usize;
-            encoder.set_buffer(buffer, offset as usize, index);
-            if let Some(size) = buf.binding_size {
-                let br = naga::ResourceBinding {
-                    group: group_index,
-                    binding: buf.binding_location,
-                };
-                self.state.storage_buffer_length_map.insert(br, size);
-                changes_sizes_buffer = true;
+            let res = &group.buffers[(index_base.buffers + index) as usize];
+            match res {
+                super::BufferLikeResource::Buffer {
+                    ptr,
+                    mut offset,
+                    dynamic_index,
+                    binding_size,
+                    binding_location,
+                } => {
+                    let buffer = Some(unsafe { ptr.as_ref() });
+                    if let Some(dyn_index) = dynamic_index {
+                        offset += dynamic_offsets[*dyn_index as usize] as wgt::BufferAddress;
+                    }
+                    let index = (resource_indices.buffers + index) as usize;
+                    encoder.set_buffer(buffer, offset as usize, index);
+                    let br = naga::ResourceBinding {
+                        group: group_index,
+                        binding: *binding_location,
+                    };
+                    if let Some(size) = binding_size {
+                        self.state.storage_buffer_length_map.insert((br, 0), *size);
+                        changes_sizes_buffer = true;
+                    }
+                }
+                super::BufferLikeResource::StorageBindingArray {
+                    ptr,
+                    array_element_sizes,
+                    binding_location,
+                } => {
+                    let buffer = Some(unsafe { ptr.as_ref() });
+                    let index = (resource_indices.buffers + index) as usize;
+                    encoder.set_buffer(buffer, 0, index);
+                    let br = naga::ResourceBinding {
+                        group: group_index,
+                        binding: *binding_location,
+                    };
+                    for &(array_idx, size) in array_element_sizes {
+                        self.state
+                            .storage_buffer_length_map
+                            .insert((br, array_idx), size);
+                        changes_sizes_buffer = true;
+                    }
+                }
+                super::BufferLikeResource::AccelerationStructure(ptr) => {
+                    let buffer = Some(unsafe { ptr.as_ref() });
+                    let index = (resource_indices.buffers + index) as usize;
+                    encoder.set_acceleration_structure(buffer, index);
+                }
             }
         }
         if changes_sizes_buffer {
@@ -303,6 +402,7 @@ impl super::CommandEncoder {
             S::Task => group.counters.ts.samplers,
             S::Mesh => group.counters.ms.samplers,
             S::Compute => group.counters.cs.samplers,
+            S::RayGeneration | S::AnyHit | S::ClosestHit | S::Miss => unimplemented!(),
         };
         for index in 0..samplers {
             let res = group.samplers[(index_base.samplers + index) as usize];
@@ -317,6 +417,7 @@ impl super::CommandEncoder {
             S::Task => group.counters.ts.textures,
             S::Mesh => group.counters.ms.textures,
             S::Compute => group.counters.cs.textures,
+            S::RayGeneration | S::AnyHit | S::ClosestHit | S::Miss => unimplemented!(),
         };
         for index in 0..textures {
             let res = group.textures[(index_base.textures + index) as usize];
@@ -348,9 +449,9 @@ impl super::CommandState {
         let slot = stage_info.sizes_slot?;
 
         result_sizes.clear();
-        result_sizes.extend(stage_info.sized_bindings.iter().map(|br| {
+        result_sizes.extend(stage_info.sized_bindings.iter().map(|(br, array_idx)| {
             self.storage_buffer_length_map
-                .get(br)
+                .get(&(*br, *array_idx))
                 .map(|size| u32::try_from(size.get()).unwrap_or(u32::MAX))
                 .unwrap_or_default()
         }));
@@ -359,7 +460,7 @@ impl super::CommandState {
         // they were added to the map.
         result_sizes.extend(stage_info.vertex_buffer_mappings.iter().map(|vbm| {
             self.vertex_buffer_size_map
-                .get(&(vbm.id as u64))
+                .get(&vbm.id)
                 .map(|size| u32::try_from(size.get()).unwrap_or(u32::MAX))
                 .unwrap_or_default()
         }));
@@ -376,8 +477,29 @@ impl crate::CommandEncoder for super::CommandEncoder {
     type A = super::Api;
 
     unsafe fn begin_encoding(&mut self, label: crate::Label) -> Result<(), crate::DeviceError> {
-        let queue = &self.raw_queue.lock();
+        let queue = &self.queue_shared.raw;
         let retain_references = self.shared.settings.retain_command_buffer_references;
+        let relay = self.queue_shared.relay.get();
+
+        // Guard against exhausting Metal's command buffer budget. Use the hard
+        // limit (`MAX_COMMAND_BUFFERS`) so we fail before Metal can hang inside
+        // `new_command_buffer`.
+        let previous = self
+            .queue_shared
+            .command_buffer_created_not_submitted
+            .fetch_add(1, atomic::Ordering::AcqRel);
+        if previous >= adapter::MAX_COMMAND_BUFFERS {
+            let current = previous + 1;
+            log::warn!(
+                "metal: refusing to create new command buffer; {current} outstanding command \
+                 buffers exceeds the limit of {}. Treating this as device lost. \
+                 Ensure command encoders are submitted or dropped rather than kept alive \
+                 to avoid exhausting Metal's command buffer budget.",
+                adapter::MAX_COMMAND_BUFFERS
+            );
+            return Err(crate::DeviceError::Lost);
+        }
+
         let raw = autoreleasepool(move |_| {
             let cmd_buf_ref = if retain_references {
                 queue.commandBuffer()
@@ -388,8 +510,20 @@ impl crate::CommandEncoder for super::CommandEncoder {
             if let Some(label) = label {
                 cmd_buf_ref.setLabel(Some(&NSString::from_str(label)));
             }
+            // If strict event sync is enabled on this queue, gate the
+            // CB on the relay event at the value the next submit will
+            // signal. The CB pauses at the start until the relay fires.
+            if let Some(relay) = relay {
+                let expected = relay.next_release_value.load(atomic::Ordering::Acquire);
+                cmd_buf_ref.encodeWaitForEvent_value(relay.event.as_ref(), expected);
+            }
             cmd_buf_ref.to_owned()
         });
+
+        // Queries should either be closed out, or cleared in `discard_encoding`.
+        // This assertion is here mainly to facilitate comparison with the other
+        // backends, which clear in `begin_encoding` rather than `discard_encoding`.
+        debug_assert!(self.state.pending_timer_queries.is_empty());
 
         self.raw_cmd_buf = Some(raw);
 
@@ -398,6 +532,7 @@ impl crate::CommandEncoder for super::CommandEncoder {
 
     unsafe fn discard_encoding(&mut self) {
         self.leave_blit();
+        self.leave_acceleration_structure_builder();
         // when discarding, we don't have a guarantee that
         // everything is in a good state, so check carefully
         if let Some(encoder) = self.state.render.take() {
@@ -406,7 +541,16 @@ impl crate::CommandEncoder for super::CommandEncoder {
         if let Some(encoder) = self.state.compute.take() {
             encoder.endEncoding();
         }
+        self.state.pending_timer_queries.clear();
+        let had_command_buffer = self.raw_cmd_buf.is_some();
+        // Clear the Option first so the underlying `metal::CommandBuffer` is
+        // dropped before we update the counter.
         self.raw_cmd_buf = None;
+        if had_command_buffer {
+            self.queue_shared
+                .command_buffer_created_not_submitted
+                .fetch_sub(1, atomic::Ordering::AcqRel);
+        }
     }
 
     unsafe fn end_encoding(&mut self) -> Result<super::CommandBuffer, crate::DeviceError> {
@@ -417,12 +561,14 @@ impl crate::CommandEncoder for super::CommandEncoder {
         }
 
         self.leave_blit();
+        self.leave_acceleration_structure_builder();
         debug_assert!(self.state.render.is_none());
         debug_assert!(self.state.compute.is_none());
         debug_assert!(self.state.pending_timer_queries.is_empty());
 
         Ok(super::CommandBuffer {
             raw: self.raw_cmd_buf.take().unwrap(),
+            queue_shared: Arc::clone(&self.queue_shared),
         })
     }
 
@@ -482,7 +628,10 @@ impl crate::CommandEncoder for super::CommandEncoder {
         T: Iterator<Item = crate::TextureCopy>,
     {
         let dst_texture = if src.format != dst.format {
-            let raw_format = self.shared.private_caps.map_format(src.format);
+            let raw_format = self
+                .shared
+                .private_texture_format_caps
+                .map_format(src.format);
             Cow::Owned(autoreleasepool(|_| {
                 dst.raw.newTextureViewWithPixelFormat(raw_format).unwrap()
             }))
@@ -596,11 +745,22 @@ impl crate::CommandEncoder for super::CommandEncoder {
 
     unsafe fn copy_acceleration_structure_to_acceleration_structure(
         &mut self,
-        _src: &super::AccelerationStructure,
-        _dst: &super::AccelerationStructure,
-        _copy: wgt::AccelerationStructureCopy,
+        src: &super::AccelerationStructure,
+        dst: &super::AccelerationStructure,
+        copy: wgt::AccelerationStructureCopy,
     ) {
-        unimplemented!()
+        let command_encoder = self.enter_acceleration_structure_builder();
+        match copy {
+            wgt::AccelerationStructureCopy::Clone => unsafe {
+                command_encoder
+                    .copyAccelerationStructure_toAccelerationStructure(&src.raw, &dst.raw);
+            },
+            wgt::AccelerationStructureCopy::Compact => {
+                command_encoder.copyAndCompactAccelerationStructure_toAccelerationStructure(
+                    &src.raw, &dst.raw,
+                );
+            }
+        };
     }
 
     unsafe fn begin_query(&mut self, set: &super::QuerySet, index: u32) {
@@ -618,14 +778,17 @@ impl crate::CommandEncoder for super::CommandEncoder {
             _ => {}
         }
     }
-    unsafe fn end_query(&mut self, set: &super::QuerySet, _index: u32) {
+    unsafe fn end_query(&mut self, set: &super::QuerySet, index: u32) {
         match set.ty {
             wgt::QueryType::Occlusion => {
                 self.state
                     .render
                     .as_ref()
                     .unwrap()
-                    .setVisibilityResultMode_offset(MTLVisibilityResultMode::Disabled, 0);
+                    .setVisibilityResultMode_offset(
+                        MTLVisibilityResultMode::Disabled,
+                        index as usize * crate::QUERY_SIZE as usize,
+                    );
             }
             _ => {}
         }
@@ -687,14 +850,7 @@ impl crate::CommandEncoder for super::CommandEncoder {
         };
     }
 
-    unsafe fn reset_queries(&mut self, set: &super::QuerySet, range: Range<u32>) {
-        let encoder = self.enter_blit();
-        let raw_range = NSRange {
-            location: range.start as usize * crate::QUERY_SIZE as usize,
-            length: (range.end - range.start) as usize * crate::QUERY_SIZE as usize,
-        };
-        encoder.fillBuffer_range_value(&set.raw_buffer, raw_range, 0);
-    }
+    unsafe fn reset_queries(&mut self, _set: &super::QuerySet, _range: Range<u32>) {}
 
     unsafe fn copy_query_results(
         &mut self,
@@ -936,7 +1092,9 @@ impl crate::CommandEncoder for super::CommandEncoder {
         group: &super::BindGroup,
         dynamic_offsets: &[wgt::DynamicOffset],
     ) {
-        let bg_info = &layout.bind_group_infos[group_index as usize];
+        let bg_info = layout.bind_group_infos[group_index as usize]
+            .as_ref()
+            .unwrap();
         let render_encoder = self.state.render.clone();
         let compute_encoder = self.state.compute.clone();
         if let Some(encoder) = render_encoder {
@@ -1083,7 +1241,7 @@ impl crate::CommandEncoder for super::CommandEncoder {
             if let Some(ms) = layout.immediates_infos.ms {
                 if self.shared.private_caps.mesh_shaders {
                     unsafe {
-                        render.setObjectBytes_length_atIndex(
+                        render.setMeshBytes_length_atIndex(
                             bytes,
                             layout.total_immediates as usize * WORD_SIZE,
                             ms.buffer_index as _,
@@ -1239,10 +1397,7 @@ impl crate::CommandEncoder for super::CommandEncoder {
         binding: crate::BufferBinding<'a, super::Buffer>,
         format: wgt::IndexFormat,
     ) {
-        let (stride, raw_type) = match format {
-            wgt::IndexFormat::Uint16 => (2, MTLIndexType::UInt16),
-            wgt::IndexFormat::Uint32 => (4, MTLIndexType::UInt32),
-        };
+        let (stride, raw_type) = conv::map_index_format(format);
         self.state.index = Some(super::IndexState {
             buffer_ptr: NonNull::from(&*binding.buffer.raw),
             offset: binding.offset,
@@ -1256,7 +1411,7 @@ impl crate::CommandEncoder for super::CommandEncoder {
         index: u32,
         binding: crate::BufferBinding<'a, super::Buffer>,
     ) {
-        let buffer_index = self.shared.private_caps.max_vertex_buffers as u64 - 1 - index as u64;
+        let buffer_index = MAX_BUFFERS - 1 - index;
         let encoder = self.state.render.as_ref().unwrap();
         unsafe {
             encoder.setVertexBuffer_offset_atIndex(
@@ -1647,7 +1802,7 @@ impl crate::CommandEncoder for super::CommandEncoder {
         }
     }
 
-    unsafe fn dispatch(&mut self, count: [u32; 3]) {
+    unsafe fn dispatch_workgroups(&mut self, count: [u32; 3]) {
         if count[0] > 0 && count[1] > 0 && count[2] > 0 {
             let encoder = self.state.compute.as_ref().unwrap();
             let raw_count = MTLSize {
@@ -1662,7 +1817,11 @@ impl crate::CommandEncoder for super::CommandEncoder {
         }
     }
 
-    unsafe fn dispatch_indirect(&mut self, buffer: &super::Buffer, offset: wgt::BufferAddress) {
+    unsafe fn dispatch_workgroups_indirect(
+        &mut self,
+        buffer: &super::Buffer,
+        offset: wgt::BufferAddress,
+    ) {
         let encoder = self.state.compute.as_ref().unwrap();
         unsafe {
             encoder
@@ -1677,7 +1836,7 @@ impl crate::CommandEncoder for super::CommandEncoder {
     unsafe fn build_acceleration_structures<'a, T>(
         &mut self,
         _descriptor_count: u32,
-        _descriptors: T,
+        descriptors: T,
     ) where
         super::Api: 'a,
         T: IntoIterator<
@@ -1688,22 +1847,98 @@ impl crate::CommandEncoder for super::CommandEncoder {
             >,
         >,
     {
-        unimplemented!()
+        let command_encoder = self.enter_acceleration_structure_builder();
+        for descriptor in descriptors {
+            let acceleration_structure_descriptor =
+                conv::map_acceleration_structure_descriptor(descriptor.entries, descriptor.flags);
+            match descriptor.mode {
+                crate::AccelerationStructureBuildMode::Build => {
+                    command_encoder
+                        .buildAccelerationStructure_descriptor_scratchBuffer_scratchBufferOffset(
+                            &descriptor.destination_acceleration_structure.raw,
+                            &acceleration_structure_descriptor,
+                            &descriptor.scratch_buffer.raw,
+                            descriptor.scratch_buffer_offset as usize,
+                        );
+                }
+                crate::AccelerationStructureBuildMode::Update => unsafe {
+                    command_encoder.refitAccelerationStructure_descriptor_destination_scratchBuffer_scratchBufferOffset(
+                        &descriptor.source_acceleration_structure.unwrap().raw,
+                        &acceleration_structure_descriptor,
+                        Some(&descriptor.destination_acceleration_structure.raw),
+                        Some(&descriptor.scratch_buffer.raw),
+                        descriptor.scratch_buffer_offset as usize,
+                    );
+                },
+            }
+        }
     }
 
     unsafe fn place_acceleration_structure_barrier(
         &mut self,
         _barriers: crate::AccelerationStructureBarrier,
     ) {
-        unimplemented!()
     }
 
     unsafe fn read_acceleration_structure_compact_size(
         &mut self,
-        _acceleration_structure: &super::AccelerationStructure,
-        _buf: &super::Buffer,
+        acceleration_structure: &super::AccelerationStructure,
+        buffer: &super::Buffer,
     ) {
-        unimplemented!()
+        let command_encoder = self.enter_acceleration_structure_builder();
+        command_encoder.writeCompactedAccelerationStructureSize_toBuffer_offset(
+            &acceleration_structure.raw,
+            &buffer.raw,
+            0,
+        );
+    }
+
+    unsafe fn set_acceleration_structure_dependencies(
+        command_buffers: &[&super::CommandBuffer],
+        dependencies: &[&super::AccelerationStructure],
+    ) {
+        let Some(first_command_buffer) = command_buffers.first() else {
+            return;
+        };
+        let desc = MTLResidencySetDescriptor::new();
+        desc.setLabel(first_command_buffer.raw.label().as_deref());
+        let residency_set = first_command_buffer
+            .raw
+            .device()
+            .newResidencySetWithDescriptor_error(&desc)
+            .unwrap();
+        for command_buffer in command_buffers {
+            command_buffer.raw.useResidencySet(&residency_set);
+        }
+        for dependency in dependencies {
+            residency_set.addAllocation(ProtocolObject::from_ref(&*dependency.raw));
+        }
+        residency_set.commit();
+    }
+
+    unsafe fn begin_ray_tracing_pass(&mut self, _desc: &crate::RayTracingPassDescriptor) {
+        unreachable!("Ray tracing pipelines not supported")
+    }
+
+    unsafe fn end_ray_tracing_pass(&mut self) {
+        unreachable!("Ray tracing pipelines not supported")
+    }
+
+    unsafe fn set_ray_tracing_pipeline(
+        &mut self,
+        _pipeline: &<Self::A as crate::Api>::RayTracingPipeline,
+    ) {
+        unreachable!("Ray tracing pipelines not supported")
+    }
+
+    unsafe fn trace_rays(
+        &mut self,
+        _count: [u32; 3],
+        _ray_generation_group_data: crate::PipelineGroupData<super::Buffer>,
+        _miss_group_data: crate::PipelineGroupData<super::Buffer>,
+        _intersection_group_data: crate::PipelineGroupData<super::Buffer>,
+    ) {
+        unreachable!("Ray tracing pipelines not supported")
     }
 }
 
@@ -1722,5 +1957,23 @@ impl Drop for super::CommandEncoder {
             self.discard_encoding();
         }
         self.counters.command_encoders.sub(1);
+    }
+}
+
+impl Drop for super::CommandBuffer {
+    fn drop(&mut self) {
+        // `command_buffer_created_not_submitted` is usually decremented when the command
+        // buffer is submitted. But if we're dropping a command buffer that was never
+        // submitted, we need to decrement the count here.
+        let status = self.raw.status();
+        if status == MTLCommandBufferStatus::NotEnqueued
+            || status == MTLCommandBufferStatus::Enqueued
+        {
+            let previous = self
+                .queue_shared
+                .command_buffer_created_not_submitted
+                .fetch_sub(1, atomic::Ordering::AcqRel);
+            debug_assert!(previous > 0);
+        }
     }
 }

@@ -1,10 +1,10 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "BlankDecoderModule.h"
+
+#include <numbers>
 
 #include "ImageContainer.h"
 #include "MediaData.h"
@@ -98,7 +98,7 @@ already_AddRefed<MediaData> BlankAudioDataCreator::Create(
     return nullptr;
   }
   // Fill the sound buffer with an A4 tone.
-  static const float pi = 3.14159265f;
+  static const float pi = std::numbers::pi_v<float>;
   static const float noteHz = 440.0f;
   for (int i = 0; i < frames.value(); i++) {
     float f = sin(2 * pi * noteHz * mFrameSum / mSampleRate);

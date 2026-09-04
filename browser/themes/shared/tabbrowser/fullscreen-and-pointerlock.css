@@ -4,12 +4,29 @@
 
 :root[inDOMFullscreen] #navigator-toolbox,
 :root[inDOMFullscreen] #fullscr-toggler,
+:root[inDOMFullscreen] #sidebar-container,
+:root[fullscreenNavToolboxHidden] #sidebar-launcher-splitter,
 :root[inDOMFullscreen] #sidebar-box,
-:root[inDOMFullscreen] #sidebar-main,
 :root[inDOMFullscreen] #sidebar-splitter,
-:root[inDOMFullscreen] #sidebar-launcher-splitter,
 :root[inFullscreen]:not([macOSNativeFullscreen]) toolbar:not([fullscreentoolbar="true"]) {
   visibility: collapse;
+}
+
+/* Skip the subtree rather than collapse it: `visibility` is inherited, so it
+ * restyled a row per tab with vertical tabs (bug 2054085). */
+:root[fullscreenNavToolboxHidden]:not([inDOMFullscreen]) #sidebar-container {
+  content-visibility: hidden;
+  /* Also drops the inline width of a user-resized launcher. */
+  flex-basis: 0;
+  min-width: 0;
+}
+
+/* AI window splitter and box use visibility:collapse, not display:none, so
+ * they are separated by flexbox gaps even when invisible. Use display:none
+ * here so the gaps disappear in DOM fullscreen. */
+:root[inDOMFullscreen] #ai-window-box,
+:root[inDOMFullscreen] #ai-window-splitter {
+  display: none;
 }
 
 #fullscr-toggler {
@@ -36,6 +53,7 @@
   max-width: 95%;
 
   font: message-box;
+  font-size: 21px;
 
   align-items: center;
   color-scheme: dark;
@@ -83,12 +101,13 @@
 
   &[data-identity="unknownIdentity"]::before {
     background-image: url("chrome://global/skin/icons/security-broken.svg");
+    -moz-context-properties: fill, stroke;
+    stroke: var(--icon-color-critical);
   }
 }
 
 .pointerlockfswarning-domain-text,
 .pointerlockfswarning-generic-text {
-  font-size: 21px;
   margin: 0 16px;
   word-wrap: break-word;
   /* We must specify a min-width, otherwise word-wrap:break-word doesn't work. Bug 630864. */

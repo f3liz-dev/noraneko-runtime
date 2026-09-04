@@ -4,6 +4,7 @@
 
 import os
 import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -326,7 +327,7 @@ class BaseBootstrapper:
         pass
 
     def install_toolchain_artifact(self, toolchain_job):
-        bootstrap_toolchain(toolchain_job)
+        return bootstrap_toolchain(toolchain_job)
 
     def auto_bootstrap(self, application, exclude=[]):
         args = ["--with-ccache=sccache"]
@@ -679,3 +680,33 @@ class BaseBootstrapper:
             except OSError as e:
                 if e.errno != errno.ENOENT:
                     raise
+
+    CARGO_TOOLS = (
+        "searchfox-cli",
+        "socorro-cli",
+        "stmo-cli",
+        "treeherder-cli",
+        "webspec-index",
+    )
+
+    def cargo_tools_installed(self):
+        """Return True if all cargo developer tools are already installed."""
+        _, cargo_bin = self.cargo_home()
+        extra = [str(cargo_bin)]
+        return all(which(tool, extra_search_dirs=extra) for tool in self.CARGO_TOOLS)
+
+    def ensure_cargo_tools(self):
+        """Install required developer tools from prebuilt toolchain artifacts."""
+        cargo_home, cargo_bin = self.cargo_home()
+        cargo_bin.mkdir(parents=True, exist_ok=True)
+
+        print("Installing cargo tools: {}...".format(", ".join(self.CARGO_TOOLS)))
+        for tool in self.CARGO_TOOLS:
+            tool_dir = self.install_toolchain_artifact(tool)
+            if not tool_dir:
+                print(f"Could not install {tool}.")
+                continue
+            exe = Path(tool_dir) / (tool + rust.exe_suffix())
+            dest = cargo_bin / exe.name
+            dest.unlink(missing_ok=True)
+            shutil.copy2(exe, dest)

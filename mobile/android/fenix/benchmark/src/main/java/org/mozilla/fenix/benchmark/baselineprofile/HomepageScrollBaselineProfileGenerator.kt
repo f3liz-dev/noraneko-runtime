@@ -4,8 +4,6 @@
 
 package org.mozilla.fenix.benchmark.baselineprofile
 
-import android.content.Intent
-import android.net.Uri
 import android.os.Build
 import androidx.annotation.RequiresApi
 import androidx.benchmark.macro.junit4.BaselineProfileRule
@@ -14,11 +12,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mozilla.fenix.benchmark.utils.TARGET_PACKAGE
-import org.mozilla.fenix.benchmark.utils.dismissWallpaperOnboarding
-import org.mozilla.fenix.benchmark.utils.flingToEnd
-import org.mozilla.fenix.benchmark.utils.isWallpaperOnboardingShown
-import androidx.core.net.toUri
-import org.mozilla.fenix.benchmark.utils.FENIX_HOME_DEEP_LINK
+import org.mozilla.fenix.benchmark.utils.homepageScrollJourney
 
 /**
  * This test class generates a baseline profile on a critical user journey, that scrolls down on the
@@ -55,19 +49,9 @@ class HomepageScrollBaselineProfileGenerator {
     fun generateBaselineProfile() {
         rule.collect(
             packageName = TARGET_PACKAGE,
+            maxIterations = baselineProfileMaxIterations(),
         ) {
-            val intent = Intent(Intent.ACTION_VIEW, FENIX_HOME_DEEP_LINK)
-
-            startActivityAndWait(intent = intent)
-
-            if (device.isWallpaperOnboardingShown()) {
-                device.dismissWallpaperOnboarding()
-            }
-
-            device.flingToEnd(
-                scrollableId = "$packageName:id/rootContainer",
-                maxSwipes = Int.MAX_VALUE,
-            )
+            homepageScrollJourney()
         }
     }
 }

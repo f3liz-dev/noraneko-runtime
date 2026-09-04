@@ -1,20 +1,18 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-
-#include "mozilla/Printf.h"
 
 #include "ManifestParser.h"
 
 #include <string.h>
 
+#include "mozilla/Printf.h"
 #include "prio.h"
 #if defined(XP_WIN)
 #  include <windows.h>
 #elif defined(MOZ_WIDGET_COCOA)
 #  include <CoreServices/CoreServices.h>
+
 #  include "nsCocoaFeatures.h"
 #elif defined(MOZ_WIDGET_GTK)
 #  include <gtk/gtk.h>
@@ -30,17 +28,15 @@
 #endif
 
 #include "mozilla/Services.h"
-
 #include "nsCRT.h"
 #include "nsConsoleMessage.h"
-#include "nsTextFormatter.h"
-#include "nsVersionComparator.h"
-#include "nsXPCOMCIDInternal.h"
-
 #include "nsIConsoleService.h"
 #include "nsIScriptError.h"
 #include "nsIXULAppInfo.h"
 #include "nsIXULRuntime.h"
+#include "nsTextFormatter.h"
+#include "nsVersionComparator.h"
+#include "nsXPCOMCIDInternal.h"
 
 using namespace mozilla;
 
@@ -381,8 +377,6 @@ void ParseManifest(NSLocationType aType, FileLocation& aFile, char* aBuf,
   nsresult rv;
 
   constexpr auto kContentAccessible = u"contentaccessible"_ns;
-  constexpr auto kRemoteEnabled = u"remoteenabled"_ns;
-  constexpr auto kRemoteRequired = u"remoterequired"_ns;
   constexpr auto kApplication = u"application"_ns;
   constexpr auto kAppVersion = u"appversion"_ns;
   constexpr auto kGeckoVersion = u"platformversion"_ns;
@@ -605,14 +599,6 @@ void ParseManifest(NSLocationType aType, FileLocation& aFile, char* aBuf,
         bool flag;
         if (CheckFlag(kContentAccessible, wtoken, flag)) {
           if (flag) flags |= nsChromeRegistry::CONTENT_ACCESSIBLE;
-          continue;
-        }
-        if (CheckFlag(kRemoteEnabled, wtoken, flag)) {
-          if (flag) flags |= nsChromeRegistry::REMOTE_ALLOWED;
-          continue;
-        }
-        if (CheckFlag(kRemoteRequired, wtoken, flag)) {
-          if (flag) flags |= nsChromeRegistry::REMOTE_REQUIRED;
           continue;
         }
       }

@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -37,7 +35,7 @@ Symbol* Symbol::new_(JSContext* cx, JS::SymbolCode code,
 
   Symbol* sym = newInternal(cx, code, cx->runtime()->randomHashCode(), atom);
   if (sym) {
-    cx->markAtom(sym);
+    cx->recordRef(sym);
   }
   return sym;
 }
@@ -56,7 +54,7 @@ Symbol* Symbol::for_(JSContext* cx, HandleString description) {
   SymbolRegistry& registry = cx->symbolRegistry();
   DependentAddPtr<SymbolRegistry> p(cx, registry, atom);
   if (p) {
-    cx->markAtom(*p);
+    cx->recordRef(*p);
     return *p;
   }
 
@@ -72,7 +70,7 @@ Symbol* Symbol::for_(JSContext* cx, HandleString description) {
     return nullptr;
   }
 
-  cx->markAtom(sym);
+  cx->recordRef(sym);
   return sym;
 }
 

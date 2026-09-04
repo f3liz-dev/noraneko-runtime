@@ -4,8 +4,6 @@
 
 package org.mozilla.fenix.benchmark.baselineprofile
 
-import android.content.Intent
-import android.net.Uri
 import android.os.Build
 import androidx.annotation.RequiresApi
 import androidx.benchmark.macro.junit4.BaselineProfileRule
@@ -13,13 +11,11 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.mozilla.fenix.benchmark.utils.HtmlAsset
 import org.mozilla.fenix.benchmark.utils.MockWebServerRule
 import org.mozilla.fenix.benchmark.utils.TARGET_PACKAGE
-import org.mozilla.fenix.benchmark.utils.flingToBeginning
-import org.mozilla.fenix.benchmark.utils.flingToEnd
-import androidx.core.net.toUri
-import org.mozilla.fenix.benchmark.utils.HtmlAsset
-import org.mozilla.fenix.benchmark.utils.uri
+import org.mozilla.fenix.benchmark.utils.browserPageScrollJourney
+import org.mozilla.fenix.benchmark.utils.url
 
 /**
  * This test class generates a baseline profile on a critical user journey, that scrolls on some web
@@ -59,22 +55,9 @@ class BrowserPageScrollBaselineProfileGenerator {
     fun generateBaselineProfile() {
         rule.collect(
             packageName = TARGET_PACKAGE,
+            maxIterations = baselineProfileMaxIterations(),
         ) {
-            val intent = Intent(Intent.ACTION_VIEW)
-            intent.data = mockRule.uri(HtmlAsset.LONG)
-            intent.setPackage(packageName)
-
-            startActivityAndWait(intent = intent)
-
-            device.flingToEnd(
-                scrollableId = "$packageName:id/engineView",
-                maxSwipes = 1,
-            )
-
-            device.flingToBeginning(
-                scrollableId = "$packageName:id/engineView",
-                maxSwipes = 1,
-            )
+            browserPageScrollJourney(url = mockRule.url(HtmlAsset.LONG))
         }
     }
 }

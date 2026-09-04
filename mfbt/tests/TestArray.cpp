@@ -1,11 +1,12 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/Array.h"
 #include <cstdint>
+#include <iterator>
+#include <type_traits>
+
+#include "mozilla/Array.h"
 
 void TestInitialValueByConstructor() {
   using namespace mozilla;
@@ -26,7 +27,21 @@ void TestInitialValueByConstructor() {
   MOZ_RELEASE_ASSERT(arr3[2] == 10);
 }
 
+void TestStdData() {
+  using namespace mozilla;
+  Array<int32_t, 4> arr(1, 2, 3, 4);
+  static_assert(std::is_same_v<decltype(std::data(arr)), int32_t*>);
+  MOZ_RELEASE_ASSERT(*std::data(arr) == 1);
+  MOZ_RELEASE_ASSERT(std::data(arr) == &arr[0]);
+  MOZ_RELEASE_ASSERT(std::data(arr) == arr.begin());
+
+  const Array<int32_t, 1> const_arr(1);
+  static_assert(std::is_same_v<decltype(std::data(const_arr)), const int32_t*>);
+  MOZ_RELEASE_ASSERT(*std::data(arr) == 1);
+}
+
 int main() {
   TestInitialValueByConstructor();
+  TestStdData();
   return 0;
 }

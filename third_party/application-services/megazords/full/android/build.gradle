@@ -1,0 +1,299 @@
+apply plugin: 'com.android.library'
+
+if (!gradle.hasProperty("mozconfig")) {
+    apply plugin: 'kotlin-android'
+    apply plugin: 'org.mozilla.rust-android-gradle.rust-android'
+}
+
+android {
+    namespace 'org.mozilla.appservices.full_megazord'
+
+    compileSdk { version = release(config.compileSdkMajorVersion) { minorApiLevel = config.compileSdkMinorVersion } }
+
+    defaultConfig {
+        ndkVersion config.ndkVersion
+        minSdkVersion config.minSdkVersion
+        targetSdkVersion config.targetSdkVersion
+
+        testInstrumentationRunner "android.support.test.runner.AndroidJUnitRunner"
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            consumerProguardFiles "$appServicesRootDir/proguard-rules-consumer-jna.pro"
+        }
+    }
+
+    // Uncomment to include debug symbols in native library builds.
+    // packagingOptions { doNotStrip "**/*.so" }
+}
+
+kotlin {
+    jvmToolchain(rootProject.config.jvmTargetCompatibility)
+}
+
+// Configurations are a somewhat mysterious Gradle concept.  For our purposes, we can treat them
+// sets of files produced by one component and consumed by another.
+configurations {
+    // Libraries for unit tests
+    //
+    // This is a JAR file that contains libmegazord and libjnidispatch built for desktop platforms
+    // -- i.e. non-Android.  These include linux-x86-64, darwin-x86-64, and darwin-aarch64. These
+    // libraries are needed to run unit tests, since the AAR packages only contain libraries for
+    // Android.
+    //
+    // For libmegazord, we copy the desktop libs from the
+    // [rust-android-gradle plugin](https://github.com/mozilla/rust-android-gradle), which is
+    // configurable via `local.properties`. The official packages are built in taskcluster include
+    // `linux-x86-64` and `darwin-x86-64` and the list is controlled by
+    // taskcluster/kinds/module-build/kind.yml
+    //
+    // For libjnidispatch, we include all libraries included in the official JAR file.
+    consumable("libsForTests")
+    // Stores the JNA jar file
+    jna {
+        canBeConsumed = false
+        canBeResolved = true
+        canBeDeclared = true
+    }
+    // Native megazord library, this is the one compatible with the user's local machine.  We use it
+    // to run uniffi-bindgen against.
+    consumable("megazordNative")
+}
+
+dependencies {
+    // Needed so we can copy the libraries into libsForTests.
+    jna(libs.jna) {
+        artifact {
+            type = "jar"
+        }
+    }
+}
+
+abstract class GenerateJniLibsTask extends DefaultTask {
+    @Internal
+    abstract DirectoryProperty getNssLibsSourceDir()
+
+    @OutputDirectory
+    abstract DirectoryProperty getOutputDir()
+
+    @javax.inject.Inject
+    abstract FileSystemOperations getFs()
+
+    @TaskAction
+    void generate() {
+        // Copy NSS shared libs that libmegazord.so depends on (NEEDED) into
+        // the megazord's jniLibs staging area. Standalone consumers like
+        // samples-glean don't include GeckoView and need these in the megazord AAR.
+        def nssLibs = ["libnss3.so", "libfreebl3.so", "libsoftokn3.so", "libmozglue.so"]
+        def srcBase = nssLibsSourceDir.get().asFile
+        if (!srcBase.exists()) {
+            // Some builds do not stage GeckoView, so its native libraries
+            // are not present. There is nothing to copy in that case.
+            return
+        }
+        fs.copy {
+            from srcBase
+            include nssLibs.collect { "**/${it}" }
+            into outputDir.get().asFile
+        }
+    }
+}
+
+if (gradle.hasProperty("mozconfig")) {
+    def isFatAar = gradle.mozconfig.substs.MOZ_ANDROID_FAT_AAR_ARCHITECTURES
+    def topobjdir = gradle.mozconfig.topobjdir
+    def generateJniLibs = tasks.register("generateJniLibs", GenerateJniLibsTask) { task ->
+        if (isFatAar) {
+            // Must match the appservices output prefix in `python/mozbuild/mozbuild/action/fat_aar.py`.
+            task.outputDir.set(file("${topobjdir}/dist/fat-aar/output/appservices/jni"))
+            task.nssLibsSourceDir.set(file("${topobjdir}/dist/fat-aar/output/geckoview/jni"))
+        } else {
+            // Must match the destdir in `mobile/android/installer/package-manifest.in`.
+            task.outputDir.set(file("${topobjdir}/dist/geckoview/appservices/lib"))
+            task.nssLibsSourceDir.set(file("${topobjdir}/dist/geckoview/lib"))
+        }
+
+        // Depending directly on a task declared in the root Gradle project
+        // seems to not be sufficiently lazy: `tasks.named(...)` is invoked
+        // during configuration of this project, which is too early and fails.
+        //
+        // But this is sufficiently lazy to be present when needed during
+        // configuration of this project, while still depending on a shared task
+        // in the root Gradle project.
+        if (findProject(":geckoview") != null) {
+            task.dependsOn(":machStagePackage")
+        }
+    }
+
+    androidComponents {
+        onVariants(selector().all()) { variant ->
+            variant.sources.jniLibs?.addGeneratedSourceDirectory(
+                generateJniLibs,
+                { task -> task.outputDir }
+            )
+        }
+    }
+}
+
+// Extract JNI dispatch libraries from the JAR into a directory, so that we can then package them
+// into our own megazord-desktopLibraries JAR.
+// Resolve the JNA JAR at configuration time so `--download-all-gradle-dependencies`
+// fetches it into the offline repository; a lazy resolution inside the task action
+// isn't reached during the dry-run dependency fetch.
+def jnaLibJniDispatch = zipTree(configurations.jna.singleFile).matching {
+    include "**/libjnidispatch.*"
+}
+
+def extractLibJniDispatch = tasks.register("extractLibJniDispatch", Copy) {
+    from jnaLibJniDispatch
+    into layout.buildDirectory.dir("libjnidispatch").get()
+}
+
+def packageLibsForTest = tasks.register("packageLibsForTest", Jar) {
+    archiveBaseName = "full-megazord-libsForTests"
+
+    from extractLibJniDispatch
+    if (!gradle.hasProperty("mozconfig")) {
+        from layout.buildDirectory.dir("rustJniLibs/desktop")
+        dependsOn tasks["cargoBuild${rootProject.ext.nativeRustTarget.capitalize()}"]
+    }
+
+    if (gradle.hasProperty("mozconfig")) {
+        if (gradle.mozconfig.substs.MOZ_ANDROID_FAT_AAR_DESKTOP_ARCHITECTURES) {
+            from "${gradle.mozconfig.topobjdir}/dist/fat-aar/output/desktop/resources"
+        } else {
+            from "${gradle.mozconfig.topobjdir}/dist/host/bin/appservices/resources"
+        }
+    }
+}
+
+artifacts {
+    // Connect task output to configurations
+    libsForTests(packageLibsForTest)
+}
+
+if (!gradle.hasProperty("mozconfig")) {
+    def copyMegazordNative = tasks.register("copyMegazordNative", Copy) {
+        from layout.buildDirectory.dir("rustJniLibs/desktop")
+        into layout.buildDirectory.dir("megazordNative")
+    }
+
+    artifacts {
+        megazordNative(copyMegazordNative)
+    }
+
+    cargo {
+        // The directory of the Cargo.toml to build.
+        module = '..'
+
+        // The Android NDK API level to target.
+        apiLevel = rootProject.config.minSdkVersion
+
+        // Where Cargo writes its outputs.
+        targetDirectory = '../../../target'
+
+        libname = 'megazord'
+
+        // The Cargo targets to invoke.  The mapping from short name to target
+        // triple is defined by the `rust-android-gradle` plugin.
+        targets = rootProject.ext.rustTargets
+
+        // Perform release builds (which should have debug info, due to
+        // `debug = true` in Cargo.toml).
+        profile = "release"
+
+        exec = { spec, toolchain ->
+            rootProject.ext.cargoExec(spec, toolchain)
+            // Only used in the full megazord (that is, in this project) at build time.
+            spec.environment("MEGAZORD_VERSION", config.componentsVersion)
+        }
+
+        extraCargoBuildArguments = rootProject.ext.extraCargoBuildArguments
+
+        // Add a build-id so that our code works with simpleperf
+        // https://bugzilla.mozilla.org/show_bug.cgi?id=1937916
+        generateBuildId = true
+    }
+}
+
+if (!gradle.hasProperty("mozconfig")) {
+    androidComponents.onVariants(androidComponents.selector().all()) { variant ->
+        // The `cargoBuild` task isn't available until after evaluation.
+        afterEvaluate {
+            tasks["merge${variant.name.capitalize()}JniLibFolders"].dependsOn(tasks["cargoBuild"])
+        }
+    }
+}
+
+// Duplicated from component-common.gradle, which the megazord doesn't apply.
+// Pick the publish group id by build context. In m-c, `config` belongs to
+// android-components (`config.componentsGroupId` is `org.mozilla.components`),
+// so we hardcode `org.mozilla.appservices`. Standalone app-services uses
+// `config.componentsGroupId`, which is the only place that appends the
+// `.nightly` suffix nightly builds publish under.
+ext.appServicesGroupId = gradle.root.hasProperty("mozconfig")
+    ? "org.mozilla.appservices"
+    : rootProject.config.componentsGroupId
+
+apply from: "$publishDir/publish.gradle"
+ext.configurePublish(appServicesGroupId, project.name, project.ext.description)
+
+afterEvaluate {
+    def libUrl="https://github.com/mozilla/application-services"
+    def libVcsUrl="https://github.com/mozilla/application-services.git"
+
+    def libLicense="MPL-2.0"
+    def libLicenseUrl="https://www.mozilla.org/en-US/MPL/2.0/"
+
+    publishing {
+        publications {
+            // Publish a second package named `full-megazord-libsForTests` to Maven with the
+            // `libsForTests` output.  This contains the same content as our `libsForTests`
+            // configuration. Publishing it allows the android-components code to depend on it.
+            libsForTests(MavenPublication) {
+                artifact tasks['packageLibsForTest']
+                if (!gradle.hasProperty("mozconfig")) {
+                    artifact file("${projectDir}/../DEPENDENCIES.md"), {
+                        extension "LICENSES.md"
+                    }
+                }
+
+                pom {
+                    groupId = project.ext.appServicesGroupId
+                    artifactId = "${project.ext.artifactId}-libsForTests"
+                    description = project.ext.description
+                    // For mavenLocal publishing workflow, increment the version number every publish.
+                    version = rootProject.config.componentsVersion + (rootProject.hasProperty('local') ? '-' + rootProject.property('local') : '')
+                    packaging = "jar"
+
+                    licenses {
+                        license {
+                            name = libLicense
+                            url = libLicenseUrl
+                        }
+                    }
+
+                    developers {
+                        developer {
+                            name = 'Sync Team'
+                            email = 'sync-team@mozilla.com'
+                        }
+                    }
+
+                    scm {
+                        connection = libVcsUrl
+                        developerConnection = libVcsUrl
+                        url = libUrl
+                    }
+                }
+
+                // This is never the publication we want to use when publishing a
+                // parent project with us as a child `project()` dependency.
+                alias = true
+            }
+        }
+    }
+}

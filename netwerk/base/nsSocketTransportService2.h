@@ -1,4 +1,3 @@
-/* vim:set ts=4 sw=2 sts=2 ci et: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -12,14 +11,13 @@
 #include "mozilla/Logging.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/Mutex.h"
+#include "mozilla/Queue.h"
 #include "mozilla/RWLock.h"
 #include "mozilla/TimeStamp.h"
-#include "mozilla/Queue.h"
-
 #include "mozilla/UniquePtr.h"
 #include "mozilla/net/DashboardTypes.h"
-#include "nsCOMPtr.h"
 #include "nsASocketHandler.h"
+#include "nsCOMPtr.h"
 #include "nsIDirectTaskDispatcher.h"
 #include "nsIObserver.h"
 #include "nsIRunnable.h"
@@ -202,8 +200,7 @@ class nsSocketTransportService final : public nsPISocketTransportService,
 
   class SocketContext {
    public:
-    SocketContext(PRFileDesc* aFD,
-                  already_AddRefed<nsASocketHandler>&& aHandler,
+    SocketContext(PRFileDesc* aFD, already_AddRefed<nsASocketHandler> aHandler,
                   PRIntervalTime aPollStartEpoch)
         : mFD(aFD), mHandler(aHandler), mPollStartEpoch(aPollStartEpoch) {}
     SocketContext(PRFileDesc* aFD, nsASocketHandler* aHandler,
@@ -293,7 +290,7 @@ class nsSocketTransportService final : public nsPISocketTransportService,
   // Number of keepalive probes to send.
   int32_t mKeepaliveProbeCount{kDefaultTCPKeepCount};
   // True if TCP keepalive is enabled globally.
-  bool mKeepaliveEnabledPref{false};
+  Atomic<bool, Relaxed> mKeepaliveEnabledPref{false};
   // Timeout of pollable event signalling.
   TimeDuration mPollableEventTimeout MOZ_GUARDED_BY(mLock);
 

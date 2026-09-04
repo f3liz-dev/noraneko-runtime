@@ -1,8 +1,8 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+#include "mozilla/net/CookieJarSettings.h"
 
 #include "mozIThirdPartyUtil.h"
 #include "mozilla/AntiTrackingUtils.h"
@@ -10,20 +10,19 @@
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/Components.h"
 #include "mozilla/ContentBlockingAllowList.h"
-#include "mozilla/dom/BrowsingContext.h"
-#include "mozilla/net/CookieJarSettings.h"
-#include "mozilla/net/NeckoChannelParams.h"
 #include "mozilla/Permission.h"
 #include "mozilla/PermissionManager.h"
 #include "mozilla/SchedulerGroup.h"
 #include "mozilla/StaticPrefs_network.h"
 #include "mozilla/StoragePrincipalHelper.h"
+#include "mozilla/dom/BrowsingContext.h"
+#include "mozilla/net/NeckoChannelParams.h"
 #include "nsIPrincipal.h"
 #if defined(MOZ_THUNDERBIRD) || defined(MOZ_SUITE)
 #  include "nsIProtocolHandler.h"
 #endif
-#include "nsIClassInfoImpl.h"
 #include "nsIChannel.h"
+#include "nsIClassInfoImpl.h"
 #include "nsICookieManager.h"
 #include "nsICookieService.h"
 #include "nsIObjectInputStream.h"
@@ -178,8 +177,7 @@ CookieJarSettings::CookieJarSettings(uint32_t aCookieBehavior,
       mTopLevelWindowContextId(0) {
   MOZ_ASSERT_IF(
       mIsFirstPartyIsolated,
-      mCookieBehavior !=
-          nsICookieService::BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN);
+      mCookieBehavior != nsICookieService::BEHAVIOR_PARTITION_FOREIGN);
 }
 
 CookieJarSettings::~CookieJarSettings() {
@@ -269,8 +267,7 @@ CookieJarSettings::GetLimitForeignContexts(bool* aLimitForeignContexts) {
   *aLimitForeignContexts =
       mCookieBehavior == nsICookieService::BEHAVIOR_LIMIT_FOREIGN ||
       (StaticPrefs::privacy_dynamic_firstparty_limitForeign() &&
-       mCookieBehavior ==
-           nsICookieService::BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN);
+       mCookieBehavior == nsICookieService::BEHAVIOR_PARTITION_FOREIGN);
   return NS_OK;
 }
 
@@ -296,8 +293,7 @@ CookieJarSettings::GetBlockingAllContexts(bool* aBlockingAllContexts) {
 NS_IMETHODIMP
 CookieJarSettings::GetPartitionForeign(bool* aPartitionForeign) {
   *aPartitionForeign =
-      mCookieBehavior ==
-      nsICookieService::BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN;
+      mCookieBehavior == nsICookieService::BEHAVIOR_PARTITION_FOREIGN;
   return NS_OK;
 }
 
@@ -308,8 +304,7 @@ CookieJarSettings::SetPartitionForeign(bool aPartitionForeign) {
   }
 
   if (aPartitionForeign) {
-    mCookieBehavior =
-        nsICookieService::BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN;
+    mCookieBehavior = nsICookieService::BEHAVIOR_PARTITION_FOREIGN;
   }
   return NS_OK;
 }
@@ -485,9 +480,8 @@ already_AddRefed<nsICookieJarSettings> CookieJarSettings::Merge(
       mCookieBehavior == aData.cookieBehavior() ||
       (mCookieBehavior == nsICookieService::BEHAVIOR_REJECT_TRACKER &&
        aData.cookieBehavior() ==
-           nsICookieService::BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN) ||
-      (mCookieBehavior ==
-           nsICookieService::BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN &&
+           nsICookieService::BEHAVIOR_PARTITION_FOREIGN) ||
+      (mCookieBehavior == nsICookieService::BEHAVIOR_PARTITION_FOREIGN &&
        aData.cookieBehavior() == nsICookieService::BEHAVIOR_REJECT_TRACKER));
 
   if (mState == eFixed) {
@@ -500,17 +494,16 @@ already_AddRefed<nsICookieJarSettings> CookieJarSettings::Merge(
   // Merge cookie behavior pref values
   if (newCookieJarSettings->mCookieBehavior ==
           nsICookieService::BEHAVIOR_REJECT_TRACKER &&
-      aData.cookieBehavior() ==
-          nsICookieService::BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN) {
+      aData.cookieBehavior() == nsICookieService::BEHAVIOR_PARTITION_FOREIGN) {
     // If the other side has decided to partition third-party cookies, update
     // our side when first-party isolation is disabled.
     if (!newCookieJarSettings->mIsFirstPartyIsolated) {
       newCookieJarSettings->mCookieBehavior =
-          nsICookieService::BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN;
+          nsICookieService::BEHAVIOR_PARTITION_FOREIGN;
     }
   }
   if (newCookieJarSettings->mCookieBehavior ==
-          nsICookieService::BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN &&
+          nsICookieService::BEHAVIOR_PARTITION_FOREIGN &&
       aData.cookieBehavior() == nsICookieService::BEHAVIOR_REJECT_TRACKER) {
     // If we've decided to partition third-party cookies, the other side may not
     // have caught up yet unless it has first-party isolation enabled.
@@ -521,10 +514,9 @@ already_AddRefed<nsICookieJarSettings> CookieJarSettings::Merge(
     }
   }
   // Ignore all other cases.
-  MOZ_ASSERT_IF(
-      newCookieJarSettings->mIsFirstPartyIsolated,
-      newCookieJarSettings->mCookieBehavior !=
-          nsICookieService::BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN);
+  MOZ_ASSERT_IF(newCookieJarSettings->mIsFirstPartyIsolated,
+                newCookieJarSettings->mCookieBehavior !=
+                    nsICookieService::BEHAVIOR_PARTITION_FOREIGN);
 
   if (aData.shouldResistFingerprinting()) {
     newCookieJarSettings->mShouldResistFingerprinting = true;
@@ -627,8 +619,7 @@ void CookieJarSettings::UpdateIsOnContentBlockingAllowList(
 // static
 bool CookieJarSettings::IsRejectThirdPartyContexts(uint32_t aCookieBehavior) {
   return aCookieBehavior == nsICookieService::BEHAVIOR_REJECT_TRACKER ||
-         aCookieBehavior ==
-             nsICookieService::BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN;
+         aCookieBehavior == nsICookieService::BEHAVIOR_PARTITION_FOREIGN;
 }
 
 NS_IMETHODIMP

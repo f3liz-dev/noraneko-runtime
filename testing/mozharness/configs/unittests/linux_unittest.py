@@ -94,6 +94,7 @@ config = {
                 "--setpref=webgl.force-enabled=true",
                 "--quiet",
                 "--log-errorsummary=%(error_summary_file)s",
+                "--log-testsummary=%(test_summary_file)s",
                 "--use-test-media-devices",
                 "--screenshot-on-fail",
                 "--cleanup-crashes",
@@ -122,6 +123,7 @@ config = {
                 "--self-test",
                 "--symbols-path=%(symbols_path)s",
                 "--log-errorsummary=%(error_summary_file)s",
+                "--log-testsummary=%(test_summary_file)s",
                 "--utility-path=tests/bin",
             ],
             "run_filename": "runxpcshelltests.py",
@@ -179,11 +181,20 @@ config = {
             "--subsuite=devtools",
             "--timeout=1200",
         ],
+        # Only runs through scripts/devtools_compat.py, which provisions a server.
+        "mochitest-devtools-compat": [
+            "--flavor=browser",
+            "--subsuite=devtools-compat",
+        ],
         "mochitest-browser-a11y": ["--flavor=browser", "--subsuite=a11y"],
         "mochitest-browser-media": ["--flavor=browser", "--subsuite=media-bc"],
         "mochitest-browser-translations": [
             "--flavor=browser",
             "--subsuite=translations",
+        ],
+        "mochitest-browser-chrome-ml-models": [
+            "--flavor=browser",
+            "--subsuite=ml-models",
         ],
         "mochitest-a11y": ["--flavor=a11y", "--disable-e10s"],
         "mochitest-remote": ["--flavor=browser", "--subsuite=remote"],
@@ -261,8 +272,6 @@ config = {
     "vcs_output_timeout": 1000,
     "minidump_save_path": "%(abs_work_dir)s/../minidumps",
     "unstructured_flavors": {
-        "gtest": [],
-        "cppunittest": [],
         "jittest": [],
     },
     "tooltool_cache": "/builds/worker/tooltool-cache",

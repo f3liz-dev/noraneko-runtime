@@ -50,6 +50,11 @@ private fun JsonWriter.state(
     name(Keys.SELECTED_TAB_ID_KEY)
     value(state.selectedTabId)
 
+    state.translationEngine.isEngineSupported?.let { isEngineSupported ->
+        name(Keys.TRANSLATIONS_ENGINE_IS_SUPPORTED_KEY)
+        value(isEngineSupported)
+    }
+
     name(Keys.SESSION_STATE_TUPLES_KEY)
 
     beginArray()
@@ -109,6 +114,9 @@ private fun JsonWriter.tab(
 
         name(Keys.SESSION_CREATED_AT)
         value(tab.createdAt)
+
+        name(Keys.SESSION_LAST_VISIBLE_AT)
+        value(tab.lastVisibleAt)
 
         name(Keys.SESSION_LAST_MEDIA_URL)
         value(tab.lastMediaAccessState.lastMediaUrl)

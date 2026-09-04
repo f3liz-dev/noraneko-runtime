@@ -1,37 +1,35 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "GfxInfo.h"
 
-#include "gfxConfig.h"
+#include <batclass.h>  // for BATTERY_*
+#include <devguid.h>   // for GUID_DEVCLASS_BATTERY
+#include <intrin.h>
+#include <setupapi.h>  // for SetupDi*
+#include <windows.h>
+#include <winioctl.h>  // for IOCTL_*
+
 #include "GfxDriverInfo.h"
+#include "gfxConfig.h"
 #include "gfxWindowsPlatform.h"
-#include "jsapi.h"
 #include "js/PropertyAndElement.h"  // JS_SetElement, JS_SetProperty
+#include "jsapi.h"
+#include "mozilla/Components.h"
+#include "mozilla/PodOperations.h"
+#include "mozilla/Preferences.h"
+#include "mozilla/SSE.h"
+#include "mozilla/WindowsProcessMitigations.h"
+#include "mozilla/gfx/DeviceManagerDx.h"
+#include "mozilla/gfx/Logging.h"
+#include "mozilla/widget/WinRegistry.h"
 #include "nsExceptionHandler.h"
 #include "nsPrintfCString.h"
 #include "nsUnicharUtils.h"
 #include "prenv.h"
 #include "prprf.h"
 #include "xpcpublic.h"
-
-#include "mozilla/Components.h"
-#include "mozilla/PodOperations.h"
-#include "mozilla/Preferences.h"
-#include "mozilla/gfx/DeviceManagerDx.h"
-#include "mozilla/gfx/Logging.h"
-#include "mozilla/SSE.h"
-#include "mozilla/widget/WinRegistry.h"
-#include "mozilla/WindowsProcessMitigations.h"
-
-#include <intrin.h>
-#include <windows.h>
-#include <devguid.h>   // for GUID_DEVCLASS_BATTERY
-#include <setupapi.h>  // for SetupDi*
-#include <winioctl.h>  // for IOCTL_*
-#include <batclass.h>  // for BATTERY_*
 
 using namespace mozilla;
 using namespace mozilla::gfx;
@@ -530,8 +528,7 @@ nsresult GfxInfo::Init() {
     if (len < sizeof(sysdir)) {
       nsString rdpudd(sysdir);
       rdpudd.AppendLiteral("\\rdpudd.dll");
-      gfxWindowsPlatform::GetDLLVersion(rdpudd.BeginReading(),
-                                        mDriverVersion[0]);
+      gfxWindowsPlatform::GetDLLVersion(rdpudd.get(), mDriverVersion[0]);
       mDriverDate[0].AssignLiteral("01-01-1970");
 
       // 0x1414 is Microsoft; 0xfefe is an invented (and unused) code
@@ -1616,11 +1613,8 @@ const nsTArray<RefPtr<GfxDriverInfo>>& GfxInfo::GetGfxDriverInfo() {
     ////////////////////////////////////
     // FEATURE_DX_P010
 
-    APPEND_TO_DRIVER_BLOCKLIST2(
-        OperatingSystem::Windows, DeviceFamily::NvidiaAll,
-        nsIGfxInfo::FEATURE_DX_P010, nsIGfxInfo::FEATURE_BLOCKED_DEVICE,
-        DRIVER_LESS_THAN, GfxDriverInfo::allDriverVersions,
-        "FEATURE_UNQUALIFIED_P010_NVIDIA");
+    ////////////////////////////////////
+    // FEATURE_VIDEO_HDR
 
     ////////////////////////////////////
     // FEATURE_HW_DECODED_VIDEO_ZERO_COPY
@@ -1665,13 +1659,6 @@ const nsTArray<RefPtr<GfxDriverInfo>>& GfxInfo::GetGfxDriverInfo() {
 
     ////////////////////////////////////
     // FEATURE_HW_DECODED_VIDEO_ZERO_COPY - ALLOWLIST
-#ifdef EARLY_BETA_OR_EARLIER
-    APPEND_TO_DRIVER_BLOCKLIST2(OperatingSystem::Windows, DeviceFamily::All,
-                                nsIGfxInfo::FEATURE_HW_DECODED_VIDEO_ZERO_COPY,
-                                nsIGfxInfo::FEATURE_ALLOW_ALWAYS,
-                                DRIVER_COMPARISON_IGNORED, V(0, 0, 0, 0),
-                                "FEATURE_ROLLOUT_ALL");
-#endif
     APPEND_TO_DRIVER_BLOCKLIST2(
         OperatingSystem::Windows, DeviceFamily::IntelAll,
         nsIGfxInfo::FEATURE_HW_DECODED_VIDEO_ZERO_COPY,
@@ -1767,6 +1754,15 @@ const nsTArray<RefPtr<GfxDriverInfo>>& GfxInfo::GetGfxDriverInfo() {
         nsIGfxInfo::FEATURE_WEBRENDER, nsIGfxInfo::FEATURE_BLOCKED_DEVICE,
         DRIVER_LESS_THAN, GfxDriverInfo::allDriverVersions,
         "INTEL_DEVICE_GEN5_OR_OLDER");
+
+    // Bug 1970532 - Intel D3D11 driver crash.
+    // Known-bad versions: 31.0.101.4032, .4091, .4146, .4255, .4314.
+    APPEND_TO_DRIVER_BLOCKLIST_RANGE(
+        OperatingSystem::Windows10or11, DeviceFamily::IntelAll,
+        nsIGfxInfo::FEATURE_WEBRENDER,
+        nsIGfxInfo::FEATURE_BLOCKED_DRIVER_VERSION, DRIVER_BETWEEN_INCLUSIVE,
+        V(31, 0, 101, 4032), V(31, 0, 101, 4314), "FEATURE_FAILURE_BUG_1970532",
+        "31.0.101.4032 - 31.0.101.4314");
 
     APPEND_TO_DRIVER_BLOCKLIST2(
         OperatingSystem::Windows, DeviceFamily::NvidiaWebRenderBlocked,

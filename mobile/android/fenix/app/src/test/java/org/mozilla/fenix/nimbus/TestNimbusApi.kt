@@ -46,13 +46,13 @@ abstract class TestNimbusApi(
         return false
     }
 
-    override fun applyPendingExperiments(): Job {
+    override fun applyPendingExperiments(initial: Boolean): Job {
         return Job()
     }
 
     override val context: Context
         get() = testContext
 
-        override var experimentParticipation: Boolean = true
-        override var rolloutParticipation: Boolean = true
+    override var experimentParticipation: Boolean = true
+    override var rolloutParticipation: Boolean = true
 }

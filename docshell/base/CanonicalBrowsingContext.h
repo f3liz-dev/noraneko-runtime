@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -36,6 +34,7 @@ class nsBrowserStatusFilter;
 class nsSecureBrowserUI;
 class CallerWillNotifyHistoryIndexAndLengthChanges;
 class nsITimer;
+class nsIScopedPrefs;
 
 namespace mozilla {
 enum class CallState;
@@ -56,6 +55,7 @@ class BrowserBridgeParent;
 class FeaturePolicy;
 struct LoadURIOptions;
 class MediaController;
+enum class AudioFocusInterruptAction : uint8_t;
 struct LoadingSessionHistoryInfo;
 class SSCacheCopy;
 class WindowGlobalParent;
@@ -75,7 +75,7 @@ class CanonicalBrowsingContext final : public BrowsingContext {
   static CanonicalBrowsingContext* Cast(BrowsingContext* aContext);
   static const CanonicalBrowsingContext* Cast(const BrowsingContext* aContext);
   static already_AddRefed<CanonicalBrowsingContext> Cast(
-      already_AddRefed<BrowsingContext>&& aContext);
+      already_AddRefed<BrowsingContext> aContext);
 
   bool IsOwnedByProcess(uint64_t aProcessId) const {
     return mProcessId == aProcessId;
@@ -83,6 +83,7 @@ class CanonicalBrowsingContext final : public BrowsingContext {
   bool IsEmbeddedInProcess(uint64_t aProcessId) const {
     return mEmbedderProcessId == aProcessId;
   }
+  bool IsKnownInSubTree(uint64_t aProcessId);
   uint64_t OwnerProcessId() const { return mProcessId; }
   uint64_t EmbedderProcessId() const { return mEmbedderProcessId; }
   ContentParent* GetContentParent() const;
@@ -218,11 +219,6 @@ class CanonicalBrowsingContext final : public BrowsingContext {
   // autoplay media.
   void NotifyStartDelayedAutoplayMedia();
 
-  // This function is used to mute or unmute all media within a tab. It would
-  // set the media mute property for the top level window and propagate it to
-  // other top level windows in other processes.
-  void NotifyMediaMutedChanged(bool aMuted, ErrorResult& aRv);
-
   // Return the number of unique site origins by iterating all given BCs,
   // including their subtrees.
   static uint32_t CountSiteOrigins(
@@ -235,6 +231,10 @@ class CanonicalBrowsingContext final : public BrowsingContext {
   // This function would propogate the action to its all child browsing contexts
   // in content processes.
   void UpdateMediaControlAction(const MediaControlAction& aAction);
+
+  // Propagate an audio-focus interrupt (suspend or resume) to this browsing
+  // context tree across content processes.
+  void UpdateMediaSessionInterrupt(AudioFocusInterruptAction aAction);
 
   // Triggers a load in the process
   using BrowsingContext::LoadURI;
@@ -309,8 +309,8 @@ class CanonicalBrowsingContext final : public BrowsingContext {
   void ReplacedBy(CanonicalBrowsingContext* aNewContext,
                   const NavigationIsolationOptions& aRemotenessOptions);
 
-  bool HasHistoryEntry(nsISHEntry* aEntry);
-  bool HasLoadingHistoryEntry(nsISHEntry* aEntry) {
+  bool HasHistoryEntry(SessionHistoryEntry* aEntry);
+  bool HasLoadingHistoryEntry(SessionHistoryEntry* aEntry) {
     for (const LoadingSessionHistoryEntry& loading : mLoadingEntries) {
       if (loading.mEntry == aEntry) {
         return true;
@@ -319,7 +319,8 @@ class CanonicalBrowsingContext final : public BrowsingContext {
     return false;
   }
 
-  void SwapHistoryEntries(nsISHEntry* aOldEntry, nsISHEntry* aNewEntry);
+  void SwapHistoryEntries(SessionHistoryEntry* aOldEntry,
+                          SessionHistoryEntry* aNewEntry);
 
   void AddLoadingSessionHistoryEntry(uint64_t aLoadId,
                                      SessionHistoryEntry* aEntry);
@@ -329,6 +330,12 @@ class CanonicalBrowsingContext final : public BrowsingContext {
 
   MOZ_CAN_RUN_SCRIPT
   void HistoryCommitIndexAndLength();
+
+  void DeactivateDocuments();
+
+  MOZ_CAN_RUN_SCRIPT
+  void ReactivateDocuments(SessionHistoryEntry* aEntry,
+                           SessionHistoryEntry* aPreviousEntryForActivation);
 
   void SynchronizeLayoutHistoryState();
 
@@ -367,7 +374,7 @@ class CanonicalBrowsingContext final : public BrowsingContext {
 
  private:
   static nsresult ContainsSameOriginBfcacheEntry(
-      nsISHEntry* aEntry, mozilla::dom::BrowsingContext* aBC,
+      SessionHistoryEntry* aEntry, mozilla::dom::BrowsingContext* aBC,
       int32_t aChildIndex, void* aData);
 
  public:
@@ -386,21 +393,27 @@ class CanonicalBrowsingContext final : public BrowsingContext {
     mPriorityActive = aIsActive;
   }
 
+  void GetDownloadFolderOverride(nsString& aOut) const {
+    if (IsTop()) {
+      aOut = mDownloadFolderOverride;
+    }
+  }
+  void SetDownloadFolderOverride(const nsAString& aValue, ErrorResult& aRv) {
+    if (!IsTop()) {
+      aRv.ThrowInvalidStateError(
+          "downloadFolderOverride can only be set on the top "
+          "BrowsingContext");
+      return;
+    }
+    mDownloadFolderOverride = aValue;
+  }
+
   void SetIsActive(bool aIsActive, ErrorResult& aRv);
 
   void SetIsActiveInternal(bool aIsActive, ErrorResult& aRv) {
     ExplicitActiveStatus newValue = aIsActive ? ExplicitActiveStatus::Active
                                               : ExplicitActiveStatus::Inactive;
-    bool changed = GetExplicitActive() != newValue;
     SetExplicitActive(newValue, aRv);
-    if (changed) {
-      nsCOMPtr<nsIObserverService> observerService =
-          mozilla::services::GetObserverService();
-      if (observerService) {
-        observerService->NotifyObservers(
-            ToSupports(this), "browsing-context-active-change", nullptr);
-      }
-    }
   }
 
   void SetTouchEventsOverride(dom::TouchEventsOverride, ErrorResult& aRv);
@@ -408,6 +421,15 @@ class CanonicalBrowsingContext final : public BrowsingContext {
                                           ErrorResult& aRv);
 
   bool IsReplaced() const { return mIsReplaced; }
+
+#ifdef ANDROID
+  uint32_t GetAndroidAppLinkLaunchType() const {
+    return mAndroidAppLinkLaunchType;
+  }
+  void SetAndroidAppLinkLaunchType(uint32_t aType) {
+    mAndroidAppLinkLaunchType = aType;
+  }
+#endif
 
   const JS::Heap<JS::Value>& PermanentKey() { return mPermanentKey; }
   void ClearPermanentKey() { mPermanentKey.setNull(); }
@@ -442,9 +464,13 @@ class CanonicalBrowsingContext final : public BrowsingContext {
   void SetForceAppWindowActive(bool, ErrorResult&);
   void RecomputeAppWindowVisibility();
 
+  void IncrementDocumentPiPWindowCount();
+  void DecrementDocumentPiPWindowCount();
+
   already_AddRefed<nsISHEntry> GetMostRecentLoadingSessionHistoryEntry();
 
   already_AddRefed<BounceTrackingState> GetBounceTrackingState();
+  already_AddRefed<nsIScopedPrefs> GetScopedPrefs();
 
   bool CanOpenModalPicker();
 
@@ -651,6 +677,10 @@ class CanonicalBrowsingContext final : public BrowsingContext {
   RefPtr<nsSecureBrowserUI> mSecureBrowserUI;
   RefPtr<BrowsingContextWebProgress> mWebProgress;
 
+  // ScopedPrefs is set on all top-level browsing contexts and is shared
+  // across navigation, therefore lifetime of tab.
+  nsCOMPtr<nsIScopedPrefs> mScopedPrefs;
+
   nsCOMPtr<nsIWebProgressListener> mDocShellProgressBridge;
   RefPtr<nsBrowserStatusFilter> mStatusFilter;
 
@@ -675,10 +705,22 @@ class CanonicalBrowsingContext final : public BrowsingContext {
   // active in the process priority manager.
   bool mPriorityActive = false;
 
+  // If this is a top level context, an override for the default downloads
+  // directory, set via WebDriver BiDi's.
+  nsString mDownloadFolderOverride;
+
   // See CanonicalBrowsingContext.forceAppWindowActive.
   bool mForceAppWindowActive = false;
 
+  uint32_t mDocumentPiPWindowCount = 0;
+
   bool mIsReplaced = false;
+
+#ifdef ANDROID
+  // App link launch type for the current load; 0 means not an app link.
+  // Stored here so it survives process switches and COOP-triggered BC swaps.
+  uint32_t mAndroidAppLinkLaunchType = 0;
+#endif
 
   // A Promise created when cloning documents for printing.
   RefPtr<GenericNonExclusivePromise> mClonePromise;

@@ -1,6 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,7 +5,6 @@
 #include "mozilla/ScopeExit.h"
 
 #include "ds/SlimLinkedList.h"
-
 #include "jsapi-tests/tests.h"
 
 using namespace js;
@@ -19,10 +15,18 @@ struct IntElement : public SlimLinkedListElement<IntElement> {
   void incr() { ++value; }
 };
 
+struct AutoIntList : public SlimLinkedList<IntElement> {
+  using SlimLinkedList::SlimLinkedList;
+  ~AutoIntList() {
+    drain([](auto* e) { delete e; });
+  }
+};
+
 BEGIN_TEST(testSlimLinkedList) {
   CHECK(TestList());
   CHECK(TestMove());
   CHECK(TestExtendLists());
+  CHECK(TestRemoveRange());
   return true;
 }
 
@@ -49,6 +53,10 @@ template <size_t N>
   CHECK(count == N);
 
   return true;
+}
+
+static void DeleteListElements(SlimLinkedList<IntElement>& list) {
+  list.drain([](auto* e) { delete e; });
 }
 
 bool TestList() {
@@ -211,6 +219,87 @@ bool TestMove() {
   CHECK(list2.isEmpty());
 
   list3.clear();
+
+  return true;
+}
+
+bool TestRemoveRange() {
+  // Remove a single element.
+  {
+    SlimLinkedList<IntElement> list;
+    CHECK(PushListValues(list, std::array{0, 1, 2}));
+
+    IntElement* element = list.getFirst()->getNext();  // 1
+    SlimLinkedList<IntElement> removed = list.removeRange(element, element);
+
+    CHECK(CheckListValues(list, std::array{0, 2}));
+    CHECK(CheckListValues(removed, std::array{1}));
+
+    DeleteListElements(list);
+    DeleteListElements(removed);
+  }
+
+  // Remove every element.
+  {
+    SlimLinkedList<IntElement> list;
+    CHECK(PushListValues(list, std::array{0, 1, 2}));
+
+    SlimLinkedList<IntElement> removed =
+        list.removeRange(list.getFirst(), list.getLast());
+
+    CHECK(list.isEmpty());
+    CHECK(CheckListValues(removed, std::array{0, 1, 2}));
+
+    DeleteListElements(removed);
+  }
+
+  // Remove a range from the middle.
+  {
+    SlimLinkedList<IntElement> list;
+    CHECK(PushListValues(list, std::array{0, 1, 2, 3, 4}));
+
+    IntElement* from = list.getFirst()->getNext();  // 1
+    IntElement* to = from->getNext();               // 2
+    SlimLinkedList<IntElement> removed = list.removeRange(from, to);
+
+    CHECK(CheckListValues(list, std::array{0, 3, 4}));
+    CHECK(CheckListValues(removed, std::array{1, 2}));
+
+    DeleteListElements(list);
+    DeleteListElements(removed);
+  }
+
+  // Remove a prefix.
+  {
+    SlimLinkedList<IntElement> list;
+    CHECK(PushListValues(list, std::array{0, 1, 2, 3, 4}));
+
+    IntElement* from = list.getFirst();           // 0
+    IntElement* to = from->getNext()->getNext();  // 2
+    SlimLinkedList<IntElement> removed = list.removeRange(from, to);
+
+    CHECK(CheckListValues(list, std::array{3, 4}));
+    CHECK(CheckListValues(removed, std::array{0, 1, 2}));
+
+    DeleteListElements(list);
+    DeleteListElements(removed);
+  }
+
+  // Remove a suffix.
+  {
+    SlimLinkedList<IntElement> list;
+    CHECK(PushListValues(list, std::array{0, 1, 2, 3, 4}));
+
+    IntElement* from = list.getLast()->getPrev()->getPrev();  // 2
+    IntElement* to = list.getLast();                          // 4
+    SlimLinkedList<IntElement> removed = list.removeRange(from, to);
+
+    CHECK(CheckListValues(list, std::array{0, 1}));
+    CHECK(CheckListValues(removed, std::array{2, 3, 4}));
+
+    DeleteListElements(list);
+    DeleteListElements(removed);
+  }
 
   return true;
 }

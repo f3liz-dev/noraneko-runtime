@@ -4,26 +4,13 @@
 
 package mozilla.components.service.fxa.sync
 
-import mozilla.appservices.syncmanager.SyncAuthInfo
-import mozilla.components.service.fxa.SyncEngine
+import mozilla.components.concept.sync.SyncEngine
 
 /**
  * Converts from a list of raw strings describing engines to a set of [SyncEngine] objects.
  */
 fun List<String>.toSyncEngines(): Set<SyncEngine> {
     return this.map { it.toSyncEngine() }.toSet()
-}
-
-/**
- * Conversion from our SyncAuthInfo into its "native" version used at the interface boundary.
- */
-internal fun mozilla.components.concept.sync.SyncAuthInfo.toNative(): SyncAuthInfo {
-    return SyncAuthInfo(
-        kid = this.kid,
-        fxaAccessToken = this.fxaAccessToken,
-        syncKey = this.syncKey,
-        tokenserverUrl = this.tokenServerUrl,
-    )
 }
 
 internal fun String.toSyncEngine(): SyncEngine {

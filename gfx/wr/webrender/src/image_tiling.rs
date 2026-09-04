@@ -14,22 +14,10 @@ use std::ops::Range;
 /// treat the primitive as not repeated.
 /// This can let us avoid unnecessary work later to handle some
 /// of the parameters.
-pub fn simplify_repeated_primitive(
-    stretch_size: &LayoutSize,
-    tile_spacing: &mut LayoutSize,
-    prim_rect: &mut LayoutRect,
-) {
-    let stride = *stretch_size + *tile_spacing;
-
-    if stride.width >= prim_rect.width() {
-        tile_spacing.width = 0.0;
-        prim_rect.max.x = f32::min(prim_rect.min.x + stretch_size.width, prim_rect.max.x);
-    }
-    if stride.height >= prim_rect.height() {
-        tile_spacing.height = 0.0;
-        prim_rect.max.y = f32::min(prim_rect.min.y + stretch_size.height, prim_rect.max.y);
-    }
-}
+// `simplify_repeated_primitive` now lives in `webrender_api::prim_geometry` so
+// content-process interning can share it. Re-exported here to keep existing
+// references working.
+pub use api::prim_geometry::simplify_repeated_primitive;
 
 pub struct Repetition {
     pub origin: LayoutPoint,
@@ -47,17 +35,11 @@ pub struct RepetitionIterator {
     stride: LayoutSize,
 }
 
-impl RepetitionIterator {
-    pub fn num_repetitions(&self) -> usize {
-        (self.y_count * self.x_count) as usize
-    }
-}
-
 impl Iterator for RepetitionIterator {
     type Item = Repetition;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.current_x == self.x_count {
+        if self.current_x >= self.x_count {
             self.current_y += 1;
             if self.current_y >= self.y_count {
                 return None;
@@ -94,63 +76,76 @@ impl Iterator for RepetitionIterator {
     }
 }
 
+/// Enumerate the repetitions of a pattern that cover `coverage_rect`.
 pub fn repetitions(
-    prim_rect: &LayoutRect,
-    visible_rect: &LayoutRect,
+    pattern_rect: &LayoutRect,
+    coverage_rect: &LayoutRect,
     stride: LayoutSize,
 ) -> RepetitionIterator {
-    let visible_rect = match prim_rect.intersection(&visible_rect) {
-        Some(rect) => rect,
-        None => {
-            return RepetitionIterator {
-                current_origin: LayoutPoint::zero(),
-                initial_origin: LayoutPoint::zero(),
-                current_x: 0,
-                current_y: 0,
-                x_count: 0,
-                y_count: 0,
-                stride,
-                row_flags: EdgeMask::empty(),
-            }
+    if coverage_rect.is_empty() {
+        return RepetitionIterator {
+            current_origin: LayoutPoint::zero(),
+            initial_origin: LayoutPoint::zero(),
+            current_x: 0,
+            current_y: 0,
+            x_count: 0,
+            y_count: 0,
+            stride,
+            row_flags: EdgeMask::empty(),
         }
-    };
+    }
 
     assert!(stride.width > 0.0);
     assert!(stride.height > 0.0);
 
-    let nx = if visible_rect.min.x > prim_rect.min.x {
-        f32::floor((visible_rect.min.x - prim_rect.min.x) / stride.width)
+    let nx = if coverage_rect.min.x > pattern_rect.min.x {
+        f32::floor((coverage_rect.min.x - pattern_rect.min.x) / stride.width)
     } else {
         0.0
     };
 
-    let ny = if visible_rect.min.y > prim_rect.min.y {
-        f32::floor((visible_rect.min.y - prim_rect.min.y) / stride.height)
+    let ny = if coverage_rect.min.y > pattern_rect.min.y {
+        f32::floor((coverage_rect.min.y - pattern_rect.min.y) / stride.height)
     } else {
         0.0
     };
 
-    let x0 = prim_rect.min.x + nx * stride.width;
-    let y0 = prim_rect.min.y + ny * stride.height;
+    let x0 = pattern_rect.min.x + nx * stride.width;
+    let y0 = pattern_rect.min.y + ny * stride.height;
 
-    let x_most = visible_rect.max.x;
-    let y_most = visible_rect.max.y;
+    let x_most = coverage_rect.max.x;
+    let y_most = coverage_rect.max.y;
 
-    let x_count = f32::ceil((x_most - x0) / stride.width) as i32;
-    let y_count = f32::ceil((y_most - y0) / stride.height) as i32;
+    // The coverage rect can lie entirely before the anchor, which yields a
+    // negative count.
+    let mut x_count = f32::ceil((x_most - x0) / stride.width).max(0.0);
+    let mut y_count = f32::ceil((y_most - y0) / stride.height).max(0.0);
+
+    // Sanity-check that we don't have anything that may cause the iterator
+    // to run indefinitely.
+    let valid = x_count.is_finite()
+        & y_count.is_finite()
+        & stride.is_finite();
+
+    if !valid {
+        x_count = 0.0;
+        y_count = 0.0;
+    }
+
 
     let mut row_flags = EdgeMask::TOP;
-    if y_count == 1 {
+    if y_count as i32 == 1 {
         row_flags |= EdgeMask::BOTTOM;
     }
+
 
     RepetitionIterator {
         current_origin: LayoutPoint::new(x0, y0),
         initial_origin: LayoutPoint::new(x0, y0),
         current_x: 0,
         current_y: 0,
-        x_count,
-        y_count,
+        x_count: x_count as i32,
+        y_count: y_count as i32,
         row_flags,
         stride,
     }

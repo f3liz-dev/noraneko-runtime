@@ -1,6 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: sw=2 ts=8 et :
- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -11,7 +8,6 @@
 
 #include "IMEData.h"
 #include "TextEvents.h"
-
 #include "mozilla/Assertions.h"
 #include "mozilla/IMEStateManager.h"
 #include "mozilla/IntegerPrintfMacros.h"
@@ -106,6 +102,7 @@ void ContentCache::AssertIfInvalid() const {
           ? "Nothing"
           : nsPrintfCString("%u", mCompositionStart.value()).get());
   CrashReporter::AppendAppNotesToCrashReport(info);
+  NS_WARNING(info.get());
   MOZ_DIAGNOSTIC_CRASH("Invalid ContentCache data");
 #endif  // #if MOZ_DIAGNOSTIC_ASSERT_ENABLED
 }
@@ -439,14 +436,17 @@ bool ContentCacheInChild::CacheTextRects(nsIWidget* aWidget,
     //      composition immediately, we should cache next character of current
     //      composition too.
     uint32_t length = textComposition->LastData().Length() + 1;
-    mTextRectArray = Some(TextRectArray(mCompositionStart.value()));
-    if (NS_WARN_IF(!QueryCharRectArray(aWidget, mTextRectArray->mStart, length,
-                                       mTextRectArray->mRects))) {
+    mTextRectArray.reset();
+    RectArray rects;
+    if (NS_WARN_IF(!QueryCharRectArray(aWidget, mCompositionStart.value(),
+                                       length, rects))) {
       MOZ_LOG(sContentCacheLog, LogLevel::Error,
               ("0x%p   CacheTextRects(), FAILED, "
                "couldn't retrieve text rect array of the composition string",
                this));
-      mTextRectArray.reset();
+    } else {
+      mTextRectArray = Some(TextRectArray(mCompositionStart.value()));
+      mTextRectArray->mRects = std::move(rects);
     }
   } else {
     mCompositionStart.reset();
@@ -607,6 +607,7 @@ bool ContentCacheInChild::CacheTextRects(nsIWidget* aWidget,
   // or undo the last commit.  Then, IME requires the character rects for
   // positioning their UI.
   if (mLastCommit.isSome()) {
+    RectArray rects;
     mLastCommitStringTextRectArray =
         Some(TextRectArray(mLastCommit->StartOffset()));
     if (mLastCommit->Length() == 1 && mSelection.isSome() &&
@@ -615,15 +616,17 @@ bool ContentCacheInChild::CacheTextRects(nsIWidget* aWidget,
         !mSelection->mAnchorCharRects[ePrevCharRect].IsEmpty()) {
       mLastCommitStringTextRectArray->mRects.AppendElement(
           mSelection->mAnchorCharRects[ePrevCharRect]);
-    } else if (NS_WARN_IF(!QueryCharRectArray(
-                   aWidget, mLastCommit->StartOffset(), mLastCommit->Length(),
-                   mLastCommitStringTextRectArray->mRects))) {
+    } else if (NS_WARN_IF(!QueryCharRectArray(aWidget,
+                                              mLastCommit->StartOffset(),
+                                              mLastCommit->Length(), rects))) {
       MOZ_LOG(sContentCacheLog, LogLevel::Error,
               ("0x%p   CacheTextRects(), FAILED, "
                "couldn't retrieve text rect array of the last commit string",
                this));
       mLastCommitStringTextRectArray.reset();
       mLastCommit.reset();
+    } else {
+      mLastCommitStringTextRectArray->mRects = std::move(rects);
     }
     MOZ_ASSERT((mLastCommitStringTextRectArray.isSome()
                     ? mLastCommitStringTextRectArray->mRects.Length()
@@ -755,17 +758,6 @@ void ContentCacheInParent::AssignContent(const ContentCache& aOther,
 bool ContentCacheInParent::HandleQueryContentEvent(
     WidgetQueryContentEvent& aEvent, nsIWidget* aWidget) const {
   MOZ_ASSERT(aWidget);
-
-  // ContentCache doesn't store offset of its start with XP linebreaks.
-  // So, we don't support to query contents relative to composition start
-  // offset with XP linebreaks.
-  if (NS_WARN_IF(!aEvent.mUseNativeLineBreak)) {
-    MOZ_LOG(sContentCacheLog, LogLevel::Error,
-            ("0x%p HandleQueryContentEvent(), FAILED due to query with XP "
-             "linebreaks",
-             this));
-    return false;
-  }
 
   if (NS_WARN_IF(!aEvent.mInput.IsValidOffset())) {
     MOZ_LOG(
@@ -1392,14 +1384,13 @@ void ContentCacheInParent::OnSelectionEvent(
   MOZ_LOG(sContentCacheLog, LogLevel::Info,
           ("0x%p OnSelectionEvent(aEvent={ "
            "mMessage=%s, mOffset=%u, mLength=%u, mReversed=%s, "
-           "mExpandToClusterBoundary=%s, mUseNativeLineBreak=%s }), "
+           "mExpandToClusterBoundary=%s }), "
            "PendingEventsNeedingAck()=%u, WidgetHasComposition()=%s, "
            "mHandlingCompositions.Length()=%zu, HasPendingCommit()=%s, "
            "mIsChildIgnoringCompositionEvents=%s",
            this, ToChar(aSelectionEvent.mMessage), aSelectionEvent.mOffset,
            aSelectionEvent.mLength, TrueOrFalse(aSelectionEvent.mReversed),
            TrueOrFalse(aSelectionEvent.mExpandToClusterBoundary),
-           TrueOrFalse(aSelectionEvent.mUseNativeLineBreak),
            PendingEventsNeedingAck(), TrueOrFalse(WidgetHasComposition()),
            mHandlingCompositions.Length(), TrueOrFalse(HasPendingCommit()),
            TrueOrFalse(mIsChildIgnoringCompositionEvents)));

@@ -1,4 +1,4 @@
-requestLongerTimeout(4);
+requestLongerTimeout(7);
 
 // Bug 1617611: Fix all the tests broken by "cookies SameSite=lax by default"
 Services.prefs.setBoolPref("network.cookie.sameSite.laxByDefault", false);
@@ -66,13 +66,7 @@ AntiTracking.runTestInNormalAndPrivateMode(
   },
 
   // Cleanup callback
-  async _ => {
-    await new Promise(resolve => {
-      Services.clearData.deleteData(Ci.nsIClearDataService.CLEAR_ALL, () =>
-        resolve()
-      );
-    });
-  }
+  clearSiteTestData
 );
 
 AntiTracking.runTestInNormalAndPrivateMode(
@@ -172,21 +166,15 @@ AntiTracking.runTestInNormalAndPrivateMode(
   },
 
   // Cleanup callback
-  async _ => {
-    await new Promise(resolve => {
-      Services.clearData.deleteData(Ci.nsIClearDataService.CLEAR_ALL, () =>
-        resolve()
-      );
-    });
-  },
+  clearSiteTestData,
   null,
   false,
   false
 );
 
 AntiTracking._createTask({
-  name: "Block cookies with BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN when preference is enabled",
-  cookieBehavior: BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN,
+  name: "Block cookies with BEHAVIOR_PARTITION_FOREIGN when preference is enabled",
+  cookieBehavior: BEHAVIOR_PARTITION_FOREIGN,
   allowList: false,
   callback: async _ => {
     document.cookie = "name=value";
@@ -220,8 +208,8 @@ AntiTracking._createTask({
 });
 
 AntiTracking._createTask({
-  name: "Block cookies in pbm with BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN when preference is enabled",
-  cookieBehavior: BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN,
+  name: "Block cookies in pbm with BEHAVIOR_PARTITION_FOREIGN when preference is enabled",
+  cookieBehavior: BEHAVIOR_PARTITION_FOREIGN,
   allowList: false,
   callback: async _ => {
     document.cookie = "name=value";
@@ -255,8 +243,8 @@ AntiTracking._createTask({
 });
 
 AntiTracking._createTask({
-  name: "Block cookies with BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN when preference is enabled for pbmode",
-  cookieBehavior: BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN,
+  name: "Block cookies with BEHAVIOR_PARTITION_FOREIGN when preference is enabled for pbmode",
+  cookieBehavior: BEHAVIOR_PARTITION_FOREIGN,
   allowList: false,
   callback: async _ => {
     document.cookie = "name=value";

@@ -1,115 +1,139 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 package org.mozilla.fenix.ui
 
-import android.os.Build
-import androidx.compose.ui.test.junit4.AndroidComposeTestRule
 import androidx.test.filters.SdkSuppress
 import org.junit.Ignore
 import org.junit.Rule
 import org.junit.Test
 import org.mozilla.fenix.customannotations.SmokeTest
-import org.mozilla.fenix.helpers.AppAndSystemHelper.dismissSetAsDefaultBrowserOnboardingDialog
-import org.mozilla.fenix.helpers.AppAndSystemHelper.runWithCondition
 import org.mozilla.fenix.helpers.AppAndSystemHelper.runWithLauncherIntent
+import org.mozilla.fenix.helpers.FenixTestRule
 import org.mozilla.fenix.helpers.HomeActivityIntentTestRule
-import org.mozilla.fenix.helpers.TestSetup
+import org.mozilla.fenix.helpers.TestHelper.closeApp
+import org.mozilla.fenix.helpers.TestHelper.restartApp
 import org.mozilla.fenix.helpers.perf.DetectMemoryLeaksRule
 import org.mozilla.fenix.ui.robots.homeScreen
+import androidx.compose.ui.test.junit4.v2.AndroidComposeTestRule as AndroidComposeTestRuleV2
 
-class OnboardingTest : TestSetup() {
+class OnboardingTest {
+    @get:Rule(order = 0)
+    val fenixTestRule: FenixTestRule = FenixTestRule(grantNotifications = false)
 
-    @get:Rule
+    @get:Rule(order = 1)
     val composeTestRule =
-        AndroidComposeTestRule(
-            HomeActivityIntentTestRule.withDefaultSettingsOverrides(launchActivity = false),
+        AndroidComposeTestRuleV2(
+            HomeActivityIntentTestRule.withDefaultSettingsOverrides(
+                launchActivity = false,
+                skipOnboarding = false,
+            ),
         ) { it.activity }
 
-    @get:Rule
-    val memoryLeaksRule = DetectMemoryLeaksRule()
+    @get:Rule(order = 2)
+    val memoryLeaksRule = DetectMemoryLeaksRule(composeTestRule = { composeTestRule })
 
-    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2122321
-    @Ignore("Failing: https://bugzilla.mozilla.org/show_bug.cgi?id=2021112")
-    @Test
-    fun verifyFirstOnboardingCardItemsTest() {
-        // Run UI test only on devices with Android version lower than 10
-        // because on Android 10 and above, the default browser dialog is shown and the first onboarding card is skipped
-        runWithCondition(Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
-            runWithLauncherIntent(composeTestRule) {
-                homeScreen(composeTestRule) {
-                    verifyFirstOnboardingCard()
-                }
-            }
-        }
-    }
-
-    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2122334
-    @Ignore("Failing: https://bugzilla.mozilla.org/show_bug.cgi?id=2021112")
-    @Test
-    fun verifyFirstOnboardingCardItemsFunctionalityTest() {
-        // Run UI test only on devices with Android version lower than 10
-        // because on Android 10 and above, the default browser dialog is shown and the first onboarding card is skipped
-        runWithCondition(Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
-            runWithLauncherIntent(composeTestRule) {
-                homeScreen(composeTestRule) {
-                    clickDefaultCardNotNowOnboardingButton()
-                    verifySecondOnboardingCard()
-                    swipeSecondOnboardingCardToRight()
-                }.clickSetAsDefaultBrowserOnboardingButton {
-                    verifyAndroidDefaultAppsMenuAppears()
-                }.goBackToOnboardingScreen(composeTestRule) {
-                    verifySecondOnboardingCard()
-                }
-            }
-        }
-    }
-
-    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2122343
-    @Ignore("Failing: https://bugzilla.mozilla.org/show_bug.cgi?id=2021112")
-    @Test
-    fun verifySecondOnboardingCardItemsTest() {
-        runWithLauncherIntent(composeTestRule) {
-            homeScreen(composeTestRule) {
-                // Check if the device is running on Android version lower than 10
-                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
-                    // If true, click the "Not Now" button from the first onboarding card
-                    clickDefaultCardNotNowOnboardingButton()
-                }
-                dismissSetAsDefaultBrowserOnboardingDialog()
-                verifySecondOnboardingCard()
-            }
-        }
-    }
-
-    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2122344
-    @Ignore("Failing: https://bugzilla.mozilla.org/show_bug.cgi?id=2021112")
-    @SmokeTest
-    @Test
-    fun verifyThirdOnboardingCardSignInFunctionalityTest() {
-        runWithLauncherIntent(composeTestRule) {
-            homeScreen(composeTestRule) {
-                // Check if the device is running on Android version lower than 10
-                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
-                    // If true, click the "Not Now" button from the first onboarding card
-                    clickDefaultCardNotNowOnboardingButton()
-                }
-                dismissSetAsDefaultBrowserOnboardingDialog()
-                verifySecondOnboardingCard()
-                clickAddSearchWidgetNotNowOnboardingButton()
-                verifyThirdOnboardingCard()
-            }.clickSignInOnboardingButton {
-                verifyTurnOnSyncMenu()
-            }
-        }
-    }
-
-    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2609732
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/3349493
     @SdkSuppress(minSdkVersion = 29)
-    @Ignore("Failing: https://bugzilla.mozilla.org/show_bug.cgi?id=2021112")
     @SmokeTest
     @Test
-    fun verifySetAsDefaultBrowserDialogWhileFirefoxIsNotSetAsDefaultBrowserTest() {
-        runWithLauncherIntent(composeTestRule) {
+    fun verifyTheTermsOfUseOnboardingCardTest() {
+        runWithLauncherIntent(composeTestRule.activityRule) {
             homeScreen(composeTestRule) {
-                verifySetAsDefaultBrowserDialogWhileFirefoxIsNotSetAsDefaultBrowser()
+                verifyTheTermsOfUseOnboardingCard()
+                clickTheOnboardingCardContinueButton()
+                clickTheSetAsDefaultBrowserDialogCancelButton()
+                verifyTheSetAsDefaultBrowserOnboardingCard()
+            }
+        }
+    }
+
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/3814795
+    @Ignore("Disabled temporarily,as the default prompt is being turned off for tests, for more info check: https://bugzilla.mozilla.org/show_bug.cgi?id=2051502")
+    @SdkSuppress(minSdkVersion = 29)
+    @SmokeTest
+    @Test
+    fun verifyTheSetAsDefaultBrowserOnboardingCardFunctionalityTest() {
+        runWithLauncherIntent(composeTestRule.activityRule) {
+            homeScreen(composeTestRule) {
+                verifyTheTermsOfUseOnboardingCard()
+                clickTheOnboardingCardContinueButton()
+                clickTheSetAsDefaultBrowserDialogCancelButton()
+                verifyTheSetAsDefaultBrowserOnboardingCard()
+            }
+        }
+    }
+
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/3349492
+    @SdkSuppress(minSdkVersion = 29)
+    @Test
+    fun verifyTheOnboardingCardOrderTest() {
+        runWithLauncherIntent(composeTestRule.activityRule) {
+            homeScreen(composeTestRule) {
+                verifyTheTermsOfUseOnboardingCard()
+                clickTheOnboardingCardContinueButton()
+
+                clickTheSetAsDefaultBrowserDialogCancelButton()
+                verifyTheSetAsDefaultBrowserOnboardingCard()
+                clickNotNowOnboardingCardButton()
+            }
+        }
+    }
+
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/3814666
+    @SdkSuppress(minSdkVersion = 29)
+    @Test
+    fun verifyTheTermsOfUseOnboardingCardCannotBeDismissedWithoutAcceptingTest() {
+        runWithLauncherIntent(composeTestRule.activityRule) {
+            homeScreen(composeTestRule) {
+                verifyTheTermsOfUseOnboardingCard()
+                swipeRightTheTermsOfUseOnboardingCard()
+                verifyTheTermsOfUseOnboardingCard()
+                restartApp(composeTestRule.activityRule)
+                verifyTheTermsOfUseOnboardingCard()
+                closeApp(composeTestRule.activityRule)
+                restartApp(composeTestRule.activityRule)
+                verifyTheTermsOfUseOnboardingCard()
+                clickTheOnboardingCardContinueButton()
+            }
+        }
+    }
+
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/3349494
+    @SdkSuppress(minSdkVersion = 29)
+    @Test
+    fun verifyTheSetAsDefaultBrowserOnboardingCardTest() {
+        runWithLauncherIntent(composeTestRule.activityRule) {
+            homeScreen(composeTestRule) {
+                verifyTheTermsOfUseOnboardingCard()
+                clickTheOnboardingCardContinueButton()
+                clickTheSetAsDefaultBrowserDialogCancelButton()
+                verifyTheSetAsDefaultBrowserOnboardingCard()
+                closeApp(composeTestRule.activityRule)
+                restartApp(composeTestRule.activityRule)
+                verifyTheTermsOfUseOnboardingCard()
+                clickTheOnboardingCardContinueButton()
+                clickTheSetAsDefaultBrowserDialogCancelButton()
+                verifyTheSetAsDefaultBrowserOnboardingCard()
+            }
+        }
+    }
+
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/3911762
+    @SdkSuppress(minSdkVersion = 29)
+    @SmokeTest
+    @Test
+    fun verifyEdgeToEdgeWallpaperAfterOnboardingTest() {
+        runWithLauncherIntent(composeTestRule.activityRule) {
+            homeScreen(composeTestRule) {
+                clickTheOnboardingCardContinueButton()
+                clickTheSetAsDefaultBrowserDialogCancelButton()
+                clickNotNowOnboardingCardButton()
+                clickContinueIfMarketingCardShown()
+            }
+            homeScreen(composeTestRule) {
+                verifyEdgeToEdgeWallpaperApplied(composeTestRule)
             }
         }
     }

@@ -9,9 +9,9 @@ description: >
 negative:
   phase: parse
   type: SyntaxError
-flags: [noStrict, explicit-resource-management]
+flags: [noStrict]
+features: [explicit-resource-management]
 ---*/
 
 $DONOTEVALUATE();
 (async function() { 'use strict'; { await using f = null; var f; } })
-

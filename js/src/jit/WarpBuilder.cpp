@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -24,9 +22,7 @@
 #include "vm/Interpreter.h"
 #include "vm/Opcodes.h"
 #include "vm/TypeofEqOperand.h"  // TypeofEqOperand
-#ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
-#  include "vm/UsingHint.h"
-#endif
+#include "vm/UsingHint.h"
 
 #include "gc/ObjectKind-inl.h"
 #include "vm/BytecodeIterator-inl.h"
@@ -314,6 +310,8 @@ bool WarpBuilder::build() {
 }
 
 bool WarpBuilder::buildInline() {
+  MOZ_ASSERT(!script_->isGenerator() && !script_->isAsync());
+
   if (!buildInlinePrologue()) {
     return false;
   }
@@ -1171,7 +1169,6 @@ bool WarpBuilder::build_StrictConstantNe(BytecodeLocation loc) {
   return buildStrictConstantEqOp(loc, JSOp::StrictNe);
 }
 
-#ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
 bool WarpBuilder::build_AddDisposable(BytecodeLocation loc) {
   MOZ_ASSERT(usesEnvironmentChain());
 
@@ -1196,18 +1193,6 @@ bool WarpBuilder::build_TakeDisposeCapability(BytecodeLocation loc) {
   current->push(ins);
   return resumeAfter(ins, loc);
 }
-
-bool WarpBuilder::build_CreateSuppressedError(BytecodeLocation loc) {
-  MDefinition* suppressed = current->pop();
-  MDefinition* error = current->pop();
-
-  MCreateSuppressedError* ins =
-      MCreateSuppressedError::New(alloc(), error, suppressed);
-  current->add(ins);
-  current->push(ins);
-  return true;
-}
-#endif
 
 // Returns true iff the MTest added for |op| has a true-target corresponding
 // with the join point in the bytecode.
@@ -1575,23 +1560,14 @@ bool WarpBuilder::build_DebugCheckSelfHosted(BytecodeLocation loc) {
 }
 
 bool WarpBuilder::build_DynamicImport(BytecodeLocation loc) {
+  auto phase = ImportPhase(GET_UINT8(loc.toRawBytecode()));
   MDefinition* options = current->pop();
   MDefinition* specifier = current->pop();
-  MDynamicImport* ins = MDynamicImport::New(alloc(), specifier, options);
+  MDynamicImport* ins = MDynamicImport::New(alloc(), specifier, options, phase);
   current->add(ins);
   current->push(ins);
   return resumeAfter(ins, loc);
 }
-
-#ifdef ENABLE_SOURCE_PHASE_IMPORTS
-bool WarpBuilder::build_DynamicImportSource(BytecodeLocation loc) {
-  MDefinition* specifier = current->pop();
-  MDynamicImportSource* ins = MDynamicImportSource::New(alloc(), specifier);
-  current->add(ins);
-  current->push(ins);
-  return resumeAfter(ins, loc);
-}
-#endif
 
 bool WarpBuilder::build_Not(BytecodeLocation loc) {
   if (auto* cacheIRSnapshot = getOpSnapshot<WarpCacheIR>(loc)) {
@@ -1643,16 +1619,6 @@ bool WarpBuilder::build_GlobalOrEvalDeclInstantiation(BytecodeLocation loc) {
   auto* redeclCheck = MGlobalDeclInstantiation::New(alloc());
   current->add(redeclCheck);
   return resumeAfter(redeclCheck, loc);
-}
-
-bool WarpBuilder::build_BindVar(BytecodeLocation) {
-  MOZ_ASSERT(usesEnvironmentChain());
-
-  MDefinition* env = current->environmentChain();
-  MCallBindVar* ins = MCallBindVar::New(alloc(), env);
-  current->add(ins);
-  current->push(ins);
-  return true;
 }
 
 bool WarpBuilder::build_MutateProto(BytecodeLocation loc) {
@@ -2463,7 +2429,7 @@ bool WarpBuilder::build_FinalYieldRval(BytecodeLocation loc) {
   };
 
   // Close the generator
-  setSlotNull(AbstractGeneratorObject::calleeSlot());
+  setSlotNull(AbstractGeneratorObject::calleeOrModuleSlot());
   setSlotNull(AbstractGeneratorObject::envChainSlot());
   setSlotNull(AbstractGeneratorObject::argsObjectSlot());
   setSlotNull(AbstractGeneratorObject::stackStorageSlot());
@@ -2471,6 +2437,23 @@ bool WarpBuilder::build_FinalYieldRval(BytecodeLocation loc) {
 
   // Return
   return build_RetRval(loc);
+}
+
+bool WarpBuilder::build_Resume(BytecodeLocation loc) {
+  MDefinition* resumeKind = current->pop();
+  MDefinition* value = current->pop();
+  MDefinition* gen = current->pop();
+
+  // resumeKind is always a constant Int32 emitted by JSOp::ResumeKind right
+  // before the resume.
+  MOZ_RELEASE_ASSERT(resumeKind->isConstant());
+  int32_t resumeKindInt32 = resumeKind->toConstant()->toInt32();
+  resumeKind->setImplicitlyUsedUnchecked();
+
+  auto* resume = MGeneratorResume::New(alloc(), gen, value, resumeKindInt32);
+  current->add(resume);
+  current->push(resume);
+  return resumeAfter(resume, loc);
 }
 
 bool WarpBuilder::build_AsyncResolve(BytecodeLocation loc) {
@@ -2481,17 +2464,6 @@ bool WarpBuilder::build_AsyncResolve(BytecodeLocation loc) {
   current->add(resolve);
   current->push(resolve);
   return resumeAfter(resolve, loc);
-}
-
-bool WarpBuilder::build_AsyncReject(BytecodeLocation loc) {
-  MDefinition* generator = current->pop();
-  MDefinition* stack = current->pop();
-  MDefinition* reason = current->pop();
-
-  auto* reject = MAsyncReject::New(alloc(), generator, reason, stack);
-  current->add(reject);
-  current->push(reject);
-  return resumeAfter(reject, loc);
 }
 
 bool WarpBuilder::build_ResumeKind(BytecodeLocation loc) {
@@ -2528,6 +2500,10 @@ bool WarpBuilder::build_CheckResumeKind(BytecodeLocation loc) {
 }
 
 bool WarpBuilder::build_CanSkipAwait(BytecodeLocation loc) {
+  // LCanSkipAwait's frame descriptor check is not correct for inlined
+  // functions.
+  MOZ_ASSERT(!inlineCallInfo());
+
   MDefinition* val = current->pop();
 
   MCanSkipAwait* canSkip = MCanSkipAwait::New(alloc(), val);
@@ -2608,13 +2584,12 @@ bool WarpBuilder::buildSuspend(BytecodeLocation loc, MDefinition* gen,
       current->add(MPostWriteBarrier::New(alloc(), arrayObj, stackElem));
     }
 
-    auto* len = constant(Int32Value(slotsToCopy - 1));
-
     auto* setInitLength =
-        MSetInitializedLength::New(alloc(), stackStorage, len);
+        MSetInitializedLength::New(alloc(), stackStorage, slotsToCopy,
+                                   /* needsPreBarrier = */ false);
     current->add(setInitLength);
 
-    auto* setLength = MSetArrayLength::New(alloc(), stackStorage, len);
+    auto* setLength = MSetArrayLength::New(alloc(), stackStorage, slotsToCopy);
     current->add(setLength);
   }
 
@@ -3055,7 +3030,8 @@ bool WarpBuilder::build_InitElemArray(BytecodeLocation loc) {
     current->add(store);
   }
 
-  auto* setLength = MSetInitializedLength::New(alloc(), elements, indexConst);
+  auto* setLength = MSetInitializedLength::New(alloc(), elements, index + 1,
+                                               /* needsPreBarrier = */ false);
   current->add(setLength);
 
   return resumeAfter(setLength, loc);
@@ -3264,13 +3240,12 @@ bool WarpBuilder::build_Rest(BytecodeLocation loc) {
 
     // Unroll the argument copy loop. We don't need to do any bounds or hole
     // checking here.
-    MConstant* index = nullptr;
     for (uint32_t i = numFormals; i < numActuals; i++) {
       if (!alloc().ensureBallast()) {
         return false;
       }
 
-      index = MConstant::NewInt32(alloc(), i - numFormals);
+      MConstant* index = MConstant::NewInt32(alloc(), i - numFormals);
       current->add(index);
 
       MDefinition* arg = inlineCallInfo()->argv()[i];
@@ -3284,7 +3259,8 @@ bool WarpBuilder::build_Rest(BytecodeLocation loc) {
     // Update the initialized length for all the (necessarily non-hole)
     // elements added.
     MSetInitializedLength* initLength =
-        MSetInitializedLength::New(alloc(), elements, index);
+        MSetInitializedLength::New(alloc(), elements, numRest,
+                                   /* needsPreBarrier = */ false);
     current->add(initLength);
 
     return true;
@@ -3324,6 +3300,14 @@ bool WarpBuilder::build_Exception(BytecodeLocation) {
 }
 
 bool WarpBuilder::build_ExceptionAndStack(BytecodeLocation) {
+  MOZ_CRASH("Unreachable because we skip catch-blocks");
+}
+
+bool WarpBuilder::build_CreateSuppressedError(BytecodeLocation) {
+  MOZ_CRASH("Unreachable because we skip catch-blocks");
+}
+
+bool WarpBuilder::build_AsyncReject(BytecodeLocation) {
   MOZ_CRASH("Unreachable because we skip catch-blocks");
 }
 
@@ -3382,6 +3366,170 @@ bool WarpBuilder::build_ThrowMsg(BytecodeLocation loc) {
   current->end(MUnreachable::New(alloc()));
   setTerminatedBlock();
   return true;
+}
+
+static bool CanTruncateToInt32(MIRType type) {
+  // Don't allow Strings because `MTruncateToInt32` can't directly truncate
+  // them to Int32. And it's probably not much more efficient if Strings are
+  // first boxed and then truncated through `LValueTruncateToInt32`.
+  return IsTypeRepresentableAsDouble(type) || IsNullOrUndefined(type) ||
+         type == MIRType::Boolean;
+}
+
+// Try to emit a bitwise instruction if both operands can be truncated to Int32.
+static MInstruction* TryBitwise(TempAllocator& alloc, JSOp jsop,
+                                MDefinition* lhs, MDefinition* rhs) {
+  switch (jsop) {
+    case JSOp::BitOr:
+    case JSOp::BitXor:
+    case JSOp::BitAnd:
+    case JSOp::Lsh:
+    case JSOp::Rsh:
+      break;
+    case JSOp::Ursh:
+      // Ursh is complicated because we don't know which MUrsh to use, so we
+      // don't yet optimize it here.
+      return nullptr;
+    default:
+      return nullptr;
+  }
+
+  // Both operands must be convertible to Int32 using truncation.
+  if (!CanTruncateToInt32(lhs->type()) || !CanTruncateToInt32(rhs->type())) {
+    return nullptr;
+  }
+
+  // It's valid to check the operand types even for loop phis, because loop
+  // phis are always typed as `MIRType::Value` at this point.
+  MOZ_ASSERT(lhs->type() != MIRType::Value && rhs->type() != MIRType::Value);
+
+  switch (jsop) {
+    case JSOp::BitOr:
+      return MBitOr::New(alloc, lhs, rhs, MIRType::Int32);
+    case JSOp::BitXor:
+      return MBitXor::New(alloc, lhs, rhs, MIRType::Int32);
+    case JSOp::BitAnd:
+      return MBitAnd::New(alloc, lhs, rhs, MIRType::Int32);
+    case JSOp::Lsh:
+      return MLsh::New(alloc, lhs, rhs, MIRType::Int32);
+    case JSOp::Rsh:
+      return MRsh::New(alloc, lhs, rhs, MIRType::Int32);
+    default:
+      break;
+  }
+  MOZ_CRASH("unexpected jsop");
+}
+
+// Try to emit a compare instruction if both operands are unboxed.
+static MInstruction* TryCompare(TempAllocator& alloc, JSOp jsop,
+                                MDefinition* lhs, MDefinition* rhs) {
+  MOZ_ASSERT(IsEqualityOp(jsop) || IsRelationalOp(jsop));
+
+  // Both operands must be unboxed.
+  //
+  // It's valid to check the operand types even for loop phis, because loop
+  // phis are always typed as `MIRType::Value` at this point.
+  if (lhs->type() == MIRType::Value || rhs->type() == MIRType::Value) {
+    return nullptr;
+  }
+
+  // Prefer MCompare if both operands have the same type.
+  if (lhs->type() == rhs->type()) {
+    MCompare::CompareType compareType;
+    switch (lhs->type()) {
+      case MIRType::Int32:
+        compareType = MCompare::Compare_Int32;
+        break;
+      case MIRType::Float32:
+        compareType = MCompare::Compare_Float32;
+        break;
+      case MIRType::Double:
+        compareType = MCompare::Compare_Double;
+        break;
+      case MIRType::String:
+        compareType = MCompare::Compare_String;
+        break;
+      case MIRType::BigInt:
+        compareType = MCompare::Compare_BigInt;
+        break;
+      default:
+        return nullptr;
+    }
+    return MCompare::New(alloc, lhs, rhs, jsop, compareType);
+  }
+
+  // Use MCompare if both operands are Numbers.
+  if (IsTypeRepresentableAsDouble(lhs->type()) &&
+      IsTypeRepresentableAsDouble(rhs->type())) {
+    return MCompare::New(alloc, lhs, rhs, jsop, MCompare::Compare_Double);
+  }
+  return nullptr;
+}
+
+// Try to emit a strict-constant-compare instruction.
+static MInstruction* TryStrictConstantCompare(TempAllocator& alloc, JSOp jsop,
+                                              MDefinition* lhs,
+                                              MDefinition* rhs) {
+  // Need strict equality comparison.
+  if (!IsStrictEqualityOp(jsop)) {
+    return nullptr;
+  }
+
+  // At least one operand must be a constant.
+  if (!lhs->isConstant() && !rhs->isConstant()) {
+    return nullptr;
+  }
+
+  auto strictCompare = [&](MConstant* cst,
+                           MDefinition* operand) -> MInstruction* {
+    // Strict equality comparison against an Int32 constant, but the constant
+    // is too large for the StrictConstantEq/Ne byte code.
+    if (cst->type() == MIRType::Int32) {
+      cst->setImplicitlyUsedUnchecked();
+      return MStrictConstantCompareInt32::New(alloc, operand, cst->toInt32(),
+                                              jsop);
+    }
+
+    // Strict equality comparison against a String constant.
+    if (cst->type() == MIRType::String) {
+      cst->setImplicitlyUsedUnchecked();
+      return MStrictConstantCompareString::New(alloc, operand, cst->toString(),
+                                               jsop);
+    }
+
+    // Strict equality comparison against an Object constant.
+    if (cst->type() == MIRType::Object) {
+      cst->setImplicitlyUsedUnchecked();
+      return MStrictConstantCompareObject::New(alloc, operand, &cst->toObject(),
+                                               jsop);
+    }
+
+    // Strict equality comparison against Undefined.
+    if (cst->type() == MIRType::Undefined) {
+      return MCompare::New(alloc, operand, cst, jsop,
+                           MCompare::Compare_Undefined);
+    }
+
+    // Strict equality comparison against Null.
+    if (cst->type() == MIRType::Null) {
+      return MCompare::New(alloc, operand, cst, jsop, MCompare::Compare_Null);
+    }
+
+    // No optimization possible.
+    return nullptr;
+  };
+
+  if (lhs->isConstant()) {
+    if (auto* ins = strictCompare(lhs->toConstant(), rhs)) {
+      return ins;
+    }
+  }
+  if (rhs->isConstant()) {
+    if (auto* ins = strictCompare(rhs->toConstant(), lhs)) {
+      return ins;
+    }
+  }
+  return nullptr;
 }
 
 bool WarpBuilder::buildIC(BytecodeLocation loc, CacheKind kind,
@@ -3445,16 +3593,50 @@ bool WarpBuilder::buildIC(BytecodeLocation loc, CacheKind kind,
     }
     case CacheKind::BinaryArith: {
       MOZ_ASSERT(numInputs == 2);
-      auto* ins =
-          MBinaryCache::New(alloc(), getInput(0), getInput(1), MIRType::Value);
+
+      auto* lhs = getInput(0);
+      auto* rhs = getInput(1);
+
+      // If both operands are unboxed, we may be able to emit a more optimized
+      // instruction than just MBinaryCache.
+      //
+      // We perform this optimization early instead of in MBinaryCache::foldsTo
+      // to avoid creating resume points which may keep some operands alive.
+      if (auto* ins = TryBitwise(alloc(), loc.getOp(), lhs, rhs)) {
+        current->add(ins);
+        current->push(ins);
+        return true;
+      }
+
+      auto* ins = MBinaryCache::New(alloc(), lhs, rhs, MIRType::Value);
       current->add(ins);
       current->push(ins);
       return resumeAfter(ins, loc);
     }
     case CacheKind::Compare: {
       MOZ_ASSERT(numInputs == 2);
-      auto* ins = MBinaryCache::New(alloc(), getInput(0), getInput(1),
-                                    MIRType::Boolean);
+
+      auto* lhs = getInput(0);
+      auto* rhs = getInput(1);
+
+      // If both operands are unboxed, we may be able to emit a more optimized
+      // instruction than just MBinaryCache.
+      if (auto* ins = TryCompare(alloc(), loc.getOp(), lhs, rhs)) {
+        current->add(ins);
+        current->push(ins);
+        return true;
+      }
+
+      // If one operand is a constant, we may be able to create strict constant
+      // compare instructions.
+      if (auto* ins =
+              TryStrictConstantCompare(alloc(), loc.getOp(), lhs, rhs)) {
+        current->add(ins);
+        current->push(ins);
+        return true;
+      }
+
+      auto* ins = MBinaryCache::New(alloc(), lhs, rhs, MIRType::Boolean);
       current->add(ins);
       current->push(ins);
       return resumeAfter(ins, loc);

@@ -78,15 +78,8 @@ export const NIMBUS_MIGRATION_PREFS = Object.fromEntries(
 
 export const LABS_MIGRATION_FEATURE_MAP = (function () {
   const featureMap = {
-    "auto-pip": "firefox-labs-auto-pip",
     "urlbar-ime-search": "firefox-labs-urlbar-ime-search",
   };
-
-  // The jpeg-xl feature is Nightly-only and the relevant prefs do not exist
-  // outside Nightly.
-  if (AppConstants.MOZ_JXL) {
-    featureMap["jpeg-xl"] = "firefox-labs-jpeg-xl";
-  }
 
   return Object.freeze(featureMap);
 })();
@@ -275,26 +268,23 @@ async function migrateEnrollmentsToSql() {
 }
 
 /**
- * Migrate enrollment from the firefox-labs-auto-pip rolloutl.
+ * Graduate a Firefox Labs opt-in! 🎓
  *
- * This feature is becoming a regular setting in about:preferences in Firefox
- * 147. We need to unenroll users without resetting the prefs controlled by the
- * feature.
+ * Migrations should use this function when features controlled by labs become
+ * default-enabled. The user will be unenrolled from the rollout while keeping
+ * the prefs set by the enrollment.
  *
- * This migration must run before the `ExperimentManager.onStartup` has run
- * because this feature might be removed and we cannot guarantee that users will
- * update to exactly 145.
+ * @param {string} migration The name of the migration.
+ * @param {string} slug The slug of the rollout.
  */
-function migrateGraduateFirefoxLabsAutoPip(migration) {
+function graduateLabs(migration, slug) {
   if (isBackgroundTaskMode()) {
     // This migration does not apply to background task mode.
     lazy.log.debug(`${migration}: skipping (is background task mode)`);
     return;
   }
 
-  const enrollment = lazy.ExperimentAPI.manager.store.get(
-    "firefox-labs-auto-pip"
-  );
+  const enrollment = lazy.ExperimentAPI.manager.store.get(slug);
   if (!enrollment?.active) {
     lazy.log.debug(`${migration}: skipping (no or inactive enrollment)`);
     return;
@@ -305,6 +295,104 @@ function migrateGraduateFirefoxLabsAutoPip(migration) {
     lazy.UnenrollmentCause.Migration(migration),
     { unsetEnrollmentPrefs: false }
   );
+}
+
+/**
+ * Migrate enrollment from the firefox-labs-auto-pip rollout.
+ *
+ * This feature is becoming a regular setting in about:preferences in Firefox
+ * 147. We need to unenroll users without resetting the prefs controlled by the
+ * feature.
+ *
+ * This migration must run before the `ExperimentManager.onStartup` has run
+ * because this feature might be removed and we cannot guarantee that users will
+ * update to exactly 145.
+ */
+function migrateGraduateFirefoxLabsAutoPip(migration) {
+  graduateLabs(migration, "firefox-labs-auto-pip");
+}
+
+/**
+ * Migrate enrollment from the firefox-labs-jpeg-xl rollout.
+ *
+ * This rollout was only available in Nightly and the feature is becoming on by
+ * default in Nightly. We need to unenroll users without resetting the prefs
+ * controlled by the feature.
+ */
+function migrateGraduateFirefoxLabsJPEGXL(migration) {
+  if (!AppConstants.MOZ_JXL) {
+    lazy.log.debug(`${migration}: skipping (MOZ_JXL disabled)`);
+    return;
+  }
+
+  graduateLabs(migration, "firefox-labs-jpeg-xl");
+}
+
+function migrateRestorePrefFlipsBug2054546(migration) {
+  const experimentManager = lazy.ExperimentAPI.manager;
+
+  function unenrollForMigration(enrollment) {
+    // UnenrollmentCause.Migration was added in Firefox 147.
+    experimentManager._unenroll(enrollment, { reason: "migration", migration });
+  }
+
+  {
+    const enrollment = experimentManager.store.get(
+      "detectportal-fastly-testing"
+    );
+    if (enrollment) {
+      const pref = "captivedetect.canonicalURL";
+      if (enrollment.active) {
+        // The prefFlips feature is not fully initialized at this point and
+        // won't reset the pref when we unenroll, so we have to do it ourselves.
+        unenrollForMigration(enrollment);
+        Services.prefs.clearUserPref(pref);
+      } else if (
+        Services.prefs.getStringPref(pref) ===
+        "http://detectportal.firefox.com/canonical.html"
+      ) {
+        Services.prefs.clearUserPref(pref);
+      }
+    }
+  }
+
+  {
+    const originalEnrollment = experimentManager.store.get(
+      "hnt-nova-pref-flip-rollout-content-market-widget-exp-cohort"
+    );
+    if (originalEnrollment) {
+      if (originalEnrollment.active) {
+        unenrollForMigration(originalEnrollment);
+      }
+
+      const fixupEnrollment = lazy.ExperimentAPI.manager.store.get(
+        "hnt-nova-pref-flip-restore"
+      );
+      if (fixupEnrollment?.active) {
+        unenrollForMigration(fixupEnrollment);
+      }
+
+      Services.prefs.clearUserPref(
+        "browser.newtabpage.activity-stream.nova.enabled"
+      );
+    }
+  }
+
+  {
+    // disabling-chips-for-v131 ended 2024-12-17 and thus will no longer be
+    // stored in the enrollment history.
+    const enrollment = experimentManager.store.get("restore-chips-133");
+    if (enrollment) {
+      if (enrollment?.active) {
+        // The prefFlips feature is not fully initialized at this point and
+        // won't reset the pref when we unenroll, so we have to do it ourselves.
+        unenrollForMigration(enrollment);
+      }
+    }
+    // Unfortunately we can't determine if the user was affected, so we must
+    // reset this pref for all users.
+    Services.prefs.clearUserPref("network.cookie.CHIPS.enabled");
+  }
 }
 
 /**
@@ -430,19 +518,23 @@ export const NimbusMigrations = {
         `applyMigrations ${phase}: applying migration ${i}: ${migration.name}`
       );
 
+      const migrationStart = ChromeUtils.now();
+      let duration;
       try {
-        await migration.fn(migration.name);
+        // Not all migrations are async fns, so coerce them.
+        await Promise.try(migration.fn, migration.name).finally(() => {
+          duration = Math.ceil(ChromeUtils.now() - migrationStart);
+        });
       } catch (e) {
         lazy.log.error(
           `applyMigrations: error running migration ${i} (${migration.name}): ${e}`
         );
 
-        let reason = MigrationError.Reason.UNKNOWN;
-        if (e instanceof MigrationError) {
-          reason = e.reason;
-        }
-
-        lazy.NimbusTelemetry.recordMigration(migration.name, reason);
+        const reason =
+          e instanceof MigrationError
+            ? e.reason
+            : MigrationError.Reason.UNKNOWN;
+        lazy.NimbusTelemetry.recordMigration(migration.name, duration, reason);
 
         break;
       }
@@ -453,7 +545,7 @@ export const NimbusMigrations = {
         `applyMigrations: applied migration ${i}: ${migration.name}`
       );
 
-      lazy.NimbusTelemetry.recordMigration(migration.name);
+      lazy.NimbusTelemetry.recordMigration(migration.name, duration);
     }
 
     if (latestMigration != lastSuccess) {
@@ -514,6 +606,11 @@ export const NimbusMigrations = {
         "graduate-firefox-labs-auto-pip",
         migrateGraduateFirefoxLabsAutoPip
       ),
+      migration(
+        "graduate-firefox-labs-jpeg-xl",
+        migrateGraduateFirefoxLabsJPEGXL
+      ),
+      migration("bug-2054546-mitigation", migrateRestorePrefFlipsBug2054546),
     ],
 
     [Phase.AFTER_REMOTE_SETTINGS_UPDATE]: [

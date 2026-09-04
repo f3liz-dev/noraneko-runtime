@@ -25,7 +25,9 @@
     "isSPA",
     "defaultPageQueryParam",
     "pageTypeParam",
+    "requireTopLevelImpressionOrigin",
     "subframes",
-    "impressionAttributes"
+    "impressionAttributes",
+    "alwaysMatchSERP"
   ]
 }

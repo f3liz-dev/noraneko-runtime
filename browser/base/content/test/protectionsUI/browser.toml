@@ -11,6 +11,7 @@ support-files = [
   "embeddedPage.html",
   "trackingAPI.js",
   "trackingPage.html",
+  "trackingPageWithMetaRefresh.html",
 ]
 
 prefs = [
@@ -29,8 +30,6 @@ https_first_disabled = true
 
 ["browser_protectionsUI_categories.js"]
 https_first_disabled = true
-
-["browser_protectionsUI_cookie_banner.js"]
 
 ["browser_protectionsUI_cookies_subview.js"]
 https_first_disabled = true

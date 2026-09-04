@@ -17,16 +17,20 @@
 #include <optional>
 #include <string>
 
+#include "absl/base/nullability.h"
 #include "absl/functional/any_invocable.h"
+#include "absl/strings/string_view.h"
 #include "api/data_channel_interface.h"
 #include "api/priority.h"
 #include "api/rtc_error.h"
 #include "api/scoped_refptr.h"
+#include "api/sctp_transport_interface.h"
 #include "api/sequence_checker.h"
 #include "api/task_queue/pending_task_safety_flag.h"
 #include "api/transport/data_channel_transport_interface.h"
 #include "pc/data_channel_utils.h"
 #include "pc/sctp_utils.h"
+#include "rtc_base/checks.h"
 #include "rtc_base/containers/flat_set.h"
 #include "rtc_base/copy_on_write_buffer.h"
 #include "rtc_base/ssl_stream_adapter.h"  // For SSLRole
@@ -48,7 +52,7 @@ class SctpDataChannelControllerInterface {
                             const SendDataParams& params,
                             const CopyOnWriteBuffer& payload) = 0;
   // Adds the data channel SID to the transport for SCTP.
-  virtual void AddSctpDataStream(StreamId sid, PriorityValue priority) = 0;
+  virtual RTCError AddSctpDataStream(StreamId sid, PriorityValue priority) = 0;
   // Begins the closing procedure by sending an outgoing stream reset. Still
   // need to wait for callbacks to tell when this completes.
   virtual void RemoveSctpDataStream(StreamId sid) = 0;
@@ -85,6 +89,13 @@ struct InternalDataChannelInit : public DataChannelInit {
 class SctpSidAllocator {
  public:
   SctpSidAllocator() = default;
+  void SetMaxSid(int max_sid) {
+    RTC_DCHECK_RUN_ON(&sequence_checker_);
+    RTC_DCHECK(max_sid >= 0 && max_sid <= max_sid_)
+        << "max_sid can only be decreased, and can't be negative: changing from"
+        << max_sid_ << " to " << max_sid;
+    max_sid_ = max_sid;
+  }
   // Gets the first unused odd/even id based on the DTLS role. If `role` is
   // SSL_CLIENT, the allocated id starts from 0 and takes even numbers;
   // otherwise, the id starts from 1 and takes odd numbers.
@@ -98,6 +109,7 @@ class SctpSidAllocator {
   void ReleaseSid(StreamId sid);
 
  private:
+  int max_sid_ RTC_GUARDED_BY(&sequence_checker_) = kMaxSctpSid;
   flat_set<StreamId> used_sids_ RTC_GUARDED_BY(&sequence_checker_);
   RTC_NO_UNIQUE_ADDRESS SequenceChecker sequence_checker_{
       SequenceChecker::kDetached};
@@ -129,24 +141,25 @@ class SctpSidAllocator {
 //    OnClosingProcedureComplete callback and transition to kClosed.
 class SctpDataChannel : public DataChannelInterface {
  public:
-  static scoped_refptr<SctpDataChannel> Create(
+  // The `controller_safety` flag is used for the ObserverAdapter callback proxy
+  // which delivers callbacks on the `signaling_thread` but must not deliver
+  // such callbacks after the peerconnection has been closed. The data
+  // controller will update the flag when closed, which will cancel any pending
+  // event notifications.
+  static absl_nonnull scoped_refptr<SctpDataChannel> Create(
       WeakPtr<SctpDataChannelControllerInterface> controller,
-      const std::string& label,
+      absl::string_view label,
       bool connected_to_transport,
       const InternalDataChannelInit& config,
+      std::optional<int> max_message_size,
+      scoped_refptr<PendingTaskSafetyFlag> controller_safety,
       Thread* signaling_thread,
       Thread* network_thread);
 
   // Instantiates an API proxy for a SctpDataChannel instance that will be
   // handed out to external callers.
-  // The `signaling_safety` flag is used for the ObserverAdapter callback proxy
-  // which delivers callbacks on the signaling thread but must not deliver such
-  // callbacks after the peerconnection has been closed. The data controller
-  // will update the flag when closed, which will cancel any pending event
-  // notifications.
-  static scoped_refptr<DataChannelInterface> CreateProxy(
-      scoped_refptr<SctpDataChannel> channel,
-      scoped_refptr<PendingTaskSafetyFlag> signaling_safety);
+  static absl_nonnull scoped_refptr<DataChannelInterface> CreateProxy(
+      scoped_refptr<SctpDataChannel> channel);
 
   void RegisterObserver(DataChannelObserver* observer) override;
   void UnregisterObserver() override;
@@ -208,6 +221,9 @@ class SctpDataChannel : public DataChannelInterface {
   // Called when the amount of data buffered to be sent falls to or below the
   // threshold set when calling `SetBufferedAmountLowThreshold`.
   void OnBufferedAmountLow();
+  // Called when the data channel's max-message-size has changed as a result
+  // of SDP negotiation.
+  void OnMaxMessageSize(int max_message_size);
 
   DataChannelStats GetStats() const;
 
@@ -228,13 +244,27 @@ class SctpDataChannel : public DataChannelInterface {
  protected:
   SctpDataChannel(const InternalDataChannelInit& config,
                   WeakPtr<SctpDataChannelControllerInterface> controller,
-                  const std::string& label,
+                  absl::string_view label,
                   bool connected_to_transport,
+                  std::optional<int> max_message_size,
+                  scoped_refptr<PendingTaskSafetyFlag> controller_safety,
                   Thread* signaling_thread,
                   Thread* network_thread);
   ~SctpDataChannel() override;
 
  private:
+  // Caches the current state on the network thread and makes a call back to the
+  // `callback` object on the signaling thread while applying the cached state
+  // to specific getter functions.
+  // This is useful when a callback to the application is needed and during that
+  // callback, it's expected that this state will be queried (e.g. the
+  // `state()`), but a thread hop should not be required for querying that
+  // state.
+  // Must be called on the network thread.
+  void CacheStateAndCallBackOnSignalingThread(
+      absl::AnyInvocable<void() &&> callback);
+
+  struct CachedState;
   class ObserverAdapter;
 
   // The OPEN(_ACK) signaling state.
@@ -259,7 +289,7 @@ class SctpDataChannel : public DataChannelInterface {
       RTC_RUN_ON(network_thread_);
 
   bool connected_to_transport() const RTC_RUN_ON(network_thread_) {
-    return network_safety_->alive();
+    return connected_to_transport_;
   }
   void MaybeSendOnBufferedAmountChanged() RTC_RUN_ON(network_thread_);
 
@@ -279,21 +309,23 @@ class SctpDataChannel : public DataChannelInterface {
 
   DataChannelObserver* observer_ RTC_GUARDED_BY(network_thread_) = nullptr;
   std::unique_ptr<ObserverAdapter> observer_adapter_;
+  CachedState* cached_state_ RTC_GUARDED_BY(signaling_thread_) = nullptr;
   DataState state_ RTC_GUARDED_BY(network_thread_) = kConnecting;
   RTCError error_ RTC_GUARDED_BY(network_thread_);
   uint32_t messages_sent_ RTC_GUARDED_BY(network_thread_) = 0;
   uint64_t bytes_sent_ RTC_GUARDED_BY(network_thread_) = 0;
   uint32_t messages_received_ RTC_GUARDED_BY(network_thread_) = 0;
   uint64_t bytes_received_ RTC_GUARDED_BY(network_thread_) = 0;
+  std::optional<int> max_message_size_ RTC_GUARDED_BY(network_thread_);
   WeakPtr<SctpDataChannelControllerInterface> controller_
       RTC_GUARDED_BY(network_thread_);
   HandshakeState handshake_state_ RTC_GUARDED_BY(network_thread_) =
       kHandshakeInit;
   // Did we already start the graceful SCTP closing procedure?
   bool started_closing_procedure_ RTC_GUARDED_BY(network_thread_) = false;
+  bool connected_to_transport_ RTC_GUARDED_BY(network_thread_) = false;
   PacketQueue queued_received_data_ RTC_GUARDED_BY(network_thread_);
-  scoped_refptr<PendingTaskSafetyFlag> network_safety_ =
-      PendingTaskSafetyFlag::CreateDetachedInactive();
+  scoped_refptr<PendingTaskSafetyFlag> controller_safety_;
 };
 
 }  // namespace webrtc

@@ -4,15 +4,14 @@
 
 #include <stdio.h>
 
-#include "nspr.h"
 #include "ScopedNSSTypes.h"
+#include "TLSServer.h"
+#include "mozilla/Sprintf.h"
+#include "nspr.h"
 #include "ssl.h"
 #include "ssl3prot.h"
 #include "sslexp.h"
 #include "sslimpl.h"
-#include "TLSServer.h"
-
-#include "mozilla/Sprintf.h"
 
 using namespace mozilla;
 using namespace mozilla::test;
@@ -22,6 +21,7 @@ enum FaultType {
   ZeroRtt,
   UnknownSNI,
   Mlkem768x25519,
+  Mlkem1024,
 };
 
 struct FaultyServerHost {
@@ -37,11 +37,18 @@ const char* kHostZeroRttAlertVersion =
     "0rtt-alert-protocol-version.example.com";
 const char* kHostZeroRttAlertUnexpected = "0rtt-alert-unexpected.example.com";
 const char* kHostZeroRttAlertDowngrade = "0rtt-alert-downgrade.example.com";
+const char* kHostDecryptErrorOnResume = "decrypt-error-on-resume.example.com";
+const char* kHostIllegalParameterOnResume =
+    "illegal-parameter-on-resume.example.com";
+const char* kHostPSKDecryptErrorNoEarlyData =
+    "psk-no-early-data-on-resume.example.com";
 
 const char* kHostMlkem768x25519NetInterrupt =
     "mlkem768x25519-net-interrupt.example.com";
 const char* kHostMlkem768x25519AlertAfterServerHello =
     "mlkem768x25519-alert-after-server-hello.example.com";
+
+const char* kHostMlkem1024 = "mlkem1024.example.com";
 
 const char* kCertWildcard = "default-ee";
 
@@ -56,30 +63,14 @@ MOZ_RUNINIT const FaultyServerHost sFaultyServerHosts[]{
     {kHostZeroRttAlertVersion, kCertWildcard, ZeroRtt},
     {kHostZeroRttAlertUnexpected, kCertWildcard, ZeroRtt},
     {kHostZeroRttAlertDowngrade, kCertWildcard, ZeroRtt},
+    {kHostDecryptErrorOnResume, kCertWildcard, ZeroRtt},
+    {kHostIllegalParameterOnResume, kCertWildcard, ZeroRtt},
+    {kHostPSKDecryptErrorNoEarlyData, kCertWildcard, ZeroRtt},
     {kHostMlkem768x25519NetInterrupt, kCertWildcard, Mlkem768x25519},
     {kHostMlkem768x25519AlertAfterServerHello, kCertWildcard, Mlkem768x25519},
+    {kHostMlkem1024, kCertWildcard, Mlkem1024},
     {nullptr, nullptr},
 };
-
-nsresult SendAll(PRFileDesc* aSocket, const char* aData, size_t aDataLen) {
-  if (gDebugLevel >= DEBUG_VERBOSE) {
-    fprintf(stderr, "sending '%s'\n", aData);
-  }
-
-  int32_t len = static_cast<int32_t>(aDataLen);
-  while (len > 0) {
-    int32_t bytesSent = PR_Send(aSocket, aData, len, 0, PR_INTERVAL_NO_TIMEOUT);
-    if (bytesSent == -1) {
-      PrintPRError("PR_Send failed");
-      return NS_ERROR_FAILURE;
-    }
-
-    len -= bytesSent;
-    aData += bytesSent;
-  }
-
-  return NS_OK;
-}
 
 // returns 0 on success, non-zero on error
 int DoCallback(const char* path) {
@@ -159,7 +150,26 @@ void SecretCallbackFailZeroRtt(PRFileDesc* fd, PRUint16 epoch,
       SSL3_SendAlert(ss, alert_fatal, protocol_version);
     } else if (!strcmp(host->mHostName, kHostZeroRttAlertUnexpected)) {
       SSL3_SendAlert(ss, alert_fatal, unexpected_message);
+    } else if (!strcmp(host->mHostName, kHostDecryptErrorOnResume)) {
+      SSL3_SendAlert(ss, alert_fatal, decrypt_error);
+    } else if (!strcmp(host->mHostName, kHostIllegalParameterOnResume)) {
+      SSL3_SendAlert(ss, alert_fatal, illegal_parameter);
     }
+  } else if (epoch == 2 && dir == ssl_secret_read &&
+             !strcmp(host->mHostName, kHostPSKDecryptErrorNoEarlyData)) {
+    sslSocket* ss = ssl_FindSocket(fd);
+    if (!ss) {
+      fprintf(stderr, "PSK-no-earlydata handler, no ss!\n");
+      return;
+    }
+    if (!ss->statelessResume) {
+      return;
+    }
+    fprintf(stderr, "PSK-no-earlydata handler, sending alert\n");
+    char path[256];
+    SprintfLiteral(path, "/callback/%d", epoch);
+    DoCallback(path);
+    SSL3_SendAlert(ss, alert_fatal, decrypt_error);
   }
 }
 
@@ -222,8 +232,10 @@ int32_t DoSNISocketConfig(PRFileDesc* aFd, const SECItem* aSrvNameArr,
     fprintf(stderr, "found pre-defined host '%s'\n", host->mHostName);
   }
 
-  const SSLNamedGroup mlkemTestNamedGroups[] = {ssl_grp_kem_mlkem768x25519,
-                                                ssl_grp_ec_curve25519};
+  const SSLNamedGroup hybridTestNamedGroups[] = {ssl_grp_kem_mlkem768x25519,
+                                                 ssl_grp_ec_curve25519};
+
+  const SSLNamedGroup mlkem1024TestNamedGroups[] = {ssl_grp_kem_mlkem1024};
 
   switch (host->mFaultType) {
     case ZeroRtt:
@@ -231,8 +243,12 @@ int32_t DoSNISocketConfig(PRFileDesc* aFd, const SECItem* aSrvNameArr,
       break;
     case Mlkem768x25519:
       SSL_SecretCallback(aFd, &SecretCallbackFailMlkem768x25519, (void*)host);
-      SSL_NamedGroupConfig(aFd, mlkemTestNamedGroups,
-                           std::size(mlkemTestNamedGroups));
+      SSL_NamedGroupConfig(aFd, hybridTestNamedGroups,
+                           std::size(hybridTestNamedGroups));
+      break;
+    case Mlkem1024:
+      SSL_NamedGroupConfig(aFd, mlkem1024TestNamedGroups,
+                           std::size(mlkem1024TestNamedGroups));
       break;
     case None:
       break;

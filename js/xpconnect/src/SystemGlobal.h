@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,20 +5,24 @@
 #ifndef SystemGlobal_h_
 #define SystemGlobal_h_
 
-#include "js/loader/ModuleLoaderBase.h"
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/SchedulerGroup.h"
 #include "mozilla/StorageAccess.h"
-#include "nsISupports.h"
-#include "nsWeakReference.h"
+
 #include "nsIGlobalObject.h"
 #include "nsIScriptObjectPrincipal.h"
+#include "nsISupports.h"
 #include "nsIXPCScriptable.h"
+#include "nsWeakReference.h"
 
 #include "js/HeapAPI.h"
 
 class nsICookieJarSettings;
 class XPCWrappedNative;
+
+namespace JS::loader {
+class ModuleLoaderBase;
+}  // namespace JS::loader
 
 // The shared system global (used by ChromeUtils.importESModule), and also
 // the xpcshell's global.
@@ -76,15 +78,12 @@ class SystemGlobal final : public nsIGlobalObject,
 
   void SetGlobalObject(JSObject* global);
 
-  void InitModuleLoader(ModuleLoaderBase* aModuleLoader) {
-    MOZ_ASSERT(!mModuleLoader);
-    mModuleLoader = aModuleLoader;
-  }
+  void InitModuleLoader(ModuleLoaderBase* aModuleLoader);
 
   nsISerialEventTarget* SerialEventTarget() const final {
     return mozilla::GetMainThreadSerialEventTarget();
   }
-  nsresult Dispatch(already_AddRefed<nsIRunnable>&& aRunnable) const final {
+  nsresult Dispatch(already_AddRefed<nsIRunnable> aRunnable) const final {
     return mozilla::SchedulerGroup::Dispatch(std::move(aRunnable));
   }
 
@@ -97,7 +96,7 @@ class SystemGlobal final : public nsIGlobalObject,
   }
 
  private:
-  virtual ~SystemGlobal() = default;
+  virtual ~SystemGlobal();
 
   const nsID mAgentClusterId;
   nsCOMPtr<nsIPrincipal> mPrincipal;

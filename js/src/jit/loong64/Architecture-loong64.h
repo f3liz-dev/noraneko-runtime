@@ -1,18 +1,16 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #ifndef jit_loong64_Architecture_loong64_h
 #define jit_loong64_Architecture_loong64_h
 
-#include "mozilla/MathAlgorithms.h"
+#include "mozilla/EnumSet.h"
 
 #include <algorithm>
+#include <bit>
 
 #include "jit/shared/Architecture-shared.h"
-
 #include "js/Utility.h"
 
 namespace js {
@@ -127,22 +125,22 @@ class Registers {
     uintptr_t r;
   };
 
-  static uint32_t SetSize(SetType x) {
-    static_assert(sizeof(SetType) == 4, "SetType must be 32 bits");
-    return mozilla::CountPopulation32(x);
-  }
+  static uint32_t SetSize(SetType x) { return std::popcount(x); }
   static uint32_t FirstBit(SetType x) {
-    return mozilla::CountTrailingZeroes32(x);
+    MOZ_ASSERT(x);
+    return std::countr_zero(x);
   }
   static uint32_t LastBit(SetType x) {
-    return 31 - mozilla::CountLeadingZeroes32(x);
+    MOZ_ASSERT(x);
+    return std::bit_width(x) - 1;
   }
 
   static const char* GetName(uint32_t code) {
     static const char* const Names[] = {
-        "zero", "ra", "tp", "sp", "a0", "a1", "a2", "a3", "a4", "a5", "a6",
-        "a7",   "t0", "t1", "t2", "t3", "t4", "t5", "t6", "t7", "t8", "rx",
-        "fp",   "s0", "s1", "s2", "s3", "s4", "s5", "s6", "s7", "s8"};
+        "$zero", "$ra", "$tp", "$sp", "$a0", "$a1", "$a2", "$a3",
+        "$a4",   "$a5", "$a6", "$a7", "$t0", "$t1", "$t2", "$t3",
+        "$t4",   "$t5", "$t6", "$t7", "$t8", "$rx", "$fp", "$s0",
+        "$s1",   "$s2", "$s3", "$s4", "$s5", "$s6", "$s7", "$s8"};
     static_assert(Total == std::size(Names), "Table is the correct size");
     if (code >= Total) {
       return "invalid";
@@ -183,6 +181,7 @@ class Registers {
 
   static const SetType NonAllocatableMask =
       (1U << Registers::zero) |  // Always be zero.
+      (1U << Registers::t6) |    // Scratch register.
       (1U << Registers::t7) |    // Scratch register.
       (1U << Registers::t8) |    // Scratch register.
       (1U << Registers::s8) |    // Saved scratch register.
@@ -255,10 +254,10 @@ class FloatRegisters {
 
   static const char* GetName(uint32_t code) {
     static const char* const Names[] = {
-        "f0",  "f1",  "f2",  "f3",  "f4",  "f5",  "f6",  "f7",
-        "f8",  "f9",  "f10", "f11", "f12", "f13", "f14", "f15",
-        "f16", "f17", "f18", "f19", "f20", "f21", "f22", "f23",
-        "f24", "f25", "f26", "f27", "f28", "f29", "f30", "f31"};
+        "$f0",  "$f1",  "$f2",  "$f3",  "$f4",  "$f5",  "$f6",  "$f7",
+        "$f8",  "$f9",  "$f10", "$f11", "$f12", "$f13", "$f14", "$f15",
+        "$f16", "$f17", "$f18", "$f19", "$f20", "$f21", "$f22", "$f23",
+        "$f24", "$f25", "$f26", "$f27", "$f28", "$f29", "$f30", "$f31"};
     static_assert(TotalPhys == std::size(Names), "Table is the correct size");
     if (code >= Total) {
       return "invalid";
@@ -354,19 +353,18 @@ struct FloatRegister {
   typedef Codes::SetType SetType;
 
   static uint32_t SetSize(SetType x) {
-    static_assert(sizeof(SetType) == 8, "SetType must be 64 bits");
     x |= x >> FloatRegisters::TotalPhys;
     x &= FloatRegisters::AllPhysMask;
-    return mozilla::CountPopulation32(x);
+    return std::popcount(x);
   }
 
   static uint32_t FirstBit(SetType x) {
-    static_assert(sizeof(SetType) == 8, "SetType");
-    return mozilla::CountTrailingZeroes64(x);
+    MOZ_ASSERT(x);
+    return std::countr_zero(x);
   }
   static uint32_t LastBit(SetType x) {
-    static_assert(sizeof(SetType) == 8, "SetType");
-    return 63 - mozilla::CountLeadingZeroes64(x);
+    MOZ_ASSERT(x);
+    return std::bit_width(x) - 1;
   }
 
  private:
@@ -510,13 +508,53 @@ FloatRegister::LiveAsIndexableSet<RegTypeName::Any>(SetType set) {
   return set;
 }
 
-// LoongArch doesn't have double registers that cannot be treated as float32.
-inline bool hasUnaliasedDouble() { return false; }
-
 // LoongArch doesn't have double registers that alias multiple floats.
 inline bool hasMultiAlias() { return false; }
 
-uint32_t GetLOONG64Flags();
+enum class LOONG64Extension : uint32_t {
+  // Flag when the extensions are initialized, so they can be atomically set.
+  Initialized,
+
+  // Atomic operations AM{SWAP,ADD}{,_DB}.[BH].
+  LamBh,
+};
+
+using LOONG64Extensions = mozilla::EnumSet<LOONG64Extension>;
+
+class LOONG64Flags final {
+  // The override flags selected by the LOONG64_ISA environment variable or
+  // the --loong64-isa JS shell argument. They are stable after startup: there
+  // is no programmatic way of setting these from JS.
+  static inline LOONG64Extensions extensions{};
+
+ public:
+  LOONG64Flags() = delete;
+
+  // LOONG64Flags::Init is called from the JitContext constructor to read the
+  // hardware flags. This method must only be called once.
+  static void Init();
+
+  static bool IsInitialized() {
+    return extensions.contains(LOONG64Extension::Initialized);
+  }
+
+  static uint32_t GetFlags() {
+    MOZ_ASSERT(IsInitialized());
+    return extensions.serialize();
+  }
+
+  static bool HasLamBhExtension() {
+    return extensions.contains(LOONG64Extension::LamBh);
+  }
+};
+
+// Register a LoongArch ISA target. During engine initialization, this target
+// is used instead of enabling every detected hardware feature. This must be
+// called before JS_Init and the passed string's buffer must outlive JS_Init.
+void SetLOONG64ISAString(const char* isa);
+
+// Retrieve the Loong64 extensions as a bitmask. They must have been set.
+inline uint32_t GetLOONG64Flags() { return LOONG64Flags::GetFlags(); }
 
 }  // namespace jit
 }  // namespace js

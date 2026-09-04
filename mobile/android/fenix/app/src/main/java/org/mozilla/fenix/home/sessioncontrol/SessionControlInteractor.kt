@@ -15,8 +15,11 @@ import org.mozilla.fenix.components.appstate.setup.checklist.ChecklistItem
 import org.mozilla.fenix.home.bookmarks.Bookmark
 import org.mozilla.fenix.home.bookmarks.controller.BookmarksController
 import org.mozilla.fenix.home.interactor.HomepageInteractor
+import org.mozilla.fenix.home.logo.LogoController
+import org.mozilla.fenix.home.logo.TrackingProtectionController
 import org.mozilla.fenix.home.pocket.PocketRecommendedStoriesCategory
 import org.mozilla.fenix.home.pocket.controller.PocketStoriesController
+import org.mozilla.fenix.home.pocket.controller.StoriesImpressionSource
 import org.mozilla.fenix.home.privatebrowsing.controller.PrivateBrowsingController
 import org.mozilla.fenix.home.recentsyncedtabs.RecentSyncedTab
 import org.mozilla.fenix.home.recentsyncedtabs.controller.RecentSyncedTabController
@@ -28,9 +31,9 @@ import org.mozilla.fenix.home.recentvisits.controller.RecentVisitsController
 import org.mozilla.fenix.home.search.HomeSearchController
 import org.mozilla.fenix.home.termsofuse.PrivacyNoticeBannerController
 import org.mozilla.fenix.home.toolbar.ToolbarController
+import org.mozilla.fenix.home.topsites.AddShortcutEntryPoint
+import org.mozilla.fenix.home.topsites.AddShortcutSource
 import org.mozilla.fenix.home.topsites.controller.TopSiteController
-import org.mozilla.fenix.search.toolbar.SearchSelectorController
-import org.mozilla.fenix.search.toolbar.SearchSelectorMenu
 import org.mozilla.fenix.wallpapers.WallpaperState
 
 /**
@@ -119,11 +122,6 @@ interface CollectionInteractor {
      * Opens the collection creator
      */
     fun onAddTabsToCollectionTapped()
-
-    /**
-     * User has removed the collections placeholder from home.
-     */
-    fun onRemoveCollectionsPlaceholder()
 }
 
 interface MessageCardInteractor {
@@ -168,6 +166,26 @@ interface SetupChecklistInteractor {
 }
 
 /**
+ * Interface for tracking protection related actions on the homepage.
+ */
+interface TrackingProtectionInteractor {
+    /**
+     * Invoked when the privacy report card is tapped.
+     */
+    fun onPrivacyReportTapped()
+
+    /**
+     * Invoked when the longfox entry point text is clicked.
+     */
+    fun onLongfoxEntryPointClicked()
+
+    /**
+     * Invoked when the longfox entry point is shown.
+     */
+    fun onLongfoxEntryPointShown()
+}
+
+/**
  * Interactor for the Home screen. Provides implementations for the CollectionInteractor,
  * OnboardingInteractor, TopSiteInteractor, TabSessionInteractor, ToolbarInteractor,
  * ExperimentCardInteractor, RecentTabInteractor, RecentBookmarksInteractor
@@ -182,11 +200,12 @@ class SessionControlInteractor(
     private val recentVisitsController: RecentVisitsController,
     private val pocketStoriesController: PocketStoriesController,
     private val privateBrowsingController: PrivateBrowsingController,
-    private val searchSelectorController: SearchSelectorController,
     private val toolbarController: ToolbarController,
     private val homeSearchController: HomeSearchController,
     private val topSiteController: TopSiteController,
     private val privacyNoticeBannerController: PrivacyNoticeBannerController,
+    private val trackingProtectionController: TrackingProtectionController,
+    private val logoController: LogoController,
 ) : HomepageInteractor {
 
     override fun onCollectionAddTabTapped(collection: TabCollection) {
@@ -257,6 +276,20 @@ class SessionControlInteractor(
         topSiteController.handleShortcutsLibraryViewed()
     }
 
+    override fun onSaveShortcut(
+        title: String,
+        url: String,
+        source: AddShortcutSource,
+        entryPoint: AddShortcutEntryPoint,
+    ) {
+        topSiteController.handleSaveShortcut(
+            title = title,
+            url = url,
+            source = source,
+            entryPoint = entryPoint,
+        )
+    }
+
     override fun showWallpapersOnboardingDialog(state: WallpaperState): Boolean {
         return controller.handleShowWallpapersOnboardingDialog(state)
     }
@@ -285,24 +318,12 @@ class SessionControlInteractor(
         privateBrowsingController.handlePrivateModeButtonClicked(newMode)
     }
 
-    override fun onPasteAndGo(clipboardText: String) {
-        toolbarController.handlePasteAndGo(clipboardText)
-    }
-
-    override fun onPaste(clipboardText: String) {
-        toolbarController.handlePaste(clipboardText)
-    }
-
     override fun onNavigateSearch() {
         toolbarController.handleNavigateSearch()
     }
 
     override fun onHomeContentFocusedWhileSearchIsActive() {
         homeSearchController.handleHomeContentFocusedWhileSearchIsActive()
-    }
-
-    override fun onRemoveCollectionsPlaceholder() {
-        controller.handleRemoveCollectionsPlaceholder()
     }
 
     override fun onRecentTabClicked(tabId: String) {
@@ -367,16 +388,20 @@ class SessionControlInteractor(
         pocketStoriesController.handleStoryShown(storyShown, storyPosition)
     }
 
-    override fun onStoriesShown(storiesShown: List<PocketStory>) {
-        pocketStoriesController.handleStoriesShown(storiesShown)
+    override fun onStoriesShown(storiesShown: List<PocketStory>, source: StoriesImpressionSource) {
+        pocketStoriesController.handleStoriesShown(storiesShown, source)
     }
 
     override fun onCategoryClicked(categoryClicked: PocketRecommendedStoriesCategory) {
         pocketStoriesController.handleCategoryClick(categoryClicked)
     }
 
-    override fun onStoryClicked(storyClicked: PocketStory, storyPosition: Triple<Int, Int, Int>) {
-        pocketStoriesController.handleStoryClicked(storyClicked, storyPosition)
+    override fun onStoryClicked(
+        storyClicked: PocketStory,
+        storyPosition: Triple<Int, Int, Int>,
+        source: StoriesImpressionSource,
+    ) {
+        pocketStoriesController.handleStoryClicked(storyClicked, storyPosition, source)
     }
 
     override fun onDiscoverMoreClicked() {
@@ -399,10 +424,6 @@ class SessionControlInteractor(
         controller.handleMessageClosed(message)
     }
 
-    override fun onMenuItemTapped(item: SearchSelectorMenu.Item) {
-        searchSelectorController.handleMenuItemTapped(item)
-    }
-
     override fun onPrivacyNoticeBannerCloseClicked() {
         privacyNoticeBannerController.onBannerCloseClicked()
     }
@@ -417,5 +438,17 @@ class SessionControlInteractor(
 
     override fun onPrivacyNoticeBannerDisplayed() {
         privacyNoticeBannerController.onBannerDisplayed()
+    }
+
+    override fun onPrivacyReportTapped() {
+        trackingProtectionController.handleProtectionStatusPillClicked()
+    }
+
+    override fun onLongfoxEntryPointClicked() {
+        logoController.handleLongfoxEntryPointClicked()
+    }
+
+    override fun onLongfoxEntryPointShown() {
+        logoController.handleLongfoxEntryPointShown()
     }
 }

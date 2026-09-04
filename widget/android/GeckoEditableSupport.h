@@ -1,5 +1,4 @@
-/* -*- Mode: c++; c-basic-offset: 2; tab-width: 20; indent-tabs-mode: nil; -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -7,15 +6,14 @@
 #define mozilla_widget_GeckoEditableSupport_h
 
 #include "GeckoViewSupport.h"
-#include "nsAppShell.h"
-#include "nsIWidget.h"
-#include "nsTArray.h"
-
-#include "mozilla/java/GeckoEditableChildNatives.h"
-#include "mozilla/java/SessionTextInputWrappers.h"
 #include "mozilla/TextEventDispatcher.h"
 #include "mozilla/TextEventDispatcherListener.h"
 #include "mozilla/UniquePtr.h"
+#include "mozilla/java/GeckoEditableChildNatives.h"
+#include "mozilla/java/SessionTextInputWrappers.h"
+#include "nsAppShell.h"
+#include "nsIWidget.h"
+#include "nsTArray.h"
 
 class nsWindow;
 
@@ -130,6 +128,7 @@ class GeckoEditableSupport final
   void OnNotifyIMEOfCompositionEventHandled();
   void NotifyIMEContext(const InputContext& aContext,
                         const InputContextAction& aAction);
+  void EnsureEditableParent(uint64_t aContentId, uint64_t aTabId);
 
  public:
   template <typename Functor>

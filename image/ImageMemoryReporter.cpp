@@ -1,15 +1,14 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "ImageMemoryReporter.h"
+
 #include "Image.h"
 #include "base/process_util.h"
+#include "mozilla/StaticPrefs_image.h"
 #include "mozilla/ipc/SharedMemoryMapping.h"
 #include "mozilla/layers/SharedSurfacesParent.h"
-#include "mozilla/StaticPrefs_image.h"
 #include "nsIMemoryReporter.h"
 #include "nsISupportsImpl.h"
 
@@ -22,7 +21,7 @@ class ImageMemoryReporter::WebRenderReporter final : public nsIMemoryReporter {
  public:
   NS_DECL_ISUPPORTS
 
-  WebRenderReporter() {}
+  WebRenderReporter() = default;
 
   NS_IMETHOD CollectReports(nsIHandleReportCallback* aHandleReport,
                             nsISupports* aData, bool aAnonymize) override {
@@ -34,7 +33,7 @@ class ImageMemoryReporter::WebRenderReporter final : public nsIMemoryReporter {
   }
 
  private:
-  virtual ~WebRenderReporter() {}
+  virtual ~WebRenderReporter() = default;
 };
 
 NS_IMPL_ISUPPORTS(ImageMemoryReporter::WebRenderReporter, nsIMemoryReporter)
@@ -44,7 +43,7 @@ void ImageMemoryReporter::InitForWebRender() {
   MOZ_ASSERT(XRE_IsParentProcess() || XRE_IsGPUProcess());
   if (!sWrReporter) {
     sWrReporter = new WebRenderReporter();
-    RegisterStrongMemoryReporter(sWrReporter);
+    RegisterStrongMemoryReporter(do_AddRef(sWrReporter));
   }
 }
 

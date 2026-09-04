@@ -1,5 +1,4 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -33,6 +32,8 @@
 // continue to the TLS connection.
 
 #include "TLSClientAuthCertSelection.h"
+
+#include "NSSCertDBTrustDomain.h"
 #include "cert_storage/src/cert_storage.h"
 #include "mozilla/Logging.h"
 #include "mozilla/dom/BrowsingContext.h"
@@ -43,19 +44,17 @@
 #include "mozilla/net/SocketProcessBackgroundChild.h"
 #include "mozilla/psm/SelectTLSClientAuthCertChild.h"
 #include "mozilla/psm/SelectTLSClientAuthCertParent.h"
-#include "nsArray.h"
-#include "nsArrayUtils.h"
-#include "nsNSSComponent.h"
-#include "nsIClientAuthDialogService.h"
-#include "nsIMutableArray.h"
-#include "nsINSSComponent.h"
-#include "NSSCertDBTrustDomain.h"
-#include "nsIClientAuthRememberService.h"
-#include "nsIX509CertDB.h"
-#include "nsNSSHelper.h"
+#include "mozpkix/pkix.h"
 #include "mozpkix/pkixnss.h"
 #include "mozpkix/pkixutil.h"
-#include "mozpkix/pkix.h"
+#include "nsArray.h"
+#include "nsArrayUtils.h"
+#include "nsIClientAuthDialogService.h"
+#include "nsIClientAuthRememberService.h"
+#include "nsIMutableArray.h"
+#include "nsINSSComponent.h"
+#include "nsIX509CertDB.h"
+#include "nsNSSComponent.h"
 #include "secerr.h"
 #include "sslerr.h"
 

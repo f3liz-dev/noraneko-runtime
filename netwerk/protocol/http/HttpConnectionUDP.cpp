@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=4 sw=2 sts=2 et cin: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -19,19 +17,19 @@
 
 #include "ASpdySession.h"
 #include "ConnectionHandle.h"
+#include "Http3Session.h"
+#include "HttpConnectionUDP.h"
 #include "mozilla/StaticPrefs_network.h"
 #include "mozilla/glean/NetwerkMetrics.h"
-#include "HttpConnectionUDP.h"
+#include "nsComponentManagerUtils.h"
 #include "nsHttpConnectionMgr.h"
 #include "nsHttpHandler.h"
 #include "nsHttpTransaction.h"
-#include "Http3Session.h"
-#include "nsComponentManagerUtils.h"
 #include "nsIDNSRecord.h"
 #include "nsIHttpChannelInternal.h"
+#include "nsINetAddr.h"
 #include "nsISocketProvider.h"
 #include "nsNetAddr.h"
-#include "nsINetAddr.h"
 #include "nsStringStream.h"
 #include "nsThreadUtils.h"
 
@@ -111,7 +109,7 @@ class ConnectUDPTransaction : public nsAHttpTransaction {
   void SetProxyConnectFailed() override {
     mTransaction->SetProxyConnectFailed();
   }
-  nsHttpRequestHead* RequestHead() override {
+  const nsHttpRequestHead* RequestHead() override {
     return mTransaction->RequestHead();
   }
   uint32_t Http1xTransactionCount() override { return 0; }
@@ -170,6 +168,7 @@ class Http3ConnectTransaction : public ConnectUDPTransaction {
   }
 
   void Close(nsresult reason) override { mConnection = nullptr; }
+  const nsHttpRequestHead* RequestHead() override { return nullptr; }
 
  private:
   virtual ~Http3ConnectTransaction() {
@@ -217,10 +216,7 @@ nsresult HttpConnectionUDP::Init(nsHttpConnectionInfo* info,
   mErrorBeforeConnect = status;
   mAlpnToken = mConnInfo->GetNPNToken();
   if (NS_FAILED(mErrorBeforeConnect)) {
-    // See explanation for non-strictness of this operation in
-    // SetSecurityCallbacks.
-    mCallbacks = new nsMainThreadPtrHolder<nsIInterfaceRequestor>(
-        "HttpConnectionUDP::mCallbacks", callbacks, false);
+    InitCallbacks(callbacks, "HttpConnectionUDP::mCallbacks");
     SetCloseReason(ToCloseReason(mErrorBeforeConnect));
     return mErrorBeforeConnect;
   }
@@ -327,6 +323,7 @@ nsresult HttpConnectionUDP::InitCommon(nsIUDPSocket* aSocket,
   if (caps & NS_HTTP_LOAD_ANONYMOUS) {
     providerFlags |= nsISocketProvider::ANONYMOUS_CONNECT;
   }
+  mSocket->SetOriginAttributes(mConnInfo->GetOriginAttributes());
   if (mConnInfo->GetPrivate()) {
     providerFlags |= nsISocketProvider::NO_PERMANENT_STORAGE;
   }
@@ -366,10 +363,7 @@ nsresult HttpConnectionUDP::InitCommon(nsIUDPSocket* aSocket,
   }
 
   ChangeConnectionState(ConnectionState::INITED);
-  // See explanation for non-strictness of this operation in
-  // SetSecurityCallbacks.
-  mCallbacks = new nsMainThreadPtrHolder<nsIInterfaceRequestor>(
-      "HttpConnectionUDP::mCallbacks", callbacks, false);
+  InitCallbacks(callbacks, "HttpConnectionUDP::mCallbacks");
 
   // Call SyncListen at the end of this function. This call will actually
   // attach the sockte to SocketTransportService.
@@ -398,8 +392,18 @@ nsresult HttpConnectionUDP::Activate(nsAHttpTransaction* trans, uint32_t caps,
     // set the targetIpAddressSpace in the transaction object, this might be
     // needed by the channel for determining the kind of LNA permissions and/or
     // LNA telemetry
-    if (!hTrans->AllowedToConnectToIpAddressSpace(
-            peerAddr.GetIpAddressSpace())) {
+    auto addrSpace = peerAddr.GetIpAddressSpace();
+    // h3 always uses TLS via QUIC. When network.lna.defer_https_check is
+    // enabled and the QUIC handshake hasn't yet completed, defer the LNA
+    // check for Private targets to OnConnected() so we don't prompt for
+    // misdirected public hostnames whose certificate would have failed to
+    // validate. Local targets are still checked immediately.
+    bool deferPrivate = addrSpace == nsILoadInfo::IPAddressSpace::Private &&
+                        StaticPrefs::network_lna_defer_https_check() &&
+                        mHttp3Session && !mHttp3Session->IsConnected();
+    if (deferPrivate) {
+      mDeferredLnaTransactions.AppendElement(hTrans);
+    } else if (!hTrans->AllowedToConnectToIpAddressSpace(addrSpace)) {
       // we could probably fail early and avoid recreating the H3 session
       // See Bug 1968908
       CloseTransaction(mHttp3Session, NS_ERROR_LOCAL_NETWORK_ACCESS_DENIED);
@@ -493,10 +497,13 @@ nsresult HttpConnectionUDP::Activate(nsAHttpTransaction* trans, uint32_t caps,
     return NS_OK;
   }
 
-  if (!mHttp3Session->AddStream(trans, pri, mCallbacks)) {
-    MOZ_ASSERT(false);  // this cannot happen!
-    trans->Close(NS_ERROR_ABORT);
-    return NS_ERROR_FAILURE;
+  {
+    nsCOMPtr<nsIInterfaceRequestor> callbacks = GetCallbacks();
+    if (!mHttp3Session->AddStream(trans, pri, callbacks)) {
+      MOZ_ASSERT(false);  // this cannot happen!
+      trans->Close(NS_ERROR_ABORT);
+      return NS_ERROR_FAILURE;
+    }
   }
 
   if (mHasFirstHttpTransaction && mExperienced) {
@@ -513,6 +520,37 @@ void HttpConnectionUDP::OnConnected() {
   MOZ_ASSERT(!mConnected, "Called more than once");
 
   mConnected = true;
+
+  // Deferred LNA check: now that the QUIC handshake has succeeded (and the
+  // peer presented a valid certificate for the requested name), check
+  // whether any deferred transactions are permitted to reach this address
+  // space. If denied, tear down the session and close all of them.
+  if (!mDeferredLnaTransactions.IsEmpty()) {
+    nsTArray<RefPtr<nsHttpTransaction>> deferred =
+        std::move(mDeferredLnaTransactions);
+    NetAddr peerAddr;
+    if (NS_SUCCEEDED(GetPeerAddr(&peerAddr))) {
+      auto addrSpace = peerAddr.GetIpAddressSpace();
+      bool denied = false;
+      for (const auto& t : deferred) {
+        if (!t->AllowedToConnectToIpAddressSpace(addrSpace)) {
+          denied = true;
+          // We might want to break here, but AllowedToConnectToIpAddressSpace
+          // has a side effect of setting mTargetIpAddressSpace. In practice
+          // the array will usually just contain one transaction.
+        }
+      }
+      if (denied) {
+        DontReuse();
+        CloseTransaction(mHttp3Session, NS_ERROR_LOCAL_NETWORK_ACCESS_DENIED);
+        for (const auto& t : deferred) {
+          t->Close(NS_ERROR_LOCAL_NETWORK_ACCESS_DENIED);
+        }
+        return;
+      }
+    }
+  }
+
   if (mIsInTunnel) {
     return;
   }
@@ -557,7 +595,7 @@ already_AddRefed<nsIInputStream> HttpConnectionUDP::CreateProxyConnectStream(
   if (LOG1_ENABLED()) {
     LOG(("HttpConnectionUDP::MakeConnectString for transaction=%p[",
          trans->QueryHttpTransaction()));
-    LogHeaders(result.BeginReading());
+    LogHeaders(result.get());
     LOG(("]"));
   }
   result.AppendLiteral("\r\n");
@@ -580,8 +618,9 @@ nsresult HttpConnectionUDP::CreateTunnelStream(
   if (!isHttp3) {
     RefPtr<Http3ConnectTransaction> trans = new Http3ConnectTransaction(
         httpTransaction->Caps(), httpTransaction->ConnectionInfo());
+    nsCOMPtr<nsIInterfaceRequestor> callbacks = GetCallbacks();
     RefPtr<nsHttpConnection> conn =
-        mHttp3Session->CreateTunnelStream(trans, mCallbacks, mRtt, false);
+        mHttp3Session->CreateTunnelStream(trans, callbacks, mRtt, false);
     RefPtr<ConnectionHandle> handle = new ConnectionHandle(conn);
     trans->SetConnection(handle);
 
@@ -597,8 +636,9 @@ nsresult HttpConnectionUDP::CreateTunnelStream(
 
   RefPtr<ConnectUDPTransaction> trans =
       new ConnectUDPTransaction(httpTransaction, proxyConnectStream);
+  nsCOMPtr<nsIInterfaceRequestor> callbacks2 = GetCallbacks();
   RefPtr<HttpConnectionUDP> conn =
-      mHttp3Session->CreateTunnelStream(trans, mCallbacks);
+      mHttp3Session->CreateTunnelStream(trans, callbacks2);
   RefPtr<ConnectionHandle> handle = new ConnectionHandle(conn);
   trans->SetConnection(handle);
 
@@ -678,6 +718,11 @@ bool HttpConnectionUDP::JoinConnection(const nsACString& hostname,
 }
 
 bool HttpConnectionUDP::CanReuse() {
+#ifdef DEBUG
+  if (StaticPrefs::network_http_http3_force_cannot_reuse_for_testing()) {
+    return false;
+  }
+#endif
   if (NS_FAILED(mErrorBeforeConnect)) {
     return false;
   }
@@ -689,6 +734,15 @@ bool HttpConnectionUDP::CanReuse() {
     return mHttp3Session->CanReuse();
   }
   return false;
+}
+
+bool HttpConnectionUDP::IsConnectedAndUnusable() {
+  // mExperienced is set only after the QUIC/TLS handshake completes and a real
+  // transaction is served, so it excludes still-handshaking connections (which
+  // report !CanReuse() transiently). Combined with !CanReuse() this identifies
+  // a connection that was usable and can no longer serve new transactions
+  // (either DontReuse'd or its Http3Session went away, e.g. GOAWAY).
+  return mExperienced && !CanReuse();
 }
 
 bool HttpConnectionUDP::CanDirectlyActivate() {
@@ -726,7 +780,7 @@ nsresult HttpConnectionUDP::OnHeadersAvailable(nsAHttpTransaction* trans,
   uint16_t responseStatus = responseHead->Status();
   nsHttpTransaction* hTrans = trans->QueryHttpTransaction();
   if (mState == HttpConnectionState::SETTING_UP_TUNNEL) {
-    HandleTunnelResponse(hTrans, responseStatus, reset);
+    HandleTunnelResponse(hTrans, *responseHead, reset);
     return NS_OK;
   }
 
@@ -749,18 +803,21 @@ nsresult HttpConnectionUDP::OnHeadersAvailable(nsAHttpTransaction* trans,
 }
 
 void HttpConnectionUDP::HandleTunnelResponse(
-    nsHttpTransaction* aHttpTransaction, uint16_t responseStatus, bool* reset) {
+    nsHttpTransaction* aHttpTransaction, const nsHttpResponseHead& responseHead,
+    bool* reset) {
   LOG(("HttpConnectionUDP::HandleTunnelResponse mIsInTunnel=%d", mIsInTunnel));
   MOZ_ASSERT(TunnelSetupInProgress());
   MOZ_ASSERT(mIsInTunnel);
 
-  if (responseStatus == 200) {
+  mProxyConnectResponseHead =
+      MakeRefPtr<ProxyConnectResponseHead>(responseHead);
+  if (responseHead.Status() == 200) {
     ChangeState(HttpConnectionState::REQUEST);
   }
 
   bool onlyConnect = mTransactionCaps & NS_HTTP_CONNECT_ONLY;
-  aHttpTransaction->OnProxyConnectComplete(responseStatus);
-  if (responseStatus == 200) {
+  aHttpTransaction->OnProxyConnectComplete(mProxyConnectResponseHead);
+  if (responseHead.Status() == 200) {
     LOG(("proxy CONNECT succeeded! onlyconnect=%d mIsInTunnel=%d\n",
          onlyConnect, mIsInTunnel));
     // If we're only connecting, we don't need to reset the transaction
@@ -772,7 +829,8 @@ void HttpConnectionUDP::HandleTunnelResponse(
 
     for (const auto& trans : mQueuedConnectUdpTransaction) {
       LOG(("add trans=%p", trans.get()));
-      if (!mHttp3Session->AddStream(trans, trans->Priority(), mCallbacks)) {
+      nsCOMPtr<nsIInterfaceRequestor> callbacks = GetCallbacks();
+      if (!mHttp3Session->AddStream(trans, trans->Priority(), callbacks)) {
         MOZ_ASSERT(false);  // this cannot happen!
         trans->Close(NS_ERROR_ABORT);
       }
@@ -791,12 +849,18 @@ void HttpConnectionUDP::ResetTransaction(nsHttpTransaction* aHttpTransaction) {
   LOG(("HttpConnectionUDP::ResetTransaction [this=%p mState=%d]\n", this,
        static_cast<uint32_t>(mState)));
 
-  RefPtr<nsHttpConnectionInfo> wildCardProxyCi;
-  nsresult rv = mConnInfo->CreateWildCard(getter_AddRefs(wildCardProxyCi));
-  if (NS_FAILED(rv)) {
-    CloseTransaction(mHttp3Session, rv);
-    aHttpTransaction->Close(rv);
-    return;
+  if (!mAlreadyWildcard) {
+    RefPtr<nsHttpConnectionInfo> wildCardProxyCi;
+    nsresult rv = mConnInfo->CreateWildCard(getter_AddRefs(wildCardProxyCi));
+    if (NS_FAILED(rv)) {
+      CloseTransaction(mHttp3Session, rv);
+      aHttpTransaction->Close(rv);
+      return;
+    }
+    gHttpHandler->ConnMgr()->MoveToWildCardConnEntry(mConnInfo, wildCardProxyCi,
+                                                     this);
+    mConnInfo = wildCardProxyCi;
+    mAlreadyWildcard = true;
   }
 
   // Both Http3Session and nsHttpTransaction keeps a strong reference to a
@@ -818,10 +882,11 @@ void HttpConnectionUDP::ResetTransaction(nsHttpTransaction* aHttpTransaction) {
     mHttp3Session->SetConnection(aHttpTransaction->Connection());
   }
   aHttpTransaction->SetConnection(nullptr);
-  gHttpHandler->ConnMgr()->MoveToWildCardConnEntry(mConnInfo, wildCardProxyCi,
-                                                   this);
-  mConnInfo = wildCardProxyCi;
+
   aHttpTransaction->DoNotRemoveAltSvc();
+  // This transaction may have NS_HTTP_STICKY_CONNECTION set, so we must call
+  // MakeRestartable() explicitly to ensure it can be restarted.
+  aHttpTransaction->MakeRestartable();
   aHttpTransaction->Close(NS_ERROR_NET_RESET);
 }
 
@@ -986,6 +1051,12 @@ void HttpConnectionUDP::CloseTransaction(nsAHttpTransaction* trans,
   MOZ_ASSERT(OnSocketThread(), "not on socket thread");
 
   if (NS_SUCCEEDED(reason) || (reason == NS_BASE_STREAM_CLOSED)) {
+    if (aIsShutdown && mHttp3Session) {
+      // The underlying socket has been closed. Cancel the Http3Session timer
+      // to prevent it from firing on the now-closed socket.
+      mHttp3Session->SetCleanShutdown(true);
+      mHttp3Session->Close(reason);
+    }
     return;
   }
 
@@ -1119,11 +1190,7 @@ HttpConnectionUDP::GetInterface(const nsIID& iid, void** result) {
 
   MOZ_ASSERT(!OnSocketThread(), "on socket thread");
 
-  nsCOMPtr<nsIInterfaceRequestor> callbacks;
-  {
-    MutexAutoLock lock(mCallbacksLock);
-    callbacks = mCallbacks;
-  }
+  nsCOMPtr<nsIInterfaceRequestor> callbacks = GetCallbacks();
   if (callbacks) return callbacks->GetInterface(iid, result);
   return NS_ERROR_NO_INTERFACE;
 }
@@ -1208,6 +1275,12 @@ Http3Stats HttpConnectionUDP::GetStats() {
     return Http3Stats();
   }
   return mHttp3Session->GetStats();
+}
+
+void HttpConnectionUDP::SetDontExclude() {
+  if (mHttp3Session) {
+    mHttp3Session->SetDontExclude();
+  }
 }
 
 }  // namespace net

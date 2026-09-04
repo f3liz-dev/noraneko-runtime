@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2; -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -76,9 +75,7 @@ class BatchProcessedStackGenerator {
  private:
   ProcessedStack GetStackAndModules(const uintptr_t* aBegin,
                                     const uintptr_t* aEnd);
-#if defined(MOZ_GECKO_PROFILER)
   SharedLibraryInfo mSortedRawModules;
-#endif
 };
 
 }  // namespace Telemetry
@@ -86,49 +83,11 @@ class BatchProcessedStackGenerator {
 
 namespace IPC {
 
-template <>
-struct ParamTraits<mozilla::Telemetry::ProcessedStack::Module> {
-  typedef mozilla::Telemetry::ProcessedStack::Module paramType;
+DEFINE_IPC_SERIALIZER_WITH_FIELDS(mozilla::Telemetry::ProcessedStack::Module,
+                                  mName, mBreakpadId);
 
-  static void Write(MessageWriter* aWriter, const paramType& aParam) {
-    WriteParam(aWriter, aParam.mName);
-    WriteParam(aWriter, aParam.mBreakpadId);
-  }
-
-  static bool Read(MessageReader* aReader, paramType* aResult) {
-    if (!ReadParam(aReader, &aResult->mName)) {
-      return false;
-    }
-
-    if (!ReadParam(aReader, &aResult->mBreakpadId)) {
-      return false;
-    }
-
-    return true;
-  }
-};
-
-template <>
-struct ParamTraits<mozilla::Telemetry::ProcessedStack::Frame> {
-  typedef mozilla::Telemetry::ProcessedStack::Frame paramType;
-
-  static void Write(MessageWriter* aWriter, const paramType& aParam) {
-    WriteParam(aWriter, aParam.mOffset);
-    WriteParam(aWriter, aParam.mModIndex);
-  }
-
-  static bool Read(MessageReader* aReader, paramType* aResult) {
-    if (!ReadParam(aReader, &aResult->mOffset)) {
-      return false;
-    }
-
-    if (!ReadParam(aReader, &aResult->mModIndex)) {
-      return false;
-    }
-
-    return true;
-  }
-};
+DEFINE_IPC_SERIALIZER_WITH_FIELDS(mozilla::Telemetry::ProcessedStack::Frame,
+                                  mOffset, mModIndex);
 
 }  // namespace IPC
 

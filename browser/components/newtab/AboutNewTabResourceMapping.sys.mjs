@@ -9,12 +9,39 @@ export const BUILTIN_ADDON_ID = "newtab@mozilla.org";
 export const DISABLE_NEWTAB_AS_ADDON_PREF =
   "browser.newtabpage.disableNewTabAsAddon";
 export const TRAINHOP_NIMBUS_FEATURE_ID = "newtabTrainhopAddon";
+export const TRAINHOP_NIMBUS_DEPLOYMENT_FEATURE_ID =
+  "newtabTrainhopAddonDeployment";
+// For trainhop migration to enable co-enrollment: for now, enrollments
+// are read from both the original settings-pref feature
+// (newtabTrainhopAddon) and its co-enrollment successor
+// (newtabTrainhopAddonDeployment), joined together with the highest
+// addon_version winning. The original feature can be dropped from this list
+// once its rollouts have aged out (see Bug 1995391).
+export const TRAINHOP_NIMBUS_FEATURE_IDS = [
+  TRAINHOP_NIMBUS_FEATURE_ID,
+  TRAINHOP_NIMBUS_DEPLOYMENT_FEATURE_ID,
+];
 export const TRAINHOP_NIMBUS_FIRST_STARTUP_FEATURE_ID =
   "newtabTrainhopFirstStartup";
 export const TRAINHOP_XPI_BASE_URL_PREF =
   "browser.newtabpage.trainhopAddon.xpiBaseURL";
 export const TRAINHOP_XPI_VERSION_PREF =
   "browser.newtabpage.trainhopAddon.version";
+// Records the highest currently-enrolled train-hop version for the co-enrollment
+// deployment feature. Owned exclusively by AboutNewTabResourceMapping. It tracks
+// the current winner and can decrease (e.g. when a higher-version rollout ends,
+// which is what drives a downgrade). It is kept separate from
+// TRAINHOP_XPI_VERSION_PREF (which the original newtabTrainhopAddon feature owns
+// via setPref) because writing the original feature's pref externally would make
+// Nimbus treat it as a user opt-out and unenroll the client. See Bug 1995391.
+export const TRAINHOP_XPI_DEPLOYMENT_VERSION_PREF =
+  "browser.newtabpage.trainhopAddonDeployment.version";
+// "any" is a sentinel value accepted in either of the two version prefs above,
+// meaning "entitled to whichever train-hop version happens to be installed".
+// Nimbus never writes it; it exists for the callers that install the XPI with
+// the traditional extension install mechanism (namely, newtab devs and our CI
+// infrastructure).
+export const TRAINHOP_ANY_VERSION_SENTINEL = "any";
 export const TRAINHOP_SCHEDULED_UPDATE_STATE_DELAY_PREF =
   "browser.newtabpage.trainhopAddon.scheduledUpdateState.delay";
 export const TRAINHOP_SCHEDULED_UPDATE_STATE_TIMEOUT_PREF =
@@ -23,10 +50,13 @@ export const TRAINHOP_SCHEDULED_UPDATE_STATE_TIMEOUT_PREF =
 const FLUENT_SOURCE_NAME = "newtab";
 const TOPIC_LOCALES_CHANGED = "intl:app-locales-changed";
 const TOPIC_SHUTDOWN = "profile-before-change";
+const TOPIC_LANGPACK_STARTUP = "webextension-langpack-startup";
+const TOPIC_LANGPACK_SHUTDOWN = "webextension-langpack-shutdown";
 
 const lazy = XPCOMUtils.declareLazy({
   AddonManager: "resource://gre/modules/AddonManager.sys.mjs",
   AddonSettings: "resource://gre/modules/addons/AddonSettings.sys.mjs",
+  Langpack: "resource://gre/modules/Extension.sys.mjs",
   AboutHomeStartupCache: "resource:///modules/AboutHomeStartupCache.sys.mjs",
   AsyncShutdown: "resource://gre/modules/AsyncShutdown.sys.mjs",
   DeferredTask: "resource://gre/modules/DeferredTask.sys.mjs",
@@ -66,7 +96,30 @@ const lazy = XPCOMUtils.declareLazy({
     pref: TRAINHOP_XPI_VERSION_PREF,
     default: "",
   },
+  trainhopAddonDeploymentXPIVersion: {
+    pref: TRAINHOP_XPI_DEPLOYMENT_VERSION_PREF,
+    default: "",
+  },
 });
+
+/**
+ * Returns the greater of two version strings, treating an empty string as
+ * "no version". Returns "" only when both are empty.
+ *
+ * @param {string} a A version string (or "").
+ * @param {string} b A version string (or "").
+ * @returns {string} The higher of the two versions (either one when they are
+ *   equal), or "" if both are empty.
+ */
+function maxVersionString(a, b) {
+  if (!a) {
+    return b;
+  }
+  if (!b) {
+    return a;
+  }
+  return Services.vc.compare(a, b) >= 0 ? a : b;
+}
 
 /**
  * AboutNewTabResourceMapping is responsible for creating the mapping between
@@ -90,6 +143,8 @@ export var AboutNewTabResourceMapping = {
   _builtinVersion: null,
   _updateAddonStateDeferredTask: null,
   _supportedLocales: null,
+  _langpackShadowSources: null,
+  _inObserveHandler: false,
 
   /**
    * Returns the version string for whichever version of New Tab is currently
@@ -280,18 +335,35 @@ export var AboutNewTabResourceMapping = {
     // Do not use XPI resources to prepare to uninstall the train-hop add-on xpi
     // later in the current application session from updateTrainhopAddonState, if:
     //
-    // - the train-hop add-on version set in the pref is empty (the client has been
-    //   unenrolled in the previous browsing session and so we fallback to the
-    //   resources bundled in the Desktop omni jar)
+    // - both train-hop version prefs are empty (the client has been unenrolled
+    //   from both the original and the deployment feature in the previous
+    //   browsing session and so we fallback to the resources bundled in the
+    //   Desktop omni jar). Either pref being set means the client is still
+    //   entitled to a train-hop version.
     // - the builtin add-on version is equal or greater than the train-hop add-on
     //   version (and so the application has been updated and the old train-hop
     //   add-on is obsolete and can be uninstalled)
+    // - the installed train-hop add-on version is higher than the version the
+    //   client is currently entitled to (e.g. the higher-version rollout has
+    //   ended while a lower-version one is still active); we stop using it so the
+    //   highest currently-enrolled version can take over on the next startups.
+    //   This comparison is skipped when the entitled version is
+    //   TRAINHOP_ANY_VERSION_SENTINEL.
     // - the train-hop add-on xpi is not system-signed (as specifically required for
     //   newtab xpi being installed in the `extensions` profile subdirectory by
     //   the custom install logic provided by the _installTrainhopAddon method).
+    const entitledVersion = maxVersionString(
+      lazy.trainhopAddonXPIVersion,
+      lazy.trainhopAddonDeploymentXPIVersion
+    );
+    const entitledToAnyVersion =
+      lazy.trainhopAddonXPIVersion === TRAINHOP_ANY_VERSION_SENTINEL ||
+      lazy.trainhopAddonDeploymentXPIVersion === TRAINHOP_ANY_VERSION_SENTINEL;
     const shouldUninstallXPI = isXPI
-      ? lazy.trainhopAddonXPIVersion === "" ||
+      ? entitledVersion === "" ||
         Services.vc.compare(this._builtinVersion, version) >= 0 ||
+        (!entitledToAnyVersion &&
+          Services.vc.compare(version, entitledVersion) > 0) ||
         (lazy.AddonSettings.REQUIRE_SIGNING && !isPrivileged)
       : false;
 
@@ -337,6 +409,7 @@ export var AboutNewTabResourceMapping = {
         // may have Fluent files or Glean pings/metrics to register dynamically.
         this.registerFluentSources(rootURI);
         this.registerMetricsFromJson();
+        this.reevaluateNimbusRecipes();
       }
       lazy.aboutRedirector.wrappedJSObject.notifyBuiltInAddonInitialized();
       Glean.newtab.addonReadySuccess.set(true);
@@ -368,18 +441,75 @@ export var AboutNewTabResourceMapping = {
         )
       );
 
+      this._langpackShadowSources = new Set();
+
       // Set up observers so that if the user changes the list of available
       // locales, we'll re-register.
       Services.obs.addObserver(this, TOPIC_LOCALES_CHANGED);
       Services.obs.addObserver(this, TOPIC_SHUTDOWN);
-      // Now actually do the registration.
+      Services.obs.addObserver(this, TOPIC_LANGPACK_STARTUP);
+      Services.obs.addObserver(this, TOPIC_LANGPACK_SHUTDOWN);
+      // Register the primary newtab source in the "app" metasource so that
+      // its strings are available wherever app strings are resolved (notably
+      // the en-US fallback chain when no langpack is active).
       this._updateFluentSourcesRegistration();
+
+      // For each already-active langpack, also register a shadow newtab
+      // source inside that langpack's metasource. This lets the L10nRegistry
+      // solver produce a bundle where the langpack provides every other
+      // resource in the active locale while the newtab XPI provides its own
+      // (possibly newer) newtab.ftl entries. Without this, train-hop-only
+      // strings (added in the XPI but not yet in any langpack) would never
+      // appear in a non-English locale: the (locale, app) bundle can't be
+      // built because the rest of the app sources are en-US only, and the
+      // (locale, langpack) bundle would only contain the langpack's older
+      // newtab.ftl. See Bug 2046945.
+      //
+      // Batch the registration into a single registerSources call so we
+      // emit one intl:l10n-sources-changed / intl:app-locales-changed
+      // broadcast for the whole set of active langpacks rather than one
+      // per langpack. Profiles in Bug 2049845 showed the per-langpack
+      // path multiplying observer cascades at startup on installations
+      // with multiple langpacks (Flatpak/Snap/MSIX).
+      const shadowSources = [];
+      for (const langpackId of lazy.Langpack.activeLangpackIds) {
+        if (this._langpackShadowSources.has(langpackId)) {
+          continue;
+        }
+        const sourceName = `${FLUENT_SOURCE_NAME}-${langpackId}`;
+        shadowSources.push(this._buildNewtabFileSource(sourceName, langpackId));
+        this._langpackShadowSources.add(langpackId);
+      }
+      if (shadowSources.length) {
+        L10nRegistry.getInstance().registerSources(shadowSources);
+      }
     } catch (e) {
       // TODO: consider if we should collect this in telemetry.
       this.logger.error(
         `Error on registering fluent files from ${rootURI.spec}:`,
         e
       );
+    }
+  },
+
+  /**
+   * This is run during `init` after the addonVersion has been updated, and only
+   * if an XPI is being used. We tell Nimbus to re-evaluate any recipes in case
+   * the XPI is being used for an experiment.
+   *
+   * @returns {Promise<void>}
+   */
+  async reevaluateNimbusRecipes() {
+    // Tell Experimenter to re-evaluate experiment recipe targeting in case we
+    // just installed an XPI.
+    try {
+      await lazy.ExperimentAPI._rsLoader.finishedUpdating();
+      await lazy.ExperimentAPI._rsLoader.updateRecipes("newtab-trainhop", {
+        onlyFeatureIds: new Set(["newtabTrainhop"]),
+      });
+    } catch (e) {
+      // TODO: consider if we should collect this in telemetry.
+      this.logger.error("Error when re-evaluating Nimbus recipes:", e);
     }
   },
 
@@ -393,11 +523,9 @@ export var AboutNewTabResourceMapping = {
     let availableSupportedLocales =
       this._supportedLocales.intersection(availableLocales);
 
-    const newtabFileSource = new L10nFileSource(
+    const newtabFileSource = this._buildNewtabFileSource(
       FLUENT_SOURCE_NAME,
-      "app",
-      [...availableSupportedLocales],
-      `resource://newtab/locales/{locale}/`
+      "app"
     );
 
     let registry = L10nRegistry.getInstance();
@@ -416,17 +544,146 @@ export var AboutNewTabResourceMapping = {
     }
   },
 
-  observe(_subject, topic, _data) {
-    switch (topic) {
-      case TOPIC_LOCALES_CHANGED: {
-        this._updateFluentSourcesRegistration();
-        break;
+  /**
+   * Builds an L10nFileSource for the newtab Fluent files with a given name
+   * and metasource, using the current intersection of the XPI's supported
+   * locales and the locales known to the L10nRegistry.
+   *
+   * @param {string} name
+   *   The source name. Must be unique per metasource.
+   * @param {string} metasource
+   *   The metasource the source belongs to. "app" for the primary source,
+   *   a langpack id for shadow sources.
+   * @returns {L10nFileSource}
+   */
+  _buildNewtabFileSource(name, metasource) {
+    let availableLocales = new Set(Services.locale.availableLocales);
+    let availableSupportedLocales =
+      this._supportedLocales.intersection(availableLocales);
+    return new L10nFileSource(
+      name,
+      metasource,
+      [...availableSupportedLocales],
+      `resource://newtab/locales/{locale}/`
+    );
+  },
+
+  /**
+   * Registers a shadow L10nFileSource for the newtab XPI inside a langpack's
+   * metasource. This lets the L10nRegistry solver produce a bundle where the
+   * langpack provides every required resource in the active locale except
+   * browser/newtab/newtab.ftl, which is satisfied by the train-hopped XPI's
+   * (possibly newer) copy. Without this, train-hop-only strings — those
+   * present in the XPI but not yet in any langpack — are unreachable in any
+   * non-English locale and fall through to en-US. No-op if a shadow is
+   * already registered for this langpack. See Bug 2046945.
+   *
+   * @param {string} langpackId
+   *   The langpack's L10nRegistry metasource string, as stored on
+   *   `Langpack.langpackId`. This is NOT the langpack add-on's `id` —
+   *   its shape is `langpack-${manifest.langpack_id}-${productCodeName}`,
+   *   e.g. "langpack-es-ES-browser" on desktop Firefox.
+   */
+  _registerLangpackShadow(langpackId) {
+    if (this._langpackShadowSources.has(langpackId)) {
+      return;
+    }
+    const sourceName = `${FLUENT_SOURCE_NAME}-${langpackId}`;
+    const shadowSource = this._buildNewtabFileSource(sourceName, langpackId);
+    L10nRegistry.getInstance().registerSources([shadowSource]);
+    this._langpackShadowSources.add(langpackId);
+    this.logger.debug(
+      `Registered newtab shadow source in metasource ${langpackId}`
+    );
+  },
+
+  /**
+   * Removes a previously-registered shadow source for the given langpack.
+   * Called when a langpack shuts down (is uninstalled or disabled) so we
+   * don't leave an orphan source keeping the langpack's now-empty metasource
+   * alive. No-op if no shadow was registered for this langpack.
+   *
+   * @param {string} langpackId
+   *   The langpack metasource string whose shadow source should be removed.
+   *   Same shape as the argument to `_registerLangpackShadow`.
+   */
+  _unregisterLangpackShadow(langpackId) {
+    if (!this._langpackShadowSources.has(langpackId)) {
+      return;
+    }
+    const sourceName = `${FLUENT_SOURCE_NAME}-${langpackId}`;
+    L10nRegistry.getInstance().removeSources([sourceName]);
+    this._langpackShadowSources.delete(langpackId);
+    this.logger.debug(
+      `Removed newtab shadow source from metasource ${langpackId}`
+    );
+  },
+
+  /**
+   * Re-issues every currently-registered shadow source against the current
+   * intersection of the XPI's supported locales and the L10nRegistry's known
+   * available locales. Called on `intl:app-locales-changed` so shadow sources
+   * track locale-set changes the same way the primary "app" source does.
+   */
+  _updateLangpackShadows() {
+    let registry = L10nRegistry.getInstance();
+    for (const langpackId of this._langpackShadowSources) {
+      const sourceName = `${FLUENT_SOURCE_NAME}-${langpackId}`;
+      registry.updateSources([
+        this._buildNewtabFileSource(sourceName, langpackId),
+      ]);
+    }
+  },
+
+  observe(subject, topic, _data) {
+    // The TOPIC_LOCALES_CHANGED, TOPIC_LANGPACK_STARTUP, and
+    // TOPIC_LANGPACK_SHUTDOWN handlers all call L10nRegistry.{register,
+    // update,remove}Sources, and each of those calls fires
+    // intl:l10n-sources-changed (and, because LocaleService::
+    // SetAvailableLocales compares as an order-sensitive nsTArray against
+    // an array built from a Rust HashSet, spuriously fires
+    // intl:app-locales-changed too). Without this guard, those broadcasts can
+    // re-enter observe synchronously and the resulting cascade can pump
+    // unbounded source mutations through the registry at startup,
+    // exploding memory on installations with downloaded langpacks
+    // (Flatpak/Snap/MSIX). The first invocation does its work; any
+    // synchronous re-entries during that work are coalesced away. See
+    // Bug 2049845.
+    if (this._inObserveHandler) {
+      return;
+    }
+    this._inObserveHandler = true;
+    try {
+      switch (topic) {
+        case TOPIC_LOCALES_CHANGED: {
+          this._updateFluentSourcesRegistration();
+          this._updateLangpackShadows();
+          break;
+        }
+        case TOPIC_LANGPACK_STARTUP: {
+          const langpackId = subject?.wrappedJSObject?.langpack?.langpackId;
+          if (langpackId) {
+            this._registerLangpackShadow(langpackId);
+          }
+          break;
+        }
+        case TOPIC_LANGPACK_SHUTDOWN: {
+          const langpackId = subject?.wrappedJSObject?.langpack?.langpackId;
+          if (langpackId) {
+            this._unregisterLangpackShadow(langpackId);
+          }
+          break;
+        }
+        case TOPIC_SHUTDOWN: {
+          Services.obs.removeObserver(this, TOPIC_LOCALES_CHANGED);
+          Services.obs.removeObserver(this, TOPIC_SHUTDOWN);
+          Services.obs.removeObserver(this, TOPIC_LANGPACK_STARTUP);
+          Services.obs.removeObserver(this, TOPIC_LANGPACK_SHUTDOWN);
+          break;
+        }
       }
-      case TOPIC_SHUTDOWN: {
-        Services.obs.removeObserver(this, TOPIC_LOCALES_CHANGED);
-        Services.obs.removeObserver(this, TOPIC_SHUTDOWN);
-        break;
-      }
+    } finally {
+      this._inObserveHandler = false;
     }
   },
 
@@ -473,9 +730,11 @@ export var AboutNewTabResourceMapping = {
         `${TRAINHOP_NIMBUS_FEATURE_ID} scheduleUpdateTrainhopAddonState shutting down`,
         () => this._updateAddonStateDeferredTask.finalize()
       );
-      lazy.NimbusFeatures[TRAINHOP_NIMBUS_FEATURE_ID].onUpdate(() =>
-        this._updateAddonStateDeferredTask.arm()
-      );
+      for (const featureId of TRAINHOP_NIMBUS_FEATURE_IDS) {
+        lazy.NimbusFeatures[featureId].onUpdate(() =>
+          this._updateAddonStateDeferredTask.arm()
+        );
+      }
     }
     this.logger.debug("re-arming _updateAddonStateDeferredTask");
     this._updateAddonStateDeferredTask.arm();
@@ -491,6 +750,23 @@ export var AboutNewTabResourceMapping = {
    *   or an higher add-on version than the train-hop add-on version is already in use,
    *   installed or pending to be installed). Rejects on failures or unexpected cancellations
    *   during installation or uninstallation process.
+   *
+   *   The winning enrollment is chosen across both the original newtabTrainhopAddon
+   *   feature (a settings-pref feature) and its co-enrollment successor
+   *   newtabTrainhopAddonDeployment, joining their active enrollments and keeping
+   *   the highest addon_version. The original feature owns
+   *   browser.newtabpage.trainhopAddon.version via its setPref. This method never
+   *   writes that pref (doing so would make Nimbus treat it as a user opt-out and
+   *   unenroll the client). Instead, the front-end records the winning version in its
+   *   own pref (browser.newtabpage.trainhopAddonDeployment.version), and early
+   *   startup keeps the train-hop XPI while either pref is non-empty.
+   *
+   *   The highest currently-enrolled version always wins, including downgrades: if
+   *   the highest-version rollout ends while a lower-version one is still active,
+   *   the higher XPI is uninstalled and the lower version is installed instead (this
+   *   is applied over the following startups, since the switch is decided at early
+   *   startup). If nothing remains, the built-in takes over. This intentionally lets
+   *   a rollout be rolled back by ending it (see Bug 1995391).
    */
   async updateTrainhopAddonState(forceRestartlessInstall = false) {
     if (this.inSafeMode) {
@@ -500,11 +776,52 @@ export var AboutNewTabResourceMapping = {
       return;
     }
 
-    const nimbusFeature = lazy.NimbusFeatures[TRAINHOP_NIMBUS_FEATURE_ID];
-    await nimbusFeature.ready();
-    const { addon_version, xpi_download_path } = nimbusFeature.getAllVariables({
-      defaultValues: { addon_version: null, xpi_download_path: null },
-    });
+    // Union the active enrollments of both trainhop features (the original
+    // settings-pref feature and its co-enrollment successor) and keep the one
+    // with the highest addon_version.
+    let winningEnrollment = null;
+    let winningFeature = null;
+    for (const featureId of TRAINHOP_NIMBUS_FEATURE_IDS) {
+      const feature = lazy.NimbusFeatures[featureId];
+      await feature.ready();
+      for (const enrollment of feature.getAllEnrollments()) {
+        const { addon_version } = enrollment.value;
+        if (!addon_version) {
+          continue;
+        }
+        if (
+          !winningEnrollment ||
+          Services.vc.compare(
+            addon_version,
+            winningEnrollment.value.addon_version
+          ) > 0
+        ) {
+          winningEnrollment = enrollment;
+          winningFeature = feature;
+        }
+      }
+    }
+
+    const addon_version = winningEnrollment?.value.addon_version ?? null;
+    const xpi_download_path =
+      winningEnrollment?.value.xpi_download_path ?? null;
+
+    // Record the winning version in the deployment pref (owned exclusively by the
+    // front-end). It only ever holds an empty string or a version that came from
+    // a Nimbus train-hop enrollment, never the built-in add-on version. We
+    // deliberately do not write TRAINHOP_XPI_VERSION_PREF here: that pref is owned
+    // by the original newtabTrainhopAddon feature's setPref, and writing it
+    // externally would make Nimbus treat it as a user opt-out and unenroll the
+    // client. This pref tracks the current winner and can decrease, which is what
+    // drives a downgrade when a higher-version rollout ends.
+    if (addon_version) {
+      Services.prefs.setCharPref(
+        TRAINHOP_XPI_DEPLOYMENT_VERSION_PREF,
+        addon_version
+      );
+    } else {
+      Services.prefs.clearUserPref(TRAINHOP_XPI_DEPLOYMENT_VERSION_PREF);
+    }
 
     this.logger.debug("Force restartless install: ", forceRestartlessInstall);
     this.logger.debug("Received addon version:", addon_version);
@@ -535,6 +852,20 @@ export var AboutNewTabResourceMapping = {
         });
       }
 
+      // Downgrade: the installed train-hop XPI is higher than the version the
+      // client is currently entitled to (the higher-version rollout ended while a
+      // lower-version one is still active). Uninstall it so the lower winning
+      // version can be installed below (or the built-in takes over if none remains).
+      if (
+        addon_version !== null &&
+        Services.vc.compare(addon.version, addon_version) > 0
+      ) {
+        changed ||= await this.uninstallAddon({
+          uninstallReason:
+            "uninstalling higher train-hop add-on version to downgrade to the highest currently-enrolled version",
+        });
+      }
+
       if (
         lazy.AddonSettings.REQUIRE_SIGNING &&
         addon.signedState !== lazy.AddonManager.SIGNEDSTATE_SYSTEM
@@ -557,13 +888,22 @@ export var AboutNewTabResourceMapping = {
 
     // Record Nimbus feature newtabTrainhopAddon exposure event if NewTab
     // is currently using the resources from the train-hop add-on version.
-    if (this._addonIsXPI && this._addonVersion === addon_version) {
+    if (
+      this._addonIsXPI &&
+      this._addonVersion === addon_version &&
+      winningEnrollment
+    ) {
       this.logger.debug(
         `train-hop add-on version ${addon_version} already in use`
       );
-      // Record exposure event for the train hop feature if the train-hop
-      // add-on version is already in use.
-      nimbusFeature.recordExposureEvent({ once: true });
+      // Record exposure event for the winning train-hop feature if the
+      // train-hop add-on version is already in use. recordExposureEvent requires
+      // a slug for co-enrollment features and ignores it otherwise, so passing
+      // the winning enrollment's slug is safe for both features.
+      winningFeature.recordExposureEvent({
+        once: true,
+        slug: winningEnrollment.meta.slug,
+      });
       return;
     }
 
@@ -676,6 +1016,10 @@ export var AboutNewTabResourceMapping = {
       let newInstall = await lazy.AddonManager.getInstallForURL(
         xpiDownloadURL,
         {
+          // Intentionally stable across both trainhop features: this categorizes
+          // the install as coming from the Nimbus newtab train-hop mechanism, so
+          // it is kept the same whether the winning enrollment is from
+          // newtabTrainhopAddon or newtabTrainhopAddonDeployment.
           telemetryInfo: { source: "nimbus-newtabTrainhopAddon" },
         }
       );
@@ -838,6 +1182,7 @@ export var AboutNewTabResourceMapping = {
 
     await lazy.AddonManager.readyPromise;
     await this.updateTrainhopAddonState(true /* forceRestartlessInstall */);
+
     this.logger.debug("First startup - new profile done");
   },
 };

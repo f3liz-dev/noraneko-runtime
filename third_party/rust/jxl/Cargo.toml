@@ -12,7 +12,7 @@
 [package]
 edition = "2024"
 name = "jxl"
-version = "0.3.0"
+version = "0.5.1"
 authors = ["Luca Versari <veluca93@gmail.com>"]
 build = false
 exclude = ["resources/"]
@@ -36,12 +36,19 @@ resolver = "2"
 all-simd = ["jxl_simd/all-simd"]
 avx = ["jxl_simd/avx"]
 avx512 = ["jxl_simd/avx512"]
+default = ["all-simd"]
 neon = ["jxl_simd/neon"]
+simd128 = ["jxl_simd/simd128"]
 sse42 = ["jxl_simd/sse42"]
 
 [lib]
 name = "jxl"
 path = "src/lib.rs"
+
+[[bench]]
+name = "blending"
+path = "benches/blending.rs"
+harness = false
 
 [dependencies.array-init]
 version = "2.0.0"
@@ -50,13 +57,13 @@ version = "2.0.0"
 version = "1.4.3"
 
 [dependencies.jxl_macros]
-version = "=0.3.0"
+version = "=0.5.1"
 
 [dependencies.jxl_simd]
-version = "=0.3.0"
+version = "=0.5.1"
 
 [dependencies.jxl_transforms]
-version = "0.3.0"
+version = "=0.5.1"
 
 [dependencies.num-derive]
 version = "0.4"
@@ -75,7 +82,7 @@ optional = true
 version = "0.3.2"
 
 [dev-dependencies.jxl_macros]
-version = "=0.3.0"
+version = "=0.5.1"
 features = ["test"]
 
 [dev-dependencies.paste]
@@ -90,6 +97,19 @@ version = "0.4.0"
 [dev-dependencies.test-log]
 version = "0.2.16"
 features = ["trace"]
+
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies.criterion]
+version = "0.7.0"
+features = ["html_reports"]
+
+[target.'cfg(target_arch = "wasm32")'.dev-dependencies.criterion]
+version = "0.7.0"
+features = [
+    "html_reports",
+    "plotters",
+    "cargo_bench_support",
+]
+default-features = false
 
 [lints.clippy]
 missing_safety_doc = "deny"

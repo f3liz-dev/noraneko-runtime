@@ -1,5 +1,4 @@
-/* -*- Mode: C; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,13 +8,14 @@
 #ifndef xpctest_private_h_
 #define xpctest_private_h_
 
+#include "mozilla/ModuleUtils.h"
+
 #include "nsISupports.h"
 #include "nsString.h"
 #include "xpctest_attributes.h"
+#include "xpctest_cenums.h"
 #include "xpctest_params.h"
 #include "xpctest_returncode.h"
-#include "xpctest_cenums.h"
-#include "mozilla/ModuleUtils.h"
 
 nsresult xpcTestRegisterComponents();
 

@@ -1,4 +1,3 @@
-/* -*- Mode: c++; c-basic-offset: 2; indent-tabs-mode: nil; tab-width: 4; -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -6,8 +5,9 @@
 #ifndef SHARED_SURFACEIO_H_
 #define SHARED_SURFACEIO_H_
 
-#include "mozilla/RefPtr.h"
 #include "SharedSurface.h"
+#include "mozilla/RefPtr.h"
+#include "mozilla/layers/GpuFence.h"
 
 class MacIOSurface;
 
@@ -17,6 +17,9 @@ namespace gl {
 class Texture;
 
 class SharedSurface_IOSurface final : public SharedSurface {
+ private:
+  RefPtr<layers::GpuFence> mGpuFence;
+
  public:
   const UniquePtr<Texture> mTex;
   const RefPtr<MacIOSurface> mIOSurf;
@@ -39,6 +42,9 @@ class SharedSurface_IOSurface final : public SharedSurface {
   virtual bool NeedsIndirectReads() const override { return true; }
 
   Maybe<layers::SurfaceDescriptor> ToSurfaceDescriptor() override;
+  RefPtr<layers::GpuFence> TakeGpuFence() override {
+    return std::move(mGpuFence);
+  }
 };
 
 class SurfaceFactory_IOSurface : public SurfaceFactory {

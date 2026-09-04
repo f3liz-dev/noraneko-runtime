@@ -1,0 +1,76 @@
+<!--
+  Any copyright is dedicated to the Public Domain.
+  http://creativecommons.org/publicdomain/zero/1.0/
+-->
+<html>
+<head>
+  <title>Indexed Database Blob Structured Clone Test</title>
+
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
+
+  <script type="text/javascript">
+  /**
+   * Test that structured cloning a Blob preserves deduplication when stored in
+   * IndexedDB.
+   *
+   * IndexedDB deduplicates blobs based on their underlying BlobImpl.
+   * Structured cloning creates a new Blob object, but it refers to the same
+   * BlobImpl, so the two blobs should be treated as identical and stored only
+   * once on disk.
+   *
+   * This test verifies that behavior by ensuring that both the original and
+   * the structured-cloned Blob map to the same backing file (same fileId).
+   */
+  async function testSteps()
+  {
+    const name = window.location.pathname;
+
+    const objectStoreName = "Blobs";
+
+    const blob = getRandomBlob(10000);
+    const clonedBlob = structuredClone(blob);
+
+    const blobData1 = { key: 1, blob, expectedFileId: 1 };
+    const blobData2 = { key: 2, blob: clonedBlob, expectedFileId: 1 };
+
+    await SpecialPowers.pushPrefEnv({ set: [["dom.indexedDB.dataThreshold", -1]] });
+
+    let request = indexedDB.open(name, 1);
+    await expectingUpgrade(request);
+
+    let db = request.result;
+    db.onerror = errorHandler;
+
+    let objectStore = db.createObjectStore(objectStoreName, {});
+
+    objectStore.add(blobData1.blob, blobData1.key);
+    objectStore.add(blobData2.blob, blobData2.key);
+
+    await expectingSuccess(request);
+
+    objectStore = db.transaction([objectStoreName]).objectStore(objectStoreName);
+
+    request = objectStore.get(blobData1.key);
+    await requestSucceeded(request);
+
+    await verifyBlobAsync(request.result, blobData1.blob, blobData1.expectedFileId);
+
+    objectStore = db.transaction([objectStoreName]).objectStore(objectStoreName);
+
+    request = objectStore.get(blobData2.key);
+    await requestSucceeded(request);
+
+    await verifyBlobAsync(request.result, blobData2.blob, blobData2.expectedFileId);
+
+    is(bufferCache.length, 2, "Correct length");
+  }
+  </script>
+  <script type="text/javascript" src="file.js"></script>
+  <script type="text/javascript" src="helpers.js"></script>
+
+</head>
+
+<body onload="runTest();"></body>
+
+</html>

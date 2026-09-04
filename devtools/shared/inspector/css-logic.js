@@ -71,6 +71,7 @@ exports.STATUS = {
  * Mapping of CSS at-Rule className to CSSRule type name.
  */
 exports.CSSAtRuleClassNameType = {
+  CSSAppearanceBaseRule: "appearance-base",
   CSSContainerRule: "container",
   CSSCounterStyleRule: "counter-style",
   CSSDocumentRule: "document",
@@ -569,13 +570,18 @@ function getBindingElementAndPseudo(node) {
   if (implementedPseudoElement) {
     // we only want to explicitly handle the elements we're displaying in the markup view
     if (
-      implementedPseudoElement === "::marker" ||
-      implementedPseudoElement === "::before" ||
       implementedPseudoElement === "::after" ||
-      implementedPseudoElement === "::backdrop"
+      implementedPseudoElement === "::backdrop" ||
+      implementedPseudoElement === "::before" ||
+      implementedPseudoElement === "::checkmark" ||
+      implementedPseudoElement === "::marker" ||
+      implementedPseudoElement === "::picker" ||
+      implementedPseudoElement === "::picker-icon"
     ) {
       pseudo = getNodeDisplayName(node);
-      bindingElement = node.parentNode;
+      // Use flattenedTreeParentNode instead of parentNode to reach the shadow host from
+      // the shadow dom (needed for some pseudo elements, e.g. `::picker`)
+      bindingElement = node.flattenedTreeParentNode;
     } else if (implementedPseudoElement.startsWith("::view-transition")) {
       pseudo = getNodeDisplayName(node);
       // The binding for all view transition pseudo element is the <html> element, i.e. we
@@ -680,7 +686,7 @@ const findCssSelector = function (ele) {
     return "";
   }
 
-  const cssEscape = ele.ownerGlobal.CSS.escape;
+  const cssEscape = ele.documentGlobal.CSS.escape;
 
   // document.querySelectorAll("#id") returns multiple if elements share an ID
   if (
@@ -751,7 +757,7 @@ function getCssPath(ele) {
     return "";
   }
 
-  const nodeGlobal = ele.ownerGlobal.Node;
+  const nodeGlobal = ele.documentGlobal.Node;
 
   const getElementSelector = element => {
     if (!element.localName) {
@@ -813,7 +819,7 @@ function getXPath(ele) {
   // Otherwise walk the DOM up and create a part for each ancestor.
   const parts = [];
 
-  const nodeGlobal = ele.ownerGlobal.Node;
+  const nodeGlobal = ele.documentGlobal.Node;
   // Use nodeName (instead of localName) so namespace prefix is included (if any).
   while (ele && ele.nodeType === nodeGlobal.ELEMENT_NODE) {
     let nbOfPreviousSiblings = 0;
@@ -898,4 +904,5 @@ exports.isCssVariable = isCssVariable;
 exports.ELEMENT_BACKED_PSEUDO_ELEMENTS = new Set([
   "::details-content",
   "::file-selector-button",
+  "::picker",
 ]);

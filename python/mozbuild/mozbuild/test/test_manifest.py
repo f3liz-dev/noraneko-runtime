@@ -84,6 +84,74 @@ bugzilla:
         ])
 
     # ===========================================================================================
+    def test_boolean(self):
+        def build_input(input):
+            return (
+                b"""
+---
+schema: 1
+origin:
+  name: cairo
+  description: 2D Graphics Library
+  url: https://www.cairographics.org/
+  release: version 1.6.4
+  license:
+    - MPL-1.1
+    - LGPL-2.1
+  revision: AA001122334455
+vendoring:
+  url: https://example.com
+  source-hosting: gitlab
+bugzilla:
+  product: Core
+  component: Graphics
+updatebot:
+  fuzzy-query: "!linux64"
+  maintainer-phab: tjr
+  maintainer-bz: a@example.com
+  tasks:
+    - type: commit-alert
+      enabled: %s
+            """.strip()
+                % input
+            )
+
+        def build_expected(expected):
+            return {
+                "schema": "1",
+                "origin": {
+                    "description": "2D Graphics Library",
+                    "license": ["MPL-1.1", "LGPL-2.1"],
+                    "name": "cairo",
+                    "release": "version 1.6.4",
+                    "revision": "AA001122334455",
+                    "url": "https://www.cairographics.org/",
+                },
+                "bugzilla": {"component": "Graphics", "product": "Core"},
+                "vendoring": {
+                    "url": "https://example.com",
+                    "source-hosting": "gitlab",
+                },
+                "updatebot": {
+                    "maintainer-phab": "tjr",
+                    "maintainer-bz": "a@example.com",
+                    "fuzzy-query": "!linux64",
+                    "tasks": [{"type": "commit-alert", "enabled": expected}],
+                },
+            }
+
+        true_values = [b"1", b"true", b"yes", b"on", b"enable"]
+        false_values = [b"0", b"false", b"no", b"off", b"disable"]
+        malformed_values = [b"existential dread", b"", b"2", b"!@#$%^"]
+        test_vectors = (
+            [(build_expected(True), build_input(v)) for v in true_values]
+            + [(build_expected(False), build_input(v)) for v in false_values]
+            + [("exception", build_input(v)) for v in malformed_values]
+        )
+
+        self.process_test_vectors(test_vectors)
+
+    # ===========================================================================================
     def test_updatebot(self):
         self.process_test_vectors([
             (
@@ -414,6 +482,7 @@ updatebot:
                                 "needinfo": ["c@example.com"],
                                 "frequency": "1 weeks",
                                 "platform": "windows",
+                                "options": ["build-flag"],
                             },
                         ],
                     },
@@ -450,6 +519,7 @@ updatebot:
       needinfo: ["c@example.com"]
       frequency: 1 weeks
       platform: windows
+      options: ["build-flag"]
             """.strip(),
             ),
             # -------------------------------------------------
@@ -746,6 +816,7 @@ updatebot:
                                 "needinfo": ["d@example.com", "e@example.com"],
                                 "frequency": "every",
                                 "blocking": "1234",
+                                "options": ["option1", "option2"],
                             },
                             {
                                 "type": "commit-alert",
@@ -789,6 +860,7 @@ updatebot:
         - e@example.com
       frequency: every
       blocking: 1234
+      options: ["option1", "option2"]
     - type: commit-alert
       filter: none
       frequency: 2 commits
@@ -1858,6 +1930,91 @@ updatebot:
     - type: commit-alert
       frequency: 0 weeks
                   """.strip(),
+            ),
+        ])
+
+    # ===========================================================================================
+    def test_updatebot_options(self):
+        self.process_test_vectors([
+            # options is accepted as an array of strings
+            (
+                {
+                    "schema": "1",
+                    "origin": {
+                        "description": "2D Graphics Library",
+                        "license": ["MPL-1.1", "LGPL-2.1"],
+                        "name": "cairo",
+                        "release": "version 1.6.4",
+                        "revision": "AA001122334455",
+                        "url": "https://www.cairographics.org/",
+                    },
+                    "bugzilla": {"component": "Graphics", "product": "Core"},
+                    "vendoring": {
+                        "url": "https://example.com",
+                        "source-hosting": "gitlab",
+                    },
+                    "updatebot": {
+                        "maintainer-phab": "tjr",
+                        "maintainer-bz": "a@example.com",
+                        "tasks": [{"type": "commit-alert", "options": ["one", "two"]}],
+                    },
+                },
+                b"""
+---
+schema: 1
+origin:
+  name: cairo
+  description: 2D Graphics Library
+  url: https://www.cairographics.org/
+  release: version 1.6.4
+  license:
+    - MPL-1.1
+    - LGPL-2.1
+  revision: AA001122334455
+vendoring:
+  url: https://example.com
+  source-hosting: gitlab
+bugzilla:
+  product: Core
+  component: Graphics
+updatebot:
+  maintainer-phab: tjr
+  maintainer-bz: a@example.com
+  tasks:
+    - type: commit-alert
+      options:
+        - one
+        - two
+            """.strip(),
+            ),
+            # -------------------------------------------------
+            (
+                "exception",  # options must be an array, not a scalar
+                b"""
+---
+schema: 1
+origin:
+  name: cairo
+  description: 2D Graphics Library
+  url: https://www.cairographics.org/
+  release: version 1.6.4
+  license:
+    - MPL-1.1
+    - LGPL-2.1
+  revision: AA001122334455
+vendoring:
+  url: https://example.com
+  source-hosting: gitlab
+bugzilla:
+  product: Core
+  component: Graphics
+updatebot:
+  maintainer-phab: tjr
+  maintainer-bz: a@example.com
+  tasks:
+    - type: commit-alert
+      options: not-an-array
+            """.strip(),
             ),
         ])
 

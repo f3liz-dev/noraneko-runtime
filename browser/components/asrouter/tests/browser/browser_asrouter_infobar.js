@@ -97,7 +97,7 @@ add_task(async function show_and_send_telemetry() {
     "CLICK_PRIMARY_BUTTON"
   );
 
-  await BrowserTestUtils.waitForCondition(
+  await TestUtils.waitForCondition(
     () => !InfoBar._activeInfobar,
     "Wait for notification to be dismissed by primary btn click."
   );
@@ -123,7 +123,7 @@ add_task(async function dismiss_telemetry() {
 
   infobar.notification.closeButton.click();
 
-  await BrowserTestUtils.waitForCondition(
+  await TestUtils.waitForCondition(
     () => infobar.notification === null,
     "Set to null by `removed` event"
   );
@@ -148,7 +148,7 @@ add_task(async function dismiss_telemetry() {
     dispatchStub
   );
 
-  await BrowserTestUtils.waitForCondition(
+  await TestUtils.waitForCondition(
     () => dispatchStub.callCount > 0,
     "Wait for impression ping"
   );
@@ -157,7 +157,7 @@ add_task(async function dismiss_telemetry() {
   dispatchStub.reset();
   BrowserTestUtils.removeTab(tab);
 
-  await BrowserTestUtils.waitForCondition(
+  await TestUtils.waitForCondition(
     () => infobar.notification === null,
     "Set to null by `disconnect` event"
   );
@@ -235,7 +235,7 @@ add_task(async function default_dismissable_button_shows() {
   );
 
   infobar.notification.closeButton.click();
-  await BrowserTestUtils.waitForCondition(
+  await TestUtils.waitForCondition(
     () => infobar.notification === null,
     "Wait for default message notification to be dismissed."
   );
@@ -283,15 +283,19 @@ add_task(
     Assert.ok(cancelButton, "Non-primary footer button exists");
 
     cancelButton.click();
-    await BrowserTestUtils.waitForCondition(
+    await TestUtils.waitForCondition(
       () => infobar.notification === null,
       "Wait for default message notification to close."
     );
   }
 );
 
+function getMessageEl(infobar) {
+  return infobar.notification.querySelector(':scope > [slot="message"]');
+}
+
 function getMeaningfulNodes(infobar) {
-  return [...infobar.notification.messageText.childNodes].filter(
+  return [...getMessageEl(infobar).childNodes].filter(
     n =>
       n.nodeType === Node.ELEMENT_NODE ||
       (n.nodeType === Node.TEXT_NODE && n.textContent.trim())
@@ -326,7 +330,7 @@ add_task(async function test_formatMessageConfig_single_string() {
   Assert.equal(nodes[0].textContent.trim(), "Just a plain string");
 
   infobar.notification.closeButton.click();
-  await BrowserTestUtils.waitForCondition(() => !InfoBar._activeInfobar);
+  await TestUtils.waitForCondition(() => !InfoBar._activeInfobar);
 });
 
 add_task(async function test_formatMessageConfig_array() {
@@ -360,7 +364,7 @@ add_task(async function test_formatMessageConfig_array() {
   Assert.equal(nodes[4].textContent, "Z", "Trailing text");
 
   infobar.notification.closeButton.click();
-  await BrowserTestUtils.waitForCondition(() => !InfoBar._activeInfobar);
+  await TestUtils.waitForCondition(() => !InfoBar._activeInfobar);
 });
 
 add_task(async function test_specialMessageAction_onLinkClick() {
@@ -377,9 +381,9 @@ add_task(async function test_specialMessageAction_onLinkClick() {
   ];
   let { infobar } = await showInfobar(parts, box, browser);
 
-  let link = infobar.notification.messageText.querySelector("a[href]");
+  let link = getMessageEl(infobar).querySelector("a[href]");
   Assert.ok(link, "Found the link");
-  EventUtils.synthesizeMouseAtCenter(link, {}, browser.ownerGlobal);
+  EventUtils.synthesizeMouseAtCenter(link, {}, browser.documentGlobal);
 
   Assert.equal(handleStub.callCount, 1, "handleAction was invoked once");
   let [actionArg, browserArg] = handleStub.firstCall.args;
@@ -398,7 +402,7 @@ add_task(async function test_specialMessageAction_onLinkClick() {
   );
 
   infobar.notification.closeButton.click();
-  await BrowserTestUtils.waitForCondition(() => !InfoBar._activeInfobar);
+  await TestUtils.waitForCondition(() => !InfoBar._activeInfobar);
 
   handleStub.restore();
 });
@@ -493,7 +497,7 @@ add_task(async function test_non_dismissable_button_action() {
 
   // Clean up
   infobar.notification.closeButton.click();
-  await BrowserTestUtils.waitForCondition(() => !InfoBar._activeInfobar);
+  await TestUtils.waitForCondition(() => !InfoBar._activeInfobar);
 });
 
 // Default experience
@@ -556,9 +560,158 @@ add_task(async function test_dismissable_button_action() {
   );
 
   // Wait for the notification to be removed
-  await BrowserTestUtils.waitForCondition(() => !infobar.notification);
+  await TestUtils.waitForCondition(() => !infobar.notification);
 
   Assert.ok(!infobar.notification, "Infobar was dismissed after button click");
+});
+
+// Two buttons that are both non-primary produce the same event name, so the
+// button identity has to come from event_context.source.
+add_task(async function test_button_click_telemetry_source() {
+  let baseMessage = (await CFRMessageProvider.getMessages()).find(
+    m => m.id === "INFOBAR_ACTION_86"
+  );
+
+  let message = {
+    ...baseMessage,
+    content: {
+      ...baseMessage.content,
+      type: "tab",
+      dismissable: true,
+      // dismiss: false keeps the infobar open so both buttons can be clicked.
+      buttons: [
+        { label: "Keep on", action: { type: "CANCEL", dismiss: false } },
+        {
+          label: "Turn off",
+          id: "turn_off",
+          action: { type: "CANCEL", dismiss: false },
+        },
+      ],
+    },
+  };
+
+  let dispatchStub = sinon.stub();
+  let infobar = await InfoBar.showInfoBarMessage(
+    BrowserWindowTracker.getTopWindow().gBrowser.selectedBrowser,
+    message,
+    dispatchStub
+  );
+
+  let buttons = infobar.notification.buttonContainer.querySelectorAll(
+    ".notification-button"
+  );
+  Assert.equal(buttons.length, 2, "Found both buttons");
+
+  buttons[0].click();
+
+  Assert.ok(
+    dispatchStub.calledWith(
+      sinon.match({
+        type: "INFOBAR_TELEMETRY",
+        data: sinon.match({
+          event: "CLICK_SECONDARY_BUTTON",
+          event_context: sinon.match({ source: "button_0" }),
+        }),
+      })
+    ),
+    "Button without an id falls back to its index"
+  );
+
+  buttons[1].click();
+
+  Assert.ok(
+    dispatchStub.calledWith(
+      sinon.match({
+        type: "INFOBAR_TELEMETRY",
+        data: sinon.match({
+          event: "CLICK_SECONDARY_BUTTON",
+          event_context: sinon.match({ source: "turn_off" }),
+        }),
+      })
+    ),
+    "Button with an id reports that id"
+  );
+
+  infobar.notification.closeButton.click();
+  await TestUtils.waitForCondition(() => !InfoBar._activeInfobar);
+});
+
+add_task(async function test_dismiss_telemetry_source() {
+  let message = {
+    ...(await CFRMessageProvider.getMessages()).find(
+      m => m.id === "INFOBAR_ACTION_86"
+    ),
+  };
+  message.content = { ...message.content, type: "tab", dismissable: true };
+
+  let dispatchStub = sinon.stub();
+  let infobar = await InfoBar.showInfoBarMessage(
+    BrowserWindowTracker.getTopWindow().gBrowser.selectedBrowser,
+    message,
+    dispatchStub
+  );
+
+  infobar.notification.closeButton.click();
+  await TestUtils.waitForCondition(() => !InfoBar._activeInfobar);
+
+  Assert.ok(
+    dispatchStub.calledWith(
+      sinon.match({
+        type: "INFOBAR_TELEMETRY",
+        data: sinon.match({
+          event: "DISMISSED",
+          event_context: sinon.match({ source: "dismiss_button" }),
+        }),
+      })
+    ),
+    "Dismissing via the X reports the dismiss_button source"
+  );
+});
+
+// A teardown the user did not ask for must not be reported as a dismiss button
+// click.
+add_task(async function test_disconnected_telemetry_source() {
+  let message = {
+    ...(await CFRMessageProvider.getMessages()).find(
+      m => m.id === "INFOBAR_ACTION_86"
+    ),
+  };
+  message.content = { ...message.content, type: "tab", dismissable: true };
+
+  let dispatchStub = sinon.stub();
+  let infobar = await InfoBar.showInfoBarMessage(
+    BrowserWindowTracker.getTopWindow().gBrowser.selectedBrowser,
+    message,
+    dispatchStub
+  );
+
+  // Detaching the element fires the notification's disconnectedCallback.
+  infobar.notification.remove();
+  await TestUtils.waitForCondition(() => !InfoBar._activeInfobar);
+
+  Assert.ok(
+    dispatchStub.calledWith(
+      sinon.match({
+        type: "INFOBAR_TELEMETRY",
+        data: sinon.match({
+          event: "DISMISSED",
+          event_context: sinon.match({ source: "disconnected" }),
+        }),
+      })
+    ),
+    "Disconnecting the notification reports the disconnected source"
+  );
+  Assert.ok(
+    !dispatchStub.calledWith(
+      sinon.match({
+        type: "INFOBAR_TELEMETRY",
+        data: sinon.match({
+          event_context: sinon.match({ source: "dismiss_button" }),
+        }),
+      })
+    ),
+    "Disconnecting is not reported as a dismiss button click"
+  );
 });
 
 add_task(async function clear_activeInfobar_on_window_close() {
@@ -578,7 +731,7 @@ add_task(async function clear_activeInfobar_on_window_close() {
   );
 
   await BrowserTestUtils.closeWindow(testWin);
-  await BrowserTestUtils.waitForCondition(
+  await TestUtils.waitForCondition(
     () => !InfoBar._activeInfobar,
     "InfoBar._activeInfobar should be cleared when the window unloads"
   );
@@ -589,7 +742,7 @@ add_task(async function clear_activeInfobar_on_window_close() {
 add_task(async function test_buildMessageFragment_withInlineAnchors() {
   const win = BrowserWindowTracker.getTopWindow();
   const browser = win.gBrowser.selectedBrowser;
-  const doc = browser.ownerGlobal.document;
+  const doc = browser.documentGlobal.document;
 
   sinon
     .stub(RemoteL10n, "formatLocalizableText")
@@ -623,7 +776,7 @@ add_task(async function test_buildMessageFragment_withInlineAnchors() {
     "Template anchor carries the correct href"
   );
 
-  const rendered = infobar.notification.messageText.querySelector(
+  const rendered = getMessageEl(infobar).querySelector(
     'a[data-l10n-name="foo"]'
   );
   Assert.ok(rendered, "Rendered anchor is present in infobar");
@@ -647,7 +800,7 @@ add_task(async function test_buildMessageFragment_withInlineAnchors() {
   container.remove();
   RemoteL10n.formatLocalizableText.restore();
   infobar.notification.closeButton.click();
-  await BrowserTestUtils.waitForCondition(() => !InfoBar._activeInfobar);
+  await TestUtils.waitForCondition(() => !InfoBar._activeInfobar);
   sinon.restore();
 });
 
@@ -655,7 +808,7 @@ add_task(async function test_buildMessageFragment_withoutInlineAnchors() {
   const win = BrowserWindowTracker.getTopWindow();
   const browser = win.gBrowser.selectedBrowser;
   const box = win.gNotificationBox;
-  const doc = browser.ownerGlobal.document;
+  const doc = browser.documentGlobal.document;
 
   // Stub Fluent to return plain text (no <a data-l10n-name>)
   sinon.stub(RemoteL10n, "formatLocalizableText").resolves("Just plain text");
@@ -688,7 +841,7 @@ add_task(async function test_buildMessageFragment_withoutInlineAnchors() {
   // Cleanup
   RemoteL10n.formatLocalizableText.restore();
   infobar.notification.closeButton.click();
-  await BrowserTestUtils.waitForCondition(() => !InfoBar._activeInfobar);
+  await TestUtils.waitForCondition(() => !InfoBar._activeInfobar);
   sinon.restore();
 });
 
@@ -727,13 +880,13 @@ add_task(
       dispatchStub
     );
 
-    const rendered = infobar.notification.messageText.querySelector(
+    const rendered = getMessageEl(infobar).querySelector(
       'a[data-l10n-name="foo"]'
     );
     Assert.ok(rendered, "Rendered inline anchor present");
     Assert.equal(rendered.href, testUrl, "Rendered href is correct");
 
-    EventUtils.synthesizeMouseAtCenter(rendered, {}, browser.ownerGlobal);
+    EventUtils.synthesizeMouseAtCenter(rendered, {}, browser.documentGlobal);
 
     Assert.equal(handleStub.callCount, 2, "handleAction called twice");
 
@@ -761,7 +914,7 @@ add_task(
     RemoteL10n.formatLocalizableText.restore();
     handleStub.restore();
     infobar.notification.closeButton.click();
-    await BrowserTestUtils.waitForCondition(() => !InfoBar._activeInfobar);
+    await TestUtils.waitForCondition(() => !InfoBar._activeInfobar);
   }
 );
 
@@ -792,7 +945,7 @@ add_task(async function test_configurable_background_color() {
   Assert.ok(infobar.notification, "Got a notification");
 
   let node = infobar.notification;
-  let bg = browser.ownerGlobal
+  let bg = browser.documentGlobal
     .getComputedStyle(node)
     .getPropertyValue("background-color");
 
@@ -804,7 +957,7 @@ add_task(async function test_configurable_background_color() {
 
   // Cleanup
   infobar.notification.closeButton.click();
-  await BrowserTestUtils.waitForCondition(() => !InfoBar._activeInfobar);
+  await TestUtils.waitForCondition(() => !InfoBar._activeInfobar);
 });
 
 add_task(async function test_configurable_font_size() {
@@ -831,7 +984,7 @@ add_task(async function test_configurable_font_size() {
   Assert.ok(infobar.notification, "Got a notification");
 
   let node = infobar.notification;
-  let fs = browser.ownerGlobal
+  let fs = browser.documentGlobal
     .getComputedStyle(node)
     .getPropertyValue("font-size");
 
@@ -839,7 +992,7 @@ add_task(async function test_configurable_font_size() {
 
   // Cleanup
   infobar.notification.closeButton.click();
-  await BrowserTestUtils.waitForCondition(() => !InfoBar._activeInfobar);
+  await TestUtils.waitForCondition(() => !InfoBar._activeInfobar);
 });
 
 add_task(async function test_infobar_css_background_fallback_var() {
@@ -903,7 +1056,7 @@ add_task(async function test_infobar_css_background_fallback_var() {
 
   // Cleanup
   infobar.notification.closeButton.click();
-  await BrowserTestUtils.waitForCondition(
+  await TestUtils.waitForCondition(
     () => !InfoBar._activeInfobar,
     "Wait for infobar to close"
   );
@@ -948,7 +1101,7 @@ add_task(async function test_impression_action_handling() {
 
   // Cleanup
   infobar.notification.closeButton.click();
-  await BrowserTestUtils.waitForCondition(
+  await TestUtils.waitForCondition(
     () => !InfoBar._activeInfobar,
     "Wait for infobar to close"
   );
@@ -991,7 +1144,7 @@ add_task(
     handleStub.resetHistory();
 
     infobar.notification.closeButton.click();
-    await BrowserTestUtils.waitForCondition(
+    await TestUtils.waitForCondition(
       () => !InfoBar._activeInfobar,
       "Wait for infobar to close"
     );
@@ -1010,7 +1163,7 @@ add_task(
 
     // Cleanup
     infobar2.notification.closeButton.click();
-    await BrowserTestUtils.waitForCondition(
+    await TestUtils.waitForCondition(
       () => !InfoBar._activeInfobar,
       "Wait for infobar to close"
     );
@@ -1061,7 +1214,7 @@ add_task(async function test_impression_action_multi_action_once_and_every() {
   );
 
   infobar1.notification.closeButton.click();
-  await BrowserTestUtils.waitForCondition(
+  await TestUtils.waitForCondition(
     () => !InfoBar._activeInfobar,
     "Wait for first infobar to close"
   );
@@ -1079,12 +1232,203 @@ add_task(async function test_impression_action_multi_action_once_and_every() {
   );
 
   infobar2.notification.closeButton.click();
-  await BrowserTestUtils.waitForCondition(
+  await TestUtils.waitForCondition(
     () => !InfoBar._activeInfobar,
     "Wait for second infobar to close"
   );
 
   handleStub.restore();
+});
+
+add_task(async function test_dismiss_action_on_user_dismissal() {
+  let message = {
+    ...(await CFRMessageProvider.getMessages()).find(
+      m => m.id === "INFOBAR_ACTION_86"
+    ),
+  };
+  message.content = {
+    ...message.content,
+    type: "tab",
+    dismiss_action: {
+      type: "OPEN_URL",
+      data: { args: "https://example.com/", where: "tab" },
+    },
+  };
+
+  let dispatchStub = sinon.stub();
+  let infobar = await InfoBar.showInfoBarMessage(
+    BrowserWindowTracker.getTopWindow().gBrowser.selectedBrowser,
+    message,
+    dispatchStub
+  );
+
+  // Remove any IMPRESSION pings
+  dispatchStub.reset();
+
+  infobar.notification.closeButton.click();
+
+  await TestUtils.waitForCondition(
+    () => infobar.notification === null,
+    "Set to null by `removed` event"
+  );
+
+  let userActionCall = dispatchStub
+    .getCalls()
+    .find(c => c.args[0].type === "USER_ACTION");
+  Assert.ok(userActionCall, "Dispatched a USER_ACTION on dismiss");
+  Assert.deepEqual(
+    userActionCall.args[0].data,
+    message.content.dismiss_action,
+    "USER_ACTION carries the dismiss_action"
+  );
+  Assert.ok(
+    dispatchStub.getCalls().some(c => c.args[0].data?.event === "DISMISSED"),
+    "DISMISSED telemetry still sent"
+  );
+});
+
+add_task(async function test_dismiss_action_multi_action() {
+  let message = {
+    ...(await CFRMessageProvider.getMessages()).find(
+      m => m.id === "INFOBAR_ACTION_86"
+    ),
+  };
+  message.content = {
+    ...message.content,
+    type: "tab",
+    dismiss_action: {
+      type: "MULTI_ACTION",
+      data: {
+        actions: [
+          {
+            type: "SET_PREF",
+            data: { pref: { name: "dismissMulti", value: true } },
+          },
+          {
+            type: "OPEN_URL",
+            data: { args: "https://example.com/", where: "tab" },
+          },
+        ],
+      },
+    },
+  };
+
+  let dispatchStub = sinon.stub();
+  let infobar = await InfoBar.showInfoBarMessage(
+    BrowserWindowTracker.getTopWindow().gBrowser.selectedBrowser,
+    message,
+    dispatchStub
+  );
+
+  // Remove any IMPRESSION pings
+  dispatchStub.reset();
+
+  infobar.notification.closeButton.click();
+
+  await TestUtils.waitForCondition(
+    () => infobar.notification === null,
+    "Set to null by `removed` event"
+  );
+
+  let userActionCalls = dispatchStub
+    .getCalls()
+    .filter(c => c.args[0].type === "USER_ACTION");
+  Assert.equal(
+    userActionCalls.length,
+    1,
+    "Dispatched a single USER_ACTION carrying the MULTI_ACTION"
+  );
+  Assert.deepEqual(
+    userActionCalls[0].args[0].data,
+    message.content.dismiss_action,
+    "USER_ACTION carries the whole MULTI_ACTION object"
+  );
+});
+
+add_task(async function test_dismiss_action_not_fired_on_tab_close() {
+  let message = {
+    ...(await CFRMessageProvider.getMessages()).find(
+      m => m.id === "INFOBAR_ACTION_86"
+    ),
+  };
+  message.content = {
+    ...message.content,
+    type: "tab",
+    dismiss_action: {
+      type: "OPEN_URL",
+      data: { args: "https://example.com/", where: "tab" },
+    },
+  };
+
+  let dispatchStub = sinon.stub();
+  let tab = await BrowserTestUtils.openNewForegroundTab(
+    gBrowser,
+    "about:blank"
+  );
+  let infobar = await InfoBar.showInfoBarMessage(
+    BrowserWindowTracker.getTopWindow().gBrowser.selectedBrowser,
+    message,
+    dispatchStub
+  );
+
+  await TestUtils.waitForCondition(
+    () => dispatchStub.callCount > 0,
+    "Wait for impression ping"
+  );
+
+  // Remove IMPRESSION pings
+  dispatchStub.reset();
+  BrowserTestUtils.removeTab(tab);
+
+  await TestUtils.waitForCondition(
+    () => infobar.notification === null,
+    "Set to null by `disconnect` event"
+  );
+
+  Assert.ok(
+    dispatchStub.getCalls().some(c => c.args[0].data?.event === "DISMISSED"),
+    "DISMISSED telemetry sent on tab close"
+  );
+  Assert.ok(
+    !dispatchStub.getCalls().some(c => c.args[0].type === "USER_ACTION"),
+    "dismiss_action NOT dispatched on tab close (disconnected)"
+  );
+});
+
+add_task(async function test_no_dismiss_action() {
+  let message = {
+    ...(await CFRMessageProvider.getMessages()).find(
+      m => m.id === "INFOBAR_ACTION_86"
+    ),
+  };
+  message.content = { ...message.content, type: "tab" };
+  delete message.content.dismiss_action;
+
+  let dispatchStub = sinon.stub();
+  let infobar = await InfoBar.showInfoBarMessage(
+    BrowserWindowTracker.getTopWindow().gBrowser.selectedBrowser,
+    message,
+    dispatchStub
+  );
+
+  // Remove any IMPRESSION pings
+  dispatchStub.reset();
+
+  infobar.notification.closeButton.click();
+
+  await TestUtils.waitForCondition(
+    () => infobar.notification === null,
+    "Set to null by `removed` event"
+  );
+
+  Assert.ok(
+    !dispatchStub.getCalls().some(c => c.args[0].type === "USER_ACTION"),
+    "No USER_ACTION dispatched when no dismiss_action is set"
+  );
+  Assert.ok(
+    dispatchStub.getCalls().some(c => c.args[0].data?.event === "DISMISSED"),
+    "DISMISSED telemetry still sent"
+  );
 });
 
 add_task(
@@ -1125,11 +1469,9 @@ add_task(
     // Ignore impression ping.
     dispatch.resetHistory();
 
-    infobar.notification.messageText
-      .querySelector('a[data-l10n-name="test"]')
-      .click();
+    getMessageEl(infobar).querySelector('a[data-l10n-name="test"]').click();
 
-    await BrowserTestUtils.waitForCondition(
+    await TestUtils.waitForCondition(
       () => !infobar.notification,
       "Infobar dismissed by inline anchor configured to dismiss"
     );
@@ -1175,7 +1517,7 @@ add_task(async function dismiss_on_pref_first_set() {
 
   Services.prefs.setBoolPref(PREF, true);
 
-  await BrowserTestUtils.waitForCondition(
+  await TestUtils.waitForCondition(
     () => !infobar.notification,
     "Infobar dismissed by first time pref set"
   );
@@ -1217,7 +1559,7 @@ add_task(async function dismiss_on_pref_value_change() {
 
   Services.prefs.setBoolPref(PREF, true);
 
-  await BrowserTestUtils.waitForCondition(
+  await TestUtils.waitForCondition(
     () => !infobar.notification,
     "Infobar dismissed by subsequent pref change"
   );
@@ -1279,7 +1621,7 @@ add_task(async function global_does_not_replace_without_permission() {
     dispatchOriginal
   );
 
-  await BrowserTestUtils.waitForCondition(
+  await TestUtils.waitForCondition(
     () => !!getNotification(originalGlobalMessage.id),
     "Original global infobar is visible"
   );
@@ -1369,7 +1711,7 @@ add_task(async function replace_global_with_global_and_record_impressions() {
     dispatchFirstGlobal
   );
 
-  await BrowserTestUtils.waitForCondition(
+  await TestUtils.waitForCondition(
     () => !!getFromWin(win, firstGlobalMessage.id),
     "First global visible"
   );
@@ -1390,11 +1732,11 @@ add_task(async function replace_global_with_global_and_record_impressions() {
     dispatchSecondGlobal
   );
 
-  await BrowserTestUtils.waitForCondition(
+  await TestUtils.waitForCondition(
     () => !!getFromWin(win, secondGlobalMessage.id),
     "Second global visible"
   );
-  await BrowserTestUtils.waitForCondition(
+  await TestUtils.waitForCondition(
     () => !getFromWin(win, firstGlobalMessage.id),
     "First global removed"
   );
@@ -1415,11 +1757,11 @@ add_task(async function replace_global_with_global_and_record_impressions() {
     dispatchFirstGlobalAgain
   );
 
-  await BrowserTestUtils.waitForCondition(
+  await TestUtils.waitForCondition(
     () => !!getFromWin(win, firstGlobalMessage.id),
     "First global visible again"
   );
-  await BrowserTestUtils.waitForCondition(
+  await TestUtils.waitForCondition(
     () => !getFromWin(win, secondGlobalMessage.id),
     "Second global removed"
   );
@@ -1464,7 +1806,7 @@ add_task(async function dismiss_on_any_pref_in_array_change() {
 
   Services.prefs.setBoolPref(PREF2, true);
 
-  await BrowserTestUtils.waitForCondition(
+  await TestUtils.waitForCondition(
     () => !infobar.notification,
     "Infobar dismissed when pref in the array changes"
   );

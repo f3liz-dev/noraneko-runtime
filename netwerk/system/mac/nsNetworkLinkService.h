@@ -5,16 +5,16 @@
 #ifndef NSNETWORKLINKSERVICEMAC_H_
 #define NSNETWORKLINKSERVICEMAC_H_
 
+#include <SystemConfiguration/SCNetworkReachability.h>
+#include <SystemConfiguration/SystemConfiguration.h>
+#include <netinet/in.h>
+
+#include "mozilla/Mutex.h"
+#include "mozilla/SHA1.h"
 #include "nsINetworkLinkService.h"
 #include "nsIObserver.h"
 #include "nsITimer.h"
 #include "nsString.h"
-#include "mozilla/Mutex.h"
-#include "mozilla/SHA1.h"
-
-#include <netinet/in.h>
-#include <SystemConfiguration/SCNetworkReachability.h>
-#include <SystemConfiguration/SystemConfiguration.h>
 
 using prefix_and_netmask = std::pair<in6_addr, in6_addr>;
 
@@ -69,9 +69,9 @@ class nsNetworkLinkService : public nsINetworkLinkService,
   bool RoutingFromKernel(nsTArray<nsCString>& aHash);
   bool RoutingTable(nsTArray<nsCString>& aHash);
 
-  mozilla::Mutex mMutex MOZ_UNANNOTATED;
-  nsCString mNetworkId;
-  nsTArray<nsCString> mDNSSuffixList;
+  mozilla::Mutex mMutex;
+  nsCString mNetworkId MOZ_GUARDED_BY(mMutex);
+  nsTArray<nsCString> mDNSSuffixList MOZ_GUARDED_BY(mMutex);
 
   // The timer used to delay the calculation of network id since it takes some
   // time to discover the gateway's MAC address.
@@ -79,7 +79,7 @@ class nsNetworkLinkService : public nsINetworkLinkService,
 
   // Scheduled timers used to delay querying of the DNS suffix list when
   // triggered by a network change. Guarded by mMutex.
-  nsTArray<nsCOMPtr<nsITimer>> mDNSConfigChangedTimers;
+  nsTArray<nsCOMPtr<nsITimer>> mDNSConfigChangedTimers MOZ_GUARDED_BY(mMutex);
 
   // IP address used to check the route for public traffic.
   struct in_addr mRouteCheckIPv4;

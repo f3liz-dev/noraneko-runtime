@@ -20,6 +20,9 @@ task-defaults:
                     android-hw.*-aarch64.*/.*:
                         upstream-task: signing-apk
                         name: public/build/target.arm64-v8a.apk
+                    android-em-14-arm64.*:
+                        upstream-task: signing-apk
+                        name: public/build/target.arm64-v8a.apk
                     default:
                         upstream-task: signing-apk
                         name: public/build/target.armeabi-v7a.apk
@@ -49,7 +52,11 @@ task-defaults:
     mozharness:
         script: raptor_script.py
         config:
-            - raptor/android_hw_config.py
+            by-test-platform:
+                android-em-14-arm64.*:
+                    - raptor/android_emulator_macosx_config.py
+                default:
+                    - raptor/android_hw_config.py
         extra-options:
             # Bug 1635749, disable window recorder temporarily
             - --browsertime-no-ffwindowrecorder
@@ -66,12 +73,33 @@ task-defaults:
         toolchain:
             by-app:
                 cstm-car-m:
-                    - android-custom-car
-                    - linux64-minidump-stackwalk
-                    - linux64-fix-stacks
+                    by-test-platform:
+                        android-em-14-arm64.*:
+                            - android-custom-car
+                            - android-sdk-macos
+                            - android-system-image-arm64-macos
+                            - android-avd-arm64-macos
+                            - macosx64-jdk-repack
+                            - macosx64-aarch64-minidump-stackwalk
+                            - macosx64-aarch64-fix-stacks
+                            - linux64-hostutils
+                        default:
+                            - android-custom-car
+                            - linux64-minidump-stackwalk
+                            - linux64-fix-stacks
                 default:
-                    - linux64-minidump-stackwalk
-                    - linux64-fix-stacks
+                    by-test-platform:
+                        android-em-14-arm64.*:
+                            - android-sdk-macos
+                            - android-system-image-arm64-macos
+                            - android-avd-arm64-macos
+                            - macosx64-jdk-repack
+                            - macosx64-aarch64-minidump-stackwalk
+                            - macosx64-aarch64-fix-stacks
+                            - linux64-hostutils
+                        default:
+                            - linux64-minidump-stackwalk
+                            - linux64-fix-stacks
     dependencies:
         by-app:
             fenix:
@@ -118,7 +146,8 @@ browsertime-tp6m:
             - dailymail
             - [ebay-kleinanzeigen, ebay-k]
             - [ebay-kleinanzeigen-search, ebay-k-s]
-            - [facebook-cristiano, fb-cris]
+            # Bug 1682027 - Disabled due to high failure rate
+            # - [facebook-cristiano, fb-cris]
             - [google-maps, gmaps]
             - [google-search-restaurants, gsearch-r]
             - instagram
@@ -138,7 +167,10 @@ browsertime-tp6m:
                         by-test-platform:
                             android-hw-a55.*shippable.*: [trunk-only]
                             default: []
-                    default: [mozilla-central]
+                    default:
+                        by-test-platform:
+                            android-hw-a55.*shippable.*: [trunk-only]
+                            default: [mozilla-central]
             default: []
 
 browsertime-tp6m-essential:
@@ -276,7 +308,7 @@ browsertime-youtube-playback-power-mobile:
         by-app:
             fenix:
                 by-test-platform:
-                    android-hw-a55.*shippable.*: [autoland, mozilla-central]
+                    android-hw-a55.*shippable.*: []  # Bug 1934169: disabled, intermittent power measurement failure
                     default: []
             geckoview: []
             default: []
@@ -401,27 +433,26 @@ browsertime-video-playback-latency-mobile:
         by-app:
             fenix: 1
             default: 3
+    fetches:
+        toolchain:
+            - linux64-minidump-stackwalk
+            - linux64-fix-stacks
+            - linux64-samply
+            - profiler-node-tools
 
-browsertime-benchmark-speedometer-mobile:
-    description: Browsertime Speedometer on Android
+browsertime-benchmark-speedometer2-mobile:
+    description: Browsertime Speedometer 2 on Android
     raptor:
         apps: [geckoview, fenix, chrome-m, cstm-car-m]
     tier:
         by-app:
             fenix: 1
             default: 3
-    run-on-projects:
-        by-app:
-            fenix:
-                by-test-platform:
-                    android-hw-a55.*shippable.*: [trunk]
-                    default: []
-            geckoview: []
-            default: []
-    treeherder-symbol: Btime(sp)
+    run-on-projects: []
+    treeherder-symbol: Btime(sp2)
     mozharness:
         extra-options:
-            - --test=speedometer
+            - --test=speedometer2
 
 browsertime-benchmark-speedometer3-mobile:
     description: Browsertime Speedometer 3 on Android
@@ -430,7 +461,10 @@ browsertime-benchmark-speedometer3-mobile:
         apps: [geckoview, fenix, chrome-m, cstm-car-m]
     tier:
         by-app:
-            fenix: 1
+            fenix:
+                by-test-platform:
+                    android-em-14-arm64.*: 3
+                    default: 1
             geckoview: 2
             cstm-car-m: 2
             default: 3
@@ -441,12 +475,14 @@ browsertime-benchmark-speedometer3-mobile:
                     android-hw-a55.*shippable.*: [trunk-only]
                     android-hw-p6.*shippable.*: [mozilla-central]
                     android-hw-s24.*shippable.*: [mozilla-central]
+                    android-em-14-arm64.*shippable.*: [autoland]
                     default: []
             geckoview: []
             chrome-m:
                 by-test-platform:
                     android-hw-p6.*shippable.*: [mozilla-central]
                     android-hw-s24.*shippable.*: [mozilla-central]
+                    android-em-14-arm64.*shippable.*: []
                     default: []
             default: []
     treeherder-symbol: Btime(sp3)
@@ -545,7 +581,7 @@ browsertime-power:
         subtests:
             - idle
             - idle-bg
-            - [speedometer, sp]
+            - [speedometer2, sp2]
     tier:
         by-app:
             fenix: 1
@@ -563,11 +599,9 @@ browsertime-trr-performance-m:
         subtests:
             - dns-multi
             - dns-native
-            - dns-usatdy
             - trr-cloudf
             - trr-multi
             - trr-next
-            - trr-usatdy
             - trr-w-clou
             - trr-w-next
 
@@ -581,3 +615,34 @@ browsertime-trr-performance-m:
                     default: []
     tier: 3
     treeherder-symbol: Btime(trrperfm)
+
+browsertime-hev3-connection-m:
+    raptor:
+        apps: [fenix, chrome-m]
+        run-visual-metrics: false
+        subtests:
+            by-app:
+                fenix:
+                    - he3off-dns
+                    - he3off-doh
+                    - he3on-dns
+                    - he3on-doh
+                chrome-m:
+                    - baseline
+
+    description: Raptor (browsertime) Happy Eyeballs v3 connection tests, mobile
+    # Ceiling for flaky venv/pip setup, not the test (healthy run ~6-7 min).
+    max-run-time: 900
+    run-on-projects:
+        by-app:
+            fenix:
+                by-test-platform:
+                    android-hw-a55.*shippable.*: [mozilla-central]
+                    default: []
+            chrome-m:
+                by-test-platform:
+                    android-hw-a55.*shippable.*: [mozilla-central]
+                    default: []
+            default: []
+    tier: 3
+    treeherder-symbol: Btime(hev3connm)

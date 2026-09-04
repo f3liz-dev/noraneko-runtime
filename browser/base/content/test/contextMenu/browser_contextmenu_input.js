@@ -44,7 +44,7 @@ const askChatMenu = [
 
 add_task(async function test_setup() {
   const example_base =
-    // eslint-disable-next-line @microsoft/sdl/no-insecure-url
+    // eslint-disable-next-line sdl/no-insecure-url
     "http://example.com/browser/browser/base/content/test/contextMenu/";
   const url = example_base + "subtst_contextmenu_input.html";
   await BrowserTestUtils.openNewForegroundTab(gBrowser, url);
@@ -361,6 +361,13 @@ add_task(
           null,
           "context-viewsource",
           true,
+          "---",
+          null,
+          "context-sendpagetodevice",
+          true,
+          // This entry will be blank because the submenu is dynamically generated.
+          [],
+          null,
         ],
         {
           skipFocusChange: true,

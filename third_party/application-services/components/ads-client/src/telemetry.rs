@@ -1,0 +1,14 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+* License, v. 2.0. If a copy of the MPL was not distributed with this
+* file, You can obtain one at http://mozilla.org/MPL/2.0/.
+*/
+
+use std::any::Any;
+
+pub trait Telemetry {
+    fn record(&self, event: &dyn Any);
+
+    // Shuts down any telemetry structures. This should be called before dropping the struct implementing this trait.
+    // Future calls to `record` will not record anything.
+    fn shutdown(&self);
+}

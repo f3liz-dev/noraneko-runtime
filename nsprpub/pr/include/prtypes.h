@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -68,7 +67,7 @@
 
 #define PR_EXPORT(__type) extern __declspec(dllexport) __type
 #define PR_EXPORT_DATA(__type) extern __declspec(dllexport) __type
-#define PR_IMPORT(__type) extern  __declspec(dllimport) __type
+#define PR_IMPORT(__type) extern __declspec(dllimport) __type
 #define PR_IMPORT_DATA(__type) extern __declspec(dllimport) __type
 
 #define PR_EXTERN(__type) extern __declspec(dllexport) __type
@@ -83,8 +82,7 @@
 #else /* Unix */
 
 /* GCC 3.3 and later support the visibility attribute. */
-#if (__GNUC__ >= 4) || \
-    (__GNUC__ == 3 && __GNUC_MINOR__ >= 3)
+#if (__GNUC__ >= 4) || (__GNUC__ == 3 && __GNUC_MINOR__ >= 3)
 #define PR_VISIBILITY_DEFAULT __attribute__((visibility("default")))
 #else
 #define PR_VISIBILITY_DEFAULT
@@ -120,8 +118,10 @@
 **      Macro body brackets so that macros with compound statement definitions
 **      behave syntactically more like functions when called.
 ***********************************************************************/
-#define PR_BEGIN_MACRO  do {
-#define PR_END_MACRO    } while (0)
+#define PR_BEGIN_MACRO do {
+#define PR_END_MACRO \
+    }                \
+    while (0)
 
 /***********************************************************************
 ** MACROS:      PR_BEGIN_EXTERN_C
@@ -130,8 +130,8 @@
 **      Macro shorthands for conditional C++ extern block delimiters.
 ***********************************************************************/
 #ifdef __cplusplus
-#define PR_BEGIN_EXTERN_C       extern "C" {
-#define PR_END_EXTERN_C         }
+#define PR_BEGIN_EXTERN_C extern "C" {
+#define PR_END_EXTERN_C }
 #else
 #define PR_BEGIN_EXTERN_C
 #define PR_END_EXTERN_C
@@ -143,8 +143,8 @@
 ** DESCRIPTION:
 ** Bit masking macros.  XXX n must be <= 31 to be portable
 ***********************************************************************/
-#define PR_BIT(n)       ((PRUint32)1 << (n))
-#define PR_BITMASK(n)   (PR_BIT(n) - 1)
+#define PR_BIT(n) ((PRUint32)1 << (n))
+#define PR_BITMASK(n) (PR_BIT(n) - 1)
 
 /***********************************************************************
 ** MACROS:      PR_ROUNDUP
@@ -154,17 +154,17 @@
 ** DESCRIPTION:
 **      Commonly used macros for operations on compatible types.
 ***********************************************************************/
-#define PR_ROUNDUP(x,y) ((((x)+((y)-1))/(y))*(y))
-#define PR_MIN(x,y)     ((x)<(y)?(x):(y))
-#define PR_MAX(x,y)     ((x)>(y)?(x):(y))
-#define PR_ABS(x)       ((x)<0?-(x):(x))
+#define PR_ROUNDUP(x, y) ((((x) + ((y) - 1)) / (y)) * (y))
+#define PR_MIN(x, y) ((x) < (y) ? (x) : (y))
+#define PR_MAX(x, y) ((x) > (y) ? (x) : (y))
+#define PR_ABS(x) ((x) < 0 ? -(x) : (x))
 
 /***********************************************************************
 ** MACROS:      PR_ARRAY_SIZE
 ** DESCRIPTION:
 **  The number of elements in an array.
 ***********************************************************************/
-#define PR_ARRAY_SIZE(a) (sizeof(a)/sizeof((a)[0]))
+#define PR_ARRAY_SIZE(a) (sizeof(a) / sizeof((a)[0]))
 
 PR_BEGIN_EXTERN_C
 
@@ -228,7 +228,7 @@ typedef signed char PRInt8;
  *              PR_UINT8_MAX
  * DESCRIPTION:
  *  The maximum and minimum values of a PRInt8 or PRUint8.
-************************************************************************/
+ ************************************************************************/
 
 #define PR_INT8_MAX 127
 #define PR_INT8_MIN (-128)
@@ -253,7 +253,7 @@ typedef short PRInt16;
  *              PR_UINT16_MAX
  * DESCRIPTION:
  *  The maximum and minimum values of a PRInt16 or PRUint16.
-************************************************************************/
+ ************************************************************************/
 
 #define PR_INT16_MAX 32767
 #define PR_INT16_MIN (-32768)
@@ -268,13 +268,13 @@ typedef short PRInt16;
 #if PR_BYTES_PER_INT == 4
 typedef unsigned int PRUint32;
 typedef int PRInt32;
-#define PR_INT32(x)  x
-#define PR_UINT32(x) x ## U
+#define PR_INT32(x) x
+#define PR_UINT32(x) x##U
 #elif PR_BYTES_PER_LONG == 4
 typedef unsigned long PRUint32;
 typedef long PRInt32;
-#define PR_INT32(x)  x ## L
-#define PR_UINT32(x) x ## UL
+#define PR_INT32(x) x##L
+#define PR_UINT32(x) x##UL
 #else
 #error No suitable type for PRInt32/PRUint32
 #endif
@@ -285,7 +285,7 @@ typedef long PRInt32;
  *              PR_UINT32_MAX
  * DESCRIPTION:
  *  The maximum and minimum values of a PRInt32 or PRUint32.
-************************************************************************/
+ ************************************************************************/
 
 #define PR_INT32_MAX PR_INT32(2147483647)
 #define PR_INT32_MIN (-PR_INT32_MAX - 1)
@@ -323,24 +323,24 @@ typedef long PRInt32;
 #if PR_BYTES_PER_LONG == 8 && !defined(PR_ALTERNATE_INT64_TYPEDEF)
 typedef long PRInt64;
 typedef unsigned long PRUint64;
-#define PR_INT64(x)  x ## L
-#define PR_UINT64(x) x ## UL
+#define PR_INT64(x) x##L
+#define PR_UINT64(x) x##UL
 #elif defined(WIN32) && !defined(__GNUC__)
-typedef __int64  PRInt64;
+typedef __int64 PRInt64;
 typedef unsigned __int64 PRUint64;
-#define PR_INT64(x)  x ## i64
-#define PR_UINT64(x) x ## ui64
+#define PR_INT64(x) x##i64
+#define PR_UINT64(x) x##ui64
 #else
 typedef long long PRInt64;
 typedef unsigned long long PRUint64;
-#define PR_INT64(x)  x ## LL
-#define PR_UINT64(x) x ## ULL
+#define PR_INT64(x) x##LL
+#define PR_UINT64(x) x##ULL
 #endif /* PR_BYTES_PER_LONG == 8 */
 
 #define PR_INT64_MAX PR_INT64(0x7fffffffffffffff)
 #define PR_INT64_MIN (-PR_INT64_MAX - 1)
 #define PR_UINT64_MAX PR_UINT64(-1)
-#else  /* !HAVE_LONG_LONG */
+#else /* !HAVE_LONG_LONG */
 typedef struct {
 #ifdef IS_LITTLE_ENDIAN
     PRUint32 lo, hi;
@@ -350,9 +350,9 @@ typedef struct {
 } PRInt64;
 typedef PRInt64 PRUint64;
 
-#define PR_INT64_MAX (PRInt64){0x7fffffff, 0xffffffff}
-#define PR_INT64_MIN (PRInt64){0xffffffff, 0xffffffff}
-#define PR_UINT64_MAX (PRUint64){0xffffffff, 0xffffffff}
+#define PR_INT64_MAX (PRInt64){ 0x7fffffff, 0xffffffff }
+#define PR_INT64_MIN (PRInt64){ 0xffffffff, 0xffffffff }
+#define PR_UINT64_MAX (PRUint64){ 0xffffffff, 0xffffffff }
 
 #endif /* !HAVE_LONG_LONG */
 
@@ -377,7 +377,7 @@ typedef unsigned int PRUintn;
 ** DESCRIPTION:
 **  NSPR's floating point type is always 64 bits.
 ************************************************************************/
-typedef double          PRFloat64;
+typedef double PRFloat64;
 
 /************************************************************************
 ** TYPES:       PRSize
@@ -385,7 +385,6 @@ typedef double          PRFloat64;
 **  A type for representing the size of objects.
 ************************************************************************/
 typedef size_t PRSize;
-
 
 /************************************************************************
 ** TYPES:       PROffset32, PROffset64
@@ -439,7 +438,8 @@ typedef PRUint8 PRPackedBool;
 ** Status code used by some routines that have a single point of failure or
 ** special status return.
 */
-typedef enum { PR_FAILURE = -1, PR_SUCCESS = 0 } PRStatus;
+typedef enum { PR_FAILURE = -1,
+               PR_SUCCESS = 0 } PRStatus;
 
 #ifndef __PRUNICHAR__
 #define __PRUNICHAR__
@@ -497,20 +497,24 @@ typedef unsigned long PRUword;
 #if defined(NO_NSPR_10_SUPPORT)
 #else
 /********* ???????????????? FIX ME       ??????????????????????????? *****/
-/********************** Some old definitions until pr=>ds transition is done ***/
-/********************** Also, we are still using NSPR 1.0. GC ******************/
+/********************** Some old definitions until pr=>ds transition is done
+ * ***/
+/********************** Also, we are still using NSPR 1.0. GC
+ * ******************/
 /*
 ** Fundamental NSPR macros, used nearly everywhere.
 */
 
-#define PR_PUBLIC_API       PR_IMPLEMENT
+#define PR_PUBLIC_API PR_IMPLEMENT
 
 /*
 ** Macro body brackets so that macros with compound statement definitions
 ** behave syntactically more like functions when called.
 */
-#define NSPR_BEGIN_MACRO        do {
-#define NSPR_END_MACRO          } while (0)
+#define NSPR_BEGIN_MACRO do {
+#define NSPR_END_MACRO \
+    }                  \
+    while (0)
 
 /*
 ** Macro shorthands for conditional C++ extern block delimiters.
@@ -523,8 +527,8 @@ typedef unsigned long PRUword;
 #endif
 
 #ifdef __cplusplus
-#define NSPR_BEGIN_EXTERN_C     extern "C" {
-#define NSPR_END_EXTERN_C       }
+#define NSPR_BEGIN_EXTERN_C extern "C" {
+#define NSPR_END_EXTERN_C }
 #else
 #define NSPR_BEGIN_EXTERN_C
 #define NSPR_END_EXTERN_C
@@ -546,4 +550,3 @@ typedef unsigned long PRUword;
 PR_END_EXTERN_C
 
 #endif /* prtypes_h___ */
-

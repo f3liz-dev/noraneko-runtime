@@ -21,11 +21,13 @@ struct SocketInfo {
   uint16_t port;
   bool active;
   nsCString type;
+  nsCString originAttributesSuffix;
 };
 
 inline bool operator==(const SocketInfo& a, const SocketInfo& b) {
   return a.host == b.host && a.sent == b.sent && a.received == b.received &&
-         a.port == b.port && a.active == b.active && a.type == b.type;
+         a.port == b.port && a.active == b.active && a.type == b.type &&
+         a.originAttributesSuffix == b.originAttributesSuffix;
 }
 
 struct DnsAndConnectSockets {
@@ -60,6 +62,7 @@ struct HttpRetParams {
   uint16_t port;
   nsCString httpVersion;
   bool ssl;
+  nsCString originAttributesSuffix;
 };
 
 struct Http3ConnStats {
@@ -95,167 +98,49 @@ struct Http3ConnectionStatsParams {
   CopyableTArray<Http3ConnStats> stats;
 };
 
+struct SSLTokensCacheRecordInfo {
+  nsCString key;
+  int64_t expirationTime;
+  uint8_t overridableError;
+  bool restored;
+  uint64_t id;
+  CopyableTArray<uint8_t> compressedPayload;
+};
+
 }  // namespace net
 }  // namespace mozilla
 
 namespace IPC {
 
-template <>
-struct ParamTraits<mozilla::net::SocketInfo> {
-  typedef mozilla::net::SocketInfo paramType;
+DEFINE_IPC_SERIALIZER_WITH_FIELDS(mozilla::net::SocketInfo, host, sent,
+                                  received, port, active, type,
+                                  originAttributesSuffix);
 
-  static void Write(MessageWriter* aWriter, const paramType& aParam) {
-    WriteParam(aWriter, aParam.host);
-    WriteParam(aWriter, aParam.sent);
-    WriteParam(aWriter, aParam.received);
-    WriteParam(aWriter, aParam.port);
-    WriteParam(aWriter, aParam.active);
-    WriteParam(aWriter, aParam.type);
-  }
+DEFINE_IPC_SERIALIZER_WITH_FIELDS(mozilla::net::DNSCacheEntries, hostname,
+                                  hostaddr, family, expiration, TRR,
+                                  originAttributesSuffix, flags, resolveType);
 
-  static bool Read(MessageReader* aReader, paramType* aResult) {
-    return ReadParam(aReader, &aResult->host) &&
-           ReadParam(aReader, &aResult->sent) &&
-           ReadParam(aReader, &aResult->received) &&
-           ReadParam(aReader, &aResult->port) &&
-           ReadParam(aReader, &aResult->active) &&
-           ReadParam(aReader, &aResult->type);
-  }
-};
+DEFINE_IPC_SERIALIZER_WITH_FIELDS(mozilla::net::DnsAndConnectSockets,
+                                  speculative);
 
-template <>
-struct ParamTraits<mozilla::net::DNSCacheEntries> {
-  typedef mozilla::net::DNSCacheEntries paramType;
+DEFINE_IPC_SERIALIZER_WITH_FIELDS(mozilla::net::HttpConnInfo, ttl, rtt,
+                                  protocolVersion);
 
-  static void Write(MessageWriter* aWriter, const paramType& aParam) {
-    WriteParam(aWriter, aParam.hostname);
-    WriteParam(aWriter, aParam.hostaddr);
-    WriteParam(aWriter, aParam.family);
-    WriteParam(aWriter, aParam.expiration);
-    WriteParam(aWriter, aParam.TRR);
-    WriteParam(aWriter, aParam.originAttributesSuffix);
-    WriteParam(aWriter, aParam.flags);
-    WriteParam(aWriter, aParam.resolveType);
-  }
+DEFINE_IPC_SERIALIZER_WITH_FIELDS(mozilla::net::HttpRetParams, host, active,
+                                  idle, dnsAndSocks, counter, port, httpVersion,
+                                  ssl, originAttributesSuffix);
 
-  static bool Read(MessageReader* aReader, paramType* aResult) {
-    return ReadParam(aReader, &aResult->hostname) &&
-           ReadParam(aReader, &aResult->hostaddr) &&
-           ReadParam(aReader, &aResult->family) &&
-           ReadParam(aReader, &aResult->expiration) &&
-           ReadParam(aReader, &aResult->TRR) &&
-           ReadParam(aReader, &aResult->originAttributesSuffix) &&
-           ReadParam(aReader, &aResult->flags) &&
-           ReadParam(aReader, &aResult->resolveType);
-  }
-};
+DEFINE_IPC_SERIALIZER_WITH_FIELDS(mozilla::net::Http3ConnStats, packetsRx,
+                                  dupsRx, droppedRx, savedDatagrams, packetsTx,
+                                  lost, lateAck, ptoAck, ptoCounts,
+                                  wouldBlockRx, wouldBlockTx);
 
-template <>
-struct ParamTraits<mozilla::net::DnsAndConnectSockets> {
-  typedef mozilla::net::DnsAndConnectSockets paramType;
+DEFINE_IPC_SERIALIZER_WITH_FIELDS(mozilla::net::Http3ConnectionStatsParams,
+                                  host, port, stats);
 
-  static void Write(MessageWriter* aWriter, const paramType& aParam) {
-    WriteParam(aWriter, aParam.speculative);
-  }
-
-  static bool Read(MessageReader* aReader, paramType* aResult) {
-    return ReadParam(aReader, &aResult->speculative);
-  }
-};
-
-template <>
-struct ParamTraits<mozilla::net::HttpConnInfo> {
-  typedef mozilla::net::HttpConnInfo paramType;
-
-  static void Write(MessageWriter* aWriter, const paramType& aParam) {
-    WriteParam(aWriter, aParam.ttl);
-    WriteParam(aWriter, aParam.rtt);
-    WriteParam(aWriter, aParam.protocolVersion);
-  }
-
-  static bool Read(MessageReader* aReader, paramType* aResult) {
-    return ReadParam(aReader, &aResult->ttl) &&
-           ReadParam(aReader, &aResult->rtt) &&
-           ReadParam(aReader, &aResult->protocolVersion);
-  }
-};
-
-template <>
-struct ParamTraits<mozilla::net::HttpRetParams> {
-  typedef mozilla::net::HttpRetParams paramType;
-
-  static void Write(MessageWriter* aWriter, const paramType& aParam) {
-    WriteParam(aWriter, aParam.host);
-    WriteParam(aWriter, aParam.active);
-    WriteParam(aWriter, aParam.idle);
-    WriteParam(aWriter, aParam.dnsAndSocks);
-    WriteParam(aWriter, aParam.counter);
-    WriteParam(aWriter, aParam.port);
-    WriteParam(aWriter, aParam.httpVersion);
-    WriteParam(aWriter, aParam.ssl);
-  }
-
-  static bool Read(MessageReader* aReader, paramType* aResult) {
-    return ReadParam(aReader, &aResult->host) &&
-           ReadParam(aReader, &aResult->active) &&
-           ReadParam(aReader, &aResult->idle) &&
-           ReadParam(aReader, &aResult->dnsAndSocks) &&
-           ReadParam(aReader, &aResult->counter) &&
-           ReadParam(aReader, &aResult->port) &&
-           ReadParam(aReader, &aResult->httpVersion) &&
-           ReadParam(aReader, &aResult->ssl);
-  }
-};
-
-template <>
-struct ParamTraits<mozilla::net::Http3ConnStats> {
-  typedef mozilla::net::Http3ConnStats paramType;
-
-  static void Write(MessageWriter* aWriter, const paramType& aParam) {
-    WriteParam(aWriter, aParam.packetsRx);
-    WriteParam(aWriter, aParam.dupsRx);
-    WriteParam(aWriter, aParam.droppedRx);
-    WriteParam(aWriter, aParam.savedDatagrams);
-    WriteParam(aWriter, aParam.packetsTx);
-    WriteParam(aWriter, aParam.lost);
-    WriteParam(aWriter, aParam.lateAck);
-    WriteParam(aWriter, aParam.ptoAck);
-    WriteParam(aWriter, aParam.ptoCounts);
-    WriteParam(aWriter, aParam.wouldBlockRx);
-    WriteParam(aWriter, aParam.wouldBlockTx);
-  }
-
-  static bool Read(MessageReader* aReader, paramType* aResult) {
-    return ReadParam(aReader, &aResult->packetsRx) &&
-           ReadParam(aReader, &aResult->dupsRx) &&
-           ReadParam(aReader, &aResult->droppedRx) &&
-           ReadParam(aReader, &aResult->savedDatagrams) &&
-           ReadParam(aReader, &aResult->packetsTx) &&
-           ReadParam(aReader, &aResult->lost) &&
-           ReadParam(aReader, &aResult->lateAck) &&
-           ReadParam(aReader, &aResult->ptoAck) &&
-           ReadParam(aReader, &aResult->ptoCounts) &&
-           ReadParam(aReader, &aResult->wouldBlockRx) &&
-           ReadParam(aReader, &aResult->wouldBlockTx);
-  }
-};
-
-template <>
-struct ParamTraits<mozilla::net::Http3ConnectionStatsParams> {
-  typedef mozilla::net::Http3ConnectionStatsParams paramType;
-
-  static void Write(MessageWriter* aWriter, const paramType& aParam) {
-    WriteParam(aWriter, aParam.host);
-    WriteParam(aWriter, aParam.port);
-    WriteParam(aWriter, aParam.stats);
-  }
-
-  static bool Read(MessageReader* aReader, paramType* aResult) {
-    return ReadParam(aReader, &aResult->host) &&
-           ReadParam(aReader, &aResult->port) &&
-           ReadParam(aReader, &aResult->stats);
-  }
-};
+DEFINE_IPC_SERIALIZER_WITH_FIELDS(mozilla::net::SSLTokensCacheRecordInfo, key,
+                                  expirationTime, overridableError, restored,
+                                  id, compressedPayload);
 
 }  // namespace IPC
 

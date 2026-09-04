@@ -112,18 +112,18 @@ function setResultGroups(groups) {
       {
         maxResultCount: 1,
         children: [
-          { group: UrlbarUtils.RESULT_GROUP.HEURISTIC_TEST },
-          { group: UrlbarUtils.RESULT_GROUP.HEURISTIC_EXTENSION },
-          { group: UrlbarUtils.RESULT_GROUP.HEURISTIC_SEARCH_TIP },
-          { group: UrlbarUtils.RESULT_GROUP.HEURISTIC_OMNIBOX },
-          { group: UrlbarUtils.RESULT_GROUP.HEURISTIC_AUTOFILL },
-          { group: UrlbarUtils.RESULT_GROUP.HEURISTIC_TOKEN_ALIAS_ENGINE },
-          { group: UrlbarUtils.RESULT_GROUP.HEURISTIC_FALLBACK },
+          { group: UrlbarShared.RESULT_GROUP.HEURISTIC_TEST },
+          { group: UrlbarShared.RESULT_GROUP.HEURISTIC_EXTENSION },
+          { group: UrlbarShared.RESULT_GROUP.HEURISTIC_SEARCH_TIP },
+          { group: UrlbarShared.RESULT_GROUP.HEURISTIC_OMNIBOX },
+          { group: UrlbarShared.RESULT_GROUP.HEURISTIC_AUTOFILL },
+          { group: UrlbarShared.RESULT_GROUP.HEURISTIC_TOKEN_ALIAS_ENGINE },
+          { group: UrlbarShared.RESULT_GROUP.HEURISTIC_FALLBACK },
         ],
       },
       // extensions using the omnibox API
       {
-        group: UrlbarUtils.RESULT_GROUP.OMNIBOX,
+        group: UrlbarShared.RESULT_GROUP.OMNIBOX,
       },
       ...groups,
     ],
@@ -205,6 +205,31 @@ add_task(async function disabled_allSuggestions() {
   await cleanUpSuggestions();
 });
 
+// The searchbar shows form history even when remote suggestions are disabled.
+add_task(async function disabled_allSuggestions_searchbar() {
+  Services.prefs.setBoolPref(SUGGEST_PREF, true);
+  Services.prefs.setBoolPref(SUGGEST_ENABLED_PREF, false);
+
+  for (let isPrivate of [false, true]) {
+    let context = createContext(SEARCH_STRING, {
+      isPrivate,
+      sapName: "searchbar",
+    });
+    await check_results({
+      context,
+      matches: [
+        makeSearchResult(context, {
+          engineName: SUGGESTIONS_ENGINE_NAME,
+          heuristic: true,
+        }),
+        ...makeFormHistoryResults(context, MAX_RESULTS - 1),
+      ],
+    });
+  }
+
+  await cleanUpSuggestions();
+});
+
 add_task(async function disabled_privateWindow() {
   Services.prefs.setBoolPref(SUGGEST_PREF, true);
   Services.prefs.setBoolPref(SUGGEST_ENABLED_PREF, true);
@@ -226,7 +251,7 @@ add_task(async function disabled_urlbarSuggestions_withRestrictionToken() {
   Services.prefs.setBoolPref(SUGGEST_PREF, false);
   Services.prefs.setBoolPref(SUGGEST_ENABLED_PREF, true);
   let context = createContext(
-    `${UrlbarTokenizer.RESTRICT.SEARCH} ${SEARCH_STRING}`,
+    `${UrlbarShared.RESTRICT_TOKENS.SEARCH} ${SEARCH_STRING}`,
     { isPrivate: false }
   );
   await check_results({
@@ -234,7 +259,7 @@ add_task(async function disabled_urlbarSuggestions_withRestrictionToken() {
     matches: [
       makeSearchResult(context, {
         query: SEARCH_STRING,
-        alias: UrlbarTokenizer.RESTRICT.SEARCH,
+        alias: UrlbarShared.RESTRICT_TOKENS.SEARCH,
         engineName: SUGGESTIONS_ENGINE_NAME,
         heuristic: true,
       }),
@@ -253,7 +278,7 @@ add_task(
     Services.prefs.setBoolPref(SUGGEST_ENABLED_PREF, true);
     Services.prefs.setBoolPref(PRIVATE_ENABLED_PREF, false);
     let context = createContext(
-      `${UrlbarTokenizer.RESTRICT.SEARCH} ${SEARCH_STRING}`,
+      `${UrlbarShared.RESTRICT_TOKENS.SEARCH} ${SEARCH_STRING}`,
       { isPrivate: true }
     );
     await check_results({
@@ -261,7 +286,7 @@ add_task(
       matches: [
         makeSearchResult(context, {
           query: SEARCH_STRING,
-          alias: UrlbarTokenizer.RESTRICT.SEARCH,
+          alias: UrlbarShared.RESTRICT_TOKENS.SEARCH,
           engineName: SUGGESTIONS_ENGINE_NAME,
           heuristic: true,
         }),
@@ -277,7 +302,7 @@ add_task(
     Services.prefs.setBoolPref(SUGGEST_ENABLED_PREF, true);
     Services.prefs.setBoolPref(PRIVATE_ENABLED_PREF, true);
     let context = createContext(
-      `${UrlbarTokenizer.RESTRICT.SEARCH} ${SEARCH_STRING}`,
+      `${UrlbarShared.RESTRICT_TOKENS.SEARCH} ${SEARCH_STRING}`,
       { isPrivate: true }
     );
     await check_results({
@@ -285,7 +310,7 @@ add_task(
       matches: [
         makeSearchResult(context, {
           query: SEARCH_STRING,
-          alias: UrlbarTokenizer.RESTRICT.SEARCH,
+          alias: UrlbarShared.RESTRICT_TOKENS.SEARCH,
           engineName: SUGGESTIONS_ENGINE_NAME,
           heuristic: true,
         }),
@@ -509,17 +534,15 @@ add_task(async function restrictToken() {
 
   // Now do a restricted search to make sure only suggestions appear.
   context = createContext(
-    `${UrlbarTokenizer.RESTRICT.SEARCH} ${SEARCH_STRING}`,
-    {
-      isPrivate: false,
-    }
+    `${UrlbarShared.RESTRICT_TOKENS.SEARCH} ${SEARCH_STRING}`,
+    { isPrivate: false }
   );
   await check_results({
     context,
     matches: [
       makeSearchResult(context, {
         engineName: SUGGESTIONS_ENGINE_NAME,
-        alias: UrlbarTokenizer.RESTRICT.SEARCH,
+        alias: UrlbarShared.RESTRICT_TOKENS.SEARCH,
         query: SEARCH_STRING,
         heuristic: true,
       }),
@@ -533,7 +556,7 @@ add_task(async function restrictToken() {
 
   // Typing the search restriction char shows the Search Engine entry and local
   // results.
-  context = createContext(UrlbarTokenizer.RESTRICT.SEARCH, {
+  context = createContext(UrlbarShared.RESTRICT_TOKENS.SEARCH, {
     isPrivate: false,
   });
   await check_results({
@@ -549,7 +572,7 @@ add_task(async function restrictToken() {
   });
 
   // Also if followed by multiple spaces.
-  context = createContext(`${UrlbarTokenizer.RESTRICT.SEARCH}  `, {
+  context = createContext(`${UrlbarShared.RESTRICT_TOKENS.SEARCH}  `, {
     isPrivate: false,
   });
   await check_results({
@@ -557,7 +580,7 @@ add_task(async function restrictToken() {
     matches: [
       makeSearchResult(context, {
         engineName: SUGGESTIONS_ENGINE_NAME,
-        alias: UrlbarTokenizer.RESTRICT.SEARCH,
+        alias: UrlbarShared.RESTRICT_TOKENS.SEARCH,
         query: "",
         heuristic: true,
       }),
@@ -567,7 +590,7 @@ add_task(async function restrictToken() {
 
   // If followed by any char we should fetch suggestions.
   // Note this uses "h" to match form history.
-  context = createContext(`${UrlbarTokenizer.RESTRICT.SEARCH}h`, {
+  context = createContext(`${UrlbarShared.RESTRICT_TOKENS.SEARCH}h`, {
     isPrivate: false,
   });
   await check_results({
@@ -587,7 +610,7 @@ add_task(async function restrictToken() {
   });
 
   // Also if followed by a space and single char.
-  context = createContext(`${UrlbarTokenizer.RESTRICT.SEARCH} h`, {
+  context = createContext(`${UrlbarShared.RESTRICT_TOKENS.SEARCH} h`, {
     isPrivate: false,
   });
   await check_results({
@@ -595,7 +618,7 @@ add_task(async function restrictToken() {
     matches: [
       makeSearchResult(context, {
         engineName: SUGGESTIONS_ENGINE_NAME,
-        alias: UrlbarTokenizer.RESTRICT.SEARCH,
+        alias: UrlbarShared.RESTRICT_TOKENS.SEARCH,
         query: "h",
         heuristic: true,
       }),
@@ -609,17 +632,17 @@ add_task(async function restrictToken() {
 
   // Leading search-mode restriction tokens are removed.
   context = createContext(
-    `${UrlbarTokenizer.RESTRICT.BOOKMARK} ${SEARCH_STRING}`,
+    `${UrlbarShared.RESTRICT_TOKENS.BOOKMARK} ${SEARCH_STRING}`,
     { isPrivate: false }
   );
   await check_results({
     context,
     matches: [
       makeSearchResult(context, {
-        source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+        source: UrlbarShared.RESULT_SOURCE.OTHER_LOCAL,
         heuristic: true,
         query: SEARCH_STRING,
-        alias: UrlbarTokenizer.RESTRICT.BOOKMARK,
+        alias: UrlbarShared.RESTRICT_TOKENS.BOOKMARK,
       }),
       makeBookmarkResult(context, {
         uri: `http://example.com/${SEARCH_STRING}-bookmark`,
@@ -631,8 +654,8 @@ add_task(async function restrictToken() {
   // Non-search-mode restriction tokens remain in the query and heuristic search
   // result.
   let token;
-  for (let t of Object.values(UrlbarTokenizer.RESTRICT)) {
-    if (!UrlbarTokenizer.SEARCH_MODE_RESTRICT.has(t)) {
+  for (let t of Object.values(UrlbarShared.RESTRICT_TOKENS)) {
+    if (!UrlbarShared.SEARCH_MODE_RESTRICT.has(t)) {
       token = t;
       break;
     }
@@ -780,28 +803,28 @@ add_task(async function mixup_frecency() {
     {
       maxResultCount: 1,
       children: [
-        { group: UrlbarUtils.RESULT_GROUP.FORM_HISTORY },
-        { group: UrlbarUtils.RESULT_GROUP.REMOTE_SUGGESTION },
+        { group: UrlbarShared.RESULT_GROUP.FORM_HISTORY },
+        { group: UrlbarShared.RESULT_GROUP.REMOTE_SUGGESTION },
       ],
     },
     // 5 general
     {
       maxResultCount: 5,
-      group: UrlbarUtils.RESULT_GROUP.GENERAL,
+      group: UrlbarShared.RESULT_GROUP.GENERAL,
     },
     // 1 suggestion
     {
       maxResultCount: 1,
       children: [
-        { group: UrlbarUtils.RESULT_GROUP.FORM_HISTORY },
-        { group: UrlbarUtils.RESULT_GROUP.REMOTE_SUGGESTION },
+        { group: UrlbarShared.RESULT_GROUP.FORM_HISTORY },
+        { group: UrlbarShared.RESULT_GROUP.REMOTE_SUGGESTION },
       ],
     },
     // remaining general
-    { group: UrlbarUtils.RESULT_GROUP.GENERAL },
+    { group: UrlbarShared.RESULT_GROUP.GENERAL },
     // remaining suggestions
-    { group: UrlbarUtils.RESULT_GROUP.FORM_HISTORY },
-    { group: UrlbarUtils.RESULT_GROUP.REMOTE_SUGGESTION },
+    { group: UrlbarShared.RESULT_GROUP.FORM_HISTORY },
+    { group: UrlbarShared.RESULT_GROUP.REMOTE_SUGGESTION },
   ]);
 
   // Do an unrestricted search to make sure everything appears in it, including
@@ -896,7 +919,7 @@ add_task(async function prohibit_suggestions() {
     context,
     matches: [
       makeVisitResult(context, {
-        source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+        source: UrlbarShared.RESULT_SOURCE.OTHER_LOCAL,
         uri: `http://${SEARCH_STRING}/`,
         title: `${SEARCH_STRING}/`,
         iconUri: "",
@@ -941,7 +964,7 @@ add_task(async function prohibit_suggestions() {
     context,
     matches: [
       makeVisitResult(context, {
-        source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+        source: UrlbarShared.RESULT_SOURCE.OTHER_LOCAL,
         uri: `http://${SEARCH_STRING}/`,
         title: `${SEARCH_STRING}/`,
         iconUri: "",
@@ -960,7 +983,7 @@ add_task(async function prohibit_suggestions() {
     context,
     matches: [
       makeVisitResult(context, {
-        source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+        source: UrlbarShared.RESULT_SOURCE.OTHER_LOCAL,
         uri: "http://somethingelse/",
         title: "somethingelse/",
         iconUri: "",
@@ -995,7 +1018,7 @@ add_task(async function prohibit_suggestions() {
     context,
     matches: [
       makeVisitResult(context, {
-        source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+        source: UrlbarShared.RESULT_SOURCE.OTHER_LOCAL,
         uri: "http://1.2.3.4/",
         title: "http://1.2.3.4/",
         iconUri: "page-icon:http://1.2.3.4/",
@@ -1009,7 +1032,7 @@ add_task(async function prohibit_suggestions() {
     context,
     matches: [
       makeVisitResult(context, {
-        source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+        source: UrlbarShared.RESULT_SOURCE.OTHER_LOCAL,
         uri: "http://[2001::1]:30/",
         title: "[2001::1]:30/",
         iconUri: "",
@@ -1023,7 +1046,7 @@ add_task(async function prohibit_suggestions() {
     context,
     matches: [
       makeVisitResult(context, {
-        source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+        source: UrlbarShared.RESULT_SOURCE.OTHER_LOCAL,
         uri: "http://user:pass@test/",
         title: "user:pass@test/",
         iconUri: "",
@@ -1037,7 +1060,7 @@ add_task(async function prohibit_suggestions() {
     context,
     matches: [
       makeVisitResult(context, {
-        source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+        source: UrlbarShared.RESULT_SOURCE.OTHER_LOCAL,
         uri: "http://user:pass@mozilla.org/",
         title: "user:pass@mozilla.org/",
         iconUri: "",
@@ -1051,7 +1074,7 @@ add_task(async function prohibit_suggestions() {
     context,
     matches: [
       makeVisitResult(context, {
-        source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+        source: UrlbarShared.RESULT_SOURCE.OTHER_LOCAL,
         uri: "http://mozilla.org:1234/",
         title: "mozilla.org:1234/",
         iconUri: "",
@@ -1065,7 +1088,7 @@ add_task(async function prohibit_suggestions() {
     context,
     matches: [
       makeVisitResult(context, {
-        source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+        source: UrlbarShared.RESULT_SOURCE.OTHER_LOCAL,
         uri: "data:text/plain,Content",
         title: "data:text/plain,Content",
         iconUri: "",
@@ -1108,7 +1131,7 @@ add_task(async function simple_origin_queries() {
       let context = createContext(query, { isPrivate: false });
       let expected = [
         makeVisitResult(context, {
-          source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+          source: UrlbarShared.RESULT_SOURCE.OTHER_LOCAL,
           title: `${query}/`,
           uri: `http://${query}/`,
           iconUri: "",
@@ -1430,7 +1453,7 @@ add_task(async function avoid_remote_url_suggestions_2() {
     context,
     matches: [
       makeVisitResult(context, {
-        source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+        source: UrlbarShared.RESULT_SOURCE.OTHER_LOCAL,
         uri: "ftp://test/",
         title: "ftp://test/",
         iconUri: "",
@@ -1488,7 +1511,7 @@ add_task(async function avoid_remote_url_suggestions_2() {
     context,
     matches: [
       makeVisitResult(context, {
-        source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+        source: UrlbarShared.RESULT_SOURCE.OTHER_LOCAL,
         uri: "http://www/",
         title: "http://www/",
         iconUri: "",
@@ -1502,7 +1525,7 @@ add_task(async function avoid_remote_url_suggestions_2() {
     context,
     matches: [
       makeVisitResult(context, {
-        source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+        source: UrlbarShared.RESULT_SOURCE.OTHER_LOCAL,
         uri: "https://www/",
         title: "https://www/",
         iconUri: "",
@@ -1516,7 +1539,7 @@ add_task(async function avoid_remote_url_suggestions_2() {
     context,
     matches: [
       makeVisitResult(context, {
-        source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+        source: UrlbarShared.RESULT_SOURCE.OTHER_LOCAL,
         uri: "http://test/",
         title: "http://test/",
         iconUri: "",
@@ -1530,7 +1553,7 @@ add_task(async function avoid_remote_url_suggestions_2() {
     context,
     matches: [
       makeVisitResult(context, {
-        source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+        source: UrlbarShared.RESULT_SOURCE.OTHER_LOCAL,
         uri: "https://test/",
         title: "https://test/",
         iconUri: "",
@@ -1544,7 +1567,7 @@ add_task(async function avoid_remote_url_suggestions_2() {
     context,
     matches: [
       makeVisitResult(context, {
-        source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+        source: UrlbarShared.RESULT_SOURCE.OTHER_LOCAL,
         uri: "http://www.test/",
         title: "http://www.test/",
         iconUri: "",
@@ -1558,7 +1581,7 @@ add_task(async function avoid_remote_url_suggestions_2() {
     context,
     matches: [
       makeVisitResult(context, {
-        source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+        source: UrlbarShared.RESULT_SOURCE.OTHER_LOCAL,
         uri: "http://www.test.com/",
         title: "http://www.test.com/",
         iconUri: "",
@@ -1602,7 +1625,7 @@ add_task(async function avoid_remote_url_suggestions_2() {
     context,
     matches: [
       makeVisitResult(context, {
-        source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+        source: UrlbarShared.RESULT_SOURCE.OTHER_LOCAL,
         uri: "file:///Users",
         title: "file:///Users",
         iconUri: "",
@@ -1878,7 +1901,7 @@ add_task(async function formHistory() {
     context,
     matches: [
       makeVisitResult(context, {
-        source: UrlbarUtils.RESULT_SOURCE.HISTORY,
+        source: UrlbarShared.RESULT_SOURCE.HISTORY,
         uri: "http://foo.example.com/",
         title: "test visit for http://foo.example.com/",
         heuristic: true,

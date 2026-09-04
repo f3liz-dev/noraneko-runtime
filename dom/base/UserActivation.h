@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -144,6 +142,12 @@ class UserActivation final : public nsISupports, public nsWrapperCache {
   static bool IsHandlingKeyboardInput();
 
   /**
+   * Returns true if the current code is being executed as a result of
+   * a keyboard input and the keyboard input is associated with paste actions.
+   */
+  static bool IsHandlingKeyboardInputWithPasteActions();
+
+  /**
    * Returns true if the event is considered as user interaction event. I.e.,
    * enough obvious input to allow to open popup, etc. Otherwise, returns false.
    */
@@ -190,6 +194,10 @@ class MOZ_RAII AutoHandlingUserInputStatePusher final {
  protected:
   EventMessage mMessage;
   bool mIsHandlingUserInput;
+
+  // True if there are paste commands associated with the previous keyboard
+  // event when a nested event loop is spun.
+  bool mPreviousHandlingKeyboardEventHasAssociatedPasteCommands;
 };
 
 }  // namespace mozilla::dom

@@ -1,0 +1,79 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Test that redundant characterboundsupdate events are not fired at EditContext.</title>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/EventUtils.js"></script>
+  <link rel="stylesheet" href="/tests/SimpleTest/test.css"/>
+</head>
+<body>
+<div></div>
+<script>
+'use strict';
+
+const host = document.querySelector('div');
+let editContext;
+const spanBefore = document.getElementById('spanBefore');
+const spanAfter = document.getElementById('spanAfter');
+let provideCharacterBounds;
+
+function check(func, shouldFire, message) {
+  let fired = false;
+  editContext.addEventListener('characterboundsupdate', () => fired = true, {once: true});
+  func();
+  synthesizeQueryTextRect(3, 1);
+  is(fired, shouldFire, `Should${shouldFire ? " " : " not "}fire characterboundsupdate when ${message} (provideCharacterBounds = ${provideCharacterBounds}).`);
+}
+
+function runTests() {
+  editContext = new EditContext({text: 'hello'});
+  host.editContext = editContext;
+  host.focus();
+  // Clear any existing character bounds
+  editContext.updateCharacterBounds(0, []);
+  check(() => {
+    editContext.updateSelection(3, 4);
+  }, true, 'Selection is set without any character bounds.');
+  if (provideCharacterBounds) {
+    editContext.updateCharacterBounds(3, [new DOMRect(10,20,30,40)]);
+  }
+  check(() => {
+    host.after(document.createElement('hr'));
+    document.body.getBoundingClientRect();
+  }, false, 'unrelated element is reflowed');
+  check(() => {
+    editContext.updateSelection(3, 3);
+    synthesizeKey('x');
+  }, true, 'user inputs text');
+  check(() => {
+    editContext.updateText(1, 2, 'y');
+    // This will only fire characterboundsupdate if we actually provided
+    // the character bounds. Otherwise, we assume nothing relevant has changed.
+  }, provideCharacterBounds, 'text before queried character changes');
+  check(() => {
+    editContext.updateText(4, 4, 'z');
+  }, false, 'text after queried character changes');
+  check(() => {
+    editContext.updateControlBounds(new DOMRect(99, 99, 1, 1));
+  }, true, 'control bounds are set');
+  check(() => {
+    editContext.updateControlBounds(new DOMRect(999, 9, 1, 1));
+  }, true, 'control bounds are changed');
+  check(() => {
+    document.querySelector('hr').remove();
+    host.getBoundingClientRect();
+  }, false, 'associated element bounding rect changes, but control bounds stay the same');
+}
+
+for (let provideBounds of [false, true]) {
+  add_task(async () => {
+    provideCharacterBounds = provideBounds;
+    await SimpleTest.promiseFocus();
+    runTests();
+  });
+}
+
+</script>
+</body>
+</html>

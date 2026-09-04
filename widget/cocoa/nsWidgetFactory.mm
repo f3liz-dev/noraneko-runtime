@@ -1,41 +1,40 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "nsISupports.h"
 #include "mozilla/Components.h"
 #include "mozilla/ModuleUtils.h"
 #include "mozilla/WidgetUtils.h"
+#include "nsISupports.h"
 
 #include "nsWidgetsCID.h"
 
-#include "nsChildView.h"
 #include "nsAppShell.h"
 #include "nsAppShellSingleton.h"
-#include "nsFilePicker.h"
+#include "nsChildView.h"
 #include "nsColorPicker.h"
+#include "nsFilePicker.h"
 
-#include "nsClipboard.h"
-#include "nsClipboardHelper.h"
 #include "HeadlessClipboard.h"
 #include "gfxPlatform.h"
-#include "nsTransferable.h"
-#include "nsHTMLFormatConverter.h"
+#include "nsClipboard.h"
+#include "nsClipboardHelper.h"
 #include "nsDragService.h"
+#include "nsHTMLFormatConverter.h"
 #include "nsToolkit.h"
+#include "nsTransferable.h"
 
 #include "nsLookAndFeel.h"
 
+#include "MacOSNotificationCenter.h"
+#include "NativeKeyBindings.h"
 #include "nsSound.h"
 #include "nsUserIdleServiceX.h"
-#include "NativeKeyBindings.h"
-#include "OSXNotificationCenter.h"
 
 #include "nsDeviceContextSpecX.h"
-#include "nsPrinterListCUPS.h"
-#include "nsPrintSettingsServiceX.h"
 #include "nsPrintDialogX.h"
+#include "nsPrintSettingsServiceX.h"
+#include "nsPrinterListCUPS.h"
 #include "nsToolkitCompsCID.h"
 
 #include "mozilla/widget/ScreenManager.h"
@@ -85,7 +84,7 @@ MAKE_GENERIC_CTOR_INIT(nsPrintSettingsServiceX, nsIPrintSettingsService, Init)
 MAKE_GENERIC_CTOR_INIT(nsPrintDialogServiceX, nsIPrintDialogService, Init)
 MAKE_GENERIC_SINGLETON_CTOR(nsUserIdleServiceX, nsUserIdleServiceX::GetInstance)
 MAKE_GENERIC_SINGLETON_CTOR(ScreenManager, ScreenManager::GetAddRefedSingleton)
-MAKE_GENERIC_CTOR_INIT(OSXNotificationCenter, nsIAlertsService, Init)
+MAKE_GENERIC_CTOR_INIT(MacOSNotificationCenter, nsIAlertsService, Init)
 
 #include "nsMacDockSupport.h"
 MAKE_GENERIC_CTOR(nsMacDockSupport, nsIMacDockSupport)
@@ -110,6 +109,9 @@ MAKE_GENERIC_CTOR(nsSystemStatusBarCocoa, nsISystemStatusBar)
 
 #include "nsTouchBarUpdater.h"
 MAKE_GENERIC_CTOR(nsTouchBarUpdater, nsITouchBarUpdater)
+
+#include "nsMacPermissionMonitor.h"
+MAKE_GENERIC_CTOR(nsMacPermissionMonitor, nsIPermissionMonitor)
 
 void nsWidgetCocoaModuleCtor() { nsAppShellInit(); }
 

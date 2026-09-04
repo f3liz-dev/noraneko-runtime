@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -59,30 +58,6 @@ WebGPUChild::WebGPUChild()
     : mClient(ffi::wgpu_client_new(this, on_message_queued)) {}
 
 WebGPUChild::~WebGPUChild() = default;
-
-RawId WebGPUChild::RenderBundleEncoderFinish(
-    ffi::WGPURenderBundleEncoder& aEncoder, RawId aDeviceId,
-    const dom::GPURenderBundleDescriptor& aDesc) {
-  ffi::WGPURenderBundleDescriptor desc = {};
-
-  webgpu::StringHelper label(aDesc.mLabel);
-  desc.label = label.Get();
-
-  RawId id = ffi::wgpu_client_create_render_bundle(GetClient(), aDeviceId,
-                                                   &aEncoder, &desc);
-
-  return id;
-}
-
-RawId WebGPUChild::RenderBundleEncoderFinishError(RawId aDeviceId,
-                                                  const nsString& aLabel) {
-  webgpu::StringHelper label(aLabel);
-
-  RawId id = ffi::wgpu_client_create_render_bundle_error(GetClient(), aDeviceId,
-                                                         label.Get());
-
-  return id;
-}
 
 namespace ffi {
 void wgpu_child_send_messages(WGPUWebGPUChildPtr aChild, uint32_t aNrOfMessages,
@@ -356,7 +331,7 @@ ipc::IPCResult WebGPUChild::RecvUncapturedError(RawId aDeviceId,
 
   // We don't want to spam the errors to the console indefinitely
   if (device->CheckNewWarning(aMessage)) {
-    JsWarning(device->GetOwnerGlobal(), aMessage);
+    JsWarning(device->GetRelevantGlobal(), aMessage);
 
     dom::GPUUncapturedErrorEventInit init;
     switch (aType) {
@@ -378,7 +353,8 @@ ipc::IPCResult WebGPUChild::RecvUncapturedError(RawId aDeviceId,
   return IPC_OK();
 }
 
-ipc::IPCResult WebGPUChild::RecvDeviceLost(RawId aDeviceId, uint8_t aReason,
+ipc::IPCResult WebGPUChild::RecvDeviceLost(RawId aDeviceId,
+                                           const GPUDeviceLostReason aReason,
                                            const nsACString& aMessage) {
   // There might have been a race between getting back the response to a
   // `device.destroy()` call and actual device loss. If that was the case,
@@ -402,9 +378,7 @@ ipc::IPCResult WebGPUChild::RecvDeviceLost(RawId aDeviceId, uint8_t aReason,
         return IPC_OK();
       }
 
-      dom::GPUDeviceLostReason reason =
-          static_cast<dom::GPUDeviceLostReason>(aReason);
-      device->ResolveLost(reason, message);
+      device->ResolveLost(aReason, message);
     }
   }
 

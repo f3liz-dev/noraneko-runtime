@@ -1,5 +1,4 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -27,9 +26,9 @@ NS_IMPL_CLASSINFO(nsJARURI, nullptr, nsIClassInfo::THREADSAFE, NS_JARURI_CID)
 // Empty CI getter. We only need nsIClassInfo for Serialization
 NS_IMPL_CI_INTERFACE_GETTER0(nsJARURI)
 
-nsJARURI::nsJARURI() {}
+nsJARURI::nsJARURI() = default;
 
-nsJARURI::~nsJARURI() {}
+nsJARURI::~nsJARURI() = default;
 
 // XXX Why is this threadsafe?
 NS_IMPL_ADDREF(nsJARURI)
@@ -42,6 +41,8 @@ NS_INTERFACE_MAP_BEGIN(nsJARURI)
   NS_INTERFACE_MAP_ENTRY(nsISerializable)
   NS_IMPL_QUERY_CLASSINFO(nsJARURI)
   NS_INTERFACE_MAP_ENTRY(nsINestedURI)
+  NS_INTERFACE_MAP_ENTRY(nsIIPCSerializableURI)
+  NS_INTERFACE_MAP_ENTRY(nsIURIWithSizeOf)
   NS_INTERFACE_MAP_ENTRY_CONCRETE(nsJARURI)
 NS_INTERFACE_MAP_END
 
@@ -138,6 +139,12 @@ nsJARURI::GetSpec(nsACString& aSpec) {
   nsAutoCString entrySpec;
   mJAREntry->GetSpec(entrySpec);
   return FormatSpec(entrySpec, aSpec);
+}
+
+uint32_t nsJARURI::SpecHash() {
+  nsAutoCString spec;
+  (void)GetSpec(spec);
+  return CachedSpecHash(spec);
 }
 
 NS_IMETHODIMP
@@ -316,7 +323,7 @@ nsresult nsJARURI::SetSpecWithBase(const nsACString& aSpec, nsIURI* aBaseURL) {
   if (NS_FAILED(rv)) return rv;
 
   // skip over any extra '/' chars
-  while (*delim_end == '/') ++delim_end;
+  while (delim_end != end && *delim_end == '/') ++delim_end;
 
   aSpec.EndReading(end);  // set to the original 'end'
   return SetJAREntry(Substring(delim_end, end));
@@ -638,7 +645,7 @@ nsJARURI::GetRelativeSpec(nsIURI* uriToCompare, nsACString& relativeSpec) {
 
   if (!StringBeginsWith(relativeEntrySpec, NS_BOGUS_ENTRY_SCHEME)) {
     // An actual relative spec!
-    relativeSpec = relativeEntrySpec;
+    relativeSpec = std::move(relativeEntrySpec);
   }
   return rv;
 }

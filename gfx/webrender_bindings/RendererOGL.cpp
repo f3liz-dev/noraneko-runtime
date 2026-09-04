@@ -1,18 +1,16 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "RendererOGL.h"
 
-#include "base/task.h"
 #include "GLContext.h"
-#include "mozilla/gfx/Logging.h"
+#include "base/task.h"
 #include "mozilla/Logging.h"
-
-#include "mozilla/gfx/gfxVars.h"
+#include "mozilla/StaticPrefs_gfx.h"
+#include "mozilla/gfx/Logging.h"
 #include "mozilla/gfx/Types.h"
+#include "mozilla/gfx/gfxVars.h"
 #include "mozilla/layers/CompositorBridgeParent.h"
 #include "mozilla/layers/CompositorThread.h"
 #include "mozilla/layers/Fence.h"
@@ -24,8 +22,8 @@
 
 #ifdef MOZ_WIDGET_ANDROID
 #  include "GLContextEGL.h"
-#  include "mozilla/layers/AndroidHardwareBuffer.h"
 #  include "ScopedGLHelpers.h"
+#  include "mozilla/layers/AndroidHardwareBuffer.h"
 #endif
 
 namespace mozilla {
@@ -124,7 +122,6 @@ RendererOGL::RendererOGL(RefPtr<RenderThread>&& aThread,
       mRenderer(aRenderer),
       mBridge(aBridge),
       mWindowId(aWindowId),
-      mDisableNativeCompositor(false),
       mLastPipelineInfo(new WebRenderPipelineInfo) {
   MOZ_ASSERT(mThread);
   MOZ_ASSERT(mCompositor);
@@ -167,11 +164,6 @@ void RendererOGL::Update() {
   }
 }
 
-static void DoWebRenderDisableNativeCompositor(
-    layers::CompositorBridgeParent* aBridge) {
-  aBridge->NotifyWebRenderDisableNativeCompositor();
-}
-
 RenderedFrameId RendererOGL::UpdateAndRender(
     const Maybe<gfx::IntSize>& aReadbackSize,
     const Maybe<wr::ImageFormat>& aReadbackFormat,
@@ -188,10 +180,7 @@ RenderedFrameId RendererOGL::UpdateAndRender(
   // with mCompositor.
   bool present = aFrameParams.present;
 
-  LayoutDeviceIntSize size(0, 0);
-  auto bufferAge = 0;
   bool fullRender = false;
-
   bool needPostRenderCall = false;
   bool beginFrame = !mThread->IsHandlingDeviceReset();
 
@@ -205,12 +194,15 @@ RenderedFrameId RendererOGL::UpdateAndRender(
 
     // XXX set clear color if MOZ_WIDGET_ANDROID is defined.
 
+    if (aReadbackBuffer.isSome() || layers::ProfilerScreenshots::IsEnabled()) {
+      if (mCompositor->UseLayerCompositor()) {
+        mCompositor->EnableAsyncScreenshot();
+      }
+    }
+
     if (!mCompositor->BeginFrame()) {
       beginFrame = false;
     }
-
-    size = mCompositor->GetBufferSize();
-    bufferAge = mCompositor->GetBufferAge();
 
     fullRender = mCompositor->RequestFullRender();
     // When we're rendering to an external target, we want to render everything.
@@ -238,6 +230,9 @@ RenderedFrameId RendererOGL::UpdateAndRender(
   if (fullRender) {
     wr_renderer_force_redraw(mRenderer);
   }
+
+  LayoutDeviceIntSize size = mCompositor->GetBufferSize();
+  auto bufferAge = mCompositor->GetBufferAge();
 
   nsTArray<DeviceIntRect> dirtyRects;
   bool didRasterize = false;
@@ -328,14 +323,7 @@ bool RendererOGL::EnsureAsyncScreenshot() {
   if (mCompositor->SupportAsyncScreenshot()) {
     return true;
   }
-  if (!mDisableNativeCompositor) {
-    layers::CompositorThread()->Dispatch(
-        NewRunnableFunction("DoWebRenderDisableNativeCompositorRunnable",
-                            &DoWebRenderDisableNativeCompositor, mBridge));
-
-    mDisableNativeCompositor = true;
-    gfxCriticalNote << "Disable native compositor for async screenshot";
-  }
+  MOZ_ASSERT_UNREACHABLE("unexpected to be called");
   return false;
 }
 
@@ -368,9 +356,32 @@ RenderedFrameId RendererOGL::UpdateFrameId() {
   return mCompositor->UpdateFrameId();
 }
 
-void RendererOGL::Pause() { mCompositor->Pause(); }
+void RendererOGL::Pause() {
+  mCompositor->Pause();
 
-bool RendererOGL::Resume() { return mCompositor->Resume(); }
+  // Only trim on the transition into the paused state. Repeated pause
+  // notifications should not generate redundant backend work. Do not use
+  // RenderCompositor::IsPaused() here: on GTK it describes surface state and
+  // remains false for normal paused windows.
+  if (mPausedForResourceTrimming) {
+    return;
+  }
+  mPausedForResourceTrimming = true;
+
+  const uint32_t trimMode =
+      StaticPrefs::gfx_webrender_trim_paused_renderers_mode();
+  if (trimMode > 0) {
+    wr_renderer_trim_transient_resources(mRenderer, trimMode >= 2);
+  }
+}
+
+bool RendererOGL::Resume() {
+  const bool resumed = mCompositor->Resume();
+  if (resumed) {
+    mPausedForResourceTrimming = false;
+  }
+  return resumed;
+}
 
 bool RendererOGL::IsPaused() { return mCompositor->IsPaused(); }
 
@@ -478,7 +489,13 @@ Maybe<layers::FrameRecording> RendererOGL::EndRecording() {
 
 #ifdef MOZ_WIDGET_ANDROID
 RefPtr<RendererOGL::ScreenPixelsPromise> RendererOGL::RequestScreenPixels(
-    gfx::IntRect aSourceRect, gfx::IntSize aDestSize) {
+    gfx::IntRect aSourceRect,
+    RefPtr<layers::AndroidHardwareBuffer> aHardwareBuffer) {
+  if (!aHardwareBuffer) {
+    return ScreenPixelsPromise::CreateAndReject(NS_ERROR_ILLEGAL_VALUE,
+                                                __func__);
+  }
+
   // If a new request is made we no longer care about the result of the previous
   // one, so just reject it if it exists.
   if (mPendingScreenPixelsRequest) {
@@ -487,7 +504,7 @@ RefPtr<RendererOGL::ScreenPixelsPromise> RendererOGL::RequestScreenPixels(
   }
   mPendingScreenPixelsRequest.emplace(ScreenPixelsRequest{
       .mSourceRect = aSourceRect,
-      .mDestSize = aDestSize,
+      .mHardwareBuffer = std::move(aHardwareBuffer),
       .mPromise = new ScreenPixelsPromise::Private(__func__),
   });
   return mPendingScreenPixelsRequest->mPromise;
@@ -500,19 +517,16 @@ void RendererOGL::MaybeCaptureScreenPixels() {
 
   auto request = mPendingScreenPixelsRequest.extract();
 
-  const RefPtr<layers::AndroidHardwareBuffer> hardwareBuffer =
-      layers::AndroidHardwareBuffer::Create(request.mDestSize,
-                                            gfx::SurfaceFormat::R8G8B8A8);
-
   if (mCompositor->MaybeCaptureScreenPixels(request.mSourceRect,
-                                            hardwareBuffer)) {
-    request.mPromise->Resolve(hardwareBuffer, __func__);
+                                            request.mHardwareBuffer)) {
+    request.mPromise->Resolve(Ok{}, __func__);
     return;
   }
 
   auto* const gle = gl::GLContextEGL::Cast(gl());
   const auto& egl = gle->mEgl;
-  gl::ScopedEGLImageForAndroidHardwareBuffer eglImage(gle, hardwareBuffer);
+  gl::ScopedEGLImageForAndroidHardwareBuffer eglImage(gle,
+                                                      request.mHardwareBuffer);
   gl::ScopedBindFramebuffer scopedBind(gl());
   gl::ScopedRenderbuffer rb(gl());
   gl()->fBindRenderbuffer(LOCAL_GL_RENDERBUFFER, rb);
@@ -526,7 +540,7 @@ void RendererOGL::MaybeCaptureScreenPixels() {
                 request.mSourceRect.x,
                 mCompositor->GetBufferSize().height - request.mSourceRect.y,
                 request.mSourceRect.width, -request.mSourceRect.height);
-  const auto destRect = gfx::IntRect({}, hardwareBuffer->mSize);
+  const auto destRect = gfx::IntRect({}, request.mHardwareBuffer->mSize);
   gl()->BindReadFB(0);
   gl()->BindDrawFB(fb.FB());
   gl()->fBlitFramebuffer(srcRect.x, srcRect.y, srcRect.XMost(), srcRect.YMost(),
@@ -535,15 +549,15 @@ void RendererOGL::MaybeCaptureScreenPixels() {
                          LOCAL_GL_LINEAR);
 
   if (EGLSync sync =
-          egl->fCreateSync(LOCAL_EGL_SYNC_NATIVE_FENCE_ANDROID, nullptr)) {
+          egl->fCreateSyncKHR(LOCAL_EGL_SYNC_NATIVE_FENCE_ANDROID, nullptr)) {
     auto fence = UniqueFileHandle(egl->fDupNativeFenceFDANDROID(sync));
     if (fence) {
-      hardwareBuffer->SetAcquireFence(std::move(fence));
+      request.mHardwareBuffer->SetAcquireFence(std::move(fence));
     }
     egl->fDestroySync(sync);
   }
 
-  request.mPromise->Resolve(hardwareBuffer, __func__);
+  request.mPromise->Resolve(Ok{}, __func__);
 }
 #endif
 

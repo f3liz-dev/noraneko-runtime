@@ -27,6 +27,7 @@
   <string name="teaser">Wí lút tá. KwàɁn. Tedónt. Bí-ré.</string>
   <!-- "Snackbar" shown after the user has pressed the 'erase' button at the end of a browsing session -->
   <string name="feedback_erase">Mté dont na ré ko wíl.</string>
+  <!-- "Snackbar" shown after the user has pressed the 'erase' button at the end of a browsing session -->
   <string name="feedback_erase2">Ndó bíy</string>
   <!-- "Snackbar" shown after the user has pressed the 'erase' button at the end of a custom tab browsing session -->
   <string name="feedback_erase_custom_tab">Ndó bíy sá.</string>
@@ -113,6 +114,9 @@
   -->
   <string name="shortcut_erase_and_open_long_label">Tòb bí ner mb-šàlɁ %1$s</string>
   <!--
+    These labels are selected per variant through manifestPlaceholders in build.gradle, so
+    UnusedResources does not see the ones for the variants it is not analyzing.
+
     This is the label of an action we offer when the user selects text in other third-party apps.
     Focus is hard coded since we can't use variables in this context.
     Do not translate or transliterate Focus.
@@ -123,19 +127,19 @@
     Klar is hard coded since we can't use variables in this context.
     Do not translate or transliterate Klar.
   -->
-  <string name="text_selection_search_action_klar" tools:ignore="BrandUsage">KwàɁn léɁn Klar</string>
+  <string name="text_selection_search_action_klar" tools:ignore="BrandUsage,UnusedResources">KwàɁn léɁn Klar</string>
   <!--
     This is the label of an action we offer when the user selects text in other third-party apps.
     Focus Beta is hard coded since we can't use variables in this context.
     Do not translate or transliterate Focus Beta.
   -->
-  <string name="text_selection_search_action_focus_beta" tools:ignore="BrandUsage">KwàɁn léɁn Focus Beta</string>
+  <string name="text_selection_search_action_focus_beta" tools:ignore="BrandUsage,UnusedResources">KwàɁn léɁn Focus Beta</string>
   <!--
     This is the label of an action we offer when the user selects text in other third-party apps.
     Focus Nightly is hard coded since we can't use variables in this context.
     Do not translate or transliterate Focus Nightly.
   -->
-  <string name="text_selection_search_action_focus_nightly" tools:ignore="BrandUsage">KwàɁn léɁn Focus Nightly</string>
+  <string name="text_selection_search_action_focus_nightly" tools:ignore="BrandUsage,UnusedResources">KwàɁn léɁn Focus Nightly</string>
   <!-- Header for the Privacy and Security settings menu -->
   <string name="preference_privacy_and_security_header">Yent-chó wìʔ</string>
   <!-- Preference summary for settings related to privacy and security -->
@@ -182,7 +186,7 @@
   <!-- "Hint" text for the "custom autocomplete URL" input field. Shown when the field is empty. -->
   <string name="preference_autocomplete_add_hint">Lí chop ó m-tòb URL</string>
   <!-- Example how a custom domain autocomplete URL be added (e.g. without http://) -->
-  <string name="preference_autocomplete_add_example2">\"VáɁ: mozilla.org \"</string>
+  <string name="preference_autocomplete_add_example2" tools:ignore="BrandUsage">\"VáɁ: mozilla.org \"</string>
   <!-- To be removed once the new hint has been translated -->
   <string name="preference_autocomplete_add_example">M-tòb: sálépágina.com</string>
   <!-- Confirmation "snackbar" shown after a new custom autocomplete URL has been added. -->
@@ -227,7 +231,7 @@
     %1$s will be replaced by the app name (e.g. Firefox Focus)
   -->
   <string name="preference_default_browser2">\"M-tòb %1$s mdó-lás=lû \"</string>
-  <string name="preference_category_mozilla">Mozilla</string>
+  <string name="preference_category_mozilla" tools:ignore="BrandUsage">Mozilla</string>
   <string name="preference_mozilla_telemetry2">M-tàl kò lì-chèl</string>
   <!-- A link to SUMO at the end of the summary (preference_mozilla_telemetry_summary2) of the "Send anonymous usage data" setting. -->
   <string name="preference_mozilla_telemetry_summary">Lab kùe</string>

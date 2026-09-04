@@ -1,27 +1,26 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+#include <cstdio>
+#include <cstring>
+
 #include "AvailableMemoryWatcher.h"
 #include "AvailableMemoryWatcherUtils.h"
 #include "mozilla/FileUtils.h"
-#include "mozilla/TimeStamp.h"
 #include "mozilla/Services.h"
 #include "mozilla/StaticPrefs_browser.h"
+#include "mozilla/TimeStamp.h"
 #include "nsAppRunner.h"
 #include "nsIAvailableMemoryWatcherTestingLinux.h"
 #include "nsIObserverService.h"
 #include "nsISupports.h"
-#include "nsITimer.h"
 #include "nsIThread.h"
+#include "nsITimer.h"
 #include "nsMemoryPressure.h"
 #include "nsString.h"
-#include <cstring>
-#include <cstdio>
 #if !defined(ANDROID)
-#  include "nsIPSIProvider.h"
 #  include "mozilla/glean/XpcomMetrics.h"
+#  include "nsIPSIProvider.h"
 #endif
 
 #define NON_OOM_DELAY_SEC 120
@@ -156,6 +155,10 @@ class nsAvailableMemoryWatcher final
   // Flag to track if SetPSIPathForTesting has been called
   bool mIsTesting MOZ_GUARDED_BY(mMutex);
 
+  // Flag to track if PSI file reading has failed
+  // (e.g., due to AppArmor denial or kernel not supporting PSI)
+  bool mPSIReadFailed MOZ_GUARDED_BY(mMutex);
+
   // Polling interval to check for low memory. In high memory scenarios,
   // default to 5000 ms between each check.
   static const uint32_t kHighMemoryPollingIntervalMS = 5000;
@@ -178,9 +181,10 @@ nsAvailableMemoryWatcher::nsAvailableMemoryWatcher()
       mPSIInfo{},
       mLastOOMTime(),
       mPSIPath(kPSIPath),
-      mIsTesting(false) {}
+      mIsTesting(false),
+      mPSIReadFailed(false) {}
 
-nsAvailableMemoryWatcher::~nsAvailableMemoryWatcher() {}
+nsAvailableMemoryWatcher::~nsAvailableMemoryWatcher() = default;
 
 NS_IMETHODIMP
 nsAvailableMemoryWatcher::GetCachedPSIInfo(mozilla::PSIInfo& aResult) {
@@ -426,9 +430,16 @@ void nsAvailableMemoryWatcher::UpdatePSIInfo(const MutexAutoLock&)
   }
 #endif
 
+  // Skip reading PSI file if it has failed before (e.g., AppArmor denial)
+  // to avoid spamming syslog with repeated access denials
+  if (mPSIReadFailed) {
+    return;
+  }
+
   nsresult rv = ReadPSIFile(mPSIPath.get(), mPSIInfo);
   if (NS_FAILED(rv)) {
     mPSIInfo = {};
+    mPSIReadFailed = true;
   }
 }
 
@@ -510,6 +521,8 @@ NS_IMETHODIMP nsAvailableMemoryWatcher::SetPSIPathForTesting(
   MutexAutoLock lock(mMutex);
   mPSIPath.Assign(aPSIPath);
   mIsTesting = true;
+  // Reset the failed flag when changing PSI path for testing
+  mPSIReadFailed = false;
   return NS_OK;
 }
 

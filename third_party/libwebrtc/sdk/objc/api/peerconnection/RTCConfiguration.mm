@@ -20,6 +20,7 @@
 #include "rtc_base/checks.h"
 #include "rtc_base/rtc_certificate_generator.h"
 #include "rtc_base/ssl_identity.h"
+#include "rtc_base/system/plan_b_only.h"
 
 @implementation RTC_OBJC_TYPE (RTCConfiguration)
 
@@ -130,13 +131,16 @@
     _sdpSemantics =
         [[self class] sdpSemanticsForNativeSdpSemantics:config.sdp_semantics];
     _turnCustomizer = config.turn_customizer;
-    _activeResetSrtpParams = config.active_reset_srtp_params;
 
     _cryptoOptions = [[RTC_OBJC_TYPE(RTCCryptoOptions) alloc]
              initWithSrtpEnableGcmCryptoSuites:config.crypto_options.srtp
                                                    .enable_gcm_crypto_suites
+                     srtpPreferGcmCryptoSuites:config.crypto_options.srtp
+                                                   .prefer_gcm_crypto_suites
            srtpEnableAes128Sha1_32CryptoCipher:
                config.crypto_options.srtp.enable_aes128_sha1_32_crypto_cipher
+           srtpEnableAes128Sha1_80CryptoCipher:
+               config.crypto_options.srtp.enable_aes128_sha1_80_crypto_cipher
         srtpEnableEncryptedRtpHeaderExtensions:
             config.crypto_options.srtp.enable_encrypted_rtp_header_extensions
                   sframeRequireFrameEncryption:config.crypto_options.sframe
@@ -286,14 +290,16 @@
   if (_turnCustomizer) {
     nativeConfig->turn_customizer = _turnCustomizer;
   }
-  nativeConfig->active_reset_srtp_params =
-      _activeResetSrtpParams ? true : false;
   if (_cryptoOptions) {
     webrtc::CryptoOptions nativeCryptoOptions;
     nativeCryptoOptions.srtp.enable_gcm_crypto_suites =
         _cryptoOptions.srtpEnableGcmCryptoSuites ? true : false;
+    nativeCryptoOptions.srtp.prefer_gcm_crypto_suites =
+        _cryptoOptions.srtpPreferGcmCryptoSuites ? true : false;
     nativeCryptoOptions.srtp.enable_aes128_sha1_32_crypto_cipher =
         _cryptoOptions.srtpEnableAes128Sha1_32CryptoCipher ? true : false;
+    nativeCryptoOptions.srtp.enable_aes128_sha1_80_crypto_cipher =
+        _cryptoOptions.srtpEnableAes128Sha1_80CryptoCipher ? true : false;
     nativeCryptoOptions.srtp.enable_encrypted_rtp_header_extensions =
         _cryptoOptions.srtpEnableEncryptedRtpHeaderExtensions ? true : false;
     nativeCryptoOptions.sframe.require_frame_encryption =
@@ -537,7 +543,9 @@
     (RTCSdpSemantics)sdpSemantics {
   switch (sdpSemantics) {
     case RTCSdpSemanticsPlanB:
+      RTC_ALLOW_PLAN_B_DEPRECATION_BEGIN();
       return webrtc::SdpSemantics::kPlanB_DEPRECATED;
+      RTC_ALLOW_PLAN_B_DEPRECATION_END();
     case RTCSdpSemanticsUnifiedPlan:
       return webrtc::SdpSemantics::kUnifiedPlan;
   }
@@ -547,7 +555,9 @@
     (webrtc::SdpSemantics)sdpSemantics {
   switch (sdpSemantics) {
     case webrtc::SdpSemantics::kPlanB_DEPRECATED:
+      RTC_ALLOW_PLAN_B_DEPRECATION_BEGIN();
       return RTCSdpSemanticsPlanB;
+      RTC_ALLOW_PLAN_B_DEPRECATION_END();
     case webrtc::SdpSemantics::kUnifiedPlan:
       return RTCSdpSemanticsUnifiedPlan;
   }

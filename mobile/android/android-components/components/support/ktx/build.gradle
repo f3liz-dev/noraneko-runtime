@@ -2,14 +2,10 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
-
 plugins {
+    id 'com.android.library'
     alias(libs.plugins.dependency.analysis)
 }
-
-apply plugin: 'com.android.library'
-apply plugin: 'kotlin-android'
 
 android {
     namespace = 'mozilla.components.support.ktx'
@@ -21,7 +17,6 @@ dependencies {
     implementation project(':components:support-utils')
 
     implementation libs.androidx.core
-    implementation libs.androidx.core.ktx
     implementation libs.kotlinx.coroutines
 
     testImplementation project(':components:support-test')
@@ -30,6 +25,7 @@ dependencies {
     testImplementation libs.androidx.test.core
     testImplementation libs.androidx.test.junit
     testImplementation libs.kotlin.reflect
+    testImplementation libs.kotlin.test
     testImplementation libs.kotlinx.coroutines.test
     testImplementation libs.robolectric
 
@@ -39,6 +35,8 @@ dependencies {
     androidTestImplementation libs.androidx.test.junit
     androidTestImplementation libs.androidx.test.rules
     androidTestImplementation libs.androidx.test.runner
+
+    androidTestRuntimeOnly libs.okhttp
 }
 
 apply from: '../../../common-config.gradle'

@@ -1,31 +1,29 @@
-From: Andreas Pehrson <apehrson@mozilla.com>
-Date: Mon, 6 May 2024 07:28:00 +0000
-Subject: Bug 1892329 - Fix threading issues in VideoCaptureModuleV4L2 once and
- for all. r=webrtc-reviewers,mjf
+From: Dan Baker <dbaker@mozilla.com>
+Date: Tue, 27 Aug 2024 14:09:00 -0600
+Subject: Bug 1912989 - (fix-2360208f7d) Removed build command causing failure.
+ - moz.build file updates
 
-Differential Revision: https://phabricator.services.mozilla.com/D208187
-Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/65e120a9c1dcb9c8f1c8930e808b03aa149eaf40
+Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/fd4bc7427678a45283f0f56418ee2c70fac711e6
 ---
- modules/video_capture/linux/video_capture_v4l2.cc | 2 +-
- 1 file changed, 1 insertion(+), 1 deletion(-)
+ .gn | 8 +++++---
+ 1 file changed, 5 insertions(+), 3 deletions(-)
 
-diff --git a/modules/video_capture/linux/video_capture_v4l2.cc b/modules/video_capture/linux/video_capture_v4l2.cc
-index 7e4901b566..0a44e1ff73 100644
---- a/modules/video_capture/linux/video_capture_v4l2.cc
-+++ b/modules/video_capture/linux/video_capture_v4l2.cc
-@@ -303,7 +303,6 @@ int32_t VideoCaptureModuleV4L2::StartCapture(
-   _requestedCapability = capability;
-   _captureStarted = true;
-   _streaming = true;
--  }
+diff --git a/.gn b/.gn
+index c028ef6f70..1d9b371ee0 100644
+--- a/.gn
++++ b/.gn
+@@ -38,9 +38,11 @@ no_check_targets = [
+ exec_script_allowlist = build_dotfile_settings.exec_script_allowlist +
+                         [ "//build_overrides/build.gni" ]
  
-   // start capture thread;
-   if (!_captureThread.empty()) {
-@@ -311,6 +310,7 @@ int32_t VideoCaptureModuleV4L2::StartCapture(
-   }
+-expand_directory_allowlist = build_dotfile_settings.expand_directory_allowlist
+-
+-export_compile_commands = [ "*" ]
++# Normally, we'd use 'if (!build_with_mozilla)', but that flag isn't
++# available yet.
++#expand_directory_allowlist = build_dotfile_settings.expand_directory_allowlist
++#
++#export_compile_commands = [ "*" ]
  
-   quit_ = false;
-+  }
- 
-   _captureThread = PlatformThread::SpawnJoinable(
-       [self = scoped_refptr(this)] {
+ default_args = {
+   # Webrtc does not support component builds because we are not using the

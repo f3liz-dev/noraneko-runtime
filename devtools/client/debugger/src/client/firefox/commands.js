@@ -135,11 +135,22 @@ function breakOnNext(thread) {
   return lookupThreadFront(thread).breakOnNext();
 }
 
-async function sourceContents({ actor, thread }) {
-  const sourceThreadFront = lookupThreadFront(thread);
-  const sourceFront = sourceThreadFront.source({ actor });
-  const { source, contentType } = await sourceFront.source();
-  return { source, contentType };
+async function updateStyleSheetContent(sourceActor, text, isTransitionEnabled) {
+  const { targetFront, id } = sourceActor;
+  if (!targetFront) {
+    return null;
+  }
+  const stylesheetsFront = await targetFront.getFront("stylesheets");
+  return stylesheetsFront.update(id, text, isTransitionEnabled, "debugger");
+}
+
+async function toggleStylesheetVisibility(sourceActor) {
+  const { targetFront, id } = sourceActor;
+  if (!targetFront) {
+    return null;
+  }
+  const styleSheetsFront = await targetFront.getFront("stylesheets");
+  return styleSheetsFront.toggleDisabled(id);
 }
 
 async function setXHRBreakpoint(path, method) {
@@ -366,9 +377,9 @@ async function blackBox(sourceActor, shouldBlackBox, ranges) {
     const blackboxingFront =
       await commands.targetCommand.watcherFront.getBlackboxingActor();
     if (shouldBlackBox) {
-      await blackboxingFront.blackbox(sourceActor.url, ranges);
+      await blackboxingFront.blackbox(sourceActor.sourceObject.url, ranges);
     } else {
-      await blackboxingFront.unblackbox(sourceActor.url, ranges);
+      await blackboxingFront.unblackbox(sourceActor.sourceObject.url, ranges);
     }
   } else {
     const sourceFront = currentThreadFront().source({
@@ -425,17 +436,19 @@ function getMainThread() {
   return currentThreadFront().actor;
 }
 
-async function getSourceActorBreakpointPositions({ thread, actor }, range) {
-  const sourceThreadFront = lookupThreadFront(thread);
-  const sourceFront = sourceThreadFront.source({ actor });
+async function getSourceActorBreakpointPositions(sourceActor, range) {
+  const sourceFront = sourceActor.targetFront.threadFront.source({
+    actor: sourceActor.id,
+  });
   return sourceFront.getBreakpointPositionsCompressed(range);
 }
 
-async function getSourceActorBreakableLines({ thread, actor }) {
+async function getSourceActorBreakableLines(sourceActor) {
   let actorLines = [];
   try {
-    const sourceThreadFront = lookupThreadFront(thread);
-    const sourceFront = sourceThreadFront.source({ actor });
+    const sourceFront = sourceActor.targetFront.threadFront.source({
+      actor: sourceActor.id,
+    });
     actorLines = await sourceFront.getBreakableLines();
   } catch (e) {
     // Exceptions could be due to the target thread being shut down.
@@ -465,7 +478,6 @@ const clientCommands = {
   stepOver,
   restart,
   breakOnNext,
-  sourceContents,
   getSourceActorBreakpointPositions,
   getSourceActorBreakableLines,
   hasBreakpoint,
@@ -490,6 +502,8 @@ const clientCommands = {
   getFrontByID,
   fetchAncestorFramePositions,
   toggleJavaScriptEnabled,
+  updateStyleSheetContent,
+  toggleStylesheetVisibility,
 };
 
 export { setupCommands, clientCommands };

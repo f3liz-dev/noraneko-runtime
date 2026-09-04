@@ -216,7 +216,7 @@ export var SiteDataTestUtils = {
 
     let registrationBrowsingContext = browser.browsingContext;
 
-    let { SpecialPowers } = browser.ownerGlobal;
+    let { SpecialPowers } = browser.documentGlobal;
 
     // If caller requested a partitioned service worker create an iframe to
     // register the SW in.
@@ -265,20 +265,11 @@ export var SiteDataTestUtils = {
     BrowserTestUtils.removeTab(tab);
   },
 
-  hasCookies(origin, testEntries = null, testPBMCookies = false) {
+  hasCookies(origin, testEntries = null, originAttributes = null) {
     let principal =
       Services.scriptSecurityManager.createContentPrincipalFromOrigin(origin);
+    originAttributes ??= principal.originAttributes;
 
-    let originAttributes = principal.originAttributes;
-
-    if (testPBMCookies) {
-      // Override the origin attributes to set PBM.
-      // This needs to be updated when adding support for multiple PBM contexts.
-      originAttributes = {
-        ...principal.originAttributes,
-        privateBrowsingId: 1,
-      };
-    }
     // Need to do an additional filter step since getCookiesFromHost returns all
     // cookies for the base domain (including subdomains). This method takes an
     // origin so we need to do an exact host match.
@@ -468,8 +459,6 @@ export var SiteDataTestUtils = {
           Ci.nsIClearDataService.CLEAR_CLIENT_AUTH_REMEMBER_SERVICE |
           Ci.nsIClearDataService.CLEAR_EME |
           Ci.nsIClearDataService.CLEAR_STORAGE_ACCESS |
-          Ci.nsIClearDataService.CLEAR_COOKIE_BANNER_EXCEPTION |
-          Ci.nsIClearDataService.CLEAR_COOKIE_BANNER_EXECUTED_RECORD |
           Ci.nsIClearDataService.CLEAR_FINGERPRINTING_PROTECTION_STATE |
           Ci.nsIClearDataService.CLEAR_BOUNCE_TRACKING_PROTECTION_STATE,
         resolve

@@ -1,5 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,7 +7,10 @@
   /* import-globals-from ../head_common.js */
   let commonFile = do_get_file("../head_common.js", false);
   let uri = Services.io.newFileURI(commonFile);
-  Services.scriptloader.loadSubScript(uri.spec, this);
+  Services.scriptloader.loadSubScriptWithOptions(uri.spec, {
+    target: this,
+    allowUnsafeURL: true,
+  });
 }
 
 // Put any other stuff relative to this test folder below.
@@ -221,8 +222,6 @@ function compareArrayToResult(aArray, aRoot) {
   }).length;
   if (expectedResultCount != aRoot.childCount) {
     // Debugging code for failures.
-    dump_table("moz_places");
-    dump_table("moz_historyvisits");
     info("Found children:");
     for (let i = 0; i < aRoot.childCount; i++) {
       info(aRoot.getChild(i).uri);
@@ -246,7 +245,6 @@ function compareArrayToResult(aArray, aRoot) {
           "testing testData[" + aArray[i].uri + "] vs result[" + child.uri + "]"
         );
         if (aArray[i].uri != child.uri) {
-          dump_table("moz_places");
           do_throw("Expected " + aArray[i].uri + " found " + child.uri);
         }
       }

@@ -1,26 +1,23 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 // Chromium headers must come before Mozilla headers.
-#include "base/process_util.h"
+#include "nsDebugImpl.h"
 
+#include "MainThreadUtils.h"
+#include "base/process_util.h"
 #include "mozilla/Atomics.h"
 #include "mozilla/IntentionalCrash.h"
 #include "mozilla/Printf.h"
 #include "mozilla/ProfilerMarkers.h"
-
-#include "MainThreadUtils.h"
-#include "nsDebugImpl.h"
 #include "nsDebug.h"
 #include "nsExceptionHandler.h"
 #include "nsString.h"
 #include "nsXULAppAPI.h"
-#include "prerror.h"
-#include "prerr.h"
 #include "prenv.h"
+#include "prerr.h"
+#include "prerror.h"
 
 #ifdef ANDROID
 #  include <android/log.h>
@@ -39,15 +36,16 @@
 
 #if defined(XP_WIN)
 #  include <tchar.h>
+
 #  include "nsString.h"
 #endif
 
 #if defined(XP_MACOSX) || defined(__DragonFly__) || defined(__FreeBSD__) || \
     defined(__NetBSD__) || defined(__OpenBSD__)
 #  include <stdbool.h>
-#  include <unistd.h>
 #  include <sys/param.h>
 #  include <sys/sysctl.h>
+#  include <unistd.h>
 #endif
 
 #if defined(__OpenBSD__)
@@ -86,9 +84,9 @@ static void RealBreak();
 static void Break(const char* aMsg);
 
 #if defined(_WIN32)
-#  include <windows.h>
-#  include <signal.h>
 #  include <malloc.h>  // for _alloca
+#  include <signal.h>
+#  include <windows.h>
 #endif
 
 using namespace mozilla;
@@ -379,6 +377,7 @@ static void NS_PrintStackTrace() {
 EXPORT_XPCOM_API(void)
 NS_DebugBreak(uint32_t aSeverity, const char* aStr, const char* aExpr,
               const char* aFile, int32_t aLine) {
+  aFile = MOZ_StripRelativeComponents(aFile);
   FixedBuffer nonPIDBuf;
   FixedBuffer buf;
   const char* sevString = "WARNING";

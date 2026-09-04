@@ -13,6 +13,7 @@
 #include <map>
 
 #include "MFCDMExtra.h"
+#include "mozilla/Mutex.h"
 #include "nsISupportsImpl.h"
 
 namespace mozilla {
@@ -48,6 +49,13 @@ class MFCDMProxy {
   // because they are in bad state.
   void OnHardwareContextReset();
 
+  // Discard the cached IMFTrustedInput and per-stream ITAs so they are
+  // re-fetched from the CDM on the next GetInputTrustAuthority call. Call this
+  // whenever the CDM proxy is swapped mid-stream (e.g. ClearLead ad-boundary
+  // key rotation), since the old ITAs belong to the previous CDM instance and
+  // will cause MF_E_NOT_FOUND on the new key ID.
+  void ResetTrustedInput();
+
   void Shutdown();
 
   // TODO : set last key id in order to let CDM use the key IDs information to
@@ -56,14 +64,21 @@ class MFCDMProxy {
  private:
   ~MFCDMProxy();
 
-  Microsoft::WRL::ComPtr<IMFContentDecryptionModule> mCDM;
+  void ResetTrustedInputUnlocked() MOZ_REQUIRES(mMutex);
+
+  // Serialises access to the guarded state below, which is reached from both
+  // the manager thread and Media Foundation worker threads.
+  mozilla::Mutex mMutex;
+
+  Microsoft::WRL::ComPtr<IMFContentDecryptionModule> mCDM
+      MOZ_GUARDED_BY(mMutex);
 
   // The same ITA is always mapping to the same stream Id.
   std::map<uint32_t /* stream Id */,
            Microsoft::WRL::ComPtr<IMFInputTrustAuthority>>
-      mInputTrustAuthorities;
+      mInputTrustAuthorities MOZ_GUARDED_BY(mMutex);
 
-  Microsoft::WRL::ComPtr<IMFTrustedInput> mTrustedInput;
+  Microsoft::WRL::ComPtr<IMFTrustedInput> mTrustedInput MOZ_GUARDED_BY(mMutex);
 
   const uint64_t mCDMParentId;
 

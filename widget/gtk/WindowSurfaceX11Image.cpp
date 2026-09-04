@@ -1,18 +1,17 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "WindowSurfaceX11Image.h"
 
+#include <X11/extensions/shape.h>
+
+#include "gfx2DGlue.h"
+#include "gfxPlatform.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/gfx/Tools.h"
 #include "mozilla/gfx/gfxVars.h"
-#include "gfxPlatform.h"
-#include "gfx2DGlue.h"
-
-#include <X11/extensions/shape.h>
 
 namespace mozilla {
 namespace widget {
@@ -32,7 +31,7 @@ WindowSurfaceX11Image::WindowSurfaceX11Image(Display* aDisplay, Window aWindow,
                                              unsigned int aDepth)
     : WindowSurfaceX11(aDisplay, aWindow, aVisual, aDepth) {}
 
-WindowSurfaceX11Image::~WindowSurfaceX11Image() {}
+WindowSurfaceX11Image::~WindowSurfaceX11Image() = default;
 
 already_AddRefed<gfx::DrawTarget> WindowSurfaceX11Image::Lock(
     const LayoutDeviceIntRegion& aRegion) {

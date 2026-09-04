@@ -1,5 +1,4 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,16 +7,16 @@
 #define mozilla_image_encoders_icon_mac_nsIconChannel_h
 
 #include "nsCOMPtr.h"
-#include "nsString.h"
 #include "nsIChannel.h"
-#include "nsILoadGroup.h"
-#include "nsILoadInfo.h"
+#include "nsIInputStreamPump.h"
 #include "nsIInterfaceRequestor.h"
 #include "nsIInterfaceRequestorUtils.h"
-#include "nsIInputStreamPump.h"
+#include "nsILoadGroup.h"
+#include "nsILoadInfo.h"
 #include "nsIStreamListener.h"
 #include "nsIURI.h"
 #include "nsNetUtil.h"
+#include "nsString.h"
 
 class nsIFile;
 
@@ -42,6 +41,7 @@ class nsIconChannel final : public nsIChannel, public nsIStreamListener {
   nsCOMPtr<nsIInterfaceRequestor> mCallbacks;
   nsCOMPtr<nsISupports> mOwner;
   nsCOMPtr<nsILoadInfo> mLoadInfo;
+  RefPtr<mozilla::dom::ParentProcessChannelHandle> mParentProcessChannelHandle;
 
   nsCOMPtr<nsIInputStreamPump> mPump;
   nsCOMPtr<nsIStreamListener> mListener;

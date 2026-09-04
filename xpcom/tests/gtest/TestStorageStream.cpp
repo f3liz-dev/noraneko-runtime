@@ -1,11 +1,9 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "gtest/gtest.h"
 #include "Helpers.h"
+#include "gtest/gtest.h"
 #include "mozilla/gtest/MozAssertions.h"
 #include "nsCOMPtr.h"
 #include "nsICloneableInputStream.h"
@@ -126,4 +124,48 @@ TEST(StorageStreams, EarlyInputStream)
   // Should be able to consume input stream
   testing::ConsumeAndValidateStream(in, dataWritten);
   in = nullptr;
+}
+
+TEST(StorageStreams, InterleavedReadAndWrite)
+{
+  nsTArray<char> kData;
+  testing::CreateData(16, kData);
+
+  nsresult rv;
+  nsCOMPtr<nsIStorageStream> stor;
+  rv = NS_NewStorageStream(8, UINT32_MAX, getter_AddRefs(stor));
+  EXPECT_NS_SUCCEEDED(rv);
+
+  nsCOMPtr<nsIInputStream> in;
+  rv = stor->NewInputStream(0, getter_AddRefs(in));
+  EXPECT_NS_SUCCEEDED(rv);
+
+  nsCOMPtr<nsIOutputStream> out;
+  rv = stor->GetOutputStream(0, getter_AddRefs(out));
+  EXPECT_NS_SUCCEEDED(rv);
+
+  uint32_t n;
+  char buffer[16];
+
+  EXPECT_NS_SUCCEEDED(out->Write(kData.Elements(), 1, &n));
+  EXPECT_EQ(n, 1u);
+  EXPECT_NS_SUCCEEDED(in->Read(buffer, 16, &n));
+  EXPECT_EQ(n, 1u);
+  EXPECT_EQ(buffer[0], kData[0]);
+
+  EXPECT_NS_SUCCEEDED(out->Write(kData.Elements() + 1, 1, &n));
+  EXPECT_EQ(n, 1u);
+  EXPECT_NS_SUCCEEDED(in->Read(buffer, 16, &n));
+  EXPECT_EQ(n, 1u);
+  EXPECT_EQ(buffer[0], kData[1]);
+
+  // Make sure it also works going past a segment boundary.
+  EXPECT_NS_SUCCEEDED(out->Write(kData.Elements() + 2, 11, &n));
+  EXPECT_EQ(n, 11u);
+  EXPECT_NS_SUCCEEDED(in->Read(buffer, 16, &n));
+  EXPECT_EQ(n, 11u);
+  EXPECT_EQ(memcmp(buffer, kData.Elements() + 2, 11), 0);
+
+  out->Close();
+  in->Close();
 }

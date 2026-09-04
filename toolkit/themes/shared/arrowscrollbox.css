@@ -11,6 +11,18 @@
 scrollbox {
   min-width: 0;
   min-height: 0;
+
+  /* Vertical mode scrolls natively. Horizontal mode is scrolled from script,
+   * see arrowscrollbox.js.
+   *
+   * Only a box with something to scroll becomes a scroll container, so that one
+   * that fits doesn't get an APZ scroll frame. The scrollbar and the overscroll
+   * effect are off by default; a consumer can opt into either. */
+  :host([orient="vertical"][overflowing]) > & {
+    overflow-y: auto;
+    overscroll-behavior-y: none;
+    scrollbar-width: none;
+  }
 }
 
 slot {
@@ -23,17 +35,20 @@ slot {
 
 toolbarbutton {
   color: inherit;
+  /* Width of list-style-image SVG and padding-block used to calculate
+   * --scrollbutton-height in menu.css.
+   */
   list-style-image: url("chrome://global/skin/icons/arrow-down-12.svg");
+  padding: 2px;
   -moz-context-properties: fill, fill-opacity;
   fill: currentColor;
   fill-opacity: 1;
-  padding: 2px;
   /* Make sure we draw on top of our scrollbox, since otherwise the up button
    * won't be hittable */
   position: relative;
 
   &[disabled] {
-    fill-opacity: var(--toolbarbutton-disabled-opacity);
+    fill-opacity: var(--toolbarbutton-opacity-disabled);
   }
 
   > .toolbarbutton-icon {

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,7 +7,6 @@
 
 #include "mozilla/Maybe.h"
 #include "mozilla/net/NeckoChannelParams.h"
-
 #include "nsICookieJarSettings.h"
 #include "nsIPermission.h"
 #include "nsTArray.h"
@@ -188,7 +185,7 @@ class CookieJarSettings final : public nsICookieJarSettings {
   }
 
   // Utility function to test if the passed cookiebahvior is
-  // BEHAVIOR_REJECT_TRACKER, BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN or
+  // BEHAVIOR_REJECT_TRACKER, BEHAVIOR_PARTITION_FOREIGN or
   // BEHAVIOR_REJECT_FOREIGN when
   // network.cookie.rejectForeignWithExceptions.enabled pref is set to true.
   static bool IsRejectThirdPartyContexts(uint32_t aCookieBehavior);

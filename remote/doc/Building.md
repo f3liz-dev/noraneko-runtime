@@ -51,7 +51,7 @@ them, place this in your [mozconfig]:
 ac_add_options --enable-artifact-builds
 ```
 
-[remote/ in central]: https://searchfox.org/mozilla-central/source/remote
-[mozconfig]: /build/buildsystem/mozconfigs.rst
-[artifact builds]: /contributing/build/artifact_builds.rst
-[Marionette]: /testing/marionette/index.rst
+[remote/ in central]: https://searchfox.org/firefox-main/source/remote
+[mozconfig]: /build/buildsystem/mozconfigs.md
+[artifact builds]: /contributing/build/artifact_builds.md
+[Marionette]: /remote/marionette/index.md

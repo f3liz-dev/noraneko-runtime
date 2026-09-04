@@ -3,6 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
+import { serializeClientErrorDetail } from "chrome://browser/content/aiwindow/modules/ClientErrorTelemetry.mjs";
 
 const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {});
@@ -28,14 +29,32 @@ export class AIChatContentChild extends JSWindowActorChild {
     "AIChatContent:RemoveAppliedMemory": {
       event: "aiChatContentActor:remove-applied-memory",
     },
+    "AIChatContent:SeenUrls": {
+      event: "aiChatContentActor:seen-urls",
+    },
+    "AIChatContent:SetGenerating": {
+      event: "aiChatContentActor:set-generating",
+    },
+    "AIChatContent:AssetsReady": {
+      event: "aiChatContentActor:assets-ready",
+    },
+    "AIChatContent:SetMode": {
+      event: "aiChatContentActor:set-mode",
+    },
   };
 
   static #VALID_EVENTS_FROM_CONTENT = new Set([
-    "AIChatContent:DispatchSearch",
     "AIChatContent:DispatchFollowUp",
     "AIChatContent:Ready",
     "AIChatContent:DispatchAction",
     "AIChatContent:OpenLink",
+    "AIChatContent:DispatchNewChat",
+    "AIChatContent:AccountSignIn",
+    "AIChatContent:ToolUIUpdate",
+    "AIChatContent:RequestAssets",
+    "AIChatContent:HistoryGridRender",
+    "AIChatContent:HistoryGridItemClick",
+    "AIChatContent:ClientError",
   ]);
 
   /**
@@ -49,53 +68,25 @@ export class AIChatContentChild extends JSWindowActorChild {
       return;
     }
 
-    switch (event.type) {
-      case "AIChatContent:DispatchSearch":
-        this.#handleSearchDispatch(event);
-        break;
-
-      case "AIChatContent:DispatchAction": {
-        this.#handleActionDispatch(event);
-        break;
-      }
-
-      case "AIChatContent:DispatchFollowUp":
-        this.#handleFollowUpDispatch(event);
-        break;
-
-      case "AIChatContent:Ready":
-        this.sendAsyncMessage("AIChatContent:Ready");
-        break;
-
-      case "AIChatContent:OpenLink":
-        this.sendAsyncMessage("AIChatContent:OpenLink", event.detail);
-        break;
-
-      default:
-        console.warn(
-          `AIChatContentChild received unknown event: ${event.type}`
-        );
-    }
-  }
-
-  #handleSearchDispatch(event) {
-    this.sendAsyncMessage("aiChatContentActor:search", event.detail);
-  }
-
-  #handleActionDispatch(event) {
     const { action, text } = event.detail ?? {};
-    // Copy is handled in the child actor since it depends on content-side
-    // selection and clipboard context.
-    if (action === "copy") {
-      if (text) {
-        lazy.ClipboardHelper.copyString(text, this.windowContext);
-      }
-    }
-    this.sendAsyncMessage("aiChatContentActor:footer-action", event.detail);
-  }
+    const copyActions = ["copy", "copy-table"];
+    const isCopyAction = copyActions.includes(action) && text;
 
-  #handleFollowUpDispatch(event) {
-    this.sendAsyncMessage("aiChatContentActor:followUp", event.detail);
+    switch (event.type) {
+      case "AIChatContent:DispatchAction":
+        // Copy is handled in the child actor since it depends on content-side
+        // selection and clipboard context.
+        if (isCopyAction) {
+          lazy.ClipboardHelper.copyString(text, this.windowContext);
+        }
+
+        this.sendAsyncMessage(event.type, event.detail);
+        break;
+
+      // Relay known events to AIChatContentParent
+      default:
+        this.sendAsyncMessage(event.type, event.detail);
+    }
   }
 
   async receiveMessage(message) {
@@ -133,7 +124,23 @@ export class AIChatContentChild extends JSWindowActorChild {
       return true;
     } catch (error) {
       console.error(`Error dispatching ${eventName} to chat content:`, error);
+      this.#reportDispatchFailure(error);
       return false;
+    }
+  }
+
+  #reportDispatchFailure(error) {
+    try {
+      this.sendAsyncMessage(
+        "AIChatContent:ClientError",
+        serializeClientErrorDetail(
+          error,
+          "message-data",
+          "message_dispatch_failed"
+        )
+      );
+    } catch (e) {
+      console.warn("Could not report dispatch failure:", e);
     }
   }
 }

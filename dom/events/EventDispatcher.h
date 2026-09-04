@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -89,10 +87,11 @@ class MOZ_STACK_CLASS EventChainVisitor {
 
   /**
    * Bits for items in the event target chain.
-   * Set in GetEventTargetParent() and used in PostHandleEvent().
+   * They are scoped to each item and will be set/stored when invoking most
+   * of EventTarget's methods.
    *
    * @note These bits are different for each item in the event target chain.
-   *       It is up to the Pre/PostHandleEvent implementation to decide how to
+   *       It is up to the EventTarget implementation to decide how to
    *       use these bits.
    *
    * @note Using uint16_t because that is used also in EventTargetChainItem.
@@ -100,11 +99,12 @@ class MOZ_STACK_CLASS EventChainVisitor {
   uint16_t mItemFlags;
 
   /**
-   * Data for items in the event target chain.
-   * Set in GetEventTargetParent() and used in PostHandleEvent().
+   * Data for items in the event target chain, scoped to each item.
+   *
+   * Only used for (legacy) activation behavior methods.
    *
    * @note This data is different for each item in the event target chain.
-   *       It is up to the Pre/PostHandleEvent implementation to decide how to
+   *       It is up to the EventTarget implementation to decide how to
    *       use this.
    */
   nsCOMPtr<nsISupports> mItemData;

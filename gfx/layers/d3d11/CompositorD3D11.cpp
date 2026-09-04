@@ -1,36 +1,31 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "CompositorD3D11.h"
 
+#include "BlendShaderConstants.h"
+#include "D3D11ShareHandleImage.h"
+#include "DeviceAttachmentsD3D11.h"
 #include "TextureD3D11.h"
-
+#include "gfxConfig.h"
+#include "gfxCrashReporterUtils.h"
+#include "gfxUtils.h"
 #include "gfxWindowsPlatform.h"
-#include "nsIWidget.h"
+#include "mozilla/ProfilerState.h"
+#include "mozilla/StaticPrefs_gfx.h"
+#include "mozilla/StaticPrefs_layers.h"
 #include "mozilla/gfx/D3D11Checks.h"
 #include "mozilla/gfx/DeviceManagerDx.h"
 #include "mozilla/gfx/GPUParent.h"
+#include "mozilla/gfx/StackArray.h"
 #include "mozilla/gfx/Swizzle.h"
 #include "mozilla/layers/Diagnostics.h"
 #include "mozilla/layers/Effects.h"
 #include "mozilla/layers/HelpersD3D11.h"
-#include "nsWindowsHelpers.h"
-#include "gfxConfig.h"
-#include "gfxCrashReporterUtils.h"
-#include "gfxUtils.h"
-#include "mozilla/gfx/StackArray.h"
 #include "mozilla/widget/WinCompositorWidget.h"
-
-#include "mozilla/ProfilerState.h"
-#include "mozilla/StaticPrefs_gfx.h"
-#include "mozilla/StaticPrefs_layers.h"
-
-#include "D3D11ShareHandleImage.h"
-#include "DeviceAttachmentsD3D11.h"
-#include "BlendShaderConstants.h"
+#include "nsIWidget.h"
+#include "nsWindowsHelpers.h"
 
 namespace mozilla {
 
@@ -104,8 +99,6 @@ CompositorD3D11::CompositorD3D11(widget::CompositorWidget* aWidget)
       mUseMutexOnPresent(false) {
   mUseMutexOnPresent = StaticPrefs::gfx_use_mutex_on_present_AtStartup();
 }
-
-CompositorD3D11::~CompositorD3D11() {}
 
 template <typename VertexType>
 void CompositorD3D11::SetVertexBuffer(ID3D11Buffer* aBuffer) {
@@ -281,8 +274,8 @@ bool CanUsePartialPresents(ID3D11Device* aDevice) {
 
 already_AddRefed<DataTextureSource> CompositorD3D11::CreateDataTextureSource(
     TextureFlags aFlags) {
-  RefPtr<DataTextureSource> result =
-      new DataTextureSourceD3D11(gfx::SurfaceFormat::UNKNOWN, this, aFlags);
+  RefPtr result = MakeRefPtr<DataTextureSourceD3D11>(
+      gfx::SurfaceFormat::UNKNOWN, this, aFlags);
   return result.forget();
 }
 
@@ -310,8 +303,8 @@ already_AddRefed<CompositingRenderTarget> CompositorD3D11::CreateRenderTarget(
     return nullptr;
   }
 
-  RefPtr<CompositingRenderTargetD3D11> rt =
-      new CompositingRenderTargetD3D11(texture, aRect.TopLeft());
+  RefPtr rt =
+      MakeRefPtr<CompositingRenderTargetD3D11>(texture, aRect.TopLeft());
   rt->SetSize(IntSize(aRect.Width(), aRect.Height()));
 
   if (aInit == INIT_MODE_CLEAR) {

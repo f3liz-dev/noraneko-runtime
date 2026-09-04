@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,12 +5,12 @@
 #include "GpuProcessD3D11TextureMap.h"
 
 #include "libyuv.h"
+#include "mozilla/ProfilerMarkers.h"
+#include "mozilla/SharedThreadPool.h"
 #include "mozilla/layers/CompositorThread.h"
 #include "mozilla/layers/D3D11ZeroCopyTextureImage.h"
 #include "mozilla/layers/HelpersD3D11.h"
 #include "mozilla/layers/TextureHostWrapperD3D11.h"
-#include "mozilla/ProfilerMarkers.h"
-#include "mozilla/SharedThreadPool.h"
 #include "mozilla/webrender/RenderThread.h"
 
 namespace mozilla {
@@ -38,11 +36,6 @@ GpuProcessTextureId GpuProcessD3D11TextureMap::GetNextTextureId() {
   MOZ_ASSERT(XRE_IsGPUProcess());
   return GpuProcessTextureId::GetNext();
 }
-
-GpuProcessD3D11TextureMap::GpuProcessD3D11TextureMap()
-    : mMonitor("GpuProcessD3D11TextureMap::mMonitor") {}
-
-GpuProcessD3D11TextureMap::~GpuProcessD3D11TextureMap() {}
 
 void GpuProcessD3D11TextureMap::Register(
     GpuProcessTextureId aTextureId, ID3D11Texture2D* aTexture,
@@ -92,7 +85,7 @@ RefPtr<ID3D11Texture2D> GpuProcessD3D11TextureMap::GetTexture(
   return it->second.mTexture;
 }
 
-Maybe<HANDLE> GpuProcessD3D11TextureMap::GetSharedHandle(
+RefPtr<gfx::FileHandleWrapper> GpuProcessD3D11TextureMap::GetSharedHandle(
     GpuProcessTextureId aTextureId) {
   TextureHolder holder;
   {
@@ -100,15 +93,15 @@ Maybe<HANDLE> GpuProcessD3D11TextureMap::GetSharedHandle(
 
     auto it = mD3D11TexturesById.find(aTextureId);
     if (it == mD3D11TexturesById.end()) {
-      return Nothing();
+      return nullptr;
     }
 
     if (it->second.mSharedHandle) {
-      return Some(it->second.mSharedHandle->GetHandle());
+      return it->second.mSharedHandle;
     }
 
     if (it->second.mCopiedTextureSharedHandle) {
-      return Some(it->second.mCopiedTextureSharedHandle->GetHandle());
+      return it->second.mCopiedTextureSharedHandle;
     }
 
     holder = it->second;
@@ -117,17 +110,20 @@ Maybe<HANDLE> GpuProcessD3D11TextureMap::GetSharedHandle(
   RefPtr<ID3D11Device> device;
   holder.mTexture->GetDevice(getter_AddRefs(device));
   if (!device) {
-    return Nothing();
+    return nullptr;
   }
 
   RefPtr<ID3D11DeviceContext> context;
   device->GetImmediateContext(getter_AddRefs(context));
   if (!context) {
-    return Nothing();
+    return nullptr;
   }
 
+  D3D11_TEXTURE2D_DESC existingDesc;
+  holder.mTexture->GetDesc(&existingDesc);
+
   CD3D11_TEXTURE2D_DESC newDesc(
-      DXGI_FORMAT_NV12, holder.mSize.width, holder.mSize.height, 1, 1,
+      existingDesc.Format, holder.mSize.width, holder.mSize.height, 1, 1,
       D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE);
   newDesc.MiscFlags =
       D3D11_RESOURCE_MISC_SHARED_NTHANDLE | D3D11_RESOURCE_MISC_SHARED;
@@ -136,7 +132,7 @@ Maybe<HANDLE> GpuProcessD3D11TextureMap::GetSharedHandle(
   HRESULT hr =
       device->CreateTexture2D(&newDesc, nullptr, getter_AddRefs(copiedTexture));
   if (FAILED(hr)) {
-    return Nothing();
+    return nullptr;
   }
 
   D3D11_TEXTURE2D_DESC inDesc;
@@ -155,7 +151,7 @@ Maybe<HANDLE> GpuProcessD3D11TextureMap::GetSharedHandle(
   RefPtr<IDXGIResource1> resource;
   copiedTexture->QueryInterface((IDXGIResource1**)getter_AddRefs(resource));
   if (!resource) {
-    return Nothing();
+    return nullptr;
   }
 
   HANDLE sharedHandle;
@@ -163,18 +159,18 @@ Maybe<HANDLE> GpuProcessD3D11TextureMap::GetSharedHandle(
       nullptr, DXGI_SHARED_RESOURCE_READ | DXGI_SHARED_RESOURCE_WRITE, nullptr,
       &sharedHandle);
   if (FAILED(hr)) {
-    return Nothing();
+    return nullptr;
   }
 
-  RefPtr<gfx::FileHandleWrapper> handle =
-      new gfx::FileHandleWrapper(UniqueFileHandle(sharedHandle));
+  RefPtr handle =
+      MakeRefPtr<gfx::FileHandleWrapper>(UniqueFileHandle(sharedHandle));
 
   RefPtr<ID3D11Query> query;
   CD3D11_QUERY_DESC desc(D3D11_QUERY_EVENT);
   hr = device->CreateQuery(&desc, getter_AddRefs(query));
   if (FAILED(hr) || !query) {
     gfxWarning() << "Could not create D3D11_QUERY_EVENT: " << gfx::hexa(hr);
-    return Nothing();
+    return nullptr;
   }
 
   context->End(query);
@@ -191,7 +187,7 @@ Maybe<HANDLE> GpuProcessD3D11TextureMap::GetSharedHandle(
     auto it = mD3D11TexturesById.find(aTextureId);
     if (it == mD3D11TexturesById.end()) {
       MOZ_ASSERT_UNREACHABLE("unexpected to be called");
-      return Nothing();
+      return nullptr;
     }
 
     // Disable no video copy for future decoded video frames. Since
@@ -204,7 +200,7 @@ Maybe<HANDLE> GpuProcessD3D11TextureMap::GetSharedHandle(
     it->second.mCopiedTextureSharedHandle = handle;
   }
 
-  return Some(handle->GetHandle());
+  return handle;
 }
 
 void GpuProcessD3D11TextureMap::DisableZeroCopyNV12Texture(
@@ -243,7 +239,7 @@ bool GpuProcessD3D11TextureMap::WaitTextureReady(
 
   auto start = TimeStamp::Now();
   const TimeDuration timeout = TimeDuration::FromMilliseconds(1000);
-  while (1) {
+  while (true) {
     CVStatus status = mMonitor.Wait(timeout);
     if (status == CVStatus::Timeout) {
       MOZ_ASSERT_UNREACHABLE("unexpected to be called");
@@ -342,15 +338,19 @@ RefPtr<ID3D11Texture2D> GpuProcessD3D11TextureMap::UpdateTextureData(
   }
 
   auto size = bufferTexture->GetSize();
+  auto colorDepth = bufferTexture->GetColorDepth();
+  gfx::SurfaceFormat surfaceFormat = colorDepth == gfx::ColorDepth::COLOR_10
+                                         ? gfx::SurfaceFormat::P010
+                                         : gfx::SurfaceFormat::NV12;
 
   RefPtr<ID3D11Texture2D> texture2D =
-      aHolder->mAllocator->CreateOrRecycle(gfx::SurfaceFormat::NV12, size);
+      aHolder->mAllocator->CreateOrRecycle(surfaceFormat, size);
   if (!texture2D) {
     return nullptr;
   }
 
   RefPtr<ID3D11Texture2D> stagingTexture =
-      aHolder->mAllocator->GetStagingTextureNV12();
+      aHolder->mAllocator->GetStagingTexture();
   if (!stagingTexture) {
     return nullptr;
   }
@@ -389,19 +389,36 @@ RefPtr<ID3D11Texture2D> GpuProcessD3D11TextureMap::UpdateTextureData(
   }
 
   const size_t destStride = mappedResource.RowPitch;
-  uint8_t* yDestPlaneStart = reinterpret_cast<uint8_t*>(mappedResource.pData);
-  uint8_t* uvDestPlaneStart = reinterpret_cast<uint8_t*>(mappedResource.pData) +
-                              destStride * size.height;
-  // Convert I420 to NV12,
-  const uint8_t* yChannel = bufferTexture->GetYChannel();
-  const uint8_t* cbChannel = bufferTexture->GetCbChannel();
-  const uint8_t* crChannel = bufferTexture->GetCrChannel();
   int32_t yStride = bufferTexture->GetYStride();
   int32_t cbCrStride = bufferTexture->GetCbCrStride();
 
-  libyuv::I420ToNV12(yChannel, yStride, cbChannel, cbCrStride, crChannel,
-                     cbCrStride, yDestPlaneStart, destStride, uvDestPlaneStart,
-                     destStride, size.width, size.height);
+  if (colorDepth == gfx::ColorDepth::COLOR_10) {
+    const uint16_t* yChannel = bufferTexture->GetYChannel16();
+    const uint16_t* cbChannel = bufferTexture->GetCbChannel16();
+    const uint16_t* crChannel = bufferTexture->GetCrChannel16();
+    uint16_t* yDestPlaneStart =
+        reinterpret_cast<uint16_t*>(mappedResource.pData);
+    uint16_t* uvDestPlaneStart = reinterpret_cast<uint16_t*>(
+        reinterpret_cast<uint8_t*>(mappedResource.pData) +
+        destStride * size.height);
+
+    libyuv::I010ToP010(yChannel, yStride / 2, cbChannel, cbCrStride / 2,
+                       crChannel, cbCrStride / 2, yDestPlaneStart,
+                       destStride / 2, uvDestPlaneStart, destStride / 2,
+                       size.width, size.height);
+  } else {
+    const uint8_t* yChannel = bufferTexture->GetYChannel();
+    const uint8_t* cbChannel = bufferTexture->GetCbChannel();
+    const uint8_t* crChannel = bufferTexture->GetCrChannel();
+    uint8_t* yDestPlaneStart = reinterpret_cast<uint8_t*>(mappedResource.pData);
+    uint8_t* uvDestPlaneStart =
+        reinterpret_cast<uint8_t*>(mappedResource.pData) +
+        destStride * size.height;
+
+    libyuv::I420ToNV12(yChannel, yStride, cbChannel, cbCrStride, crChannel,
+                       cbCrStride, yDestPlaneStart, destStride,
+                       uvDestPlaneStart, destStride, size.width, size.height);
+  }
 
   context->Unmap(stagingTexture, 0);
 

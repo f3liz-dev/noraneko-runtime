@@ -1,4 +1,3 @@
-/* -*- Mode: IDL; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -20,6 +19,14 @@ enum TCPSocketBinaryType {
 dictionary SocketOptions {
   boolean useSecureTransport = false;
   TCPSocketBinaryType binaryType = "string";
+  /**
+   * nsISocketTransport connection flags, applied to the transport before the
+   * connection is started. Setting them afterwards through the transport
+   * attribute is too late, because the connect has already been dispatched to
+   * the socket thread. Only honoured in the parent process; the content process
+   * path does not carry these over IPC.
+   */
+  unsigned long connectionFlags = 0;
 };
 
 enum TCPReadyState {

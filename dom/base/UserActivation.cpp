@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -67,6 +65,10 @@ static TimeStamp sHandlingInputStart;
 // at the end of the input.
 static TimeStamp sLatestUserInputStart;
 
+// True if there are paste commands associated with the current keyboard event
+// being handled, if any.
+static bool sHandlingKeyboardEventHasAssociatedPasteCommands = false;
+
 }  // namespace
 
 /* static */
@@ -75,6 +77,12 @@ bool UserActivation::IsHandlingUserInput() { return sUserInputEventDepth > 0; }
 /* static */
 bool UserActivation::IsHandlingKeyboardInput() {
   return sUserKeyboardEventDepth > 0;
+}
+
+bool UserActivation::IsHandlingKeyboardInputWithPasteActions() {
+  MOZ_ASSERT_IF(sHandlingKeyboardEventHasAssociatedPasteCommands,
+                sUserKeyboardEventDepth > 0);
+  return sHandlingKeyboardEventHasAssociatedPasteCommands;
 }
 
 /* static */
@@ -148,7 +156,19 @@ TimeStamp UserActivation::LatestUserInputStart() {
 AutoHandlingUserInputStatePusher::AutoHandlingUserInputStatePusher(
     bool aIsHandlingUserInput, WidgetEvent* aEvent)
     : mMessage(aEvent ? aEvent->mMessage : eVoidEvent),
-      mIsHandlingUserInput(aIsHandlingUserInput) {
+      mIsHandlingUserInput(aIsHandlingUserInput),
+      // Save the current keyboard event paste command state in case a nested
+      // event loop is spun.
+      mPreviousHandlingKeyboardEventHasAssociatedPasteCommands(
+          sHandlingKeyboardEventHasAssociatedPasteCommands) {
+  MOZ_ASSERT(NS_IsMainThread());
+
+  if (aEvent && aEvent->IsTrusted() && aEvent->AsKeyboardEvent()) {
+    mozilla::WidgetKeyboardEvent* keyboardEvent = aEvent->AsKeyboardEvent();
+    sHandlingKeyboardEventHasAssociatedPasteCommands =
+        keyboardEvent->HasRelevantCommand(Command::Paste) ||
+        keyboardEvent->HasRelevantCommand(Command::PasteWithoutFormat);
+  }
   if (!aIsHandlingUserInput) {
     return;
   }
@@ -156,6 +176,11 @@ AutoHandlingUserInputStatePusher::AutoHandlingUserInputStatePusher(
 }
 
 AutoHandlingUserInputStatePusher::~AutoHandlingUserInputStatePusher() {
+  // Restore the previous keyboard event paste command state in case a nested
+  // event loop was entered.
+  sHandlingKeyboardEventHasAssociatedPasteCommands =
+      mPreviousHandlingKeyboardEventHasAssociatedPasteCommands;
+
   if (!mIsHandlingUserInput) {
     return;
   }

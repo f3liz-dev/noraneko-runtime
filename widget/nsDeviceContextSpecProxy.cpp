@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,12 +6,12 @@
 
 #include "gfxASurface.h"
 #include "gfxPlatform.h"
+#include "mozilla/RefPtr.h"
 #include "mozilla/gfx/DrawEventRecorder.h"
 #include "mozilla/gfx/PrintTargetThebes.h"
 #include "mozilla/layout/RemotePrintJobChild.h"
-#include "mozilla/RefPtr.h"
-#include "nsComponentManagerUtils.h"
 #include "nsAppDirectoryServiceDefs.h"
+#include "nsComponentManagerUtils.h"
 #include "nsDirectoryServiceUtils.h"
 #include "nsIPrintSettings.h"
 #include "private/pprio.h"
@@ -93,6 +91,7 @@ nsDeviceContextSpecProxy::GetDrawEventRecorder(
 NS_IMETHODIMP
 nsDeviceContextSpecProxy::BeginDocument(const nsAString& aTitle,
                                         const nsAString& aPrintToFileName,
+                                        dom::WindowContext* aWindowContext,
                                         int32_t aStartPage, int32_t aEndPage) {
   if (!mRemotePrintJob || mRemotePrintJob->IsDestroyed()) {
     mRemotePrintJob = nullptr;
@@ -100,8 +99,8 @@ nsDeviceContextSpecProxy::BeginDocument(const nsAString& aTitle,
   }
 
   mRecorder = new mozilla::layout::DrawEventRecorderPRFileDesc();
-  nsresult rv =
-      mRemotePrintJob->InitializePrint(nsString(aTitle), aStartPage, aEndPage);
+  nsresult rv = mRemotePrintJob->InitializePrint(
+      nsString(aTitle), aWindowContext, aStartPage, aEndPage);
   if (NS_FAILED(rv)) {
     // The parent process will send a 'delete' message to tell this process to
     // delete our RemotePrintJobChild.  As soon as we return to the event loop

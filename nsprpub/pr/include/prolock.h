@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -50,7 +49,7 @@ PR_BEGIN_EXTERN_C
 */
 
 #if defined(DEBUG) || defined(FORCE_NSPR_ORDERED_LOCKS)
-typedef void * PROrderedLock;
+typedef void* PROrderedLock;
 #else
 /*
 ** Map PROrderedLock and methods onto PRLock when ordered locking
@@ -79,17 +78,14 @@ typedef PRLock PROrderedLock;
 **
 */
 #if defined(DEBUG) || defined(FORCE_NSPR_ORDERED_LOCKS)
-#define PR_CREATE_ORDERED_LOCK(order,name)\
-    PR_CreateOrderedLock((order),(name))
+#define PR_CREATE_ORDERED_LOCK(order, name) \
+    PR_CreateOrderedLock((order), (name))
 #else
 #define PR_CREATE_ORDERED_LOCK(order) PR_NewLock()
 #endif
 
-NSPR_API(PROrderedLock *)
-PR_CreateOrderedLock(
-    PRInt32 order,
-    const char *name
-);
+NSPR_API(PROrderedLock*)
+PR_CreateOrderedLock(PRInt32 order, const char* name);
 
 /* -----------------------------------------------------------------------
 ** FUNCTION: PR_DestroyOrderedLock() -- Destroy an Ordered Lock
@@ -113,9 +109,7 @@ PR_CreateOrderedLock(
 #endif
 
 NSPR_API(void)
-PR_DestroyOrderedLock(
-    PROrderedLock *lock
-);
+PR_DestroyOrderedLock(PROrderedLock* lock);
 
 /* -----------------------------------------------------------------------
 ** FUNCTION: PR_LockOrderedLock() -- Lock an ordered lock
@@ -141,9 +135,7 @@ PR_DestroyOrderedLock(
 #endif
 
 NSPR_API(void)
-PR_LockOrderedLock(
-    PROrderedLock *lock
-);
+PR_LockOrderedLock(PROrderedLock* lock);
 
 /* -----------------------------------------------------------------------
 ** FUNCTION: PR_UnlockOrderedLock() -- unlock and Ordered Lock
@@ -169,9 +161,7 @@ PR_LockOrderedLock(
 #endif
 
 NSPR_API(PRStatus)
-PR_UnlockOrderedLock(
-    PROrderedLock *lock
-);
+PR_UnlockOrderedLock(PROrderedLock* lock);
 
 PR_END_EXTERN_C
 

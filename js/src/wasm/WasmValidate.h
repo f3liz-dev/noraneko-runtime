@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- *
+/*
  * Copyright 2016 Mozilla Foundation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -21,7 +19,6 @@
 
 #include "js/Utility.h"
 #include "js/WasmFeatures.h"
-
 #include "wasm/WasmBinary.h"
 #include "wasm/WasmCompile.h"
 #include "wasm/WasmCompileArgs.h"
@@ -116,8 +113,8 @@ using ValidatingOpIter = OpIter<ValidatingPolicy>;
                                     size_t opcodeOffset, StorageType subType,
                                     StorageType superType);
 
-// The local entries are part of function bodies and thus serialized by both
-// wasm and asm.js and decoded as part of both validation and compilation.
+// The local entries are part of function bodies and thus serialized and
+// decoded as part of both validation and compilation.
 
 [[nodiscard]] bool EncodeLocalEntries(Encoder& e, const ValTypeVector& locals);
 
@@ -146,6 +143,10 @@ using ValidatingOpIter = OpIter<ValidatingPolicy>;
 [[nodiscard]] bool StartsCodeSection(const uint8_t* begin, const uint8_t* end,
                                      BytecodeRange* codeSection);
 
+#ifdef ENABLE_WASM_COMPONENTS
+[[nodiscard]] bool IsComponent(Decoder& d);
+#endif
+
 // Calling DecodeModuleEnvironment decodes all sections up to the code section
 // and performs full validation of all those sections. The client must then
 // decode the code section itself, reusing ValidateFunctionBody if necessary,
@@ -161,6 +162,12 @@ using ValidatingOpIter = OpIter<ValidatingPolicy>;
 
 [[nodiscard]] bool DecodeModuleTail(Decoder& d, CodeMetadata* codeMeta,
                                     ModuleMetadata* meta);
+
+#ifdef ENABLE_WASM_COMPONENTS
+[[nodiscard]] bool DecodeComponent(
+    Decoder& d, MutableComponent c, const CompileArgs& args,
+    JS::OptimizedEncodingListener* listener = nullptr);
+#endif
 
 // Validate an entire module, returning true if the module was validated
 // successfully. If Validate returns false:

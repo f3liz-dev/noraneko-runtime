@@ -5,6 +5,7 @@
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
+  FirstStartup: "resource://gre/modules/FirstStartup.sys.mjs",
   TelemetryEnvironment: "resource://gre/modules/TelemetryEnvironment.sys.mjs",
 });
 
@@ -54,6 +55,7 @@ const RemoteSettingsSyncErrorReason = Object.freeze({
   LAST_MODIFIED_EXCEPTION: "last-modified-exception",
   NOT_YET_SYNCED: "not-yet-synced",
   NULL_LAST_MODIFIED: "null-last-modified",
+  MISSING_SIGNATURE: "missing-signature",
 });
 
 /**
@@ -165,6 +167,14 @@ export const NimbusTelemetry = {
     conflict_slug,
     migration,
   }) {
+    // Do not record unsupported feature telemetry.
+    if (
+      reason === EnrollmentStatusReason.ERROR &&
+      error_string === ValidationFailureReason.UNSUPPORTED_FEATURES
+    ) {
+      return;
+    }
+
     Glean.nimbusEvents.enrollmentStatus.record({
       slug,
       status,
@@ -189,14 +199,24 @@ export const NimbusTelemetry = {
     });
   },
 
-  recordMigration(migration, error) {
+  /**
+   * Record the result of a migration.
+   *
+   * @param {string} migration The name of the migration.
+   * @param {number} duration The duration of the migration.
+   * @param {string | undefined} The reason the migration failed, if any.
+   */
+  recordMigration(migration, duration, errorReason) {
     Glean.nimbusEvents.migration.record(
       Object.assign(
         {
           migration_id: migration,
-          success: typeof error === "undefined",
+          success: typeof errorReason === "undefined",
+          duration,
+          is_first_startup:
+            lazy.FirstStartup.state === lazy.FirstStartup.IN_PROGRESS,
         },
-        typeof error !== "undefined" ? { error_reason: error } : {}
+        typeof errorReason !== "undefined" ? { error_reason: errorReason } : {}
       )
     );
   },

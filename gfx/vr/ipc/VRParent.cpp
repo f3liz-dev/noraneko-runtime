@@ -1,25 +1,24 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "VRParent.h"
+
 #include "VRGPUParent.h"
 #include "gfxConfig.h"
-#include "nsDebugImpl.h"
-#include "nsThreadManager.h"
-#include "nsPrintfCString.h"
-
+#include "mozilla/Preferences.h"
 #include "mozilla/dom/MemoryReportRequest.h"
 #include "mozilla/gfx/gfxVars.h"
 #include "mozilla/ipc/CrashReporterClient.h"
 #include "mozilla/ipc/ProcessChild.h"
 #include "mozilla/ipc/ProcessUtils.h"
-#include "mozilla/Preferences.h"
+#include "nsDebugImpl.h"
+#include "nsPrintfCString.h"
+#include "nsThreadManager.h"
 
 #if defined(XP_WIN)
 #  include <process.h>
+
 #  include "mozilla/gfx/DeviceManagerDx.h"
 #else
 #  include <unistd.h>
@@ -29,8 +28,6 @@ namespace mozilla {
 namespace gfx {
 
 using mozilla::ipc::IPCResult;
-
-VRParent::VRParent() : mVRGPUParent(nullptr) {}
 
 IPCResult VRParent::RecvNewGPUVRManager(Endpoint<PVRGPUParent>&& aEndpoint) {
   RefPtr<VRGPUParent> vrGPUParent =

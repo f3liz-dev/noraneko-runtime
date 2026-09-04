@@ -21,12 +21,12 @@ import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import mozilla.components.concept.base.profiler.Profiler
 import mozilla.components.concept.engine.Engine
 import org.junit.After
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -38,6 +38,8 @@ import org.mozilla.fenix.components.Components
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.shadows.ShadowApplication
+import kotlin.test.assertIs
+import kotlin.test.assertNotNull
 
 @OptIn(ExperimentalCoroutinesApi::class)
 @RunWith(RobolectricTestRunner::class)
@@ -131,7 +133,7 @@ class ProfilerViewModelTest {
             viewModel.isProfilerActive.toList(collectedActiveStates)
         }
 
-        advanceUntilIdle()
+        runCurrent()
         assertEquals(listOf(ProfilerUiState.Idle), collectedUiStates)
         assertEquals(listOf(false), collectedActiveStates)
 
@@ -149,7 +151,7 @@ class ProfilerViewModelTest {
             viewModel.isProfilerActive.toList(collectedActiveStates)
         }
 
-        advanceUntilIdle()
+        runCurrent()
         assertEquals(listOf(ProfilerUiState.Idle), collectedUiStates)
         assertEquals(listOf(true), collectedActiveStates)
 
@@ -166,15 +168,15 @@ class ProfilerViewModelTest {
             mainDispatcher = testDispatcher,
             ioDispatcher = testDispatcher,
         )
-        advanceUntilIdle()
+        runCurrent()
 
         assertEquals(ProfilerUiState.Idle, viewModel.uiState.value)
         viewModel.initiateProfilerStartProcess(ProfilerSettings.Firefox)
-        advanceUntilIdle()
+        runCurrent()
 
         val finalState = viewModel.uiState.value
-        assertTrue(finalState is ProfilerUiState.Error)
-        assertEquals(R.string.profiler_error, (finalState as ProfilerUiState.Error).messageResId)
+        assertIs<ProfilerUiState.Error>(finalState)
+        assertEquals(R.string.profiler_error, finalState.messageResId)
         assertTrue(
             finalState.errorDetails.contains("Profiler not available"),
         )
@@ -188,10 +190,10 @@ class ProfilerViewModelTest {
             mainDispatcher = testDispatcher,
             ioDispatcher = testDispatcher,
         )
-        advanceUntilIdle()
+        runCurrent()
         assertEquals(ProfilerUiState.Idle, viewModel.uiState.value)
         viewModel.initiateProfilerStartProcess(ProfilerSettings.Firefox)
-        advanceUntilIdle()
+        runCurrent()
         assertEquals(ProfilerUiState.Running, viewModel.uiState.value)
         verify(exactly = 0) { mockProfiler.startProfiler(any(), any()) }
     }
@@ -206,17 +208,15 @@ class ProfilerViewModelTest {
         val settings = ProfilerSettings.Firefox
 
         val collectedStates = mutableListOf<ProfilerUiState>()
-        val collectionJob = launch {
+        backgroundScope.launch {
             viewModel.uiState.toList(collectedStates)
         }
-        advanceUntilIdle()
+        runCurrent()
 
         viewModel.initiateProfilerStartProcess(settings)
         every { mockProfiler.isProfilerActive() } returns true
 
-        advanceUntilIdle()
-
-        collectionJob.cancel()
+        runCurrent()
 
         val expectedSequence = listOf(
             ProfilerUiState.Idle::class,
@@ -236,14 +236,14 @@ class ProfilerViewModelTest {
             mainDispatcher = testDispatcher,
             ioDispatcher = testDispatcher,
         )
-        advanceUntilIdle()
+        runCurrent()
 
         viewModel.stopProfilerAndSave()
-        advanceUntilIdle()
+        runCurrent()
 
         val lastState = viewModel.uiState.value
-        assertTrue(lastState is ProfilerUiState.Finished)
-        assertNull((lastState as ProfilerUiState.Finished).profileUrl)
+        assertIs<ProfilerUiState.Finished>(lastState)
+        assertNull(lastState.profileUrl)
 
         verify(exactly = 0) { mockProfiler.stopProfiler(any(), any()) }
     }
@@ -267,14 +267,13 @@ class ProfilerViewModelTest {
         }
 
         val collectedStates = mutableListOf<ProfilerUiState>()
-        val collectionJob = launch {
+        backgroundScope.launch {
             viewModel.uiState.toList(collectedStates)
         }
-        advanceUntilIdle()
+        runCurrent()
 
         viewModel.stopProfilerAndSave()
         advanceUntilIdle()
-        collectionJob.cancel()
 
         assertTrue(collectedStates.any { it is ProfilerUiState.Idle })
         assertTrue(collectedStates.any { it is ProfilerUiState.Gathering })
@@ -282,8 +281,8 @@ class ProfilerViewModelTest {
         assertNotNull(toastState)
         assertEquals(R.string.profiler_uploaded_url_to_clipboard, (toastState as ProfilerUiState.ShowToast).messageResId)
         val finishedState = collectedStates.last()
-        assertTrue(finishedState is ProfilerUiState.Finished)
-        assertEquals(expectedUrl, (finishedState as ProfilerUiState.Finished).profileUrl)
+        assertIs<ProfilerUiState.Finished>(finishedState)
+        assertEquals(expectedUrl, finishedState.profileUrl)
 
         verify { mockProfiler.stopProfiler(any(), any()) }
         verify { mockProfilerUtils.saveProfileUrlToClipboard(fakeProfileData, mockApplication) }
@@ -308,20 +307,19 @@ class ProfilerViewModelTest {
         }
 
         val collectedStates = mutableListOf<ProfilerUiState>()
-        val collectionJob = launch {
+        backgroundScope.launch {
             viewModel.uiState.toList(collectedStates)
         }
-        advanceUntilIdle()
+        runCurrent()
 
         viewModel.stopProfilerAndSave()
-        advanceUntilIdle()
-        collectionJob.cancel()
+        runCurrent()
 
         assertTrue(collectedStates.any { it is ProfilerUiState.Idle })
         assertTrue(collectedStates.any { it is ProfilerUiState.Gathering })
         val errorState = collectedStates.last()
-        assertTrue(errorState is ProfilerUiState.Error)
-        assertEquals(R.string.profiler_error, (errorState as ProfilerUiState.Error).messageResId)
+        assertIs<ProfilerUiState.Error>(errorState)
+        assertEquals(R.string.profiler_error, errorState.messageResId)
         assertEquals("Profiler Stop Failed", errorState.errorDetails)
 
         verify { mockProfiler.stopProfiler(any(), any()) }
@@ -351,14 +349,13 @@ class ProfilerViewModelTest {
         } throws saveException
 
         val collectedStates = mutableListOf<ProfilerUiState>()
-        val collectionJob = launch {
+        backgroundScope.launch {
             viewModel.uiState.toList(collectedStates)
         }
-        advanceUntilIdle()
+        runCurrent()
 
         viewModel.stopProfilerAndSave()
-        advanceUntilIdle()
-        collectionJob.cancel()
+        runCurrent()
 
         val expectedSequence = listOf(
             ProfilerUiState.Idle::class,
@@ -393,21 +390,20 @@ class ProfilerViewModelTest {
         }
 
         val collectedUiStates = mutableListOf<ProfilerUiState>()
-        val collectionJob = launch {
+        backgroundScope.launch {
             viewModel.uiState.toList(collectedUiStates)
         }
-        advanceUntilIdle()
+        runCurrent()
 
         viewModel.stopProfilerWithoutSaving()
-        advanceUntilIdle()
-        collectionJob.cancel()
+        runCurrent()
 
         assertEquals("Expected 3 state emissions: Initial, Stopping, Finished", 3, collectedUiStates.size)
-        assertTrue("First collected state should be Idle", collectedUiStates[0] is ProfilerUiState.Idle)
-        assertTrue("Second collected state should be Stopping", collectedUiStates[1] is ProfilerUiState.Stopping)
+        assertIs<ProfilerUiState.Idle>(collectedUiStates[0], "First collected state should be Idle")
+        assertIs<ProfilerUiState.Stopping>(collectedUiStates[1], "Second collected state should be Stopping")
         val finalState = collectedUiStates[2]
-        assertTrue("Third collected state should be Finished", finalState is ProfilerUiState.Finished)
-        assertNull("Profile URL should be null in the final Finished state", (finalState as ProfilerUiState.Finished).profileUrl)
+        assertIs<ProfilerUiState.Finished>(finalState, "Third collected state should be Finished")
+        assertNull("Profile URL should be null in the final Finished state", finalState.profileUrl)
 
         verify { mockProfiler.stopProfiler(any(), any()) }
         verify(exactly = 0) { mockProfilerUtils.saveProfileUrlToClipboard(any(), any()) }

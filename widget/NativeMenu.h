@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -6,11 +5,12 @@
 #ifndef mozilla_widget_NativeMenu_h
 #define mozilla_widget_NativeMenu_h
 
-#include "nsISupportsImpl.h"
 #include "Units.h"
+#include "nsISupportsImpl.h"
 
 class nsIURI;
 class nsIFrame;
+class nsMenuPopupFrame;
 class nsPresContext;
 
 namespace mozilla {
@@ -42,8 +42,7 @@ class NativeMenu {
   // This call assumes that the popupshowing event for the root popup has
   // already been sent and "approved", i.e. preventDefault() was not called.
   virtual void ShowMenuAnchored(nsIFrame* aClickedFrame,
-                                const CSSIntRect& aRect,
-                                const nsAString& aPosition) = 0;
+                                const nsMenuPopupFrame* aPopupFrame) = 0;
 
   // Show this menu at the specified position.
   // This call assumes that the popupshowing event for the root popup has
@@ -78,37 +77,14 @@ class NativeMenu {
   // Return this NativeMenu's DOM element.
   virtual RefPtr<dom::Element> Element() = 0;
 
-  class Observer {
-   public:
-    // Called when the menu opened, after popupshown.
-    // No strong reference is held to the observer during the call.
-    virtual void OnNativeMenuOpened() = 0;
-
-    // Called when the menu closed, after popuphidden.
-    // No strong reference is held to the observer during the call.
-    virtual void OnNativeMenuClosed() = 0;
-
-    // Called before the popupshowing event of a submenu fires.
-    virtual void OnNativeSubMenuWillOpen(dom::Element* aPopupElement) = 0;
-
-    // Called after the popupshown event of a submenu fired.
-    virtual void OnNativeSubMenuDidOpen(dom::Element* aPopupElement) = 0;
-
-    // Called after the popuphidden event of a submenu fired.
-    virtual void OnNativeSubMenuClosed(dom::Element* aPopupElement) = 0;
-
-    // Called before the command event of an activated menu item fires.
-    virtual void OnNativeMenuWillActivateItem(
-        dom::Element* aMenuItemElement) = 0;
-  };
-
-  // Add an observer that gets notified of menu opening and closing.
-  // The menu does not keep a strong reference the observer. The observer must
-  // remove itself before it is destroyed.
-  virtual void AddObserver(Observer* aObserver) = 0;
-
-  // Remove an observer that was previously added with AddObserver.
-  virtual void RemoveObserver(Observer* aObserver) = 0;
+  // Notifications to the popup manager, if this menu is the one it is
+  // currently showing.
+  void OnOpened();
+  void OnClosed();
+  void OnSubMenuWillOpen(dom::Element* aPopupElement);
+  void OnSubMenuDidOpen(dom::Element* aPopupElement);
+  void OnSubMenuClosed(dom::Element* aPopupElement);
+  void OnWillActivateItem(dom::Element* aMenuItemElement);
 
  protected:
   virtual ~NativeMenu() = default;

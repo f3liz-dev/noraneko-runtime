@@ -1,23 +1,22 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/layers/Compositor.h"
-#include "mozilla/layers/CompositionRecorder.h"
+
+#include "GeckoProfiler.h"
 #include "base/message_loop.h"  // for MessageLoop
+#include "gfx2DGlue.h"
+#include "gfxUtils.h"
 #include "mozilla/gfx/Types.h"
+#include "mozilla/layers/CompositionRecorder.h"
 #include "mozilla/layers/CompositorBridgeParent.h"  // for CompositorBridgeParent
+#include "mozilla/layers/CompositorThread.h"
 #include "mozilla/layers/Diagnostics.h"
 #include "mozilla/layers/Effects.h"  // for Effect, EffectChain, etc
 #include "mozilla/layers/TextureClient.h"
 #include "mozilla/layers/TextureHost.h"
-#include "mozilla/layers/CompositorThread.h"
 #include "mozilla/mozalloc.h"  // for operator delete, etc
-#include "GeckoProfiler.h"
-#include "gfx2DGlue.h"
-#include "gfxUtils.h"
 #include "nsAppRunner.h"
 
 namespace mozilla::layers {
@@ -65,7 +64,7 @@ Compositor::Compositor(widget::CompositorWidget* aWidget)
 {
 }
 
-Compositor::~Compositor() {}
+Compositor::~Compositor() = default;
 
 void Compositor::Destroy() {
   mWidget = nullptr;

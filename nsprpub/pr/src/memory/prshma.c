@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -18,19 +17,25 @@ extern PRLogModuleInfo* _pr_shma_lm;
 #elif defined(WIN32)
 /* defined in pr/src/md/windows/w32shm.c */
 #else
-extern PRFileMap* _PR_MD_OPEN_ANON_FILE_MAP(const char* dirName, PRSize size,
-                                            PRFileMapProtect prot) {
-  PR_SetError(PR_NOT_IMPLEMENTED_ERROR, 0);
-  return NULL;
+extern PRFileMap*
+_PR_MD_OPEN_ANON_FILE_MAP(const char* dirName, PRSize size,
+                          PRFileMapProtect prot)
+{
+    PR_SetError(PR_NOT_IMPLEMENTED_ERROR, 0);
+    return NULL;
 }
-extern PRStatus _PR_MD_EXPORT_FILE_MAP_AS_STRING(PRFileMap* fm, PRSize bufSize,
-                                                 char* buf) {
-  PR_SetError(PR_NOT_IMPLEMENTED_ERROR, 0);
-  return PR_FAILURE;
+extern PRStatus
+_PR_MD_EXPORT_FILE_MAP_AS_STRING(PRFileMap* fm, PRSize bufSize,
+                                 char* buf)
+{
+    PR_SetError(PR_NOT_IMPLEMENTED_ERROR, 0);
+    return PR_FAILURE;
 }
-extern PRFileMap* _PR_MD_IMPORT_FILE_MAP_FROM_STRING(const char* fmstring) {
-  PR_SetError(PR_NOT_IMPLEMENTED_ERROR, 0);
-  return NULL;
+extern PRFileMap*
+_PR_MD_IMPORT_FILE_MAP_FROM_STRING(const char* fmstring)
+{
+    PR_SetError(PR_NOT_IMPLEMENTED_ERROR, 0);
+    return NULL;
 }
 #endif
 
@@ -39,8 +44,9 @@ extern PRFileMap* _PR_MD_IMPORT_FILE_MAP_FROM_STRING(const char* fmstring) {
 **
 */
 PR_IMPLEMENT(PRFileMap*)
-PR_OpenAnonFileMap(const char* dirName, PRSize size, PRFileMapProtect prot) {
-  return (_PR_MD_OPEN_ANON_FILE_MAP(dirName, size, prot));
+PR_OpenAnonFileMap(const char* dirName, PRSize size, PRFileMapProtect prot)
+{
+    return (_PR_MD_OPEN_ANON_FILE_MAP(dirName, size, prot));
 } /* end PR_OpenAnonFileMap() */
 
 /*
@@ -51,9 +57,10 @@ PR_OpenAnonFileMap(const char* dirName, PRSize size, PRFileMapProtect prot) {
 */
 PR_IMPLEMENT(PRStatus)
 PR_ProcessAttrSetInheritableFileMap(PRProcessAttr* attr, PRFileMap* fm,
-                                    const char* shmname) {
-  PR_SetError(PR_NOT_IMPLEMENTED_ERROR, 0);
-  return (PR_FAILURE);
+                                    const char* shmname)
+{
+    PR_SetError(PR_NOT_IMPLEMENTED_ERROR, 0);
+    return (PR_FAILURE);
 } /* end PR_ProcessAttrSetInheritableFileMap() */
 
 /*
@@ -62,10 +69,11 @@ PR_ProcessAttrSetInheritableFileMap(PRProcessAttr* attr, PRFileMap* fm,
 **
 */
 PR_IMPLEMENT(PRFileMap*)
-PR_GetInheritedFileMap(const char* shmname) {
-  PRFileMap* fm = NULL;
-  PR_SetError(PR_NOT_IMPLEMENTED_ERROR, 0);
-  return (fm);
+PR_GetInheritedFileMap(const char* shmname)
+{
+    PRFileMap* fm = NULL;
+    PR_SetError(PR_NOT_IMPLEMENTED_ERROR, 0);
+    return (fm);
 } /* end PR_GetInhteritedFileMap() */
 
 /*
@@ -73,8 +81,9 @@ PR_GetInheritedFileMap(const char* shmname) {
 **
 */
 PR_IMPLEMENT(PRStatus)
-PR_ExportFileMapAsString(PRFileMap* fm, PRSize bufSize, char* buf) {
-  return (_PR_MD_EXPORT_FILE_MAP_AS_STRING(fm, bufSize, buf));
+PR_ExportFileMapAsString(PRFileMap* fm, PRSize bufSize, char* buf)
+{
+    return (_PR_MD_EXPORT_FILE_MAP_AS_STRING(fm, bufSize, buf));
 } /* end PR_ExportFileMapAsString() */
 
 /*
@@ -84,7 +93,8 @@ PR_ExportFileMapAsString(PRFileMap* fm, PRSize bufSize, char* buf) {
 **
 */
 PR_IMPLEMENT(PRFileMap*)
-PR_ImportFileMapFromString(const char* fmstring) {
-  return (_PR_MD_IMPORT_FILE_MAP_FROM_STRING(fmstring));
+PR_ImportFileMapFromString(const char* fmstring)
+{
+    return (_PR_MD_IMPORT_FILE_MAP_FROM_STRING(fmstring));
 } /* end PR_ImportFileMapFromString() */
 /* end prshma.c */

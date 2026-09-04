@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -20,6 +19,7 @@
 #include "mozilla/gfx/gfxVars.h"
 #include "mozilla/layers/CanvasRenderer.h"
 #include "mozilla/layers/CompositableForwarder.h"
+#include "mozilla/layers/ImageBridgeChild.h"
 #include "mozilla/layers/ImageDataSerializer.h"
 #include "mozilla/layers/LayersSurfaces.h"
 #include "mozilla/layers/RenderRootStateManager.h"
@@ -172,6 +172,13 @@ void CanvasContext::Configure(const dom::GPUCanvasConfiguration& aConfig,
 
 void CanvasContext::Unconfigure() {
   if (mChild && mChild->CanSend() && mRemoteTextureOwnerId) {
+    if (mOffscreenCanvas) {
+      if (RefPtr<layers::ImageBridgeChild> imageBridge =
+              layers::ImageBridgeChild::GetSingleton()) {
+        // Ensure FwdTransactionTracker is updated by ImageBridgeChild.
+        imageBridge->WaitFlushTasks();
+      }
+    }
     auto txn_type = layers::ToRemoteTextureTxnType(mFwdTransactionTracker);
     auto txn_id = layers::ToRemoteTextureTxnId(mFwdTransactionTracker);
     ffi::wgpu_client_swap_chain_drop(
@@ -339,10 +346,10 @@ mozilla::UniquePtr<uint8_t[]> CanvasContext::GetImageBuffer(
 
   nsRFPService::PotentiallyDumpImage(PrincipalOrNull(), dataSurface);
   if (ShouldResistFingerprinting(RFPTarget::CanvasRandomization)) {
-    gfxUtils::GetImageBufferWithRandomNoise(dataSurface,
-                                            /* aIsAlphaPremultiplied */ true,
-                                            GetCookieJarSettings(),
-                                            PrincipalOrNull(), &*out_format);
+    return gfxUtils::GetImageBufferWithRandomNoise(
+        dataSurface,
+        /* aIsAlphaPremultiplied */ true, GetCookieJarSettings(),
+        PrincipalOrNull(), &*out_format);
   }
 
   return gfxUtils::GetImageBuffer(dataSurface, /* aIsAlphaPremultiplied */ true,
@@ -362,14 +369,15 @@ NS_IMETHODIMP CanvasContext::GetInputStream(
   RefPtr<gfx::DataSourceSurface> dataSurface = snapshot->GetDataSurface();
 
   nsRFPService::PotentiallyDumpImage(PrincipalOrNull(), dataSurface);
-  if (ShouldResistFingerprinting(RFPTarget::CanvasRandomization)) {
+  if (aExtractionBehavior == CanvasUtils::ImageExtraction::Randomize) {
     return gfxUtils::GetInputStreamWithRandomNoise(
         dataSurface, /* aIsAlphaPremultiplied */ true, aMimeType,
         aEncoderOptions, GetCookieJarSettings(), PrincipalOrNull(), aStream);
   }
 
   return gfxUtils::GetInputStream(dataSurface, /* aIsAlphaPremultiplied */ true,
-                                  aMimeType, aEncoderOptions, aStream);
+                                  aMimeType, aEncoderOptions, aRandomizationKey,
+                                  aStream);
 }
 
 bool CanvasContext::GetIsOpaque() {
@@ -415,6 +423,10 @@ already_AddRefed<gfx::SourceSurface> CanvasContext::GetSurfaceSnapshot(
       ffi::wgpu_client_make_command_encoder_id(mChild->GetClient());
   RawId commandBufferId =
       ffi::wgpu_client_make_command_buffer_id(mChild->GetClient());
+  // `GetSnapshot` is a synchronous API, but WebGPU requires that reading the
+  // canvas reflect all submitted operations, so we need to flush any messages
+  // that we have buffered above the IPC layer.
+  mChild->FlushQueuedMessages();
   RefPtr<gfx::DataSourceSurface> snapshot = cm->GetSnapshot(
       cm->Id(), mChild->Id(), mRemoteTextureOwnerId, Some(commandEncoderId),
       Some(commandBufferId), snapshotFormat, /* aPremultiply */ false,

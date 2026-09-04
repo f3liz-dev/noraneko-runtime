@@ -1,48 +1,33 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #undef LOG
-#include "ipc/IPCMessageUtils.h"
-
 #include "nsSimpleURI.h"
-#include "nscore.h"
-#include "nsCRT.h"
-#include "nsString.h"
-#include "nsURLHelper.h"
-#include "nsNetCID.h"
-#include "nsIObjectInputStream.h"
-#include "nsIObjectOutputStream.h"
-#include "nsEscape.h"
-#include "nsError.h"
+
+#include "ipc/IPCMessageUtils.h"
 #include "mozilla/MemoryReporting.h"
+#include "mozilla/StaticPrefs_network.h"
 #include "mozilla/TextUtils.h"
 #include "mozilla/ipc/URIUtils.h"
-#include "nsIClassInfoImpl.h"
-#include "nsIURIMutator.h"
 #include "mozilla/net/MozURL.h"
-#include "mozilla/StaticPrefs_network.h"
+#include "nsCRT.h"
+#include "nsError.h"
+#include "nsEscape.h"
+#include "nsIClassInfoImpl.h"
+#include "nsIObjectInputStream.h"
+#include "nsIObjectOutputStream.h"
+#include "nsIURIMutator.h"
+#include "nsNetCID.h"
+#include "nsQueryObject.h"
+#include "nsString.h"
+#include "nsURLHelper.h"
+#include "nscore.h"
 
 using namespace mozilla::ipc;
 
 namespace mozilla {
 namespace net {
-
-static NS_DEFINE_CID(kThisSimpleURIImplementationCID,
-                     NS_THIS_SIMPLEURI_IMPLEMENTATION_CID);
-
-/* static */
-already_AddRefed<nsSimpleURI> nsSimpleURI::From(nsIURI* aURI) {
-  RefPtr<nsSimpleURI> uri;
-  nsresult rv = aURI->QueryInterface(kThisSimpleURIImplementationCID,
-                                     getter_AddRefs(uri));
-  if (NS_FAILED(rv)) {
-    return nullptr;
-  }
-
-  return uri.forget();
-}
 
 NS_IMPL_CLASSINFO(nsSimpleURI, nullptr, nsIClassInfo::THREADSAFE,
                   NS_SIMPLEURI_CID)
@@ -55,12 +40,11 @@ NS_IMPL_CI_INTERFACE_GETTER0(nsSimpleURI)
 NS_IMPL_ADDREF(nsSimpleURI)
 NS_IMPL_RELEASE(nsSimpleURI)
 NS_INTERFACE_TABLE_HEAD(nsSimpleURI)
-  NS_INTERFACE_TABLE(nsSimpleURI, nsIURI, nsISerializable)
+  NS_INTERFACE_TABLE(nsSimpleURI, nsIURI, nsISerializable,
+                     nsIIPCSerializableURI, nsIURIWithSizeOf)
   NS_INTERFACE_TABLE_TO_MAP_SEGUE
   NS_IMPL_QUERY_CLASSINFO(nsSimpleURI)
-  if (aIID.Equals(kThisSimpleURIImplementationCID)) {
-    foundInterface = static_cast<nsIURI*>(this);
-  } else
+  NS_INTERFACE_MAP_ENTRY_CONCRETE(nsSimpleURI)
 NS_INTERFACE_MAP_END
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -185,6 +169,8 @@ nsSimpleURI::GetSpec(nsACString& result) {
   return NS_OK;
 }
 
+uint32_t nsSimpleURI::SpecHash() { return CachedSpecHash(mSpec); }
+
 // result may contain unescaped UTF-8 characters
 NS_IMETHODIMP
 nsSimpleURI::GetSpecIgnoringRef(nsACString& result) {
@@ -256,6 +242,7 @@ nsresult nsSimpleURI::SetSpecInternal(const nsACString& aSpec,
   // unless it's required so we can share the (potentially very large data: URI)
   // string buffer.
   mSpec = std::move(spec);
+  ResetSpecHash();
   mPathSep = mSpec.FindChar(':');
   MOZ_ASSERT(mPathSep != kNotFound, "A colon should be in this string");
   mQuerySep = kNotFound;
@@ -410,7 +397,19 @@ nsresult nsSimpleURI::SetPathQueryRefInternal() {
   MOZ_ASSERT(mRefSep == kNotFound);
 
   // Initialize `mQuerySep` and `mRefSep` if those components are present.
-  int32_t pathEnd = mSpec.FindCharInSet("?#", PathStart());
+  // Two single-char FindChar scans are used instead of FindCharInSet("?#")
+  // because each is SIMD-accelerated, which outperforms the set lookup. See
+  // bug 2045537 for the discussion and profiling.
+  const int32_t queryPos = mSpec.FindChar('?', PathStart());
+  const int32_t refPos = mSpec.FindChar('#', PathStart());
+  int32_t pathEnd;
+  if (queryPos == kNotFound) {
+    pathEnd = refPos;
+  } else if (refPos == kNotFound) {
+    pathEnd = queryPos;
+  } else {
+    pathEnd = queryPos < refPos ? queryPos : refPos;
+  }
   if (pathEnd != kNotFound) {
     if (mSpec.CharAt(pathEnd) == '?') {
       mQuerySep = pathEnd;
@@ -429,7 +428,7 @@ nsresult nsSimpleURI::SetPathQueryRefInternal() {
     // fallible version of `NS_EscapeURL` which won't do an unnecessary copy in
     // the non-escaping case.
     nsAutoCString escapedRef;
-    if (NS_EscapeURLSpan(Ref(), esc_OnlyNonASCII | esc_Spaces, escapedRef)) {
+    if (NS_EscapeURLSpan(Ref(), esc_Ref, escapedRef)) {
       if (!mSpec.Replace(RefStart(), RefLen(), escapedRef, fallible)) {
         return NS_ERROR_OUT_OF_MEMORY;
       }
@@ -461,9 +460,11 @@ nsresult nsSimpleURI::SetRef(const nsACString& aRef) {
     return NS_ERROR_MALFORMED_URI;
   }
 
+  nsAutoCString filteredRef(aRef);
+  filteredRef.StripTaggedASCII(ASCIIMask::MaskCRLFTab());
+
   nsAutoCString ref;
-  nsresult rv =
-      NS_EscapeURL(aRef, esc_OnlyNonASCII | esc_Spaces, ref, fallible);
+  nsresult rv = NS_EscapeURL(filteredRef, esc_Ref, ref, fallible);
   if (NS_FAILED(rv)) {
     return rv;
   }
@@ -523,10 +524,8 @@ nsresult nsSimpleURI::EqualsInternal(
   NS_ENSURE_ARG_POINTER(other);
   MOZ_ASSERT(result, "null pointer");
 
-  RefPtr<nsSimpleURI> otherUri;
-  nsresult rv = other->QueryInterface(kThisSimpleURIImplementationCID,
-                                      getter_AddRefs(otherUri));
-  if (NS_FAILED(rv)) {
+  RefPtr<nsSimpleURI> otherUri = do_QueryObject(other);
+  if (!otherUri) {
     *result = false;
     return NS_OK;
   }

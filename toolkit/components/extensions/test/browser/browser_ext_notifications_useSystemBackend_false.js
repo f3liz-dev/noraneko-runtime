@@ -1,5 +1,3 @@
-/* -*- Mode: indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
 
 // Regression test for: https://bugzilla.mozilla.org/show_bug.cgi?id=1970075
@@ -114,7 +112,7 @@ add_task(async function test_http_icon() {
     response.bodyOutputStream.write(body, body.length);
   });
 
-  // eslint-disable-next-line @microsoft/sdl/no-insecure-url
+  // eslint-disable-next-line sdl/no-insecure-url
   const httpUrl = `http://${serverHost}:${serverPort}/test_http_icon.png`;
 
   await testCreateNotification({

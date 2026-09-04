@@ -19,25 +19,51 @@
 namespace mozilla {
 
 // Don't use this log on the task queue, because it would be racy for `mStream`.
-#define WLOGV(msg, ...)                                                   \
-  MOZ_LOG(gMFMediaEngineLog, LogLevel::Verbose,                           \
-          ("MFMediaEngineStreamWrapper for stream %p (%s, id=%lu), " msg, \
-           mStream.Get(), mStream->GetDescriptionName().get(),            \
-           mStream->DescriptorId(), ##__VA_ARGS__))
+#define WLOGV(msg, ...)                                                     \
+  MOZ_LOG_FMT(gMFMediaEngineLog, LogLevel::Verbose,                         \
+              "MFMediaEngineStreamWrapper for stream {} ({}, id={}), " msg, \
+              fmt::ptr(mStream.Get()), mStream->GetDescriptionName().get(), \
+              mStream->DescriptorId(), ##__VA_ARGS__)
 
-#define SLOG(msg, ...)                              \
-  MOZ_LOG(                                          \
-      gMFMediaEngineLog, LogLevel::Debug,           \
-      ("MFMediaStream=%p (%s, id=%lu), " msg, this, \
-       this->GetDescriptionName().get(), this->DescriptorId(), ##__VA_ARGS__))
+#define SLOG(msg, ...)                                                \
+  MOZ_LOG_FMT(gMFMediaEngineLog, LogLevel::Debug,                     \
+              "MFMediaStream={} ({}, id={}), " msg, fmt::ptr(this),   \
+              this->GetDescriptionName().get(), this->DescriptorId(), \
+              ##__VA_ARGS__)
 
-#define SLOGV(msg, ...)                             \
-  MOZ_LOG(                                          \
-      gMFMediaEngineLog, LogLevel::Verbose,         \
-      ("MFMediaStream=%p (%s, id=%lu), " msg, this, \
-       this->GetDescriptionName().get(), this->DescriptorId(), ##__VA_ARGS__))
+#define SLOGV(msg, ...)                                               \
+  MOZ_LOG_FMT(gMFMediaEngineLog, LogLevel::Verbose,                   \
+              "MFMediaStream={} ({}, id={}), " msg, fmt::ptr(this),   \
+              this->GetDescriptionName().get(), this->DescriptorId(), \
+              ##__VA_ARGS__)
 
 using Microsoft::WRL::ComPtr;
+
+namespace {
+// Dispatches aFunc to aTaskQueue and chains the resulting promise into a
+// newly allocated Private promise. If the dispatch fails (e.g. aTaskQueue has
+// been shut down), the Private is immediately rejected so it cannot be
+// destroyed while pending and orphan any upstream chained promises.
+template <typename Function>
+auto DispatchOrReject(TaskQueue* aTaskQueue, StaticString aCallerName,
+                      Function&& aFunc) {
+  using ReturnType = std::invoke_result_t<Function>;
+  using PromiseType = RemoveSmartPointer<ReturnType>;
+  auto p = MakeRefPtr<typename PromiseType::Private>(aCallerName);
+  nsresult rv = aTaskQueue->Dispatch(NS_NewRunnableFunction(
+      aCallerName.get(),
+      [func = std::forward<Function>(aFunc), p, aCallerName]() mutable {
+        func()->ChainTo(p.forget(), aCallerName);
+      }));
+  if (NS_FAILED(rv)) {
+    p->Reject(MediaResult(NS_ERROR_FAILURE,
+                          nsPrintfCString("%s: Dispatch failed to task queue",
+                                          aCallerName.get())),
+              aCallerName);
+  }
+  return p;
+}
+}  // namespace
 
 RefPtr<MediaDataDecoder::InitPromise> MFMediaEngineStreamWrapper::Init() {
   MOZ_ASSERT(mStream->DescriptorId(), "Stream hasn't been initialized!");
@@ -53,9 +79,11 @@ RefPtr<MediaDataDecoder::DecodePromise> MFMediaEngineStreamWrapper::Decode(
         MediaResult(NS_ERROR_FAILURE, "MFMediaEngineStreamWrapper is shutdown"),
         __func__);
   }
-  RefPtr<MediaRawData> sample = aSample;
-  return InvokeAsync(mTaskQueue, mStream.Get(), __func__,
-                     &MFMediaEngineStream::OutputData, std::move(sample));
+  return DispatchOrReject(
+      mTaskQueue, __func__,
+      [stream = mStream, sample = RefPtr<MediaRawData>(aSample)]() mutable {
+        return stream->OutputData(std::move(sample));
+      });
 }
 
 RefPtr<MediaDataDecoder::DecodePromise> MFMediaEngineStreamWrapper::Drain() {
@@ -65,8 +93,8 @@ RefPtr<MediaDataDecoder::DecodePromise> MFMediaEngineStreamWrapper::Drain() {
         MediaResult(NS_ERROR_FAILURE, "MFMediaEngineStreamWrapper is shutdown"),
         __func__);
   }
-  return InvokeAsync(mTaskQueue, mStream.Get(), __func__,
-                     &MFMediaEngineStream::Drain);
+  return DispatchOrReject(mTaskQueue, __func__,
+                          [stream = mStream] { return stream->Drain(); });
 }
 
 RefPtr<MediaDataDecoder::FlushPromise> MFMediaEngineStreamWrapper::Flush() {
@@ -76,8 +104,8 @@ RefPtr<MediaDataDecoder::FlushPromise> MFMediaEngineStreamWrapper::Flush() {
         MediaResult(NS_ERROR_FAILURE, "MFMediaEngineStreamWrapper is shutdown"),
         __func__);
   }
-  return InvokeAsync(mTaskQueue, mStream.Get(), __func__,
-                     &MFMediaEngineStream::Flush);
+  return DispatchOrReject(mTaskQueue, __func__,
+                          [stream = mStream] { return stream->Flush(); });
 }
 
 RefPtr<ShutdownPromise> MFMediaEngineStreamWrapper::Shutdown() {
@@ -138,14 +166,14 @@ MFMediaEngineStream::~MFMediaEngineStream() {
 HRESULT MFMediaEngineStream::RuntimeClassInitialize(
     uint64_t aStreamId, const TrackInfo& aInfo, bool aIsEncryptedCustomInit,
     MFMediaSource* aParentSource) {
-  mParentSource = aParentSource;
+  SetParentSource(aParentSource);
   mTaskQueue = aParentSource->GetTaskQueue();
   MOZ_ASSERT(mTaskQueue);
   mStreamId = aStreamId;
   mIsEncryptedCustomInit = aIsEncryptedCustomInit;
 
   auto errorExit = MakeScopeExit([&] {
-    SLOG("Failed to initialize media stream (id=%" PRIu64 ")", aStreamId);
+    SLOG("Failed to initialize media stream (id={})", aStreamId);
     mIsShutdown = true;
     (void)mMediaEventQueue->Shutdown();
   });
@@ -156,22 +184,30 @@ HRESULT MFMediaEngineStream::RuntimeClassInitialize(
   // The inherited stream would return different type based on their media info.
   RETURN_IF_FAILED(CreateMediaType(aInfo, mediaType.GetAddressOf()));
   RETURN_IF_FAILED(GenerateStreamDescriptor(mediaType));
-  SLOG("Initialized %s (id=%" PRIu64 ", descriptorId=%lu)",
-       GetDescriptionName().get(), aStreamId, mStreamDescriptorId);
+  SLOG("Initialized {} (id={}, descriptorId={})", GetDescriptionName().get(),
+       aStreamId, mStreamDescriptorId);
   errorExit.release();
   return S_OK;
 }
 
 HRESULT MFMediaEngineStream::GenerateStreamDescriptor(
     ComPtr<IMFMediaType>& aMediaType) {
+  ComPtr<IMFStreamDescriptor> descriptor;
+  MutexAutoLock lock(mDescriptorMutex);
   RETURN_IF_FAILED(wmf::MFCreateStreamDescriptor(
       mStreamId, 1 /* stream amount */, aMediaType.GetAddressOf(),
-      &mStreamDescriptor));
-  RETURN_IF_FAILED(
-      mStreamDescriptor->GetStreamIdentifier(&mStreamDescriptorId));
+      descriptor.GetAddressOf()));
+  DWORD descriptorId = 0;
+  RETURN_IF_FAILED(descriptor->GetStreamIdentifier(&descriptorId));
   if (IsEncrypted()) {
-    RETURN_IF_FAILED(mStreamDescriptor->SetUINT32(MF_SD_PROTECTED, 1));
+    RETURN_IF_FAILED(descriptor->SetUINT32(MF_SD_PROTECTED, 1));
   }
+  if (!mStreamDescriptorId) {
+    mStreamDescriptorId = descriptorId;
+  }
+  MOZ_ASSERT(mStreamDescriptorId == descriptorId,
+             "Stream identifier must not change across a config change");
+  mStreamDescriptor.Swap(descriptor);
   return S_OK;
 }
 
@@ -250,7 +286,7 @@ void MFMediaEngineStream::Shutdown() {
   MOZ_ASSERT(mTaskQueue);
   (void)mTaskQueue->Dispatch(
       NS_NewRunnableFunction("MFMediaEngineStream::Shutdown", [self]() {
-        self->mParentSource = nullptr;
+        self->SetParentSource(nullptr);
         self->mRawDataQueueForFeedingEngine.Reset();
         self->mRawDataQueueForGeneratingOutput.Reset();
         self->ShutdownCleanUpOnTaskQueue();
@@ -264,8 +300,23 @@ MFMediaEngineStream::GetMediaSource(IMFMediaSource** aMediaSource) {
   if (IsShutdown()) {
     return MF_E_SHUTDOWN;
   }
+  MutexAutoLock lock(mParentSourceMutex);
+  if (!mParentSource) {
+    return MF_E_SHUTDOWN;
+  }
   RETURN_IF_FAILED(mParentSource.CopyTo(aMediaSource));
   return S_OK;
+}
+
+ComPtr<MFMediaSource> MFMediaEngineStream::GetParentSource() const {
+  MutexAutoLock lock(mParentSourceMutex);
+  return mParentSource;
+}
+
+void MFMediaEngineStream::SetParentSource(MFMediaSource* aParentSource) {
+  MutexAutoLock lock(mParentSourceMutex);
+  mParentSource = aParentSource;
+  SLOG("Parent source {}", aParentSource ? "set" : "cleared");
 }
 
 IFACEMETHODIMP MFMediaEngineStream::GetStreamDescriptor(
@@ -274,6 +325,7 @@ IFACEMETHODIMP MFMediaEngineStream::GetStreamDescriptor(
   if (IsShutdown()) {
     return MF_E_SHUTDOWN;
   }
+  MutexAutoLock lock(mDescriptorMutex);
   if (!mStreamDescriptor) {
     SLOG("Hasn't initialized stream descriptor");
     return MF_E_NOT_INITIALIZED;
@@ -295,9 +347,9 @@ IFACEMETHODIMP MFMediaEngineStream::RequestSample(IUnknown* aToken) {
       "MFMediaEngineStream::RequestSample", [token, self, this]() {
         AssertOnTaskQueue();
         mSampleRequestTokens.push(token);
-        SLOGV("RequestSample, token amount=%zu", mSampleRequestTokens.size());
+        SLOGV("RequestSample, token amount={}", mSampleRequestTokens.size());
         ReplySampleRequestIfPossible();
-        if (!HasEnoughRawData() && mParentSource && !IsEnded()) {
+        if (!HasEnoughRawData() && GetParentSource() && !IsEnded()) {
           SendRequestSampleEvent(false /* isEnough */);
         }
       }));
@@ -352,8 +404,9 @@ void MFMediaEngineStream::NotifyEndEvent() {
 
 bool MFMediaEngineStream::ShouldServeSamples() const {
   AssertOnTaskQueue();
-  return mParentSource &&
-         mParentSource->GetState() == MFMediaSource::State::Started &&
+  ComPtr<MFMediaSource> parentSource = GetParentSource();
+  return parentSource &&
+         parentSource->GetState() == MFMediaSource::State::Started &&
          mIsSelected;
 }
 
@@ -365,11 +418,12 @@ HRESULT MFMediaEngineStream::CreateInputSample(IMFSample** aSample) {
 
   MOZ_ASSERT(mRawDataQueueForFeedingEngine.GetSize() != 0);
   RefPtr<MediaRawData> data = mRawDataQueueForFeedingEngine.PopFront();
-  SLOGV("CreateInputSample, pop data [%" PRId64 ", %" PRId64
-        "] (duration=%" PRId64 ", kf=%d, encrypted=%d), queue size=%zu",
-        data->mTime.ToMicroseconds(), data->GetEndTime().ToMicroseconds(),
-        data->mDuration.ToMicroseconds(), data->mKeyframe,
-        data->mCrypto.IsEncrypted(), mRawDataQueueForFeedingEngine.GetSize());
+  SLOGV(
+      "CreateInputSample, pop data [{}, {}] (duration={}, kf={}, "
+      "encrypted={}), queue size={}",
+      data->mTime.ToMicroseconds(), data->GetEndTime().ToMicroseconds(),
+      data->mDuration.ToMicroseconds(), data->mKeyframe,
+      data->mCrypto.IsEncrypted(), mRawDataQueueForFeedingEngine.GetSize());
   PROFILER_MARKER(
       nsPrintfCString(
           "pop %s (stream=%" PRIu64 ")",
@@ -421,7 +475,7 @@ HRESULT MFMediaEngineStream::AddEncryptAttributes(
              aCryptoConfig.mCryptoScheme == CryptoScheme::Cbcs_1_9) {
     protectionScheme = MFSampleEncryptionProtectionScheme::
         MF_SAMPLE_ENCRYPTION_PROTECTION_SCHEME_AES_CBC;
-    SLOG("Set CBC pattern encryption, crypt=%u, skip=%u",
+    SLOG("Set CBC pattern encryption, crypt={}, skip={}",
          aCryptoConfig.mCryptByteBlock, aCryptoConfig.mSkipByteBlock);
     // Only need to set them when they are non-zero. See
     // https://learn.microsoft.com/en-us/windows/win32/medfound/mfsampleextension-encryption-cryptbyteblock
@@ -443,7 +497,7 @@ HRESULT MFMediaEngineStream::AddEncryptAttributes(
 
   // KID
   if (aCryptoConfig.mKeyId.Length() != sizeof(GUID)) {
-    SLOG("Unsupported key ID size (%zu)", aCryptoConfig.mKeyId.Length());
+    SLOG("Unsupported key ID size ({})", aCryptoConfig.mKeyId.Length());
     return MF_E_UNEXPECTED;
   }
   GUID keyId;
@@ -455,14 +509,14 @@ HRESULT MFMediaEngineStream::AddEncryptAttributes(
   // IV
   if (aCryptoConfig.mIVSize != 0) {
     // Per-sample IV, usually seen in CENC.
-    SLOG("Use sample IV for decryption, IV size=%u", aCryptoConfig.mIVSize);
+    SLOG("Use sample IV for decryption, IV size={}", aCryptoConfig.mIVSize);
     RETURN_IF_FAILED(aSample->SetBlob(
         MFSampleExtension_Encryption_SampleID,
         reinterpret_cast<const uint8_t*>(aCryptoConfig.mIV.Elements()),
         aCryptoConfig.mIVSize));
   } else {
     // A constant IV for all samples, usually seen in CBCS.
-    SLOG("Use constant IV for decryption, constantIV length=%zu",
+    SLOG("Use constant IV for decryption, constantIV length={}",
          aCryptoConfig.mConstantIV.Length());
     RETURN_IF_FAILED(aSample->SetBlob(
         MFSampleExtension_Encryption_SampleID,
@@ -523,13 +577,13 @@ IFACEMETHODIMP MFMediaEngineStream::QueueEvent(MediaEventType aType,
   MOZ_ASSERT(mMediaEventQueue);
   RETURN_IF_FAILED(mMediaEventQueue->QueueEventParamVar(aType, aExtendedType,
                                                         aStatus, aValue));
-  SLOG("Queued event %s", MediaEventTypeToStr(aType));
+  SLOG("Queued event {}", MediaEventTypeToStr(aType));
   return S_OK;
 }
 
 void MFMediaEngineStream::SetSelected(bool aSelected) {
   AssertOnMFThreadPool();
-  SLOG("Select=%d", aSelected);
+  SLOG("Select={}", aSelected);
   mIsSelected = aSelected;
 }
 
@@ -541,8 +595,7 @@ void MFMediaEngineStream::NotifyNewData(MediaRawData* aSample) {
   const bool wasEnough = HasEnoughRawData();
   mRawDataQueueForFeedingEngine.Push(aSample);
   mRawDataQueueForGeneratingOutput.Push(aSample);
-  SLOGV("NotifyNewData, push data [%" PRId64 ", %" PRId64
-        "], queue size=%zu, queue duration=%" PRId64,
+  SLOGV("NotifyNewData, push data [{}, {}], queue size={}, queue duration={}",
         aSample->mTime.ToMicroseconds(), aSample->GetEndTime().ToMicroseconds(),
         mRawDataQueueForFeedingEngine.GetSize(),
         mRawDataQueueForFeedingEngine.PreciseDuration());
@@ -558,10 +611,9 @@ void MFMediaEngineStream::NotifyNewData(MediaRawData* aSample) {
 
 void MFMediaEngineStream::SendRequestSampleEvent(bool aIsEnough) {
   AssertOnTaskQueue();
-  SLOGV("data is %s, queue duration=%" PRId64,
-        aIsEnough ? "enough" : "not enough",
+  SLOGV("data is {}, queue duration={}", aIsEnough ? "enough" : "not enough",
         mRawDataQueueForFeedingEngine.PreciseDuration());
-  mParentSource->mRequestSampleEvent.Notify(
+  GetParentSource()->mRequestSampleEvent.Notify(
       SampleRequest{TrackType(), aIsEnough});
 }
 
@@ -608,8 +660,7 @@ RefPtr<MediaDataDecoder::DecodePromise> MFMediaEngineStream::OutputData(
   MediaDataDecoder::DecodedData outputs;
   if (RefPtr<MediaData> outputData = OutputDataInternal()) {
     outputs.AppendElement(outputData);
-    SLOGV("Output data [%" PRId64 ",%" PRId64 "]",
-          outputData->mTime.ToMicroseconds(),
+    SLOGV("Output data [{},{}]", outputData->mTime.ToMicroseconds(),
           outputData->GetEndTime().ToMicroseconds());
   }
   return MediaDataDecoder::DecodePromise::CreateAndResolve(std::move(outputs),
@@ -627,8 +678,7 @@ RefPtr<MediaDataDecoder::DecodePromise> MFMediaEngineStream::Drain() {
   MediaDataDecoder::DecodedData outputs;
   while (RefPtr<MediaData> outputData = OutputDataInternal()) {
     outputs.AppendElement(outputData);
-    SLOGV("Output data [%" PRId64 ",%" PRId64 "]",
-          outputData->mTime.ToMicroseconds(),
+    SLOGV("Output data [{},{}]", outputData->mTime.ToMicroseconds(),
           outputData->GetEndTime().ToMicroseconds());
   }
   return MediaDataDecoder::DecodePromise::CreateAndResolve(std::move(outputs),

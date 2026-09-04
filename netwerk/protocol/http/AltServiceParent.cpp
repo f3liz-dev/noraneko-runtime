@@ -1,14 +1,12 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
-/* vim:set ts=4 sw=4 sts=4 et cin: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 // HttpLog.h should generally be included first
-#include "HttpLog.h"
-
 #include "AltServiceParent.h"
+
 #include "AlternateServices.h"
+#include "HttpLog.h"
 #include "nsHttpHandler.h"
 
 namespace mozilla {
@@ -33,9 +31,9 @@ mozilla::ipc::IPCResult AltServiceParent::RecvProcessHeader(
     const OriginAttributes& aOriginAttributes,
     const HttpConnectionInfoCloneArgs& aArgs) {
   LOG(("AltServiceParent::RecvProcessHeader [this=%p]\n", this));
-  nsProxyInfo* pi = aProxyInfo.IsEmpty()
-                        ? nullptr
-                        : nsProxyInfo::DeserializeProxyInfo(aProxyInfo);
+  RefPtr<nsProxyInfo> pi = aProxyInfo.IsEmpty()
+                               ? nullptr
+                               : nsProxyInfo::DeserializeProxyInfo(aProxyInfo);
   RefPtr<nsHttpConnectionInfo> cinfo =
       nsHttpConnectionInfo::DeserializeHttpConnectionInfoCloneArgs(aArgs);
   AltSvcMapping::ProcessHeader(aBuf, aOriginScheme, aOriginHost, aOriginPort,

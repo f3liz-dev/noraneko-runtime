@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -11,6 +9,7 @@
 
 #include "mozilla/Assertions.h"
 #include "mozilla/dom/quota/Assertions.h"
+#include "mozilla/dom/quota/QuotaCommon.h"
 
 namespace mozilla::dom::quota {
 
@@ -41,10 +40,22 @@ void AssertNoOverflow(uint64_t aDest, T aArg) {
 }
 
 template <typename T, typename U>
-void AssertNoUnderflow(T aDest, U aArg) {
+void AssertNoUnderflow(T aDest, U aArg, const nsACString& context) {
   detail::IntChecker<T>::Assert(aDest);
   detail::IntChecker<T>::Assert(aArg);
-  MOZ_ASSERT(uint64_t(aDest) >= uint64_t(aArg));
+#if defined(NIGHTLY_BUILD) || defined(DEBUG)
+  {
+    const auto scope =
+        context.IsEmpty()
+            ? Nothing{}
+            : Some(quota::ScopedLogExtraInfo{
+                  quota::ScopedLogExtraInfo::kTagContextTainted, context});
+    const bool noUnderflow = uint64_t(aDest) >= uint64_t(aArg);
+    MOZ_ASSERT(noUnderflow);
+    QM_TRY(OkIf(noUnderflow), QM_VOID, QM_NO_CLEANUP,
+           ([&context]() { return ShouldReportUnderflow(context); }));
+  }
+#endif
 }
 
 }  // namespace mozilla::dom::quota

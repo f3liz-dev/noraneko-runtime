@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,13 +5,12 @@
 #include "OverscrollHandoffState.h"
 
 #include <algorithm>  // for std::stable_sort
-#include "mozilla/Assertions.h"
+
 #include "AsyncPanZoomController.h"
+#include "mozilla/Assertions.h"
 
 namespace mozilla {
 namespace layers {
-
-OverscrollHandoffChain::~OverscrollHandoffChain() = default;
 
 void OverscrollHandoffChain::Add(AsyncPanZoomController* aApzc) {
   mChain.push_back(aApzc);
@@ -66,6 +63,10 @@ void OverscrollHandoffChain::CancelAnimations(
 
 void OverscrollHandoffChain::ClearOverscroll() const {
   ForEachApzc(&AsyncPanZoomController::ClearOverscroll);
+}
+
+void OverscrollHandoffChain::ClearScrolledByHandedOffGesture() const {
+  ForEachApzc(&AsyncPanZoomController::ClearScrolledByHandedOffGesture);
 }
 
 void OverscrollHandoffChain::SnapBackOverscrolledApzc(
@@ -222,6 +223,15 @@ bool OverscrollHandoffChain::ScrollingUpWillTriggerPullToRefresh(
     }
   }
   return false;
+}
+
+bool OverscrollHandoffState::IsScrolledByHandedOffGesture() const {
+  // A chain index > 0 means the gesture originated on a descendant APZ
+  // and was handed off to this one, rather than starting here.
+  return mChainIndex > 0 &&
+         (mScrollSource == ScrollSource::Touchscreen ||
+          mScrollSource == ScrollSource::Touchpad) &&
+         mChain.GetApzcAtIndex(0)->IsInScrollingGesture();
 }
 
 }  // namespace layers

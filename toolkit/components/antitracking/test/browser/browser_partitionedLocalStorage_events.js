@@ -16,8 +16,7 @@ function runAllTests(prefValue) {
   const storagePrincipalTest =
     prefValue == Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER;
   const dynamicFPITest =
-    prefValue ==
-    Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN;
+    prefValue == Ci.nsICookieService.BEHAVIOR_PARTITION_FOREIGN;
 
   const test = { dynamicFPITest, prefValue };
 
@@ -994,21 +993,13 @@ function runAllTests(prefValue) {
     BrowserTestUtils.removeTab(normalTab2);
 
     UrlClassifierTestUtils.cleanupTestTrackers();
-  });
-
-  // Cleanup data.
-  add_task(async _ => {
-    await new Promise(resolve => {
-      Services.clearData.deleteData(Ci.nsIClearDataService.CLEAR_ALL, () =>
-        resolve()
-      );
-    });
+    await clearSiteTestData();
   });
 }
 
 for (let pref of [
   Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER,
-  Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN,
+  Ci.nsICookieService.BEHAVIOR_PARTITION_FOREIGN,
 ]) {
   runAllTests(pref);
 }

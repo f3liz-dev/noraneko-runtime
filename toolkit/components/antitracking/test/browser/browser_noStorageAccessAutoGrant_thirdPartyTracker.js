@@ -22,7 +22,6 @@ add_setup(async function () {
 
   await SpecialPowers.pushPrefEnv({
     set: [
-      ["network.cookie.cookieBehavior.trackerCookieBlocking", false],
       ["dom.storage_access.max_concurrent_auto_grants", 2],
       ["dom.storage_access.auto_grants.exclude_third_party_trackers", true],
     ],
@@ -59,7 +58,7 @@ add_task(async function test_noAutoGrant_thirdPartyTracker() {
     requestStorageAccessAndExpectFailure
   );
 
-  await cleanUpData();
+  await clearSiteTestData();
 });
 
 add_task(async function test_autoGrant_entityList() {
@@ -86,5 +85,5 @@ add_task(async function test_autoGrant_entityList() {
     requestStorageAccessAndExpectSuccess
   );
 
-  await cleanUpData();
+  await clearSiteTestData();
 });

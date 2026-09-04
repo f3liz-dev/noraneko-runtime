@@ -1,3 +1,7 @@
+add_setup(function () {
+  registerCleanupFunction(clearSiteTestData);
+});
+
 async function runTests(topPage, limitForeignContexts) {
   info("Creating a new tab");
   let tab = BrowserTestUtils.addTab(gBrowser, topPage);
@@ -272,21 +276,17 @@ add_task(async function () {
     set: [
       [
         "network.cookie.cookieBehavior",
-        Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN,
+        Ci.nsICookieService.BEHAVIOR_PARTITION_FOREIGN,
       ],
       [
         "network.cookie.cookieBehavior.pbmode",
-        Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN,
+        Ci.nsICookieService.BEHAVIOR_PARTITION_FOREIGN,
       ],
       ["privacy.trackingprotection.enabled", false],
       ["privacy.trackingprotection.pbmode.enabled", false],
       ["privacy.trackingprotection.annotate_channels", true],
       // Bug 1617611: Fix all the tests broken by "cookies SameSite=lax by default"
       ["network.cookie.sameSite.laxByDefault", false],
-      [
-        "privacy.partition.always_partition_third_party_non_cookie_storage",
-        true,
-      ],
     ],
   });
 
@@ -302,13 +302,4 @@ add_task(async function () {
 
   SpecialPowers.clearUserPref("privacy.dynamic_firstparty.limitForeign");
   SpecialPowers.clearUserPref("network.cookie.sameSite.laxByDefault");
-});
-
-add_task(async function () {
-  info("Cleaning up.");
-  await new Promise(resolve => {
-    Services.clearData.deleteData(Ci.nsIClearDataService.CLEAR_ALL, () =>
-      resolve()
-    );
-  });
 });

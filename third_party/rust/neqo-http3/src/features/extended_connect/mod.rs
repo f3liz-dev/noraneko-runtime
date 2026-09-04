@@ -5,6 +5,7 @@
 // except according to those terms.
 
 pub(crate) mod connect_udp_session;
+pub mod send_group;
 pub mod session;
 pub(crate) mod webtransport_session;
 pub(crate) mod webtransport_streams;
@@ -19,13 +20,13 @@ use neqo_common::{Bytes, Header, Role};
 use neqo_transport::StreamId;
 
 use crate::{
+    Http3StreamInfo, HttpRecvStreamEvents, RecvStreamEvents, Res, SendStreamEvents,
     client_events::Http3ClientEvents,
     features::{
-        extended_connect::session::{CloseReason, Protocol},
         NegotiationState,
+        extended_connect::session::{CloseReason, Protocol},
     },
     settings::{HSettingType, HSettings},
-    Http3StreamInfo, HttpRecvStreamEvents, RecvStreamEvents, Res, SendStreamEvents,
 };
 
 pub(crate) trait ExtendedConnectEvents: Debug {

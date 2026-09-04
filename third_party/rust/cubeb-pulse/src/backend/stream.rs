@@ -9,7 +9,7 @@ use cubeb_backend::{
     ffi, log_enabled, ChannelLayout, DeviceId, DeviceRef, Error, InputProcessingParams, Result,
     SampleFormat, StreamOps, StreamParamsRef, StreamPrefs,
 };
-use pulse::{self, CVolumeExt, ChannelMapExt, SampleSpecExt, StreamLatency, USecExt};
+use pulse::{self, ChannelMapExt, SampleSpecExt, StreamLatency, USecExt};
 use pulse_ffi::*;
 use ringbuf::RingBuffer;
 use std::ffi::{CStr, CString};
@@ -431,12 +431,30 @@ impl<'ctx> PulseStream<'ctx> {
             input_buffer_manager: None,
         });
 
+        // Stable, versioned module-stream-restore.id for this application's
+        // playback streams, so PulseAudio keys the remembered volume on a
+        // value we control rather than the default by-application-name key.
+        // The version prefix lets new streams ignore stale legacy entries.
+        // With no application name, set nothing and let PulseAudio use its
+        // default keying rather than inventing an identity that would make
+        // unrelated nameless clients share one entry.
+        let restore_id = stm.context.context_name.as_ref().and_then(|n| {
+            let mut id = b"cubeb-output-v1:".to_vec();
+            id.extend_from_slice(n.to_bytes());
+            CString::new(id).ok()
+        });
+
         if let Some(ref context) = stm.context.context {
             stm.context.mainloop.lock();
 
             // Setup output stream
             if let Some(stream_params) = output_stream_params {
-                match PulseStream::stream_init(context, stream_params, stream_name) {
+                match PulseStream::stream_init(
+                    context,
+                    stream_params,
+                    stream_name,
+                    restore_id.as_deref(),
+                ) {
                     Ok(s) => {
                         stm.output_sample_spec = *s.get_sample_spec();
 
@@ -465,9 +483,17 @@ impl<'ctx> PulseStream<'ctx> {
                         {
                             stream_flags |= pulse::StreamFlags::DONT_MOVE;
                         }
-                        let _ = s.connect_playback(device_name, &battr, stream_flags, None, None);
-
+                        let connect_result =
+                            s.connect_playback(device_name, &battr, stream_flags, None, None);
+                        // Set output_stream before checking connect_result so
+                        // destroy() can clean up the stream on error.
                         stm.output_stream = Some(s);
+                        if let Err(e) = connect_result {
+                            cubeb_log!("Output stream connect error: {}", e);
+                            stm.context.mainloop.unlock();
+                            stm.destroy();
+                            return Err(Error::Error);
+                        }
                     }
                     Err(e) => {
                         cubeb_log!("Output stream initialization error");
@@ -480,7 +506,7 @@ impl<'ctx> PulseStream<'ctx> {
 
             // Set up input stream
             if let Some(stream_params) = input_stream_params {
-                match PulseStream::stream_init(context, stream_params, stream_name) {
+                match PulseStream::stream_init(context, stream_params, stream_name, None) {
                     Ok(s) => {
                         stm.input_sample_spec = *s.get_sample_spec();
 
@@ -508,9 +534,16 @@ impl<'ctx> PulseStream<'ctx> {
                         {
                             stream_flags |= pulse::StreamFlags::DONT_MOVE;
                         }
-                        let _ = s.connect_record(device_name, &battr, stream_flags);
-
+                        let connect_result = s.connect_record(device_name, &battr, stream_flags);
+                        // Set input_stream before checking connect_result so
+                        // destroy() can clean up the stream on error.
                         stm.input_stream = Some(s);
+                        if let Err(e) = connect_result {
+                            cubeb_log!("Input stream connect error: {}", e);
+                            stm.context.mainloop.unlock();
+                            stm.destroy();
+                            return Err(Error::Error);
+                        }
                     }
                     Err(e) => {
                         cubeb_log!("Input stream initialization error");
@@ -627,6 +660,15 @@ impl StreamOps for PulseStream<'_> {
                 stm.trigger_user_callback(std::ptr::null(), size);
             }
         }
+
+        // Restarting a stream that is still draining is a cubeb API contract
+        // violation: the pending drain_timer holds a pointer to this stream,
+        // and re-prerolling would arm a second timer and leak the first.
+        if !self.drain_timer.load(Ordering::Acquire).is_null() {
+            cubeb_log!("Rejecting start() on a draining stream");
+            return Err(Error::Error);
+        }
+
         self.shutdown = false;
         self.cork(CorkState::uncork() | CorkState::notify());
 
@@ -649,12 +691,14 @@ impl StreamOps for PulseStream<'_> {
         {
             self.context.mainloop.lock();
             self.shutdown = true;
-            // If draining is taking place wait to finish
-            cubeb_log!("Stream stop: waiting for drain");
-            while !self.drain_timer.load(Ordering::Acquire).is_null() {
-                self.context.mainloop.wait();
+            // Cancel any pending drain timer rather than blocking until it
+            // fires, matching destroy() and other backends' behaviour.
+            let drain_timer = self.drain_timer.load(Ordering::Acquire);
+            if !drain_timer.is_null() {
+                cubeb_log!("Stream stop: cancelling drain timer");
+                self.context.mainloop.get_api().time_free(drain_timer);
+                self.drain_timer.store(ptr::null_mut(), Ordering::Release);
             }
-            cubeb_log!("Stream stop: waited for drain");
             self.context.mainloop.unlock();
         }
         self.cork(CorkState::cork() | CorkState::notify());
@@ -745,42 +789,10 @@ impl StreamOps for PulseStream<'_> {
                 cubeb_log!("Error: can't set volume on an input-only stream");
                 Err(Error::Error)
             }
-            Some(ref stm) => {
-                if let Some(ref context) = self.context.context {
+            Some(_) => {
+                if self.context.context.is_some() {
                     self.context.mainloop.lock();
-
-                    let mut cvol: pa_cvolume = Default::default();
-
-                    /* if the pulse daemon is configured to use flat
-                     * volumes, apply our own gain instead of changing
-                     * the input volume on the sink. */
-                    let flags = {
-                        match self.context.default_sink_info {
-                            Some(ref info) => info.flags,
-                            _ => pulse::SinkFlags::empty(),
-                        }
-                    };
-
-                    if flags.contains(pulse::SinkFlags::FLAT_VOLUME) {
-                        self.volume = volume;
-                    } else {
-                        let channels = stm.get_sample_spec().channels;
-                        let vol = pulse::sw_volume_from_linear(f64::from(volume));
-                        cvol.set(u32::from(channels), vol);
-
-                        let index = stm.get_index();
-
-                        let context_ptr = self.context as *const _ as *mut _;
-                        if let Ok(o) = context.set_sink_input_volume(
-                            index,
-                            &cvol,
-                            context_success,
-                            context_ptr,
-                        ) {
-                            self.context.operation_wait(stm, &o);
-                        }
-                    }
-
+                    self.volume = volume;
                     self.context.mainloop.unlock();
                     Ok(())
                 } else {
@@ -873,6 +885,7 @@ impl PulseStream<'_> {
         context: &pulse::Context,
         stream_params: &StreamParamsRef,
         stream_name: Option<&CStr>,
+        restore_id: Option<&CStr>,
     ) -> Result<pulse::Stream> {
         if stream_params.prefs() == StreamPrefs::LOOPBACK {
             cubeb_log!("Error: StreamPref::LOOPBACK unimplemented");
@@ -922,7 +935,27 @@ impl PulseStream<'_> {
             _ => Some(layout_to_channel_map(stream_params.layout())),
         };
 
-        let stream = pulse::Stream::new(context, stream_name.unwrap(), &ss, cm.as_ref());
+        // When set, create the stream with the restore id as a proplist
+        // property so module-stream-restore uses it as the key for this
+        // stream's remembered volume.
+        let stream = match restore_id {
+            Some(id) => match pulse::OwnedProplist::new() {
+                Some(mut pl) => {
+                    pl.sets("module-stream-restore.id", id.to_bytes());
+                    // PulseAudio copies the proplist; `pl` is freed on drop
+                    // at the end of this scope.
+                    pulse::Stream::new_with_proplist(
+                        context,
+                        stream_name.unwrap(),
+                        &ss,
+                        cm.as_ref(),
+                        &pl,
+                    )
+                }
+                None => pulse::Stream::new(context, stream_name.unwrap(), &ss, cm.as_ref()),
+            },
+            None => pulse::Stream::new(context, stream_name.unwrap(), &ss, cm.as_ref()),
+        };
 
         match stream {
             None => {
@@ -996,13 +1029,15 @@ impl PulseStream<'_> {
     }
 
     fn wait_until_ready(&self) -> bool {
-        fn wait_until_io_stream_ready(
-            stm: &pulse::Stream,
-            mainloop: &pulse::ThreadedMainloop,
-        ) -> bool {
-            if mainloop.is_null() {
+        fn wait_until_io_stream_ready(stm: &pulse::Stream, ctx: &PulseContext) -> bool {
+            if ctx.mainloop.is_null() {
                 return false;
             }
+
+            let context = match ctx.context {
+                Some(ref c) => c,
+                None => return false,
+            };
 
             loop {
                 let state = stm.get_state();
@@ -1012,20 +1047,23 @@ impl PulseStream<'_> {
                 if state == pulse::StreamState::Ready {
                     break;
                 }
-                mainloop.wait();
+                if !context.get_state().is_good() {
+                    return false;
+                }
+                ctx.mainloop.wait();
             }
 
             true
         }
 
         if let Some(ref stm) = self.output_stream {
-            if !wait_until_io_stream_ready(stm, &self.context.mainloop) {
+            if !wait_until_io_stream_ready(stm, self.context) {
                 return false;
             }
         }
 
         if let Some(ref stm) = self.input_stream {
-            if !wait_until_io_stream_ready(stm, &self.context.mainloop) {
+            if !wait_until_io_stream_ready(stm, self.context) {
                 return false;
             }
         }
@@ -1176,7 +1214,10 @@ impl PulseStream<'_> {
 
                             /* pa_stream_drain is useless, see PA bug# 866. this is a workaround. */
                             /* arbitrary safety margin: double the current latency. */
-                            debug_assert!(self.drain_timer.load(Ordering::Acquire).is_null());
+                            assert!(
+                                self.drain_timer.load(Ordering::Acquire).is_null(),
+                                "drain timer already armed; stream restarted while draining"
+                            );
                             let stream_ptr = self as *const _ as *mut _;
                             if let Some(ref context) = self.context.context {
                                 self.drain_timer.store(
@@ -1209,14 +1250,6 @@ fn stream_success(_: &pulse::Stream, success: i32, u: *mut c_void) {
         cubeb_log!("stream_success ignored failure: {}", success);
     }
     stm.context.mainloop.signal();
-}
-
-fn context_success(_: &pulse::Context, success: i32, u: *mut c_void) {
-    let ctx = unsafe { &*(u as *mut PulseContext) };
-    if success != 1 {
-        cubeb_log!("context_success ignored failure: {}", success);
-    }
-    ctx.mainloop.signal();
 }
 
 #[cfg(all(test, not(feature = "pulse-dlopen")))]

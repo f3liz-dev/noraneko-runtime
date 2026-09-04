@@ -1,15 +1,53 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "IndexedDBCommon.h"
 
+#include "ReportInternalError.h"
 #include "js/StructuredClone.h"
 #include "mozilla/SnappyUncompressInputStream.h"
+#include "mozilla/StaticPrefs_dom.h"
+#include "nsError.h"
 
 namespace mozilla::dom::indexedDB {
+
+EnumSet<ValidatePrincipalOptions> PrincipalValidationOptions() {
+  EnumSet<ValidatePrincipalOptions> options;
+  if (StaticPrefs::dom_indexedDB_testing_allowContentSystem() &&
+      xpc::IsInAutomation()) {
+    options += ValidatePrincipalOptions::AllowNotLoadedOrigin;
+    options += ValidatePrincipalOptions::AlwaysAllowSystem;
+  }
+  return options;
+}
+
+nsresult ClampResultCode(nsresult aResultCode) {
+  if (NS_SUCCEEDED(aResultCode) ||
+      NS_ERROR_GET_MODULE(aResultCode) == NS_ERROR_MODULE_DOM_INDEXEDDB) {
+    return aResultCode;
+  }
+
+  switch (aResultCode) {
+    case NS_ERROR_FILE_NO_DEVICE_SPACE:
+      return NS_ERROR_DOM_INDEXEDDB_QUOTA_ERR;
+    case NS_ERROR_STORAGE_CONSTRAINT:
+      return NS_ERROR_DOM_INDEXEDDB_CONSTRAINT_ERR;
+    default:
+#ifdef DEBUG
+      nsPrintfCString message("Converting non-IndexedDB error code (0x%" PRIX32
+                              ") to "
+                              "NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR",
+                              static_cast<uint32_t>(aResultCode));
+      NS_WARNING(message.get());
+#else
+        ;
+#endif
+  }
+
+  IDB_REPORT_INTERNAL_ERR();
+  return NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR;
+}
 
 // aStructuredCloneData is a parameter rather than a return value because one
 // caller preallocates it on the heap not immediately before calling for some

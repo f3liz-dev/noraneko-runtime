@@ -63,6 +63,11 @@ async function openFirefoxViewTab(win) {
     );
   }
   await switchToWindow(win);
+  if (
+    !win.CustomizableUI.getPlacementOfWidget(win.FirefoxViewHandler.BUTTON_ID)
+  ) {
+    enableFirefoxViewButton(win);
+  }
   let fxviewTab = win.FirefoxViewHandler.tab;
   let alreadyLoaded =
     fxviewTab?.linkedBrowser.currentURI.spec.includes(getFirefoxViewURL()) &&
@@ -99,7 +104,7 @@ async function openFirefoxViewTab(win) {
     return (
       document.readyState == "complete" && document.visibilityState == "visible"
     );
-  });
+  }, "Waiting for the Firefox View tab document to be complete and visible");
 
   testScope.info("openFirefoxViewTab, ready resolved");
   return fxviewTab;
@@ -154,9 +159,9 @@ async function withFirefoxView(
     set: [["accessibility.tabfocus", 7]],
   });
   let tab = await openFirefoxViewTab(win);
-  let originalWindow = tab.ownerGlobal;
+  let originalWindow = tab.documentGlobal;
   let result = await taskFn(tab.linkedBrowser);
-  let finalWindow = tab.ownerGlobal;
+  let finalWindow = tab.documentGlobal;
   if (originalWindow == finalWindow && !tab.closing && tab.linkedBrowser) {
     // taskFn may resolve within a tick after opening a new tab.
     // We shouldn't remove the newly opened tab in the same tick.
@@ -180,6 +185,21 @@ function isFirefoxViewTabSelectedInWindow(win) {
   return win.gBrowser.selectedBrowser.currentURI.spec == getFirefoxViewURL();
 }
 
+/**
+ * Adds the Firefox View button to the tabstrip. It will be removed after the
+ * test ends.
+ */
+function enableFirefoxViewButton({ CustomizableUI, FirefoxViewHandler }) {
+  CustomizableUI.addWidgetToArea(
+    FirefoxViewHandler.BUTTON_ID,
+    CustomizableUI.AREA_TABSTRIP,
+    CustomizableUI.getPlacementOfWidget("tabbrowser-tabs").position
+  );
+  testScope.registerCleanupFunction(() => {
+    CustomizableUI.removeWidgetFromArea(FirefoxViewHandler.BUTTON_ID);
+  });
+}
+
 export {
   init,
   switchToWindow,
@@ -190,4 +210,5 @@ export {
   closeFirefoxViewTab,
   isFirefoxViewTabSelectedInWindow,
   getFirefoxViewURL,
+  enableFirefoxViewButton,
 };

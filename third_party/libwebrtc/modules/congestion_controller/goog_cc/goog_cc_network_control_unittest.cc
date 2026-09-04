@@ -19,7 +19,6 @@
 
 #include "absl/strings/string_view.h"
 #include "api/environment/environment.h"
-#include "api/environment/environment_factory.h"
 #include "api/field_trials.h"
 #include "api/test/network_emulation/create_cross_traffic.h"
 #include "api/test/network_emulation/cross_traffic.h"
@@ -31,6 +30,7 @@
 #include "api/units/time_delta.h"
 #include "api/units/timestamp.h"
 #include "call/video_receive_stream.h"
+#include "test/create_test_environment.h"
 #include "test/create_test_field_trials.h"
 #include "test/gmock.h"
 #include "test/gtest.h"
@@ -75,6 +75,7 @@ constexpr uint32_t kInitialBitrateKbps = 60;
 constexpr DataRate kInitialBitrate =
     DataRate::KilobitsPerSec(kInitialBitrateKbps);
 constexpr float kDefaultPacingRate = 2.5f;
+constexpr float kDefaultPacingRateSendSideBwe = 1.1f;
 
 CallClient* CreateVideoSendingClient(
     Scenario* s,
@@ -160,7 +161,7 @@ void UpdatesTargetRateBasedOnLinkCapacity(absl::string_view test_name = "",
   GoogCcNetworkControllerFactory factory;
   Scenario s("googcc_unit/target_capacity" + std::string(test_name), false);
   CallClientConfig config;
-  config.field_trials.Merge(FieldTrials(field_trials));
+  config.field_trials.Merge(CreateTestFieldTrials(field_trials));
   config.transport.cc_factory = &factory;
   config.transport.rates.min_rate = DataRate::KilobitsPerSec(10);
   config.transport.rates.max_rate = DataRate::KilobitsPerSec(1500);
@@ -268,7 +269,8 @@ class NetworkControllerTestFixture {
   }
 
   FieldTrials field_trials_ = CreateTestFieldTrials();
-  const Environment env_ = CreateEnvironment(&field_trials_);
+  const Environment env_ =
+      CreateTestEnvironment({.field_trials = &field_trials_});
   GoogCcNetworkControllerFactory factory_;
 };
 
@@ -292,7 +294,68 @@ TEST(GoogCcNetworkControllerTest,
             kInitialBitrate * 5);
 }
 
-TEST(GoogCcNetworkControllerTest, ReactsToChangedNetworkConditions) {
+TEST(GoogCcNetworkControllerTest, ChangeDefaultPacingFactorAfterFirstFeedback) {
+  NetworkControllerTestFixture fixture;
+  std::unique_ptr<NetworkControllerInterface> controller =
+      fixture.CreateController();
+
+  NetworkControlUpdate update = controller->OnNetworkAvailability(
+      {.at_time = Timestamp::Millis(123456), .network_available = true});
+  update =
+      controller->OnProcessInterval({.at_time = Timestamp::Millis(123456)});
+  ASSERT_EQ(update.pacer_config->data_rate(),
+            kInitialBitrate * kDefaultPacingRate);
+
+  TransportPacketsFeedback feedback;
+  feedback.feedback_time = Timestamp::Millis(123457);
+  feedback.packet_feedbacks.push_back(CreatePacketResult(
+      feedback.feedback_time, feedback.feedback_time, 100, PacedPacketInfo()));
+  update = controller->OnTransportPacketsFeedback(feedback);
+  ASSERT_TRUE(update.pacer_config.has_value());
+  EXPECT_GE(update.pacer_config->data_rate(),
+            kInitialBitrate * kDefaultPacingRateSendSideBwe);
+  EXPECT_LT(update.pacer_config->data_rate(),
+            (kInitialBitrate + DataRate::KilobitsPerSec(5)) *
+                kDefaultPacingRateSendSideBwe);
+}
+
+TEST(GoogCcNetworkControllerTest, RespectsConfiguredPacingFactor) {
+  NetworkControllerTestFixture fixture;
+  std::unique_ptr<NetworkControllerInterface> controller =
+      fixture.CreateController();
+
+  NetworkControlUpdate update = controller->OnNetworkAvailability(
+      {.at_time = Timestamp::Millis(123456), .network_available = true});
+  update =
+      controller->OnProcessInterval({.at_time = Timestamp::Millis(123456)});
+  ASSERT_EQ(update.pacer_config->data_rate(),
+            kInitialBitrate * kDefaultPacingRate);
+
+  std::optional<PacerConfig> last_pacer_config;
+  StreamsConfig streams_config;
+  streams_config.pacing_factor = 10;
+
+  update = controller->OnStreamsConfig(streams_config);
+  if (update.pacer_config.has_value()) {
+    last_pacer_config = update.pacer_config;
+  }
+
+  TransportPacketsFeedback feedback;
+  feedback.feedback_time = Timestamp::Millis(123457);
+  feedback.packet_feedbacks.push_back(CreatePacketResult(
+      feedback.feedback_time, feedback.feedback_time, 100, PacedPacketInfo()));
+  update = controller->OnTransportPacketsFeedback(feedback);
+  if (update.pacer_config.has_value()) {
+    last_pacer_config = update.pacer_config;
+  }
+
+  ASSERT_TRUE(last_pacer_config.has_value());
+  EXPECT_GE(last_pacer_config->data_rate(), kInitialBitrate * 10);
+  EXPECT_LT(last_pacer_config->data_rate(),
+            (kInitialBitrate + DataRate::KilobitsPerSec(5)) * 10);
+}
+
+TEST(GoogCcNetworkControllerTest, ReactsToChangedNetworkConditionsFromRemote) {
   NetworkControllerTestFixture fixture;
   std::unique_ptr<NetworkControllerInterface> controller =
       fixture.CreateController();
@@ -957,6 +1020,75 @@ TEST(GoogCcScenario, FallbackToLossBasedBweWithoutPacketFeedback) {
 
   // Bandwidth decreases thanks to loss based bwe v0.
   EXPECT_LE(client->target_rate().kbps(), 300);
+}
+
+TEST(GoogCcNetworkControllerTest,
+     TriggersTargetRateUpdateWhenBandwidthLimitedChanges) {
+  NetworkControllerTestFixture fixture;
+  std::unique_ptr<NetworkControllerInterface> controller =
+      fixture.CreateController();
+  Timestamp current_time = Timestamp::Millis(123456);
+
+  NetworkControlUpdate update = controller->OnNetworkAvailability(
+      {.at_time = current_time, .network_available = true});
+  update = controller->OnProcessInterval({.at_time = current_time});
+  ASSERT_TRUE(update.target_rate.has_value());
+  EXPECT_TRUE(update.target_rate->is_bandwidth_limited);
+
+  // Send packet to initialize ALR detector
+  SentPacket sent_packet;
+  sent_packet.send_time = current_time;
+  sent_packet.size = DataSize::Bytes(1000);
+  update = controller->OnSentPacket(sent_packet);
+
+  // Wait 10 seconds without sending any packets (this will make budget ratio
+  // accumulate and enter ALR)
+  current_time += TimeDelta::Seconds(10);
+  // Send a tiny packet to trigger AlrDetector state change evaluation
+  sent_packet.send_time = current_time;
+  sent_packet.size = DataSize::Bytes(1);
+  update = controller->OnSentPacket(sent_packet);
+
+  bool alr_detected = false;
+  if (update.target_rate.has_value() &&
+      !update.target_rate->is_bandwidth_limited) {
+    alr_detected = true;
+  } else {
+    // Process interval should trigger target rate update if not already
+    // triggered by OnSentPacket
+    update = controller->OnProcessInterval({.at_time = current_time});
+    if (update.target_rate.has_value() &&
+        !update.target_rate->is_bandwidth_limited) {
+      alr_detected = true;
+    }
+  }
+  EXPECT_TRUE(alr_detected);
+
+  // Now send a large burst of packets to leave ALR.
+  // Target rate is kInitialBitrate (60kbps). Budget ratio needs to drop below
+  // 0.5. We send 50 packets of 1000 bytes.
+  bool bandwidth_limited_detected = false;
+  for (int i = 0; i < 50; ++i) {
+    current_time += TimeDelta::Millis(1);
+    sent_packet.send_time = current_time;
+    sent_packet.size = DataSize::Bytes(1000);
+    update = controller->OnSentPacket(sent_packet);
+    if (update.target_rate.has_value() &&
+        update.target_rate->is_bandwidth_limited) {
+      bandwidth_limited_detected = true;
+    }
+  }
+
+  if (!bandwidth_limited_detected) {
+    // Process interval should trigger target rate update if not already
+    // triggered by OnSentPacket
+    update = controller->OnProcessInterval({.at_time = current_time});
+    if (update.target_rate.has_value() &&
+        update.target_rate->is_bandwidth_limited) {
+      bandwidth_limited_detected = true;
+    }
+  }
+  EXPECT_TRUE(bandwidth_limited_detected);
 }
 
 }  // namespace test

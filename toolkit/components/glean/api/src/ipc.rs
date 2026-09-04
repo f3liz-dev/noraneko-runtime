@@ -223,11 +223,7 @@ pub fn is_in_automation() -> bool {
 
 #[cfg(feature = "with_gecko")]
 pub fn is_in_automation() -> bool {
-    extern "C" {
-        fn FOG_IPCIsInAutomation() -> bool;
-    }
-    // SAFETY NOTE: Safe because it returns a primitive by value.
-    unsafe { FOG_IPCIsInAutomation() }
+    xpcom::is_in_automation()
 }
 
 // Reason: We instrument the error counts,
@@ -371,7 +367,7 @@ pub fn replay_from_buf(buf: &[u8]) -> Result<(), ()> {
                 .read()
                 .expect("Read lock for dynamic memory dist map was poisoned");
             if let Some(metric) = map.get(&id) {
-                metric.accumulate_samples(samples);
+                metric.accumulate_samples_unsigned(samples);
             }
         } else if let Some(metric) = __glean_metric_maps::MEMORY_DISTRIBUTION_MAP.get(&id) {
             samples
@@ -386,13 +382,13 @@ pub fn replay_from_buf(buf: &[u8]) -> Result<(), ()> {
                 .expect("Read lock for dynamic labeled memory distribution map was poisoned");
             if let Some(metric) = map.get(&id) {
                 for (label, samples) in labeled_memory_samples.into_iter() {
-                    metric.get(&label).accumulate_samples(samples);
+                    metric.get(&label).accumulate_samples_unsigned(samples);
                 }
             }
         } else {
             for (label, samples) in labeled_memory_samples.into_iter() {
                 __glean_metric_maps::labeled_memory_distribution_get(*id, &label)
-                    .accumulate_samples(samples);
+                    .accumulate_samples_unsigned(samples);
             }
         }
     }

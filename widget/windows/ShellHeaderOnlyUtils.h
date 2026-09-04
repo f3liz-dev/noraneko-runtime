@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
@@ -12,23 +10,22 @@
       "UNICODE not set - must be set to prevent compile failure in `comdef.h` due to us deleting `FormatMessage` when absent."
 #endif
 
-#include "mozilla/WinHeaderOnlyUtils.h"
-
-#include <objbase.h>
-
 #include <exdisp.h>
+#include <objbase.h>
 #include <shldisp.h>
 #include <shlobj.h>
 #include <shlwapi.h>
 #include <shobjidl.h>
 #include <shtypes.h>
+
+#include "mozilla/WinHeaderOnlyUtils.h"
 // NB: include this after shldisp.h so its macros do not conflict with COM
 // interfaces defined by shldisp.h
-#include <shellapi.h>
-#include <type_traits>
-
 #include <comdef.h>
 #include <comutil.h>
+#include <shellapi.h>
+
+#include <type_traits>
 
 #include "mozilla/RefPtr.h"
 #include "mozilla/UniquePtr.h"

@@ -11,8 +11,6 @@ export const AppConstants: Readonly<{
   // defines: https://wiki.mozilla.org/Platform/Channel-specific_build_defines
   NIGHTLY_BUILD: boolean;
 
-  ENABLE_EXPLICIT_RESOURCE_MANAGEMENT: boolean;
-
   RELEASE_OR_BETA: boolean;
 
   EARLY_BETA_OR_EARLIER: boolean;
@@ -104,8 +102,6 @@ export const AppConstants: Readonly<{
 
   MOZ_GECKOVIEW_HISTORY: boolean;
 
-  MOZ_GECKO_PROFILER: boolean;
-
   DLL_PREFIX: string;
   DLL_SUFFIX: ".dll" | ".so";
 
@@ -177,9 +173,6 @@ export const AppConstants: Readonly<{
 
   // #ifdef MOZ_WIDGET_ANDROID
   MOZ_ANDROID_CONTENT_SERVICE_ISOLATED_PROCESS: boolean;
-
-  // Returns true for CN region build when distibution id set as 'MozillaOnline'
-  isChinaRepack(): boolean;
 }>;
 
 type Platform = "linux" | "win" | "macosx" | "ios" | "android" | "other";

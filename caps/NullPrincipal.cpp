@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set sw=2 sts=2 ts=2 et tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,23 +8,23 @@
  * same-origin with anything but themselves.
  */
 
-#include "mozilla/dom/BlobURLProtocolHandler.h"
-#include "mozilla/StaticPrefs_network.h"
-#include "nsDocShell.h"
 #include "NullPrincipal.h"
+
+#include "ContentPrincipal.h"
 #include "DefaultURI.h"
-#include "nsSimpleURI.h"
-#include "nsIClassInfoImpl.h"
-#include "nsNetCID.h"
+#include "NullPrincipalJSONHandler.h"
+#include "js/JSON.h"
+#include "mozilla/StaticPrefs_network.h"
+#include "mozilla/dom/BlobURLProtocolHandler.h"
+#include "nsDocShell.h"
 #include "nsError.h"
 #include "nsEscape.h"
-#include "ContentPrincipal.h"
-#include "nsScriptSecurityManager.h"
-#include "pratom.h"
+#include "nsIClassInfoImpl.h"
 #include "nsIObjectInputStream.h"
-
-#include "js/JSON.h"
-#include "NullPrincipalJSONHandler.h"
+#include "nsNetCID.h"
+#include "nsScriptSecurityManager.h"
+#include "nsSimpleURI.h"
+#include "pratom.h"
 
 using namespace mozilla;
 
@@ -185,7 +183,7 @@ bool NullPrincipal::MayLoadInternal(nsIURI* aURI) {
   // Also allow the load if we are the principal of the URI being checked.
   nsCOMPtr<nsIPrincipal> blobPrincipal;
   if (dom::BlobURLProtocolHandler::GetBlobURLPrincipal(
-          aURI, getter_AddRefs(blobPrincipal))) {
+          aURI, OriginAttributesRef(), getter_AddRefs(blobPrincipal))) {
     MOZ_ASSERT(blobPrincipal);
     return SubsumesInternal(blobPrincipal,
                             BasePrincipal::ConsiderDocumentDomain);

@@ -1,41 +1,38 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "base/basictypes.h"
-
 #include "gfxAndroidPlatform.h"
+
+#include "AndroidBuild.h"
+#include "AndroidSystemFontIterator.h"
+#include "GeckoProfiler.h"
+#include "VsyncSource.h"
+#include "base/basictypes.h"
+#include "cairo.h"
+#include "ft2build.h"
+#include "gfx2DGlue.h"
+#include "gfxFT2FontList.h"
+#include "gfxImageSurface.h"
+#include "gfxTextRun.h"
+#include "mozilla/CountingAllocatorBase.h"
+#include "mozilla/Preferences.h"
+#include "mozilla/StaticPrefs_gfx.h"
+#include "mozilla/StaticPrefs_webgl.h"
+#include "mozilla/Utf16.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/gfx/gfxVars.h"
-#include "mozilla/CountingAllocatorBase.h"
 #include "mozilla/intl/LocaleService.h"
 #include "mozilla/intl/OSPreferences.h"
 #include "mozilla/java/GeckoAppShellWrappers.h"
 #include "mozilla/java/HardwareCodecCapabilityUtilsWrappers.h"
 #include "mozilla/jni/Utils.h"
 #include "mozilla/layers/AndroidHardwareBuffer.h"
-#include "mozilla/Preferences.h"
-#include "mozilla/StaticPrefs_gfx.h"
-#include "mozilla/StaticPrefs_webgl.h"
 #include "mozilla/widget/AndroidVsync.h"
-
-#include "AndroidBuild.h"
-#include "AndroidSystemFontIterator.h"
-#include "GeckoProfiler.h"
-#include "gfx2DGlue.h"
-#include "gfxFT2FontList.h"
-#include "gfxImageSurface.h"
-#include "gfxTextRun.h"
-#include "nsXULAppAPI.h"
 #include "nsIScreen.h"
 #include "nsServiceManagerUtils.h"
 #include "nsUnicodeProperties.h"
-#include "cairo.h"
-#include "VsyncSource.h"
-
-#include "ft2build.h"
+#include "nsXULAppAPI.h"
 #include FT_FREETYPE_H
 #include FT_MODULE_H
 
@@ -170,7 +167,7 @@ gfxAndroidPlatform::gfxAndroidPlatform() {
 
   Factory::SetFTLibrary(gPlatformFTLibrary);
 
-  RegisterStrongMemoryReporter(new FreetypeReporter());
+  RegisterStrongMemoryReporter(MakeAndAddRef<FreetypeReporter>());
 
   // Bug 1886573: At this point, we don't yet have primary screen depth.
   // This setting of screen depth to 0 is preserving existing behavior,
@@ -238,7 +235,7 @@ void gfxAndroidPlatform::GetCommonFallbackFonts(
     aFontList.AppendElement(kNotoColorEmoji);
   }
 
-  if (IS_IN_BMP(aCh)) {
+  if (mozilla::IsInBMP(aCh)) {
     // try language-specific "Droid Sans *" and "Noto Sans *" fonts for
     // certain blocks, as most devices probably have these
     uint8_t block = (aCh >> 8) & 0xff;

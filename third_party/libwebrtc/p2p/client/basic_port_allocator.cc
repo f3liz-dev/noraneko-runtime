@@ -32,6 +32,7 @@
 #include "api/packet_socket_factory.h"
 #include "api/sequence_checker.h"
 #include "api/task_queue/pending_task_safety_flag.h"
+#include "api/task_queue/task_queue_base.h"
 #include "api/transport/enums.h"
 #include "api/units/time_delta.h"
 #include "p2p/base/port.h"
@@ -52,7 +53,6 @@
 #include "rtc_base/network_constants.h"
 #include "rtc_base/socket_address.h"
 #include "rtc_base/strings/string_builder.h"
-#include "rtc_base/thread.h"
 #include "rtc_base/trace_event.h"
 
 namespace webrtc {
@@ -260,7 +260,7 @@ BasicPortAllocatorSession::BasicPortAllocatorSession(
                            ice_pwd,
                            allocator->flags()),
       allocator_(allocator),
-      network_thread_(Thread::Current()),
+      network_thread_(TaskQueueBase::Current()),
       socket_factory_(allocator->socket_factory()),
       allocation_started_(false),
       network_manager_started_(false),
@@ -269,6 +269,7 @@ BasicPortAllocatorSession::BasicPortAllocatorSession(
   TRACE_EVENT0("webrtc",
                "BasicPortAllocatorSession::BasicPortAllocatorSession");
   allocator_->network_manager()->SubscribeNetworksChanged(
+      this,
       SafeInvocable(network_safety_.flag(), [this] { OnNetworksChanged(); }));
   allocator_->network_manager()->StartUpdating();
 }
@@ -278,6 +279,7 @@ BasicPortAllocatorSession::~BasicPortAllocatorSession() {
                "BasicPortAllocatorSession::~BasicPortAllocatorSession");
   RTC_DCHECK_RUN_ON(network_thread_);
   allocator_->network_manager()->StopUpdating();
+  allocator_->network_manager()->UnsubscribeNetworksChanged(this);
 
   for (uint32_t i = 0; i < sequences_.size(); ++i) {
     // AllocationSequence should clear it's map entry for turn ports before
@@ -919,16 +921,18 @@ void BasicPortAllocatorSession::AddAllocatedPort(Port* port,
   ports_.emplace_back(port, seq);
 
   port->SubscribeCandidateReadyCallback(
+      this,
       [this](Port* port, const Candidate& c) { OnCandidateReady(port, c); });
   port->SubscribeCandidateError(
-      [this](Port* port, const IceCandidateErrorEvent& event) {
+      this, [this](Port* port, const IceCandidateErrorEvent& event) {
         OnCandidateError(port, event);
       });
-  port->SubscribePortComplete([this](Port* port) { OnPortComplete(port); });
+  port->SubscribePortComplete(this,
+                              [this](Port* port) { OnPortComplete(port); });
   port->SubscribePortDestroyed(
-      [this](PortInterface* port) { OnPortDestroyed(port); });
+      this, [this](PortInterface* port) { OnPortDestroyed(port); });
 
-  port->SubscribePortError([this](Port* port) { OnPortError(port); });
+  port->SubscribePortError(this, [this](Port* port) { OnPortError(port); });
 
   RTC_LOG(LS_INFO) << port->ToString() << ": Added port to allocator";
 
@@ -1390,7 +1394,7 @@ void AllocationSequence::Stop() {
 }
 
 void AllocationSequence::Process(int epoch) {
-  RTC_DCHECK(Thread::Current() == session_->network_thread());
+  RTC_DCHECK(TaskQueueBase::Current() == session_->network_thread());
   const char* const PHASE_NAMES[kNumPhases] = {"Udp", "Relay", "Tcp"};
 
   if (epoch != epoch_)
@@ -1454,7 +1458,8 @@ void AllocationSequence::CreateUDPPorts() {
          .ice_password = session_->password(),
          .content_name = session_->content_name(),
          .lna_permission_factory =
-             session_->allocator()->lna_permission_factory()},
+             session_->allocator()->lna_permission_factory(),
+         .ice_tiebreaker = session_->allocator()->ice_tiebreaker()},
         udp_socket_.get(), emit_local_candidate_for_anyaddress,
         session_->allocator()->stun_candidate_keepalive_interval());
   } else {
@@ -1467,20 +1472,20 @@ void AllocationSequence::CreateUDPPorts() {
          .ice_password = session_->password(),
          .content_name = session_->content_name(),
          .lna_permission_factory =
-             session_->allocator()->lna_permission_factory()},
+             session_->allocator()->lna_permission_factory(),
+         .ice_tiebreaker = session_->allocator()->ice_tiebreaker()},
         session_->allocator()->min_port(), session_->allocator()->max_port(),
         emit_local_candidate_for_anyaddress,
         session_->allocator()->stun_candidate_keepalive_interval());
   }
 
   if (port) {
-    port->SetIceTiebreaker(session_->allocator()->ice_tiebreaker());
     // If shared socket is enabled, STUN candidate will be allocated by the
     // UDPPort.
     if (IsFlagSet(PORTALLOCATOR_ENABLE_SHARED_SOCKET)) {
       udp_port_ = port.get();
       port->SubscribePortDestroyed(
-          [this](PortInterface* port) { OnPortDestroyed(port); });
+          this, [this](PortInterface* port) { OnPortDestroyed(port); });
       // If STUN is not disabled, setting stun server address to port.
       if (!IsFlagSet(PORTALLOCATOR_DISABLE_STUN)) {
         if (config_ && !config_->StunServers().empty()) {
@@ -1509,11 +1514,11 @@ void AllocationSequence::CreateTCPPorts() {
        .network = network_,
        .ice_username_fragment = session_->username(),
        .ice_password = session_->password(),
-       .content_name = session_->content_name()},
+       .content_name = session_->content_name(),
+       .ice_tiebreaker = session_->allocator()->ice_tiebreaker()},
       session_->allocator()->min_port(), session_->allocator()->max_port(),
       session_->allocator()->allow_tcp_listen());
   if (port) {
-    port->SetIceTiebreaker(session_->allocator()->ice_tiebreaker());
     session_->AddAllocatedPort(port.release(), this);
     // Since TCPPort is not created using shared socket, `port` will not be
     // added to the dequeue.
@@ -1545,12 +1550,12 @@ void AllocationSequence::CreateStunPorts() {
        .ice_password = session_->password(),
        .content_name = session_->content_name(),
        .lna_permission_factory =
-           session_->allocator()->lna_permission_factory()},
+           session_->allocator()->lna_permission_factory(),
+       .ice_tiebreaker = session_->allocator()->ice_tiebreaker()},
       session_->allocator()->min_port(), session_->allocator()->max_port(),
       config_->StunServers(),
       session_->allocator()->stun_candidate_keepalive_interval());
   if (port) {
-    port->SetIceTiebreaker(session_->allocator()->ice_tiebreaker());
     session_->AddAllocatedPort(port.release(), this);
     // Since StunPort is not created using shared socket, `port` will not be
     // added to the dequeue.
@@ -1620,6 +1625,7 @@ void AllocationSequence::CreateTurnPort(const RelayServerConfig& config,
     args.relative_priority = relative_priority;
     args.lna_permission_factory =
         session_->allocator()->lna_permission_factory();
+    args.ice_tiebreaker = session_->allocator()->ice_tiebreaker();
 
     std::unique_ptr<Port> port;
     // Shared socket mode must be enabled only for UDP based ports. Hence
@@ -1641,7 +1647,7 @@ void AllocationSequence::CreateTurnPort(const RelayServerConfig& config,
       // Listen to the port destroyed signal, to allow AllocationSequence to
       // remove the entry from it's map.
       port->SubscribePortDestroyed(
-          [this](PortInterface* port) { OnPortDestroyed(port); });
+          this, [this](PortInterface* port) { OnPortDestroyed(port); });
     } else {
       port = session_->allocator()->relay_port_factory()->Create(
           args, session_->allocator()->min_port(),
@@ -1654,7 +1660,6 @@ void AllocationSequence::CreateTurnPort(const RelayServerConfig& config,
       }
     }
     RTC_DCHECK(port != nullptr);
-    port->SetIceTiebreaker(session_->allocator()->ice_tiebreaker());
     session_->AddAllocatedPort(port.release(), this);
   }
 }
@@ -1735,13 +1740,23 @@ ServerAddresses PortConfiguration::StunServers() {
   // Every UDP TURN server should also be used as a STUN server if
   // use_turn_server_as_stun_server is not disabled or the stun servers are
   // empty.
-  ServerAddresses turn_servers = GetRelayServerAddresses(PROTO_UDP);
+
+  InsertStunServersForProtocol(PROTO_UDP);
+
+  // Every DTLS TURN server should also be used as a STUN server if
+  // use_turn_server_as_stun_server is not disabled or the stun servers are
+  // empty.
+  InsertStunServersForProtocol(PROTO_DTLS);
+  return stun_servers;
+}
+
+void PortConfiguration::InsertStunServersForProtocol(ProtocolType type) {
+  ServerAddresses turn_servers = GetRelayServerAddresses(type);
   for (const SocketAddress& turn_server : turn_servers) {
     if (stun_servers.find(turn_server) == stun_servers.end()) {
       stun_servers.insert(turn_server);
     }
   }
-  return stun_servers;
 }
 
 void PortConfiguration::AddRelay(const RelayServerConfig& config) {

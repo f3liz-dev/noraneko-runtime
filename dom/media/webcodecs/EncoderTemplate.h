@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -326,5 +324,23 @@ class EncoderTemplate : public DOMEventTargetHelper {
 };
 
 }  // namespace mozilla::dom
+
+inline void ImplCycleCollectionUnlink(
+    mozilla::SimpleMap<int64_t, RefPtr<mozilla::dom::Promise>>& aField) {
+  aField.Clear(
+      [](const int64_t&, const RefPtr<mozilla::dom::Promise>& aPromise) {
+        aPromise->MaybeRejectWithInvalidStateError("Cycle-collected encoder");
+      });
+}
+
+inline void ImplCycleCollectionTraverse(
+    nsCycleCollectionTraversalCallback& aCallback,
+    mozilla::SimpleMap<int64_t, RefPtr<mozilla::dom::Promise>>& aField,
+    const char* aName, uint32_t aFlags = 0) {
+  aField.Enumerate(
+      [&](const int64_t&, const RefPtr<mozilla::dom::Promise>& aPromise) {
+        CycleCollectionNoteChild(aCallback, aPromise.get(), aName, aFlags);
+      });
+}
 
 #endif  // mozilla_dom_EncoderTemplate_h

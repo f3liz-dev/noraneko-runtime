@@ -1,10 +1,6 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-
-#include "debugger/Frame-inl.h"
 
 #include "mozilla/Assertions.h"  // for MOZ_ASSERT, MOZ_ASSERT_IF, MOZ_CRASH
 #include "mozilla/HashTable.h"   // for HashMapEntry
@@ -68,12 +64,15 @@
 #include "vm/Scope.h"              // for PositionalFormalParameterIter
 #include "vm/Stack.h"              // for AbstractFramePtr, FrameIter
 #include "vm/StringType.h"         // for PropertyName, JSString
+#include "wasm/WasmContext.h"      // for Context
 #include "wasm/WasmDebug.h"        // for DebugState
 #include "wasm/WasmDebugFrame.h"   // for DebugFrame
 #include "wasm/WasmInstance.h"     // for Instance
 #include "wasm/WasmJS.h"           // for WasmInstanceObject
+#include "wasm/WasmStacks.h"       // for wasm::ContStack
 
-#include "debugger/Debugger-inl.h"    // for Debugger::fromJSObject
+#include "debugger/Debugger-inl.h"  // for Debugger::fromJSObject
+#include "debugger/Frame-inl.h"
 #include "gc/WeakMap-inl.h"           // for WeakMap::remove
 #include "vm/Compartment-inl.h"       // for Compartment::wrap
 #include "vm/JSContext-inl.h"         // for JSContext::check
@@ -176,16 +175,8 @@ js::Debugger* js::DebuggerFrame::owner() const {
 }
 
 const JSClassOps DebuggerFrame::classOps_ = {
-    nullptr,                         // addProperty
-    nullptr,                         // delProperty
-    nullptr,                         // enumerate
-    nullptr,                         // newEnumerate
-    nullptr,                         // resolve
-    nullptr,                         // mayResolve
-    finalize,                        // finalize
-    nullptr,                         // call
-    nullptr,                         // construct
-    CallTraceMethod<DebuggerFrame>,  // trace
+    .finalize = finalize,
+    .trace = CallTraceMethod<DebuggerFrame>,
 };
 
 const JSClass DebuggerFrame::class_ = {
@@ -205,11 +196,11 @@ const JSClass DebuggerArguments::class_ = {
 };
 
 bool DebuggerFrame::resume(const FrameIter& iter) {
-  FrameIter::Data* data = iter.copyData();
+  mozilla::UniquePtr<FrameIter::Data> data = iter.copyData();
   if (!data) {
     return false;
   }
-  setFrameIterData(data);
+  setFrameIterData(data.release());
   return true;
 }
 
@@ -243,13 +234,29 @@ DebuggerFrame* DebuggerFrame::create(
 
   frame->setReservedSlot(OWNER_SLOT, ObjectValue(*debugger));
 
+#ifdef ENABLE_WASM_JSPI
+  if (maybeIter && maybeIter->isWasm()) {
+    AbstractFramePtr fp = maybeIter->abstractFramePtr();
+    MOZ_ASSERT(fp.isWasmDebugFrame());
+    wasm::ContStack* stack = cx->wasm().findStackForAddress(
+        cx, reinterpret_cast<uintptr_t>(fp.asWasmDebugFrame()));
+    if (stack) {
+      frame->setReservedSlot(WASM_CONT_FRAME_PTR_SLOT,
+                             JS::PrivateValue(fp.raw()));
+
+      // Don't store the FrameIter below
+      maybeIter = nullptr;
+    }
+  }
+#endif
+
   if (maybeIter) {
-    FrameIter::Data* data = maybeIter->copyData();
+    mozilla::UniquePtr<FrameIter::Data> data = maybeIter->copyData();
     if (!data) {
       return nullptr;
     }
 
-    frame->setFrameIterData(data);
+    frame->setFrameIterData(data.release());
   }
 
   if (maybeGenerator) {
@@ -338,9 +345,13 @@ class DebuggerFrame::GeneratorInfo {
   }
 };
 
-bool js::DebuggerFrame::isSuspended() const {
+bool js::DebuggerFrame::isSuspendedGeneratorFrame() const {
   return hasGeneratorInfo() &&
          generatorInfo()->unwrappedGenerator().isSuspended();
+}
+
+bool js::DebuggerFrame::isWasmContFrame() const {
+  return !getReservedSlot(WASM_CONT_FRAME_PTR_SLOT).isUndefined();
 }
 
 js::AbstractGeneratorObject& js::DebuggerFrame::unwrappedGenerator() const {
@@ -375,7 +386,7 @@ bool DebuggerFrame::setGeneratorInfo(JSContext* cx,
   //
   // 2) The generator's script's observer count must be bumped.
 
-  RootedScript script(cx, genObj->callee().nonLazyScript());
+  RootedScript script(cx, genObj->script());
   Rooted<UniquePtr<GeneratorInfo>> info(
       cx, cx->make_unique<GeneratorInfo>(genObj, script));
   if (!info) {
@@ -415,6 +426,17 @@ void DebuggerFrame::terminate(JS::GCContext* gcx, AbstractFramePtr frame) {
       decrementStepperCounter(gcx, frame);
     }
   }
+
+#ifdef ENABLE_WASM_JSPI
+  if (!getReservedSlot(WASM_CONT_FRAME_PTR_SLOT).isUndefined()) {
+    if (onStepHandler()) {
+      AbstractFramePtr referent = AbstractFramePtr::fromRaw(
+          getReservedSlot(WASM_CONT_FRAME_PTR_SLOT).toPrivate());
+      decrementStepperCounter(gcx, referent);
+    }
+    setReservedSlot(WASM_CONT_FRAME_PTR_SLOT, JS::UndefinedValue());
+  }
+#endif
 
   if (!hasGeneratorInfo()) {
     return;
@@ -462,7 +484,7 @@ void DebuggerFrame::onGeneratorClosed(JS::GCContext* gcx) {
   }
 }
 
-void DebuggerFrame::suspend(JS::GCContext* gcx) {
+void DebuggerFrame::suspendGeneratorFrame(JS::GCContext* gcx) {
   // There must be generator info because otherwise this would be the same
   // overall behavior as terminate() except that here we do not properly
   // adjust stepper counts.
@@ -475,15 +497,17 @@ void DebuggerFrame::suspend(JS::GCContext* gcx) {
 bool DebuggerFrame::getCallee(JSContext* cx, Handle<DebuggerFrame*> frame,
                               MutableHandle<DebuggerObject*> result) {
   RootedObject callee(cx);
-  if (frame->isOnStack()) {
+  if (frame->isOnStack(cx)) {
     AbstractFramePtr referent = DebuggerFrame::getReferent(frame);
     if (referent.isFunctionFrame()) {
       callee = referent.callee();
     }
   } else {
-    MOZ_ASSERT(frame->isSuspended());
-
-    callee = &frame->generatorInfo()->unwrappedGenerator().callee();
+    MOZ_ASSERT(frame->isSuspendedGeneratorFrame());
+    AbstractGeneratorObject& gen = frame->generatorInfo()->unwrappedGenerator();
+    if (!gen.isModuleGenerator()) {
+      callee = &gen.callee();
+    }
   }
 
   return frame->owner()->wrapNullableDebuggeeObject(cx, callee, result);
@@ -493,12 +517,12 @@ bool DebuggerFrame::getCallee(JSContext* cx, Handle<DebuggerFrame*> frame,
 bool DebuggerFrame::getIsConstructing(JSContext* cx,
                                       Handle<DebuggerFrame*> frame,
                                       bool& result) {
-  if (frame->isOnStack()) {
+  if (frame->isOnStack(cx)) {
     FrameIter iter = frame->getFrameIter(cx);
 
     result = iter.isFunctionFrame() && iter.isConstructing();
   } else {
-    MOZ_ASSERT(frame->isSuspended());
+    MOZ_ASSERT(frame->isSuspendedGeneratorFrame());
 
     // Generators and async functions can't be constructed.
     result = false;
@@ -559,8 +583,13 @@ bool DebuggerFrame::getEnvironment(JSContext* cx, Handle<DebuggerFrame*> frame,
   Debugger* dbg = frame->owner();
   Rooted<Env*> env(cx);
 
-  if (frame->isOnStack()) {
+  if (frame->isOnStack(cx)) {
     FrameIter iter = frame->getFrameIter(cx);
+
+    if (iter.hasScript() && iter.script()->selfHosted()) {
+      result.set(nullptr);
+      return true;
+    }
 
     {
       AutoRealm ar(cx, iter.abstractFramePtr().environmentChain());
@@ -568,11 +597,16 @@ bool DebuggerFrame::getEnvironment(JSContext* cx, Handle<DebuggerFrame*> frame,
       env = GetDebugEnvironmentForFrame(cx, iter.abstractFramePtr(), iter.pc());
     }
   } else {
-    MOZ_ASSERT(frame->isSuspended());
+    MOZ_ASSERT(frame->isSuspendedGeneratorFrame());
 
     AbstractGeneratorObject& genObj =
         frame->generatorInfo()->unwrappedGenerator();
     JSScript* script = frame->generatorInfo()->generatorScript();
+
+    if (script->selfHosted()) {
+      result.set(nullptr);
+      return true;
+    }
 
     {
       AutoRealm ar(cx, &genObj.environmentChain());
@@ -590,7 +624,7 @@ bool DebuggerFrame::getEnvironment(JSContext* cx, Handle<DebuggerFrame*> frame,
 /* static */
 bool DebuggerFrame::getOffset(JSContext* cx, Handle<DebuggerFrame*> frame,
                               size_t& result) {
-  if (frame->isOnStack()) {
+  if (frame->isOnStack(cx)) {
     FrameIter iter = frame->getFrameIter(cx);
 
     AbstractFramePtr referent = DebuggerFrame::getReferent(frame);
@@ -604,7 +638,7 @@ bool DebuggerFrame::getOffset(JSContext* cx, Handle<DebuggerFrame*> frame,
       result = script->pcToOffset(pc);
     }
   } else {
-    MOZ_ASSERT(frame->isSuspended());
+    MOZ_ASSERT(frame->isSuspendedGeneratorFrame());
 
     AbstractGeneratorObject& genObj =
         frame->generatorInfo()->unwrappedGenerator();
@@ -617,7 +651,7 @@ bool DebuggerFrame::getOffset(JSContext* cx, Handle<DebuggerFrame*> frame,
 /* static */
 bool DebuggerFrame::getOlder(JSContext* cx, Handle<DebuggerFrame*> frame,
                              MutableHandle<DebuggerFrame*> result) {
-  if (frame->isOnStack()) {
+  if (frame->isOnStack(cx)) {
     Debugger* dbg = frame->owner();
     FrameIter iter = frame->getFrameIter(cx);
 
@@ -647,7 +681,7 @@ bool DebuggerFrame::getOlder(JSContext* cx, Handle<DebuggerFrame*> frame,
       }
     }
   } else {
-    MOZ_ASSERT(frame->isSuspended());
+    MOZ_ASSERT(frame->isSuspendedGeneratorFrame());
 
     // If the frame is suspended, there is no older frame.
   }
@@ -659,7 +693,7 @@ bool DebuggerFrame::getOlder(JSContext* cx, Handle<DebuggerFrame*> frame,
 /* static */
 bool DebuggerFrame::getAsyncPromise(JSContext* cx, Handle<DebuggerFrame*> frame,
                                     MutableHandle<DebuggerObject*> result) {
-  MOZ_ASSERT(frame->isOnStack() || frame->isSuspended());
+  MOZ_ASSERT(frame->isOnStack(cx) || frame->isSuspendedGeneratorFrame());
 
   if (!frame->hasGeneratorInfo()) {
     // An on-stack frame may not have an associated generator yet when the
@@ -691,7 +725,7 @@ bool DebuggerFrame::getThis(JSContext* cx, Handle<DebuggerFrame*> frame,
                             MutableHandleValue result) {
   Debugger* dbg = frame->owner();
 
-  if (frame->isOnStack()) {
+  if (frame->isOnStack(cx)) {
     if (!requireScriptReferent(cx, frame)) {
       return false;
     }
@@ -709,7 +743,7 @@ bool DebuggerFrame::getThis(JSContext* cx, Handle<DebuggerFrame*> frame,
       }
     }
   } else {
-    MOZ_ASSERT(frame->isSuspended());
+    MOZ_ASSERT(frame->isSuspendedGeneratorFrame());
 
     AbstractGeneratorObject& genObj =
         frame->generatorInfo()->unwrappedGenerator();
@@ -726,8 +760,9 @@ bool DebuggerFrame::getThis(JSContext* cx, Handle<DebuggerFrame*> frame,
 }
 
 /* static */
-DebuggerFrameType DebuggerFrame::getType(Handle<DebuggerFrame*> frame) {
-  if (frame->isOnStack()) {
+DebuggerFrameType DebuggerFrame::getType(JSContext* cx,
+                                         Handle<DebuggerFrame*> frame) {
+  if (frame->isOnStack(cx)) {
     AbstractFramePtr referent = DebuggerFrame::getReferent(frame);
 
     // Indirect eval frames are both isGlobalFrame() and isEvalFrame(), so the
@@ -752,7 +787,7 @@ DebuggerFrameType DebuggerFrame::getType(Handle<DebuggerFrame*> frame) {
       return DebuggerFrameType::WasmCall;
     }
   } else {
-    MOZ_ASSERT(frame->isSuspended());
+    MOZ_ASSERT(frame->isSuspendedGeneratorFrame());
 
     return DebuggerFrameType::Call;
   }
@@ -800,7 +835,7 @@ bool DebuggerFrame::setOnStepHandler(JSContext* cx,
   }
 
   JS::GCContext* gcx = cx->gcContext();
-  if (frame->isOnStack()) {
+  if (frame->isOnStack(cx)) {
     AbstractFramePtr referent = DebuggerFrame::getReferent(frame);
 
     // Adjust execution observability and step counts on whatever code (JS or
@@ -812,7 +847,7 @@ bool DebuggerFrame::setOnStepHandler(JSContext* cx,
     } else if (!handler && prior) {
       frame->decrementStepperCounter(cx->gcContext(), referent);
     }
-  } else if (frame->isSuspended()) {
+  } else if (frame->isSuspendedGeneratorFrame()) {
     RootedScript script(cx, frame->generatorInfo()->generatorScript());
 
     if (handler && !prior) {
@@ -822,6 +857,18 @@ bool DebuggerFrame::setOnStepHandler(JSContext* cx,
     } else if (!handler && prior) {
       frame->decrementStepperCounter(cx->gcContext(), script);
     }
+#ifdef ENABLE_WASM_JSPI
+  } else if (!frame->getReservedSlot(WASM_CONT_FRAME_PTR_SLOT).isUndefined()) {
+    AbstractFramePtr referent = DebuggerFrame::getReferent(frame);
+
+    if (handler && !prior) {
+      if (!frame->incrementStepperCounter(cx, referent)) {
+        return false;
+      }
+    } else if (!handler && prior) {
+      frame->decrementStepperCounter(cx->gcContext(), referent);
+    }
+#endif
   } else {
     // If the frame is entirely dead, we still allow setting the onStep
     // handler, but it has no effect.
@@ -945,7 +992,7 @@ static WithEnvironmentObject* CreateBindingsEnv(
   JS::Rooted<JS::Value> val(cx);
   for (size_t i = 0; i < bindingKeys.length(); i++) {
     id = bindingKeys[i];
-    cx->markId(id);
+    cx->recordRefToId(id);
     val = bindingValues[i];
     if (!cx->compartment()->wrap(cx, &val) ||
         !NativeDefineDataProperty(cx, bindingsObj, id, val, 0)) {
@@ -1218,7 +1265,7 @@ Result<Completion> DebuggerFrame::eval(JSContext* cx,
                                        const EvalOptions& options) {
   MOZ_ASSERT(options.kind() == EvalOptions::EnvKind::Frame ||
              options.kind() == EvalOptions::EnvKind::FrameWithExtraBindings);
-  MOZ_ASSERT(frame->isOnStack());
+  MOZ_ASSERT(frame->isOnStack(cx));
 
   Debugger* dbg = frame->owner();
   FrameIter iter = frame->getFrameIter(cx);
@@ -1228,9 +1275,46 @@ Result<Completion> DebuggerFrame::eval(JSContext* cx,
   return DebuggerGenericEval(cx, chars, bindings, options, dbg, nullptr, &iter);
 }
 
-bool DebuggerFrame::isOnStack() const {
+bool DebuggerFrame::isOnStack(JSContext* cx) const {
+#ifdef ENABLE_WASM_JSPI
+  if (!getReservedSlot(WASM_CONT_FRAME_PTR_SLOT).isUndefined()) {
+    // maybePtrFromReservedSlot
+    AbstractFramePtr fp = AbstractFramePtr::fromRaw(
+        getReservedSlot(WASM_CONT_FRAME_PTR_SLOT).toPrivate());
+    MOZ_ASSERT(fp.isWasmDebugFrame());
+    wasm::ContStack* stack = cx->wasm().findStackForAddress(
+        cx, reinterpret_cast<uintptr_t>(fp.asWasmDebugFrame()));
+    // No stack means the frame address is on the main stack (not a continuation
+    // stack). canResume() means the continuation is suspended, not active.
+    if (!stack || stack->canResume()) {
+      return false;
+    }
+    return stack->findIfActive();
+  }
+#endif
+
   // Note: this is equivalent to checking frameIterData() != nullptr.
   return !getFixedSlot(FRAME_ITER_SLOT).isUndefined();
+}
+
+bool DebuggerFrame::isSuspendedWasmFrame(JSContext* cx) const {
+#ifdef ENABLE_WASM_JSPI
+  if (!getReservedSlot(WASM_CONT_FRAME_PTR_SLOT).isUndefined()) {
+    AbstractFramePtr fp = AbstractFramePtr::fromRaw(
+        getReservedSlot(WASM_CONT_FRAME_PTR_SLOT).toPrivate());
+    MOZ_ASSERT(fp.isWasmDebugFrame());
+    wasm::ContStack* stack = cx->wasm().findStackForAddress(
+        cx, reinterpret_cast<uintptr_t>(fp.asWasmDebugFrame()));
+    // canResume() means the continuation is suspended, not active, and may be
+    // resumed later, so the frame is not terminated.
+    return stack && stack->canResume();
+  }
+#endif
+  return false;
+}
+
+bool DebuggerFrame::isSuspended(JSContext* cx) const {
+  return isSuspendedGeneratorFrame() || isSuspendedWasmFrame(cx);
 }
 
 bool DebuggerFrame::isOnStackOrSuspendedWasmStack() const {
@@ -1275,11 +1359,57 @@ FrameIter::Data* DebuggerFrame::frameIterData() const {
 
 /* static */
 AbstractFramePtr DebuggerFrame::getReferent(Handle<DebuggerFrame*> frame) {
+  if (!frame->getReservedSlot(WASM_CONT_FRAME_PTR_SLOT).isUndefined()) {
+    AbstractFramePtr fp = AbstractFramePtr::fromRaw(
+        frame->getReservedSlot(WASM_CONT_FRAME_PTR_SLOT).toPrivate());
+    return fp;
+  }
   FrameIter iter(*frame->frameIterData());
   return iter.abstractFramePtr();
 }
 
+#ifdef ENABLE_WASM_JSPI
+static mozilla::UniquePtr<FrameIter::Data> FindFrameIterDataForFP(
+    JSContext* cx, AbstractFramePtr fp) {
+  FrameIter frames(cx);
+  for (; !frames.done(); ++frames) {
+    if (!frames.isWasm() || !frames.hasUsableAbstractFramePtr() ||
+        frames.abstractFramePtr() != fp) {
+      continue;
+    }
+
+    AutoEnterOOMUnsafeRegion oomUnsafe;
+    mozilla::UniquePtr<FrameIter::Data> data = frames.copyData();
+    // Null signifies that the frame wasn't found, not that we failed to
+    // allocate. So we crash here.
+    if (!data) {
+      oomUnsafe.crash("GetFrameIterDataForFP");
+    }
+    return data;
+  }
+
+  // The `fp` must not have been actively linked in the current frames.
+  return nullptr;
+}
+#endif
+
 FrameIter DebuggerFrame::getFrameIter(JSContext* cx) {
+#ifdef ENABLE_WASM_JSPI
+  if (!getReservedSlot(WASM_CONT_FRAME_PTR_SLOT).isUndefined()) {
+    AbstractFramePtr fp = AbstractFramePtr::fromRaw(
+        getReservedSlot(WASM_CONT_FRAME_PTR_SLOT).toPrivate());
+    MOZ_ASSERT(fp.isWasmDebugFrame());
+    wasm::ContStack* stack = cx->wasm().findStackForAddress(
+        cx, reinterpret_cast<uintptr_t>(fp.asWasmDebugFrame()));
+    // The stack must be active, as all callers should be guarded by isOnStack.
+    MOZ_RELEASE_ASSERT(stack && stack->findIfActive());
+    mozilla::UniquePtr<FrameIter::Data> data = FindFrameIterDataForFP(cx, fp);
+    // Because the stack is active, this should be infallible.
+    MOZ_RELEASE_ASSERT(data);
+    return FrameIter(std::move(data));
+  }
+#endif
+
   FrameIter::Data* data = frameIterData();
   MOZ_ASSERT(data);
   MOZ_ASSERT(data->cx_ == cx);
@@ -1315,12 +1445,12 @@ void DebuggerFrame::freeFrameIterData(JS::GCContext* gcx) {
 }
 
 bool DebuggerFrame::replaceFrameIterData(JSContext* cx, const FrameIter& iter) {
-  FrameIter::Data* data = iter.copyData();
+  mozilla::UniquePtr<FrameIter::Data> data = iter.copyData();
   if (!data) {
     return false;
   }
   freeFrameIterData(cx->gcContext());
-  setFrameIterData(data);
+  setFrameIterData(data.release());
   return true;
 }
 
@@ -1414,7 +1544,7 @@ struct MOZ_STACK_CLASS DebuggerFrame::CallData {
   static bool ToNative(JSContext* cx, unsigned argc, Value* vp);
 
   bool ensureOnStack() const;
-  bool ensureOnStackOrSuspended() const;
+  bool ensureOnStackOrSuspendedGenerator() const;
 };
 
 template <DebuggerFrame::CallData::Method MyMethod>
@@ -1434,7 +1564,7 @@ bool DebuggerFrame::CallData::ToNative(JSContext* cx, unsigned argc,
 
 static bool EnsureOnStack(JSContext* cx, Handle<DebuggerFrame*> frame) {
   MOZ_ASSERT(frame);
-  if (!frame->isOnStack()) {
+  if (!frame->isOnStack(cx)) {
     JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
                               JSMSG_DEBUG_NOT_ON_STACK, "Debugger.Frame");
     return false;
@@ -1442,10 +1572,10 @@ static bool EnsureOnStack(JSContext* cx, Handle<DebuggerFrame*> frame) {
 
   return true;
 }
-static bool EnsureOnStackOrSuspended(JSContext* cx,
-                                     Handle<DebuggerFrame*> frame) {
+static bool EnsureOnStackOrSuspendedGenerator(JSContext* cx,
+                                              Handle<DebuggerFrame*> frame) {
   MOZ_ASSERT(frame);
-  if (!frame->isOnStack() && !frame->isSuspended()) {
+  if (!frame->isOnStack(cx) && !frame->isSuspendedGeneratorFrame()) {
     JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
                               JSMSG_DEBUG_NOT_ON_STACK_OR_SUSPENDED,
                               "Debugger.Frame");
@@ -1458,16 +1588,16 @@ static bool EnsureOnStackOrSuspended(JSContext* cx,
 bool DebuggerFrame::CallData::ensureOnStack() const {
   return EnsureOnStack(cx, frame);
 }
-bool DebuggerFrame::CallData::ensureOnStackOrSuspended() const {
-  return EnsureOnStackOrSuspended(cx, frame);
+bool DebuggerFrame::CallData::ensureOnStackOrSuspendedGenerator() const {
+  return EnsureOnStackOrSuspendedGenerator(cx, frame);
 }
 
 bool DebuggerFrame::CallData::typeGetter() {
-  if (!ensureOnStackOrSuspended()) {
+  if (!ensureOnStackOrSuspendedGenerator()) {
     return false;
   }
 
-  DebuggerFrameType type = DebuggerFrame::getType(frame);
+  DebuggerFrameType type = DebuggerFrame::getType(cx, frame);
 
   JSString* str;
   switch (type) {
@@ -1530,7 +1660,7 @@ bool DebuggerFrame::CallData::implementationGetter() {
 }
 
 bool DebuggerFrame::CallData::environmentGetter() {
-  if (!ensureOnStackOrSuspended()) {
+  if (!ensureOnStackOrSuspendedGenerator()) {
     return false;
   }
 
@@ -1539,12 +1669,17 @@ bool DebuggerFrame::CallData::environmentGetter() {
     return false;
   }
 
+  if (!result) {
+    args.rval().setNull();
+    return true;
+  }
+
   args.rval().setObject(*result);
   return true;
 }
 
 bool DebuggerFrame::CallData::calleeGetter() {
-  if (!ensureOnStackOrSuspended()) {
+  if (!ensureOnStackOrSuspendedGenerator()) {
     return false;
   }
 
@@ -1565,7 +1700,7 @@ bool DebuggerFrame::CallData::generatorGetter() {
 }
 
 bool DebuggerFrame::CallData::constructingGetter() {
-  if (!ensureOnStackOrSuspended()) {
+  if (!ensureOnStackOrSuspendedGenerator()) {
     return false;
   }
 
@@ -1579,12 +1714,12 @@ bool DebuggerFrame::CallData::constructingGetter() {
 }
 
 bool DebuggerFrame::CallData::asyncPromiseGetter() {
-  if (!ensureOnStackOrSuspended()) {
+  if (!ensureOnStackOrSuspendedGenerator()) {
     return false;
   }
 
   RootedScript script(cx);
-  if (frame->isOnStack()) {
+  if (frame->isOnStack(cx)) {
     FrameIter iter = frame->getFrameIter(cx);
     AbstractFramePtr framePtr = iter.abstractFramePtr();
 
@@ -1592,7 +1727,7 @@ bool DebuggerFrame::CallData::asyncPromiseGetter() {
       script = framePtr.script();
     }
   } else {
-    MOZ_ASSERT(frame->isSuspended());
+    MOZ_ASSERT(frame->isSuspendedGeneratorFrame());
     script = frame->generatorInfo()->generatorScript();
   }
   // The async promise value is only provided for async functions and
@@ -1612,7 +1747,7 @@ bool DebuggerFrame::CallData::asyncPromiseGetter() {
 }
 
 bool DebuggerFrame::CallData::olderSavedFrameGetter() {
-  if (!ensureOnStackOrSuspended()) {
+  if (!ensureOnStackOrSuspendedGenerator()) {
     return false;
   }
 
@@ -1629,7 +1764,7 @@ bool DebuggerFrame::CallData::olderSavedFrameGetter() {
 bool DebuggerFrame::getOlderSavedFrame(JSContext* cx,
                                        Handle<DebuggerFrame*> frame,
                                        MutableHandle<SavedFrame*> result) {
-  if (frame->isOnStack()) {
+  if (frame->isOnStack(cx)) {
     Debugger* dbg = frame->owner();
     FrameIter iter = frame->getFrameIter(cx);
 
@@ -1666,7 +1801,7 @@ bool DebuggerFrame::getOlderSavedFrame(JSContext* cx,
       }
     }
   } else {
-    MOZ_ASSERT(frame->isSuspended());
+    MOZ_ASSERT(frame->isSuspendedGeneratorFrame());
   }
 
   result.set(nullptr);
@@ -1674,7 +1809,7 @@ bool DebuggerFrame::getOlderSavedFrame(JSContext* cx,
 }
 
 bool DebuggerFrame::CallData::thisGetter() {
-  if (!ensureOnStackOrSuspended()) {
+  if (!ensureOnStackOrSuspendedGenerator()) {
     return false;
   }
 
@@ -1682,7 +1817,7 @@ bool DebuggerFrame::CallData::thisGetter() {
 }
 
 bool DebuggerFrame::CallData::olderGetter() {
-  if (!ensureOnStackOrSuspended()) {
+  if (!ensureOnStackOrSuspendedGenerator()) {
     return false;
   }
 
@@ -1774,7 +1909,7 @@ DebuggerArguments* DebuggerArguments::create(JSContext* cx, HandleObject proto,
     return nullptr;
   }
 
-  JS::SetReservedSlot(obj, FRAME_SLOT, ObjectValue(*frame));
+  obj->setReservedSlot(FRAME_SLOT, ObjectValue(*frame));
 
   MOZ_ASSERT(referent.numActualArgs() <= 0x7fffffff);
   unsigned fargc = referent.numActualArgs();
@@ -1818,14 +1953,14 @@ bool DebuggerFrame::CallData::argumentsGetter() {
 }
 
 bool DebuggerFrame::CallData::getScript() {
-  if (!ensureOnStackOrSuspended()) {
+  if (!ensureOnStackOrSuspendedGenerator()) {
     return false;
   }
 
   Rooted<DebuggerScript*> scriptObject(cx);
 
   Debugger* debug = frame->owner();
-  if (frame->isOnStack()) {
+  if (frame->isOnStack(cx)) {
     FrameIter iter = frame->getFrameIter(cx);
     AbstractFramePtr framePtr = iter.abstractFramePtr();
 
@@ -1838,7 +1973,7 @@ bool DebuggerFrame::CallData::getScript() {
       scriptObject = debug->wrapScript(cx, script);
     }
   } else {
-    MOZ_ASSERT(frame->isSuspended());
+    MOZ_ASSERT(frame->isSuspendedGeneratorFrame());
     RootedScript script(cx, frame->generatorInfo()->generatorScript());
     scriptObject = debug->wrapScript(cx, script);
   }
@@ -1851,7 +1986,7 @@ bool DebuggerFrame::CallData::getScript() {
 }
 
 bool DebuggerFrame::CallData::offsetGetter() {
-  if (!ensureOnStackOrSuspended()) {
+  if (!ensureOnStackOrSuspendedGenerator()) {
     return false;
   }
 
@@ -1871,12 +2006,12 @@ bool DebuggerFrame::CallData::liveGetter() {
 }
 
 bool DebuggerFrame::CallData::onStackGetter() {
-  args.rval().setBoolean(frame->isOnStack());
+  args.rval().setBoolean(frame->isOnStack(cx));
   return true;
 }
 
 bool DebuggerFrame::CallData::terminatedGetter() {
-  args.rval().setBoolean(!frame->isOnStack() && !frame->isSuspended());
+  args.rval().setBoolean(!frame->isOnStack(cx) && !frame->isSuspended(cx));
   return true;
 }
 

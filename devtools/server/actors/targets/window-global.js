@@ -771,6 +771,8 @@ class WindowGlobalTargetActor extends BaseTargetActor {
         watchpoints: true,
         // Supports back and forward navigation
         navigation: true,
+        // Supports navigation by index
+        navigationByIndex: true,
       },
     };
 
@@ -1352,6 +1354,24 @@ class WindowGlobalTargetActor extends BaseTargetActor {
     return {};
   }
 
+  gotoIndex(index) {
+    // Wait a tick so that the response packet can be dispatched before the
+    // subsequent navigation event packet.
+    Services.tm.dispatchToMainThread(
+      DevToolsUtils.makeInfallible(() => {
+        // This won't work while the browser is shutting down and we don't really
+        // care.
+        if (Services.startup.shuttingDown) {
+          return;
+        }
+
+        this.webNavigation.gotoIndex(index, true);
+      }, "WindowGlobalTargetActor.prototype.gotoIndex's delayed body")
+    );
+
+    return {};
+  }
+
   /**
    * Reload the page in this window global.
    *
@@ -1453,6 +1473,17 @@ class WindowGlobalTargetActor extends BaseTargetActor {
       this.emit("use-simple-highlighters-updated");
     }
 
+    if (
+      this.isRootActor &&
+      typeof options.animationsPlayBackRateMultiplier !== "undefined"
+    ) {
+      // animationsPlayBackRateMultiplier can only be set on the top browsing
+      // context (this.browsingContext isn't top when an iframe is selected as
+      // the targeted document in the Browser Toolbox).
+      this.browsingContext.top.animationsPlayBackRateMultiplier =
+        options.animationsPlayBackRateMultiplier;
+    }
+
     if (!this.isTopLevelTarget) {
       // Following DevTools target options should only apply to the top target and be
       // propagated through the window global tree via the platform.
@@ -1489,6 +1520,10 @@ class WindowGlobalTargetActor extends BaseTargetActor {
    * state when closing the toolbox.
    */
   _restoreTargetConfiguration() {
+    if (!this.browsingContext) {
+      return;
+    }
+
     if (this._restoreFocus && this.browsingContext?.isActive && this.window) {
       try {
         this.window.focus();
@@ -1498,6 +1533,10 @@ class WindowGlobalTargetActor extends BaseTargetActor {
           throw e;
         }
       }
+    }
+
+    if (this.isRootActor && !this.browsingContext.isDiscarded) {
+      this.browsingContext.top.animationsPlayBackRateMultiplier = 1;
     }
   }
 

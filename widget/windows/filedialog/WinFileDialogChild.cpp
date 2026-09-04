@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -48,10 +46,11 @@ WinFileDialogChild::IPCResult WinFileDialogChild::MakeIpcFailure(
 
 WinFileDialogChild::IPCResult WinFileDialogChild::RecvShowFileDialog(
     uintptr_t parentHwnd, FileDialogType type, nsTArray<Command> commands,
-    FileResolver&& resolver) {
+    bool needsInputProtection, FileResolver&& resolver) {
   MOZ_ABORT_IF_ALREADY_USED();
 
-  auto promise = SpawnFilePicker(HWND(parentHwnd), type, std::move(commands));
+  auto promise = SpawnFilePicker(HWND(parentHwnd), type, std::move(commands),
+                                 needsInputProtection);
   using RRV = std::decay_t<decltype(*promise)>::ResolveOrRejectValue;
 
   promise->Then(GetMainThreadSerialEventTarget(), __PRETTY_FUNCTION__,
@@ -68,11 +67,12 @@ WinFileDialogChild::IPCResult WinFileDialogChild::RecvShowFileDialog(
 }
 
 WinFileDialogChild::IPCResult WinFileDialogChild::RecvShowFolderDialog(
-    uintptr_t parentHwnd, nsTArray<Command> commands,
+    uintptr_t parentHwnd, nsTArray<Command> commands, bool needsInputProtection,
     FolderResolver&& resolver) {
   MOZ_ABORT_IF_ALREADY_USED();
 
-  auto promise = SpawnFolderPicker(HWND(parentHwnd), std::move(commands));
+  auto promise = SpawnFolderPicker(HWND(parentHwnd), std::move(commands),
+                                   needsInputProtection);
   using RRV = std::decay_t<decltype(*promise)>::ResolveOrRejectValue;
 
   promise->Then(GetMainThreadSerialEventTarget(), __PRETTY_FUNCTION__,

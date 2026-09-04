@@ -153,8 +153,8 @@ function waitOnFaviconLoaded(aFaviconURL) {
 async function generateCookies(aHost) {
   // we generate two different cookies for two userContextIds.
   let cookies = [];
-  cookies.push(Math.random().toString());
-  cookies.push(Math.random().toString());
+  cookies.push(`A=${Math.random().toString()}`);
+  cookies.push(`B=${Math.random().toString()}`);
 
   // Then, we add cookies into the site for 'personal' and 'work'.
   let tabInfoA = await openTabInUserContext(aHost, USER_CONTEXT_ID_PERSONAL);
@@ -266,7 +266,8 @@ async function doTestForAllTabsFavicon(aTestPage, aFaviconHost, aFaviconURL) {
   await allTabsPopupShownPromise;
 
   assertIconIsData(
-    gTabsPanel.allTabsViewTabs.lastElementChild.firstElementChild
+    [...gTabsPanel.allTabsViewTabs.querySelectorAll(".all-tabs-item")].at(-1)
+      .firstElementChild
   );
 
   // Close the popup of allTabs and wait until it's done.
@@ -300,7 +301,8 @@ async function doTestForAllTabsFavicon(aTestPage, aFaviconHost, aFaviconURL) {
   await allTabsPopupShownPromise;
 
   assertIconIsData(
-    gTabsPanel.allTabsViewTabs.lastElementChild.firstElementChild
+    [...gTabsPanel.allTabsViewTabs.querySelectorAll(".all-tabs-item")].at(-1)
+      .firstElementChild
   );
 
   // Close the popup of allTabs and wait until it's done.

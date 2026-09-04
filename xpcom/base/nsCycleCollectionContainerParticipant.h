@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -50,8 +48,8 @@ struct ImplCycleCollectionIsContainerT<Container<Args...>, Container>
     : std::true_type {};
 
 template <typename T, template <typename...> typename Container>
-constexpr bool ImplCycleCollectionIsContainer = ImplCycleCollectionIsContainerT<
-    std::remove_cv_t<std::remove_reference_t<T>>, Container>::value;
+constexpr bool ImplCycleCollectionIsContainer =
+    ImplCycleCollectionIsContainerT<std::remove_cvref_t<T>, Container>::value;
 
 template <typename T, template <typename...> typename Container>
 using EnableCycleCollectionIf =

@@ -6,9 +6,6 @@ const { HttpServer } = ChromeUtils.importESModule(
 const { sinon } = ChromeUtils.importESModule(
   "resource://testing-common/Sinon.sys.mjs"
 );
-const { autocompleteUXTreatments } = ChromeUtils.importESModule(
-  "resource://gre/modules/FirefoxRelay.sys.mjs"
-);
 const { getFxAccountsSingleton } = ChromeUtils.importESModule(
   "resource://gre/modules/FxAccounts.sys.mjs"
 );
@@ -132,16 +129,14 @@ async function stubRemoteSettingsDenyList(
 }
 
 add_setup(async function () {
-  const allMessageIds = [];
-  for (const key in autocompleteUXTreatments) {
-    const treatment = autocompleteUXTreatments[key];
-    allMessageIds.push(...treatment.messageIds);
-  }
-  allMessageIds.push("firefox-relay-use-mask-title-1");
   gRelayACOptionsTitles = await new Localization([
     "browser/firefoxRelay.ftl",
     "toolkit/branding/brandings.ftl",
-  ]).formatMessages(allMessageIds);
+  ]).formatMessages([
+    "firefox-relay-opt-in-title-b",
+    "firefox-relay-opt-in-subtitle-b",
+    "firefox-relay-use-mask-title-1",
+  ]);
 });
 
 function stubFxAccountsToSimulateSignedIn() {
@@ -160,10 +155,10 @@ function stubFxAccountsToSimulateSignedIn() {
 
 function getRelayItemFromACPopup(popup) {
   const relayItem = Array.from(popup.querySelectorAll("richlistitem")).find(
-    item =>
-      gRelayACOptionsTitles.some(
-        title => title.value === item.getAttribute("ac-value")
-      )
+    item => {
+      const value = item.querySelector("autocomplete-row-item").value;
+      return gRelayACOptionsTitles.some(title => title.value === value);
+    }
   );
   return relayItem;
 }

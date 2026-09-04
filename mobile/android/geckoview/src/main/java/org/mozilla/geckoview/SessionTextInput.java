@@ -1,10 +1,10 @@
-/* -*- Mode: Java; c-basic-offset: 4; tab-width: 20; indent-tabs-mode: nil; -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 package org.mozilla.geckoview;
 
+import android.annotation.SuppressLint;
 import android.content.Context;
 import android.graphics.RectF;
 import android.os.Handler;
@@ -200,12 +200,6 @@ public final class SessionTextInput {
       final View view = session.getTextInput().getView();
       final InputMethodManager imm = getInputMethodManager(view);
       if (imm != null) {
-        if (view.hasFocus() && !imm.isActive(view)) {
-          // Marshmallow workaround: The view has focus but it is not the active
-          // view for the input method. (Bug 1211848)
-          view.clearFocus();
-          view.requestFocus();
-        }
         imm.showSoftInput(view, 0);
       }
     }
@@ -341,6 +335,9 @@ public final class SessionTextInput {
    * @param attrs EditorInfo instance to be filled on return.
    * @return InputConnection instance, or null if there is no active input (or if in viewless mode).
    */
+  // ThreadConstraint: onCreateInputConnection is intentionally @AnyThread per its documented
+  // contract.
+  @SuppressLint("ThreadConstraint")
   @AnyThread
   public synchronized @Nullable InputConnection onCreateInputConnection(
       final @NonNull EditorInfo attrs) {

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,14 +5,20 @@
 #ifndef mozilla_layers_AsyncPanZoomController_h
 #define mozilla_layers_AsyncPanZoomController_h
 
+#include <iosfwd>
+
+#include "APZUtils.h"
+#include "Axis.h"  // for Axis, Side, etc.
+#include "ExpectedGeckoMetrics.h"
+#include "FlingAccelerator.h"
+#include "InputData.h"
+#include "InputQueue.h"
+#include "LayersTypes.h"
+#include "PotentialCheckerboardDurationTracker.h"
+#include "RecentEventsBuffer.h"  // for RecentEventsBuffer
+#include "SampledAPZCState.h"
 #include "Units.h"
 #include "apz/public/APZPublicUtils.h"
-#include "mozilla/layers/CompositorScrollUpdate.h"
-#include "mozilla/layers/GeckoContentController.h"
-#include "mozilla/layers/RepaintRequest.h"
-#include "mozilla/layers/SampleTime.h"
-#include "mozilla/layers/ScrollbarData.h"
-#include "mozilla/layers/ZoomConstraints.h"
 #include "mozilla/Atomics.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/EventForwards.h"
@@ -24,21 +28,15 @@
 #include "mozilla/ScrollTypes.h"
 #include "mozilla/StaticPrefs_apz.h"
 #include "mozilla/UniquePtr.h"
-#include "InputData.h"
-#include "Axis.h"  // for Axis, Side, etc.
-#include "ExpectedGeckoMetrics.h"
-#include "FlingAccelerator.h"
-#include "InputQueue.h"
-#include "APZUtils.h"
-#include "LayersTypes.h"
 #include "mozilla/gfx/Matrix.h"
+#include "mozilla/layers/CompositorScrollUpdate.h"
+#include "mozilla/layers/GeckoContentController.h"
+#include "mozilla/layers/RepaintRequest.h"
+#include "mozilla/layers/SampleTime.h"
+#include "mozilla/layers/ScrollbarData.h"
+#include "mozilla/layers/ZoomConstraints.h"
 #include "nsRegion.h"
 #include "nsTArray.h"
-#include "PotentialCheckerboardDurationTracker.h"
-#include "RecentEventsBuffer.h"  // for RecentEventsBuffer
-#include "SampledAPZCState.h"
-
-#include <iosfwd>
 
 namespace mozilla {
 
@@ -296,8 +294,8 @@ class AsyncPanZoomController {
    * A WebRender scroll data has arrived. |aScrollMetdata| is the new
    * ScrollMetadata for the scroll container corresponding to this APZC.
    */
-  void NotifyLayersUpdated(const ScrollMetadata& aScrollMetadata,
-                           LayersUpdateFlags aLayersUpdateFlags);
+  void NotifyMainThreadTransaction(const ScrollMetadata& aScrollMetadata,
+                                   LayersUpdateFlags aLayersUpdateFlags);
 
   /**
    * The platform implementation must set the compositor controller so that we
@@ -617,13 +615,13 @@ class AsyncPanZoomController {
    * Get the CompositorScrollUpdates to be sent to consumers for the current
    * composite.
    */
-  std::vector<CompositorScrollUpdate> GetCompositorScrollUpdates();
+  nsTArray<CompositorScrollUpdate> GetCompositorScrollUpdates();
 
  private:
   // Compositor scroll updates since the last time
   // SampleCompositedAsyncTransform() was called.
   // Access to this field should be protected by mRecursiveMutex.
-  std::vector<CompositorScrollUpdate> mUpdatesSinceLastSample;
+  nsTArray<CompositorScrollUpdate> mUpdatesSinceLastSample;
 
   CompositorScrollUpdate::Metrics GetCurrentMetricsForCompositorScrollUpdate(
       const RecursiveMutexAutoLock& aProofOfApzcLock) const;
@@ -638,6 +636,19 @@ class AsyncPanZoomController {
   bool IsZero(ParentLayerCoord aCoord) const;
 
   bool FuzzyGreater(ParentLayerCoord aCoord1, ParentLayerCoord aCoord2) const;
+
+  /**
+   * This deleted function is used for:
+   * 1. avoiding accidental implicit value type conversions of input delta
+   *    values when callers intend to call the above function;
+   * 2. decoupling the manual relationship between the delta value type and the
+   *    above function. If by any chance the defined delta value type in
+   *    ScrollWheelInput has changed, this will automatically result in build
+   *    time failure, so we can learn of it the first time and accordingly
+   *    redefine those parameters' value types in the above function.
+   */
+  template <typename T>
+  ParentLayerPoint GetScrollWheelDelta(ScrollWheelInput&, T, T, T, T) = delete;
 
  private:
   // Get whether the horizontal content of the honoured target of auto-dir
@@ -732,19 +743,6 @@ class AsyncPanZoomController {
                                        double aDeltaX, double aDeltaY,
                                        double aMultiplierX,
                                        double aMultiplierY) const;
-
-  /**
-   * This deleted function is used for:
-   * 1. avoiding accidental implicit value type conversions of input delta
-   *    values when callers intend to call the above function;
-   * 2. decoupling the manual relationship between the delta value type and the
-   *    above function. If by any chance the defined delta value type in
-   *    ScrollWheelInput has changed, this will automatically result in build
-   *    time failure, so we can learn of it the first time and accordingly
-   *    redefine those parameters' value types in the above function.
-   */
-  template <typename T>
-  ParentLayerPoint GetScrollWheelDelta(ScrollWheelInput&, T, T, T, T) = delete;
 
   /**
    * Helper methods for handling keyboard events.
@@ -919,15 +917,15 @@ class AsyncPanZoomController {
   void RestoreOverscrollAmount(const ParentLayerPoint& aOverscroll);
 
   /**
-   * Sets the panning state basing on the pan direction angle and current
+   * Sets the panning state basing on the pan vector and current
    * touch-action value.
    */
-  void HandlePanningWithTouchAction(double angle);
+  void HandlePanningWithTouchAction(const ParentLayerPoint& aVector);
 
   /**
    * Sets the panning state ignoring the touch action value.
    */
-  void HandlePanning(double angle);
+  void HandlePanning(const ParentLayerPoint& aVector);
 
   /**
    * Update the panning state and axis locks.
@@ -1482,6 +1480,20 @@ class AsyncPanZoomController {
   // held whenever this is updated. In practice though... see bug 897017.
   PanZoomState mState;
 
+  // Whether an active scroll gesture that started on another APZC has been
+  // handed off to this APZC and scrolled it. While true, this APZC reports
+  // itself as being in a scrolling gesture. Set during handoff in
+  // AttemptScroll() and cleared via ClearScrolledByHandedOffGesture() when
+  // the gesture ends. Protected by |mRecursiveMutex|.
+  bool mScrolledByHandedOffGesture = false;
+
+ public:
+  void SetScrolledByHandedOffGesture(bool aState);
+
+ private:
+  void ClearScrolledByHandedOffGestureOnChain();
+
+ protected:
   AxisX mX;
   AxisY mY;
 
@@ -1907,7 +1919,12 @@ class AsyncPanZoomController {
 
   // Returns whether being in the middle of a gesture. E.g., this APZC has
   // started handling a pan gesture but hasn't yet received pan-end, etc.
+  // This includes being scrolled by a gesture handed off from another APZC.
   bool IsInScrollingGesture() const;
+
+  // Clears |mScrolledByHandedOffGesture|, requesting a content repaint to
+  // deliver the change to the main thread if it was set.
+  void ClearScrolledByHandedOffGesture();
 
  private:
   /* This is the cumulative CSS transform for all the layers from (and
@@ -1946,6 +1963,8 @@ class AsyncPanZoomController {
  private:
   // The timestamp of the latest touch start event.
   TimeStamp mTouchStartTime;
+  // The start time of the latest autoscroll animation.
+  TimeStamp mAutoscrollStartTime;
   // Used for interpolating touch events that cross the touch-start
   // tolerance threshold.
   struct TouchSample {
@@ -2001,20 +2020,18 @@ class AsyncPanZoomController {
   // If moving |aStartPosition| by |aDelta| should trigger scroll snapping,
   // adjust |aDelta| to reflect the snapping (that is, make it a delta that will
   // take us to the desired snap point). The delta is interpreted as being
-  // relative to |aStartPosition|, and if a target snap point is found,
-  // |aStartPosition| is also updated, to the value of the snap point.
-  // |aUnit| affects the snapping behaviour (see ScrollSnapUtils::
-  // GetSnapPointForDestination).
+  // relative to |aStartPosition|. |aUnit| affects the snapping behaviour
+  // (see ScrollSnapUtils:: GetSnapPointForDestination).
   // Returns true iff. a target snap point was found.
   Maybe<CSSSnapDestination> MaybeAdjustDeltaForScrollSnapping(
       ScrollUnit aUnit, ScrollSnapFlags aSnapFlags, ParentLayerPoint& aDelta,
-      CSSPoint& aStartPosition);
+      const CSSPoint& aStartPosition);
 
   // A wrapper function of MaybeAdjustDeltaForScrollSnapping for
   // ScrollWheelInput.
   Maybe<CSSSnapDestination> MaybeAdjustDeltaForScrollSnappingOnWheelInput(
       const ScrollWheelInput& aEvent, ParentLayerPoint& aDelta,
-      CSSPoint& aStartPosition);
+      const CSSPoint& aStartPosition);
 
   Maybe<CSSSnapDestination> MaybeAdjustDestinationForScrollSnapping(
       const KeyboardInput& aEvent, CSSPoint& aDestination,

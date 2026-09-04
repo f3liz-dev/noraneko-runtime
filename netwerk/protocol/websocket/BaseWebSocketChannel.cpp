@@ -1,23 +1,22 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set sw=2 ts=8 et tw=80 : */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "WebSocketLog.h"
 #include "BaseWebSocketChannel.h"
-#include "mozilla/dom/Document.h"
+
+#include "LoadInfo.h"
 #include "MainThreadUtils.h"
+#include "WebSocketLog.h"
+#include "mozilla/dom/ContentChild.h"
+#include "mozilla/dom/Document.h"
 #include "nsContentUtils.h"
 #include "nsIClassifiedChannel.h"
+#include "nsIInterfaceRequestor.h"
 #include "nsILoadGroup.h"
 #include "nsINode.h"
-#include "nsIInterfaceRequestor.h"
+#include "nsITransportProvider.h"
 #include "nsProxyRelease.h"
 #include "nsStandardURL.h"
-#include "LoadInfo.h"
-#include "mozilla/dom/ContentChild.h"
-#include "nsITransportProvider.h"
 
 using mozilla::dom::ContentChild;
 
@@ -221,14 +220,25 @@ BaseWebSocketChannel::InitLoadInfoNative(
     nsINode* aLoadingNode, nsIPrincipal* aLoadingPrincipal,
     nsIPrincipal* aTriggeringPrincipal,
     nsICookieJarSettings* aCookieJarSettings, uint32_t aSecurityFlags,
-    nsContentPolicyType aContentPolicyType, uint32_t aSandboxFlags) {
+    nsContentPolicyType aContentPolicyType,
+    const Maybe<mozilla::dom::ClientInfo>& aClientInfo,
+    uint32_t aSandboxFlags) {
+  MOZ_ASSERT(NS_IsMainThread());
   mLoadInfo = MOZ_TRY(LoadInfo::Create(
       aLoadingPrincipal, aTriggeringPrincipal, aLoadingNode, aSecurityFlags,
-      aContentPolicyType, Maybe<mozilla::dom::ClientInfo>(),
+      aContentPolicyType, aClientInfo,
       Maybe<mozilla::dom::ServiceWorkerDescriptor>(), aSandboxFlags));
   if (aCookieJarSettings) {
     mLoadInfo->SetCookieJarSettings(aCookieJarSettings);
   }
+
+  // The CSP content-policy check for WebSockets is performed manually in
+  // WebSocketImpl::Init, which is responsible for sending any violation report.
+  // The real channel is opened in the parent process
+  // (WebSocketChannelParent::RecvAsyncOpen), where it runs its own
+  // content-security check on this LoadInfo. Disable reporting for that
+  // parent-side check so a CSP violation is reported exactly once.
+  mLoadInfo->SetSendCSPViolationEvents(false);
 
   if (aLoadingNode) {
     RefPtr<dom::Document> doc = aLoadingNode->OwnerDoc();
@@ -249,9 +259,9 @@ BaseWebSocketChannel::InitLoadInfo(nsINode* aLoadingNode,
                                    nsIPrincipal* aTriggeringPrincipal,
                                    uint32_t aSecurityFlags,
                                    nsContentPolicyType aContentPolicyType) {
-  return InitLoadInfoNative(aLoadingNode, aLoadingPrincipal,
-                            aTriggeringPrincipal, nullptr, aSecurityFlags,
-                            aContentPolicyType, 0);
+  return InitLoadInfoNative(
+      aLoadingNode, aLoadingPrincipal, aTriggeringPrincipal, nullptr,
+      aSecurityFlags, aContentPolicyType, Maybe<mozilla::dom::ClientInfo>(), 0);
 }
 
 NS_IMETHODIMP
@@ -283,39 +293,6 @@ BaseWebSocketChannel::SetServerParameters(
 NS_IMETHODIMP
 BaseWebSocketChannel::GetHttpChannelId(uint64_t* aHttpChannelId) {
   *aHttpChannelId = mHttpChannelId;
-  return NS_OK;
-}
-
-//-----------------------------------------------------------------------------
-// BaseWebSocketChannel::nsIProtocolHandler
-//-----------------------------------------------------------------------------
-
-NS_IMETHODIMP
-BaseWebSocketChannel::GetScheme(nsACString& aScheme) {
-  LOG(("BaseWebSocketChannel::GetScheme() %p\n", this));
-
-  if (mEncrypted) {
-    aScheme.AssignLiteral("wss");
-  } else {
-    aScheme.AssignLiteral("ws");
-  }
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-BaseWebSocketChannel::NewChannel(nsIURI* aURI, nsILoadInfo* aLoadInfo,
-                                 nsIChannel** outChannel) {
-  LOG(("BaseWebSocketChannel::NewChannel() %p\n", this));
-  return NS_ERROR_NOT_IMPLEMENTED;
-}
-
-NS_IMETHODIMP
-BaseWebSocketChannel::AllowPort(int32_t port, const char* scheme,
-                                bool* _retval) {
-  LOG(("BaseWebSocketChannel::AllowPort() %p\n", this));
-
-  // do not override any blacklisted ports
-  *_retval = false;
   return NS_OK;
 }
 

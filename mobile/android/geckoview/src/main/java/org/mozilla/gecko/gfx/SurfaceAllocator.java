@@ -1,10 +1,10 @@
-/* -*- Mode: Java; c-basic-offset: 4; tab-width: 20; indent-tabs-mode: nil; -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 package org.mozilla.gecko.gfx;
 
+import android.os.Binder;
 import android.os.IBinder;
 import android.os.RemoteException;
 import android.util.Log;
@@ -18,6 +18,7 @@ import org.mozilla.gecko.process.GeckoServiceChildProcess;
   private static final String LOGTAG = "SurfaceAllocator";
 
   private static ISurfaceAllocator sAllocator;
+  private static final IBinder sClient = new Binder();
 
   // Keep a reference to all allocated Surfaces, so that we can release them if we lose the
   // connection to the allocator service.
@@ -31,9 +32,9 @@ import org.mozilla.gecko.process.GeckoServiceChildProcess;
 
     try {
       if (GeckoAppShell.isParentProcess()) {
-        sAllocator = GeckoProcessManager.getInstance().getSurfaceAllocator();
+        sAllocator = GeckoProcessManager.getInstance().getSurfaceAllocator(sClient);
       } else {
-        sAllocator = GeckoServiceChildProcess.getSurfaceAllocator();
+        sAllocator = GeckoServiceChildProcess.getSurfaceAllocator(sClient);
       }
 
       if (sAllocator == null) {
@@ -84,12 +85,6 @@ import org.mozilla.gecko.process.GeckoServiceChildProcess;
       }
       sSurfaces.put(surface.getHandle(), surface);
 
-      if (!surface.inProcess()) {
-        final SyncConfig config = surface.initSyncSurface(width, height);
-        if (config != null) {
-          sAllocator.configureSync(config);
-        }
-      }
       return surface;
     } catch (final RemoteException e) {
       Log.w(LOGTAG, "Failed to acquire GeckoSurface", e);
@@ -122,18 +117,6 @@ import org.mozilla.gecko.process.GeckoServiceChildProcess;
       }
     } catch (final RemoteException e) {
       Log.w(LOGTAG, "Failed to release surface texture", e);
-    }
-  }
-
-  public static synchronized void sync(final long upstream) {
-    // Sync from the SurfaceTexture on the other side. If we have lost connection then do nothing,
-    // as there is nothing on the other side to sync from.
-    try {
-      if (sAllocator != null) {
-        sAllocator.sync(upstream);
-      }
-    } catch (final RemoteException e) {
-      Log.w(LOGTAG, "Failed to sync texture", e);
     }
   }
 }

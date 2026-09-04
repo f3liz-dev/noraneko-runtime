@@ -1,18 +1,17 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #ifndef GFX_FT2FONTS_H
 #define GFX_FT2FONTS_H
 
-#include "mozilla/MemoryReporting.h"
-#include "gfxTypes.h"
-#include "gfxFont.h"
-#include "gfxFT2FontBase.h"
 #include "gfxContext.h"
+#include "gfxFT2FontBase.h"
+#include "gfxFont.h"
 #include "gfxFontUtils.h"
+#include "gfxTypes.h"
 #include "gfxUserFontSet.h"
+#include "mozilla/MemoryReporting.h"
 
 class FT2FontEntry;
 
@@ -62,10 +61,9 @@ class gfxFT2Font final : public gfxFT2FontBase {
     return &entry->GetData();
   }
 
-  bool ShapeText(DrawTarget* aDrawTarget, const char16_t* aText,
-                 uint32_t aOffset, uint32_t aLength, Script aScript,
-                 nsAtom* aLanguage, bool aVertical, RoundingFlags aRounding,
-                 gfxShapedText* aShapedText) override;
+  bool ShapeText(const char16_t* aText, uint32_t aOffset, uint32_t aLength,
+                 Script aScript, nsAtom* aLanguage, bool aVertical,
+                 RoundingFlags aRounding, gfxShapedText* aShapedText) override;
 
   void FillGlyphDataForChar(FT_Face face, uint32_t ch, CachedGlyphData* gd);
 

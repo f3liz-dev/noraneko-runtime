@@ -1,47 +1,39 @@
 From: Michael Froman <mfroman@mozilla.com>
-Date: Wed, 8 Oct 2025 17:49:00 +0000
-Subject: Bug 1980501 - use forward class decl rather than include
- audio_state.h r?ng!
+Date: Mon, 19 Jan 2026 13:10:00 -0600
+Subject: Bug 2010312 - (fix-d167fe9296) fix linux builds for constexpr
+ containing std::string. r?ng!
 
-This avoids code outside of libwebrtc inadvertently including
-rtc_base/containers/flat_set.h which uses c++20 features.  Once
-the rest of the Mozilla tree is compiling with c++20, we can
-remove this modification (see Bug 1768116).
-
-Differential Revision: https://phabricator.services.mozilla.com/D267993
-Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/9c487a574d218cc1c261b646c501db4d159754f0
+Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/ece87d91b514ab155e600e067b4a99601bddbffc
 ---
- audio/audio_receive_stream.h | 12 ++++++++++++
+ .../linux/wayland/shared_screencast_stream.cc        | 12 ++++++++++++
  1 file changed, 12 insertions(+)
 
-diff --git a/audio/audio_receive_stream.h b/audio/audio_receive_stream.h
-index ef4d74f772..ff5c210dd8 100644
---- a/audio/audio_receive_stream.h
-+++ b/audio/audio_receive_stream.h
-@@ -34,7 +34,11 @@
- #include "api/transport/rtp/rtp_source.h"
- #include "api/units/time_delta.h"
- #include "api/units/timestamp.h"
-+// This can be removed after Bug 1768116 enables
-+// c++20 builds across the entire Mozilla tree.
-+#if !defined(WEBRTC_MOZILLA_BUILD)
- #include "audio/audio_state.h"
-+#endif
- #include "call/audio_receive_stream.h"
- #include "call/audio_state.h"
- #include "call/syncable.h"
-@@ -47,6 +51,14 @@ class PacketRouter;
- class RtpStreamReceiverControllerInterface;
- class RtpStreamReceiverInterface;
+diff --git a/modules/desktop_capture/linux/wayland/shared_screencast_stream.cc b/modules/desktop_capture/linux/wayland/shared_screencast_stream.cc
+index ff3863ae32..8ac2ead85d 100644
+--- a/modules/desktop_capture/linux/wayland/shared_screencast_stream.cc
++++ b/modules/desktop_capture/linux/wayland/shared_screencast_stream.cc
+@@ -81,12 +81,24 @@ constexpr int CursorMetaSize(int w, int h) {
+           w * h * kBytesPerPixel);
+ }
  
-+// This can be removed after Bug 1768116 enables
-+// c++20 builds across the entire Mozilla tree.
-+#if defined(WEBRTC_MOZILLA_BUILD)
-+namespace internal {
-+class AudioState;
-+}
++#if defined(__GNUC__) && defined(WEBRTC_MOZILLA_BUILD)
++// Mozilla linux builds are using -std=gnu++20, which doesn't approve
++// of using std::string in a constexpr.  PipewireVersion now contains
++// std::string as of libwebrtc commit d167fe9296.
++static const PipeWireVersion kDmaBufModifierMinVersion = {.major = 0,
++                                                          .minor = 3,
++                                                          .micro = 33};
++static const PipeWireVersion kDropSingleModifierMinVersion = {.major = 0,
++                                                              .minor = 3,
++                                                              .micro = 40};
++#else
+ constexpr PipeWireVersion kDmaBufModifierMinVersion = {.major = 0,
+                                                        .minor = 3,
+                                                        .micro = 33};
+ constexpr PipeWireVersion kDropSingleModifierMinVersion = {.major = 0,
+                                                            .minor = 3,
+                                                            .micro = 40};
 +#endif
-+
- namespace voe {
- class ChannelReceiveInterface;
- }  // namespace voe
+ 
+ class SharedScreenCastStreamPrivate {
+  public:

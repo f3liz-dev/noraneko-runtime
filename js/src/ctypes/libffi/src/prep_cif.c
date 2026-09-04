@@ -1,6 +1,7 @@
 /* -----------------------------------------------------------------------
-   prep_cif.c - Copyright (c) 2011, 2012  Anthony Green
+   prep_cif.c - Copyright (c) 2011, 2012, 2021, 2025, 2026  Anthony Green
                 Copyright (c) 1996, 1998, 2007  Red Hat, Inc.
+                Copyright (c) 2022 Oracle and/or its affiliates.
 
    Permission is hereby granted, free of charge, to any person obtaining
    a copy of this software and associated documentation files (the
@@ -129,7 +130,7 @@ ffi_status FFI_HIDDEN ffi_prep_cif_core(ffi_cif *cif, ffi_abi abi,
   cif->rtype = rtype;
 
   cif->flags = 0;
-#ifdef _M_ARM64
+#if (defined(_M_ARM64) || defined(__aarch64__)) && defined(_WIN32)
   cif->is_variadic = isvariadic;
 #endif
 #if HAVE_LONG_DOUBLE_VARIANT
@@ -157,9 +158,6 @@ ffi_status FFI_HIDDEN ffi_prep_cif_core(ffi_cif *cif, ffi_abi abi,
 #endif
 #ifdef XTENSA
       && (cif->rtype->size > 16)
-#endif
-#ifdef NIOS2
-      && (cif->rtype->size > 8)
 #endif
      )
     bytes = STACK_ARG_SIZE(sizeof(void*));
@@ -231,7 +229,26 @@ ffi_status ffi_prep_cif_var(ffi_cif *cif,
                             ffi_type *rtype,
                             ffi_type **atypes)
 {
-  return ffi_prep_cif_core(cif, abi, 1, nfixedargs, ntotalargs, rtype, atypes);
+  ffi_status rc;
+  size_t int_size = ffi_type_sint.size;
+  unsigned int i;
+
+  rc = ffi_prep_cif_core(cif, abi, 1, nfixedargs, ntotalargs, rtype, atypes);
+
+  if (rc != FFI_OK)
+    return rc;
+
+  for (i = nfixedargs; i < ntotalargs; i++)
+    {
+      ffi_type *arg_type = atypes[i];
+      if (arg_type == &ffi_type_float
+          || ((arg_type->type != FFI_TYPE_STRUCT
+               && arg_type->type != FFI_TYPE_COMPLEX)
+              && arg_type->size < int_size))
+        return FFI_BAD_ARGTYPE;
+    }
+
+  return FFI_OK;
 }
 
 #if FFI_CLOSURES
@@ -261,3 +278,42 @@ ffi_get_struct_offsets (ffi_abi abi, ffi_type *struct_type, size_t *offsets)
 
   return initialize_aggregate(struct_type, offsets);
 }
+
+/* Generic ffi_call_plan: a portable fallback compiled on every target that does
+   not provide its own accelerated implementation.  The x86-64 SysV backend
+   (ffi64.c) defines these with a fast path under __x86_64__ && !__ILP32__, but
+   that file is not built for Windows x86-64 (X86_WIN64), which uses ffiw64.c
+   instead -- and clang-cl and MSYS/mingw both define __x86_64__ there.  So
+   exclude the fallback only when ffi64.c actually provides it; everywhere else
+   this plan just records the cif and invoke calls ffi_call, so the API is
+   always present and links on all targets.  The cif must outlive the plan. */
+#if !(defined(__x86_64__) && !defined(__ILP32__) && !defined(X86_WIN64))
+
+struct ffi_call_plan
+{
+  ffi_cif *cif;
+};
+
+ffi_call_plan *
+ffi_call_plan_alloc (ffi_cif *cif)
+{
+  ffi_call_plan *plan = malloc (sizeof (struct ffi_call_plan));
+  if (plan != NULL)
+    plan->cif = cif;
+  return plan;
+}
+
+void
+ffi_call_plan_invoke (ffi_call_plan *plan, void (*fn) (void),
+		      void *rvalue, void **avalue)
+{
+  ffi_call (plan->cif, fn, rvalue, avalue);
+}
+
+void
+ffi_call_plan_free (ffi_call_plan *plan)
+{
+  free (plan);
+}
+
+#endif /* generic ffi_call_plan fallback */

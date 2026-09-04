@@ -27,6 +27,7 @@
   <string name="teaser">Automatsko privatno pretraživanje.\nPretražujte. Izbrišite. Ponovite.</string>
   <!-- "Snackbar" shown after the user has pressed the 'erase' button at the end of a browsing session -->
   <string name="feedback_erase">Vaša historija pretraživanja je izbrisana.</string>
+  <!-- "Snackbar" shown after the user has pressed the 'erase' button at the end of a browsing session -->
   <string name="feedback_erase2">Historija pretraživanja je izbrisana</string>
   <!-- "Snackbar" shown after the user has pressed the 'erase' button at the end of a custom tab browsing session -->
   <string name="feedback_erase_custom_tab">Historija tab pretraživanja je izbrisana.</string>
@@ -129,6 +130,9 @@
   -->
   <string name="shortcut_erase_and_open_long_label">Izbriši i otvori %1$s</string>
   <!--
+    These labels are selected per variant through manifestPlaceholders in build.gradle, so
+    UnusedResources does not see the ones for the variants it is not analyzing.
+
     This is the label of an action we offer when the user selects text in other third-party apps.
     Focus is hard coded since we can't use variables in this context.
     Do not translate or transliterate Focus.
@@ -139,24 +143,24 @@
     Klar is hard coded since we can't use variables in this context.
     Do not translate or transliterate Klar.
   -->
-  <string name="text_selection_search_action_klar" tools:ignore="BrandUsage">Traži u Klaru</string>
+  <string name="text_selection_search_action_klar" tools:ignore="BrandUsage,UnusedResources">Traži u Klaru</string>
   <!--
     This is the label of an action we offer when the user selects text in other third-party apps.
     Focus Beta is hard coded since we can't use variables in this context.
     Do not translate or transliterate Focus Beta.
   -->
-  <string name="text_selection_search_action_focus_beta" tools:ignore="BrandUsage">Traži u Focus Beta</string>
+  <string name="text_selection_search_action_focus_beta" tools:ignore="BrandUsage,UnusedResources">Traži u Focus Beta</string>
   <!--
     This is the label of an action we offer when the user selects text in other third-party apps.
     Focus Nightly is hard coded since we can't use variables in this context.
     Do not translate or transliterate Focus Nightly.
   -->
-  <string name="text_selection_search_action_focus_nightly" tools:ignore="BrandUsage">Traži u Focus Nightly</string>
+  <string name="text_selection_search_action_focus_nightly" tools:ignore="BrandUsage,UnusedResources">Traži u Focus Nightly</string>
   <!--
     Content of about focus. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     %2$s is the url for the learn-more link.
   -->
-  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s daje ti kontrolu.</p>\n<p>Koristi ga kao privatni pretraživač:\n<ul>\n<li>traži i pretražuj direktno u aplikaciji</li>\n<li>blokiraj programe za praćenje (ili ih omogući u postavkama)</li>\n<li>izbriši sve kolačiće kao i historiju traženja i surfanja</li>\n</ul> </p>\n<p>%1$s je kreirala Mozilla. Naša misija je njegovanje zdravog i otvorenog interneta.<br/>\n<a href=\"%2$s\">Saznajte više</a></p>]]></string>
+  <string name="about_content" tools:ignore="BrandUsage,IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s daje ti kontrolu.</p>\n<p>Koristi ga kao privatni pretraživač:\n<ul>\n<li>traži i pretražuj direktno u aplikaciji</li>\n<li>blokiraj programe za praćenje (ili ih omogući u postavkama)</li>\n<li>izbriši sve kolačiće kao i historiju traženja i surfanja</li>\n</ul> </p>\n<p>%1$s je kreirala Mozilla. Naša misija je njegovanje zdravog i otvorenog interneta.<br/>\n<a href=\"%2$s\">Saznajte više</a></p>]]></string>
   <!-- A link to SUMO at the bottom of About Focus screen. -->
   <string name="about_screen_learn_more">Saznajte više</string>
   <!-- Header for the Privacy and Security settings menu -->
@@ -251,7 +255,7 @@
   <!-- "Hint" text for the "custom autocomplete URL" input field. Shown when the field is empty. -->
   <string name="preference_autocomplete_add_hint">Zalijepite ili unesite URL</string>
   <!-- Example how a custom domain autocomplete URL be added (e.g. without http://) -->
-  <string name="preference_autocomplete_add_example2">Primjer: mozilla.org</string>
+  <string name="preference_autocomplete_add_example2" tools:ignore="BrandUsage">Primjer: mozilla.org</string>
   <!-- To be removed once the new hint has been translated -->
   <string name="preference_autocomplete_add_example">Primjer: example.com</string>
   <!-- Confirmation "snackbar" shown after a new custom autocomplete URL has been added. -->
@@ -323,15 +327,15 @@
     %1$s will be replaced by the app name (e.g. Firefox Focus)
   -->
   <string name="preference_default_browser2">Učini %1$s glavnim pretraživačem</string>
-  <string name="preference_category_mozilla">Mozilla</string>
+  <string name="preference_category_mozilla" tools:ignore="BrandUsage">Mozilla</string>
   <string name="preference_mozilla_telemetry2">Šalji podatke o korištenju</string>
   <!-- A link to SUMO at the end of the summary (preference_mozilla_telemetry_summary2) of the "Send anonymous usage data" setting. -->
   <string name="preference_mozilla_telemetry_summary">Saznajte više</string>
   <!-- %1$s will be replaced with the name of the app (e.g. Firefox Focus) -->
-  <string name="preference_mozilla_telemetry_summary2">Mozila nastoji prikupljati samo ono što trebamo da osiguramo i poboljšamo %1$s za sve.</string>
+  <string name="preference_mozilla_telemetry_summary2" tools:ignore="BrandUsage">Mozila nastoji prikupljati samo ono što trebamo da osiguramo i poboljšamo %1$s za sve.</string>
   <!-- Preference switch for daily usage ping data collection -->
   <string name="preference_daily_usage_ping_title">Dnevna upotreba pinga</string>
-  <string name="preference_daily_usage_ping_description">Ovo pomaže Mozili da procijeni aktivne korisnike.</string>
+  <string name="preference_daily_usage_ping_description" tools:ignore="BrandUsage">Ovo pomaže Mozili da procijeni aktivne korisnike.</string>
   <string name="preference_daily_usage_ping_learn_more">Saznajte više</string>
   <!-- In-app link (in settings) to Focus privacy notice. -->
   <string name="preference_privacy_notice">Napomena o privatnosti</string>
@@ -812,7 +816,7 @@
   <!-- Label for button to close the tab -->
   <string name="tab_crash_report_close_tab_button_label">Zatvori tab</string>
   <!-- Label for the checkbox to send the tab crash report to Mozilla -->
-  <string name="crash_report_send_crash_label">Pošalji izvještaj o rušenju Mozilla-i</string>
+  <string name="crash_report_send_crash_label" tools:ignore="BrandUsage">Pošalji izvještaj o rušenju Mozilla-i</string>
   <!-- Tracking protection bottom sheet -->
 
   <!-- Label for the total number of trackers blocked. %s is the app install date. -->
@@ -877,12 +881,16 @@
     %2$s is a URL to a support article. Contains a button that will redirect the user to Privacy & Security Screen.
   -->
   <string name="errorpage_httpsonly_message2" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[%1$s pokušava koristiti HTTPS vezu kad god je to moguće radi veće sigurnosti. <a href=\"%2$s\">Saznajte više</a> <br/><br/> Promijenite ovu postavku u Postavke > Privatnost i sigurnost > Sigurnost.]]></string>
-  <!-- The document title and heading of the error page shown when a website has an invalid or expired SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_bad_cert_title">Veza nije sigurna</string>
+  <!--
+    The strings below override AC defaults and are only referenced from there.
+
+    The document title and heading of the error page shown when a website has an invalid or expired SSL certificate.
+  -->
+  <string name="mozac_browser_errorpages_security_bad_cert_title" tools:ignore="UnusedResources">Veza nije sigurna</string>
   <!-- The error message shown when a website has an invalid or expired SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_bad_cert_message"><![CDATA[Ovo može biti problem s konfiguracijom servera, ili može biti da neko pokušava imitirati server. <br/><br/> Ako ste se u prošlosti uspješno povezali s ovim serverom, greška može biti privremena.]]></string>
+  <string name="mozac_browser_errorpages_security_bad_cert_message" tools:ignore="UnusedResources"><![CDATA[Ovo može biti problem s konfiguracijom servera, ili može biti da neko pokušava imitirati server. <br/><br/> Ako ste se u prošlosti uspješno povezali s ovim serverom, greška može biti privremena.]]></string>
   <!-- The advanced certificate information shown when a website has an invalid SSL certificate. The %1$s will be replaced by the app name and %2$s will be replaced by website URL. It's only shown when a website has an invalid SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>Neko se možda pokušava lažno predstavljati za web stranicu i nastavak bi mogao biti rizičan.</label> <br><br>\n<label>%1$s nema povjerenja u <b>%2$s</b> jer je njegov izdavalac certifikata nepoznat, certifikat je samopotpisan ili server ne šalje ispravne posredničke certifikate.</label>]]></string>
+  <string name="mozac_browser_errorpages_security_bad_cert_techInfo" tools:ignore="UnusedResources"><![CDATA[<label>Neko se možda pokušava lažno predstavljati za web stranicu i nastavak bi mogao biti rizičan.</label> <br><br>\n<label>%1$s nema povjerenja u <b>%2$s</b> jer je njegov izdavalac certifikata nepoznat, certifikat je samopotpisan ili server ne šalje ispravne posredničke certifikate.</label>]]></string>
   <!--
     Sessions List
 

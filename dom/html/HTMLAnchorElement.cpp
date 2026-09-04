@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -92,36 +90,10 @@ bool HTMLAnchorElement::IsHTMLFocusable(IsFocusableFlags aFlags,
     return true;
   }
 
-  // cannot focus links if there is no link handler
-  if (!OwnerDoc()->LinkHandlingEnabled()) {
-    *aTabIndex = -1;
-    *aIsFocusable = false;
-    return false;
-  }
+  Focusable focusable = Link::IsLinkFocusableWithoutStyle(aFlags);
+  *aIsFocusable = focusable.mFocusable;
+  *aTabIndex = focusable.mTabIndex;
 
-  // Links that are in an editable region should never be focusable, even if
-  // they are in a contenteditable="false" region.
-  if (nsContentUtils::IsNodeInEditableRegion(this)) {
-    *aTabIndex = -1;
-    *aIsFocusable = false;
-    return true;
-  }
-
-  if (GetTabIndexAttrValue().isNothing()) {
-    // check whether we're actually a link
-    if (!IsLink()) {
-      // Not tabbable or focusable without href (bug 17605), unless
-      // forced to be via presence of nonnegative tabindex attribute
-      *aTabIndex = -1;
-      *aIsFocusable = false;
-      return false;
-    }
-  }
-
-  if (!FocusModel::IsTabFocusable(TabFocusableType::Links)) {
-    *aTabIndex = -1;
-  }
-  *aIsFocusable = true;
   return false;
 }
 

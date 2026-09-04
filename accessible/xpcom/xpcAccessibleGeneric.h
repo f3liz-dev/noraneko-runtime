@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,14 +5,13 @@
 #ifndef mozilla_a11y_xpcAccessibleGeneric_h_
 #define mozilla_a11y_xpcAccessibleGeneric_h_
 
+#include "LocalAccessible.h"
+#include "mozilla/a11y/Accessible.h"
+#include "mozilla/a11y/RemoteAccessible.h"
 #include "xpcAccessible.h"
 #include "xpcAccessibleHyperLink.h"
 #include "xpcAccessibleSelectable.h"
 #include "xpcAccessibleValue.h"
-
-#include "LocalAccessible.h"
-#include "mozilla/a11y/Accessible.h"
-#include "mozilla/a11y/RemoteAccessible.h"
 
 namespace mozilla {
 namespace a11y {
@@ -33,6 +30,9 @@ class xpcAccessibleGeneric : public xpcAccessible,
     if (aInternal->HasNumericValue()) mSupportedIfaces |= eValue;
     if (aInternal->IsLink()) mSupportedIfaces |= eHyperLink;
   }
+
+  xpcAccessibleGeneric(const xpcAccessibleGeneric&) = delete;
+  xpcAccessibleGeneric& operator=(const xpcAccessibleGeneric&) = delete;
 
   NS_DECL_ISUPPORTS
 
@@ -62,9 +62,6 @@ class xpcAccessibleGeneric : public xpcAccessible,
   friend class xpcAccessibleHyperLink;
   friend class xpcAccessibleSelectable;
   friend class xpcAccessibleValue;
-
-  xpcAccessibleGeneric(const xpcAccessibleGeneric&) = delete;
-  xpcAccessibleGeneric& operator=(const xpcAccessibleGeneric&) = delete;
 };
 
 inline LocalAccessible* xpcAccessible::Intl() {

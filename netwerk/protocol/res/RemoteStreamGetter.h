@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,15 +5,15 @@
 #ifndef RemoteStreamGetter_h_
 #define RemoteStreamGetter_h_
 
-#include "nsIChannel.h"
-#include "nsIInputStreamPump.h"
-#include "nsIStreamListener.h"
-#include "nsIInputStream.h"
-#include "nsICancelable.h"
 #include "SimpleChannel.h"
+#include "mozilla/Maybe.h"
 #include "mozilla/net/NeckoChannelParams.h"
 #include "mozilla/net/NeckoChild.h"
-#include "mozilla/Maybe.h"
+#include "nsICancelable.h"
+#include "nsIChannel.h"
+#include "nsIInputStream.h"
+#include "nsIInputStreamPump.h"
+#include "nsIStreamListener.h"
 
 class nsILoadInfo;
 

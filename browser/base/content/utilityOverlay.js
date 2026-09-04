@@ -1,5 +1,4 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -17,12 +16,15 @@ ChromeUtils.defineESModuleGetters(this, {
     "moz-src:///browser/components/aiwindow/ui/modules/AIWindow.sys.mjs",
   BrowserUtils: "resource://gre/modules/BrowserUtils.sys.mjs",
   BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.sys.mjs",
+  ContainerCreationPanel:
+    "chrome://browser/content/usercontext/ContainerCreationPanel.mjs",
   ContextualIdentityService:
-    "resource://gre/modules/ContextualIdentityService.sys.mjs",
+    "moz-src:///toolkit/components/contextualidentity/ContextualIdentityService.sys.mjs",
   ExtensionSettingsStore:
     "resource://gre/modules/ExtensionSettingsStore.sys.mjs",
   ExtensionUtils: "resource://gre/modules/ExtensionUtils.sys.mjs",
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
+  Referrals: "resource:///modules/referrals/Referrals.sys.mjs",
   ShellService: "moz-src:///browser/components/shell/ShellService.sys.mjs",
   URILoadingHelper: "resource:///modules/URILoadingHelper.sys.mjs",
 });
@@ -183,6 +185,8 @@ function createUserContextMenu(
     excludeUserContextId = 0,
     showDefaultTab = false,
     useAccessKeys = true,
+    showAddContainer = true,
+    showManageContainers = true,
   } = {}
 ) {
   while (event.target.hasChildNodes()) {
@@ -192,14 +196,15 @@ function createUserContextMenu(
   MozXULElement.insertFTLIfNeeded("toolkit/global/contextual-identity.ftl");
   let docfrag = document.createDocumentFragment();
 
-  // If we are excluding a userContextId, we want to add a 'no-container' item.
+  // Add an item for a tab without a container, labeled "New Tab".
   if (excludeUserContextId || showDefaultTab) {
     let menuitem = document.createXULElement("menuitem");
     if (useAccessKeys) {
-      document.l10n.setAttributes(menuitem, "user-context-none");
+      document.l10n.setAttributes(menuitem, "user-context-new-tab");
     } else {
-      const label =
-        ContextualIdentityService.formatContextLabel("user-context-none");
+      const label = ContextualIdentityService.formatContextLabel(
+        "user-context-new-tab"
+      );
       menuitem.setAttribute("label", label);
     }
     menuitem.setAttribute("data-usercontextid", "0");
@@ -243,9 +248,28 @@ function createUserContextMenu(
     docfrag.appendChild(menuitem);
   });
 
-  if (!isContextMenu) {
+  if (showAddContainer || showManageContainers) {
     docfrag.appendChild(document.createXULElement("menuseparator"));
+  }
 
+  if (showAddContainer) {
+    let menuitem = document.createXULElement("menuitem");
+    if (useAccessKeys) {
+      document.l10n.setAttributes(menuitem, "user-context-add-container");
+    } else {
+      const label = ContextualIdentityService.formatContextLabel(
+        "user-context-add-container"
+      );
+      menuitem.setAttribute("label", label);
+    }
+    menuitem.addEventListener("command", commandEvent => {
+      commandEvent.stopPropagation();
+      ContainerCreationPanel.open(window);
+    });
+    docfrag.appendChild(menuitem);
+  }
+
+  if (showManageContainers) {
     let menuitem = document.createXULElement("menuitem");
     if (useAccessKeys) {
       document.l10n.setAttributes(menuitem, "user-context-manage-containers");
@@ -255,7 +279,10 @@ function createUserContextMenu(
       );
       menuitem.setAttribute("label", label);
     }
-    menuitem.setAttribute("command", "Browser:OpenAboutContainers");
+    menuitem.addEventListener("command", commandEvent => {
+      commandEvent.stopPropagation();
+      openPreferences("paneContainers");
+    });
     docfrag.appendChild(menuitem);
   }
 
@@ -373,7 +400,12 @@ function openAboutDialog() {
     features += "centerscreen,dependent,dialog=no";
   }
 
-  window.openDialog("chrome://browser/content/aboutDialog.xhtml", "", features);
+  var win = BrowserWindowTracker.getTopWindow() || window;
+  win.openDialog("chrome://browser/content/aboutDialog.xhtml", "", features);
+}
+
+function openReferralsPage() {
+  Referrals.openReferralsTab(window, "help_menu");
 }
 
 async function openPreferences(paneID, extraArgs) {
@@ -498,6 +530,9 @@ function buildHelpMenu() {
 
   document.getElementById("troubleShooting").disabled =
     !Services.policies.isAllowed("aboutSupport");
+
+  document.getElementById("menu_referralsPage").hidden =
+    !Services.prefs.getBoolPref("browser.referrals.enabled");
 
   let supportMenu = Services.policies.getSupportMenu();
   if (supportMenu) {

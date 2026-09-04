@@ -6,11 +6,7 @@ package org.mozilla.fenix.home.store
 
 import android.content.res.Configuration
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.res.colorResource
-import mozilla.components.feature.top.sites.TopSite
-import mozilla.components.ui.icons.R
 import org.mozilla.fenix.browser.browsingmode.BrowsingMode
 import org.mozilla.fenix.browser.browsingmode.BrowsingModeManager
 import org.mozilla.fenix.components.appstate.AppState
@@ -26,9 +22,7 @@ import org.mozilla.fenix.home.recentsyncedtabs.RecentSyncedTab
 import org.mozilla.fenix.home.recentsyncedtabs.RecentSyncedTabState
 import org.mozilla.fenix.home.recenttabs.RecentTab
 import org.mozilla.fenix.home.recentvisits.RecentlyVisitedItem
-import org.mozilla.fenix.home.topsites.TopSiteColors
-import org.mozilla.fenix.home.ui.getAttr
-import org.mozilla.fenix.search.SearchDialogFragment
+import org.mozilla.fenix.home.topsites.TopSiteState
 import org.mozilla.fenix.termsofuse.store.PrivacyNoticeBannerState
 import org.mozilla.fenix.utils.Settings
 
@@ -70,58 +64,45 @@ internal sealed class HomepageState {
      *
      * @property shouldShowPrivacyNoticeBanner If the privacy notice banner should show.
      * @property nimbusMessage Optional message to display.
-     * @property topSites List of [TopSite] to display.
-     * @property recentTabs List of [RecentTab] to display.
-     * @property syncedTab The [RecentSyncedTab] to display.
-     * @property bookmarks List of [Bookmark] to display.
-     * @property recentlyVisited List of [RecentlyVisitedItem] to display.
+     * @property topSiteState State of the top sites section to display, or null when the section is hidden.
+     * @property recentTabs List of [RecentTab] to display, or null when the recent tabs section is hidden.
+     * @property recentSyncedTabSectionState State of the recent synced tab section to display.
+     * @property bookmarks List of [Bookmark] to display, or null when the bookmarks section is hidden.
+     * @property recentlyVisited List of [RecentlyVisitedItem] to display, or null when the recent history
+     * section is hidden.
      * @property collectionsState State of the collections section to display.
-     * @property pocketState State of the pocket section to display.
-     * @property showTopSites Whether to show top sites or not.
-     * @property showRecentTabs Whether to show recent tabs or not.
-     * @property showRecentSyncedTab Whether to show recent synced tab or not.
-     * @property showBookmarks Whether to show bookmarks.
-     * @property showRecentlyVisited Whether to show recent history section.
-     * @property showPocketStories Whether to show the pocket stories section.
-     * @property showCollections Whether to show the collections section.
+     * @property pocketState State of the pocket section to display, or null when the section is hidden.
+     * @property showTopSitesHeader Whether to show the shortcuts section header and "show all" button.
+     * @property showPrivacyReport Whether to show the privacy report section.
+     * @property longfoxEnabled Whether the longfox game is enabled.
+     * @property showLongfoxAnimation Whether to play the fox peek animation on the privacy report card.
+     * @property trackersBlockedCount The number of trackers blocked for the privacy report.
      * @property headerState State related to the header of the homepage.
-     * @property searchBarVisible Whether the middle search bar should be visible or not.
-     * @property searchBarEnabled Whether the middle search bar is enabled or not.
+     * @property middleSearchState State of the middle search bar on the homepage.
      * @property firstFrameDrawn Flag indicating whether the first frame of the homescreen has been drawn.
      * @property setupChecklistState Optional state of the setup checklist feature.
-     * @property topSiteColors The color set defined by [TopSiteColors] used to style a top site.
-     * @property cardBackgroundColor Background color for card items.
-     * @property buttonBackgroundColor Background [Color] for buttons.
-     * @property buttonTextColor Text [Color] for buttons.
      * @property isSearchInProgress Whether search is currently active on the homepage.
      * @property bottomPadding Amount of padding to display at the bottom of the homepage.
      */
     internal data class Normal(
         val shouldShowPrivacyNoticeBanner: Boolean,
         val nimbusMessage: NimbusMessageState?,
-        val topSites: List<TopSite>,
-        val recentTabs: List<RecentTab>,
-        val syncedTab: RecentSyncedTab?,
-        val bookmarks: List<Bookmark>,
-        val recentlyVisited: List<RecentlyVisitedItem>,
+        val topSiteState: TopSiteState? = null,
+        val recentTabs: List<RecentTab>? = null,
+        val recentSyncedTabSectionState: RecentSyncedTabSectionState = RecentSyncedTabSectionState.Gone,
+        val bookmarks: List<Bookmark>? = null,
+        val recentlyVisited: List<RecentlyVisitedItem>? = null,
         val collectionsState: CollectionsState,
-        val pocketState: PocketState,
-        val showTopSites: Boolean,
-        val showRecentTabs: Boolean,
-        val showRecentSyncedTab: Boolean,
-        val showBookmarks: Boolean,
-        val showRecentlyVisited: Boolean,
-        val showPocketStories: Boolean,
-        val showCollections: Boolean,
+        val pocketState: PocketState? = null,
+        val showTopSitesHeader: Boolean,
+        val showPrivacyReport: Boolean,
+        val longfoxEnabled: Boolean,
+        val showLongfoxAnimation: Boolean,
+        val trackersBlockedCount: Int,
         override val headerState: HeaderState,
-        val searchBarVisible: Boolean,
-        val searchBarEnabled: Boolean,
+        val middleSearchState: MiddleSearchState = MiddleSearchState(),
         override val firstFrameDrawn: Boolean = false,
         val setupChecklistState: SetupChecklistState?,
-        val topSiteColors: TopSiteColors,
-        val cardBackgroundColor: Color,
-        val buttonBackgroundColor: Color,
-        val buttonTextColor: Color,
         override val isSearchInProgress: Boolean,
         val bottomPadding: Int,
     ) : HomepageState()
@@ -139,7 +120,10 @@ internal sealed class HomepageState {
      */
     internal fun isMinimalLayout(): Boolean {
         return (this as? Normal)?.run {
-            !showRecentTabs && !showRecentSyncedTab && !showBookmarks && !showRecentlyVisited
+            recentTabs == null &&
+                recentSyncedTabSectionState is RecentSyncedTabSectionState.Gone &&
+                bookmarks == null &&
+                recentlyVisited == null
         } ?: false
     }
 
@@ -171,7 +155,6 @@ internal sealed class HomepageState {
                 buildNormalState(
                     appState = appState,
                     privacyNoticeBannerState = privacyNoticeBannerState,
-                    browsingModeManager = browsingModeManager,
                     settings = settings,
                 )
             }
@@ -181,7 +164,7 @@ internal sealed class HomepageState {
          * Builds a new [HomepageState.Private] from the current [AppState] and [Settings].
          *
          * @param appState State to build the [HomepageState.Private] from.
-         * @param settings [Settings] corresponding to how the homepage should be displayed.
+         * @param settings [Settings] to build the [HomepageState.Private] from.
          */
         @Composable
         private fun buildPrivateState(
@@ -189,15 +172,7 @@ internal sealed class HomepageState {
             settings: Settings,
         ) = with(appState) {
             Private(
-                headerState = HeaderState(
-                    showHeader = settings.showHomepageHeader,
-                    wordmarkTextColor = null,
-                    privateBrowsingButtonColor = colorResource(
-                        getAttr(
-                            R.attr.mozac_ic_private_mode_circle_fill_icon_color,
-                        ),
-                    ),
-                ),
+                headerState = buildPrivateHeaderState(settings = settings),
                 firstFrameDrawn = firstFrameDrawn,
                 isSearchInProgress = searchState.isSearchActive,
             )
@@ -208,58 +183,51 @@ internal sealed class HomepageState {
          *
          * @param appState State to build the [HomepageState.Normal] from.
          * @param privacyNoticeBannerState State of the privacy notice banner.
-         * @param browsingModeManager Manager holding current state of whether the browser is in private mode or not.
          * @param settings [Settings] corresponding to how the homepage should be displayed.
          */
         @Composable
         private fun buildNormalState(
             appState: AppState,
             privacyNoticeBannerState: PrivacyNoticeBannerState,
-            browsingModeManager: BrowsingModeManager,
             settings: Settings,
         ) = with(appState) {
             Normal(
                 shouldShowPrivacyNoticeBanner = privacyNoticeBannerState.visible,
                 nimbusMessage = NimbusMessageState.build(appState, privacyNoticeBannerState),
-                topSites = topSites,
-                recentTabs = recentTabs,
-                syncedTab = when (recentSyncedTabState) {
-                    RecentSyncedTabState.None,
-                    RecentSyncedTabState.Loading,
-                    -> null
-                    is RecentSyncedTabState.Success -> recentSyncedTabState.tabs.firstOrNull()
+                topSiteState = TopSiteState.build(appState = appState, settings = settings),
+                recentTabs = recentTabs.takeIf { shouldShowRecentTabs(settings) },
+                recentSyncedTabSectionState = buildRecentSyncedTabSectionState(settings),
+                bookmarks = bookmarks.takeIf { settings.showBookmarksHomeFeature && it.isNotEmpty() },
+                recentlyVisited = recentHistory.takeIf {
+                    settings.historyMetadataUIFeature && it.isNotEmpty()
                 },
-                bookmarks = bookmarks,
-                recentlyVisited = recentHistory,
-                collectionsState = CollectionsState.build(
-                    appState = appState,
-                    browserState = components.core.store.state,
-                    browsingModeManager = browsingModeManager,
+                collectionsState = if (settings.collections) {
+                    CollectionsState.build(
+                        appState = appState,
+                        browserState = components.core.store.state,
+                    )
+                } else {
+                    CollectionsState.Gone
+                },
+                pocketState = PocketState.build(appState = appState).takeIf {
+                    settings.showPocketRecommendationsFeature &&
+                        recommendationState.pocketStories.isNotEmpty() &&
+                        !settings.privateModeAndStoriesEntryPointEnabled
+                },
+                showTopSitesHeader = !(settings.privateModeAndStoriesEntryPointEnabled && topSites.size < 8),
+                showPrivacyReport = settings.showPrivacyReportFeature,
+                longfoxEnabled = settings.longfoxEnabled,
+                showLongfoxAnimation = settings.longfoxEnabled && longfoxEntryPointReady,
+                trackersBlockedCount = blockedTrackersState.trackersBlockedCount,
+                headerState = buildHeaderState(settings = settings),
+                middleSearchState = MiddleSearchState(
+                    searchBarVisible = shouldShowSearchBar(appState = appState),
+                    searchBarEnabled = settings.enableHomepageSearchBar &&
+                        settings.toolbarPosition == ToolbarPosition.TOP &&
+                        LocalConfiguration.current.orientation == Configuration.ORIENTATION_PORTRAIT,
                 ),
-                pocketState = PocketState.build(appState = appState, settings = settings),
-                showTopSites = settings.showTopSitesFeature && topSites.isNotEmpty(),
-                showRecentTabs = shouldShowRecentTabs(settings),
-                showBookmarks = settings.showBookmarksHomeFeature && bookmarks.isNotEmpty(),
-                showRecentSyncedTab = shouldShowRecentSyncedTabs() && settings.showSyncedTabs,
-                showRecentlyVisited = settings.historyMetadataUIFeature && recentHistory.isNotEmpty(),
-                showPocketStories = settings.showPocketRecommendationsFeature &&
-                    recommendationState.pocketStories.isNotEmpty(),
-                showCollections = settings.collections,
-                headerState = HeaderState(
-                    showHeader = settings.showHomepageHeader,
-                    wordmarkTextColor = wallpaperState.textColor,
-                    privateBrowsingButtonColor = wallpaperState.iconColor,
-                ),
-                searchBarVisible = shouldShowSearchBar(appState = appState),
-                searchBarEnabled = settings.enableHomepageSearchBar &&
-                    settings.toolbarPosition == ToolbarPosition.TOP &&
-                    LocalConfiguration.current.orientation == Configuration.ORIENTATION_PORTRAIT,
                 firstFrameDrawn = firstFrameDrawn,
                 setupChecklistState = setupChecklistState,
-                topSiteColors = TopSiteColors.colors(wallpaperState = wallpaperState),
-                cardBackgroundColor = wallpaperState.cardBackgroundColor,
-                buttonBackgroundColor = wallpaperState.buttonBackgroundColor,
-                buttonTextColor = wallpaperState.buttonTextColor,
                 isSearchInProgress = searchState.isSearchActive,
                 bottomPadding = if (settings.toolbarPosition == ToolbarPosition.TOP) {
                     BOTTOM_PADDING_TOP_TOOLBAR
@@ -271,26 +239,118 @@ internal sealed class HomepageState {
     }
 }
 
-/**
- * A simple wrapper around state required for the homepage header.
- *
- * @property showHeader whether the header should be shown
- * @property wordmarkTextColor an optional color for the wordmark text
- * @property privateBrowsingButtonColor the color to use for the private browsing button
- */
-internal data class HeaderState(
-    val showHeader: Boolean,
-    val wordmarkTextColor: Color?,
-    val privateBrowsingButtonColor: Color,
-)
+private fun buildHeaderState(settings: Settings): HeaderState {
+    return if (settings.privateModeAndStoriesEntryPointEnabled) {
+        HeaderState.Experimental.Normal(
+            showButtonAnimation = settings.shouldShowNewsButtonAnimation(),
+            showStoriesButton = settings.showPocketRecommendationsFeature,
+        )
+    } else {
+        HeaderState.Normal
+    }
+}
+
+private fun buildPrivateHeaderState(settings: Settings): HeaderState {
+    return if (settings.privateModeAndStoriesEntryPointEnabled) {
+        HeaderState.Experimental.Private
+    } else {
+        HeaderState.Normal
+    }
+}
 
 /**
- * Returns whether the search bar should be shown. Only show if the search dialog
- * [SearchDialogFragment] is not visible, and the user does not have their toolbar set to be on the
- * bottom, and the screen is not in landscape mode. This is in addition to logic in the view layer
- * which hides the middle search bar when the users scrolls down. This is separate from the middle
- * search bar being enabled in settings since the toolbar address bar needs to react to the middle
- * search bar's visibility.
+ * A simple wrapper around state required for the homepage header.
+ */
+internal sealed class HeaderState {
+
+    /**
+     * Represents the non-experimental header state for both normal and private mode. The header's
+     * colors are derived from the wallpaper at render time (see `HomepageHeader`), so no colors are
+     * held here.
+     */
+    data object Normal : HeaderState()
+
+    /**
+     * Represents the experimental states for the entry points experiment.
+     */
+    sealed class Experimental : HeaderState() {
+
+        /**
+         * Represents the header in normal mode for the entry points experiment.
+         *
+         * @property showStoriesButton Whether to show the stories button.
+         * @property showButtonAnimation Whether to animate the news button label.
+         */
+        data class Normal(
+            val showStoriesButton: Boolean,
+            val showButtonAnimation: Boolean,
+        ) : Experimental()
+
+        /**
+         * Represents the header in private mode for the entry points experiment.
+         */
+        data object Private : Experimental()
+    }
+}
+
+/**
+ * State of the middle search bar on the homepage.
+ *
+ * @property searchBarVisible Whether the middle search bar should be visible or not.
+ * @property searchBarEnabled Whether the middle search bar is enabled or not.
+ */
+internal data class MiddleSearchState(
+    val searchBarVisible: Boolean = false,
+    val searchBarEnabled: Boolean = false,
+) {
+    /**
+     * Whether the middle search bar should be shown, i.e. it is both enabled and visible.
+     */
+    val isShown: Boolean
+        get() = searchBarEnabled && searchBarVisible
+}
+
+/**
+ * Represents the state of the recent synced tab section on the homepage.
+ */
+internal sealed class RecentSyncedTabSectionState {
+
+    /**
+     * The section is not shown.
+     */
+    data object Gone : RecentSyncedTabSectionState()
+
+    /**
+     * The section is shown while the synced tab is still being resolved and a placeholder is displayed.
+     */
+    data object Loading : RecentSyncedTabSectionState()
+
+    /**
+     * The section is shown with a synced tab to display.
+     *
+     * @property tab The [RecentSyncedTab] to display.
+     */
+    data class Visible(val tab: RecentSyncedTab) : RecentSyncedTabSectionState()
+}
+
+/**
+ * Builds the [RecentSyncedTabSectionState] for the homepage from the current [AppState] and [Settings].
+ */
+private fun AppState.buildRecentSyncedTabSectionState(settings: Settings): RecentSyncedTabSectionState {
+    if (!(shouldShowRecentSyncedTabs(settings))) {
+        return RecentSyncedTabSectionState.Gone
+    }
+
+    val tab = (recentSyncedTabState as? RecentSyncedTabState.Success)?.tabs?.firstOrNull()
+    return tab?.let { RecentSyncedTabSectionState.Visible(it) } ?: RecentSyncedTabSectionState.Loading
+}
+
+/**
+ * Returns whether the search bar should be shown. Only show if search is not active, and the user
+ * does not have their toolbar set to be on the bottom, and the screen is not in landscape mode.
+ * This is in addition to logic in the view layer which hides the middle search bar when the users
+ * scrolls down. This is separate from the middle search bar being enabled in settings since the
+ * toolbar address bar needs to react to the middle search bar's visibility.
  */
 private fun shouldShowSearchBar(appState: AppState) =
     !appState.searchState.isSearchActive

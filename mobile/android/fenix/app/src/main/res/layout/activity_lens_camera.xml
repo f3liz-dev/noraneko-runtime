@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- This Source Code Form is subject to the terms of the Mozilla Public
+   - License, v. 2.0. If a copy of the MPL was not distributed with this
+   - file, You can obtain one at http://mozilla.org/MPL/2.0/. -->
+<RelativeLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <!-- Declared first so the fragment container draws on top of it. Gone until the opt-out sheet
+       - needs it, and hidden again before LensCameraFragment is attached: being merely covered
+       - would leave its close button reachable by accessibility services. -->
+    <androidx.compose.ui.platform.ComposeView
+        android:id="@+id/lens_opt_out_backdrop"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:visibility="gone"/>
+
+    <androidx.fragment.app.FragmentContainerView
+        android:id="@+id/lens_fragment_container_view"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"/>
+</RelativeLayout>

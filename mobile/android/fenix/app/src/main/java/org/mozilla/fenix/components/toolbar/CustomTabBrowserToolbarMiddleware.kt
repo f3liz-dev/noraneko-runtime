@@ -37,13 +37,16 @@ import mozilla.components.compose.browser.toolbar.store.BrowserDisplayToolbarAct
 import mozilla.components.compose.browser.toolbar.store.BrowserDisplayToolbarAction.UpdateProgressBarConfig
 import mozilla.components.compose.browser.toolbar.store.BrowserToolbarAction
 import mozilla.components.compose.browser.toolbar.store.BrowserToolbarAction.Init
+import mozilla.components.compose.browser.toolbar.store.BrowserToolbarInteraction
 import mozilla.components.compose.browser.toolbar.store.BrowserToolbarInteraction.BrowserToolbarEvent
 import mozilla.components.compose.browser.toolbar.store.BrowserToolbarState
 import mozilla.components.compose.browser.toolbar.store.ProgressBarConfig
-import mozilla.components.concept.engine.cookiehandling.CookieBannersStorage
 import mozilla.components.concept.engine.permission.SitePermissions
 import mozilla.components.concept.engine.permission.SitePermissionsStorage
 import mozilla.components.concept.engine.prompt.ShareData
+import mozilla.components.feature.ipprotection.store.IPProtectionAction
+import mozilla.components.feature.ipprotection.store.IPProtectionStore
+import mozilla.components.feature.ipprotection.store.state.Authorized
 import mozilla.components.feature.session.TrackingProtectionUseCases
 import mozilla.components.feature.tabs.CustomTabsUseCases
 import mozilla.components.lib.publicsuffixlist.PublicSuffixList
@@ -74,14 +77,13 @@ import org.mozilla.fenix.components.toolbar.CustomTabBrowserToolbarMiddleware.Co
 import org.mozilla.fenix.components.toolbar.CustomTabBrowserToolbarMiddleware.Companion.StartPageActions.SiteInfoClicked
 import org.mozilla.fenix.customtabs.ExternalAppBrowserFragmentDirections
 import org.mozilla.fenix.ext.nav
-import org.mozilla.fenix.settings.quicksettings.protections.cookiebanners.getCookieBannerUIMode
 import org.mozilla.fenix.telemetry.ACTION_CLOSE_CLICKED
 import org.mozilla.fenix.telemetry.ACTION_MENU_CLICKED
 import org.mozilla.fenix.telemetry.ACTION_SECURITY_INDICATOR_CLICKED
 import org.mozilla.fenix.telemetry.ACTION_SHARE_CLICKED
 import org.mozilla.fenix.telemetry.ACTION_SITE_CUSTOM_CLICKED
-import org.mozilla.fenix.telemetry.SOURCE_CUSTOM_BAR
-import org.mozilla.fenix.utils.Settings
+import org.mozilla.fenix.telemetry.SOURCE_ADDRESS_BAR
+import org.mozilla.fenix.telemetry.SURFACE_CUSTOM_TAB
 import mozilla.components.browser.toolbar.R as toolbarR
 import mozilla.components.feature.customtabs.R as customtabsR
 import mozilla.components.lib.state.Action as MVIAction
@@ -99,8 +101,8 @@ private const val CUSTOM_BUTTON_CLICK_RETURN_CODE = 0
  * @param customTabId [String] of the custom tab in which the toolbar is shown.
  * @param browserStore [BrowserStore] to sync from.
  * @param appStore [AppStore] allowing to integrate with other features of the applications.
+ * @param ipProtectionStore [IPProtectionStore] to observe IP protection proxy status.
  * @param permissionsStorage [SitePermissionsStorage] to sync from.
- * @param cookieBannersStorage [CookieBannersStorage] to sync from.
  * @param useCases [CustomTabsUseCases] used for cleanup when closing the custom tab.
  * @param trackingProtectionUseCases [TrackingProtectionUseCases] allowing to query
  * tracking protection data of the current tab.
@@ -108,7 +110,6 @@ private const val CUSTOM_BUTTON_CLICK_RETURN_CODE = 0
  * @param clipboard [ClipboardHandler] to use for reading from device's clipboard.
  * @param navController [NavController] to use for navigating to other in-app destinations.
  * @param closeTabDelegate Callback for when the current custom tab needs to be closed.
- * @param settings [Settings] for accessing user preferences.
  * @param scope [CoroutineScope] used for running long running operations in background.
  * @param isSandboxCustomTab Whether the custom tab is sandboxed.
  */
@@ -118,15 +119,14 @@ class CustomTabBrowserToolbarMiddleware(
     private val customTabId: String,
     private val browserStore: BrowserStore,
     private val appStore: AppStore,
+    private val ipProtectionStore: IPProtectionStore,
     private val permissionsStorage: SitePermissionsStorage,
-    private val cookieBannersStorage: CookieBannersStorage,
     private val useCases: CustomTabsUseCases,
     private val trackingProtectionUseCases: TrackingProtectionUseCases,
     private val publicSuffixList: PublicSuffixList,
     private val clipboard: ClipboardHandler,
     private val navController: NavController,
     private val closeTabDelegate: () -> Unit,
-    private val settings: Settings,
     private val scope: CoroutineScope,
     private val isSandboxCustomTab: Boolean = false,
 ) : Middleware<BrowserToolbarState, BrowserToolbarAction> {
@@ -155,11 +155,16 @@ class CustomTabBrowserToolbarMiddleware(
                 observePageOriginUpdates(store)
                 observePageSecurityUpdates(store)
                 observePageTrackingProtectionUpdates(store)
+                observeIPProtectionUpdates(store)
             }
 
             is CloseClicked -> {
                 Toolbar.buttonTapped.record(
-                    Toolbar.ButtonTappedExtra(source = SOURCE_CUSTOM_BAR, item = ACTION_CLOSE_CLICKED),
+                    Toolbar.ButtonTappedExtra(
+                        source = SOURCE_ADDRESS_BAR,
+                        item = ACTION_CLOSE_CLICKED,
+                        surface = SURFACE_CUSTOM_TAB,
+                    ),
                 )
 
                 useCases.remove(customTabId)
@@ -168,7 +173,11 @@ class CustomTabBrowserToolbarMiddleware(
 
             is SiteInfoClicked -> {
                 Toolbar.buttonTapped.record(
-                    Toolbar.ButtonTappedExtra(source = SOURCE_CUSTOM_BAR, item = ACTION_SECURITY_INDICATOR_CLICKED),
+                    Toolbar.ButtonTappedExtra(
+                        source = SOURCE_ADDRESS_BAR,
+                        item = ACTION_SECURITY_INDICATOR_CLICKED,
+                        surface = SURFACE_CUSTOM_TAB,
+                    ),
                 )
 
                 val safeCustomTab = customTab ?: return
@@ -180,13 +189,7 @@ class CustomTabBrowserToolbarMiddleware(
                     scope.launch(Dispatchers.Main) {
                         trackingProtectionUseCases.containsException(customTabId) { isExcepted ->
                             scope.launch {
-                                val cookieBannerUIMode = cookieBannersStorage.getCookieBannerUIMode(
-                                    tab = safeCustomTab,
-                                    isFeatureEnabledInPrivateMode = settings.shouldUseCookieBannerPrivateMode,
-                                    publicSuffixList = publicSuffixList,
-                                )
-
-                                val directions = if (settings.enableUnifiedTrustPanel) {
+                                val directions =
                                     ExternalAppBrowserFragmentDirections.actionGlobalTrustPanelFragment(
                                         sessionId = safeCustomTab.id,
                                         url = safeCustomTab.content.url,
@@ -198,25 +201,7 @@ class CustomTabBrowserToolbarMiddleware(
                                         permissionHighlights = safeCustomTab.content.permissionHighlights,
                                         isTrackingProtectionEnabled =
                                             safeCustomTab.trackingProtection.enabled && !isExcepted,
-                                        cookieBannerUIMode = cookieBannerUIMode,
                                     )
-                                } else {
-                                    ExternalAppBrowserFragmentDirections
-                                        .actionGlobalQuickSettingsSheetDialogFragment(
-                                            sessionId = customTabId,
-                                            url = safeCustomTab.content.url,
-                                            title = safeCustomTab.content.title,
-                                            isLocalPdf = safeCustomTab.content.url.isContentUrl(),
-                                            isSecured = safeCustomTab.content.securityInfo.isSecure,
-                                            sitePermissions = sitePermissions,
-                                            gravity = settings.toolbarPosition.androidGravity,
-                                            certificateName = safeCustomTab.content.securityInfo.issuer,
-                                            permissionHighlights = safeCustomTab.content.permissionHighlights,
-                                            isTrackingProtectionEnabled =
-                                                safeCustomTab.trackingProtection.enabled && !isExcepted,
-                                            cookieBannerUIMode = cookieBannerUIMode,
-                                        )
-                                }
                                 navController.nav(
                                     R.id.externalAppBrowserFragment,
                                     directions,
@@ -229,7 +214,11 @@ class CustomTabBrowserToolbarMiddleware(
 
             is CustomButtonClicked -> {
                 Toolbar.buttonTapped.record(
-                    Toolbar.ButtonTappedExtra(source = SOURCE_CUSTOM_BAR, item = ACTION_SITE_CUSTOM_CLICKED),
+                    Toolbar.ButtonTappedExtra(
+                        source = SOURCE_ADDRESS_BAR,
+                        item = ACTION_SITE_CUSTOM_CLICKED,
+                        surface = SURFACE_CUSTOM_TAB,
+                    ),
                 )
                 val customTab = customTab
                 customTab?.config?.actionButtonConfig?.pendingIntent?.send(
@@ -241,7 +230,11 @@ class CustomTabBrowserToolbarMiddleware(
 
             is ShareClicked -> {
                 Toolbar.buttonTapped.record(
-                    Toolbar.ButtonTappedExtra(source = SOURCE_CUSTOM_BAR, item = ACTION_SHARE_CLICKED),
+                    Toolbar.ButtonTappedExtra(
+                        source = SOURCE_ADDRESS_BAR,
+                        item = ACTION_SHARE_CLICKED,
+                        surface = SURFACE_CUSTOM_TAB,
+                    ),
                 )
                 val customTab = customTab
                 navController.navigate(
@@ -260,7 +253,11 @@ class CustomTabBrowserToolbarMiddleware(
 
             is MenuClicked -> {
                 Toolbar.buttonTapped.record(
-                    Toolbar.ButtonTappedExtra(source = SOURCE_CUSTOM_BAR, item = ACTION_MENU_CLICKED),
+                    Toolbar.ButtonTappedExtra(
+                        source = SOURCE_ADDRESS_BAR,
+                        item = ACTION_MENU_CLICKED,
+                        surface = SURFACE_CUSTOM_TAB,
+                    ),
                 )
                 navController.nav(
                     R.id.externalAppBrowserFragment,
@@ -272,21 +269,31 @@ class CustomTabBrowserToolbarMiddleware(
                 )
             }
 
-            is CopyToClipboardClicked -> {
-                Events.copyUrlTapped.record(NoExtras())
-
-                clipboard.text = customTab?.content?.url?.also {
-                    // Android 13+ shows by default a popup for copied text.
-                    // Avoid overlapping popups informing the user when the URL is copied to the clipboard.
-                    // and only show our snackbar when Android will not show an indication by default.
-                    // See https://developer.android.com/develop/ui/views/touch-and-input/copy-paste#duplicate-notifications).
-                    if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.S_V2) {
-                        appStore.dispatch(URLCopiedToClipboard)
-                    }
-                }
-            }
+            is CopyToClipboardClicked -> handleCopyToClipboard()
 
             else -> next(action)
+        }
+    }
+
+    private fun handleCopyToClipboard() {
+        Events.copyUrlTapped.record(NoExtras())
+        val currentTab = customTab
+        val url = currentTab?.content?.url
+        // For added safety unless the current tab is explicitly set to non-private,
+        // fall back to sensitiveText even if the check comes back as null.
+        if (currentTab?.content?.private == false) {
+            clipboard.text = url
+        } else {
+            clipboard.sensitiveText = url
+        }
+        url?.also {
+            // Android 13+ shows by default a popup for copied text.
+            // Avoid overlapping popups informing the user when the URL is copied to the clipboard.
+            // and only show our snackbar when Android will not show an indication by default.
+            // See https://developer.android.com/develop/ui/views/touch-and-input/copy-paste#duplicate-notifications).
+            if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.S_V2) {
+                appStore.dispatch(URLCopiedToClipboard)
+            }
         }
     }
 
@@ -331,6 +338,15 @@ class CustomTabBrowserToolbarMiddleware(
             mapNotNull { state -> state.findCustomTab(customTabId) }
                 .distinctUntilChangedBy { tab -> tab.trackingProtection }
                 .collect { updateStartPageActions(store, it) }
+        }
+    }
+
+    private fun observeIPProtectionUpdates(store: Store<BrowserToolbarState, BrowserToolbarAction>) {
+        ipProtectionStore.observeWhileActive {
+            distinctUntilChangedBy { it.proxyStatus }
+                .collect {
+                    updateStartPageActions(store, customTab)
+                }
         }
     }
 
@@ -427,19 +443,26 @@ class CustomTabBrowserToolbarMiddleware(
             customTab.content.securityInfo == SecurityInfo.Unknown
         ) {
             add(
-                ActionButtonRes(
+                buildSiteInfoAction(
                     drawableResId = iconsR.drawable.mozac_ic_globe_24,
                     contentDescription = toolbarR.string.mozac_browser_toolbar_content_description_site_info,
                     onClick = object : BrowserToolbarEvent {},
                 ),
             )
-        } else if (
-                customTab.content.securityInfo.isSecure &&
-                customTab.trackingProtection.enabled &&
-                !customTab.trackingProtection.ignoredOnTrackingProtection
-            ) {
+        } else if (!customTab.content.securityInfo.isSecure) {
             add(
-                ActionButtonRes(
+                buildSiteInfoAction(
+                    drawableResId = iconsR.drawable.mozac_ic_shield_slash_24,
+                    contentDescription = toolbarR.string.mozac_browser_toolbar_content_description_site_info,
+                    onClick = SiteInfoClicked,
+                ),
+            )
+        } else if (
+            customTab.trackingProtection.enabled &&
+            !customTab.trackingProtection.ignoredOnTrackingProtection
+        ) {
+            add(
+                buildSiteInfoAction(
                     drawableResId = iconsR.drawable.mozac_ic_shield_checkmark_24,
                     contentDescription = toolbarR.string.mozac_browser_toolbar_content_description_site_info,
                     onClick = SiteInfoClicked,
@@ -447,11 +470,37 @@ class CustomTabBrowserToolbarMiddleware(
             )
         } else {
             add(
-                ActionButtonRes(
-                    drawableResId = iconsR.drawable.mozac_ic_shield_slash_24,
+                buildSiteInfoAction(
+                    drawableResId = iconsR.drawable.mozac_ic_shield_cross_24,
                     contentDescription = toolbarR.string.mozac_browser_toolbar_content_description_site_info,
                     onClick = SiteInfoClicked,
                 ),
+            )
+        }
+    }
+
+    private fun buildSiteInfoAction(
+        drawableResId: Int,
+        contentDescription: Int,
+        onClick: BrowserToolbarInteraction,
+    ): Action {
+        return if (ipProtectionStore.state.proxyStatus == Authorized.Active) {
+            Action.AnimatedPillActionRes(
+                iconResId = drawableResId,
+                overlayResId = iconsR.drawable.mozac_ic_globe_24,
+                textResId = R.string.ip_protection_toolbar_pill_label,
+                contentDescriptionResId = R.string.ip_protection_toolbar_pill_description,
+                animated = !ipProtectionStore.state.proxyActiveShown,
+                onClick = onClick,
+                onAnimationStarted = {
+                    ipProtectionStore.dispatch(IPProtectionAction.ProxyActiveShown)
+                },
+            )
+        } else {
+            ActionButtonRes(
+                drawableResId = drawableResId,
+                contentDescription = contentDescription,
+                onClick = onClick,
             )
         }
     }

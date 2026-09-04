@@ -22,7 +22,7 @@ firefox.ai.runtime:
     data_sensitivity:
       - interaction
     notification_emails:
-      - thasan@mozilla.com
+      - firefox-ai-and-ml@mozilla.com
     expires: never
     extra_keys:
       flow_id: &flow_id
@@ -51,7 +51,7 @@ firefox.ai.runtime:
     data_sensitivity:
       - interaction
     notification_emails:
-      - thasan@mozilla.com
+      - firefox-ai-and-ml@mozilla.com
     expires: never
     extra_keys:
       flow_id: *flow_id
@@ -79,7 +79,7 @@ firefox.ai.runtime:
     data_sensitivity:
       - interaction
     notification_emails:
-      - thasan@mozilla.com
+      - firefox-ai-and-ml@mozilla.com
     expires: never
     extra_keys:
       flow_id: *flow_id
@@ -105,20 +105,24 @@ firefox.ai.runtime:
     data_sensitivity:
       - interaction
     notification_emails:
-      - tziade@mozilla.com
+      - firefox-ai-and-ml@mozilla.com
     expires: never
-    labels:
+    labels: &engine_labels
       - autofill-ml
       - pdfjs
       - ml-suggest-intent
       - ml-suggest-ner
       - about-inference
       - webextension
-      - wllamapreview
+      - link-preview
       - default-engine
       - smart-tab-embedding-engine
       - smart-tab-topic-engine
       - smart-intent
+      - smart-openai
+      - title-generation-engine
+      - smart-openai-memories-generation
+      - smart-openai-memories-usage
 
   engine_creation_failure:
     type: event
@@ -133,8 +137,7 @@ firefox.ai.runtime:
     data_sensitivity:
       - interaction
     notification_emails:
-      - tziade@mozilla.com
-      - tshasan@mozilla.com
+      - firefox-ai-and-ml@mozilla.com
     expires: never
     extra_keys:
       flow_id: *flow_id
@@ -167,8 +170,7 @@ firefox.ai.runtime:
     data_sensitivity:
       - interaction
     notification_emails:
-      - tziade@mozilla.com
-      - tshasan@mozilla.com
+      - firefox-ai-and-ml@mozilla.com
     expires: never
     extra_keys:
       flow_id: *flow_id
@@ -196,7 +198,7 @@ firefox.ai.runtime:
     data_sensitivity:
       - interaction
     notification_emails:
-      - thasan@mozilla.com
+      - firefox-ai-and-ml@mozilla.com
     expires: never
     extra_keys:
       flow_id: *flow_id
@@ -246,20 +248,9 @@ firefox.ai.runtime:
     data_sensitivity:
       - interaction
     notification_emails:
-      - tziade@mozilla.com
+      - firefox-ai-and-ml@mozilla.com
     expires: never
-    labels:
-      - autofill-ml
-      - pdfjs
-      - ml-suggest-intent
-      - ml-suggest-ner
-      - about-inference
-      - webextension
-      - wllamapreview
-      - default-engine
-      - smart-tab-embedding-engine
-      - smart-tab-topic-engine
-      - smart-intent
+    labels: *engine_labels
 
   model_download:
     type: event
@@ -267,12 +258,13 @@ firefox.ai.runtime:
       A model is downloaded
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1891685
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2015825
     data_reviews:
       - https://phabricator.services.mozilla.com/D238583
     data_sensitivity:
       - interaction
     notification_emails:
-      - tziade@mozilla.com
+      - firefox-ai-and-ml@mozilla.com
     expires: never
     extra_keys:
       modelDownloadId:
@@ -288,10 +280,16 @@ firefox.ai.runtime:
         type: string
         description: model id
       step:
-        description: start / cancel / error / complete
+        description: >
+          One of start_download, start_file_download,
+          end_file_download_success, end_file_download_failed,
+          end_download_success, end_download_failed.
         type: string
       duration:
-        description: how long it took to reach the step from start
+        description: >
+          Milliseconds elapsed to reach the step from its start. For
+          end_file_download_* this is the time to download a single file; for
+          end_download_* this is the total time to download the whole model.
         type: quantity
       when:
         description: when the event was recorded
@@ -314,7 +312,7 @@ firefox.ai.runtime:
     data_sensitivity:
       - interaction
     notification_emails:
-      - tziade@mozilla.com
+      - firefox-ai-and-ml@mozilla.com
     expires: never
     extra_keys:
       deletedBy:
@@ -368,26 +366,65 @@ firefox.ai.runtime:
           e.g. Xenova/all-MiniLM-L6-v2
       backend:
         type: string
-        description: The backend that is being used, e.g. onnx, onnx-native, wllama
+        description: The backend that is being used, e.g. onnx, onnx-native, llama.cpp
       token_count:
         description: The number of tokens generated for text generation tasks.
         type: quantity
       character_count:
         description: The number of characters generated for text generation tasks.
         type: quantity
+      time_to_first_chunk:
+        description: >
+          Milliseconds from the run request being dispatched until the first
+          generated (non-prompt) chunk is received by the consumer. Measured in
+          the parent process end-to-end, so it includes IPC and streaming
+          overhead, and is populated for all streaming backends.
+        type: quantity
+      average_chunk_time:
+        description: >
+          The mean milliseconds elapsed between consecutive generated
+          (non-prompt) chunks for a streamed text generation run. Null when
+          fewer than two generated chunks were produced.
+        type: quantity
+      system_memory_mb:
+        description: The total physical system memory in MB.
+        type: quantity
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1992779
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1997016
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2029250
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2016214
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1992779
       - https://phabricator.services.mozilla.com/D270909
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2016214
     data_sensitivity:
       - interaction
     notification_emails:
-      - tziade@mozilla.com
-      - gtatum@mozilla.com
-      - thasan@mozilla.com
+      - firefox-ai-and-ml@mozilla.com
     expires: never
+
+  onnx_native_availability:
+    type: labeled_counter
+    description: >
+      Whether the native ONNX runtime could be loaded in the inference process,
+      as reported by InferenceSession.isAvailable().
+      It is recorded at most once per profile, guarded by the
+      browser.ml.onnxNativeAvailabilityReported pref.
+    labels:
+      - available
+      - unavailable
+      - probe_error
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2063024
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2063024
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - vpollet@mozilla.com
+      - enordin@mozilla.com
+    expires: 160
 
 model_management:
   remove_initiated:
@@ -402,8 +439,7 @@ model_management:
     data_sensitivity:
       - interaction
     notification_emails:
-      - tziade@mozilla.com
-      - ngrato@mozilla.com
+      - firefox-ai-and-ml@mozilla.com
     extra_keys:
       extension_ids:
         description: Ids of the extensions that use this model
@@ -443,8 +479,7 @@ model_management:
     data_sensitivity:
       - interaction
     notification_emails:
-      - tziade@mozilla.com
-      - ngrato@mozilla.com
+      - firefox-ai-and-ml@mozilla.com
     extra_keys:
       extension_ids:
         description: Ids of the extensions that use this model
@@ -475,8 +510,7 @@ model_management:
     data_sensitivity:
       - interaction
     notification_emails:
-      - tziade@mozilla.com
-      - ngrato@mozilla.com
+      - firefox-ai-and-ml@mozilla.com
     extra_keys:
       extension_ids:
         description: Ids of the extensions that use this model
@@ -503,8 +537,7 @@ model_management:
     data_sensitivity:
       - interaction
     notification_emails:
-      - tziade@mozilla.com
-      - ngrato@mozilla.com
+      - firefox-ai-and-ml@mozilla.com
     extra_keys:
       extension_ids:
         description: Ids of the extensions that use this model
@@ -531,8 +564,7 @@ model_management:
     data_sensitivity:
       - interaction
     notification_emails:
-      - tziade@mozilla.com
-      - ngrato@mozilla.com
+      - firefox-ai-and-ml@mozilla.com
     extra_keys:
       models:
         description: Number of models in the list
@@ -550,8 +582,7 @@ model_management:
     data_sensitivity:
       - interaction
     notification_emails:
-      - tziade@mozilla.com
-      - ngrato@mozilla.com
+      - firefox-ai-and-ml@mozilla.com
     extra_keys:
       extension_ids:
         description: Ids of the extensions that use this model

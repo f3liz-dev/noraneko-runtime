@@ -2,14 +2,15 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "xpctest_private.h"
-#include "xpctest_interfaces.h"
 #include "mozilla/Casting.h"
-#include "js/Value.h"
 
-#include "nsCOMPtr.h"
 #include "nsComponentManagerUtils.h"
+#include "nsCOMPtr.h"
 #include "nsIURI.h"
+#include "xpctest_interfaces.h"
+#include "xpctest_private.h"
+
+#include "js/Value.h"
 
 using namespace mozilla;
 
@@ -67,13 +68,13 @@ NS_IMPL_ISUPPORTS(nsXPCTestParams, nsIXPCTestParams)
     /* Copy b into rv. */                                                      \
     *rvLength = *bLength;                                                      \
     *rv = static_cast<type*>(moz_xmalloc(elemSize * (*bLength + padding)));    \
-    memcpy(*rv, *b, elemSize*(*bLength + padding));                            \
+    memcpy(*rv, *b, elemSize * (*bLength + padding));                          \
                                                                                \
     /* Copy a into b. */                                                       \
     *bLength = aLength;                                                        \
     free(*b);                                                                  \
     *b = static_cast<type*>(moz_xmalloc(elemSize * (aLength + padding)));      \
-    memcpy(*b, a, elemSize*(aLength + padding));                               \
+    memcpy(*b, a, elemSize * (aLength + padding));                             \
                                                                                \
     /* We need to take ownership of the data we got from a,                    \
        since the caller owns it. */                                            \

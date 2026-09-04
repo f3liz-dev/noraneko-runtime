@@ -7,7 +7,12 @@ const lazy = {
 };
 
 ChromeUtils.defineESModuleGetters(lazy, {
+  AdsClient: "resource://newtab/lib/AdsClient.sys.mjs",
   ContextId: "moz-src:///browser/modules/ContextId.sys.mjs",
+  MozAdsPlacementRequest:
+    "moz-src:///toolkit/components/uniffi-bindgen-gecko-js/components/generated/RustAdsClient.sys.mjs",
+  MozAdsPlacementRequestWithCount:
+    "moz-src:///toolkit/components/uniffi-bindgen-gecko-js/components/generated/RustAdsClient.sys.mjs",
   ObliviousHTTP: "resource://gre/modules/ObliviousHTTP.sys.mjs",
   PersistentCache: "resource://newtab/lib/PersistentCache.sys.mjs",
 });
@@ -56,6 +61,7 @@ export class AdsFeed {
     this.tiles = [];
     this.spocs = [];
     this.spocPlacements = [];
+    this.adsClient = null;
     this.cache = this.PersistentCache(CACHE_KEY, true);
   }
 
@@ -346,6 +352,17 @@ export class AdsFeed {
       placements.push(...spocPlacements);
     }
 
+    if (this.adsClient) {
+      return this._fetchWithAdsClient(
+        supportedAdTypes,
+        placements,
+        state.Prefs.values,
+        returnData
+      );
+    }
+
+    const adsBackendConfig = state.Prefs.values?.adsBackendConfig || {};
+
     let fetchPromise;
 
     const controller = new AbortController();
@@ -356,6 +373,7 @@ export class AdsFeed {
       headers,
       body: JSON.stringify({
         context_id: await lazy.ContextId.request(),
+        flags: adsBackendConfig,
         placements,
         blocks: blockedSponsors.split(","),
       }),
@@ -421,12 +439,98 @@ export class AdsFeed {
   }
 
   /**
+   * Fetch ads through the MozAdsClient. Maps the canonical MozAdsTile/MozAdsSpoc
+   * objects into the shape the rest of New Tab consumes today; the mapping goes
+   * away once consumers read the ads-client types directly.
+   *
+   * @param {Array} supportedAdTypes
+   * @param {Array} placements
+   * @param {object} prefValues
+   * @param {object} returnData
+   * @returns {Promise<object>}
+   */
+  async _fetchWithAdsClient(
+    supportedAdTypes,
+    placements,
+    prefValues,
+    returnData
+  ) {
+    const isTile = p => p.placement?.startsWith("newtab_tile_");
+    const options = lazy.AdsClient.requestOptions(prefValues);
+
+    if (supportedAdTypes.tiles) {
+      const requests = placements.filter(isTile).map(
+        p =>
+          new lazy.MozAdsPlacementRequest({
+            placementId: p.placement,
+            iabContent: null,
+          })
+      );
+      const tiles = await this.adsClient.requestTileAds(requests, options);
+      returnData.tiles = Array.from(tiles.values(), tile => ({
+        id: tile.blockKey,
+        block_key: tile.blockKey,
+        name: tile.name,
+        url: tile.url,
+        click_url: tile.callbacks.click,
+        image_url: tile.imageUrl,
+        impression_url: tile.callbacks.impression,
+        image_size: 200,
+      }));
+    }
+
+    if (supportedAdTypes.spocs) {
+      const requests = placements
+        .filter(p => !isTile(p))
+        .map(
+          p =>
+            new lazy.MozAdsPlacementRequestWithCount({
+              placementId: p.placement,
+              count: p.count,
+              iabContent: null,
+            })
+        );
+      const spocs = await this.adsClient.requestSpocAds(requests, options);
+      returnData.spocs = (spocs.get("newtab_spocs") ?? []).map(spoc => ({
+        format: spoc.format,
+        url: spoc.url,
+        callbacks: spoc.callbacks,
+        image_url: spoc.imageUrl,
+        title: spoc.title,
+        domain: spoc.domain,
+        excerpt: spoc.excerpt,
+        sponsor: spoc.sponsor,
+        sponsored_by_override: spoc.sponsoredByOverride,
+        block_key: spoc.blockKey,
+        caps: spoc.caps
+          ? { cap_key: spoc.caps.capKey, day: spoc.caps.day }
+          : undefined,
+        ranking: spoc.ranking
+          ? {
+              item_score: spoc.ranking.itemScore,
+              personalization_models: Object.fromEntries(
+                spoc.ranking.personalizationModels ?? []
+              ),
+              priority: spoc.ranking.priority,
+            }
+          : undefined,
+      }));
+    }
+
+    return returnData;
+  }
+
+  /**
    * Init function that runs only from onAction at.INIT call.
    *
    * @param {boolean} isStartup=false
    * @returns {void}
    */
   async init(isStartup = false) {
+    if (lazy.AdsClient.isEnabled(this.store.getState().Prefs.values)) {
+      this.adsClient = lazy.AdsClient.getClient();
+    }
+
     if (this.isEnabled()) {
       await this.getAdsData(isStartup);
     }
@@ -536,7 +640,8 @@ export class AdsFeed {
       case at.PREF_CHANGED:
         await this.onPrefChangedAction(action);
         break;
-      case at.DISCOVERY_STREAM_CONFIG_CHANGE: // Event emitted from ASDevTools "Reset Cache" button
+      case at.DISCOVERY_STREAM_CONFIG_CHANGE:
+      case at.DISCOVERY_STREAM_DEV_REFRESH_CACHE: // Event emitted from ASDevTools "Refresh Cache" button
       case at.DISCOVERY_STREAM_DEV_EXPIRE_CACHE: // Event emitted from ASDevTools "Expire Cache" button
         // Clear cache
         await this.resetAdsFeed();

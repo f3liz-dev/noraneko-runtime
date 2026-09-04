@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,8 +7,8 @@
 
 #include <functional>
 
-#include "WebTransportStreamBase.h"
 #include "Http3StreamBase.h"
+#include "WebTransportStreamBase.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/Result.h"
 #include "mozilla/ResultVariant.h"
@@ -55,7 +54,8 @@ class Http3WebTransportStream final : public WebTransportStreamBase,
   Http3ConnectUDPStream* GetHttp3ConnectUDPStream() override { return nullptr; }
   Http3StreamTunnel* GetHttp3StreamTunnel() override { return nullptr; }
 
-  void SetSendOrder(Maybe<int64_t> aSendOrder) override;
+  void SetSendOrder(int64_t aSendOrder) override;
+  void SetSendGroup(uint64_t aSendGroupId) override;
 
   [[nodiscard]] nsresult ReadSegments() override;
   [[nodiscard]] nsresult WriteSegments() override;

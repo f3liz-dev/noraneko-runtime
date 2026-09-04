@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,8 +7,10 @@
 #include <limits>
 
 #include "js/Array.h"  // JS::GetArrayLength, JS::IsArrayObject
+#include "js/GCAPI.h"
 #include "js/JSON.h"
 #include "js/PropertyAndElement.h"  // JS_GetElement
+#include "mozilla/BasePrincipal.h"
 #include "mozilla/OriginAttributes.h"
 #include "mozilla/Services.h"
 #include "mozilla/StaticPrefs_dom.h"
@@ -19,7 +19,7 @@
 #include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/dom/SimpleGlobalObject.h"
 #include "mozilla/ipc/BackgroundUtils.h"
-#include "mozilla/net/SFVService.h"
+#include "mozilla/net/SFV.h"
 #include "nsCOMPtr.h"
 #include "nsContentUtils.h"
 #include "nsIEffectiveTLDService.h"
@@ -29,6 +29,7 @@
 #include "nsIPrincipal.h"
 #include "nsIRandomGenerator.h"
 #include "nsIScriptError.h"
+#include "nsMixedContentBlocker.h"
 #include "nsNetUtil.h"
 #include "nsXULAppAPI.h"
 
@@ -161,7 +162,7 @@ void ReportingHeader::ReportingFromChannel(nsIHttpChannel* aChannel) {
     return;
   }
 
-  if (!IsSecureURI(uri)) {
+  if (!nsMixedContentBlocker::IsPotentiallyTrustworthyOrigin(uri)) {
     return;
   }
 
@@ -237,9 +238,7 @@ EndpointsList ReportingHeader::ProcessReportingEndpointsListFromResponse(
     return {};
   }
 
-  // No other browsers seem to do this, even though it's defined in
-  // specification
-  if (NS_WARN_IF(!IsSecureURI(uri))) {
+  if (!nsMixedContentBlocker::IsPotentiallyTrustworthyOrigin(uri)) {
     return {};
   }
 
@@ -268,8 +267,6 @@ size_t ReportingHeader::ParseReportingEndpointsHeader(
     const nsACString& aHeaderValue, nsIURI* aURI,
     std::function<void(const nsAString&, nsCOMPtr<nsIURI>)>&&
         aOnParsedItemCallback) {
-  nsCOMPtr<nsISFVService> sfv = mozilla::net::GetSFVService();
-
   nsAutoCString uriSpec;
   aURI->GetSpec(uriSpec);
 
@@ -278,66 +275,45 @@ size_t ReportingHeader::ParseReportingEndpointsHeader(
     return 0;
   }
 
-  nsCOMPtr<nsISFVDictionary> parsedHeader;
-  if (NS_FAILED(
-          sfv->ParseDictionary(aHeaderValue, getter_AddRefs(parsedHeader)))) {
+  auto dict = mozilla::net::SFV::ParseDict(aHeaderValue);
+  if (!dict.IsValid()) {
     return 0;
   }
 
   nsTArray<nsCString> keys;
-  if (NS_FAILED(parsedHeader->Keys(keys))) {
+  if (NS_FAILED(dict.GetKeys(keys))) {
     return 0;
   }
 
   size_t itemsParsed = 0;
 
-  if (!IsSecureURI(aURI)) {
+  if (!nsMixedContentBlocker::IsPotentiallyTrustworthyOrigin(aURI)) {
     return 0;
   }
 
   for (const auto& key : keys) {
-    // Extract an SFV data object from each dictionary entry
-    nsCOMPtr<nsISFVItemOrInnerList> iil;
-    if (NS_FAILED(parsedHeader->Get(key, getter_AddRefs(iil)))) {
-      continue;
-    }
-
-    // An item needs to be extracted from the ItemOrInnerList member-value
-    nsCOMPtr<nsISFVBareItem> value;
-    if (nsCOMPtr<nsISFVInnerList> innerList = do_QueryInterface(iil)) {
-      // Extract the first entry of each inner list, which should contain the
-      // endpoint's URL string
-      nsTArray<RefPtr<nsISFVItem>> items;
-
-      if (NS_FAILED(innerList->GetItems(items))) {
-        continue;
-      }
-
-      if (items.IsEmpty()) {
-        continue;
-      }
-
-      nsCOMPtr<nsISFVItem> firstItem(items[0]);
-
-      if (NS_FAILED(firstItem->GetValue(getter_AddRefs(value)))) {
-        continue;
-      }
-    } else if (nsCOMPtr<nsISFVItem> listItem = do_QueryInterface(iil)) {
-      if (NS_FAILED(listItem->GetValue(getter_AddRefs(value)))) {
-        continue;
-      }
-    }
-
-    // Ensure that the item's data type is a string, so the URL can be properly
-    // parsed
-    nsCOMPtr<nsISFVString> sfvString(do_QueryInterface(value));
-    if (!sfvString) {
-      continue;
-    }
-
     nsAutoCString endpointURLString;
-    if (NS_FAILED(sfvString->GetValue(endpointURLString))) {
-      continue;
+
+    // Try to get value as a direct string item
+    if (NS_SUCCEEDED(dict.GetItem<mozilla::net::SFV::SFVString>(
+            key, endpointURLString))) {
+      // Got a direct string item
+    } else {
+      // Try to get value as an inner list and extract first item
+      auto innerList = dict.GetInnerList(key);
+      if (!innerList.IsValid() || innerList.Length() == 0) {
+        continue;
+      }
+
+      auto firstItem = innerList.GetItemAt(0);
+      if (!firstItem.IsValid()) {
+        continue;
+      }
+
+      if (NS_FAILED(firstItem.GetValue<mozilla::net::SFV::SFVString>(
+              endpointURLString))) {
+        continue;
+      }
     }
 
     nsCOMPtr<nsIURI> endpointURL;
@@ -347,7 +323,7 @@ size_t ReportingHeader::ParseReportingEndpointsHeader(
       continue;
     }
 
-    if (!IsSecureURI(endpointURL)) {
+    if (!nsMixedContentBlocker::IsPotentiallyTrustworthyOrigin(endpointURL)) {
       continue;
     }
 
@@ -387,12 +363,18 @@ ReportingHeader::ParseReportToHeader(nsIHttpChannel* aChannel, nsIURI* aURI,
   JS::Rooted<JS::Value> jsonValue(cx);
   bool ok = JS_ParseJSON(cx, json.BeginReading(), json.Length(), &jsonValue);
   if (!ok) {
+    // Drop error in favor of logging a generic message, because the error
+    // message's column numbers are confusing due to the prepended characters
+    // above, and a user cannot do much about it anyway (bug 2020662).
+    JS_ClearPendingException(cx);
     LogToConsoleInvalidJSON(aChannel, aURI);
     return nullptr;
   }
 
-  dom::ReportingHeaderValue data;
+  RootedDictionary<dom::ReportingHeaderValue> data(cx);
   if (!data.Init(cx, jsonValue)) {
+    // Ignore error in favor of generic message to avoid logspam (bug 2020662).
+    JS_ClearPendingException(cx);
     LogToConsoleInvalidJSON(aChannel, aURI);
     return nullptr;
   }
@@ -514,20 +496,6 @@ ReportingHeader::ParseReportToHeader(nsIHttpChannel* aChannel, nsIURI* aURI,
 }
 
 /* static */
-bool ReportingHeader::IsSecureURI(nsIURI* aURI) {
-  MOZ_ASSERT(aURI);
-
-  bool prioriAuthenticated = false;
-  if (NS_WARN_IF(NS_FAILED(NS_URIChainHasFlags(
-          aURI, nsIProtocolHandler::URI_IS_POTENTIALLY_TRUSTWORTHY,
-          &prioriAuthenticated)))) {
-    return false;
-  }
-
-  return prioriAuthenticated;
-}
-
-/* static */
 void ReportingHeader::LogToConsoleInvalidJSON(nsIHttpChannel* aChannel,
                                               nsIURI* aURI) {
   nsTArray<nsString> params;
@@ -618,7 +586,7 @@ void ReportingHeader::LogToConsoleInternal(nsIHttpChannel* aChannel,
 
   nsAutoString localizedMsg;
   rv = nsContentUtils::FormatLocalizedString(
-      nsContentUtils::eSECURITY_PROPERTIES, aMsg, aParams, localizedMsg);
+      PropertiesFile::SECURITY_PROPERTIES, aMsg, aParams, localizedMsg);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return;
   }
@@ -827,8 +795,21 @@ void ReportingHeader::RemoveOriginsFromHost(const nsAString& aHost) {
   NS_ConvertUTF16toUTF8 host(aHost);
 
   for (auto iter = mOrigins.Iter(); !iter.Done(); iter.Next()) {
+    // The key is an origin, but HasRootDomain() expects a host.
+    RefPtr<BasePrincipal> principal =
+        BasePrincipal::CreateContentPrincipal(iter.Key());
+    if (NS_WARN_IF(!principal)) {
+      continue;
+    }
+
+    nsAutoCString originHost;
+    nsresult rv = principal->GetHost(originHost);
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      continue;
+    }
+
     bool hasRootDomain = false;
-    nsresult rv = tldService->HasRootDomain(iter.Key(), host, &hasRootDomain);
+    rv = tldService->HasRootDomain(originHost, host, &hasRootDomain);
     if (NS_WARN_IF(NS_FAILED(rv)) || !hasRootDomain) {
       continue;
     }

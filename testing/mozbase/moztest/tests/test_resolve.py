@@ -163,18 +163,18 @@ def all_tests(create_tests):
             },
         ),
         (
-            "fig/grape/src/TestInstrumentationA.java",
+            "fig/grape/test_MochitestA.html",
             {
-                "flavor": "instrumentation",
-                "manifest": "fig/grape/instrumentation.toml",
+                "flavor": "mochitest",
+                "manifest": "fig/grape/mochitest.toml",
                 "subsuite": "background",
             },
         ),
         (
-            "fig/huckleberry/src/TestInstrumentationB.java",
+            "fig/huckleberry/test_MochitestB.html",
             {
-                "flavor": "instrumentation",
-                "manifest": "fig/huckleberry/instrumentation.toml",
+                "flavor": "mochitest",
+                "manifest": "fig/huckleberry/mochitest.toml",
                 "subsuite": "browser",
             },
         ),
@@ -322,6 +322,71 @@ def test_load(resolver):
     assert "/_mozilla/html" in resolver.tests_by_manifest
 
 
+def _setup_stale_backend_loader(tmpdir, topsrcdir, all_tests, defaults, monkeypatch):
+    topobjdir = tmpdir.strpath
+    with open(os.path.join(topobjdir, "all-tests.pkl"), "wb") as fh:
+        pickle.dump(all_tests, fh)
+    with open(os.path.join(topobjdir, "test-defaults.pkl"), "wb") as fh:
+        pickle.dump(defaults, fh)
+
+    calls = []
+
+    def fake_gen_test_backend():
+        calls.append("gen")
+
+    def fake_install_test_files(srcdir, objdir, tests_root):
+        calls.append(("install", srcdir, objdir, tests_root))
+
+    class BuildBackendLoaderAlwaysOutOfDate(BuildBackendLoader):
+        def backend_out_of_date(self, backend_file):
+            return True
+
+    monkeypatch.setattr(
+        "mozbuild.gen_test_backend.gen_test_backend", fake_gen_test_backend
+    )
+    monkeypatch.setattr("moztest.resolve.install_test_files", fake_install_test_files)
+
+    return (
+        BuildBackendLoaderAlwaysOutOfDate(topsrcdir, None, None, topobjdir=topobjdir),
+        calls,
+        topobjdir,
+    )
+
+
+def test_build_backend_loader_stale_backend_installs_tests(
+    monkeypatch, tmpdir, topsrcdir, all_tests, defaults
+):
+    loader, calls, topobjdir = _setup_stale_backend_loader(
+        tmpdir.mkdir("objdir"), topsrcdir, all_tests, defaults, monkeypatch
+    )
+
+    # Simulate a prior full build by creating the harness install manifest.
+    manifests_dir = os.path.join(topobjdir, "_build_manifests", "install")
+    os.makedirs(manifests_dir)
+    with open(os.path.join(manifests_dir, "_tests"), "w") as fh:
+        fh.write("")
+
+    assert list(loader())
+    assert calls[0] == "gen"
+    assert calls[1][0] == "install"
+    assert os.path.normpath(calls[1][1]) == os.path.normpath(loader.topsrcdir)
+    assert os.path.normpath(calls[1][2]) == os.path.normpath(topobjdir)
+    assert calls[1][3] == "_tests"
+
+
+def test_build_backend_loader_skips_install_without_harness_manifest(
+    monkeypatch, tmpdir, topsrcdir, all_tests, defaults
+):
+    loader, calls, _ = _setup_stale_backend_loader(
+        tmpdir.mkdir("objdir"), topsrcdir, all_tests, defaults, monkeypatch
+    )
+
+    # No _build_manifests/install/_tests was created; install must be skipped
+    # to avoid leaving a half-populated _tests/ tree.
+    assert list(loader())
+    assert calls == ["gen"]
+
+
 def test_resolve_all(resolver):
     assert len(list(resolver._resolve())) == 13
 
@@ -412,11 +477,11 @@ def test_subsuites(resolver):
 
     tests = list(resolver.resolve_tests(paths=["fig"], subsuite="browser"))
     assert len(tests) == 1
-    assert tests[0]["name"] == "src/TestInstrumentationB.java"
+    assert tests[0]["name"] == "test_MochitestB.html"
 
     tests = list(resolver.resolve_tests(paths=["fig"], subsuite="background"))
     assert len(tests) == 1
-    assert tests[0]["name"] == "src/TestInstrumentationA.java"
+    assert tests[0]["name"] == "test_MochitestA.html"
 
     # Resolve tests *without* a subsuite.
     tests = list(resolver.resolve_tests(flavor="browser-chrome", subsuite="undefined"))
@@ -454,6 +519,30 @@ def test_resolve_metadata(resolver):
         "juniper/browser_chrome.js",
         "kiwi/browser_devtools.js",
     ]
+
+
+def test_resolve_metadata_root_path(resolver):
+    """Test that a suite's root_path resolves as a suite dispatch."""
+    suites, tests = resolver.resolve_metadata(["mobile/android/fenix"])
+    assert suites == {"fenix"}
+    assert tests == []
+
+
+def test_resolve_metadata_subdir_not_suite(resolver):
+    """Test that a subdirectory within a suite root resolves individual tests."""
+    suites, tests = resolver.resolve_metadata(["banana/currant"])
+    assert suites == set()
+    assert len(tests) == 2
+    for t in tests:
+        assert t["file_relpath"].startswith("banana/currant")
+
+
+def test_resolve_metadata_file_not_suite(resolver):
+    """Test that a specific file within a suite root resolves as a test."""
+    suites, tests = resolver.resolve_metadata(["apple/test_a11y.html"])
+    assert suites == set()
+    assert len(tests) == 1
+    assert tests[0]["file_relpath"] == "apple/test_a11y.html"
 
 
 def test_ancestor_manifest_defaults(resolver, topsrcdir, defaults):
@@ -501,14 +590,10 @@ def test_task_regexes():
         "test-linux64/opt-geckoview-reftest",
         "test-linux64/debug-reftest-e10s-1",
         "test-linux64/debug-reftest-e10s-11",
-        "test-linux64/opt-robocop",
-        "test-linux64/opt-robocop-1",
-        "test-linux64/opt-robocop-e10s",
-        "test-linux64/opt-robocop-e10s-1",
-        "test-linux64/opt-robocop-e10s-11",
         "test-linux64/opt-web-platform-tests-e10s-1",
         "test-linux64/opt-web-platform-tests-reftest-e10s-1",
         "test-linux64/opt-web-platform-tests-wdspec-e10s-1",
+        "test-linux64/opt-web-platform-tests-aam-e10s-1",
         "test-linux64/opt-web-platform-tests-1",
         "test-linux64/opt-web-platform-test-e10s-1",
         "test-linux64/opt-xpcshell",
@@ -547,12 +632,6 @@ def test_task_regexes():
             "test-linux64/opt-geckoview-reftest",
             "test-linux64/debug-reftest-e10s-1",
         ],
-        "robocop": [
-            "test-linux64/opt-robocop",
-            "test-linux64/opt-robocop-1",
-            "test-linux64/opt-robocop-e10s",
-            "test-linux64/opt-robocop-e10s-1",
-        ],
         "web-platform-tests": [
             "test-linux64/opt-web-platform-tests-e10s-1",
             "test-linux64/opt-web-platform-tests-1",
@@ -562,6 +641,9 @@ def test_task_regexes():
         ],
         "web-platform-tests-wdspec": [
             "test-linux64/opt-web-platform-tests-wdspec-e10s-1",
+        ],
+        "web-platform-tests-aam": [
+            "test-linux64/opt-web-platform-tests-aam-e10s-1",
         ],
         "xpcshell": [
             "test-linux64/opt-xpcshell",

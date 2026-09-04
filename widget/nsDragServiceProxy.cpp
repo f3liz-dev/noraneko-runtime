@@ -1,12 +1,12 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsDragServiceProxy.h"
-#include "mozilla/dom/Document.h"
+
 #include "mozilla/dom/BrowserChild.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/net/CookieJarSettings.h"
 #include "mozilla/widget/WidgetLogging.h"
@@ -44,7 +44,7 @@ nsDragSessionProxy::~nsDragSessionProxy() {
 }
 
 already_AddRefed<nsIDragSession> nsDragServiceProxy::CreateDragSession() {
-  RefPtr<nsIDragSession> session = new nsDragSessionProxy();
+  auto session = mozilla::MakeRefPtr<nsDragSessionProxy>();
   return session.forget();
 }
 
@@ -83,6 +83,7 @@ nsresult nsDragSessionProxy::InvokeDragSessionImpl(
       aArrayTransferables, transferables, false, nullptr);
 
   nsCOMPtr<nsIPrincipal> principal;
+  // XXX: Can this use mTriggeringPrincipal instead?
   if (mSourceNode) {
     principal = mSourceNode->NodePrincipal();
   }

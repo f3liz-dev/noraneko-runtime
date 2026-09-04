@@ -1,17 +1,18 @@
-/* -*- Mode: c++; c-basic-offset: 2; indent-tabs-mode: nil; tab-width: 4; -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "GLUploadHelpers.h"
 
+#include <bit>
+
 #include "GLContext.h"
-#include "mozilla/gfx/2D.h"
+#include "GfxTexturesReporter.h"
 #include "gfxUtils.h"
+#include "mozilla/gfx/2D.h"
+#include "mozilla/gfx/Logging.h"
 #include "mozilla/gfx/Tools.h"  // For BytesPerPixel
 #include "nsRegion.h"
-#include "GfxTexturesReporter.h"
-#include "mozilla/gfx/Logging.h"
 
 namespace mozilla {
 
@@ -254,8 +255,8 @@ static void TexImage2DHelper(GLContext* gl, GLenum target, GLint level,
 
     MOZ_ASSERT(width >= 0 && height >= 0);
     if (!CanUploadNonPowerOfTwo(gl) &&
-        (stride != width * pixelsize || !IsPowerOfTwo((uint32_t)width) ||
-         !IsPowerOfTwo((uint32_t)height))) {
+        (stride != width * pixelsize || !std::has_single_bit((uint32_t)width) ||
+         !std::has_single_bit((uint32_t)height))) {
       // Pad out texture width and height to the next power of two
       // as we don't support/want non power of two texture uploads
       GLsizei paddedWidth = RoundUpPow2((uint32_t)width);
@@ -466,8 +467,12 @@ SurfaceFormat UploadImageDataToTexture(
         return SurfaceFormat::UNKNOWN;
       }
 
-      const unsigned char* rectData =
-          aData + DataOffset(rect.TopLeft(), aStride, aFormat);
+      // Compute the offset in uintptr_t space: aData may be nullptr when
+      // a PBO is bound (GL reinterprets the pointer as a byte offset into
+      // the buffer), and `nullptr + non-zero` is undefined behavior.
+      uintptr_t dataUint = reinterpret_cast<uintptr_t>(aData) +
+                           DataOffset(rect.TopLeft(), aStride, aFormat);
+      unsigned char* rectData = reinterpret_cast<unsigned char*>(dataUint);
 
       rect += aDstOffset;
       TexSubImage2DHelper(gl, aTextureTarget, 0, rect.X(), rect.Y(),
@@ -497,7 +502,9 @@ SurfaceFormat UploadSurfaceToTexture(GLContext* gl, DataSourceSurface* aSurface,
     return SurfaceFormat::UNKNOWN;
   }
 
-  unsigned char* data = map.GetData() + DataOffset(aSrcOffset, stride, format);
+  uintptr_t dataUint = reinterpret_cast<uintptr_t>(map.GetData()) +
+                       DataOffset(aSrcOffset, stride, format);
+  unsigned char* data = reinterpret_cast<unsigned char*>(dataUint);
   size.width -= aSrcOffset.x;
   size.height -= aSrcOffset.y;
 

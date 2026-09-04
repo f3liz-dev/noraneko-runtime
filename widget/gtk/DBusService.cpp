@@ -1,23 +1,24 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "DBusService.h"
+
+#include <errno.h>
+#include <fcntl.h>
+#include <gdk/gdk.h>
+#include <gio/gio.h>
 #include <sys/types.h>
 #include <unistd.h>
-#include <fcntl.h>
-#include <errno.h>
-#include <gdk/gdk.h>
-#include "DBusService.h"
-#include "nsAppRunner.h"
+
+#include "WidgetUtilsGtk.h"
 #include "mozilla/GUniquePtr.h"
 #include "mozilla/WidgetUtils.h"
-#include <gio/gio.h>
-#include "nsIObserverService.h"
-#include "WidgetUtilsGtk.h"
-#include "prproces.h"
 #include "mozilla/XREAppData.h"
+#include "nsAppRunner.h"
+#include "nsIObserverService.h"
 #include "nsPrintfCString.h"
+#include "prproces.h"
 
 using namespace mozilla;
 using namespace mozilla::widget;
@@ -87,7 +88,8 @@ bool DBusService::LaunchApp(const char* aCommand, const char** aURIList,
   nsAutoCString param(mAppFile);
   if (aCommand) {
     param.Append(" ");
-    param.Append(aCommand);
+    GUniquePtr<char> escCommand(g_shell_quote(aCommand));
+    param.Append(escCommand.get());
   }
   for (int i = 0; aURIList && i < aURIListLen; i++) {
     param.Append(" ");
@@ -186,6 +188,9 @@ static void HandleMethodCall(GDBusConnection* aConnection, const gchar* aSender,
   if (strcmp("org.freedesktop.Application", aInterfaceName) != 0) {
     g_warning("DBusService: HandleMethodCall() wrong interface name %s",
               aInterfaceName);
+    g_dbus_method_invocation_return_error(
+        aInvocation, G_DBUS_ERROR, G_DBUS_ERROR_UNKNOWN_INTERFACE,
+        "Unknown interface: %s", aInterfaceName);
     return;
   }
   if (strcmp("Activate", aMethodName) == 0) {
@@ -199,6 +204,9 @@ static void HandleMethodCall(GDBusConnection* aConnection, const gchar* aSender,
         aParameters, aInvocation);
   } else {
     g_warning("DBusService: HandleMethodCall() wrong method %s", aMethodName);
+    g_dbus_method_invocation_return_error(aInvocation, G_DBUS_ERROR,
+                                          G_DBUS_ERROR_UNKNOWN_METHOD,
+                                          "Unknown method: %s", aMethodName);
   }
 }
 
@@ -303,7 +311,9 @@ bool DBusService::StartFreedesktopListener() {
 }
 
 void DBusService::StopFreedesktopListener() {
-  OnNameLost(mConnection);
+  if (mConnection) {
+    OnNameLost(mConnection);
+  }
   if (mDBusID) {
     g_bus_unown_name(mDBusID);
     mDBusID = 0;

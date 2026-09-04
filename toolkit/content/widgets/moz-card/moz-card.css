@@ -3,24 +3,21 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 :host {
-  --card-border-radius: var(--border-radius-medium);
-  --card-border-width: var(--border-width);
-  --card-border: var(--card-border-width) solid var(--border-color-card);
-  --card-background-color: var(--background-color-box);
-  --card-focus-outline: var(--focus-outline);
-  --card-box-shadow: var(--box-shadow-card);
-  --card-padding: var(--space-large);
-  --card-gap: var(--card-padding);
-  --card-article-gap: var(--space-small);
-}
-
-:host {
-  display: block;
+  display: flex;
+  flex-direction: column;
   border: var(--card-border);
   border-radius: var(--card-border-radius);
   background-color: var(--card-background-color);
   box-shadow: var(--card-box-shadow);
   box-sizing: border-box;
+}
+
+:host([spacing="compact"]) {
+  --card-border-radius: var(--card-border-radius-compact);
+  --card-padding: var(--card-padding-compact);
+  --card-gap: var(--card-gap-compact);
+  --card-font-size: var(--card-font-size-compact);
+  --card-cover-image-padding: var(--card-cover-image-padding-compact);
 }
 
 :host([type="accordion"]) {
@@ -31,6 +28,7 @@
     padding-block-end: var(--card-padding-block, var(--card-padding));
   }
 }
+
 :host(:not([type="accordion"])) {
   .moz-card {
     padding-block: var(--card-padding-block, var(--card-padding));
@@ -38,7 +36,7 @@
   #moz-card-details {
     display: flex;
     flex-direction: column;
-    gap: var(--card-article-gap);
+    gap: var(--card-gap-article);
   }
 }
 
@@ -46,11 +44,20 @@
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: var(--card-article-gap);
+  gap: var(--card-gap-article);
+  overflow-wrap: anywhere;
 }
 
-#moz-card-details {
+#moz-card-details,
+.moz-card-wrapper {
   width: 100%;
+}
+
+.moz-card,
+#moz-card-details,
+.moz-card-wrapper,
+#content {
+  flex: 1;
 }
 
 summary {
@@ -92,12 +99,15 @@ summary {
 }
 
 #heading {
-  font-size: var(--font-size-root);
-  font-weight: var(--heading-font-weight);
+  font-size: var(--card-font-size);
+  font-weight: var(--font-weight-heading);
 }
 
 #content {
   align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  font-size: var(--card-font-size);
   padding-inline: var(--card-padding-inline, var(--card-padding));
   border-end-start-radius: var(--card-border-radius);
   border-end-end-radius: var(--card-border-radius);
@@ -112,35 +122,27 @@ summary {
 
 details {
   > summary {
+    background-color: var(--card-header-background-color);
+    border-color: var(--card-header-border-color);
+    color: var(--card-header-text-color);
     list-style: none;
     border-radius: var(--card-border-radius);
     cursor: pointer;
 
     &:hover {
-      background-color: var(--button-background-color-hover);
+      background-color: var(--card-header-background-color-hover);
+      border-color: var(--card-header-border-color-hover);
+      color: var(--card-header-text-color-hover);
+    }
+
+    &:active {
+      background-color: var(--card-header-background-color-active);
+      border-color: var(--card-header-border-color-active);
+      color: var(--card-header-text-color-active);
     }
 
     &:focus-visible {
       outline: var(--card-focus-outline);
-    }
-
-    @media (prefers-contrast) {
-      outline: var(--button-border-color) solid var(--border-width);
-    }
-
-    @media (forced-colors) {
-      color: var(--button-text-color);
-      background-color: var(--button-background-color);
-
-      &:hover {
-        background-color: var(--button-background-color-hover);
-        color: var(--button-text-color-hover);
-      }
-
-      &:active {
-        background-color: var(--button-background-color-active);
-        color: var(--button-text-color-active);
-      }
     }
   }
 
@@ -158,5 +160,30 @@ details {
         padding-block-start: 0;
       }
     }
+  }
+}
+
+#cover-image {
+  display: none;
+  padding-inline: var(--card-cover-image-padding);
+}
+
+::slotted(img[slot="cover-image"]) {
+  width: 100%;
+  height: var(--card-cover-image-height, var(--card-cover-image-height-default));
+  object-fit: var(--card-cover-image-object-fit, var(--card-cover-image-object-fit-default));
+  object-position: var(--card-cover-image-object-position, var(--card-cover-image-object-position-default));
+  border-radius: var(--card-cover-image-border-radius);
+}
+
+/* TODO: Probably opt-into this instead with a class or something */
+/* stylelint-disable-next-line stylelint-plugin-mozilla/no-has-selector */
+:host(:has([slot="cover-image"])) {
+  .moz-card {
+    padding-block-start: var(--card-cover-image-padding);
+  }
+
+  #cover-image {
+    display: block;
   }
 }

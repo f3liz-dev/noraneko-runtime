@@ -5,7 +5,7 @@
 package org.mozilla.fenix.settings.labs.store
 
 import mozilla.components.lib.state.Action
-import org.mozilla.fenix.settings.labs.LabsFeature
+import org.mozilla.fenix.settings.labs.LabsItem
 
 /**
  * Actions to dispatch through the [LabsStore] to modify the [LabsState].
@@ -20,23 +20,68 @@ sealed class LabsAction : Action {
     data object InitAction : LabsAction()
 
     /**
-     * [LabsAction] dispatched when the list of features is updated.
-     *
-     * @property features The new list of [LabsFeature] to store.
+     * [LabsAction] dispatched to refresh the Labs against the latest from Nimbus, reconciling them
+     * with what is on screen. Unlike [InitAction] this preserves the currently displayed items.
      */
-    data class UpdateFeatures(val features: List<LabsFeature>) : LabsAction()
+    data object RefreshLabs : LabsAction()
 
     /**
-     * [LabsAction] dispatched when a feature is toggled.
+     * [LabsAction] dispatched when the list of Labs items is updated.
      *
-     * @property feature The [LabsFeature] to toggle.
+     * @property items The new list of [LabsItem]s to store.
      */
-    data class ToggleFeature(val feature: LabsFeature) : LabsAction()
+    data class UpdateLabsItems(val items: List<LabsItem>) : LabsAction()
 
     /**
-     * [LabsAction] dispatched to restore the default settings without any lab features enabled.
+     * [LabsAction] dispatched when fetching the available Labs from Nimbus failed.
+     */
+    data object FetchFailed : LabsAction()
+
+    /**
+     * [LabsAction] dispatched when a Labs item is toggled.
+     *
+     * @property item The [LabsItem] to toggle.
+     */
+    data class ToggleLabsItem(val item: LabsItem) : LabsAction()
+
+    /**
+     * [LabsAction] dispatched to remove a Labs item from the screen, used when Nimbus reports the
+     * Lab is no longer available.
+     *
+     * @property slug The Nimbus slug identifying the [LabsItem] to remove.
+     */
+    data class RemoveLabsItem(val slug: String) : LabsAction()
+
+    /**
+     * [LabsAction] dispatched after Nimbus processes a toggle.
+     *
+     * @property slug The Nimbus slug of the toggled Labs item.
+     * @property enabled The enrollment state the user attempted to set.
+     * @property status The raw Nimbus enroll/unenroll status (lowercased), or "exception" if the
+     * Nimbus call threw.
+     */
+    data class ToggleCompleted(
+        val slug: String,
+        val enabled: Boolean,
+        val status: String,
+    ) : LabsAction()
+
+    /**
+     * [LabsAction] dispatched to restore the default settings without any Labs items enabled.
      */
     data object RestoreDefaults : LabsAction()
+
+    /**
+     * [LabsAction] dispatched after Nimbus processes a restore-defaults request.
+     *
+     * @property succeeded Whether unenrolling from all Firefox Labs completed without error.
+     * @property itemsChanged The Nimbus slugs of the items that were enrolled when defaults were
+     * restored.
+     */
+    data class RestoreDefaultsCompleted(
+        val succeeded: Boolean,
+        val itemsChanged: List<String>,
+    ) : LabsAction()
 
     /**
      * [LabsAction] dispatched to restart the application.
@@ -44,14 +89,15 @@ sealed class LabsAction : Action {
     data object RestartApplication : LabsAction()
 
     /**
-     * [LabsAction] dispatched to show the dialog for toggling a [LabsFeature].
+     * [LabsAction] dispatched to show the confirmation dialog for toggling a [LabsItem]
+     * that requires an application restart.
      *
-     * @property feature The [LabsFeature] that will be toggled.
+     * @property item The [LabsItem] that will be toggled.
      */
-    data class ShowToggleFeatureDialog(val feature: LabsFeature) : LabsAction()
+    data class ShowToggleLabsItemDialog(val item: LabsItem) : LabsAction()
 
     /**
-     * [LabsAction] dispatched to show the dialog for restoring all the [LabsFeature]s to their
+     * [LabsAction] dispatched to show the dialog for restoring all the [LabsItem]s to their
      * default disabled state.
      */
     data object ShowRestoreDefaultsDialog : LabsAction()
@@ -60,4 +106,11 @@ sealed class LabsAction : Action {
      * [LabsAction] dispatched to close the current dialog.
      */
     data object CloseDialog : LabsAction()
+
+    /**
+     * [LabsAction] dispatched when the user taps a Labs item's "Share feedback" link.
+     *
+     * @property item The [LabsItem] whose feedback link was tapped.
+     */
+    data class ShareFeedbackClicked(val item: LabsItem) : LabsAction()
 }

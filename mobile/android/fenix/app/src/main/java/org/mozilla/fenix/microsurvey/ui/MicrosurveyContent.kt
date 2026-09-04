@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectableGroup
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -41,16 +40,16 @@ import org.mozilla.fenix.theme.PreviewThemeProvider
 import org.mozilla.fenix.theme.Theme
 import mozilla.components.ui.icons.R as iconsR
 
-private val shape = RoundedCornerShape(8.dp)
-
 /**
  * The microsurvey content UI to hold question and answer data.
  *
  * @param question The survey question text.
  * @param answers The survey answer text options available for the question.
  * @param icon The survey icon, this will represent the feature the survey is for.
+ * @param iconTint The optional tint color to apply to the survey [icon].
  * @param backgroundColor The view background color.
  * @param selectedAnswer The current selected answer. Will be null until user selects an option.
+ * @param maxLabelLines The maximum number of lines allowed for each answer text layout to prevent truncation.
  * @param onSelectionChange An event that updates the [selectedAnswer].
  */
 @Composable
@@ -58,13 +57,15 @@ fun MicrosurveyContent(
     question: String,
     answers: List<String>,
     @DrawableRes icon: Int = iconsR.drawable.mozac_ic_print_24,
-    backgroundColor: Color = MaterialTheme.colorScheme.surfaceContainerLowest,
+    iconTint: Color? = null,
+    backgroundColor: Color = MaterialTheme.colorScheme.surfaceBright,
     selectedAnswer: String? = null,
+    maxLabelLines: Int = 2,
     onSelectionChange: (String) -> Unit,
 ) {
     Card(
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-        shape = shape,
+        shape = MaterialTheme.shapes.small,
         colors = CardDefaults.cardColors(containerColor = backgroundColor),
         modifier = Modifier
             .wrapContentHeight()
@@ -72,7 +73,7 @@ fun MicrosurveyContent(
             .padding(horizontal = 16.dp),
     ) {
         Column {
-            Header(icon, question)
+            Header(icon, iconTint, question)
 
             Column(
                 modifier = Modifier
@@ -85,6 +86,7 @@ fun MicrosurveyContent(
                     RadioButtonListItem(
                         label = it,
                         selected = selectedAnswer == it,
+                        maxLabelLines = maxLabelLines,
                         onClick = {
                             onSelectionChange.invoke(it)
                         },
@@ -96,7 +98,7 @@ fun MicrosurveyContent(
 }
 
 @Composable
-private fun Header(icon: Int, question: String) {
+private fun Header(icon: Int, iconTint: Color?, question: String) {
     Row(
         modifier = Modifier.padding(16.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -105,6 +107,7 @@ private fun Header(icon: Int, question: String) {
             painter = painterResource(icon),
             contentDescription = stringResource(id = R.string.microsurvey_feature_icon_content_description),
             modifier = Modifier.size(24.dp),
+            tint = iconTint ?: Color.Unspecified,
         )
 
         Spacer(modifier = Modifier.width(16.dp))

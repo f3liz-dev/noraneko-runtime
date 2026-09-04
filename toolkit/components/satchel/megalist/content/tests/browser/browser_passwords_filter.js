@@ -44,7 +44,7 @@ const waitForAlertsButton = megalist => {
 };
 
 async function checkSearchResults(expectedCount, megalist) {
-  return await BrowserTestUtils.waitForCondition(() => {
+  return await TestUtils.waitForCondition(() => {
     const passwordsList = megalist.querySelector(".passwords-list");
     return (
       passwordsList?.querySelectorAll("password-card").length === expectedCount
@@ -102,7 +102,7 @@ add_task(async function test_filter_passwords() {
 });
 
 add_task(async function test_filter_passwords_after_sidebar_closed() {
-  const megalist = await openPasswordsSidebar();
+  let megalist = await openPasswordsSidebar();
   await addBreach();
   await addMockPasswords();
   info("Adding breached login");
@@ -122,7 +122,7 @@ add_task(async function test_filter_passwords_after_sidebar_closed() {
   info("Hide sidebar.");
   SidebarController.hide();
   info("Show sidebar.");
-  await SidebarController.show("viewCPMSidebar");
+  megalist = await openPasswordsSidebar();
   await checkAllLoginsRendered(megalist);
   info("All saved logins are displayed.");
 
@@ -141,40 +141,42 @@ add_task(async function test_filter_passwords_while_editing() {
   await checkAllLoginsRendered(megalist);
 
   info("Filter password using search input");
-  const searchInput = megalist.querySelector(".search");
-  searchInput.value = TEST_LOGIN_2.username;
-  searchInput.dispatchEvent(new Event("input"));
+  const searchInput = megalist.querySelector("moz-input-search");
+  searchInput.dispatchEvent(
+    new CustomEvent("MozInputSearch:search", {
+      detail: { query: TEST_LOGIN_2.username },
+    })
+  );
   await checkSearchResults(1, megalist);
 
   info("Ensure editing login with a filter works");
   const passwordCard = megalist.querySelector("password-card");
   await waitForReauth(() => passwordCard.editBtn.click());
-  await BrowserTestUtils.waitForCondition(
+  await TestUtils.waitForCondition(
     () => megalist.querySelector("login-form"),
     "Login form failed to render"
   );
 
   info("Focus the password field.");
   const loginForm = megalist.querySelector("login-form");
-  const passwordField = loginForm.shadowRoot.querySelector(
-    "login-password-field"
-  );
+  const passwordField =
+    loginForm.shadowRoot.querySelector("moz-input-password");
   const revealPromise = BrowserTestUtils.waitForMutationCondition(
-    passwordField.input,
+    passwordField.inputEl,
     {
       attributeFilter: ["type"],
     },
-    () => passwordField.input.getAttribute("type") === "text"
+    () => passwordField.inputEl.getAttribute("type") === "text"
   );
-  passwordField.input.focus();
+  passwordField.inputEl.focus();
   await revealPromise;
-  is(passwordField.input.value, TEST_LOGIN_2.password, "password revealed");
+  is(passwordField.inputEl.value, TEST_LOGIN_2.password, "password revealed");
 
   const newUsername = "new_sally";
   const newPassword = "new_password_sally";
   info("Updating login.");
-  setInputValue(loginForm, "login-username-field", newUsername);
-  setInputValue(loginForm, "login-password-field", newPassword);
+  setInputValue(loginForm, "moz-input-text", newUsername);
+  setInputValue(loginForm, "moz-input-password", newPassword);
 
   const saveButton = loginForm.shadowRoot.querySelector(
     "moz-button[type=primary]"
@@ -186,12 +188,12 @@ add_task(async function test_filter_passwords_while_editing() {
   await checkSearchResults(1, megalist);
   const updatedPasswordCard = megalist.querySelector("password-card");
 
-  await BrowserTestUtils.waitForCondition(
+  await TestUtils.waitForCondition(
     () => updatedPasswordCard.usernameLine.value === newUsername,
     "Username not updated."
   );
   await waitForPasswordReveal(updatedPasswordCard.passwordLine);
-  await BrowserTestUtils.waitForCondition(
+  await TestUtils.waitForCondition(
     () => updatedPasswordCard.passwordLine.value === newPassword,
     "Password not updated."
   );
@@ -211,15 +213,18 @@ add_task(async function test_filter_passwords_and_update_login() {
   await checkAllLoginsRendered(megalist);
 
   info("Filter password using search input");
-  const searchInput = megalist.querySelector(".search");
-  searchInput.value = TEST_LOGIN_3.username;
-  searchInput.dispatchEvent(new Event("input"));
+  const searchInput = megalist.querySelector("moz-input-search");
+  searchInput.dispatchEvent(
+    new CustomEvent("MozInputSearch:search", {
+      detail: { query: TEST_LOGIN_3.username },
+    })
+  );
   await checkSearchResults(1, megalist);
 
   info("Ensure editing login with a filter works");
   const passwordCard = megalist.querySelector("password-card");
   await waitForReauth(() => passwordCard.editBtn.click());
-  await BrowserTestUtils.waitForCondition(
+  await TestUtils.waitForCondition(
     () => megalist.querySelector("login-form"),
     "Login form failed to render"
   );
@@ -229,8 +234,8 @@ add_task(async function test_filter_passwords_and_update_login() {
   const loginForm = megalist.querySelector("login-form");
 
   info("Updating login.");
-  setInputValue(loginForm, "login-username-field", newUsername);
-  setInputValue(loginForm, "login-password-field", newPassword);
+  setInputValue(loginForm, "moz-input-text", newUsername);
+  setInputValue(loginForm, "moz-input-password", newPassword);
   const saveButton = loginForm.shadowRoot.querySelector(
     "moz-button[type=primary]"
   );
@@ -238,14 +243,18 @@ add_task(async function test_filter_passwords_and_update_login() {
   saveButton.buttonEl.click();
 
   await waitForNotification(megalist, "update-login-success");
-  const updatedPasswordCard = megalist.querySelector("password-card");
+  const updatedPasswordCard = await BrowserTestUtils.waitForMutationCondition(
+    megalist,
+    { childList: true, subtree: true },
+    () => megalist.querySelector("password-card")
+  );
   info("Check that the login has a new username and password");
-  await BrowserTestUtils.waitForCondition(
+  await TestUtils.waitForCondition(
     () => updatedPasswordCard.usernameLine.value === newUsername,
     "Username not updated"
   );
   await waitForPasswordReveal(updatedPasswordCard.passwordLine);
-  await BrowserTestUtils.waitForCondition(
+  await TestUtils.waitForCondition(
     () => updatedPasswordCard.passwordLine.value === newPassword,
     "Password not updated"
   );
@@ -276,9 +285,12 @@ add_task(async function test_filter_passwords_with_urls() {
   await LoginTestUtils.addLogin(newLogin);
   await checkAllLoginsRendered(megalist);
 
-  const searchInput = megalist.querySelector(".search");
-  searchInput.value = newLogin.origin;
-  searchInput.dispatchEvent(new Event("input"));
+  const searchInput = megalist.querySelector("moz-input-search");
+  searchInput.dispatchEvent(
+    new CustomEvent("MozInputSearch:search", {
+      detail: { query: newLogin.origin },
+    })
+  );
   await checkSearchResults(1, megalist);
   ok(true, "Password filtered using full URL.");
 

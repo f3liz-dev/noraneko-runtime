@@ -73,7 +73,7 @@ class GypContext(TemplateContext):
     """
 
     def __init__(self, config, relobjdir):
-        self._relobjdir = relobjdir
+        self.relobjdir = relobjdir
         TemplateContext.__init__(
             self, template="Gyp", allowed_variables=VARIABLES, config=config
         )
@@ -235,15 +235,16 @@ def process_gyp_result(
                 context["PROGRAM"] = name
             if spec["type"] == "shared_library":
                 context["FORCE_SHARED_LIB"] = True
-            elif (
-                spec["type"] == "static_library"
-                and spec.get("variables", {}).get("no_expand_libs", "0") == "1"
-            ):
-                # PSM links a NSS static library, but our folded libnss
-                # doesn't actually export everything that all of the
-                # objects within would need, so that one library
-                # should be built as a real static library.
-                context["NO_EXPAND_LIBS"] = True
+            elif spec["type"] == "static_library":
+                if spec.get("variables", {}).get("no_expand_libs", "0") == "1":
+                    # PSM links a NSS static library, but our folded libnss
+                    # doesn't actually export everything that all of the
+                    # objects within would need, so that one library
+                    # should be built as a real static library.
+                    context["NO_EXPAND_LIBS"] = True
+                if name in (gyp_dir_attrs.install_static_libs or []):
+                    context["BUILD_STATIC_LIB_ARCHIVE"] = True
+                    context["DIST_INSTALL"] = True
             if use_libs:
                 context["USE_LIBS"] = sorted(use_libs, key=lambda s: s.lower())
             if os_libs:
@@ -345,6 +346,7 @@ def process_gyp_result(
                 }
                 variables = (suffix_map[e] for e in extensions if e in suffix_map)
                 for var in variables:
+                    pending_flag = None
                     for f in flags:
                         # We may be getting make variable references out of the
                         # gyp data, and we don't want those in emitted data, so
@@ -352,11 +354,30 @@ def process_gyp_result(
                         f = expand_variables(f, config.substs).split()
                         if not f:
                             continue
+
+                        def add_flag(context, flag):
+                            nonlocal pending_flag
+
+                            if flag == "-Xclang":
+                                assert pending_flag is None
+                                pending_flag = flag
+                                return
+
+                            if not var.startswith("CM") and flag.startswith("-W"):
+                                dest = context["COMPILE_FLAGS"][f"WARNINGS_{var}"]
+                            else:
+                                dest = context[var]
+                            if pending_flag:
+                                dest.append(pending_flag)
+                                pending_flag = None
+                            dest.append(flag)
+
                         # the result may be a string or a list.
                         if isinstance(f, str):
-                            context[var].append(f)
+                            add_flag(context, f)
                         else:
-                            context[var].extend(f)
+                            for elem in f:
+                                add_flag(context, elem)
         else:
             # Ignore other types because we don't have
             # anything using them, and we're not testing them. They can be
@@ -445,7 +466,7 @@ class GypProcessor:
         # The NSS gyp configuration uses CC and CFLAGS to determine the
         # floating-point ABI on arm.
         os.environ.update(
-            CC=config.substs["CC"],
+            CC=mozshellutil.quote(*config.substs["CC"]),
             CFLAGS=mozshellutil.quote(*config.substs["CC_BASE_FLAGS"]),
         )
 

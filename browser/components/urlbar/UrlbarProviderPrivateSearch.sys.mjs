@@ -9,18 +9,16 @@
 import {
   SkippableTimer,
   UrlbarProvider,
-  UrlbarUtils,
 } from "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs";
 
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   SearchService: "moz-src:///toolkit/components/search/SearchService.sys.mjs",
-  UrlbarResult: "moz-src:///browser/components/urlbar/UrlbarResult.sys.mjs",
+  UrlbarResult: "chrome://browser/content/urlbar/UrlbarResult.mjs",
   UrlbarSearchUtils:
     "moz-src:///browser/components/urlbar/UrlbarSearchUtils.sys.mjs",
-  UrlbarTokenizer:
-    "moz-src:///browser/components/urlbar/UrlbarTokenizer.sys.mjs",
+  UrlbarShared: "chrome://browser/content/urlbar/UrlbarShared.mjs",
 });
 
 /**
@@ -32,10 +30,10 @@ export class UrlbarProviderPrivateSearch extends UrlbarProvider {
   }
 
   /**
-   * @returns {Values<typeof UrlbarUtils.PROVIDER_TYPE>}
+   * @returns {Values<typeof lazy.UrlbarShared.PROVIDER_TYPE>}
    */
   get type() {
-    return UrlbarUtils.PROVIDER_TYPE.PROFILE;
+    return lazy.UrlbarShared.PROVIDER_TYPE.PROFILE;
   }
 
   /**
@@ -64,7 +62,7 @@ export class UrlbarProviderPrivateSearch extends UrlbarProvider {
     let searchString = queryContext.trimmedSearchString;
     if (
       queryContext.tokens.some(
-        t => t.type == lazy.UrlbarTokenizer.TYPE.RESTRICT_SEARCH
+        t => t.type == lazy.UrlbarShared.TOKEN_TYPE.RESTRICT_SEARCH
       )
     ) {
       if (queryContext.tokens.length == 1) {
@@ -73,7 +71,7 @@ export class UrlbarProviderPrivateSearch extends UrlbarProvider {
       }
       // Remove the restriction char from the search string.
       searchString = queryContext.tokens
-        .filter(t => t.type != lazy.UrlbarTokenizer.TYPE.RESTRICT_SEARCH)
+        .filter(t => t.type != lazy.UrlbarShared.TOKEN_TYPE.RESTRICT_SEARCH)
         .map(t => t.value)
         .join(" ");
     }
@@ -104,8 +102,8 @@ export class UrlbarProviderPrivateSearch extends UrlbarProvider {
     }
 
     let result = new lazy.UrlbarResult({
-      type: UrlbarUtils.RESULT_TYPE.SEARCH,
-      source: UrlbarUtils.RESULT_SOURCE.SEARCH,
+      type: lazy.UrlbarShared.RESULT_TYPE.SEARCH,
+      source: lazy.UrlbarShared.RESULT_SOURCE.SEARCH,
       suggestedIndex: 1,
       payload: {
         engine: engine.name,
@@ -116,7 +114,7 @@ export class UrlbarProviderPrivateSearch extends UrlbarProvider {
         isPrivateEngine,
       },
       highlights: {
-        engine: UrlbarUtils.HIGHLIGHT.TYPED,
+        engine: lazy.UrlbarShared.HIGHLIGHT.TYPED,
       },
     });
     addCallback(this, result);

@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -115,7 +114,7 @@ nsParserUtils::ParseFragment(const nsAString& aFragment, uint32_t aFlags,
         DocumentFragment(document->NodeInfoManager());
     rv = nsContentUtils::ParseFragmentHTML(aFragment, fragment, nsGkAtoms::body,
                                            kNameSpaceID_XHTML, false, true,
-                                           aFlags);
+                                           aFlags, mozilla::Nothing());
   }
 
   if (scripts_enabled) {

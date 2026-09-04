@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -78,6 +76,11 @@ void CacheStreamControlParent::AssertOwningThread() {
 }
 #endif
 
+const cache::Manager* CacheStreamControlParent::GetManager() const {
+  NS_ASSERT_OWNINGTHREAD(CacheStreamControlParent);
+  return mStreamList ? &mStreamList->GetManager() : nullptr;
+}
+
 void CacheStreamControlParent::LostIPCCleanup(
     SafeRefPtr<StreamList> aStreamList) {
   NS_ASSERT_OWNINGTHREAD(CacheStreamControlParent);
@@ -115,7 +118,7 @@ mozilla::ipc::IPCResult CacheStreamControlParent::RecvOpenStream(
     const nsID& aStreamId, OpenStreamResolver&& aResolver) {
   NS_ASSERT_OWNINGTHREAD(CacheStreamControlParent);
 
-  OpenStream(aStreamId, [aResolver, self = RefPtr{this}](
+  OpenStream(aStreamId, [aResolver = std::move(aResolver), self = RefPtr{this}](
                             nsCOMPtr<nsIInputStream>&& aStream) {
     Maybe<IPCStream> stream;
     if (self->CanSend() &&

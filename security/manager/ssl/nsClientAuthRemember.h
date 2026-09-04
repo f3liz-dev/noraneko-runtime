@@ -1,5 +1,4 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -71,8 +70,7 @@ class nsClientAuthRememberService final : public nsIClientAuthRememberService {
   NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSICLIENTAUTHREMEMBERSERVICE
 
-  nsClientAuthRememberService()
-      : mMigrated(false, "nsClientAuthRememberService::mMigrated") {}
+  nsClientAuthRememberService() = default;
 
   nsresult Init();
 
@@ -87,7 +85,8 @@ class nsClientAuthRememberService final : public nsIClientAuthRememberService {
                           const OriginAttributes& aOriginAttributes,
                           const nsACString& aDBKey, Duration aDuration);
 
-  mozilla::DataMutex<bool> mMigrated;
+  mozilla::DataMutex<bool> mMigrated{false,
+                                     "nsClientAuthRememberService::mMigrated"};
   void Migrate();
 };
 

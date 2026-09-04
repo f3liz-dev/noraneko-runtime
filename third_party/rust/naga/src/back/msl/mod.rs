@@ -75,9 +75,11 @@ use alloc::{
 };
 use core::fmt::{Error as FmtError, Write};
 
-use crate::{arena::Handle, ir, proc::index, valid::ModuleInfo};
+use crate::{arena::Handle, back::TaskDispatchLimits, ir, proc::index, valid::ModuleInfo};
 
 mod keywords;
+mod mesh_shader;
+mod ray;
 pub mod sampler;
 mod writer;
 
@@ -178,6 +180,7 @@ enum ResolvedBinding {
         interpolation: Option<ResolvedInterpolation>,
     },
     Resource(BindTarget),
+    Payload,
 }
 
 #[derive(Copy, Clone)]
@@ -189,6 +192,7 @@ enum ResolvedInterpolation {
     SamplePerspective,
     SampleNoPerspective,
     Flat,
+    PerVertex,
 }
 
 // Note: some of these should be removed in favor of proper IR validation.
@@ -217,10 +221,10 @@ pub enum Error {
     UnsupportedAttribute(String),
     #[error("function '{0}' is not supported for target MSL version")]
     UnsupportedFunction(String),
-    #[error("can not use writeable storage buffers in fragment stage prior to MSL 1.2")]
-    UnsupportedWriteableStorageBuffer,
-    #[error("can not use writeable storage textures in {0:?} stage prior to MSL 1.2")]
-    UnsupportedWriteableStorageTexture(ir::ShaderStage),
+    #[error("can not use writable storage buffers in fragment stage prior to MSL 1.2")]
+    UnsupportedWritableStorageBuffer,
+    #[error("can not use writable storage textures in {0:?} stage prior to MSL 1.2")]
+    UnsupportedWritableStorageTexture(ir::ShaderStage),
     #[error("can not use read-write storage textures prior to MSL 1.2")]
     UnsupportedRWStorageTexture,
     #[error("array of '{0}' is not supported for target MSL version")]
@@ -239,6 +243,10 @@ pub enum Error {
     ResolveArraySizeError(#[from] crate::proc::ResolveArraySizeError),
     #[error("entry point with stage {0:?} and name '{1}' not found")]
     EntryPointNotFound(ir::ShaderStage, String),
+    #[error("Cannot use mesh shader syntax prior to MSL 3.0")]
+    UnsupportedMeshShader,
+    #[error("Per vertex fragment inputs are not supported prior to MSL 4.0")]
+    PerVertexNotSupported,
 }
 
 #[derive(Clone, Debug, PartialEq, thiserror::Error)]
@@ -277,6 +285,9 @@ enum LocationMode {
     /// Output from the fragment shader.
     FragmentOutput,
 
+    /// Output from the mesh shader.
+    MeshOutput,
+
     /// Compute shader input or output.
     Uniform,
 }
@@ -303,6 +314,18 @@ pub struct Options {
     /// If set, loops will have code injected into them, forcing the compiler
     /// to think the number of iterations is bounded.
     pub force_loop_bounding: bool,
+    /// Whether and how checks in the task shader should verify the dispatched
+    /// mesh grid size.
+    pub task_dispatch_limits: Option<TaskDispatchLimits>,
+    /// Whether to validate the output of a mesh shader workgroup.
+    pub mesh_shader_primitive_indices_clamp: bool,
+    /// If true (the default), integer division and modulo operations use
+    /// wrapper functions that guard against division by zero and signed
+    /// overflow. Set to false to emit raw division for faster compute shaders
+    /// where the developer guarantees non-zero divisors.
+    pub emit_int_div_checks: bool,
+    /// Whether to validate ray query calls
+    pub ray_query_initialization_tracking: bool,
 }
 
 impl Default for Options {
@@ -316,107 +339,12 @@ impl Default for Options {
             bounds_check_policies: index::BoundsCheckPolicies::default(),
             zero_initialize_workgroup_memory: true,
             force_loop_bounding: true,
+            task_dispatch_limits: None,
+            mesh_shader_primitive_indices_clamp: true,
+            ray_query_initialization_tracking: true,
+            emit_int_div_checks: true,
         }
     }
-}
-
-/// Corresponds to [WebGPU `GPUVertexFormat`](
-/// https://gpuweb.github.io/gpuweb/#enumdef-gpuvertexformat).
-#[repr(u32)]
-#[derive(Copy, Clone, Debug, Hash, Eq, PartialEq)]
-#[cfg_attr(feature = "serialize", derive(serde::Serialize))]
-#[cfg_attr(feature = "deserialize", derive(serde::Deserialize))]
-pub enum VertexFormat {
-    /// One unsigned byte (u8). `u32` in shaders.
-    Uint8 = 0,
-    /// Two unsigned bytes (u8). `vec2<u32>` in shaders.
-    Uint8x2 = 1,
-    /// Four unsigned bytes (u8). `vec4<u32>` in shaders.
-    Uint8x4 = 2,
-    /// One signed byte (i8). `i32` in shaders.
-    Sint8 = 3,
-    /// Two signed bytes (i8). `vec2<i32>` in shaders.
-    Sint8x2 = 4,
-    /// Four signed bytes (i8). `vec4<i32>` in shaders.
-    Sint8x4 = 5,
-    /// One unsigned byte (u8). [0, 255] converted to float [0, 1] `f32` in shaders.
-    Unorm8 = 6,
-    /// Two unsigned bytes (u8). [0, 255] converted to float [0, 1] `vec2<f32>` in shaders.
-    Unorm8x2 = 7,
-    /// Four unsigned bytes (u8). [0, 255] converted to float [0, 1] `vec4<f32>` in shaders.
-    Unorm8x4 = 8,
-    /// One signed byte (i8). [-127, 127] converted to float [-1, 1] `f32` in shaders.
-    Snorm8 = 9,
-    /// Two signed bytes (i8). [-127, 127] converted to float [-1, 1] `vec2<f32>` in shaders.
-    Snorm8x2 = 10,
-    /// Four signed bytes (i8). [-127, 127] converted to float [-1, 1] `vec4<f32>` in shaders.
-    Snorm8x4 = 11,
-    /// One unsigned short (u16). `u32` in shaders.
-    Uint16 = 12,
-    /// Two unsigned shorts (u16). `vec2<u32>` in shaders.
-    Uint16x2 = 13,
-    /// Four unsigned shorts (u16). `vec4<u32>` in shaders.
-    Uint16x4 = 14,
-    /// One signed short (u16). `i32` in shaders.
-    Sint16 = 15,
-    /// Two signed shorts (i16). `vec2<i32>` in shaders.
-    Sint16x2 = 16,
-    /// Four signed shorts (i16). `vec4<i32>` in shaders.
-    Sint16x4 = 17,
-    /// One unsigned short (u16). [0, 65535] converted to float [0, 1] `f32` in shaders.
-    Unorm16 = 18,
-    /// Two unsigned shorts (u16). [0, 65535] converted to float [0, 1] `vec2<f32>` in shaders.
-    Unorm16x2 = 19,
-    /// Four unsigned shorts (u16). [0, 65535] converted to float [0, 1] `vec4<f32>` in shaders.
-    Unorm16x4 = 20,
-    /// One signed short (i16). [-32767, 32767] converted to float [-1, 1] `f32` in shaders.
-    Snorm16 = 21,
-    /// Two signed shorts (i16). [-32767, 32767] converted to float [-1, 1] `vec2<f32>` in shaders.
-    Snorm16x2 = 22,
-    /// Four signed shorts (i16). [-32767, 32767] converted to float [-1, 1] `vec4<f32>` in shaders.
-    Snorm16x4 = 23,
-    /// One half-precision float (no Rust equiv). `f32` in shaders.
-    Float16 = 24,
-    /// Two half-precision floats (no Rust equiv). `vec2<f32>` in shaders.
-    Float16x2 = 25,
-    /// Four half-precision floats (no Rust equiv). `vec4<f32>` in shaders.
-    Float16x4 = 26,
-    /// One single-precision float (f32). `f32` in shaders.
-    Float32 = 27,
-    /// Two single-precision floats (f32). `vec2<f32>` in shaders.
-    Float32x2 = 28,
-    /// Three single-precision floats (f32). `vec3<f32>` in shaders.
-    Float32x3 = 29,
-    /// Four single-precision floats (f32). `vec4<f32>` in shaders.
-    Float32x4 = 30,
-    /// One unsigned int (u32). `u32` in shaders.
-    Uint32 = 31,
-    /// Two unsigned ints (u32). `vec2<u32>` in shaders.
-    Uint32x2 = 32,
-    /// Three unsigned ints (u32). `vec3<u32>` in shaders.
-    Uint32x3 = 33,
-    /// Four unsigned ints (u32). `vec4<u32>` in shaders.
-    Uint32x4 = 34,
-    /// One signed int (i32). `i32` in shaders.
-    Sint32 = 35,
-    /// Two signed ints (i32). `vec2<i32>` in shaders.
-    Sint32x2 = 36,
-    /// Three signed ints (i32). `vec3<i32>` in shaders.
-    Sint32x3 = 37,
-    /// Four signed ints (i32). `vec4<i32>` in shaders.
-    Sint32x4 = 38,
-    /// Three unsigned 10-bit integers and one 2-bit integer, packed into a 32-bit integer (u32). [0, 1024] converted to float [0, 1] `vec4<f32>` in shaders.
-    #[cfg_attr(
-        any(feature = "serialize", feature = "deserialize"),
-        serde(rename = "unorm10-10-10-2")
-    )]
-    Unorm10_10_10_2 = 43,
-    /// Four unsigned 8-bit integers, packed into a 32-bit integer (u32). [0, 255] converted to float [0, 1] `vec4<f32>` in shaders.
-    #[cfg_attr(
-        any(feature = "serialize", feature = "deserialize"),
-        serde(rename = "unorm8x4-bgra")
-    )]
-    Unorm8x4Bgra = 44,
 }
 
 /// Defines how to advance the data in vertex buffers.
@@ -445,7 +373,7 @@ pub struct AttributeMapping {
     /// <https://gpuweb.github.io/gpuweb/#enumdef-gpuvertexformat>.
     /// The conversion process is described by
     /// <https://gpuweb.github.io/gpuweb/#vertex-processing>.
-    pub format: VertexFormat,
+    pub format: nt::VertexFormat,
 }
 
 /// A description of a vertex buffer with all the information we
@@ -484,7 +412,7 @@ pub struct PipelineOptions {
     /// Metal doesn't like this for non-point primitive topologies and requires it for
     /// point primitive topologies.
     ///
-    /// Enable this for vertex shaders with point primitive topologies.
+    /// Enable this for vertex/mesh shaders with point primitive topologies.
     pub allow_and_force_point_size: bool,
 
     /// If set, when generating the Metal vertex shader, transform it
@@ -499,6 +427,39 @@ pub struct PipelineOptions {
     /// vertex_buffer_mappings are used during shader translation to
     /// support vertex pulling.
     pub vertex_buffer_mappings: Vec<VertexBufferMapping>,
+
+    /// For each storage `binding_array` in the pipeline layout, the number of
+    /// elements that layout declares, keyed by `ResourceBinding`.
+    /// The MSL writer uses this to report the number of elements in an unbounded `binding_array`.
+    #[cfg_attr(
+        feature = "deserialize",
+        serde(deserialize_with = "deserialize_binding_array_length_map")
+    )]
+    pub binding_array_length_map: crate::FastHashMap<crate::ResourceBinding, u32>,
+}
+
+#[cfg(feature = "deserialize")]
+#[derive(serde::Deserialize)]
+struct BindingArrayLengthMapSerialization {
+    resource_binding: crate::ResourceBinding,
+    count: u32,
+}
+
+#[cfg(feature = "deserialize")]
+fn deserialize_binding_array_length_map<'de, D>(
+    deserializer: D,
+) -> Result<crate::FastHashMap<crate::ResourceBinding, u32>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::Deserialize;
+
+    let vec = Vec::<BindingArrayLengthMapSerialization>::deserialize(deserializer)?;
+    let mut map = crate::FastHashMap::default();
+    for item in vec {
+        map.insert(item.resource_binding, item.count);
+    }
+    Ok(map)
 }
 
 impl Options {
@@ -553,7 +514,7 @@ impl Options {
                 interpolation,
                 sampling,
                 blend_src,
-                per_primitive: _,
+                per_primitive,
             } => match mode {
                 LocationMode::VertexInput => Ok(ResolvedBinding::Attribute(location)),
                 LocationMode::FragmentOutput => {
@@ -565,7 +526,9 @@ impl Options {
                         blend_src,
                     })
                 }
-                LocationMode::VertexOutput | LocationMode::FragmentInput => {
+                LocationMode::VertexOutput
+                | LocationMode::FragmentInput
+                | LocationMode::MeshOutput => {
                     Ok(ResolvedBinding::User {
                         prefix: if self.spirv_cross_compatibility {
                             "locn"
@@ -579,7 +542,11 @@ impl Options {
                             // sampling is `None` only for Flat interpolation.
                             let interpolation = interpolation.unwrap();
                             let sampling = sampling.unwrap_or(crate::Sampling::Center);
-                            Some(ResolvedInterpolation::from_binding(interpolation, sampling))
+                            Some(ResolvedInterpolation::from_binding(
+                                interpolation,
+                                sampling,
+                                per_primitive,
+                            ))
                         },
                     })
                 }
@@ -686,7 +653,7 @@ impl ResolvedBinding {
                     // vertex
                     Bi::BaseInstance => "base_instance",
                     Bi::BaseVertex => "base_vertex",
-                    Bi::ClipDistance => "clip_distance",
+                    Bi::ClipDistances => "clip_distance",
                     Bi::InstanceIndex => "instance_id",
                     Bi::PointSize => "point_size",
                     Bi::VertexIndex => "vertex_id",
@@ -713,17 +680,32 @@ impl ResolvedBinding {
                     Bi::SubgroupId => "simdgroup_index_in_threadgroup",
                     Bi::SubgroupSize => "threads_per_simdgroup",
                     Bi::SubgroupInvocationId => "thread_index_in_simdgroup",
-                    Bi::CullDistance | Bi::DrawID => {
+                    Bi::CullDistance | Bi::DrawIndex => {
                         return Err(Error::UnsupportedBuiltIn(built_in))
                     }
                     Bi::CullPrimitive => "primitive_culled",
                     // TODO: figure out how to make this written as a function call
                     Bi::PointIndex | Bi::LineIndices | Bi::TriangleIndices => unimplemented!(),
+                    // These aren't real builtins passed into MSL. They are extracted by the
+                    // wrapper function which actually sets the outputs.
                     Bi::MeshTaskSize
                     | Bi::VertexCount
                     | Bi::PrimitiveCount
                     | Bi::Vertices
-                    | Bi::Primitives => unreachable!(),
+                    | Bi::Primitives
+                    | Bi::RayInvocationId
+                    | Bi::NumRayInvocations
+                    | Bi::InstanceCustomData
+                    | Bi::GeometryIndex
+                    | Bi::WorldRayOrigin
+                    | Bi::WorldRayDirection
+                    | Bi::ObjectRayOrigin
+                    | Bi::ObjectRayDirection
+                    | Bi::RayTmin
+                    | Bi::RayTCurrentMax
+                    | Bi::ObjectToWorld
+                    | Bi::WorldToObject
+                    | Bi::HitKind => unreachable!(),
                 };
                 write!(out, "{name}")?;
             }
@@ -760,6 +742,7 @@ impl ResolvedBinding {
                     return Err(Error::UnimplementedBindTarget(target.clone()));
                 }
             }
+            Self::Payload => write!(out, "payload")?,
         }
         write!(out, "]]")?;
         Ok(())
@@ -767,9 +750,17 @@ impl ResolvedBinding {
 }
 
 impl ResolvedInterpolation {
-    const fn from_binding(interpolation: crate::Interpolation, sampling: crate::Sampling) -> Self {
+    const fn from_binding(
+        interpolation: crate::Interpolation,
+        sampling: crate::Sampling,
+        per_primitive: bool,
+    ) -> Self {
         use crate::Interpolation as I;
         use crate::Sampling as S;
+
+        if per_primitive {
+            return Self::Flat;
+        }
 
         match (interpolation, sampling) {
             (I::Perspective, S::Center) => Self::CenterPerspective,
@@ -779,6 +770,7 @@ impl ResolvedInterpolation {
             (I::Linear, S::Centroid) => Self::CentroidNoPerspective,
             (I::Linear, S::Sample) => Self::SampleNoPerspective,
             (I::Flat, _) => Self::Flat,
+            (I::PerVertex, S::Center) => Self::PerVertex,
             _ => unreachable!(),
         }
     }
@@ -792,14 +784,33 @@ impl ResolvedInterpolation {
             Self::SamplePerspective => "sample_perspective",
             Self::SampleNoPerspective => "sample_no_perspective",
             Self::Flat => "flat",
+            Self::PerVertex => unreachable!(),
         };
         out.write_str(identifier)?;
         Ok(())
     }
 }
 
+struct EntryPointArgument {
+    ty_name: String,
+    name: String,
+    binding: String,
+    init: Option<Handle<crate::Expression>>,
+}
+
+/// Shorthand result used internally by the backend
+type BackendResult = Result<(), Error>;
+
+const NAMESPACE: &str = "metal";
+
+// The name of the array member of the Metal struct types we generate to
+// represent Naga `Array` types. See the comments in `Writer::write_type_defs`
+// for details.
+const WRAPPED_ARRAY_FIELD: &str = "inner";
+
 /// Information about a translated module that is required
 /// for the use of the result.
+#[derive(Debug)]
 pub struct TranslationInfo {
     /// Mapping of the entry point names. Each item in the array
     /// corresponds to an entry point index.
@@ -817,6 +828,53 @@ pub fn write_string(
     let mut w = Writer::new(String::new());
     let info = w.write(module, info, options, pipeline_options)?;
     Ok((w.finish(), info))
+}
+
+pub fn supported_capabilities() -> crate::valid::Capabilities {
+    use crate::valid::Capabilities as Caps;
+    Caps::IMMEDIATES
+        // No FLOAT64
+        | Caps::PRIMITIVE_INDEX
+        | Caps::TEXTURE_AND_SAMPLER_BINDING_ARRAY
+        // No BUFFER_BINDING_ARRAY
+        | Caps::STORAGE_TEXTURE_BINDING_ARRAY
+        | Caps::STORAGE_BUFFER_BINDING_ARRAY
+        | Caps::CLIP_DISTANCES
+        // No CULL_DISTANCE
+        | Caps::STORAGE_TEXTURE_16BIT_NORM_FORMATS
+        | Caps::MULTIVIEW
+        // No EARLY_DEPTH_TEST
+        | Caps::MULTISAMPLED_SHADING
+        | Caps::RAY_QUERY
+        | Caps::DUAL_SOURCE_BLENDING
+        | Caps::CUBE_ARRAY_TEXTURES
+        | Caps::SHADER_INT64
+        | Caps::SUBGROUP
+        | Caps::SUBGROUP_BARRIER
+        // No SUBGROUP_VERTEX_STAGE
+        | Caps::SHADER_INT64_ATOMIC_MIN_MAX
+        // No SHADER_INT64_ATOMIC_ALL_OPS
+        | Caps::SHADER_FLOAT32_ATOMIC
+        | Caps::TEXTURE_ATOMIC
+        | Caps::TEXTURE_INT64_ATOMIC
+        // No RAY_HIT_VERTEX_POSITION
+        | Caps::SHADER_FLOAT16
+        | Caps::SHADER_INT16
+        | Caps::TEXTURE_EXTERNAL
+        | Caps::SHADER_FLOAT16_IN_FLOAT32
+        | Caps::SHADER_BARYCENTRICS
+        | Caps::MESH_SHADER
+        | Caps::MESH_SHADER_POINT_TOPOLOGY
+        | Caps::TEXTURE_AND_SAMPLER_BINDING_ARRAY_NON_UNIFORM_INDEXING
+        // No BUFFER_BINDING_ARRAY_NON_UNIFORM_INDEXING
+        | Caps::STORAGE_TEXTURE_BINDING_ARRAY_NON_UNIFORM_INDEXING
+        | Caps::STORAGE_BUFFER_BINDING_ARRAY_NON_UNIFORM_INDEXING
+        | Caps::COOPERATIVE_MATRIX
+        | Caps::PER_VERTEX
+        // No RAY_TRACING_PIPELINE
+        // No DRAW_INDEX
+        // No MEMORY_DECORATION_VOLATILE
+        | Caps::MEMORY_DECORATION_COHERENT
 }
 
 #[test]

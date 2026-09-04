@@ -1,15 +1,15 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "GtkWidgets.h"
+
 #include <dlfcn.h>
 #include <gtk/gtk.h>
-#include "GtkWidgets.h"
+
 #include "mozilla/Assertions.h"
-#include "mozilla/PodOperations.h"
 #include "mozilla/EnumeratedArray.h"
+#include "mozilla/PodOperations.h"
 #include "mozilla/WidgetUtilsGtk.h"
 
 namespace mozilla::widget::GtkWidgets {
@@ -323,7 +323,7 @@ static GtkStyleContext* GetWidgetRootStyle(Type aType) {
     case Type::Tooltip:
       if (gtk_check_version(3, 20, 0) != nullptr) {
         GtkWidget* tooltipWindow = gtk_window_new(GTK_WINDOW_POPUP);
-        GtkStyleContext* style = gtk_widget_get_style_context(tooltipWindow);
+        style = gtk_widget_get_style_context(tooltipWindow);
         gtk_style_context_add_class(style, GTK_STYLE_CLASS_TOOLTIP);
         style = CreateStyleForWidget(tooltipWindow, nullptr);
         gtk_widget_destroy(tooltipWindow);  // Release GtkWindow self-reference.

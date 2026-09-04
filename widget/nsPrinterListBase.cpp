@@ -1,16 +1,16 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsPrinterListBase.h"
+
 #include "PrintBackgroundTask.h"
 #include "mozilla/ErrorResult.h"
-#include "mozilla/gfx/Rect.h"
 #include "mozilla/IntegerRange.h"
-#include "mozilla/intl/Localization.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/RefPtr.h"
+#include "mozilla/gfx/Rect.h"
+#include "mozilla/intl/Localization.h"
 #include "xpcpublic.h"
 
 using namespace mozilla;

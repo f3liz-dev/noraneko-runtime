@@ -152,6 +152,15 @@ export const listing = [
       "operation",
       "command_buffer",
       "programmable",
+      "immediate"
+    ]
+  },
+  {
+    "file": [
+      "api",
+      "operation",
+      "command_buffer",
+      "programmable",
       "state_tracking"
     ]
   },
@@ -720,7 +729,25 @@ export const listing = [
       "validation",
       "capability_checks",
       "features",
+      "subgroup_size_control"
+    ]
+  },
+  {
+    "file": [
+      "api",
+      "validation",
+      "capability_checks",
+      "features",
       "texture_component_swizzle"
+    ]
+  },
+  {
+    "file": [
+      "api",
+      "validation",
+      "capability_checks",
+      "features",
+      "texture_compression_unaligned"
     ]
   },
   {
@@ -1134,6 +1161,13 @@ export const listing = [
     "file": [
       "api",
       "validation",
+      "dispatch"
+    ]
+  },
+  {
+    "file": [
+      "api",
+      "validation",
       "encoding",
       "beginComputePass"
     ]
@@ -1456,7 +1490,22 @@ export const listing = [
     "file": [
       "api",
       "validation",
+      "min_buffer_binding_size"
+    ]
+  },
+  {
+    "file": [
+      "api",
+      "validation",
       "non_filterable_texture"
+    ]
+  },
+  {
+    "file": [
+      "api",
+      "validation",
+      "pipeline",
+      "immediates"
     ]
   },
   {
@@ -2617,6 +2666,28 @@ export const listing = [
       "call",
       "builtin",
       "atomics",
+      "atomicStoreMax"
+    ]
+  },
+  {
+    "file": [
+      "shader",
+      "execution",
+      "expression",
+      "call",
+      "builtin",
+      "atomics",
+      "atomicStoreMin"
+    ]
+  },
+  {
+    "file": [
+      "shader",
+      "execution",
+      "expression",
+      "call",
+      "builtin",
+      "atomics",
       "atomicSub"
     ]
   },
@@ -2639,6 +2710,36 @@ export const listing = [
       "call",
       "builtin",
       "bitcast"
+    ]
+  },
+  {
+    "file": [
+      "shader",
+      "execution",
+      "expression",
+      "call",
+      "builtin",
+      "bufferArrayView"
+    ]
+  },
+  {
+    "file": [
+      "shader",
+      "execution",
+      "expression",
+      "call",
+      "builtin",
+      "bufferLength"
+    ]
+  },
+  {
+    "file": [
+      "shader",
+      "execution",
+      "expression",
+      "call",
+      "builtin",
+      "bufferView"
     ]
   },
   {
@@ -4282,6 +4383,14 @@ export const listing = [
       "shader",
       "validation",
       "decl",
+      "immediate"
+    ]
+  },
+  {
+    "file": [
+      "shader",
+      "validation",
+      "decl",
       "let"
     ]
   },
@@ -4517,6 +4626,16 @@ export const listing = [
       "expression",
       "call",
       "builtin",
+      "atomicStoreMinMax"
+    ]
+  },
+  {
+    "file": [
+      "shader",
+      "validation",
+      "expression",
+      "call",
+      "builtin",
       "atomics"
     ]
   },
@@ -4538,6 +4657,36 @@ export const listing = [
       "call",
       "builtin",
       "bitcast"
+    ]
+  },
+  {
+    "file": [
+      "shader",
+      "validation",
+      "expression",
+      "call",
+      "builtin",
+      "bufferArrayView"
+    ]
+  },
+  {
+    "file": [
+      "shader",
+      "validation",
+      "expression",
+      "call",
+      "builtin",
+      "bufferLength"
+    ]
+  },
+  {
+    "file": [
+      "shader",
+      "validation",
+      "expression",
+      "call",
+      "builtin",
+      "bufferView"
     ]
   },
   {
@@ -5690,6 +5839,14 @@ export const listing = [
     "file": [
       "shader",
       "validation",
+      "extension",
+      "subgroup_size_control"
+    ]
+  },
+  {
+    "file": [
+      "shader",
+      "validation",
       "functions",
       "alias_analysis"
     ]
@@ -6068,6 +6225,14 @@ export const listing = [
       "validation",
       "types",
       "atomics"
+    ]
+  },
+  {
+    "file": [
+      "shader",
+      "validation",
+      "types",
+      "buffer"
     ]
   },
   {

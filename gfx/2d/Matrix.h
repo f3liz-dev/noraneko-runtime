@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,20 +5,25 @@
 #ifndef MOZILLA_GFX_MATRIX_H_
 #define MOZILLA_GFX_MATRIX_H_
 
-#include "Types.h"
-#include "Triangle.h"
-#include "Rect.h"
+#include <math.h>
+
+#include <iosfwd>
+
 #include "Point.h"
 #include "Quaternion.h"
-#include <iosfwd>
-#include <math.h>
+#include "Rect.h"
+#include "Triangle.h"
+#include "Types.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/DebugOnly.h"
 #include "mozilla/FloatingPoint.h"
-#include "mozilla/gfx/ScaleFactors2D.h"
 #include "mozilla/Span.h"
+#include "mozilla/gfx/ScaleFactors2D.h"
 
 namespace mozilla {
+
+constexpr double kRadPerDegree = 2.0 * M_PI / 360.0;
+
 namespace gfx {
 
 static inline bool FuzzyEqual(Float aV1, Float aV2) {
@@ -605,6 +608,8 @@ class Matrix4x4Typed {
     };
     T components[16];
   };
+
+  auto MutTiedFields() { return std::tie(components); }
 
   friend std::ostream& operator<<(std::ostream& aStream,
                                   const Matrix4x4Typed& aMatrix) {

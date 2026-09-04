@@ -1,46 +1,45 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "VRManager.h"
 
+#include <cstring>
+
 #include "GeckoProfiler.h"
 #include "VRManagerParent.h"
 #include "VRShMem.h"
 #include "VRThread.h"
 #include "gfxVR.h"
+#include "ipc/VRLayerParent.h"
 #include "mozilla/ClearOnShutdown.h"
-#include "mozilla/dom/VRDisplay.h"
-#include "mozilla/dom/GamepadEventTypes.h"
-#include "mozilla/layers/TextureHost.h"
-#include "mozilla/layers/CompositorThread.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/Services.h"
 #include "mozilla/StaticPrefs_dom.h"
+#include "mozilla/dom/GamepadEventTypes.h"
+#include "mozilla/dom/VRDisplay.h"
+#include "mozilla/layers/CompositorThread.h"
+#include "mozilla/layers/TextureHost.h"
 #include "nsIObserverService.h"
-
-#include "gfxVR.h"
-#include <cstring>
-
-#include "ipc/VRLayerParent.h"
 #if !defined(MOZ_WIDGET_ANDROID)
 #  include "VRServiceHost.h"
 #endif
 
 #ifdef XP_WIN
+#  include <d3d11.h>
+
 #  include "CompositorD3D11.h"
 #  include "TextureD3D11.h"
-#  include <d3d11.h>
 #  include "gfxWindowsPlatform.h"
 #  include "mozilla/gfx/DeviceManagerDx.h"
 #elif defined(XP_MACOSX)
-#  include "mozilla/gfx/MacIOSurface.h"
 #  include <errno.h>
+
+#  include "mozilla/gfx/MacIOSurface.h"
 #elif defined(MOZ_WIDGET_ANDROID)
-#  include <string.h>
 #  include <pthread.h>
+#  include <string.h>
+
 #  include "GeckoVRManager.h"
 #  include "mozilla/java/GeckoSurfaceTextureWrappers.h"
 #  include "mozilla/layers/CompositorThread.h"
@@ -154,8 +153,8 @@ VRManager::VRManager()
 #if !defined(MOZ_WIDGET_ANDROID)
   // XRE_IsGPUProcess() is helping us to check some platforms like
   // Win 7 try which are not using GPU process but VR process is enabled.
-  mVRProcessEnabled =
-      StaticPrefs::dom_vr_process_enabled_AtStartup() && XRE_IsGPUProcess();
+  mVRProcessEnabled = StaticPrefs::dom_vr_process_enabled_AtStartup() &&
+                      StaticPrefs::dom_vr_enabled() && XRE_IsGPUProcess();
   VRServiceHost::Init(mVRProcessEnabled);
   mServiceHost = VRServiceHost::Get();
   // We must shutdown before VRServiceHost, which is cleared
@@ -1365,8 +1364,12 @@ bool VRManager::SubmitFrame(const layers::SurfaceDescriptor& aTexture,
       const auto& desc = aTexture.get_SurfaceDescriptorMacIOSurface();
       layer.textureType = VRLayerTextureType::LayerTextureType_MacIOSurface;
       layer.textureHandle = desc.surfaceId();
-      RefPtr<MacIOSurface> surf = MacIOSurface::LookupSurface(
-          desc.surfaceId(), !desc.isOpaque(), desc.yUVColorSpace());
+      MacIOSurface::AllowAlpha allowAlpha = desc.isOpaque()
+                                                ? MacIOSurface::AllowAlpha::No
+                                                : MacIOSurface::AllowAlpha::Yes;
+      RefPtr<MacIOSurface> surf =
+          MacIOSurface::LookupSurface(desc.surfaceId(), desc.yUVColorSpace(),
+                                      gfx::TransferFunction::SRGB, allowAlpha);
       if (surf) {
         layer.textureSize.width = surf->GetDevicePixelWidth();
         layer.textureSize.height = surf->GetDevicePixelHeight();
@@ -1419,7 +1422,7 @@ bool VRManager::SubmitFrame(const layers::SurfaceDescriptor& aTexture,
 
   if (mDisplayInfo.mDisplayState.suppressFrames ||
       !mDisplayInfo.mDisplayState.isConnected) {
-    // External implementation wants to supress frames, service has shut
+    // External implementation wants to suppress frames, service has shut
     // down or hardware has been disconnected.
     return false;
   }

@@ -1,58 +1,50 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsStyleUtil.h"
 
-#include <cctype>
-
 #include "mozilla/ExpandedPrincipal.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/PolicyContainer.h"
-#include "mozilla/intl/MozLocaleBindings.h"
 #include "mozilla/intl/oxilangtag_ffi_generated.h"
-#include "nsCSSProps.h"
 #include "nsContentUtils.h"
 #include "nsIContent.h"
-#include "nsIContentPolicy.h"
 #include "nsIContentSecurityPolicy.h"
 #include "nsLayoutUtils.h"
-#include "nsPrintfCString.h"
-#include "nsROCSSPrimitiveValue.h"
 #include "nsStyleConsts.h"
 #include "nsStyleStruct.h"
 
 using namespace mozilla;
 
-//------------------------------------------------------------------------------
-// Font Algorithm Code
-//------------------------------------------------------------------------------
+static bool EqualsMaybeIgnoreCase(const nsAString& aA, const nsAString& aB,
+                                  nsCaseTreatment aCaseTreatment) {
+  return aCaseTreatment == eIgnoreCase
+             ? nsContentUtils::EqualsIgnoreASCIICase(aA, aB)
+             : aA.Equals(aB);
+}
 
 // Compare two language strings
 bool nsStyleUtil::DashMatchCompare(const nsAString& aAttributeValue,
                                    const nsAString& aSelectorValue,
-                                   const nsStringComparator& aComparator) {
-  bool result;
+                                   nsCaseTreatment aCaseTreatment) {
   uint32_t selectorLen = aSelectorValue.Length();
   uint32_t attributeLen = aAttributeValue.Length();
   if (selectorLen > attributeLen) {
-    result = false;
-  } else {
-    nsAString::const_iterator iter;
-    if (selectorLen != attributeLen &&
-        *aAttributeValue.BeginReading(iter).advance(selectorLen) !=
-            char16_t('-')) {
-      // to match, the aAttributeValue must have a dash after the end of
-      // the aSelectorValue's text (unless the aSelectorValue and the
-      // aAttributeValue have the same text)
-      result = false;
-    } else {
-      result = StringBeginsWith(aAttributeValue, aSelectorValue, aComparator);
-    }
+    return false;
   }
-  return result;
+  nsAString::const_iterator iter;
+  if (selectorLen != attributeLen &&
+      *aAttributeValue.BeginReading(iter).advance(selectorLen) !=
+          char16_t('-')) {
+    // to match, the aAttributeValue must have a dash after the end of
+    // the aSelectorValue's text (unless the aSelectorValue and the
+    // aAttributeValue have the same text)
+    return false;
+  }
+  return EqualsMaybeIgnoreCase(aSelectorValue,
+                               Substring(aAttributeValue, 0, selectorLen),
+                               aCaseTreatment);
 }
 
 bool nsStyleUtil::LangTagCompare(const nsACString& aAttributeValue,
@@ -110,7 +102,7 @@ bool nsStyleUtil::LangTagCompare(const nsACString& aAttributeValue,
 
 bool nsStyleUtil::ValueIncludes(const nsAString& aValueList,
                                 const nsAString& aValue,
-                                const nsStringComparator& aComparator) {
+                                nsCaseTreatment aCaseTreatment) {
   const char16_t *p = aValueList.BeginReading(),
                  *p_end = aValueList.EndReading();
 
@@ -127,10 +119,8 @@ bool nsStyleUtil::ValueIncludes(const nsAString& aValueList,
       ++p;
     }
 
-    const char16_t* val_end = p;
-
-    if (val_start < val_end &&
-        aValue.Equals(Substring(val_start, val_end), aComparator)) {
+    if (val_start < p && EqualsMaybeIgnoreCase(aValue, Substring(val_start, p),
+                                               aCaseTreatment)) {
       return true;
     }
 

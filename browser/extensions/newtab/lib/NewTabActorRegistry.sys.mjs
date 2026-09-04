@@ -31,12 +31,31 @@ const JSWINDOWACTORS = {
       attributionActorRegister = register;
       attributionActorUnregister = unregister;
     },
+    safeForUntrustedWebProcess: true,
+  },
+  MozNewTabRemoteRendererProtocol: {
+    parent: {
+      esModuleURI:
+        "resource://newtab/lib/actors/MozNewTabRemoteRendererProtocolParent.sys.mjs",
+    },
+    includeParent: true,
+    remoteTypes: ["parent", "privilegedabout"],
   },
 };
 
 export const NewTabActorRegistry = {
   init() {
     ActorManagerParent.addJSWindowActors(JSWINDOWACTORS);
+  },
+
+  uninit() {
+    for (let [actorName] of Object.entries(JSWINDOWACTORS)) {
+      try {
+        ChromeUtils.unregisterWindowActor(actorName);
+      } catch (e) {
+        console.error(`Failed to unregister actor ${actorName}`, e);
+      }
+    }
   },
 
   /**

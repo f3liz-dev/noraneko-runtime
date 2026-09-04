@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -108,11 +106,7 @@ JSObject* DOMSVGStringList::WrapObject(JSContext* aCx,
 // ----------------------------------------------------------------------------
 // SVGStringList implementation:
 
-uint32_t DOMSVGStringList::NumberOfItems() const {
-  return InternalList().Length();
-}
-
-uint32_t DOMSVGStringList::Length() const { return NumberOfItems(); }
+uint32_t DOMSVGStringList::Length() const { return InternalList().Length(); }
 
 void DOMSVGStringList::Clear() {
   if (InternalList().IsExplicitlySet()) {
@@ -144,6 +138,13 @@ void DOMSVGStringList::IndexedGetter(uint32_t aIndex, bool& aFound,
   if (aFound) {
     aRetval = InternalList()[aIndex];
   }
+}
+
+void DOMSVGStringList::IndexedSetter(uint32_t aIndex,
+                                     const nsAString& aNewValue,
+                                     ErrorResult& aRv) {
+  nsAutoString ignored;
+  ReplaceItem(aNewValue, aIndex, ignored, aRv);
 }
 
 void DOMSVGStringList::InsertItemBefore(const nsAString& aNewItem,

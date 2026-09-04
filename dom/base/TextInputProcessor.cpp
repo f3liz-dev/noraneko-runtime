@@ -1,11 +1,10 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/TextInputProcessor.h"
 
+#include "mozilla/AutoRestore.h"
 #include "mozilla/EventForwards.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/NativeKeyBindingsType.h"
@@ -338,7 +337,7 @@ TextInputProcessor::BeginInputTransactionForTests(
     uint8_t aOptionalArgc, bool* aSucceeded) {
   MOZ_RELEASE_ASSERT(aSucceeded, "aSucceeded must not be nullptr");
   MOZ_RELEASE_ASSERT(nsContentUtils::IsCallerChrome());
-  nsITextInputProcessorCallback* callback =
+  nsCOMPtr<nsITextInputProcessorCallback> callback =
       aOptionalArgc >= 1 ? aCallback : nullptr;
   return BeginInputTransactionInternal(aWindow, callback, true, *aSucceeded);
 }
@@ -406,7 +405,8 @@ nsresult TextInputProcessor::BeginInputTransactionInternal(
   // This instance has finished preparing to link to the dispatcher.  Therefore,
   // let's forget the old dispatcher and purpose.
   if (mDispatcher) {
-    mDispatcher->EndInputTransaction(this);
+    OwningNonNull dispatcher = *mDispatcher;
+    dispatcher->EndInputTransaction(this);
     if (NS_WARN_IF(mDispatcher)) {
       // Forcibly initialize the members if we failed to end the input
       // transaction.
@@ -911,7 +911,8 @@ TextInputProcessor::NotifyIME(TextEventDispatcher* aTextEventDispatcher,
     }
     MOZ_RELEASE_ASSERT(notification);
     bool result = false;
-    nsresult rv = mCallback->OnNotify(this, notification, &result);
+    nsCOMPtr callback = mCallback;
+    nsresult rv = callback->OnNotify(this, notification, &result);
     if (NS_WARN_IF(NS_FAILED(rv))) {
       return rv;
     }
@@ -939,9 +940,8 @@ TextInputProcessor::NotifyIME(TextEventDispatcher* aTextEventDispatcher,
 NS_IMETHODIMP_(IMENotificationRequests)
 TextInputProcessor::GetIMENotificationRequests() {
   // TextInputProcessor should support all change notifications.
-  return IMENotificationRequests(
-      IMENotificationRequests::NOTIFY_TEXT_CHANGE |
-      IMENotificationRequests::NOTIFY_POSITION_CHANGE);
+  return {IMENotificationRequest::TextChange,
+          IMENotificationRequest::PositionChange};
 }
 
 NS_IMETHODIMP_(void)
@@ -1918,6 +1918,39 @@ void TextInputProcessor::ModifierKeyDataArray::ToggleModifierKey(
     return;
   }
   RemoveElementAt(index);
+}
+
+NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(TextInputProcessorListener)
+  NS_INTERFACE_MAP_ENTRY(nsITextInputProcessorListener)
+  NS_INTERFACE_MAP_ENTRY(nsITextInputProcessorCallback)
+  NS_INTERFACE_MAP_ENTRY(nsISupports)
+NS_INTERFACE_MAP_END
+NS_IMPL_CYCLE_COLLECTING_ADDREF(TextInputProcessorListener)
+NS_IMPL_CYCLE_COLLECTING_RELEASE(TextInputProcessorListener)
+NS_IMPL_CYCLE_COLLECTION(TextInputProcessorListener, mCallback)
+
+NS_IMETHODIMP TextInputProcessorListener::OnNotify(
+    nsITextInputProcessor* aTextInputProcessor,
+    nsITextInputProcessorNotification* aNotification, bool* aRetVal) {
+  if (!mCallback) {
+    return NS_OK;
+  }
+  AutoRestore restore(mNotification);
+  mNotification = aNotification;
+  nsCOMPtr callback = mCallback;
+  return callback->OnNotify(aRetVal);
+}
+
+NS_IMETHODIMP TextInputProcessorListener::GetNotification(
+    nsITextInputProcessorNotification** aRetVal) {
+  NS_IF_ADDREF(*aRetVal = mNotification);
+  return NS_OK;
+}
+
+NS_IMETHODIMP TextInputProcessorListener::SetCallback(
+    nsITextInputProcessorListenerCallback* aCallback) {
+  mCallback = aCallback;
+  return NS_OK;
 }
 
 }  // namespace mozilla

@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -951,16 +949,6 @@ bool WarpCacheIRTranspiler::emitGuardIsNotArrayBufferMaybeShared(
   return true;
 }
 
-bool WarpCacheIRTranspiler::emitGuardIsTypedArray(ObjOperandId objId) {
-  MDefinition* obj = getOperand(objId);
-
-  auto* ins = MGuardIsTypedArray::New(alloc(), obj);
-  add(ins);
-
-  setOperand(objId, ins);
-  return true;
-}
-
 bool WarpCacheIRTranspiler::emitGuardIsNonResizableTypedArray(
     ObjOperandId objId) {
   MDefinition* obj = getOperand(objId);
@@ -1381,6 +1369,15 @@ bool WarpCacheIRTranspiler::emitGuardNonDoubleType(ValOperandId inputId,
   MOZ_CRASH("unexpected type");
 }
 
+bool WarpCacheIRTranspiler::emitGuardIsNotObject(ValOperandId inputId) {
+  MDefinition* input = getOperand(inputId);
+
+  auto* ins = MGuardIsNotObject::New(alloc(), input);
+  add(ins);
+  setOperand(inputId, ins);
+  return true;
+}
+
 bool WarpCacheIRTranspiler::emitGuardTo(ValOperandId inputId, MIRType type) {
   MDefinition* def = getOperand(inputId);
   if (def->type() == type) {
@@ -1650,9 +1647,8 @@ bool WarpCacheIRTranspiler::emitInt32ToStringWithBaseResult(
   add(guardedBase);
 
   // Use lower-case characters by default.
-  constexpr bool lower = true;
-
-  auto* ins = MInt32ToStringWithBase::New(alloc(), input, guardedBase, lower);
+  auto* ins = MInt32ToStringWithBase::New(alloc(), input, guardedBase,
+                                          StringCase::Lower);
   add(ins);
 
   pushResult(ins);
@@ -2566,6 +2562,10 @@ bool WarpCacheIRTranspiler::emitLoadTypedArrayElementResult(
     result = MInt64ToBigInt::New(alloc(), load,
                                  Scalar::isSignedIntType(elementType));
     add(result);
+  } else if (Scalar::isFloatingType(elementType) &&
+             JitOptions.disableCanonicalizeNaNAtUses) {
+    result = MCanonicalizeNaN::New(alloc(), load);
+    add(result);
   }
 
   pushResult(result);
@@ -2649,6 +2649,16 @@ bool WarpCacheIRTranspiler::emitTypedArraySubarrayResult(
 
   pushResult(ins);
   return resumeAfter(ins);
+}
+
+bool WarpCacheIRTranspiler::emitLinearizeString(StringOperandId strId,
+                                                StringOperandId resultId) {
+  MDefinition* str = getOperand(strId);
+
+  auto* ins = MLinearizeString::New(alloc(), str);
+  add(ins);
+
+  return defineOperand(resultId, ins);
 }
 
 bool WarpCacheIRTranspiler::emitLinearizeForCharAccess(
@@ -2959,8 +2969,7 @@ bool WarpCacheIRTranspiler::emitStringEndsWithResult(
 bool WarpCacheIRTranspiler::emitStringToLowerCaseResult(StringOperandId strId) {
   MDefinition* str = getOperand(strId);
 
-  auto* convert =
-      MStringConvertCase::New(alloc(), str, MStringConvertCase::LowerCase);
+  auto* convert = MStringConvertCase::New(alloc(), str, StringCase::Lower);
   add(convert);
 
   pushResult(convert);
@@ -2970,8 +2979,7 @@ bool WarpCacheIRTranspiler::emitStringToLowerCaseResult(StringOperandId strId) {
 bool WarpCacheIRTranspiler::emitStringToUpperCaseResult(StringOperandId strId) {
   MDefinition* str = getOperand(strId);
 
-  auto* convert =
-      MStringConvertCase::New(alloc(), str, MStringConvertCase::UpperCase);
+  auto* convert = MStringConvertCase::New(alloc(), str, StringCase::Upper);
   add(convert);
 
   pushResult(convert);
@@ -3328,6 +3336,10 @@ bool WarpCacheIRTranspiler::emitLoadDataViewValueResult(
   if (Scalar::isBigIntType(elementType)) {
     result = MInt64ToBigInt::New(alloc(), load,
                                  Scalar::isSignedIntType(elementType));
+    add(result);
+  } else if (Scalar::isFloatingType(elementType) &&
+             JitOptions.disableCanonicalizeNaNAtUses) {
+    result = MCanonicalizeNaN::New(alloc(), load);
     add(result);
   }
 
@@ -4678,6 +4690,14 @@ bool WarpCacheIRTranspiler::emitIsObjectResult(ValOperandId inputId) {
   return true;
 }
 
+bool WarpCacheIRTranspiler::emitIsSuspendedGeneratorResult(ObjOperandId objId) {
+  MDefinition* obj = getOperand(objId);
+  auto* ins = MIsSuspendedGenerator::New(alloc(), obj);
+  add(ins);
+  pushResult(ins);
+  return true;
+}
+
 bool WarpCacheIRTranspiler::emitIsPackedArrayResult(ObjOperandId objId) {
   MDefinition* obj = getOperand(objId);
 
@@ -5938,6 +5958,45 @@ bool WarpCacheIRTranspiler::emitDateSecondsFromSecondsIntoYearResult(
   return true;
 }
 
+bool WarpCacheIRTranspiler::emitDateNow(NumberOperandId resultId) {
+  auto* ins = MDateNow::New(alloc());
+  add(ins);
+
+  return defineOperand(resultId, ins);
+}
+
+bool WarpCacheIRTranspiler::emitDateParse(StringOperandId strId,
+                                          NumberOperandId resultId) {
+  MDefinition* str = getOperand(strId);
+
+  auto* ins = MDateParse::New(alloc(), str);
+  add(ins);
+
+  return defineOperand(resultId, ins);
+}
+
+bool WarpCacheIRTranspiler::emitTimeClip(NumberOperandId timeId,
+                                         NumberOperandId resultId) {
+  MDefinition* time = getOperand(timeId);
+
+  auto* ins = MTimeClip::New(alloc(), time);
+  add(ins);
+
+  return defineOperand(resultId, ins);
+}
+
+bool WarpCacheIRTranspiler::emitNewDateObjectResult(
+    uint32_t templateObjectOffset, NumberOperandId utcTimeId) {
+  JSObject* templateObj = tenuredObjectStubField(templateObjectOffset);
+  MDefinition* utcTime = getOperand(utcTimeId);
+
+  auto* obj = MNewDateObject::New(alloc(), utcTime, templateObj);
+  add(obj);
+
+  pushResult(obj);
+  return true;
+}
+
 bool WarpCacheIRTranspiler::emitTruthyResult(OperandId inputId) {
   MDefinition* input = getOperand(inputId);
 
@@ -7070,8 +7129,6 @@ bool WarpCacheIRTranspiler::emitMetaCreateThis(uint32_t numFixedSlots,
   callInfo_->setThis(createThis);
   return true;
 }
-
-bool WarpCacheIRTranspiler::emitReturnFromIC() { return true; }
 
 bool WarpCacheIRTranspiler::emitBailout() {
   auto* bail = MBail::New(alloc());

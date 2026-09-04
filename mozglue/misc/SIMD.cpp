@@ -1,16 +1,15 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/SIMD.h"
 
+#include <bit>
 #include <cstring>
 #include <stdint.h>
 #include <type_traits>
 
-#include "mozilla/EndianUtils.h"
+#include "mozilla/Assertions.h"
 #include "mozilla/SSE.h"
 
 #ifdef MOZILLA_PRESUME_SSE2
@@ -222,7 +221,7 @@ const TValue* Check2x2x16Bytes(__m128i needle1, __m128i needle2, uintptr_t a,
 template <typename TValue>
 const TValue* FindInBuffer(const TValue* ptr, TValue value, size_t length) {
   static_assert(sizeof(TValue) == 1 || sizeof(TValue) == 2);
-  static_assert(std::is_unsigned<TValue>::value);
+  static_assert(std::is_unsigned_v<TValue>);
   uint64_t splat64;
   if (sizeof(TValue) == 1) {
     splat64 = 0x0101010101010101llu;
@@ -329,7 +328,7 @@ const TValue* TwoElementLoop(uintptr_t start, uintptr_t end, TValue v1,
                       (static_cast<uint32_t>(v2) << (sizeof(TValue) * 8));
   while (cur < preEnd) {
     // NOTE: this should only ever be called on little endian architectures.
-    static_assert(MOZ_LITTLE_ENDIAN());
+    static_assert(std::endian::native == std::endian::little);
     // We or cur[0] and cur[1] together explicitly and compare to expected,
     // in order to avoid UB from just loading them as a uint16_t/uint32_t.
     // However, it will compile down the same code after optimizations on
@@ -353,7 +352,7 @@ template <typename TValue>
 const TValue* FindTwoInBuffer(const TValue* ptr, TValue v1, TValue v2,
                               size_t length) {
   static_assert(sizeof(TValue) == 1 || sizeof(TValue) == 2);
-  static_assert(std::is_unsigned<TValue>::value);
+  static_assert(std::is_unsigned_v<TValue>);
   uint64_t splat64;
   if (sizeof(TValue) == 1) {
     splat64 = 0x0101010101010101llu;

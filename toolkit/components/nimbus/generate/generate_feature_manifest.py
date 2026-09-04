@@ -29,6 +29,7 @@ ALLOWED_ISEARLYSTARTUP_FEATURE_IDS = {
     "aboutwelcome",
     "bounceTrackingProtection",
     "newtab",
+    "opaqueResponseBlocking",  # Requires C++ API for exposure events
     "pocketNewtab",
     "preonboarding",
     "testFeature",
@@ -56,6 +57,9 @@ DISALLOWED_PREFS = {
     # used by code to check if we are in a test.
     "security.turn_off_all_security_so_that_viruses_can_take_over_this_computer": (
         "this pref is automation-only and is unsafe to enable outside tests"
+    ),
+    "security.sandbox.content.level": (
+        "changing this value can lower the security of clients"
     ),
 }
 

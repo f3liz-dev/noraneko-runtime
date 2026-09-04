@@ -129,6 +129,33 @@ export function waitForCondition(callback, message) {
 }
 
 /**
+ * Collects the translated documents for the current page and any translated descendant frames.
+ *
+ * @param {WindowGlobalChild} [windowGlobalChild=content.windowGlobalChild]
+ * @returns {TranslationsDocument[]}
+ */
+export function collectTranslatedDocs(
+  windowGlobalChild = content.windowGlobalChild
+) {
+  const translatedDocs = [];
+
+  const translationsChild = windowGlobalChild.getExistingActor("Translations");
+  if (translationsChild?.translatedDoc) {
+    translatedDocs.push(translationsChild.translatedDoc);
+  }
+
+  for (const childBrowsingContext of windowGlobalChild.browsingContext
+    .children) {
+    const childWindowGlobal = childBrowsingContext.currentWindowGlobal;
+    if (childWindowGlobal) {
+      translatedDocs.push(...collectTranslatedDocs(childWindowGlobal));
+    }
+  }
+
+  return translatedDocs;
+}
+
+/**
  * Asserts that a page was translated with a specific result.
  *
  * @param {string} message The assertion message.
@@ -172,6 +199,59 @@ export async function assertTranslationResult(
   }
 
   is(translation, getText(), message);
+}
+
+/**
+ * Assert that a node's HTML matches expected markup, ignoring whitespace between tags.
+ * This mirrors the helper in shared-head.js's because this file cannot import it directly.
+ *
+ * @param {Element | null} node
+ * @param {string} expectedHtml
+ * @param {string} [message="HTML matches expected markup."]
+ *
+ * @returns {Promise<void>}
+ */
+export async function assertHtmlMatches(
+  node,
+  expectedHtml,
+  message = "HTML matches expected markup."
+) {
+  // All characters that will need to be escaped with a backslash in the
+  // final regex if they are contained within the HTML string.
+  const escapableCharacters = /[.*+?^${}()|[\]\\]/g;
+  const expected = new RegExp(
+    `^${expectedHtml
+      // Escape each character that needs it with a backslash.
+      .replaceAll(escapableCharacters, "\\$&")
+      // Add a 0+ blank space matcher \s* before each opening angle bracket <
+      .replaceAll(/\s*</g, "\\s*<")
+      // Add a 0+ blank space matcher \s* after each closing angle bracket >
+      .replaceAll(/>\s*/g, ">\\s*")
+      // Collapse more than one blank space into a 1+ matcher.
+      .replaceAll(/\s\s+/g, "\\s+")
+      // Replace a 1+ blank space matcher at the beginning with a 0+ matcher.
+      .replace(/^\\s\+/, "\\s*")
+      // Replace a 1+ blank space matcher at the end with a 0+ matcher.
+      .replace(/\\s\+$/, "\\s*")}$`,
+    "su"
+  );
+  if (node) {
+    try {
+      await waitForCondition(
+        () => expected.test(node.outerHTML),
+        "Waiting for HTML to match."
+      );
+    } catch (error) {
+      console.error(error);
+    }
+  }
+
+  const actualHtml = node?.outerHTML ?? "";
+
+  ok(
+    expected.test(actualHtml),
+    `${message}\n\nExpected HTML:\n\n${expectedHtml}\n\nActual HTML:\n\n${actualHtml}`
+  );
 }
 
 /**

@@ -5,7 +5,7 @@ use crate::{DownlevelFlags, Origin2d};
 ///
 /// Corresponds to [WebGPU `GPUCopyExternalImageSourceInfo`](
 /// https://gpuweb.github.io/gpuweb/#dictdef-gpuimagecopyexternalimage).
-#[cfg(all(target_arch = "wasm32", feature = "web"))]
+#[cfg(all(target_family = "wasm", feature = "web"))]
 #[derive(Clone, Debug)]
 pub struct CopyExternalImageSourceInfo {
     /// The texture to be copied from. The copy source data is captured at the moment
@@ -28,7 +28,7 @@ pub struct CopyExternalImageSourceInfo {
 ///
 /// Corresponds to the [implicit union type on WebGPU `GPUCopyExternalImageSourceInfo.source`](
 /// https://gpuweb.github.io/gpuweb/#dom-gpuimagecopyexternalimage-source).
-#[cfg(all(target_arch = "wasm32", feature = "web"))]
+#[cfg(all(target_family = "wasm", feature = "web"))]
 #[derive(Clone, Debug)]
 pub enum ExternalImageSource {
     /// Copy from a previously-decoded image bitmap.
@@ -46,11 +46,10 @@ pub enum ExternalImageSource {
     /// Requires [`DownlevelFlags::UNRESTRICTED_EXTERNAL_TEXTURE_COPIES`]
     OffscreenCanvas(web_sys::OffscreenCanvas),
     /// Copy from a video frame.
-    #[cfg(web_sys_unstable_apis)]
     VideoFrame(web_sys::VideoFrame),
 }
 
-#[cfg(all(target_arch = "wasm32", feature = "web"))]
+#[cfg(all(target_family = "wasm", feature = "web"))]
 impl ExternalImageSource {
     /// Gets the pixel, not css, width of the source.
     pub fn width(&self) -> u32 {
@@ -61,7 +60,6 @@ impl ExternalImageSource {
             ExternalImageSource::ImageData(i) => i.width(),
             ExternalImageSource::HTMLCanvasElement(c) => c.width(),
             ExternalImageSource::OffscreenCanvas(c) => c.width(),
-            #[cfg(web_sys_unstable_apis)]
             ExternalImageSource::VideoFrame(v) => v.display_width(),
         }
     }
@@ -75,13 +73,12 @@ impl ExternalImageSource {
             ExternalImageSource::ImageData(i) => i.height(),
             ExternalImageSource::HTMLCanvasElement(c) => c.height(),
             ExternalImageSource::OffscreenCanvas(c) => c.height(),
-            #[cfg(web_sys_unstable_apis)]
             ExternalImageSource::VideoFrame(v) => v.display_height(),
         }
     }
 }
 
-#[cfg(all(target_arch = "wasm32", feature = "web"))]
+#[cfg(all(target_family = "wasm", feature = "web"))]
 impl core::ops::Deref for ExternalImageSource {
     type Target = js_sys::Object;
 
@@ -93,21 +90,20 @@ impl core::ops::Deref for ExternalImageSource {
             Self::ImageData(i) => i,
             Self::HTMLCanvasElement(c) => c,
             Self::OffscreenCanvas(c) => c,
-            #[cfg(web_sys_unstable_apis)]
             Self::VideoFrame(v) => v,
         }
     }
 }
 
 #[cfg(all(
-    target_arch = "wasm32",
+    target_family = "wasm",
     feature = "web",
     feature = "fragile-send-sync-non-atomic-wasm",
     not(target_feature = "atomics")
 ))]
 unsafe impl Send for ExternalImageSource {}
 #[cfg(all(
-    target_arch = "wasm32",
+    target_family = "wasm",
     feature = "web",
     feature = "fragile-send-sync-non-atomic-wasm",
     not(target_feature = "atomics")

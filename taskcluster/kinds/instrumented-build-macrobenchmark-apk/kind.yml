@@ -25,6 +25,7 @@ task-defaults:
             - linux64-node
     run-on-projects: []
     run:
+        clone-with: hg
         using: gradlew
     treeherder:
         kind: test
@@ -33,8 +34,6 @@ task-defaults:
 tasks:
     fenix:
         description: 'Generate macrobenchmark apks for fenix with baseline profile.'
-        attributes:
-            shipping-product: fenix
         dependencies:
             build-fat-aar: build-fat-aar-android-geckoview-fat-aar/opt
             baseline-profile: generate-baseline-profile-firebase-fenix
@@ -44,6 +43,7 @@ tasks:
                   dest: baselineProfiles
         source-project-name: "fenix"
         run:
+            clone-with: hg
             gradle-package-command: ":benchmark:assembleBenchmark :app:assembleBenchmark"
             baseline-profile-path: /builds/worker/fetches/baselineProfiles
         treeherder:

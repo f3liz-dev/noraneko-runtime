@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,20 +5,19 @@
 #ifndef _nsLocalFileWIN_H_
 #define _nsLocalFileWIN_H_
 
-#include "nscore.h"
-#include "nsError.h"
-#include "nsString.h"
+#include <shlobj.h>
+#include <sys/stat.h>
+#include <windows.h>
+
 #include "nsCRT.h"
+#include "nsError.h"
+#include "nsIClassInfoImpl.h"
 #include "nsIFile.h"
 #include "nsILocalFileWin.h"
-#include "nsIClassInfoImpl.h"
+#include "nsString.h"
 #include "nsWindowsHelpers.h"
+#include "nscore.h"
 #include "prio.h"
-
-#include <windows.h>
-#include <shlobj.h>
-
-#include <sys/stat.h>
 
 class nsLocalFile final : public nsILocalFileWin {
  public:
@@ -85,7 +82,7 @@ class nsLocalFile final : public nsILocalFileWin {
   };
 
   nsLocalFile(const nsLocalFile& aOther);
-  ~nsLocalFile() {}
+  ~nsLocalFile() = default;
 
   bool mDirty;  // cached information can only be used when this is false
   bool mResolveDirty;

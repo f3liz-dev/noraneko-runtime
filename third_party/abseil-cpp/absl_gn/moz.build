@@ -9,7 +9,7 @@
 COMPILE_FLAGS["OS_INCLUDES"] = []
 AllowCompilerWarnings()
 
-FINAL_LIBRARY = "xul"
+FINAL_LIBRARY = "abseil"
 
 
 LOCAL_INCLUDES += [
@@ -48,6 +48,10 @@ if CONFIG["OS_TARGET"] == "Darwin":
 
     DEFINES["__STDC_CONSTANT_MACROS"] = True
     DEFINES["__STDC_FORMAT_MACROS"] = True
+
+    OS_LIBS += [
+        "-framework Foundation"
+    ]
 
 if CONFIG["OS_TARGET"] == "Linux":
 

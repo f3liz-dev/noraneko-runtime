@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -78,6 +76,7 @@ class DisplayListClipState {
   void ClipContainingBlockDescendants(nsDisplayListBuilder* aBuilder,
                                       const nsRect& aRect,
                                       const nsRectCornerRadii* aRadii,
+                                      const nsMargin* aInset,
                                       DisplayItemClipChain& aClipChainOnStack);
 
   void ClipToDisplayPort(nsDisplayListBuilder* aBuilder, const nsRect& aRect,
@@ -167,14 +166,16 @@ class DisplayListClipState::AutoSaveRestore {
    * mClipContainingBlockDescendants and sets mClipContainingBlockDescendants to
    * the result, stored in aClipOnStack.
    */
-  void ClipContainingBlockDescendants(
-      const nsRect& aRect, const nsRectCornerRadii* aRadii = nullptr) {
+  void ClipContainingBlockDescendants(const nsRect& aRect,
+                                      const nsRectCornerRadii* aRadii = nullptr,
+                                      const nsMargin* aInset = nullptr) {
     NS_ASSERTION(!mRestored, "Already restored!");
     NS_ASSERTION(!mClipUsed, "mClip already used");
 #ifdef DEBUG
     mClipUsed = true;
 #endif
-    mState.ClipContainingBlockDescendants(mBuilder, aRect, aRadii, mClipChain);
+    mState.ClipContainingBlockDescendants(mBuilder, aRect, aRadii, aInset,
+                                          mClipChain);
   }
 
   void ClipToDisplayPort(const nsRect& aRect) {
@@ -289,13 +290,14 @@ class DisplayListClipState::AutoClipMultiple : public AutoSaveRestore {
    * the result, stored in aClipOnStack.
    */
   void ClipContainingBlockDescendantsExtra(const nsRect& aRect,
-                                           const nsRectCornerRadii* aRadii) {
+                                           const nsRectCornerRadii* aRadii,
+                                           const nsMargin* aInset) {
     NS_ASSERTION(!mRestored, "Already restored!");
     NS_ASSERTION(!mExtraClipUsed, "mExtraClip already used");
 #ifdef DEBUG
     mExtraClipUsed = true;
 #endif
-    mState.ClipContainingBlockDescendants(mBuilder, aRect, aRadii,
+    mState.ClipContainingBlockDescendants(mBuilder, aRect, aRadii, aInset,
                                           mExtraClipChain);
   }
 

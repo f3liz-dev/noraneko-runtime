@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -178,7 +177,7 @@ already_AddRefed<XPathResult> XPathExpression::EvaluateWithContext(
 
 nsresult EvalContextImpl::getVariable(int32_t aNamespace, nsAtom* aLName,
                                       txAExprResult*& aResult) {
-  aResult = 0;
+  aResult = nullptr;
   return NS_ERROR_INVALID_ARG;
 }
 

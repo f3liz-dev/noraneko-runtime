@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -20,9 +18,11 @@
 #include "mozilla/dom/Event.h"
 #include "mozilla/dom/UserProximityEvent.h"
 #include "nsContentUtils.h"
+#include "nsDebug.h"
 #include "nsGlobalWindowInner.h"
 #include "nsIScriptObjectPrincipal.h"
 #include "nsPIDOMWindow.h"
+#include "nsPIDOMWindowInlines.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -45,7 +45,7 @@ class nsDeviceSensorData final : public nsIDeviceSensorData {
   nsDeviceSensorData(unsigned long type, double x, double y, double z);
 
  private:
-  ~nsDeviceSensorData();
+  ~nsDeviceSensorData() = default;
 
  protected:
   unsigned long mType;
@@ -62,8 +62,6 @@ NS_INTERFACE_MAP_END
 
 NS_IMPL_ADDREF(nsDeviceSensorData)
 NS_IMPL_RELEASE(nsDeviceSensorData)
-
-nsDeviceSensorData::~nsDeviceSensorData() = default;
 
 NS_IMETHODIMP nsDeviceSensorData::GetType(uint32_t* aType) {
   NS_ENSURE_ARG_POINTER(aType);
@@ -120,6 +118,20 @@ NS_IMETHODIMP nsDeviceSensors::HasWindowListener(uint32_t aType,
     *aRetVal = false;
   else
     *aRetVal = mWindowListeners[aType]->IndexOf(aWindow) != NoIndex;
+
+  return NS_OK;
+}
+
+NS_IMETHODIMP nsDeviceSensors::NotifySensorEvent(uint32_t aType, float aX,
+                                                 float aY, float aZ, float aW) {
+  SensorData sensorData;
+  sensorData.sensor() = static_cast<SensorType>(aType);
+  sensorData.timestamp() = PR_Now();
+  sensorData.values().AppendElement(aX);
+  sensorData.values().AppendElement(aY);
+  sensorData.values().AppendElement(aZ);
+  sensorData.values().AppendElement(aW);
+  Notify(sensorData);
 
   return NS_OK;
 }
@@ -326,15 +338,15 @@ void nsDeviceSensors::Notify(const mozilla::hal::SensorData& aSensorData) {
           type == nsIDeviceSensorData::TYPE_GYROSCOPE) {
         FireDOMMotionEvent(doc, target, type, timestamp, x, y, z);
       } else if (type == nsIDeviceSensorData::TYPE_ORIENTATION) {
-        FireDOMOrientationEvent(target, x, y, z, Orientation::kAbsolute);
+        MaybeFireDOMOrientationEvent(target, x, y, z, Orientation::kAbsolute);
       } else if (type == nsIDeviceSensorData::TYPE_ROTATION_VECTOR) {
         const Orientation orient = RotationVectorToOrientation(x, y, z, w);
-        FireDOMOrientationEvent(target, orient.alpha, orient.beta, orient.gamma,
-                                Orientation::kAbsolute);
+        MaybeFireDOMOrientationEvent(target, orient.alpha, orient.beta,
+                                     orient.gamma, Orientation::kAbsolute);
       } else if (type == nsIDeviceSensorData::TYPE_GAME_ROTATION_VECTOR) {
         const Orientation orient = RotationVectorToOrientation(x, y, z, w);
-        FireDOMOrientationEvent(target, orient.alpha, orient.beta, orient.gamma,
-                                Orientation::kRelative);
+        MaybeFireDOMOrientationEvent(target, orient.alpha, orient.beta,
+                                     orient.gamma, Orientation::kRelative);
       } else if (type == nsIDeviceSensorData::TYPE_PROXIMITY) {
         MaybeFireDOMUserProximityEvent(target, x, z);
       } else if (type == nsIDeviceSensorData::TYPE_LIGHT) {
@@ -381,9 +393,39 @@ void nsDeviceSensors::FireDOMUserProximityEvent(
   aTarget->DispatchEvent(*event);
 }
 
-void nsDeviceSensors::FireDOMOrientationEvent(EventTarget* aTarget,
-                                              double aAlpha, double aBeta,
-                                              double aGamma, bool aIsAbsolute) {
+bool nsDeviceSensors::CanFireDOMOrientationEvent(double aAlpha, double aBeta,
+                                                 double aGamma,
+                                                 bool aIsAbsolute) {
+  // Fire the event if any of the values have changed by more than 0.1
+  // degrees.
+  static constexpr double kThreshold = 0.1;
+
+  if (aIsAbsolute) {
+    if (!mLastOrientationAbsolute) {
+      return true;
+    }
+    return (
+        fabs(mLastOrientationAbsolute->mAlpha.Value() - aAlpha) >= kThreshold &&
+        fabs(mLastOrientationAbsolute->mBeta.Value() - aBeta) >= kThreshold &&
+        fabs(mLastOrientationAbsolute->mGamma.Value() - aGamma) >= kThreshold);
+  }
+
+  if (!mLastOrientation) {
+    return true;
+  }
+  return (fabs(mLastOrientation->mAlpha.Value() - aAlpha) >= kThreshold &&
+          fabs(mLastOrientation->mBeta.Value() - aBeta) >= kThreshold &&
+          fabs(mLastOrientation->mGamma.Value() - aGamma) >= kThreshold);
+}
+
+void nsDeviceSensors::MaybeFireDOMOrientationEvent(EventTarget* aTarget,
+                                                   double aAlpha, double aBeta,
+                                                   double aGamma,
+                                                   bool aIsAbsolute) {
+  if (!CanFireDOMOrientationEvent(aAlpha, aBeta, aGamma, aIsAbsolute)) {
+    return;
+  }
+
   DeviceOrientationEventInit init;
   init.mBubbles = true;
   init.mCancelable = false;
@@ -416,6 +458,22 @@ void nsDeviceSensors::FireDOMOrientationEvent(EventTarget* aTarget,
     // we need to additionally dispatch type "deviceorientation" to keep
     // backwards-compatibility.
     Dispatch(aTarget, u"deviceorientation"_ns);
+  }
+
+  if (aIsAbsolute) {
+    if (!mLastOrientationAbsolute) {
+      mLastOrientationAbsolute.emplace();
+    }
+    mLastOrientationAbsolute->mAlpha.SetValue(aAlpha);
+    mLastOrientationAbsolute->mBeta.SetValue(aBeta);
+    mLastOrientationAbsolute->mGamma.SetValue(aGamma);
+  } else {
+    if (!mLastOrientation) {
+      mLastOrientation.emplace();
+    }
+    mLastOrientation->mAlpha.SetValue(aAlpha);
+    mLastOrientation->mBeta.SetValue(aBeta);
+    mLastOrientation->mGamma.SetValue(aGamma);
   }
 }
 
@@ -517,7 +575,7 @@ bool nsDeviceSensors::IsSensorAllowedByPref(uint32_t aType,
         return false;
       }
       if (doc) {
-        doc->WarnOnceAbout(DeprecatedOperations::eMotionEvent);
+        doc->WarnOnceAndReportAbout(DeprecatedOperations::eMotionEvent);
       }
       break;
     case nsIDeviceSensorData::TYPE_GAME_ROTATION_VECTOR:
@@ -528,7 +586,7 @@ bool nsDeviceSensors::IsSensorAllowedByPref(uint32_t aType,
         return false;
       }
       if (doc) {
-        doc->WarnOnceAbout(DeprecatedOperations::eOrientationEvent);
+        doc->WarnOnceAndReportAbout(DeprecatedOperations::eOrientationEvent);
       }
       break;
     case nsIDeviceSensorData::TYPE_PROXIMITY:
@@ -537,7 +595,7 @@ bool nsDeviceSensors::IsSensorAllowedByPref(uint32_t aType,
         return false;
       }
       if (doc) {
-        doc->WarnOnceAbout(DeprecatedOperations::eProximityEvent, true);
+        doc->WarnOnceAndReportAbout(DeprecatedOperations::eProximityEvent);
       }
       break;
     case nsIDeviceSensorData::TYPE_LIGHT:
@@ -546,7 +604,7 @@ bool nsDeviceSensors::IsSensorAllowedByPref(uint32_t aType,
         return false;
       }
       if (doc) {
-        doc->WarnOnceAbout(DeprecatedOperations::eAmbientLightEvent, true);
+        doc->WarnOnceAndReportAbout(DeprecatedOperations::eAmbientLightEvent);
       }
       break;
     default:

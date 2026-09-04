@@ -11,21 +11,27 @@ from unittest import mock
 
 import mozunit
 import pytest
+from tryselect.selectors import perf as perf_selector
 from tryselect.selectors.perf import (
     MAX_PERF_TASKS,
-    Apps,
     InvalidCategoryException,
     InvalidRegressionDetectorQuery,
     PerfParser,
-    Platforms,
-    Suites,
-    Variants,
     run,
 )
 from tryselect.selectors.perf_preview import plain_display
 from tryselect.selectors.perfselector.classification import (
+    ClassificationEnum,
+    awsy_test_finder,
+    check_for_chrome,
+    check_for_custom_car,
     check_for_live_sites,
     check_for_profile,
+    check_for_safari,
+    check_for_safari_tp,
+    perftest_test_finder,
+    raptor_test_finder,
+    talos_test_finder,
 )
 from tryselect.selectors.perfselector.perfpushinfo import PerfPushInfo
 
@@ -36,7 +42,7 @@ TASKS = [
     "test-linux1804-64-shippable-qr/opt-browsertime-benchmark-firefox-motionmark-animometer-1-3",
     "test-linux1804-64-shippable-qr/opt-browsertime-benchmark-wasm-firefox-wasm-godot-optimizing",
     "test-linux1804-64-shippable-qr/opt-browsertime-benchmark-firefox-webaudio",
-    "test-linux1804-64-shippable-qr/opt-browsertime-benchmark-firefox-speedometer",
+    "test-linux1804-64-shippable-qr/opt-browsertime-benchmark-firefox-speedometer2",
     "test-linux1804-64-shippable-qr/opt-browsertime-benchmark-wasm-firefox-wasm-misc",
     "test-linux1804-64-shippable-qr/opt-browsertime-benchmark-firefox-jetstream2",
     "test-linux1804-64-shippable-qr/opt-browsertime-benchmark-firefox-ares6",
@@ -54,11 +60,199 @@ TASKS = [
     "test-linux1804-64-shippable-qr/opt-browsertime-amazon",
 ]
 
-# The TEST_VARIANTS, and TEST_CATEGORIES are used to force
-# a particular set of categories to show up in testing. Otherwise,
-# every time someone adds a category, or a variant, we'll need
-# to redo all the category counts. The platforms, and apps are
-# not forced because they change infrequently.
+
+# Create mock copies of the classification enums so that production changes
+# don't need test changes. The PerfParser changes for more static categories
+# follow these below.
+class Platforms(ClassificationEnum):
+    ANDROID_A55 = {"value": "android-a55", "index": 0}
+    ANDROID = {"value": "android", "index": 1}
+    WINDOWS = {"value": "windows", "index": 2}
+    LINUX = {"value": "linux", "index": 3}
+    MACOSX = {"value": "macosx", "index": 4}
+    DESKTOP = {"value": "desktop", "index": 5}
+
+
+class Apps(ClassificationEnum):
+    FIREFOX = {"value": "firefox", "index": 0}
+    CHROME = {"value": "chrome", "index": 1}
+    GECKOVIEW = {"value": "geckoview", "index": 2}
+    FENIX = {"value": "fenix", "index": 3}
+    CHROME_M = {"value": "chrome-m", "index": 4}
+    SAFARI = {"value": "safari", "index": 5}
+    CHROMIUM_RELEASE = {"value": "custom-car", "index": 6}
+    CHROMIUM_RELEASE_M = {"value": "cstm-car-m", "index": 7}
+    SAFARI_TP = {"value": "safari-tp", "index": 8}
+
+
+class Suites(ClassificationEnum):
+    RAPTOR = {"value": "raptor", "index": 0}
+    TALOS = {"value": "talos", "index": 1}
+    AWSY = {"value": "awsy", "index": 2}
+    PERFTEST = {"value": "perftest", "index": 3}
+
+
+class Variants(ClassificationEnum):
+    FISSION = {"value": "fission", "index": 0}
+    BYTECODE_CACHED = {"value": "bytecode-cached", "index": 1}
+    LIVE_SITES = {"value": "live-sites", "index": 2}
+    PROFILING = {"value": "profiling", "index": 3}
+    SWR = {"value": "swr", "index": 4}
+
+
+# Patch at a global level since we shouldn't need any other settings
+perf_selector.Platforms = Platforms
+perf_selector.Apps = Apps
+perf_selector.Suites = Suites
+perf_selector.Variants = Variants
+
+TEST_PLATFORMS = {
+    Platforms.ANDROID_A55.value: {
+        "query": {
+            Suites.PERFTEST.value: "'android 'a55",
+            "default": "'android 'a55 'shippable 'aarch64",
+        },
+        "platform": Platforms.ANDROID.value,
+    },
+    Platforms.ANDROID.value: {
+        # The android, and android-a55 queries are expected to be the same,
+        # we don't want to run the tests on other mobile platforms.
+        "query": {
+            Suites.PERFTEST.value: "'android",
+            "default": "'android 'a55 'shippable 'aarch64",
+        },
+        "platform": Platforms.ANDROID.value,
+    },
+    Platforms.WINDOWS.value: {
+        "query": {
+            Suites.PERFTEST.value: "'windows",
+            "default": "!-32 !10-64 'windows 'shippable",
+        },
+        "platform": Platforms.DESKTOP.value,
+    },
+    Platforms.LINUX.value: {
+        "query": {
+            Suites.PERFTEST.value: "'linux",
+            "default": "!clang 'linux 'shippable",
+        },
+        "platform": Platforms.DESKTOP.value,
+    },
+    Platforms.MACOSX.value: {
+        "query": {
+            Suites.PERFTEST.value: "'macosx",
+            "default": "'osx 'shippable",
+        },
+        "platform": Platforms.DESKTOP.value,
+    },
+    Platforms.DESKTOP.value: {
+        "query": {
+            Suites.PERFTEST.value: "!android",
+            "default": "!android 'shippable !-32 !clang",
+        },
+        "platform": Platforms.DESKTOP.value,
+    },
+}
+
+TEST_APPS = {
+    Apps.FIREFOX.value: {
+        "query": "!chrom !geckoview !fenix !safari !m-car !safari-tp",
+        "platforms": [Platforms.DESKTOP.value],
+    },
+    Apps.CHROME.value: {
+        "query": "'chrome",
+        "negation": "!chrom",
+        "restriction": check_for_chrome,
+        "platforms": [Platforms.DESKTOP.value],
+    },
+    Apps.GECKOVIEW.value: {
+        "query": "'geckoview",
+        "negation": "!geckoview",
+        "platforms": [Platforms.ANDROID.value],
+    },
+    Apps.FENIX.value: {
+        "query": "'fenix",
+        "negation": "!fenix",
+        "platforms": [Platforms.ANDROID.value],
+    },
+    Apps.CHROME_M.value: {
+        "query": "'chrome-m",
+        "negation": "!chrom",
+        "restriction": check_for_chrome,
+        "platforms": [Platforms.ANDROID.value],
+    },
+    Apps.SAFARI.value: {
+        "query": "'safari",
+        "negation": "!safari",
+        "restriction": check_for_safari,
+        "platforms": [Platforms.MACOSX.value],
+    },
+    Apps.SAFARI_TP.value: {
+        "query": "'safari-tp",
+        "negation": "!safari-tp",
+        "restriction": check_for_safari_tp,
+        "platforms": [Platforms.MACOSX.value],
+    },
+    Apps.CHROMIUM_RELEASE.value: {
+        "query": "'m-car",
+        "negation": "!m-car",
+        "restriction": check_for_custom_car,
+        "platforms": [
+            Platforms.LINUX.value,
+            Platforms.WINDOWS.value,
+            Platforms.MACOSX.value,
+        ],
+    },
+    Apps.CHROMIUM_RELEASE_M.value: {
+        "query": "'m-car",
+        "negation": "!m-car",
+        "restriction": check_for_custom_car,
+        "platforms": [Platforms.ANDROID.value],
+    },
+}
+
+TEST_SUITES = {
+    Suites.RAPTOR.value: {
+        "apps": list(TEST_APPS.keys()),
+        "platforms": list(TEST_PLATFORMS.keys()),
+        "variants": [
+            Variants.FISSION.value,
+            Variants.LIVE_SITES.value,
+            Variants.PROFILING.value,
+            Variants.BYTECODE_CACHED.value,
+        ],
+        "task-specifier": "browsertime",
+        "task-test-finder": raptor_test_finder,
+        "framework": 13,
+    },
+    Suites.TALOS.value: {
+        "apps": [Apps.FIREFOX.value],
+        "platforms": [Platforms.DESKTOP.value],
+        "variants": [
+            Variants.PROFILING.value,
+            Variants.SWR.value,
+        ],
+        "task-specifier": "talos",
+        "task-test-finder": talos_test_finder,
+        "framework": 1,
+    },
+    Suites.AWSY.value: {
+        "apps": [Apps.FIREFOX.value],
+        "platforms": [Platforms.DESKTOP.value],
+        "variants": [],
+        "task-specifier": "awsy",
+        "task-test-finder": awsy_test_finder,
+        "framework": 4,
+    },
+    Suites.PERFTEST.value: {
+        "apps": list(TEST_APPS.keys()),
+        "platforms": list(TEST_PLATFORMS.keys()),
+        "variants": [],
+        "task-specifier": "perftest",
+        "task-test-finder": perftest_test_finder,
+        "framework": 15,
+    },
+}
+
 TEST_VARIANTS = {
     # Bug 1837058 - Switch this back to Variants.NO_FISSION when
     # the default flips to fission on android
@@ -214,6 +408,9 @@ def category_reset():
 def setup_perfparser():
     PerfParser.categories = TEST_CATEGORIES
     PerfParser.variants = TEST_VARIANTS
+    PerfParser.suites = TEST_SUITES
+    PerfParser.platforms = TEST_PLATFORMS
+    PerfParser.apps = TEST_APPS
     PerfParser.push_info = PerfPushInfo()
 
 
@@ -871,8 +1068,7 @@ def test_category_expansion(
     category_options, expected_counts, unique_categories, missing
 ):
     # Set the categories, and variants to expand
-    PerfParser.categories = TEST_CATEGORIES
-    PerfParser.variants = TEST_VARIANTS
+    setup_perfparser()
 
     # Expand the categories, then either check if the unique_categories,
     # exist or are missing from the categories
@@ -1160,17 +1356,19 @@ def test_full_run(options, call_counts, log_ind, expected_log_message):
                 "here once the tests are complete (the autodetected framework "
                 "selection may not show all of your tests):\n"
                 " https://perf.compare/compare-lando-results?"
-                "baseLando=13&newLando=14&"
+                "landoInstance=lando-test&baseLando=42&newLando=43&"
                 "baseRepo=try&newRepo=try&framework=1\n"
             ),
         ),
     ],
 )
 @pytest.mark.skipif(os.name == "nt", reason="fzf not installed on host")
-def test_full_run_lando(options, call_counts, log_ind, expected_log_message):
-    with mock.patch("tryselect.selectors.perf.push_to_try") as ptt, mock.patch(
-        "tryselect.selectors.perf.run_fzf"
-    ) as fzf, mock.patch(
+def test_full_run_lando(
+    mock_push_to_lando_try, options, call_counts, log_ind, expected_log_message
+):
+    with mock_push_to_lando_try as ptt_lando, mock.patch(
+        "tryselect.selectors.perf.push_to_try"
+    ) as ptt, mock.patch("tryselect.selectors.perf.run_fzf") as fzf, mock.patch(
         "tryselect.selectors.perf.get_repository_object", new=mock.MagicMock()
     ), mock.patch(
         "tryselect.selectors.perf.LogProcessor.revision",
@@ -1208,6 +1406,7 @@ def test_full_run_lando(options, call_counts, log_ind, expected_log_message):
                     "description": "",
                 },
             }
+
             fzf.side_effect = [
                 ["", ["test 1 windows firefox"]],
                 ["", TASKS],
@@ -1231,7 +1430,12 @@ def test_full_run_lando(options, call_counts, log_ind, expected_log_message):
         get_mock.json.return_value = {"tasks": ["task 1", "task 2"]}
         requests_mock.get.return_value = get_mock
 
-        ptt.side_effect = ["13", "14"]
+        # Get the Lando return data from the fixture, and use it to build the return
+        # values for the subsequent calls to PTT
+        ptt_lando_job = ptt_lando.return_value
+        ptt_lando_job2 = ptt_lando_job.copy()
+        ptt_lando_job2["lando_job_id"] += 1
+        ptt.side_effect = [ptt_lando_job, ptt_lando_job2]
 
         fzf_side_effects = [
             ["", ["Benchmarks linux"]],
@@ -1515,6 +1719,49 @@ def test_check_cached_revision(
 
 
 @pytest.mark.parametrize(
+    "cached_lando_instance, current_lando_instance, expected_return",
+    [
+        # Cache from old lando, current push on new lando -> miss
+        ("lando-prod", "lando-prod-2025", None),
+        # Cache from new lando, current push on old lando -> miss
+        ("lando-prod-2025", "lando-prod", None),
+        # Both on the same (new) lando -> hit
+        ("lando-prod-2025", "lando-prod-2025", "2b04563b5"),
+    ],
+)
+def test_check_cached_revision_lando_instance_change(
+    cached_lando_instance, current_lando_instance, expected_return
+):
+    load_data = {
+        "lando_base_commit": [
+            {
+                "base_revision_treeherder": "2b04563b5",
+                "date": "2023-03-31",
+                "tasks": [],
+                "lando": True,
+                "lando_instance": cached_lando_instance,
+            },
+        ],
+    }
+    with mock.patch("tryselect.selectors.perf.json.load") as load, mock.patch(
+        "tryselect.selectors.perf.json.dump"
+    ), mock.patch(
+        "tryselect.selectors.perf.pathlib.Path.is_file"
+    ) as is_file, mock.patch("tryselect.selectors.perf.pathlib.Path.open"), mock.patch(
+        "tryselect.selectors.perf.PerfParser.determine_lando_instance",
+        return_value=current_lando_instance,
+    ):
+        load.return_value = load_data
+        is_file.return_value = True
+
+        result = PerfParser.check_cached_revision(
+            [], "lando_base_commit", push_to_vcs=False
+        )
+
+        assert result == expected_return
+
+
+@pytest.mark.parametrize(
     "args, call_counts, exists_cache_file",
     [
         (
@@ -1617,9 +1864,9 @@ def test_max_perf_tasks(
     ) as fzf, mock.patch(
         "tryselect.selectors.perf.fzf_bootstrap", return_value=mock.MagicMock()
     ):
-        tasks = ["a-task"] * total_tasks
-        get_tasks_mock.return_value = tasks
-        get_perf_tasks_mock.return_value = tasks, [], []
+        tasks = [f"a-task-{i}" for i in range(total_tasks)]
+        get_tasks_mock.return_value = set(tasks)
+        get_perf_tasks_mock.return_value = set(tasks), [], []
 
         PerfParser.push_info.finished_run = not expected_failure
 
@@ -1631,6 +1878,59 @@ def test_max_perf_tasks(
         assert perf_print.call_count == call_counts[3]
         assert fzf.call_count == 0
         assert perf_print.call_args_list[-1][0][0] == expected_log_message
+
+
+def test_get_tasks_unions_multiple_queries():
+    with mock.patch("tryselect.selectors.perf.run_fzf") as run_fzf_mock:
+        run_fzf_mock.side_effect = [
+            ["query-a", ["task-a"]],
+            ["query-b", ["task-b"]],
+        ]
+
+        queries = []
+        selected_tasks = PerfParser.get_tasks(
+            [], queries, ["'query-a", "'query-b"], {"task-a", "task-b", "task-c"}
+        )
+
+        assert selected_tasks == {"task-a", "task-b"}
+        assert run_fzf_mock.call_count == 2
+        # Each query is forwarded to fzf through the `-f` filter flag.
+        assert [call.args[0][-1] for call in run_fzf_mock.call_args_list] == [
+            "'query-a",
+            "'query-b",
+        ]
+        assert queries == ["query-a", "query-b"]
+
+
+@pytest.mark.skipif(os.name == "nt", reason="fzf not installed on host")
+def test_show_all_unions_multiple_queries():
+    setup_perfparser()
+
+    with mock.patch("tryselect.selectors.perf.push_to_try"), mock.patch(
+        "tryselect.selectors.perf.print"
+    ), mock.patch(
+        "tryselect.selectors.perf.LogProcessor.revision",
+        new_callable=mock.PropertyMock,
+        return_value="revision",
+    ), mock.patch(
+        "tryselect.selectors.perf.PerfParser.perf_push_to_try",
+        new_callable=mock.MagicMock,
+    ) as perf_push_to_try_mock, mock.patch(
+        "tryselect.selectors.perf.run_fzf"
+    ) as run_fzf_mock, mock.patch(
+        "tryselect.selectors.perf.fzf_bootstrap", return_value=mock.MagicMock()
+    ):
+        run_fzf_mock.side_effect = [
+            ["query-a", ["task-a"]],
+            ["query-b", ["task-b"]],
+        ]
+
+        PerfParser.push_info.finished_run = True
+
+        run(show_all=True, query=["'query-a", "'query-b"], push_to_vcs=True)
+
+        assert run_fzf_mock.call_count == 2
+        assert perf_push_to_try_mock.call_args.args[0] == {"task-a", "task-b"}
 
 
 @pytest.mark.parametrize(
@@ -1727,8 +2027,8 @@ def test_preview_description(options, call_count):
     "tests, tasks_found, categories_produced",
     [
         (["amazon"], 2, 1),
-        (["speedometer"], 1, 1),
-        (["webaudio", "speedometer"], 3, 2),
+        (["speedometer2"], 1, 1),
+        (["webaudio", "speedometer2"], 3, 2),
         (["webaudio", "tp5n"], 3, 2),
         (["xperf"], 1, 1),
         (["awsy"], 1, 1),
@@ -1803,6 +2103,82 @@ def test_unknown_framework():
     setup_perfparser()
     PerfParser.get_majority_framework(["unknown"])
     assert PerfParser.push_info.framework == 1
+
+
+EXPANDED_CATEGORIES = {
+    "Critical Desktop Performance desktop firefox": {
+        "try-config-defaults": {"per-task-rebuild": {"speedometer3": 20}},
+    },
+    "Benchmarks desktop firefox": {
+        "try-config-defaults": {},
+    },
+}
+
+
+SP3_TASK = "browsertime-benchmark-firefox-speedometer3"
+
+
+@pytest.mark.parametrize(
+    "selected_categories, tasks, try_config_params, expected_rebuild",
+    [
+        (
+            ["Critical Desktop Performance desktop firefox"],
+            [SP3_TASK],
+            {},
+            {SP3_TASK: 20},
+        ),
+        (
+            ["Critical Desktop Performance desktop firefox"],
+            [SP3_TASK],
+            {"try_task_config": {"rebuild": 5}},
+            5,
+        ),
+        (
+            [
+                "Critical Desktop Performance desktop firefox",
+                "Benchmarks desktop firefox",
+            ],
+            [SP3_TASK, "browsertime-benchmark-firefox-motionmark"],
+            {},
+            {SP3_TASK: 20},
+        ),
+    ],
+)
+def test_category_default_rebuild(
+    selected_categories, tasks, try_config_params, expected_rebuild
+):
+    with category_reset():
+        from tryselect.selectors.perfselector.classification import (
+            ClassificationProvider,
+        )
+
+        PerfParser.categories = ClassificationProvider().categories
+
+        with mock.patch(
+            "tryselect.selectors.perf.PerfParser.perf_push_to_try"
+        ) as perf_push_to_try_mock, mock.patch(
+            "tryselect.selectors.perf.fzf_bootstrap", return_value=mock.MagicMock()
+        ), mock.patch(
+            "tryselect.selectors.perf.PerfParser.get_perf_tasks"
+        ) as get_perf_tasks_mock, mock.patch(
+            "tryselect.selectors.perf.PerfParser.get_tasks"
+        ), mock.patch(
+            "tryselect.selectors.perf.PerfParser.get_majority_framework"
+        ), mock.patch(
+            "tryselect.selectors.perf.PerfParser.build_category_description"
+        ), mock.patch(
+            "tryselect.selectors.perf.PerfParser.get_categories",
+            return_value=EXPANDED_CATEGORIES,
+        ):
+            get_perf_tasks_mock.return_value = tasks, selected_categories, []
+
+            run(try_config_params=try_config_params, push_to_vcs=True)
+
+            assert perf_push_to_try_mock.call_count == 1
+            actual_try_config = perf_push_to_try_mock.call_args[0][3]
+            task_config = (actual_try_config or {}).get("try_task_config", {})
+            actual_rebuild = task_config.get("rebuild", 1)
+            assert actual_rebuild == expected_rebuild
 
 
 if __name__ == "__main__":

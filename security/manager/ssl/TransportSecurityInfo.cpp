@@ -1,5 +1,4 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -14,14 +13,13 @@
 #include "nsIObjectInputStream.h"
 #include "nsIObjectOutputStream.h"
 #include "nsIWebProgressListener.h"
+#include "nsIX509Cert.h"
 #include "nsNSSCertHelper.h"
 #include "nsNSSComponent.h"
-#include "nsNSSHelper.h"
 #include "nsReadableUtils.h"
 #include "nsServiceManagerUtils.h"
 #include "nsStringStream.h"
 #include "nsXULAppAPI.h"
-#include "nsIX509Cert.h"
 #include "secerr.h"
 #include "ssl.h"
 

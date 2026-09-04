@@ -5,6 +5,7 @@
  * This file contains functions to manage asymetric keys, (public and
  * private keys).
  */
+#include <limits.h>
 #include <stddef.h>
 
 #include "seccomon.h"
@@ -353,29 +354,18 @@ PK11_ImportPublicKey(PK11SlotInfo *slot, SECKEYPublicKey *pubKey,
                 }
                 break;
             case kyberKey:
-                switch (pubKey->u.kyber.params) {
+                keyType = CKK_ML_KEM;
 #ifndef NSS_DISABLE_KYBER
-                    case params_kyber768_round3:
-                    case params_kyber768_round3_test_mode:
-                        keyType = CKK_NSS_KYBER;
-                        kemParams = CKP_NSS_KYBER_768_ROUND3;
-                        break;
-#endif
-                    case params_ml_kem768:
-                    case params_ml_kem768_test_mode:
-                        keyType = CKK_ML_KEM;
-                        kemParams = CKP_ML_KEM_768;
-                        break;
-                    case params_ml_kem1024:
-                    case params_ml_kem1024_test_mode:
-                        keyType = CKK_ML_KEM;
-                        kemParams = CKP_ML_KEM_1024;
-                        break;
-                    default:
-                        kemParams = CKP_INVALID_ID;
-                        break;
+                if ((pubKey->u.kyber.params == params_kyber768_round3) ||
+                    (pubKey->u.kyber.params == params_kyber768_round3_test_mode)) {
+                    keyType = CKK_NSS_KYBER;
                 }
-                PK11_SETATTRS(attrs, CKA_NSS_PARAMETER_SET,
+#endif
+                PK11_SETATTRS(attrs, CKA_ENCAPSULATE, &cktrue, sizeof(CK_BBOOL));
+                attrs++;
+                kemParams = seckey_GetMLKEMPkcs11ParamsByKyberParams(
+                    pubKey->u.kyber.params);
+                PK11_SETATTRS(attrs, CKA_PARAMETER_SET,
                               &kemParams,
                               sizeof(CK_NSS_KEM_PARAMETER_SET_TYPE));
                 attrs++;
@@ -1022,23 +1012,8 @@ PK11_ExtractPublicKey(PK11SlotInfo *slot, KeyType keyType, CK_OBJECT_HANDLE id)
                 break;
             }
             CK_NSS_KEM_PARAMETER_SET_TYPE *pPK11Params = kemParams->pValue;
-            switch (*pPK11Params) {
-#ifndef NSS_DISABLE_KYBER
-                case CKP_NSS_KYBER_768_ROUND3:
-                    pubKey->u.kyber.params = params_kyber768_round3;
-                    break;
-#endif
-                case CKP_NSS_ML_KEM_768:
-                case CKP_ML_KEM_768:
-                    pubKey->u.kyber.params = params_ml_kem768;
-                    break;
-                case CKP_ML_KEM_1024:
-                    pubKey->u.kyber.params = params_ml_kem1024;
-                    break;
-                default:
-                    pubKey->u.kyber.params = params_kyber_invalid;
-                    break;
-            }
+            pubKey->u.kyber.params = seckey_GetKyberParamsByPkcs11ParamSet(
+                *pPK11Params);
             crv = pk11_Attr2SecItem(arena, value, &pubKey->u.kyber.publicValue);
             break;
         case fortezzaKey:
@@ -1064,13 +1039,14 @@ PK11_ExtractPublicKey(PK11SlotInfo *slot, KeyType keyType, CK_OBJECT_HANDLE id)
  * Build a Private Key structure from raw PKCS #11 information.
  */
 SECKEYPrivateKey *
-PK11_MakePrivKey(PK11SlotInfo *slot, KeyType keyType,
-                 PRBool isTemp, CK_OBJECT_HANDLE privID, void *wincx)
+pk11_MakePrivKey(PK11SlotInfo *slot, KeyType keyType,
+                 PRBool isOwner, CK_OBJECT_HANDLE privID, void *wincx)
 {
     PLArenaPool *arena;
     SECKEYPrivateKey *privKey;
     PRBool isPrivate;
     SECStatus rv;
+    PRBool isTemp = isOwner;
 
     /* don't know? look it up */
     if (keyType == nullKey) {
@@ -1078,6 +1054,9 @@ PK11_MakePrivKey(PK11SlotInfo *slot, KeyType keyType,
 
         pk11Type = PK11_ReadULongAttribute(slot, privID, CKA_KEY_TYPE);
         isTemp = (PRBool)!PK11_HasAttributeSet(slot, privID, CKA_TOKEN, PR_FALSE);
+        /* we can never own a perm key, make sure we don't set owner if
+         * the key isn't a temp key */
+        isOwner = isOwner && isTemp;
         keyType = pk11_getKeyTypeFromPKCS11KeyType(pk11Type);
         if (keyType == nullKey) {
             return NULL;
@@ -1110,7 +1089,9 @@ PK11_MakePrivKey(PK11SlotInfo *slot, KeyType keyType,
     privKey->keyType = keyType;
     privKey->pkcs11Slot = PK11_ReferenceSlot(slot);
     privKey->pkcs11ID = privID;
-    privKey->pkcs11IsTemp = isTemp;
+    privKey->pkcs11IsTemp = 0;
+    SECKEYPRIVATEKEY_SET_TEMP(privKey, isTemp);
+    SECKEYPRIVATEKEY_SET_OWNED(privKey, isOwner);
     privKey->wincx = wincx;
 
     return privKey;
@@ -1295,6 +1276,20 @@ pk11_loadPrivKeyWithFlags(PK11SlotInfo *slot, SECKEYPrivateKey *privKey,
             ap++;
             count++;
             break;
+        case kyberKey:
+            ap->type = CKA_PARAMETER_SET;
+            ap++;
+            count++;
+            ap->type = CKA_SEED;
+            ap++;
+            count++;
+            ap->type = CKA_VALUE;
+            ap++;
+            count++;
+            ap->type = CKA_DECAPSULATE;
+            ap++;
+            count++;
+            break;
         case ecKey:
         case edKey:
         case ecMontKey:
@@ -1373,7 +1368,7 @@ pk11_loadPrivKeyWithFlags(PK11SlotInfo *slot, SECKEYPrivateKey *privKey,
     }
 
     /* build new key structure */
-    return PK11_MakePrivKey(slot, privKey->keyType, !token,
+    return pk11_MakePrivKey(slot, privKey->keyType, !token,
                             objectID, privKey->wincx);
 }
 
@@ -1420,6 +1415,7 @@ PK11_GenerateKeyPairWithOpFlags(PK11SlotInfo *slot, CK_MECHANISM_TYPE type,
     CK_BBOOL cktrue = CK_TRUE;
     CK_ULONG modulusBits;
     CK_BYTE publicExponent[4];
+    CK_ULONG pubTemplateSize = 0;
     CK_ATTRIBUTE privTemplate[] = {
         { CKA_SENSITIVE, NULL, 0 },
         { CKA_TOKEN, NULL, 0 },
@@ -1491,10 +1487,10 @@ PK11_GenerateKeyPairWithOpFlags(PK11SlotInfo *slot, CK_MECHANISM_TYPE type,
         { CKA_VERIFY_RECOVER, NULL, 0 },
         { CKA_ENCRYPT, NULL, 0 },
         { CKA_MODIFIABLE, NULL, 0 },
+        { CKA_ENCAPSULATE, NULL, 0 },
     };
-
     CK_ATTRIBUTE kyberPubTemplate[] = {
-        { CKA_NSS_PARAMETER_SET, NULL, 0 },
+        { CKA_PARAMETER_SET, NULL, 0 },
         { CKA_TOKEN, NULL, 0 },
         { CKA_DERIVE, NULL, 0 },
         { CKA_WRAP, NULL, 0 },
@@ -1650,6 +1646,7 @@ PK11_GenerateKeyPairWithOpFlags(PK11SlotInfo *slot, CK_MECHANISM_TYPE type,
                           publicExponent, peCount);
             attrs++;
             pubTemplate = rsaPubTemplate;
+            pubTemplateSize = PR_ARRAY_SIZE(rsaPubTemplate);
             keyType = rsaKey;
             test_mech.mechanism = CKM_RSA_PKCS;
             break;
@@ -1666,6 +1663,7 @@ PK11_GenerateKeyPairWithOpFlags(PK11SlotInfo *slot, CK_MECHANISM_TYPE type,
                           dsaParams->base.len);
             attrs++;
             pubTemplate = dsaPubTemplate;
+            pubTemplateSize = PR_ARRAY_SIZE(dsaPubTemplate);
             keyType = dsaKey;
             test_mech.mechanism = CKM_DSA;
             break;
@@ -1679,6 +1677,7 @@ PK11_GenerateKeyPairWithOpFlags(PK11SlotInfo *slot, CK_MECHANISM_TYPE type,
                           dhParams->base.len);
             attrs++;
             pubTemplate = dhPubTemplate;
+            pubTemplateSize = PR_ARRAY_SIZE(dhPubTemplate);
             keyType = dhKey;
             test_mech.mechanism = CKM_DH_PKCS_DERIVE;
             break;
@@ -1690,6 +1689,7 @@ PK11_GenerateKeyPairWithOpFlags(PK11SlotInfo *slot, CK_MECHANISM_TYPE type,
                           ecParams->len);
             attrs++;
             pubTemplate = ecPubTemplate;
+            pubTemplateSize = PR_ARRAY_SIZE(ecPubTemplate);
             keyType = ecKey;
             /*
              * ECC supports 2 different mechanism types (unlike RSA, which
@@ -1726,6 +1726,7 @@ PK11_GenerateKeyPairWithOpFlags(PK11SlotInfo *slot, CK_MECHANISM_TYPE type,
                           sizeof(CK_NSS_KEM_PARAMETER_SET_TYPE));
             attrs++;
             pubTemplate = kyberPubTemplate;
+            pubTemplateSize = PR_ARRAY_SIZE(kyberPubTemplate);
             keyType = kyberKey;
             test_mech.mechanism = CKM_ML_KEM;
             break;
@@ -1736,6 +1737,7 @@ PK11_GenerateKeyPairWithOpFlags(PK11SlotInfo *slot, CK_MECHANISM_TYPE type,
                           ecParams->len);
             attrs++;
             pubTemplate = ecPubTemplate;
+            pubTemplateSize = PR_ARRAY_SIZE(ecPubTemplate);
             keyType = ecMontKey;
             test_mech.mechanism = CKM_ECDH1_DERIVE;
             break;
@@ -1746,6 +1748,7 @@ PK11_GenerateKeyPairWithOpFlags(PK11SlotInfo *slot, CK_MECHANISM_TYPE type,
                           ecParams->len);
             attrs++;
             pubTemplate = ecPubTemplate;
+            pubTemplateSize = PR_ARRAY_SIZE(ecPubTemplate);
             keyType = edKey;
             test_mech.mechanism = CKM_EDDSA;
             break;
@@ -1758,6 +1761,7 @@ PK11_GenerateKeyPairWithOpFlags(PK11SlotInfo *slot, CK_MECHANISM_TYPE type,
                           sizeof(CK_ML_DSA_PARAMETER_SET_TYPE));
             attrs++;
             pubTemplate = mlDsaPubTemplate;
+            pubTemplateSize = PR_ARRAY_SIZE(mlDsaPubTemplate);
             keyType = mldsaKey;
             test_mech.mechanism = CKM_ML_DSA;
             break;
@@ -1898,7 +1902,17 @@ PK11_GenerateKeyPairWithOpFlags(PK11SlotInfo *slot, CK_MECHANISM_TYPE type,
         return NULL;
     }
     privCount = privattrs - privTemplate;
+    PORT_Assert(privCount <= PR_ARRAY_SIZE(privTemplate));
+    if (privCount > PR_ARRAY_SIZE(privTemplate)) {
+        PORT_SetError(SEC_ERROR_LIBRARY_FAILURE);
+        return NULL;
+    }
     pubCount = attrs - pubTemplate;
+    PORT_Assert(pubCount <= pubTemplateSize);
+    if (pubCount > pubTemplateSize) {
+        PORT_SetError(SEC_ERROR_LIBRARY_FAILURE);
+        return NULL;
+    }
     crv = PK11_GETTAB(slot)->C_GenerateKeyPair(session_handle, &mechanism,
                                                pubTemplate, pubCount, privTemplate, privCount, &pubID, &privID);
 
@@ -1964,16 +1978,25 @@ PK11_GenerateKeyPairWithOpFlags(PK11SlotInfo *slot, CK_MECHANISM_TYPE type,
     SECITEM_FreeItem(cka_id, PR_TRUE);
 
     if (crv != CKR_OK) {
-        PK11_DestroyObject(slot, pubID);
+        /* SECKEY_DestroyPublicKey frees *pubKey and destroys the underlying
+         * PKCS #11 object, but only for session objects; a freshly generated
+         * token object must be removed explicitly. */
+        SECKEY_DestroyPublicKey(*pubKey);
+        if (pubIsToken) {
+            PK11_DestroyObject(slot, pubID);
+        }
         PK11_DestroyObject(slot, privID);
         PORT_SetError(PK11_MapError(crv));
         *pubKey = NULL;
         return NULL;
     }
 
-    privKey = PK11_MakePrivKey(slot, keyType, !token, privID, wincx);
+    privKey = pk11_MakePrivKey(slot, keyType, !token, privID, wincx);
     if (privKey == NULL) {
         SECKEY_DestroyPublicKey(*pubKey);
+        if (pubIsToken) {
+            PK11_DestroyObject(slot, pubID);
+        }
         PK11_DestroyObject(slot, privID);
         *pubKey = NULL;
         return NULL;
@@ -2139,9 +2162,28 @@ SECKEY_SetPublicValue(SECKEYPrivateKey *privKey, const SECItem *publicValue)
             }
             rv = SECSuccess;
             break;
+        case kyberKey:
+            pubKey.u.kyber.publicValue = *publicValue;
+            paramSet = PK11_ReadULongAttribute(slot, privKeyID,
+                                               CKA_PARAMETER_SET);
+            if (paramSet == CK_UNAVAILABLE_INFORMATION) {
+                PORT_SetError(SEC_ERROR_BAD_KEY);
+                break;
+            }
+            pubKey.u.kyber.params = seckey_GetKyberParamsByPkcs11ParamSet(
+                paramSet);
+            if (pubKey.u.kyber.params == params_kyber_invalid) {
+                PORT_SetError(SEC_ERROR_BAD_KEY);
+                break;
+            }
+            rv = SECSuccess;
+            break;
     }
     if (rv == SECSuccess) {
-        rv = PK11_ImportPublicKey(slot, &pubKey, PR_TRUE);
+        CK_OBJECT_HANDLE pubID = PK11_ImportPublicKey(slot, &pubKey, PR_TRUE);
+        if (pubID == CK_INVALID_HANDLE) {
+            rv = SECFailure;
+        }
     }
     /* Even though pubKey is stored on the stack, we've allocated
      * some of it's data from the arena. SECKEY_DestroyPublicKey
@@ -2616,7 +2658,7 @@ PK11_CopyTokenPrivKeyToSessionPrivKey(PK11SlotInfo *destSlot,
         return NULL;
     }
 
-    return PK11_MakePrivKey(destSlot, privKey->keyType, PR_TRUE /*isTemp*/,
+    return pk11_MakePrivKey(destSlot, privKey->keyType, PR_TRUE /*isOwner*/,
                             newKeyID, privKey->wincx);
 }
 
@@ -2649,7 +2691,7 @@ PK11_ConvertSessionPrivKeyToTokenPrivKey(SECKEYPrivateKey *privk, void *wincx)
         return NULL;
     }
 
-    return PK11_MakePrivKey(slot, nullKey /*KeyType*/, PR_FALSE /*isTemp*/,
+    return pk11_MakePrivKey(slot, nullKey /*KeyType*/, PR_FALSE /*isOwner*/,
                             newKeyID, NULL /*wincx*/);
 }
 
@@ -2712,7 +2754,7 @@ pk11_DoKeys(PK11SlotInfo *slot, CK_OBJECT_HANDLE keyHandle, void *arg)
         return SECFailure;
     }
 
-    privKey = PK11_MakePrivKey(slot, nullKey, PR_TRUE, keyHandle, keycb->wincx);
+    privKey = pk11_MakePrivKey(slot, nullKey, PR_FALSE, keyHandle, keycb->wincx);
 
     if (privKey == NULL) {
         return SECFailure;
@@ -2804,7 +2846,50 @@ PK11_FindKeyByKeyID(PK11SlotInfo *slot, SECItem *keyID, void *wincx)
     if (keyHandle == CK_INVALID_HANDLE) {
         return NULL;
     }
-    privKey = PK11_MakePrivKey(slot, nullKey, PR_TRUE, keyHandle, wincx);
+    privKey = pk11_MakePrivKey(slot, nullKey, PR_FALSE, keyHandle, wincx);
+    return privKey;
+}
+
+/*
+ * Create a SECKEYPrivateKey directly from a PKCS #11 private key template.
+ *
+ * The template must fully describe a private key object (at minimum CKA_CLASS =
+ * CKO_PRIVATE_KEY, CKA_KEY_TYPE, and the key material). The object is created
+ * as a session (non-token) object on 'slot'. The returned SECKEYPrivateKey owns
+ * the underlying PKCS #11 object and destroys it when the key is freed with
+ * SECKEY_DestroyPrivateKey.
+ */
+SECKEYPrivateKey *
+PK11_CreatePrivateKeyFromTemplate(PK11SlotInfo *slot,
+                                  const CK_ATTRIBUTE *theTemplate,
+                                  unsigned int count, void *wincx)
+{
+    CK_OBJECT_HANDLE keyHandle;
+    SECKEYPrivateKey *privKey;
+    SECStatus rv;
+
+    /* PK11_CreateNewObject takes the count as an int, so guard against a
+     * value that would overflow when narrowed. */
+    if (slot == NULL || theTemplate == NULL || count == 0 || count > INT_MAX) {
+        PORT_SetError(SEC_ERROR_INVALID_ARGS);
+        return NULL;
+    }
+
+    rv = PK11_CreateNewObject(slot, CK_INVALID_HANDLE, theTemplate, count,
+                              PR_FALSE, &keyHandle);
+    if (rv != SECSuccess) {
+        return NULL;
+    }
+
+    /* Pass isOwner = PR_TRUE so the returned key owns the session object we
+     * just created and destroys it on cleanup. */
+    privKey = pk11_MakePrivKey(slot, nullKey, PR_TRUE, keyHandle, wincx);
+    if (privKey == NULL) {
+        /* Don't leak the object we created if wrapping it failed. */
+        (void)PK11_DestroyObject(slot, keyHandle);
+        return NULL;
+    }
+
     return privKey;
 }
 
@@ -2992,7 +3077,7 @@ PK11_ListPrivKeysInSlot(PK11SlotInfo *slot, char *nickname, void *wincx)
 
     for (i = 0; i < objCount; i++) {
         SECKEYPrivateKey *privKey =
-            PK11_MakePrivKey(slot, nullKey, PR_TRUE, key_ids[i], wincx);
+            pk11_MakePrivKey(slot, nullKey, PR_FALSE, key_ids[i], wincx);
         SECKEY_AddPrivateKeyToListTail(keys, privKey);
     }
 

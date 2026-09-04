@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -21,7 +19,7 @@ namespace mozilla {
 // by the MFT into a MediaData object.
 class MFTManager {
  public:
-  virtual ~MFTManager() {}
+  virtual ~MFTManager() = default;
 
   // Submit a compressed sample for decoding.
   // This should forward to the MFTDecoder after performing
@@ -128,7 +126,7 @@ class WMFMediaDataDecoder final
   virtual void SetSeekThreshold(const media::TimeUnit& aTime) override;
 
  private:
-  ~WMFMediaDataDecoder();
+  ~WMFMediaDataDecoder() = default;
 
   RefPtr<DecodePromise> ProcessError(HRESULT aError, const char* aReason);
 

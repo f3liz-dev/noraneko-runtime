@@ -1,10 +1,10 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "Utility.h"
 
+#include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/TypedArray.h"
 #include "mozilla/dom/WebGPUBinding.h"
 #include "mozilla/webgpu/WebGPUTypes.h"
@@ -436,6 +436,35 @@ ffi::WGPUTextureAspect ConvertTextureAspect(
   return result;
 }
 
+ConvertTextureDescriptor::ConvertTextureDescriptor(
+    const dom::GPUTextureDescriptor& aDesc)
+    : mLabel(aDesc.mLabel) {
+  if (aDesc.mSize.IsRangeEnforcedUnsignedLongSequence()) {
+    const auto& seq = aDesc.mSize.GetAsRangeEnforcedUnsignedLongSequence();
+    mDesc.size.width = seq.Length() > 0 ? seq[0] : 1;
+    mDesc.size.height = seq.Length() > 1 ? seq[1] : 1;
+    mDesc.size.depth_or_array_layers = seq.Length() > 2 ? seq[2] : 1;
+  } else if (aDesc.mSize.IsGPUExtent3DDict()) {
+    const auto& dict = aDesc.mSize.GetAsGPUExtent3DDict();
+    mDesc.size.width = dict.mWidth;
+    mDesc.size.height = dict.mHeight;
+    mDesc.size.depth_or_array_layers = dict.mDepthOrArrayLayers;
+  } else {
+    MOZ_CRASH("Unexpected union");
+  }
+  mDesc.label = mLabel.Get();
+  mDesc.mip_level_count = aDesc.mMipLevelCount;
+  mDesc.sample_count = aDesc.mSampleCount;
+  mDesc.dimension = ffi::WGPUTextureDimension(aDesc.mDimension);
+  mDesc.format = ConvertTextureFormat(aDesc.mFormat);
+  mDesc.usage = aDesc.mUsage;
+
+  for (auto format : aDesc.mViewFormats) {
+    mViewFormats.AppendElement(ConvertTextureFormat(format));
+  }
+  mDesc.view_formats = {mViewFormats.Elements(), mViewFormats.Length()};
+}
+
 ffi::WGPUVertexFormat ConvertVertexFormat(const dom::GPUVertexFormat& aFormat) {
   ffi::WGPUVertexFormat result = ffi::WGPUVertexFormat_Sentinel;
   switch (aFormat) {
@@ -584,6 +613,9 @@ ffi::WGPUMultisampleState ConvertMultisampleState(
 ffi::WGPUBlendComponent ConvertBlendComponent(
     const dom::GPUBlendComponent& aDesc) {
   ffi::WGPUBlendComponent desc = {};
+  // NOTE: We rely on discriminants between `GPUBlendFactor` and
+  // `wgpu_types::BlendFactor` being the same. See also
+  // `dom/webidl/WebGPU.webidl`.
   desc.src_factor = ffi::WGPUBlendFactor(aDesc.mSrcFactor);
   desc.dst_factor = ffi::WGPUBlendFactor(aDesc.mDstFactor);
   desc.operation = ffi::WGPUBlendOperation(aDesc.mOperation);
@@ -604,8 +636,21 @@ ffi::WGPUDepthStencilState ConvertDepthStencilState(
     const dom::GPUDepthStencilState& aDesc) {
   ffi::WGPUDepthStencilState desc = {};
   desc.format = ConvertTextureFormat(aDesc.mFormat);
-  desc.depth_write_enabled = aDesc.mDepthWriteEnabled;
-  desc.depth_compare = ConvertCompareFunction(aDesc.mDepthCompare);
+  if (aDesc.mDepthWriteEnabled.WasPassed()) {
+    desc.depth_write_enabled.tag = ffi::WGPUFfiOption_bool_Some_bool;
+    desc.depth_write_enabled.some = aDesc.mDepthWriteEnabled.Value();
+  } else {
+    desc.depth_write_enabled.tag = ffi::WGPUFfiOption_bool_None_bool;
+  }
+  if (aDesc.mDepthCompare.WasPassed()) {
+    desc.depth_compare.tag =
+        ffi::WGPUFfiOption_CompareFunction_Some_CompareFunction;
+    desc.depth_compare.some =
+        ConvertCompareFunction(aDesc.mDepthCompare.Value());
+  } else {
+    desc.depth_compare.tag =
+        ffi::WGPUFfiOption_CompareFunction_None_CompareFunction;
+  }
   desc.stencil.front = ConvertStencilFaceState(aDesc.mStencilFront);
   desc.stencil.back = ConvertStencilFaceState(aDesc.mStencilBack);
   desc.stencil.read_mask = aDesc.mStencilReadMask;
@@ -668,5 +713,18 @@ mozilla::Maybe<mozilla::Buffer<uint32_t>> GetDynamicOffsetsFromArray(
 
   return dynamicOffsets;
 }
+
+namespace ffi {
+
+// Validate that the texture format `aFormat` is a valid value for the WebIDL
+// `GPUTextureFormat` type (i.e., that it is not a wgpu extension).
+extern "C" bool wgpu_texture_format_is_valid_for_webidl(
+    const nsCString* aFormat) {
+  Maybe<dom::GPUTextureFormat> format =
+      mozilla::dom::StringToEnum<dom::GPUTextureFormat>(*aFormat);
+  return format.isSome();
+}
+
+}  // namespace ffi
 
 }  // namespace mozilla::webgpu

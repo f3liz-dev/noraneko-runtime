@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -23,11 +21,12 @@
 #endif
 
 #ifdef MOZ_WIDGET_ANDROID
+#  include <android/native_window.h>
+#  include <android/native_window_jni.h>
+
 #  include "mozilla/java/GeckoSurfaceTextureWrappers.h"
 #  include "mozilla/layers/AndroidHardwareBuffer.h"
 #  include "mozilla/widget/AndroidCompositorWidget.h"
-#  include <android/native_window.h>
-#  include <android/native_window_jni.h>
 #endif
 
 namespace mozilla::wr {
@@ -135,7 +134,7 @@ RenderedFrameId RenderCompositorEGL::EndFrame(
 
   EGLSync sync = nullptr;
   if (layers::AndroidHardwareBufferManager::Get()) {
-    sync = egl->fCreateSync(LOCAL_EGL_SYNC_NATIVE_FENCE_ANDROID, nullptr);
+    sync = egl->fCreateSyncKHR(LOCAL_EGL_SYNC_NATIVE_FENCE_ANDROID, nullptr);
   }
   if (sync) {
     int fenceFd = egl->fDupNativeFenceFDANDROID(sync);

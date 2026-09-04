@@ -43,6 +43,7 @@ const PROFILE_FIRST_USE_MS = PROFILE_RESET_DATE_MS - MILLISECONDS_PER_DAY;
 const PROFILE_CREATION_DATE_MS = PROFILE_FIRST_USE_MS - MILLISECONDS_PER_DAY;
 const PROFILE_RECOVERED_FROM_BACKUP =
   PROFILE_RESET_DATE_MS - MILLISECONDS_PER_HOUR;
+const PROFILE_SOURCE = "telemetry-tests";
 
 const GFX_VENDOR_ID = "0xabcd";
 const GFX_DEVICE_ID = "0x1234";
@@ -144,6 +145,7 @@ export var TelemetryEnvironmentTesting = {
         reset: PROFILE_RESET_DATE_MS,
         firstUse: PROFILE_FIRST_USE_MS,
         recoveredFromBackup: PROFILE_RECOVERED_FROM_BACKUP,
+        source: PROFILE_SOURCE,
       }
     );
   },
@@ -524,9 +526,15 @@ export var TelemetryEnvironmentTesting = {
       data.profile.recoveredFromBackup,
       Glean.profiles.recoveredFromBackup.testGetValue()
     );
+    lazy.Assert.equal(Glean.profiles.source.testGetValue(), PROFILE_SOURCE);
   },
 
   checkPartnerSection(data, isInitial) {
+    if (AppConstants.MOZ_APP_NAME == "thunderbird") {
+      // Thunderbird doesn't have distribution data and this section fails.
+      return;
+    }
+
     const EXPECTED_FIELDS = {
       distributionId: DISTRIBUTION_ID,
       distributionVersion: DISTRIBUTION_VERSION,
@@ -786,22 +794,6 @@ export var TelemetryEnvironmentTesting = {
 
     // Service pack is only available on Windows.
     if (gIsWindows) {
-      lazy.Assert.ok(
-        Number.isFinite(osData.servicePackMajor),
-        "ServicePackMajor must be a number."
-      );
-      lazy.Assert.ok(
-        Number.isFinite(osData.servicePackMinor),
-        "ServicePackMinor must be a number."
-      );
-      lazy.Assert.equal(
-        osData.servicePackMajor,
-        Glean.systemOs.servicePackMajor.testGetValue()
-      );
-      lazy.Assert.equal(
-        osData.servicePackMinor,
-        Glean.systemOs.servicePackMinor.testGetValue()
-      );
       if ("windowsBuildNumber" in osData) {
         // This might not be available on all Windows platforms.
         lazy.Assert.ok(

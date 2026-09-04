@@ -2,8 +2,11 @@
 prefs = [
   "layout.css.at-scope.enabled=true",
   "layout.css.basic-shape-shape.enabled=true",
+  "layout.css.calc-typed-arithmetic.enabled=true",
+  "layout.css.progress-function.enabled=true",
   "layout.css.properties-and-values.enabled=true",
   "layout.css.starting-style-at-rules.enabled=true",
+  "layout.css.tree-counting-functions.enabled=true",
   "dom.viewTransitions.enabled=true",
 ]
 support-files = [
@@ -43,7 +46,15 @@ support-files = [
 
 ["test_getAnchorFor.html"]
 
+["test_getAnchorNamesFor.html"]
+
+["test_getComputationSteps.html"]
+
+["test_getComputationStepsSupportedCSSFunctions.html"]
+
 ["test_getCSSPseudoElementNames.html"]
+
+["test_getCSSWideKeywords.html"]
 
 ["test_getGridContainerType.html"]
 

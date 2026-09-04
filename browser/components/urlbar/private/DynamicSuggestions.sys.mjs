@@ -9,8 +9,8 @@ const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   QuickSuggest: "moz-src:///browser/components/urlbar/QuickSuggest.sys.mjs",
   UrlbarPrefs: "moz-src:///browser/components/urlbar/UrlbarPrefs.sys.mjs",
-  UrlbarResult: "moz-src:///browser/components/urlbar/UrlbarResult.sys.mjs",
-  UrlbarUtils: "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs",
+  UrlbarResult: "chrome://browser/content/urlbar/UrlbarResult.mjs",
+  UrlbarShared: "chrome://browser/content/urlbar/UrlbarShared.mjs",
 });
 
 /**
@@ -109,8 +109,8 @@ export class DynamicSuggestions extends SuggestProvider {
     let resultProperties = { ...result };
     delete resultProperties.payload;
     return new lazy.UrlbarResult({
-      type: lazy.UrlbarUtils.RESULT_TYPE.URL,
-      source: lazy.UrlbarUtils.RESULT_SOURCE.SEARCH,
+      type: lazy.UrlbarShared.RESULT_TYPE.URL,
+      source: lazy.UrlbarShared.RESULT_SOURCE.SEARCH,
       ...resultProperties,
       payload,
     });
@@ -124,10 +124,11 @@ export class DynamicSuggestions extends SuggestProvider {
       case "dismiss": {
         let { result } = details;
         lazy.QuickSuggest.dismissResult(result);
-        result.acknowledgeDismissalL10n = {
-          id: "firefox-suggest-dismissal-acknowledgment-one",
-        };
-        controller.removeResult(result);
+        controller.removeResult(result, {
+          acknowledgeDismissalL10n: {
+            id: "firefox-suggest-dismissal-acknowledgment-one",
+          },
+        });
         break;
       }
     }
@@ -138,14 +139,14 @@ export class DynamicSuggestions extends SuggestProvider {
     // shown. Use a dynamic result since that kind of makes sense and there are
     // no requirements for its payload other than `dynamicType`.
     return new lazy.UrlbarResult({
-      type: lazy.UrlbarUtils.RESULT_TYPE.DYNAMIC,
-      source: lazy.UrlbarUtils.RESULT_SOURCE.SEARCH,
+      type: lazy.UrlbarShared.RESULT_TYPE.DYNAMIC,
+      source: lazy.UrlbarShared.RESULT_SOURCE.SEARCH,
       // Exposure suggestions should always be hidden, and it's assumed that
       // exposure telemetry should be recorded for them, so as a convenience
       // set `exposureTelemetry` here. Otherwise experiments would need to set
       // the corresponding Nimbus variables properly. (They can still do that,
       // it's just not required.)
-      exposureTelemetry: lazy.UrlbarUtils.EXPOSURE_TELEMETRY.HIDDEN,
+      exposureTelemetry: lazy.UrlbarShared.EXPOSURE_TELEMETRY.HIDDEN,
       payload: {
         ...payload,
         dynamicType: "exposure",

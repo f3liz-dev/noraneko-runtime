@@ -6,7 +6,7 @@ const { PermissionTestUtils } = ChromeUtils.importESModule(
 
 const ROOT = getRootDirectory(gTestPath).replace(
   "chrome://mochitests/content/",
-  // eslint-disable-next-line @microsoft/sdl/no-insecure-url
+  // eslint-disable-next-line sdl/no-insecure-url
   "http://example.com/"
 );
 let pageWithAlert = ROOT + "openPromptOffTimeout.html";
@@ -123,7 +123,7 @@ add_task(async function test_modal_ui() {
   let openedTabSelectedPromise = BrowserTestUtils.waitForAttribute(
     "selected",
     openedTab,
-    "true"
+    true
   );
 
   // switch to other tab again

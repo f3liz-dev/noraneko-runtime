@@ -1,13 +1,13 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 #ifndef _nsNativeDragTarget_h_
 #define _nsNativeDragTarget_h_
 
-#include "nsCOMPtr.h"
 #include <ole2.h>
 #include <shlobj.h>
+
+#include "nsCOMPtr.h"
 
 #ifndef IDropTargetHelper
 #  include <shobjidl.h>  // Vista drag image interfaces

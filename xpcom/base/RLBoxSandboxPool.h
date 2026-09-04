@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,13 +5,12 @@
 #ifndef SECURITY_RLBOX_SANDBOX_POOL_H_
 #define SECURITY_RLBOX_SANDBOX_POOL_H_
 
-#include "nsCOMPtr.h"
-#include "nsITimer.h"
-#include "nsTArray.h"
-#include "nsINamed.h"
-
 #include "mozilla/Mutex.h"
 #include "mozilla/rlbox/rlbox_types.hpp"
+#include "nsCOMPtr.h"
+#include "nsINamed.h"
+#include "nsITimer.h"
+#include "nsTArray.h"
 
 namespace mozilla {
 

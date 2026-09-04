@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,6 +7,7 @@
 #include "mozilla/BuiltInStyleSheets.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/dom/HTMLDetailsElementBinding.h"
+#include "mozilla/dom/HTMLSlotElement.h"
 #include "mozilla/dom/HTMLSummaryElement.h"
 #include "mozilla/dom/ShadowRoot.h"
 #include "nsContentUtils.h"
@@ -22,7 +21,7 @@ HTMLDetailsElement::~HTMLDetailsElement() = default;
 
 NS_IMPL_ELEMENT_CLONE(HTMLDetailsElement)
 
-HTMLDetailsElement::HTMLDetailsElement(already_AddRefed<NodeInfo>&& aNodeInfo)
+HTMLDetailsElement::HTMLDetailsElement(already_AddRefed<NodeInfo> aNodeInfo)
     : nsGenericHTMLElement(std::move(aNodeInfo)) {
   SetupShadowTree();
 }
@@ -67,13 +66,15 @@ void HTMLDetailsElement::AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
             new AsyncEventDispatcher(this, toggleEvent.forget());
         mToggleEventDispatcher->PostDOMEvent();
 
+        SetStates(ElementState::OPEN, isOpen);
         if (isOpen) {
           CloseOtherElementsIfNeeded();
         }
-        SetStates(ElementState::OPEN, isOpen);
       }
     } else if (aName == nsGkAtoms::name) {
-      CloseElementIfNeeded();
+      if (aValue && !aValue->IsEmptyString() && Open()) {
+        CloseElementIfNeeded(aValue->GetAtomValue());
+      }
     }
   }
 
@@ -86,14 +87,17 @@ nsresult HTMLDetailsElement::BindToTree(BindContext& aContext,
   nsresult rv = nsGenericHTMLElement::BindToTree(aContext, aParent);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  CloseElementIfNeeded();
+  if (HasName() && Open()) {
+    CloseElementIfNeeded(GetParsedAttr(nsGkAtoms::name)->GetAtomValue());
+  }
 
   return NS_OK;
 }
 
 void HTMLDetailsElement::SetupShadowTree() {
   const bool kNotify = false;
-  AttachAndSetUAShadowRoot(NotifyUAWidgetSetup::No);
+  AttachAndSetUAShadowRoot(NotifyUAWidget::No, DelegatesFocus::No,
+                           CustomSlotDispatch::Yes);
   RefPtr<ShadowRoot> sr = GetShadowRoot();
   if (NS_WARN_IF(!sr)) {
     return;
@@ -122,7 +126,7 @@ void HTMLDetailsElement::SetupShadowTree() {
     }
 
     nsAutoString defaultSummaryText;
-    nsContentUtils::GetMaybeLocalizedString(nsContentUtils::eFORMS_PROPERTIES,
+    nsContentUtils::GetMaybeLocalizedString(PropertiesFile::FORMS_PROPERTIES,
                                             "DefaultSummary", OwnerDoc(),
                                             defaultSummaryText);
     RefPtr<nsTextNode> description = new (nim) nsTextNode(nim);
@@ -141,6 +145,42 @@ void HTMLDetailsElement::SetupShadowTree() {
       slot->SetPseudoElementType(PseudoStyleType::DetailsContent);
     }
     sr->AppendChildTo(slot, kNotify, IgnoreErrors());
+  }
+}
+
+void HTMLDetailsElement::GetSlotNameFor(const ShadowRoot&,
+                                        const nsIContent& aContent,
+                                        nsAString& aName) const {
+  const auto* summary = HTMLSummaryElement::FromNode(aContent);
+  if (summary && summary->IsMainSummary()) {
+    aName.AssignLiteral("internal-main-summary");
+  }
+}
+
+void HTMLDetailsElement::OnChildBeforeSlotted(ShadowRoot& aShadow,
+                                              nsIContent& aChild) {
+  if (!aChild.IsHTMLElement(nsGkAtoms::summary)) {
+    return;
+  }
+  HTMLSlotElement* slot =
+      aShadow.GetFirstNamedSlot(u"internal-main-summary"_ns);
+  MOZ_RELEASE_ASSERT(slot);
+  const auto& assigned = slot->AssignedNodes();
+  if (assigned.IsEmpty()) {
+    return;
+  }
+  if (auto* summary = HTMLSummaryElement::FromNode(assigned[0])) {
+    aShadow.MaybeReassignContent(*summary);
+  }
+}
+
+void HTMLDetailsElement::OnChildUnslotted(ShadowRoot& aShadow,
+                                          nsIContent& aChild) {
+  if (!aChild.IsHTMLElement(nsGkAtoms::summary)) {
+    return;
+  }
+  if (HTMLSummaryElement* newMainSummary = GetFirstSummary()) {
+    aShadow.MaybeReassignContent(*newMainSummary);
   }
 }
 
@@ -193,20 +233,9 @@ bool HTMLDetailsElement::HandleCommandInternal(Element* aSource,
   return false;
 }
 
-void HTMLDetailsElement::CloseElementIfNeeded() {
-  if (!StaticPrefs::dom_details_group_enabled()) {
-    return;
-  }
+void HTMLDetailsElement::CloseElementIfNeeded(nsAtom* aName) {
+  MOZ_ASSERT(Open());
 
-  if (!Open()) {
-    return;
-  }
-
-  if (!HasName()) {
-    return;
-  }
-
-  const RefPtr<nsAtom> name = GetParsedAttr(nsGkAtoms::name)->GetAsAtom();
   nsINode* const root = SubtreeRoot();
   for (nsINode* cur = root; cur; cur = cur->GetNextNode(root)) {
     if (!cur->HasName()) {
@@ -214,8 +243,7 @@ void HTMLDetailsElement::CloseElementIfNeeded() {
     }
     if (auto* other = HTMLDetailsElement::FromNode(cur)) {
       if (other != this && other->Open() &&
-          other->AttrValueIs(kNameSpaceID_None, nsGkAtoms::name, name,
-                             eCaseMatters)) {
+          other->GetParsedAttr(nsGkAtoms::name)->GetAtomValue() == aName) {
         SetOpen(false, IgnoreErrors());
         break;
       }
@@ -224,17 +252,13 @@ void HTMLDetailsElement::CloseElementIfNeeded() {
 }
 
 void HTMLDetailsElement::CloseOtherElementsIfNeeded() {
-  if (!StaticPrefs::dom_details_group_enabled()) {
-    return;
-  }
-
   MOZ_ASSERT(Open());
 
   if (!HasName()) {
     return;
   }
 
-  const RefPtr<nsAtom> name = GetParsedAttr(nsGkAtoms::name)->GetAsAtom();
+  nsAtom* name = GetParsedAttr(nsGkAtoms::name)->GetAtomValue();
   nsINode* const root = SubtreeRoot();
   for (nsINode* cur = root; cur; cur = cur->GetNextNode(root)) {
     if (!cur->HasName()) {
@@ -242,8 +266,7 @@ void HTMLDetailsElement::CloseOtherElementsIfNeeded() {
     }
     if (auto* other = HTMLDetailsElement::FromNode(cur)) {
       if (other != this && other->Open() &&
-          other->AttrValueIs(kNameSpaceID_None, nsGkAtoms::name, name,
-                             eCaseMatters)) {
+          other->GetParsedAttr(nsGkAtoms::name)->GetAtomValue() == name) {
         RefPtr<HTMLDetailsElement> otherDetails = other;
         otherDetails->SetOpen(false, IgnoreErrors());
         break;

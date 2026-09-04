@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -23,6 +21,7 @@
 #include "mozilla/Attributes.h"
 #include "mozilla/Likely.h"
 #include "mozilla/Maybe.h"
+#include "mozilla/StaticPrefs_layout.h"
 #include "mozilla/WindowButtonType.h"
 #include "nsChangeHint.h"
 #include "nsColor.h"
@@ -218,13 +217,14 @@ struct nsStyleImageLayers {
 
   struct Layer {
     using StyleGeometryBox = mozilla::StyleGeometryBox;
+    using StyleBackgroundClip = mozilla::StyleBackgroundClip;
     using StyleImageLayerAttachment = mozilla::StyleImageLayerAttachment;
     using StyleBackgroundSize = mozilla::StyleBackgroundSize;
 
     mozilla::StyleImage mImage;
     mozilla::Position mPosition;
     StyleBackgroundSize mSize;
-    StyleGeometryBox mClip;
+    StyleBackgroundClip mClip;
     MOZ_INIT_OUTSIDE_CTOR StyleGeometryBox mOrigin;
 
     // This property is used for background layer only.
@@ -517,6 +517,8 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleMargin {
   // TODO: Add support per-axis/side clipping, see
   // https://github.com/w3c/csswg-drafts/issues/7245
   mozilla::StyleOverflowClipMargin mOverflowClipMargin;
+
+  mozilla::StyleMarginTrim mMarginTrim;
 };
 
 struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStylePadding {
@@ -630,6 +632,7 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleBorder {
 
  public:
   mozilla::StyleBorderRadius mBorderRadius;  // coord, percent
+  mozilla::StyleCornerShapeRect mCornerShape;
   mozilla::StyleImage mBorderImageSource;
   mozilla::StyleBorderImageWidth mBorderImageWidth;
   mozilla::StyleNonNegativeLengthOrNumberRect mBorderImageOutset;
@@ -1013,6 +1016,11 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStylePosition {
    */
   inline mozilla::StyleContentDistribution UsedContentAlignment(
       LogicalAxis aAxis) const;
+
+  bool CanHaveDefaultAnchor() const {
+    return mPositionAnchor.value.IsIdent() || mPositionAnchor.value.IsAuto() ||
+           (mPositionAnchor.value.IsNormal() && !mPositionArea.IsNone());
+  }
 
   Position mObjectPosition;
   StyleRect<mozilla::StyleInset> mOffset;
@@ -1468,14 +1476,17 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleVisibility {
   mozilla::StyleDirection mDirection;
   mozilla::StyleVisibility mVisible;
   mozilla::StyleImageRendering mImageRendering;
+
+ private:
+  mozilla::StyleImageOrientation mImageOrientation;
+
+ public:
+  mozilla::StyleImageDecoding mImageDecoding;
   mozilla::StyleWritingModeProperty mWritingMode;
   mozilla::StyleTextOrientation mTextOrientation;
   mozilla::StyleBoxCollapse mMozBoxCollapse;
   mozilla::StylePrintColorAdjust mPrintColorAdjust;
   mozilla::StyleDominantBaseline mDominantBaseline;
-
- private:
-  mozilla::StyleImageOrientation mImageOrientation;
 };
 
 namespace mozilla {
@@ -1539,6 +1550,8 @@ struct StyleAnimation {
   float GetIterationCount() const { return mIterationCount._0; }
   StyleAnimationComposition GetComposition() const { return mComposition; }
   const StyleAnimationTimeline& GetTimeline() const { return mTimeline; }
+  const StyleAnimationRangeStart& GetRangeStart() const { return mRangeStart; }
+  const StyleAnimationRangeEnd& GetRangeEnd() const { return mRangeEnd; }
 
   bool operator==(const StyleAnimation& aOther) const;
   bool operator!=(const StyleAnimation&) const = default;
@@ -1555,13 +1568,16 @@ struct StyleAnimation {
   StyleAnimationIterationCount mIterationCount{1.0f};
   StyleAnimationComposition mComposition = StyleAnimationComposition::Replace;
   StyleAnimationTimeline mTimeline = StyleAnimationTimeline::Auto();
+  StyleAnimationRangeStart mRangeStart =
+      StyleAnimationRangeStart::DefaultStart();
+  StyleAnimationRangeEnd mRangeEnd = StyleAnimationRangeEnd::DefaultEnd();
 };
 
 struct StyleScrollTimeline {
   StyleScrollTimeline() = default;
   explicit StyleScrollTimeline(const StyleScrollTimeline& aCopy) = default;
 
-  nsAtom* GetName() const { return mName.AsAtom(); }
+  const StyleTimelineName& GetName() const { return mName; }
   StyleScrollAxis GetAxis() const { return mAxis; }
 
   bool operator==(const StyleScrollTimeline&) const = default;
@@ -1576,7 +1592,7 @@ struct StyleViewTimeline {
   StyleViewTimeline() = default;
   explicit StyleViewTimeline(const StyleViewTimeline& aCopy) = default;
 
-  nsAtom* GetName() const { return mName.AsAtom(); }
+  const StyleTimelineName& GetName() const { return mName; }
   StyleScrollAxis GetAxis() const { return mAxis; }
   const StyleViewTimelineInset& GetInset() const { return mInset; }
 
@@ -1700,7 +1716,7 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleDisplay {
 
   // 'none', 'all', or a list of one or more `<dashed-ident>` identifiers that
   // may identify anchor positioning anchor elements.
-  mozilla::StyleAnchorScope mAnchorScope;
+  mozilla::StyleScopedName mAnchorScope;
 
   mozilla::Maybe<mozilla::WindowButtonType> GetWindowButtonType() const {
     if (MOZ_LIKELY(mDefaultAppearance == mozilla::StyleAppearance::None)) {
@@ -1719,8 +1735,11 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleDisplay {
     }
   }
 
-  bool HasAppearance() const {
-    return EffectiveAppearance() != mozilla::StyleAppearance::None;
+  bool HasNativeAppearance() const {
+    auto appearance = EffectiveAppearance();
+    return appearance != mozilla::StyleAppearance::None &&
+           appearance != mozilla::StyleAppearance::Base &&
+           appearance != mozilla::StyleAppearance::BaseSelect;
   }
 
   mozilla::StyleAppearance EffectiveAppearance() const {
@@ -2008,6 +2027,14 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleContent {
     return mozilla::Span(items.items).From(items.alt_start);
   }
 
+  /**
+   * True if the 'content' change from aOld to aNew can be applied by rewriting
+   * the existing generated text nodes in place rather than reframing the full
+   * subtree.
+   */
+  static bool CanUpdateGeneratedContentText(const nsStyleContent& aOld,
+                                            const nsStyleContent& aNew);
+
   mozilla::StyleContent mContent;
   mozilla::StyleCounterIncrement mCounterIncrement;
   mozilla::StyleCounterReset mCounterReset;
@@ -2025,7 +2052,11 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleUIReset {
  public:
   mozilla::StyleUserSelect ComputedUserSelect() const { return mUserSelect; }
 
-  mozilla::StyleScrollbarWidth ScrollbarWidth() const;
+  // DO NOT USE THIS FUNCTION DIRECTLY.
+  // nsLayoutUtils::ScrollbarWidthFor() should be used instead.
+  mozilla::StyleScrollbarWidth ComputedScrollbarWidth() const {
+    return mScrollbarWidth;
+  }
 
   const mozilla::StyleTransitionProperty& GetTransitionProperty(
       uint32_t aIndex) const {
@@ -2089,13 +2120,45 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleUIReset {
   const mozilla::StyleAnimationTimeline& GetTimeline(uint32_t aIndex) const {
     return mAnimations[aIndex % mAnimationTimelineCount].GetTimeline();
   }
+  const mozilla::StyleAnimationRangeStart& GetAnimationRangeStart(
+      uint32_t aIndex) const {
+    return mAnimations[aIndex % mAnimationRangeStartCount].GetRangeStart();
+  }
+  const mozilla::StyleAnimationRangeEnd& GetAnimationRangeEnd(
+      uint32_t aIndex) const {
+    return mAnimations[aIndex % mAnimationRangeEndCount].GetRangeEnd();
+  }
+
+  const mozilla::StyleTimelineName& GetScrollTimelineName(
+      uint32_t aIndex) const {
+    return mScrollTimelines[aIndex % mScrollTimelineNameCount].GetName();
+  }
+  mozilla::StyleScrollAxis GetScrollTimelineAxis(uint32_t aIndex) const {
+    return mScrollTimelines[aIndex % mScrollTimelineAxisCount].GetAxis();
+  }
+
+  const mozilla::StyleTimelineName& GetViewTimelineName(uint32_t aIndex) const {
+    return mViewTimelines[aIndex % mViewTimelineNameCount].GetName();
+  }
+  mozilla::StyleScrollAxis GetViewTimelineAxis(uint32_t aIndex) const {
+    return mViewTimelines[aIndex % mViewTimelineAxisCount].GetAxis();
+  }
+  const mozilla::StyleViewTimelineInset& GetViewTimelineInset(
+      uint32_t aIndex) const {
+    return mViewTimelines[aIndex % mViewTimelineInsetCount].GetInset();
+  }
 
   mozilla::StyleBoolInteger mMozForceBrokenImageIcon;
   mozilla::StyleBoolInteger mMozSubtreeHiddenOnlyVisually;
   mozilla::StyleImeMode mIMEMode;
   mozilla::StyleWindowDragging mWindowDragging;
   mozilla::StyleWindowShadow mWindowShadow;
-  float mWindowOpacity;
+  mozilla::StyleFieldSizing mFieldSizing;
+
+  // How far one line scrolls this scroll container, when it doesn't want the
+  // font-derived amount. See ScrollContainerFrame::GetLineScrollAmount().
+  mozilla::NonNegativeLengthOrAuto mMozLineScrollAmount;
+
   // The margin of the window region that should be transparent to events.
   mozilla::StyleLength mMozWindowInputRegionMargin;
   mozilla::StyleTransform mMozWindowTransform;
@@ -2108,6 +2171,7 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleUIReset {
   uint32_t mTransitionDelayCount;
   uint32_t mTransitionPropertyCount;
   uint32_t mTransitionBehaviorCount;
+  float mWindowOpacity;
   nsStyleAutoArray<mozilla::StyleAnimation> mAnimations;
   // The number of elements in mAnimations that are not from repeating
   // a list due to another property being longer.
@@ -2121,6 +2185,8 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleUIReset {
   uint32_t mAnimationIterationCountCount;
   uint32_t mAnimationCompositionCount;
   uint32_t mAnimationTimelineCount;
+  uint32_t mAnimationRangeStartCount;
+  uint32_t mAnimationRangeEndCount;
 
   nsStyleAutoArray<mozilla::StyleScrollTimeline> mScrollTimelines;
   uint32_t mScrollTimelineNameCount;
@@ -2131,12 +2197,16 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleUIReset {
   uint32_t mViewTimelineAxisCount;
   uint32_t mViewTimelineInsetCount;
 
-  mozilla::StyleFieldSizing mFieldSizing;
-
-  bool HasViewTransitionName() const { return !mViewTransitionName.IsNone(); }
+  bool HasViewTransitionName() const {
+    return mViewTransitionName.value.AsAtom() != nsGkAtoms::none;
+  }
 
   mozilla::StyleViewTransitionName mViewTransitionName;
   mozilla::StyleViewTransitionClass mViewTransitionClass;
+
+  mozilla::StyleScopedName mTimelineScope;
+
+  mozilla::StyleLinkParameters mLinkParameters;
 };
 
 struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleUI {

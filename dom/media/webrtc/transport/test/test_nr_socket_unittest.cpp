@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,12 +6,10 @@
 
 #include <cstddef>
 
-extern "C" {
 // clang-format off
 #include "r_errors.h"
 #include "async_wait.h"
 // clang-format on
-}
 
 #include <vector>
 
@@ -426,6 +422,22 @@ TEST_F(TestNrSocketTest, SafePortAcceptedTCP) {
   ASSERT_FALSE(nr_str_port_to_transport_addr("127.0.0.1",
                                              // turns
                                              5349, IPPROTO_TCP, &address));
+  ASSERT_FALSE(NrSocketBase::IsForbiddenAddress(&address));
+}
+
+TEST_F(TestNrSocketTest, WebrtcGoodPortAcceptedUDP) {
+  nr_transport_addr address;
+  // Port 53 is on Necko's generic block list but is explicitly allowed for
+  // webrtc to allow punching through overzealous NATs.
+  ASSERT_FALSE(
+      nr_str_port_to_transport_addr("127.0.0.1", 53, IPPROTO_UDP, &address));
+  ASSERT_FALSE(NrSocketBase::IsForbiddenAddress(&address));
+}
+
+TEST_F(TestNrSocketTest, WebrtcGoodPortAcceptedTCP) {
+  nr_transport_addr address;
+  ASSERT_FALSE(
+      nr_str_port_to_transport_addr("127.0.0.1", 53, IPPROTO_TCP, &address));
   ASSERT_FALSE(NrSocketBase::IsForbiddenAddress(&address));
 }
 

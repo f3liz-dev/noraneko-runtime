@@ -4,43 +4,30 @@
 
 package mozilla.components.feature.downloads
 
-import android.annotation.SuppressLint
 import android.app.DownloadManager.ACTION_DOWNLOAD_COMPLETE
 import android.app.DownloadManager.EXTRA_DOWNLOAD_ID
 import android.app.Notification
 import android.app.Service
-import android.content.ActivityNotFoundException
 import android.content.BroadcastReceiver
-import android.content.ContentResolver
-import android.content.ContentUris
-import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
-import android.content.Intent.ACTION_VIEW
 import android.content.IntentFilter
-import android.net.Uri
 import android.os.Build
 import android.os.Build.VERSION.SDK_INT
-import android.os.Bundle
-import android.os.Environment
 import android.os.IBinder
-import android.os.ParcelFileDescriptor
-import android.provider.MediaStore
-import android.provider.MediaStore.setIncludePending
 import android.webkit.MimeTypeMap
 import android.widget.Toast
 import androidx.annotation.ColorRes
 import androidx.annotation.GuardedBy
-import androidx.annotation.RequiresApi
 import androidx.annotation.VisibleForTesting
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
-import androidx.core.content.FileProvider
 import androidx.core.net.toUri
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers.IO
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.MainScope
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -60,6 +47,7 @@ import mozilla.components.concept.fetch.Headers.Names.CONTENT_RANGE
 import mozilla.components.concept.fetch.Headers.Names.RANGE
 import mozilla.components.concept.fetch.MutableHeaders
 import mozilla.components.concept.fetch.Request
+import mozilla.components.concept.fetch.Response
 import mozilla.components.feature.downloads.DownloadNotification.NOTIFICATION_DOWNLOAD_GROUP_ID
 import mozilla.components.feature.downloads.ext.addCompletedDownload
 import mozilla.components.feature.downloads.ext.isScheme
@@ -69,17 +57,17 @@ import mozilla.components.feature.downloads.facts.emitNotificationOpenFact
 import mozilla.components.feature.downloads.facts.emitNotificationPauseFact
 import mozilla.components.feature.downloads.facts.emitNotificationResumeFact
 import mozilla.components.feature.downloads.facts.emitNotificationTryAgainFact
+import mozilla.components.feature.downloads.filewriter.DownloadFileWriter
 import mozilla.components.support.base.android.NotificationsDelegate
 import mozilla.components.support.base.log.logger.Logger
-import mozilla.components.support.ktx.kotlin.ifNullOrEmpty
 import mozilla.components.support.ktx.kotlin.sanitizeURL
 import mozilla.components.support.ktx.kotlinx.coroutines.throttleLatest
+import mozilla.components.support.utils.DateTimeProvider
+import mozilla.components.support.utils.DefaultDateTimeProvider
 import mozilla.components.support.utils.DownloadFileUtils
-import mozilla.components.support.utils.DownloadUtils
 import mozilla.components.support.utils.ext.registerReceiverCompat
 import mozilla.components.support.utils.ext.stopForegroundCompat
 import java.io.File
-import java.io.FileOutputStream
 import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
@@ -91,15 +79,29 @@ import kotlin.random.Random
  *
  * To use this service, you must create a subclass in your application and add it to the manifest.
  */
-@Suppress("TooManyFunctions", "LargeClass")
+@Suppress("LargeClass", "TooManyFunctions")
 abstract class AbstractFetchDownloadService : Service() {
+    private data class DownloadResponse(
+        val response: Response,
+        val usesHttpClient: Boolean,
+    )
+
+    private enum class ResumeResponseAction {
+        CONTINUE,
+        RESTART_FROM_BEGINNING,
+        FAIL,
+    }
+
     protected abstract val store: BrowserStore
 
     protected abstract val packageNameProvider: PackageNameProvider
 
     protected abstract val notificationsDelegate: NotificationsDelegate
 
-    private val notificationUpdateScope = MainScope()
+    protected open val mainDispatcher: CoroutineDispatcher = Dispatchers.Main
+    protected open val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
+
+    protected open val notificationUpdateScope by lazy { CoroutineScope(mainDispatcher + SupervisorJob()) }
 
     protected abstract val httpClient: Client
 
@@ -119,6 +121,10 @@ abstract class AbstractFetchDownloadService : Service() {
 
     protected abstract val downloadFileUtils: DownloadFileUtils
 
+    protected abstract val downloadFileWriter: DownloadFileWriter
+
+    protected open val dateTimeProvider: DateTimeProvider = DefaultDateTimeProvider()
+
     // TODO Move this to browser store and make immutable:
     // https://github.com/mozilla-mobile/android-components/issues/7050
     internal data class DownloadJobState(
@@ -130,7 +136,8 @@ abstract class AbstractFetchDownloadService : Service() {
         var downloadDeleted: Boolean = false,
         var notifiedStopped: Boolean = false,
         var lastNotificationUpdate: Long = 0L,
-        var createdTime: Long = System.currentTimeMillis(),
+        var dateTimeProvider: DateTimeProvider = DefaultDateTimeProvider(),
+        var createdTime: Long = dateTimeProvider.currentTimeMillis(),
     ) {
         internal fun canUpdateNotification(): Boolean {
             return isUnderNotificationUpdateLimit() && !notifiedStopped
@@ -147,7 +154,7 @@ abstract class AbstractFetchDownloadService : Service() {
         }
 
         internal fun getSecondsSinceTheLastNotificationUpdate(): Long {
-            return (System.currentTimeMillis() - lastNotificationUpdate) / 1000
+            return (dateTimeProvider.currentTimeMillis() - lastNotificationUpdate) / 1000
         }
     }
 
@@ -184,10 +191,14 @@ abstract class AbstractFetchDownloadService : Service() {
                     }
 
                     ACTION_RESUME -> {
-                        if (!File(currentDownloadJobState.state.filePath).exists()) {
+                        val fileExists = downloadFileUtils.fileExists(
+                            directoryPath = currentDownloadJobState.state.directoryPath,
+                            fileName = currentDownloadJobState.state.fileName,
+                        )
+                        if (!fileExists) {
                             currentDownloadJobState.lastNotificationUpdate =
-                                System.currentTimeMillis()
-                            currentDownloadJobState.createdTime = System.currentTimeMillis()
+                                dateTimeProvider.currentTimeMillis()
+                            currentDownloadJobState.createdTime = dateTimeProvider.currentTimeMillis()
                             currentDownloadJobState.notifiedStopped = false
 
                             setDownloadJobStatus(currentDownloadJobState, FAILED)
@@ -196,7 +207,7 @@ abstract class AbstractFetchDownloadService : Service() {
                         } else {
                             setDownloadJobStatus(currentDownloadJobState, DOWNLOADING)
 
-                            currentDownloadJobState.job = CoroutineScope(IO).launch {
+                            currentDownloadJobState.job = CoroutineScope(ioDispatcher).launch {
                                 startDownloadJob(currentDownloadJobState)
                             }
                         }
@@ -205,7 +216,9 @@ abstract class AbstractFetchDownloadService : Service() {
                     }
 
                     ACTION_CANCEL -> {
-                        cancelDownloadJob(currentDownloadJobState)
+                        if (currentDownloadJobState.status !in listOf(COMPLETED, CANCELLED)) {
+                            cancelDownloadJob(currentDownloadJobState)
+                        }
                         removeDownloadJob(currentDownloadJobState)
                         emitNotificationCancelFact()
                         logger.debug("ACTION_CANCEL for ${currentDownloadJobState.state.id}")
@@ -213,11 +226,11 @@ abstract class AbstractFetchDownloadService : Service() {
 
                     ACTION_TRY_AGAIN -> {
                         removeNotification(context, currentDownloadJobState)
-                        currentDownloadJobState.lastNotificationUpdate = System.currentTimeMillis()
-                        currentDownloadJobState.createdTime = System.currentTimeMillis()
+                        currentDownloadJobState.lastNotificationUpdate = dateTimeProvider.currentTimeMillis()
+                        currentDownloadJobState.createdTime = dateTimeProvider.currentTimeMillis()
                         setDownloadJobStatus(currentDownloadJobState, DOWNLOADING)
 
-                        currentDownloadJobState.job = CoroutineScope(IO).launch {
+                        currentDownloadJobState.job = CoroutineScope(ioDispatcher).launch {
                             startDownloadJob(currentDownloadJobState)
                         }
 
@@ -231,12 +244,10 @@ abstract class AbstractFetchDownloadService : Service() {
                     }
 
                     ACTION_OPEN -> {
-                        if (!openFile(
-                                applicationContext = context,
-                                packageName = packageNameProvider.packageName,
-                                downloadFileName = currentDownloadJobState.state.fileName,
-                                downloadFilePath = currentDownloadJobState.state.filePath,
-                                downloadContentType = currentDownloadJobState.state.contentType,
+                        if (!downloadFileUtils.openFile(
+                                fileName = currentDownloadJobState.state.fileName,
+                                directoryPath = currentDownloadJobState.state.directoryPath,
+                                contentType = currentDownloadJobState.state.contentType,
                             )
                         ) {
                             val fileExt = MimeTypeMap.getFileExtensionFromUrl(
@@ -247,7 +258,8 @@ abstract class AbstractFetchDownloadService : Service() {
                                 fileExt,
                             )
 
-                            Toast.makeText(applicationContext, errorMessage, Toast.LENGTH_SHORT).show()
+                            Toast.makeText(applicationContext, errorMessage, Toast.LENGTH_SHORT)
+                                .show()
                             logger.debug("ACTION_OPEN errorMessage for ${currentDownloadJobState.state.id} ")
                         }
 
@@ -324,7 +336,7 @@ abstract class AbstractFetchDownloadService : Service() {
         store.dispatch(DownloadAction.UpdateDownloadAction(downloadJobState.state))
 
         if (actualStatus == DOWNLOADING) {
-            downloadJobState.job = CoroutineScope(IO).launch {
+            downloadJobState.job = CoroutineScope(ioDispatcher).launch {
                 startDownloadJob(downloadJobState)
             }
         }
@@ -345,17 +357,23 @@ abstract class AbstractFetchDownloadService : Service() {
     @VisibleForTesting
     internal fun cancelDownloadJob(
         currentDownloadJobState: DownloadJobState,
-        coroutineScope: CoroutineScope = CoroutineScope(IO),
+        coroutineScope: CoroutineScope = CoroutineScope(ioDispatcher),
     ) {
-        currentDownloadJobState.lastNotificationUpdate = System.currentTimeMillis()
+        currentDownloadJobState.lastNotificationUpdate = dateTimeProvider.currentTimeMillis()
         setDownloadJobStatus(
             currentDownloadJobState,
             CANCELLED,
         )
+        val resolver = context.contentResolver
+
         currentDownloadJobState.job?.cancel()
         currentDownloadJobState.job?.invokeOnCompletion {
             currentDownloadJobState.job = coroutineScope.launch {
-                deleteDownloadingFile(currentDownloadJobState.state)
+                downloadFileUtils.deleteMediaFile(
+                    contentResolver = resolver,
+                    fileName = currentDownloadJobState.state.fileName,
+                    directoryPath = currentDownloadJobState.state.directoryPath,
+                )
                 currentDownloadJobState.downloadDeleted =
                     true
             }
@@ -405,7 +423,7 @@ abstract class AbstractFetchDownloadService : Service() {
     internal fun updateDownloadNotification(
         latestUIStatus: Status,
         download: DownloadJobState,
-        scope: CoroutineScope = CoroutineScope(IO),
+        scope: CoroutineScope = CoroutineScope(ioDispatcher),
     ) {
         val notification = when (latestUIStatus) {
             DOWNLOADING -> DownloadNotification.createOngoingDownloadNotification(
@@ -430,15 +448,16 @@ abstract class AbstractFetchDownloadService : Service() {
             COMPLETED -> {
                 addToDownloadSystemDatabaseCompat(download.state, scope)
                 DownloadNotification.createDownloadCompletedNotification(
-                    context,
-                    download.state,
-                    download.createdTime,
-                    style.notificationAccentColor,
+                    context = context,
+                    downloadState = download.state,
+                    createdTime = download.createdTime,
+                    notificationAccentColor = style.notificationAccentColor,
+                    downloadFileUtils = downloadFileUtils,
                 )
             }
             CANCELLED -> {
                 removeNotification(context, download)
-                download.lastNotificationUpdate = System.currentTimeMillis()
+                download.lastNotificationUpdate = dateTimeProvider.currentTimeMillis()
                 null
             }
             INITIATED -> null
@@ -449,7 +468,7 @@ abstract class AbstractFetchDownloadService : Service() {
                 notificationId = download.foregroundServiceId,
                 notification = it,
             )
-            download.lastNotificationUpdate = System.currentTimeMillis()
+            download.lastNotificationUpdate = dateTimeProvider.currentTimeMillis()
         }
     }
 
@@ -502,14 +521,6 @@ abstract class AbstractFetchDownloadService : Service() {
         }
     }
 
-    internal fun deleteDownloadingFile(downloadState: DownloadState) {
-        val downloadedFile = File(downloadState.filePath)
-        val deleted = downloadedFile.delete()
-        if (!deleted) {
-            logger.error("Unable to delete file with path: " + downloadState.filePath)
-        }
-    }
-
     /**
      * Adds a file to the downloads database system, so it could appear in Downloads App
      * (and thus become eligible for management by the Downloads App) only for compatible devices
@@ -518,7 +529,7 @@ abstract class AbstractFetchDownloadService : Service() {
     @VisibleForTesting
     internal fun addToDownloadSystemDatabaseCompat(
         download: DownloadState,
-        scope: CoroutineScope = CoroutineScope(IO),
+        scope: CoroutineScope = CoroutineScope(ioDispatcher),
     ) {
         if (!shouldUseScopedStorage()) {
             val fileName = download.fileName
@@ -530,11 +541,9 @@ abstract class AbstractFetchDownloadService : Service() {
                     title = fileName,
                     description = fileName,
                     isMediaScannerScannable = true,
-                    mimeType = getSafeContentType(
-                        context,
-                        packageNameProvider.packageName,
-                        download.filePath,
-                        download.contentType,
+                    mimeType = downloadFileUtils.getSafeContentType(
+                        fileName = download.fileName,
+                        contentType = download.contentType,
                     ),
                     path = file.absolutePath,
                     length = download.contentLength ?: file.length(),
@@ -621,7 +630,7 @@ abstract class AbstractFetchDownloadService : Service() {
      * otherwise nothing will happen.
      */
     @VisibleForTesting
-    internal fun updateNotificationGroup(): Notification? {
+    internal fun updateNotificationGroup(): Notification {
         val downloadList = downloadJobs.values.toList()
         val notificationGroup =
             DownloadNotification.createDownloadGroupNotification(
@@ -668,69 +677,43 @@ abstract class AbstractFetchDownloadService : Service() {
         }
     }
 
-    @Suppress("ComplexCondition")
     internal fun performDownload(currentDownloadJobState: DownloadJobState, useHttpClient: Boolean = false) {
         val download = currentDownloadJobState.state
         val isResumingDownload = currentDownloadJobState.currentBytesCopied > 0L
-        val headers = MutableHeaders()
 
-        if (isResumingDownload) {
-            logger.debug("Resuming download")
-            if (currentDownloadJobState.currentBytesCopied == download.contentLength) {
-                logger.debug("Already at 100%, verifying download")
-                verifyDownload(currentDownloadJobState)
-                return
-            } else {
-                headers.append(RANGE, "bytes=${currentDownloadJobState.currentBytesCopied}-")
-            }
-        }
-
-        var isUsingHttpClient = false
-        val request = Request(
-            url = download.url.sanitizeURL(),
-            headers = headers,
-            private = download.private,
-            referrerUrl = download.referrerUrl,
-        )
-        // When resuming a download we need to use the httpClient as
-        // download.response doesn't support adding headers.
-        val response = if (isResumingDownload || useHttpClient || download.response == null) {
-            isUsingHttpClient = true
-            httpClient.fetch(request)
-        } else {
-            requireNotNull(download.response)
-        }
-        logger.debug("Fetching download for ${currentDownloadJobState.state.id} ")
-
-        // If we are resuming a download and the response does not contain a CONTENT_RANGE
-        // we cannot be sure that the request will properly be handled
-        if ((response.status != PARTIAL_CONTENT_STATUS && response.status != OK_STATUS) ||
-            (isResumingDownload && !response.headers.contains(CONTENT_RANGE))
-        ) {
-            response.close()
-            // We experienced a problem trying to fetch the file, send a failure notification
-            currentDownloadJobState.currentBytesCopied = 0
-            currentDownloadJobState.state = currentDownloadJobState.state.copy(currentBytesCopied = 0)
-            setDownloadJobStatus(currentDownloadJobState, FAILED)
-            logger.debug("Unable to fetching Download for ${currentDownloadJobState.state.id} status FAILED")
+        val headers = buildDownloadRequestHeaders(currentDownloadJobState, download, isResumingDownload)
+        if (headers == null) {
+            verifyDownload(currentDownloadJobState)
             return
         }
 
-        response.body.useStream { inStream ->
-            var copyInChuckStatus: CopyInChuckStatus? = null
-            val newDownloadState = download.withResponse(
-                headers = response.headers,
-                downloadFileUtils = downloadFileUtils,
-                stream = inStream,
-            )
-            currentDownloadJobState.state = newDownloadState
+        val (response, isUsingHttpClient) = fetchDownloadResponse(download, headers, isResumingDownload, useHttpClient)
+        logger.debug("Fetching download for ${currentDownloadJobState.state.id} ")
 
-            useFileStream(newDownloadState, isResumingDownload) { outStream ->
-                copyInChuckStatus = copyInChunks(currentDownloadJobState, inStream, outStream, isUsingHttpClient)
+        val resumeResponseAction = determineResumeResponseAction(
+            isResumingDownload = isResumingDownload,
+            response = response,
+            expectedResumeStart = currentDownloadJobState.currentBytesCopied,
+        )
+
+        when (resumeResponseAction) {
+            ResumeResponseAction.FAIL -> {
+                failDownload(currentDownloadJobState, response)
             }
-
-            if (copyInChuckStatus != CopyInChuckStatus.ERROR_IN_STREAM_CLOSED) {
-                verifyDownload(currentDownloadJobState)
+            ResumeResponseAction.RESTART_FROM_BEGINNING -> {
+                restartDownloadFromBeginning(
+                    currentDownloadJobState = currentDownloadJobState,
+                    response = response,
+                    usesHttpClient = isUsingHttpClient,
+                )
+            }
+            ResumeResponseAction.CONTINUE -> {
+                writeResponseBody(
+                    currentDownloadJobState = currentDownloadJobState,
+                    response = response,
+                    append = isResumingDownload,
+                    usesHttpClient = isUsingHttpClient,
+                )
             }
         }
     }
@@ -779,7 +762,7 @@ abstract class AbstractFetchDownloadService : Service() {
 
         val throttleUpdateDownload = throttleLatest<Long>(
             PROGRESS_UPDATE_INTERVAL,
-            coroutineScope = CoroutineScope(IO),
+            coroutineScope = CoroutineScope(ioDispatcher),
         ) { copiedBytes ->
             val newState = downloadJobState.state.copy(currentBytesCopied = copiedBytes)
             updateDownloadState(newState)
@@ -834,29 +817,10 @@ abstract class AbstractFetchDownloadService : Service() {
         intent.putExtra(EXTRA_DOWNLOAD_ID, downloadState.state.id)
         intent.setPackage(packageNameProvider.packageName)
 
-        context.sendBroadcast(intent, "${packageNameProvider.packageName}.permission.RECEIVE_DOWNLOAD_BROADCAST")
-    }
-
-    /**
-     * Creates an output stream on the local filesystem, then informs the system that a download
-     * is complete after [block] is run.
-     *
-     * Encapsulates different behaviour depending on the SDK version.
-     */
-    @SuppressLint("NewApi")
-    internal fun useFileStream(
-        download: DownloadState,
-        append: Boolean,
-        block: (OutputStream) -> Unit,
-    ) {
-        val downloadWithUniqueFileName = makeUniqueFileNameIfNecessary(download, append)
-        updateDownloadState(downloadWithUniqueFileName)
-
-        if (shouldUseScopedStorage()) {
-            useFileStreamScopedStorage(downloadWithUniqueFileName, append, block)
-        } else {
-            useFileStreamLegacy(downloadWithUniqueFileName, append, block)
-        }
+        context.sendBroadcast(
+            intent,
+            "${packageNameProvider.packageName}.permission.RECEIVE_DOWNLOAD_BROADCAST",
+        )
     }
 
     @VisibleForTesting
@@ -879,263 +843,164 @@ abstract class AbstractFetchDownloadService : Service() {
         store.dispatch(DownloadAction.UpdateDownloadAction(updatedDownload))
     }
 
-    /**
-     * Returns an updated [DownloadState] with a unique fileName if the file is not being appended
-     */
-    @Suppress("Deprecation")
-    internal fun makeUniqueFileNameIfNecessary(
+    private fun Response.hasExpectedResumeRange(expectedStart: Long): Boolean =
+        parseContentRange(headers)?.start == expectedStart
+
+    private fun buildDownloadRequestHeaders(
+        currentDownloadJobState: DownloadJobState,
         download: DownloadState,
+        isResumingDownload: Boolean,
+    ): MutableHeaders? {
+        if (!isResumingDownload) {
+            return MutableHeaders()
+        }
+
+        logger.debug("Resuming download")
+        if (currentDownloadJobState.currentBytesCopied == download.contentLength) {
+            logger.debug("Already at 100%, verifying download")
+            return null
+        }
+
+        return MutableHeaders(RANGE to "bytes=${currentDownloadJobState.currentBytesCopied}-")
+    }
+
+    private fun fetchDownloadResponse(
+        download: DownloadState,
+        headers: MutableHeaders,
+        isResumingDownload: Boolean,
+        useHttpClient: Boolean,
+    ): DownloadResponse {
+        val request = Request(
+            url = download.url.sanitizeURL(),
+            headers = headers,
+            private = download.private,
+            referrerUrl = download.referrerUrl,
+        )
+
+        if (isResumingDownload || useHttpClient || download.response == null) {
+            return DownloadResponse(
+                response = httpClient.fetch(request),
+                usesHttpClient = true,
+            )
+        }
+
+        return DownloadResponse(
+            response = requireNotNull(download.response),
+            usesHttpClient = false,
+        )
+    }
+
+    private fun determineResumeResponseAction(
+        isResumingDownload: Boolean,
+        response: Response,
+        expectedResumeStart: Long,
+    ): ResumeResponseAction {
+        val isAcceptedStatus = response.status == PARTIAL_CONTENT_STATUS || response.status == OK_STATUS
+        if (!isAcceptedStatus) {
+            return ResumeResponseAction.FAIL
+        }
+
+        if (!isResumingDownload) {
+            return ResumeResponseAction.CONTINUE
+        }
+
+        return when {
+            response.status == OK_STATUS -> ResumeResponseAction.RESTART_FROM_BEGINNING
+            CONTENT_RANGE !in response.headers -> ResumeResponseAction.FAIL
+            !response.hasExpectedResumeRange(expectedResumeStart) -> ResumeResponseAction.FAIL
+            else -> ResumeResponseAction.CONTINUE
+        }
+    }
+
+    private fun failDownload(currentDownloadJobState: DownloadJobState, response: Response) {
+        response.close()
+        // We experienced a problem trying to fetch the file, send a failure notification
+        currentDownloadJobState.currentBytesCopied = 0
+        currentDownloadJobState.state = currentDownloadJobState.state.copy(
+            currentBytesCopied = 0,
+            response = null,
+        )
+        setDownloadJobStatus(currentDownloadJobState, FAILED)
+        logger.debug("Unable to fetch Download for ${currentDownloadJobState.state.id} status FAILED")
+    }
+
+    private fun restartDownloadFromBeginning(
+        currentDownloadJobState: DownloadJobState,
+        response: Response,
+        usesHttpClient: Boolean,
+    ) {
+        logger.debug("Resume response ignored Range; restarting download from beginning")
+        val partialFileExists = downloadFileUtils.fileExists(
+            directoryPath = currentDownloadJobState.state.directoryPath,
+            fileName = currentDownloadJobState.state.fileName,
+        )
+        if (partialFileExists) {
+            val deleted = downloadFileUtils.deleteMediaFile(
+                contentResolver = context.contentResolver,
+                fileName = currentDownloadJobState.state.fileName,
+                directoryPath = currentDownloadJobState.state.directoryPath,
+            )
+            if (!deleted) {
+                response.close()
+                currentDownloadJobState.state = currentDownloadJobState.state.copy(response = null)
+                setDownloadJobStatus(currentDownloadJobState, FAILED)
+                logger.debug("Failed to delete partial download for ${currentDownloadJobState.state.id} status FAILED")
+                return
+            }
+        }
+
+        currentDownloadJobState.currentBytesCopied = 0
+        currentDownloadJobState.state = currentDownloadJobState.state.copy(
+            currentBytesCopied = 0,
+            contentLength = null,
+            response = null,
+        )
+        updateDownloadState(currentDownloadJobState.state)
+        writeResponseBody(
+            currentDownloadJobState = currentDownloadJobState,
+            response = response,
+            append = false,
+            usesHttpClient = usesHttpClient,
+        )
+    }
+
+    private fun writeResponseBody(
+        currentDownloadJobState: DownloadJobState,
+        response: Response,
         append: Boolean,
-    ): DownloadState {
-        val fileName = download.fileName
-        if (append || fileName == null) {
-            return download
-        }
-
-        val file = File(fileName)
-        val path = Environment.getExternalStoragePublicDirectory(download.destinationDirectory)
-        val (baseFileName, fileExtension) = DownloadUtils.truncateFileName(
-            baseFileName = file.nameWithoutExtension,
-            fileExtension = file.extension,
-            path = path.absolutePath,
-        )
-
-        var potentialFile = File(
-            path,
-            DownloadUtils.createFileName(
-                fileName = baseFileName,
-                fileExtension = fileExtension,
-            ),
-        )
-        var copyVersionNumber = 1
-        while (potentialFile.exists() || fileNameExistsInCurrentDownloads(
-                potentialFile.name,
-                download,
-                downloadJobs,
+        usesHttpClient: Boolean,
+    ) {
+        response.body.useStream { inStream ->
+            var copyInChunkStatus: CopyInChuckStatus? = null
+            val newDownloadState = currentDownloadJobState.state.withResponse(
+                headers = response.headers,
+                downloadFileUtils = downloadFileUtils,
+                stream = inStream,
             )
-        ) {
-            potentialFile = File(path, DownloadUtils.createFileName(baseFileName, copyVersionNumber++, fileExtension))
-        }
+            currentDownloadJobState.state = newDownloadState
 
-        return download.copy(fileName = potentialFile.name)
-    }
-
-    private fun fileNameExistsInCurrentDownloads(
-        fileName: String,
-        download: DownloadState,
-        downloadJobs: Map<String, DownloadJobState>,
-    ): Boolean =
-        downloadJobs.values.any {
-            it.state.id != download.id && it.state.fileName == fileName && (
-                it.status == DOWNLOADING || it.status == PAUSED
-                )
-        }
-
-    @RequiresApi(Build.VERSION_CODES.Q)
-    @VisibleForTesting
-    internal fun useFileStreamScopedStorage(download: DownloadState, append: Boolean, block: (OutputStream) -> Unit) {
-        val values = ContentValues().apply {
-            put(MediaStore.Downloads.DISPLAY_NAME, download.fileName)
-            put(
-                MediaStore.Downloads.MIME_TYPE,
-                getSafeContentType(context, packageNameProvider.packageName, download.filePath, download.contentType),
-            )
-            put(MediaStore.Downloads.SIZE, download.contentLength)
-            put(MediaStore.Downloads.IS_PENDING, 1)
-        }
-
-        val collection = MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
-        val resolver = context.contentResolver
-        val downloadUri =
-            queryDownloadMediaStore(resolver, download.fileName, true) ?: resolver.insert(
-                collection,
-                values,
+            downloadFileWriter.useFileStream(
+                download = newDownloadState,
+                append = append,
+                shouldUseScopedStorage = shouldUseScopedStorage(),
+                onUpdateState = ::updateDownloadState,
+                block = { outStream ->
+                    copyInChunkStatus = copyInChunks(
+                        downloadJobState = currentDownloadJobState,
+                        inStream = inStream,
+                        outStream = outStream,
+                        downloadWithHttpClient = usesHttpClient,
+                    )
+                },
             )
 
-        downloadUri?.let {
-            val writingMode = if (append) "wa" else "w"
-            val pfd = resolver.openFileDescriptor(it, writingMode)
-            ParcelFileDescriptor.AutoCloseOutputStream(pfd).use(block)
-
-            values.clear()
-            values.put(MediaStore.Downloads.IS_PENDING, 0)
-            resolver.update(it, values, null, null)
-        } ?: throw IOException("Failed to register download with content resolver")
-    }
-
-    @RequiresApi(Build.VERSION_CODES.P)
-    @Suppress("Deprecation")
-    @VisibleForTesting
-    internal fun useFileStreamLegacy(download: DownloadState, append: Boolean, block: (OutputStream) -> Unit) {
-        createDirectoryIfNeeded(download)
-        FileOutputStream(File(download.filePath), append).use(block)
-    }
-
-    @VisibleForTesting
-    internal fun createDirectoryIfNeeded(download: DownloadState) {
-        val directory = File(download.directoryPath)
-        if (!directory.exists()) {
-            directory.mkdir()
+            if (copyInChunkStatus != CopyInChuckStatus.ERROR_IN_STREAM_CLOSED) {
+                verifyDownload(currentDownloadJobState)
+            }
         }
     }
 
     companion object {
-        /**
-         * Launches an intent to open the given file, returns whether or not the file could be opened.
-         *
-         * @param applicationContext the current Android *Context*
-         * @param downloadFileName A canonical filename for this download.
-         * @param downloadFilePath The file path the downloaded file was saved at.
-         * @param downloadContentType The file size reported by the server.
-         */
-        fun openFile(
-            applicationContext: Context,
-            packageName: String,
-            downloadFileName: String?,
-            downloadFilePath: String,
-            downloadContentType: String?,
-        ): Boolean {
-            val newIntent = createOpenFileIntent(
-                context = applicationContext,
-                packageName = packageName,
-                downloadFileName = downloadFileName,
-                downloadFilePath = downloadFilePath,
-                downloadContentType = downloadContentType,
-            )
-
-            return try {
-                applicationContext.startActivity(newIntent)
-                true
-            } catch (_: ActivityNotFoundException) {
-                false
-            }
-        }
-
-        /**
-         * Creates an Intent which can then be used to open the file specified.
-         *
-         * @param context the current Android *Context*
-         * @param downloadFileName A canonical filename for this download.
-         * @param downloadFilePath The file path the downloaded file was saved at.
-         * @param downloadContentType The file size reported by the server.
-         */
-        fun createOpenFileIntent(
-            context: Context,
-            packageName: String,
-            downloadFileName: String?,
-            downloadFilePath: String,
-            downloadContentType: String?,
-        ): Intent {
-            // For devices that support the scoped storage we can query directly the download
-            // media store otherwise we have to construct the uri based on the file path.
-            val fileUri: Uri =
-                if (SDK_INT >= Build.VERSION_CODES.Q) {
-                    queryDownloadMediaStore(context.contentResolver, downloadFileName)
-                        ?: getFilePathUri(context, packageName, downloadFilePath)
-                } else {
-                    // Create a new file with the location of the saved file to extract the correct path
-                    // `file` has the wrong path, so we must construct it based on the `fileName` and `dir.path`s
-                    getFilePathUri(context, packageName, downloadFilePath)
-                }
-
-            val newIntent =
-                Intent(ACTION_VIEW).apply {
-                    setDataAndType(
-                        fileUri,
-                        getSafeContentType(context, fileUri, downloadContentType),
-                    )
-                    flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION
-                }
-
-            return newIntent
-        }
-
-        @RequiresApi(Build.VERSION_CODES.Q)
-        @VisibleForTesting
-        internal fun queryDownloadMediaStore(
-            contentResolver: ContentResolver,
-            downloadFileName: String?,
-            limitToDownloadsFolder: Boolean = false,
-        ): Uri? {
-            val queryProjection = arrayOf(MediaStore.Downloads._ID, MediaStore.MediaColumns.RELATIVE_PATH)
-            val querySelection = "${MediaStore.Downloads.DISPLAY_NAME} = ?"
-            val querySelectionArgs = arrayOf(downloadFileName)
-
-            val queryBundle = Bundle().apply {
-                putString(ContentResolver.QUERY_ARG_SQL_SELECTION, querySelection)
-                putStringArray(ContentResolver.QUERY_ARG_SQL_SELECTION_ARGS, querySelectionArgs)
-            }
-
-            // Query if we have a pending download with the same name. This can happen
-            // if a download was interrupted, failed or cancelled before the file was
-            // written to disk. Our logic above will have generated a unique file name
-            // based on existing files on the device, but we might already have a row
-            // for the download in the content resolver.
-
-            val collection = MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
-            val queryCollection =
-                if (SDK_INT >= Build.VERSION_CODES.R) {
-                    queryBundle.putInt(MediaStore.QUERY_ARG_MATCH_PENDING, MediaStore.MATCH_INCLUDE)
-                    collection
-                } else {
-                    @Suppress("DEPRECATION")
-                    setIncludePending(collection)
-                }
-
-            contentResolver.query(
-                queryCollection,
-                queryProjection,
-                queryBundle,
-                null,
-            )?.use { cursor ->
-                while (cursor.moveToNext()) {
-                    val relativePath =
-                        cursor.getString(cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.RELATIVE_PATH))
-                    if (!limitToDownloadsFolder || isPathInDownloadsDirectory(relativePath)) {
-                        val idColumnIndex = cursor.getColumnIndex(MediaStore.Downloads._ID)
-                        return ContentUris.withAppendedId(collection, cursor.getLong(idColumnIndex))
-                    }
-                }
-            }
-            return null
-        }
-
-        private fun isPathInDownloadsDirectory(relativePath: String): Boolean {
-            return relativePath == "Downloads/" || relativePath == "Download/"
-        }
-
-        @VisibleForTesting
-        internal fun getSafeContentType(context: Context, constructedFilePath: Uri, contentType: String?): String {
-            val contentTypeFromFile = context.contentResolver.getType(constructedFilePath)
-            val resultContentType = if (!contentTypeFromFile.isNullOrEmpty()) {
-                contentTypeFromFile
-            } else {
-                contentType.ifNullOrEmpty { "*/*" }
-            }
-            return DownloadUtils.sanitizeMimeType(resultContentType).ifNullOrEmpty { "*/*" }
-        }
-
-        @VisibleForTesting
-        internal fun getSafeContentType(
-            context: Context,
-            packageName: String,
-            filePath: String,
-            contentType: String?,
-        ) = getSafeContentType(
-            context,
-            getFilePathUri(context, packageName, filePath),
-            contentType,
-        )
-
-        @VisibleForTesting
-        internal fun getFilePathUri(context: Context, packageName: String, filePath: String): Uri =
-            FileProvider.getUriForFile(
-                context,
-                packageName + FILE_PROVIDER_EXTENSION,
-                File(filePath),
-            )
-
-        private const val FILE_PROVIDER_EXTENSION = ".feature.downloads.fileprovider"
         private const val CHUNK_SIZE = 32 * 1024
         private const val PARTIAL_CONTENT_STATUS = 206
         private const val OK_STATUS = 200

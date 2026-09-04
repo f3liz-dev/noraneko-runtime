@@ -39,6 +39,15 @@ DesktopCapturer::SourceId FullScreenWindowDetector::FindFullScreenWindow(
   return app_handler_->FindFullScreenWindow(window_list_, last_update_time_ms_);
 }
 
+DesktopCapturer::SourceId FullScreenWindowDetector::FindEditorWindow(
+    DesktopCapturer::SourceId original_source_id) {
+  if (app_handler_ == nullptr ||
+      app_handler_->GetSourceId() != original_source_id) {
+    return 0;
+  }
+  return app_handler_->FindEditorWindow(window_list_);
+}
+
 void FullScreenWindowDetector::UpdateWindowListIfNeeded(
     DesktopCapturer::SourceId original_source_id,
     FunctionView<bool(DesktopCapturer::SourceList*)> get_sources) {
@@ -100,18 +109,23 @@ void FullScreenWindowDetector::CreateApplicationHandlerIfNeeded(
     return;
   }
 
-  if (app_handler_ == nullptr || app_handler_->GetSourceId() != source_id) {
-    app_handler_ = application_handler_factory_
-                       ? application_handler_factory_(source_id)
-                       : nullptr;
+  if (app_handler_ && app_handler_->GetSourceId() == source_id) {
+    return;
   }
+
+  app_handler_ = application_handler_factory_
+                     ? application_handler_factory_(source_id)
+                     : nullptr;
 
   if (app_handler_ == nullptr) {
     no_handler_source_id_ = source_id;
-  } else {
-    app_handler_->SetUseHeuristicFullscreenPowerPointWindows(
-        use_heuristic_fullscreen_powerpoint_windows_);
+  } else if (found_editor_for_chosen_slide_show_) {
+      app_handler_->SetEditorWasFound();
   }
+}
+
+void FullScreenWindowDetector::SetEditorWasFoundForChosenSlideShow() {
+  found_editor_for_chosen_slide_show_ = true;
 }
 
 void FullScreenWindowDetector::CreateFullScreenApplicationHandlerForTest(

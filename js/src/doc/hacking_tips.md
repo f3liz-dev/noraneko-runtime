@@ -7,7 +7,7 @@ This is archived here because it captures valuable documentation that even if po
 ---
 
 
-This page lists a few tips to help you investigate issues related to SpiderMonkey. All tips listed here are dealing with the JavaScript shell obtained at the end of the [build documentation of SpiderMonkey](build.rst). It is separated in 2 parts, one section related to debugging and another section related to drafting optimizations. Many of these tips only apply to debug builds of the JS shell; they will not function in a release build.
+This page lists a few tips to help you investigate issues related to SpiderMonkey. All tips listed here are dealing with the JavaScript shell obtained at the end of the [build documentation of SpiderMonkey](build.md). It is separated in 2 parts, one section related to debugging and another section related to drafting optimizations. Many of these tips only apply to debug builds of the JS shell; they will not function in a release build.
 
 ## Tools
 
@@ -225,9 +225,9 @@ Or you can wrap the x command in your own command:
         set arm force-mode auto
     end
 
-### Printing asm.js/wasm generated assembly code (from gdb)
+### Printing wasm generated assembly code (from gdb)
 
-- Set a breakpoint on `js::wasm::Instance::callExport` (defined in `WasmInstance.cpp` as of November 18th 2016). This will trigger for _any_ asm.js/wasm call, so you should find a way to set this breakpoint for the only generated codes you want to look at.
+- Set a breakpoint on `js::wasm::Instance::callExport` (defined in `WasmInstance.cpp` as of November 18th 2016). This will trigger for _any_ wasm call, so you should find a way to set this breakpoint for the only generated codes you want to look at.
 - Run the program.
 - Do `next` in gdb until you reach the definition of the `funcPtr`:
 ```
@@ -304,7 +304,7 @@ With gdb instrumentation, we can call [iongraph](https://github.com/sstangl/iong
 (gdb) frame 3
 #3  0x000000000083317f in js::jit::OptimizeMIR(js::jit::MIRGenerator*) (mir=0x33dbdf0) at …/js/src/jit/Ion.cpp:1570
 (gdb) iongraph mir
- function 0 (asm.js compilation): success; 1 passes.
+ function 0 (wasm compilation): success; 1 passes.
 /* open your png viewer with the result of iongraph */
 ```
 
@@ -314,7 +314,7 @@ Enabling GDB instrumentation may require launching a JS shell executable that sh
 
 ### Finding the code that generated a JIT instruction (from rr)
 
-If you are looking at a JIT instruction and need to know what code generated it, you can use [jitsrc.py](https://searchfox.org/mozilla-central/source/js/src/gdb/mozilla/jitsrc.py). This script adds a `jitsrc` command to rr that will trace backwards from the JIT instruction to the code that generated it.
+If you are looking at a JIT instruction and need to know what code generated it, you can use [jitsrc.py](https://searchfox.org/firefox-main/source/js/src/gdb/mozilla/jitsrc.py). This script adds a `jitsrc` command to rr that will trace backwards from the JIT instruction to the code that generated it.
 
 To use the `jitsrc` command, add the following line to your .gdbinit file, or run it manually:
 
@@ -359,7 +359,7 @@ Note: the line 3196, listed above, corresponds to the location of the [Jit spew 
 
 ### Using the Gecko Profiler (browser / xpcshell)
 
-See the section dedicated to [profiling with the Gecko Profiler](/tools/profiler/index.rst). This method of profiling has the advantage of mixing the JavaScript stack with the C++ stack, which is useful for analyzing library function issues.
+See the section dedicated to [profiling with the Gecko Profiler](/tools/profiler/index.md). This method of profiling has the advantage of mixing the JavaScript stack with the C++ stack, which is useful for analyzing library function issues.
 
 One tip is to start looking at a script with an inverted JS stack to locate the most expensive JS function, then to focus on the frame of this JS function, and to remove the inverted stack and look at C++ part of this function to determine from where the cost is coming from.
 
@@ -380,7 +380,7 @@ The output file can then be used with **kcachegrind**, which provides a graphica
 
 IonMonkey spew is extremely verbose (not as much as the INFER spew), but you can filter it to focus on the list of compiled scripts or channels, IonMonkey spew channels can be selected with the IONFLAGS environment variable, and compilation spew can be filtered with IONFILTER.
 
-IONFLAGS contains the names of [each channel separated by commas](https://searchfox.org/mozilla-central/source/js/src/jit/JitSpewer.cpp#338). The **logs** channel produces one file (_/tmp/ion.json_), made to be used with [iongraph](https://github.com/sstangl/iongraph) (made by Sean Stangl). This tool will show the MIR & LIR steps done by IonMonkey during the compilation. To use [iongraph](https://github.com/sstangl/iongraph), you must install [Graphviz](https://www.graphviz.org/download/ "graphviz downloads").
+IONFLAGS contains the names of [each channel separated by commas](https://searchfox.org/firefox-main/source/js/src/jit/JitSpewer.cpp#338). The **logs** channel produces one file (_/tmp/ion.json_), made to be used with [iongraph](https://github.com/sstangl/iongraph) (made by Sean Stangl). This tool will show the MIR & LIR steps done by IonMonkey during the compilation. To use [iongraph](https://github.com/sstangl/iongraph), you must install [Graphviz](https://www.graphviz.org/download/ "graphviz downloads").
 
 Compilation logs and spew can be filtered with the IONFILTER environment variable which contains locations as output by other spew channels. Multiple locations can be specified using comma as a separator.
 

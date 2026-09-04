@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -25,9 +23,9 @@
 #include "prsystem.h"
 
 #undef LOG
-#define LOG(arg, ...)                                                  \
-  DDMOZ_LOG(sPDMLog, mozilla::LogLevel::Debug, "::%s: " arg, __func__, \
-            ##__VA_ARGS__)
+#define LOG(arg, ...)                                                      \
+  DDMOZ_LOG_FMT(sPDMLog, mozilla::LogLevel::Debug, "::{}: " arg, __func__, \
+                ##__VA_ARGS__)
 
 namespace mozilla {
 
@@ -154,7 +152,7 @@ RefPtr<MediaDataDecoder::DecodePromise> VPXDecoder::ProcessDecode(
 
   if (vpx_codec_err_t r = vpx_codec_decode(&mVPX, aSample->Data(),
                                            aSample->Size(), nullptr, 0)) {
-    LOG("VPX Decode error: %s", vpx_codec_err_to_string(r));
+    LOG("VPX Decode error: {}", vpx_codec_err_to_string(r));
     return DecodePromise::CreateAndReject(
         MediaResult(NS_ERROR_DOM_MEDIA_DECODE_ERR,
                     RESULT_DETAIL("VPX error: %s", vpx_codec_err_to_string(r))),
@@ -240,15 +238,13 @@ RefPtr<MediaDataDecoder::DecodePromise> VPXDecoder::ProcessDecode(
     b.mColorRange = img->range == VPX_CR_FULL_RANGE ? gfx::ColorRange::FULL
                                                     : gfx::ColorRange::LIMITED;
 
-    RefPtr<VideoData> v;
+    Result<already_AddRefed<VideoData>, MediaResult> videoDataResult{
+        MediaResult()};
     if (!img_alpha) {
-      Result<already_AddRefed<VideoData>, MediaResult> r =
-          VideoData::CreateAndCopyData(
-              mInfo, mImageContainer, aSample->mOffset, aSample->mTime,
-              aSample->mDuration, b, aSample->mKeyframe, aSample->mTimecode,
-              mInfo.ScaledImageRect(img->d_w, img->d_h), mImageAllocator);
-      // TODO: Reject DecodePromise below with r's error return.
-      v = r.unwrapOr(nullptr);
+      videoDataResult = VideoData::CreateAndCopyData(
+          mInfo, mImageContainer, aSample->mOffset, aSample->mTime,
+          aSample->mDuration, b, aSample->mKeyframe, aSample->mTimecode,
+          mInfo.ScaledImageRect(img->d_w, img->d_h), mImageAllocator);
     } else {
       VideoData::YCbCrBuffer::Plane alpha_plane;
       alpha_plane.mData = img_alpha->planes[0];
@@ -256,19 +252,19 @@ RefPtr<MediaDataDecoder::DecodePromise> VPXDecoder::ProcessDecode(
       alpha_plane.mHeight = img_alpha->d_h;
       alpha_plane.mWidth = img_alpha->d_w;
       alpha_plane.mSkip = 0;
-      v = VideoData::CreateAndCopyData(
+      videoDataResult = VideoData::CreateAndCopyData(
           mInfo, mImageContainer, aSample->mOffset, aSample->mTime,
           aSample->mDuration, b, alpha_plane, aSample->mKeyframe,
           aSample->mTimecode, mInfo.ScaledImageRect(img->d_w, img->d_h));
     }
-
-    if (!v) {
-      LOG("Image allocation error source %ux%u display %ux%u picture %ux%u",
+    if (videoDataResult.isErr()) {
+      LOG("Image allocation error source {}x{} display {}x{} picture {}x{}",
           img->d_w, img->d_h, mInfo.mDisplay.width, mInfo.mDisplay.height,
           mInfo.mImage.width, mInfo.mImage.height);
-      return DecodePromise::CreateAndReject(
-          MediaResult(NS_ERROR_OUT_OF_MEMORY, __func__), __func__);
+      return DecodePromise::CreateAndReject(videoDataResult.unwrapErr(),
+                                            __func__);
     }
+    RefPtr<VideoData> v = videoDataResult.unwrap();
 
     rec.apply([&](auto& aRec) {
       return aRec.Record([&](DecodeStage& aStage) {
@@ -316,7 +312,7 @@ MediaResult VPXDecoder::DecodeAlpha(vpx_image_t** aImgAlpha,
   vpx_codec_err_t r = vpx_codec_decode(&mVPXAlpha, aSample->AlphaData(),
                                        aSample->AlphaSize(), nullptr, 0);
   if (r) {
-    LOG("VPX decode alpha error: %s", vpx_codec_err_to_string(r));
+    LOG("VPX decode alpha error: {}", vpx_codec_err_to_string(r));
     return MediaResult(NS_ERROR_DOM_MEDIA_DECODE_ERR,
                        RESULT_DETAIL("VPX decode alpha error: %s",
                                      vpx_codec_err_to_string(r)));

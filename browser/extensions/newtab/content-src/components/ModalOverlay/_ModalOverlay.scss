@@ -1,10 +1,15 @@
 .modalOverlayOuter {
   border: none;
-  box-shadow: var(--box-shadow-popup);
+  box-shadow: var(--popup-box-shadow);
   padding: 0;
   border-radius: var(--border-radius-medium);
 
   &::backdrop {
     background: var(--newtab-overlay-color);
+  }
+
+  .nova-enabled & {
+    // @nova-cleanup(merge-styles): Merge into .modalOverlayOuter
+    border-radius: var(--border-radius-large);
   }
 }

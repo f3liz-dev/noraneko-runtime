@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -25,11 +23,12 @@ class WinFileDialogChild : public PWinFileDialogChild {
  public:
   using FileResolver = PWinFileDialogChild::ShowFileDialogResolver;
   IPCResult RecvShowFileDialog(uintptr_t parentHwnd, FileDialogType,
-                               nsTArray<Command>, FileResolver&&);
+                               nsTArray<Command>, bool needsInputProtection,
+                               FileResolver&&);
 
   using FolderResolver = PWinFileDialogChild::ShowFolderDialogResolver;
   IPCResult RecvShowFolderDialog(uintptr_t parentHwnd, nsTArray<Command>,
-                                 FolderResolver&&);
+                                 bool needsInputProtection, FolderResolver&&);
 
  private:
   ~WinFileDialogChild();

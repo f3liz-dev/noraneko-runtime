@@ -1,24 +1,37 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "DataChannelDcSctp.h"
-#include "mozilla/Components.h"
-#include "mozilla/RandomNum.h"
+
+#include <algorithm>
+
 #include "DataChannelLog.h"
+#include "mozilla/Components.h"
+#include "mozilla/Maybe.h"
+#include "mozilla/RandomNum.h"
+#include "mozilla/dom/PMediaTransport.h"
+#include "mozilla/dom/RTCErrorBinding.h"
 #include "transport/runnable_utils.h"
 
 namespace mozilla {
+
+// dcsctp announces the full SCTP stream range up front (see DcSctpOptions'
+// announced_maximum_*_streams, which default to this) and does not support
+// RFC6525 Add-Streams renegotiation. Streams 0..kDcSctpMaxStreams-1 are usable.
+static constexpr uint16_t kDcSctpMaxStreams = 65535;
 
 DataChannelConnectionDcSctp::DataChannelConnectionDcSctp(
     DataConnectionListener* aListener, nsISerialEventTarget* aTarget,
     MediaTransportHandler* aHandler)
     : DataChannelConnection(aListener, aTarget, aHandler) {
-  // dcsctp does not expose anything related to negotiation of maximum stream
-  // id.
-  mNegotiatedIdLimit = MAX_NUM_STREAMS;
+  // We do not second-guess dcsctp's limit here. This is tightened to the
+  // negotiated value in OnConnected().
+  mNegotiatedIdLimit = kDcSctpMaxStreams;
+}
+
+uint16_t DataChannelConnectionDcSctp::GetStreamIdCeiling() const {
+  return kDcSctpMaxStreams;
 }
 
 void DataChannelConnectionDcSctp::Destroy() {
@@ -39,8 +52,9 @@ void DataChannelConnectionDcSctp::Destroy() {
 bool DataChannelConnectionDcSctp::RaiseStreamLimitTo(uint16_t aNewLimit) {
   MOZ_ASSERT(mSTS->IsOnCurrentThread());
   DC_DEBUG(("%s: %p", __func__, this));
-  // dcsctp does not expose anything related to negotiation of maximum stream
-  // id. It probably just negotiates 65534. Just smile and nod.
+  // dcsctp announces the maximum number of streams up front and does not
+  // support RFC6525 Add-Streams renegotiation, so there is never anything to
+  // raise. Just smile and nod.
   return true;
 }
 
@@ -148,7 +162,7 @@ void DataChannelConnectionDcSctp::OnSctpPacketReceived(
   if (!mDcSctp) {
     return;
   }
-  webrtc::ArrayView<const uint8_t> data(aPacket.data(), aPacket.len());
+  std::span<const uint8_t> data(aPacket.data(), aPacket.len());
   mDcSctp->ReceivePacket(data);
 }
 
@@ -163,8 +177,7 @@ bool DataChannelConnectionDcSctp::ResetStreams(nsTArray<uint16_t>& aStreams) {
     DC_DEBUG(("%s: %p Resetting %u", __func__, this, id));
     converted.push_back(StreamID(id));
   }
-  auto result =
-      mDcSctp->ResetStreams(webrtc::ArrayView<const StreamID>(converted));
+  auto result = mDcSctp->ResetStreams(std::span<const StreamID>(converted));
   aStreams.Clear();
   return result == ResetStreamsStatus::kPerformed;
 }
@@ -183,7 +196,7 @@ void DataChannelConnectionDcSctp::OnStreamOpen(uint16_t aStream) {
 }
 
 SendPacketStatus DataChannelConnectionDcSctp::SendPacketWithStatus(
-    webrtc::ArrayView<const uint8_t> aData) {
+    std::span<const uint8_t> aData) {
   MOZ_ASSERT(mSTS->IsOnCurrentThread());
   DC_DEBUG(("%s: %p", __func__, this));
   std::unique_ptr<MediaPacket> packet(new MediaPacket);
@@ -296,7 +309,13 @@ void DataChannelConnectionDcSctp::OnAborted(ErrorKind aError,
   MOZ_ASSERT(mSTS->IsOnCurrentThread());
   DC_ERROR(("%s: %p %d %s", __func__, this, static_cast<int>(aError),
             std::string(aMessage).c_str()));
-  CloseAll_s();
+  // The SCTP association was aborted; surface this to content as an
+  // "sctp-failure" RTCError on the data channels. dcSCTP exposes only its own
+  // ErrorKind (not a numeric SCTP cause code), so sctpCauseCode is left unset.
+  dom::RTCErrorParams params;
+  params.errorInit().mErrorDetail = dom::RTCErrorDetailType::Sctp_failure;
+  params.message() = nsCString(aMessage.data(), aMessage.length());
+  CloseAll_s(Some(std::move(params)));
 }
 
 void DataChannelConnectionDcSctp::OnConnected() {
@@ -305,6 +324,17 @@ void DataChannelConnectionDcSctp::OnConnected() {
   DataChannelConnectionState state = GetState();
   // TODO: Some duplicate code here, refactor
   if (state == DataChannelConnectionState::Connecting) {
+    // The negotiated stream counts are now known. maxChannels is the minimum
+    // of the negotiated incoming and outgoing streams; this tightens our id
+    // limit if the peer announced fewer streams than we did.
+    // Must happen before SetState(Open), which dispatches the
+    // NotifySctpConnected that carries maxChannels to DOM.
+    if (std::optional<dcsctp::Metrics> metrics = mDcSctp->GetMetrics()) {
+      mNegotiatedIdLimit =
+          std::min(metrics->negotiated_maximum_incoming_streams,
+                   metrics->negotiated_maximum_outgoing_streams);
+    }
+
     SetState(DataChannelConnectionState::Open);
 
     OnConnected();
@@ -337,8 +367,7 @@ void DataChannelConnectionDcSctp::OnConnectionRestarted() {
 }
 
 void DataChannelConnectionDcSctp::OnStreamsResetFailed(
-    webrtc::ArrayView<const StreamID> aOutgoingStreams,
-    absl::string_view aReason) {
+    std::span<const StreamID> aOutgoingStreams, absl::string_view aReason) {
   MOZ_ASSERT(mSTS->IsOnCurrentThread());
   DC_ERROR(("%s: %p", __func__, this));
   // It probably does not make much sense to retry this here. If dcsctp doesn't
@@ -352,7 +381,7 @@ void DataChannelConnectionDcSctp::OnStreamsResetFailed(
 }
 
 void DataChannelConnectionDcSctp::OnStreamsResetPerformed(
-    webrtc::ArrayView<const StreamID> aOutgoingStreams) {
+    std::span<const StreamID> aOutgoingStreams) {
   MOZ_ASSERT(mSTS->IsOnCurrentThread());
   DC_DEBUG(("%s: %p", __func__, this));
   std::vector<uint16_t> streamsReset;
@@ -363,7 +392,7 @@ void DataChannelConnectionDcSctp::OnStreamsResetPerformed(
 }
 
 void DataChannelConnectionDcSctp::OnIncomingStreamsReset(
-    webrtc::ArrayView<const StreamID> aIncomingStreams) {
+    std::span<const StreamID> aIncomingStreams) {
   MOZ_ASSERT(mSTS->IsOnCurrentThread());
   DC_DEBUG(("%s: %p", __func__, this));
   std::vector<uint16_t> streamsReset;

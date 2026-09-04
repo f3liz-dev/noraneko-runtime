@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 40; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -148,6 +147,13 @@ class nsICanvasRenderingContextInternal : public nsISupports,
 
   virtual RefPtr<mozilla::gfx::SourceSurface> GetFrontBufferSnapshot(bool) {
     return GetSurfaceSnapshot();
+  }
+
+  virtual bool SupportAsyncSnapshot() { return false; };
+
+  virtual RefPtr<mozilla::dom::HTMLCanvasElement::SurfaceSnapshotPromise>
+  GetSurfaceSnapshotAsync() {
+    return nullptr;
   }
 
   // If this is called with true, the backing store of the canvas should

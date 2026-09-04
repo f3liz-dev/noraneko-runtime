@@ -15,13 +15,12 @@
 #include <stdint.h>
 
 #include <functional>
-#include <map>
 #include <memory>
 #include <optional>
-#include <set>
 #include <string>
 #include <vector>
 
+#include "absl/functional/any_invocable.h"
 #include "absl/strings/string_view.h"
 #include "api/audio_options.h"
 #include "api/candidate.h"
@@ -39,10 +38,12 @@
 #include "api/set_remote_description_observer_interface.h"
 #include "api/uma_metrics.h"
 #include "api/video/video_bitrate_allocator_factory.h"
+#include "call/payload_type.h"
 #include "media/base/media_channel.h"
 #include "media/base/media_engine.h"
 #include "media/base/stream_params.h"
 #include "p2p/base/port_allocator.h"
+#include "p2p/base/transport_description.h"
 #include "pc/codec_vendor.h"
 #include "pc/connection_context.h"
 #include "pc/data_channel_controller.h"
@@ -53,20 +54,28 @@
 #include "pc/rtp_receiver.h"
 #include "pc/rtp_transceiver.h"
 #include "pc/rtp_transmission_manager.h"
+#include "pc/scoped_operations_batcher.h"
+#include "pc/sdp_payload_type_suggester.h"
 #include "pc/sdp_state_provider.h"
 #include "pc/session_description.h"
 #include "pc/stream_collection.h"
 #include "pc/transceiver_list.h"
 #include "pc/webrtc_session_description_factory.h"
+#include "rtc_base/checks.h"
+#include "rtc_base/containers/flat_map.h"
+#include "rtc_base/containers/flat_set.h"
 #include "rtc_base/operations_chain.h"
 #include "rtc_base/rtc_certificate_generator.h"
 #include "rtc_base/ssl_stream_adapter.h"
+#include "rtc_base/system/plan_b_only.h"
 #include "rtc_base/thread.h"
 #include "rtc_base/thread_annotations.h"
 #include "rtc_base/unique_id_generator.h"
 #include "rtc_base/weak_ptr.h"
 
 namespace webrtc {
+
+class ScopedOperationsBatcher;
 
 // SdpOfferAnswerHandler is a component
 // of the PeerConnection object as defined
@@ -77,13 +86,12 @@ namespace webrtc {
 // This class lives on the signaling thread.
 class SdpOfferAnswerHandler : public SdpStateProvider {
  public:
-  ~SdpOfferAnswerHandler();
+  ~SdpOfferAnswerHandler() override;
 
   // Creates an SdpOfferAnswerHandler. Modifies dependencies.
   static std::unique_ptr<SdpOfferAnswerHandler> Create(
       const Environment& env,
       PeerConnectionSdpMethods* pc,
-      const PeerConnectionInterface::RTCConfiguration& configuration,
       std::unique_ptr<RTCCertificateGeneratorInterface> cert_generator,
       std::unique_ptr<webrtc::VideoBitrateAllocatorFactory>
           video_bitrate_allocator_factory,
@@ -98,6 +106,14 @@ class SdpOfferAnswerHandler : public SdpStateProvider {
     RTC_DCHECK_RUN_ON(signaling_thread());
     return webrtc_session_desc_factory_.get();
   }
+
+  VideoBitrateAllocatorFactory* video_bitrate_allocator_factory() const {
+    RTC_DCHECK_RUN_ON(signaling_thread());
+    return video_bitrate_allocator_factory_.get();
+  }
+
+  const AudioOptions& audio_options() const { return audio_options_; }
+  const VideoOptions& video_options() const { return video_options_; }
 
   // Change signaling state to Closed, and perform appropriate actions.
   void Close();
@@ -136,19 +152,23 @@ class SdpOfferAnswerHandler : public SdpStateProvider {
       scoped_refptr<SetLocalDescriptionObserverInterface> observer);
   void SetLocalDescription(
       scoped_refptr<SetLocalDescriptionObserverInterface> observer);
-  void SetLocalDescription(SetSessionDescriptionObserver* observer,
-                           SessionDescriptionInterface* desc);
-  void SetLocalDescription(SetSessionDescriptionObserver* observer);
+  void SetLocalDescription(
+      scoped_refptr<SetSessionDescriptionObserver> observer,
+      std::unique_ptr<SessionDescriptionInterface> desc);
+  void SetLocalDescription(
+      scoped_refptr<SetSessionDescriptionObserver> observer);
 
   void SetRemoteDescription(
       std::unique_ptr<SessionDescriptionInterface> desc,
       scoped_refptr<SetRemoteDescriptionObserverInterface> observer);
-  void SetRemoteDescription(SetSessionDescriptionObserver* observer,
-                            SessionDescriptionInterface* desc);
+  void SetRemoteDescription(
+      scoped_refptr<SetSessionDescriptionObserver> observer,
+      std::unique_ptr<SessionDescriptionInterface> desc);
 
   PeerConnectionInterface::RTCConfiguration GetConfiguration();
   RTCError SetConfiguration(
       const PeerConnectionInterface::RTCConfiguration& configuration);
+  void UpdateCachedIceCredentials(std::vector<IceParameters> credentials);
   bool AddIceCandidate(const IceCandidate* candidate);
   void AddIceCandidate(std::unique_ptr<IceCandidate> candidate,
                        std::function<void(RTCError)> callback);
@@ -159,11 +179,15 @@ class SdpOfferAnswerHandler : public SdpStateProvider {
                                 const std::vector<Candidate>& candidates);
   bool ShouldFireNegotiationNeededEvent(uint32_t event_id);
 
-  bool AddStream(MediaStreamInterface* local_stream);
-  void RemoveStream(MediaStreamInterface* local_stream);
+  PLAN_B_ONLY bool AddStream(MediaStreamInterface* local_stream);
+  PLAN_B_ONLY void RemoveStream(MediaStreamInterface* local_stream);
 
   std::optional<bool> is_caller() const;
   bool HasNewIceCredentials();
+  // Updates the negotiation needed flag and generates the onnegotiationneeded
+  // event if needed. Also increments the internal state version counter, which
+  // is used to invalidate cached/unapplied offers or answers when state
+  // changes.
   void UpdateNegotiationNeeded();
   void AllocateSctpSids();
   // Based on the negotiation state, guess what the SSLRole might be without
@@ -172,11 +196,15 @@ class SdpOfferAnswerHandler : public SdpStateProvider {
   // See also `InternalDataChannelInit::fallback_ssl_role`.
   std::optional<SSLRole> GuessSslRole() const;
 
-  // Destroys all media BaseChannels.
-  void DestroyMediaChannels();
+  // Gathers tasks from all transceivers to tear down the state that
+  // belongs to the network and worker threads.
+  // The caller is responsible for invoking the callbacks on the correct threads
+  // in the order 1st network thread, 2nd worker thread.
+  void GetMediaChannelTeardownTasks(ScopedOperationsBatcher& network_tasks,
+                                    ScopedOperationsBatcher& worker_tasks);
 
-  scoped_refptr<StreamCollectionInterface> local_streams();
-  scoped_refptr<StreamCollectionInterface> remote_streams();
+  PLAN_B_ONLY scoped_refptr<StreamCollectionInterface> local_streams();
+  PLAN_B_ONLY scoped_refptr<StreamCollectionInterface> remote_streams();
 
   bool initial_offerer() {
     RTC_DCHECK_RUN_ON(signaling_thread());
@@ -190,6 +218,7 @@ class SdpOfferAnswerHandler : public SdpStateProvider {
   void DisableSdpMungingChecksForTesting() {
     disable_sdp_munging_checks_ = true;
   }
+  PayloadTypeSuggester* pt_suggester() { return &pt_suggester_; }
 
  private:
   class RemoteDescriptionOperation;
@@ -221,7 +250,6 @@ class SdpOfferAnswerHandler : public SdpStateProvider {
   // Called from the `Create()` function. Can only be called
   // once. Modifies dependencies.
   void Initialize(
-      const PeerConnectionInterface::RTCConfiguration& configuration,
       std::unique_ptr<RTCCertificateGeneratorInterface> cert_generator,
       std::unique_ptr<webrtc::VideoBitrateAllocatorFactory>
           video_bitrate_allocator_factory,
@@ -247,7 +275,7 @@ class SdpOfferAnswerHandler : public SdpStateProvider {
   // that return an RTCError instead of invoking a callback.
   RTCError ApplyLocalDescription(
       std::unique_ptr<SessionDescriptionInterface> desc,
-      const std::map<std::string, const ContentGroup*>& bundle_groups_by_mid);
+      const flat_map<std::string, const ContentGroup*>& bundle_groups_by_mid);
   void ApplyRemoteDescription(
       std::unique_ptr<RemoteDescriptionOperation> operation);
 
@@ -260,8 +288,12 @@ class SdpOfferAnswerHandler : public SdpStateProvider {
   // Part of ApplyRemoteDescription steps specific to Unified Plan.
   void ApplyRemoteDescriptionUpdateTransceiverState(SdpType sdp_type);
 
+  // Updates sender SSRCs and init send encodings from transceivers.
+  // Part of ApplyLocalDescription steps specific to Unified Plan.
+  void UpdateSenderSsrcsFromLocalDescription() RTC_RUN_ON(signaling_thread());
+
   // Part of ApplyRemoteDescription steps specific to plan b.
-  void PlanBUpdateSendersAndReceivers(
+  PLAN_B_ONLY void PlanBUpdateSendersAndReceivers(
       const ContentInfo* audio_content,
       const AudioContentDescription* audio_desc,
       const ContentInfo* video_content,
@@ -294,22 +326,22 @@ class SdpOfferAnswerHandler : public SdpStateProvider {
       SdpType type,
       ContentSource source,
       const SessionDescription* description,
-      const std::map<std::string, const ContentGroup*>& bundle_groups_by_mid);
+      const flat_map<std::string, const ContentGroup*>& bundle_groups_by_mid);
 
   bool IsUnifiedPlan() const;
 
   // Signals from MediaStreamObserver.
-  void OnAudioTrackAdded(AudioTrackInterface* track,
-                         MediaStreamInterface* stream)
+  PLAN_B_ONLY void OnAudioTrackAdded(AudioTrackInterface* track,
+                                     MediaStreamInterface* stream)
       RTC_RUN_ON(signaling_thread());
-  void OnAudioTrackRemoved(AudioTrackInterface* track,
-                           MediaStreamInterface* stream)
+  PLAN_B_ONLY void OnAudioTrackRemoved(AudioTrackInterface* track,
+                                       MediaStreamInterface* stream)
       RTC_RUN_ON(signaling_thread());
-  void OnVideoTrackAdded(VideoTrackInterface* track,
-                         MediaStreamInterface* stream)
+  PLAN_B_ONLY void OnVideoTrackAdded(VideoTrackInterface* track,
+                                     MediaStreamInterface* stream)
       RTC_RUN_ON(signaling_thread());
-  void OnVideoTrackRemoved(VideoTrackInterface* track,
-                           MediaStreamInterface* stream)
+  PLAN_B_ONLY void OnVideoTrackRemoved(VideoTrackInterface* track,
+                                       MediaStreamInterface* stream)
       RTC_RUN_ON(signaling_thread());
 
   // | desc_type | is the type of the description that caused the rollback.
@@ -330,7 +362,7 @@ class SdpOfferAnswerHandler : public SdpStateProvider {
   RTCError ValidateSessionDescription(
       const SessionDescriptionInterface* sdesc,
       ContentSource source,
-      const std::map<std::string, const ContentGroup*>& bundle_groups_by_mid)
+      const flat_map<std::string, const ContentGroup*>& bundle_groups_by_mid)
       RTC_RUN_ON(signaling_thread());
 
   // Updates the local RtpTransceivers according to the JSEP rules. Called as
@@ -340,7 +372,7 @@ class SdpOfferAnswerHandler : public SdpStateProvider {
       const SessionDescriptionInterface& new_session,
       const SessionDescriptionInterface* old_local_description,
       const SessionDescriptionInterface* old_remote_description,
-      const std::map<std::string, const ContentGroup*>& bundle_groups_by_mid);
+      const flat_map<std::string, const ContentGroup*>& bundle_groups_by_mid);
 
   // Associate the given transceiver according to the JSEP rules.
   RTCErrorOr<scoped_refptr<RtpTransceiverProxyWithInternal<RtpTransceiver>>>
@@ -362,11 +394,15 @@ class SdpOfferAnswerHandler : public SdpStateProvider {
 
   // Either creates or destroys the transceiver's BaseChannel according to the
   // given media section.
-  RTCError UpdateTransceiverChannel(
+  void UpdateTransceiverChannel(
       scoped_refptr<RtpTransceiverProxyWithInternal<RtpTransceiver>>
           transceiver,
       const ContentInfo& content,
-      const ContentGroup* bundle_group) RTC_RUN_ON(signaling_thread());
+      const ContentGroup* bundle_group,
+      ScopedOperationsBatcher& network_teardown_tasks,
+      ScopedOperationsBatcher& worker_tasks,
+      ScopedOperationsBatcher& network_init_tasks)
+      RTC_RUN_ON(signaling_thread());
 
   // Either creates or destroys the local data channel according to the given
   // media section.
@@ -397,7 +433,7 @@ class SdpOfferAnswerHandler : public SdpStateProvider {
   void GetOptionsForOffer(const PeerConnectionInterface::RTCOfferAnswerOptions&
                               offer_answer_options,
                           MediaSessionOptions* session_options);
-  void GetOptionsForPlanBOffer(
+  PLAN_B_ONLY void GetOptionsForPlanBOffer(
       const PeerConnectionInterface::RTCOfferAnswerOptions&
           offer_answer_options,
       MediaSessionOptions* session_options) RTC_RUN_ON(signaling_thread());
@@ -411,7 +447,7 @@ class SdpOfferAnswerHandler : public SdpStateProvider {
   void GetOptionsForAnswer(const PeerConnectionInterface::RTCOfferAnswerOptions&
                                offer_answer_options,
                            MediaSessionOptions* session_options);
-  void GetOptionsForPlanBAnswer(
+  PLAN_B_ONLY void GetOptionsForPlanBAnswer(
       const PeerConnectionInterface::RTCOfferAnswerOptions&
           offer_answer_options,
       MediaSessionOptions* session_options) RTC_RUN_ON(signaling_thread());
@@ -458,14 +494,15 @@ class SdpOfferAnswerHandler : public SdpStateProvider {
 
   // Remove all local and remote senders of type `media_type`.
   // Called when a media type is rejected (m-line set to port 0).
-  void RemoveSenders(webrtc::MediaType media_type);
+  PLAN_B_ONLY void RemoveSenders(webrtc::MediaType media_type);
 
   // Loops through the vector of `streams` and finds added and removed
   // StreamParams since last time this method was called.
   // For each new or removed StreamParam, OnLocalSenderSeen or
   // OnLocalSenderRemoved is invoked.
-  void UpdateLocalSenders(const std::vector<StreamParams>& streams,
-                          webrtc::MediaType media_type);
+  PLAN_B_ONLY void UpdateLocalSendersPlanB(
+      const std::vector<StreamParams>& streams,
+      webrtc::MediaType media_type);
 
   // Makes sure a MediaStreamTrack is created for each StreamParam in `streams`,
   // and existing MediaStreamTracks are removed if there is no corresponding
@@ -473,10 +510,11 @@ class SdpOfferAnswerHandler : public SdpStateProvider {
   // is created if it doesn't exist; if false, it's removed if it exists.
   // `media_type` is the type of the `streams` and can be either audio or video.
   // If a new MediaStream is created it is added to `new_streams`.
-  void UpdateRemoteSendersList(const std::vector<StreamParams>& streams,
-                               bool default_track_needed,
-                               webrtc::MediaType media_type,
-                               StreamCollection* new_streams);
+  PLAN_B_ONLY void UpdateRemoteSendersListPlanB(
+      const std::vector<StreamParams>& streams,
+      bool default_track_needed,
+      webrtc::MediaType media_type,
+      StreamCollection* new_streams);
 
   // Enables media channels to allow sending of media.
   // This enables media to flow on all configured audio/video channels.
@@ -486,7 +524,7 @@ class SdpOfferAnswerHandler : public SdpStateProvider {
   RTCError PushdownMediaDescription(
       SdpType type,
       ContentSource source,
-      const std::map<std::string, const ContentGroup*>& bundle_groups_by_mid);
+      const flat_map<std::string, const ContentGroup*>& bundle_groups_by_mid);
 
   RTCError PushdownTransportDescription(ContentSource source, SdpType type);
   // Helper function to remove stopped transceivers.
@@ -526,7 +564,7 @@ class SdpOfferAnswerHandler : public SdpStateProvider {
   // Allocates media channels based on the `desc`. If `desc` doesn't have
   // the BUNDLE option, this method will disable BUNDLE in PortAllocator.
   // This method will also delete any existing media channels before creating.
-  RTCError CreateChannels(const SessionDescription& desc);
+  PLAN_B_ONLY RTCError CreateChannels(const SessionDescription& desc);
 
   // Generates MediaDescriptionOptions for the `session_opts` based on existing
   // local description or remote description.
@@ -542,18 +580,19 @@ class SdpOfferAnswerHandler : public SdpStateProvider {
   // Generates the active MediaDescriptionOptions for the local data channel
   // given the specified MID.
   MediaDescriptionOptions GetMediaDescriptionOptionsForActiveData(
-      const std::string& mid) const;
+      absl::string_view mid) const;
 
   // Generates the rejected MediaDescriptionOptions for the local data channel
   // given the specified MID.
   MediaDescriptionOptions GetMediaDescriptionOptionsForRejectedData(
-      const std::string& mid) const;
+      absl::string_view mid) const;
 
   // Based on number of transceivers per media type, enabled or disable
   // payload type based demuxing in the affected channels.
-  bool UpdatePayloadTypeDemuxingState(
+  void UpdatePayloadTypeDemuxingState(
       ContentSource source,
-      const std::map<std::string, const ContentGroup*>& bundle_groups_by_mid);
+      const flat_map<std::string, const ContentGroup*>& bundle_groups_by_mid,
+      ScopedOperationsBatcher& worker_tasks);
 
   // Updates the error state, signaling if necessary.
   void SetSessionError(SessionError error, const std::string& error_desc);
@@ -589,8 +628,7 @@ class SdpOfferAnswerHandler : public SdpStateProvider {
   const JsepTransportController* transport_controller_n() const
       RTC_RUN_ON(network_thread());
   // ===================================================================
-  const AudioOptions& audio_options() { return audio_options_; }
-  const VideoOptions& video_options() { return video_options_; }
+
   bool ConfiguredForMedia() const;
 
   const Environment& env_;
@@ -608,10 +646,26 @@ class SdpOfferAnswerHandler : public SdpStateProvider {
       RTC_GUARDED_BY(signaling_thread());
   std::unique_ptr<SessionDescriptionInterface> pending_remote_description_
       RTC_GUARDED_BY(signaling_thread());
+  // The last generated offer and answer, cached for reuse by parameterless
+  // SetLocalDescription.
   std::unique_ptr<SessionDescriptionInterface> last_created_offer_
       RTC_GUARDED_BY(signaling_thread());
   std::unique_ptr<SessionDescriptionInterface> last_created_answer_
       RTC_GUARDED_BY(signaling_thread());
+  // Monotonically increasing version counter that tracks changes to the
+  // PeerConnection's negotiation state.
+  uint64_t state_version_ RTC_GUARDED_BY(signaling_thread()) = 0;
+  // The state version at the time the last offer or answer was created.
+  // Used to determine if the cached offer or answer is still valid (i.e.
+  // matches the current state version).
+  uint64_t last_created_offer_version_ RTC_GUARDED_BY(signaling_thread()) = 0;
+  uint64_t last_created_answer_version_ RTC_GUARDED_BY(signaling_thread()) = 0;
+#if RTC_DCHECK_IS_ON
+  PeerConnectionInterface::RTCOfferAnswerOptions last_created_offer_options_
+      RTC_GUARDED_BY(signaling_thread());
+  PeerConnectionInterface::RTCOfferAnswerOptions last_created_answer_options_
+      RTC_GUARDED_BY(signaling_thread());
+#endif
   SdpMungingType last_sdp_munging_type_ = SdpMungingType::kNoModification;
 
   PeerConnectionInterface::SignalingState signaling_state_
@@ -647,7 +701,7 @@ class SdpOfferAnswerHandler : public SdpStateProvider {
   UniqueStringGenerator mid_generator_ RTC_GUARDED_BY(signaling_thread());
 
   // List of content names for which the remote side triggered an ICE restart.
-  std::set<std::string> pending_ice_restarts_
+  flat_set<std::string> pending_ice_restarts_
       RTC_GUARDED_BY(signaling_thread());
 
   std::unique_ptr<LocalIceCredentialsToReplace>
@@ -678,8 +732,10 @@ class SdpOfferAnswerHandler : public SdpStateProvider {
   std::string session_error_desc_ RTC_GUARDED_BY(signaling_thread());
 
   // Member variables for caching global options.
-  AudioOptions audio_options_ RTC_GUARDED_BY(signaling_thread());
-  VideoOptions video_options_ RTC_GUARDED_BY(signaling_thread());
+  const AudioOptions audio_options_;
+  const VideoOptions video_options_;
+  std::vector<IceParameters> cached_pooled_ice_credentials_
+      RTC_GUARDED_BY(signaling_thread());
 
   // A video bitrate allocator factory.
   // This can be injected using the PeerConnectionDependencies,
@@ -701,6 +757,21 @@ class SdpOfferAnswerHandler : public SdpStateProvider {
 
   // Whether the username fragment or the password of the SDP was munged.
   bool has_sdp_munged_ufrag_ = false;
+
+  SdpPayloadTypeSuggester pt_suggester_;
+
+  int max_sctp_streams_;
+
+#if RTC_DCHECK_IS_ON
+  // Generates a new offer in the background and structurally compares it with
+  // the cached `last_created_offer_` to verify cache validity.
+  void VerifyCachedOffer(absl::AnyInvocable<void() &&> on_verified)
+      RTC_RUN_ON(signaling_thread());
+  // Generates a new answer in the background and structurally compares it with
+  // the cached `last_created_answer_` to verify cache validity.
+  void VerifyCachedAnswer(absl::AnyInvocable<void() &&> on_verified)
+      RTC_RUN_ON(signaling_thread());
+#endif
 
   WeakPtrFactory<SdpOfferAnswerHandler> weak_ptr_factory_
       RTC_GUARDED_BY(signaling_thread());

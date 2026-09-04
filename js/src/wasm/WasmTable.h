@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- *
+/*
  * Copyright 2016 Mozilla Foundation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -26,8 +24,7 @@ namespace js {
 namespace wasm {
 
 // A Table is an indexable array of opaque values. Tables are first-class
-// stateful objects exposed to WebAssembly. asm.js also uses Tables to represent
-// its homogeneous function-pointer tables.
+// stateful objects exposed to WebAssembly.
 //
 // A table of FuncRef holds FunctionTableElems, which are (code*,instance*)
 // pairs, where the instance must be traced.
@@ -48,7 +45,6 @@ class Table : public ShareableBase<Table> {
   TableAnyRefVector objects_;  // or objects_, but not both
   const AddressType addressType_;
   const RefType elemType_;
-  const bool isAsmJS_;
   uint32_t length_;
   const mozilla::Maybe<uint64_t> maximum_;
 
@@ -71,11 +67,6 @@ class Table : public ShareableBase<Table> {
   AddressType addressType() const { return addressType_; }
   RefType elemType() const { return elemType_; }
   TableRepr repr() const { return elemType_.tableRepr(); }
-
-  bool isAsmJS() const {
-    MOZ_ASSERT(elemType_.isFuncHierarchy());
-    return isAsmJS_;
-  }
 
   bool isFunction() const { return elemType().isFuncHierarchy(); }
   uint32_t length() const { return length_; }
@@ -111,9 +102,8 @@ class Table : public ShareableBase<Table> {
   void setNull(uint32_t address);
 
   // Copy entry from |srcTable| at |srcIndex| to this table at |dstIndex|.  Used
-  // by table.copy.  May OOM if it needs to box up a function during an upcast.
-  [[nodiscard]] bool copy(JSContext* cx, const Table& srcTable,
-                          uint32_t dstIndex, uint32_t srcIndex);
+  // by table.copy.
+  void copy(const Table& srcTable, uint32_t dstIndex, uint32_t srcIndex);
 
   // grow() returns (uint32_t)-1 if it could not grow.
   [[nodiscard]] uint32_t grow(uint32_t delta);

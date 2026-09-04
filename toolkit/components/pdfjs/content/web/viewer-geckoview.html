@@ -1,4 +1,4 @@
-﻿<!doctype html>
+<!doctype html>
 <!--
 Copyright 2012 Mozilla Foundation
 
@@ -25,6 +25,11 @@ See https://github.com/adobe-type-tools/cmap-resources
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
     <title>PDF.js viewer</title>
+
+  <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src resource: 'wasm-unsafe-eval'; worker-src resource:; style-src resource:; img-src resource: blob: data:; media-src blob:; font-src resource:; connect-src resource:; base-uri 'none'; form-action 'none';"
+    />
 
 <!-- This snippet is used in the Firefox extension (included from viewer.html) -->
 <script src="resource://pdf.js/build/pdf.mjs" type="module"></script>
@@ -59,10 +64,10 @@ See https://github.com/adobe-type-tools/cmap-resources
             <input type="password" id="password" class="toolbarField" />
           </div>
           <div class="buttonRow">
-            <button id="passwordCancel" class="dialogButton" type="button">
+            <button id="passwordCancel" class="secondaryButton" type="button">
               <span data-l10n-id="pdfjs-password-cancel-button"></span>
             </button>
-            <button id="passwordSubmit" class="dialogButton" type="button">
+            <button id="passwordSubmit" class="primaryButton" type="button">
               <span data-l10n-id="pdfjs-password-ok-button"></span>
             </button>
           </div>

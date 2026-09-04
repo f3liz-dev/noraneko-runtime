@@ -1,4 +1,3 @@
-# vim: set ts=8 sts=4 et sw=4 tw=99:
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -56,6 +55,7 @@ ignored_js_src_dirs = [
 # We ignore #includes of these files, because they don't follow the usual rules.
 included_inclnames_to_ignore = set([
     "ffi.h",  # generated in ctypes/libffi/
+    "builtin/intl/glue/Locale.h",  # generated
     "devtools/Instruments.h",  # we ignore devtools/ in general
     "double-conversion/double-conversion.h",  # strange MFBT case
     "frontend/ReservedWordsGenerated.h",  # generated in $OBJDIR
@@ -76,6 +76,7 @@ included_inclnames_to_ignore = set([
     "jit/LIROpsGenerated.h",  # generated in $OBJDIR
     "jit/MIROpsGenerated.h",  # generated in $OBJDIR
     "js/PrefsGenerated.h",  # generated in $OBJDIR
+    "js/normalizer_glue.h",  # generated
     "mozilla/ProfilingCategoryList.h",  # comes from mozglue/baseprofiler
     "mozilla/glue/Debug.h",  # comes from mozglue/misc, shadowed by <mozilla/Debug.h>
     "mozilla/glean/JsSrcMetrics.h",  # generated in $OBJDIR"
@@ -173,32 +174,11 @@ js/src/tests/style/BadIncludes.h:10: error:
 js/src/tests/style/BadIncludes2.h:1: error:
     vanilla header includes an inline-header file "tests/style/BadIncludes2-inl.h"
 
-js/src/tests/style/BadIncludesOrder-inl.h:5:6: error:
-    "vm/JSScript-inl.h" should be included after "vm/Interpreter-inl.h"
-
-js/src/tests/style/BadIncludesOrder-inl.h:6:7: error:
-    "vm/Interpreter-inl.h" should be included after "js/Value.h"
-
-js/src/tests/style/BadIncludesOrder-inl.h:7:8: error:
-    "js/Value.h" should be included after "ds/LifoAlloc.h"
-
 js/src/tests/style/BadIncludesOrder-inl.h:9: error:
     "jsapi.h" is deprecated: Prefer including headers from js/public.
 
-js/src/tests/style/BadIncludesOrder-inl.h:8:9: error:
-    "ds/LifoAlloc.h" should be included after "jsapi.h"
-
-js/src/tests/style/BadIncludesOrder-inl.h:9:10: error:
-    "jsapi.h" should be included after <stdio.h>
-
-js/src/tests/style/BadIncludesOrder-inl.h:10:11: error:
-    <stdio.h> should be included after "mozilla/HashFunctions.h"
-
-js/src/tests/style/BadIncludesOrder-inl.h:20: error:
+js/src/tests/style/BadIncludesOrder-inl.h:24: error:
     "jsapi.h" is deprecated: Prefer including headers from js/public.
-
-js/src/tests/style/BadIncludesOrder-inl.h:28:29: error:
-    "vm/JSScript.h" should be included after "vm/JSFunction.h"
 
 (multiple files): error:
     header files form one or more cycles
@@ -266,7 +246,7 @@ class FileKind:
         error(filename, None, "unknown file kind")
 
 
-def check_style(enable_fixup):
+def check_style():
     # We deal with two kinds of name.
     # - A "filename" is a full path to a file from the repository root.
     # - An "inclname" is how a file is referred to in a #include statement.
@@ -346,11 +326,6 @@ def check_style(enable_fixup):
             with open(filename, encoding="utf-8") as f:
                 code = read_file(f)
 
-            if enable_fixup:
-                code = code.sorted(inclname)
-                with open(filename, "w") as f:
-                    f.write(code.to_source())
-
             check_file(
                 filename, inclname, file_kind, code, all_inclnames, included_h_inclnames
             )
@@ -422,49 +397,11 @@ class Include:
         # style-checking algorithm in check_file.
         return True
 
-    def section(self, enclosing_inclname):
-        """Identify which section inclname belongs to.
-
-        The section numbers are as follows.
-          0. Module header (e.g. jsfoo.h or jsfoo-inl.h within jsfoo.cpp)
-          1. mozilla/Foo.h
-          2. <foo.h> or <foo>
-          3. jsfoo.h, prmjtime.h, etc
-          4. foo/Bar.h
-          5. foo/Bar-inl.h
-          6. non-.h, e.g. *.tbl, *.msg (these can be scattered throughout files)
-        """
-
-        if self.is_system:
-            return 2
-
-        if not self.inclname.endswith((".h", ".hpp")):
-            return 6
-
-        # A couple of modules have the .h file in js/ and the .cpp file elsewhere and so need
-        # special handling.
-        if is_module_header(enclosing_inclname, self.inclname):
-            return 0
-
-        if "/" in self.inclname:
-            if self.inclname.startswith("mozilla/"):
-                return 1
-
-            if self.inclname.endswith("-inl.h"):
-                return 5
-
-            return 4
-
-        return 3
-
     def quote(self):
         if self.is_system:
             return "<" + self.inclname + ">"
         else:
             return '"' + self.inclname + '"'
-
-    def sort_key(self, enclosing_inclname):
-        return (self.section(enclosing_inclname), self.inclname.lower())
 
     def to_source(self):
         return self.include_prefix + self.quote() + self.line_suffix + "\n"
@@ -496,92 +433,6 @@ class CppBlock:
     def style_relevant_kids(self):
         """Return a list of kids in this block that are style-relevant."""
         return [kid for kid in self.kids if kid.is_style_relevant()]
-
-    def sorted(self, enclosing_inclname):
-        """Return a hopefully-sorted copy of this block. Implements --fixup.
-
-        When in doubt, this leaves the code unchanged.
-        """
-
-        def pretty_sorted_includes(includes):
-            """Return a new list containing the given includes, in order,
-            with blank lines separating sections."""
-            keys = [inc.sort_key(enclosing_inclname) for inc in includes]
-            if sorted(keys) == keys:
-                return includes  # if nothing is out of order, don't touch anything
-
-            output = []
-            current_section = None
-            for (section, _), inc in sorted(zip(keys, includes)):
-                if current_section is not None and section != current_section:
-                    output.append(OrdinaryCode(["\n"]))  # blank line
-                output.append(inc)
-                current_section = section
-            return output
-
-        def should_try_to_sort(includes):
-            if "tests/style/BadIncludes" in enclosing_inclname:
-                return False  # don't straighten the counterexample
-            if any(inc.inclname in oddly_ordered_inclnames for inc in includes):
-                return False  # don't sort batches containing odd includes
-            if includes == sorted(
-                includes, key=lambda inc: inc.sort_key(enclosing_inclname)
-            ):
-                return False  # it's already sorted, avoid whitespace-only fixups
-            return True
-
-        # The content of the eventual output of this method.
-        output = []
-
-        # The current batch of includes to sort. This list only ever contains Include objects
-        # and whitespace OrdinaryCode objects.
-        batch = []
-
-        def flush_batch():
-            """Sort the contents of `batch` and move it to `output`."""
-
-            assert all(
-                isinstance(item, Include)
-                or (isinstance(item, OrdinaryCode) and "".join(item.lines).isspace())
-                for item in batch
-            )
-
-            # Here we throw away the blank lines.
-            # `pretty_sorted_includes` puts them back.
-            includes = []
-            last_include_index = -1
-            for i, item in enumerate(batch):
-                if isinstance(item, Include):
-                    includes.append(item)
-                    last_include_index = i
-            cutoff = last_include_index + 1
-
-            if should_try_to_sort(includes):
-                output.extend(pretty_sorted_includes(includes) + batch[cutoff:])
-            else:
-                output.extend(batch)
-            del batch[:]
-
-        for kid in self.kids:
-            if isinstance(kid, CppBlock):
-                flush_batch()
-                output.append(kid.sorted(enclosing_inclname))
-            elif isinstance(kid, Include):
-                batch.append(kid)
-            else:
-                assert isinstance(kid, OrdinaryCode)
-                if kid.to_source().isspace():
-                    batch.append(kid)
-                else:
-                    flush_batch()
-                    output.append(kid)
-        flush_batch()
-
-        result = CppBlock()
-        result.start = self.start
-        result.end = self.end
-        result.kids = output
-        return result
 
     def to_source(self):
         return self.start + "".join(kid.to_source() for kid in self.kids) + self.end
@@ -739,34 +590,11 @@ def check_file(
                 if inclname == include.inclname:
                     error(filename, include.linenum, "the file includes itself")
 
-    def check_includes_order(include1, include2):
-        """Check the ordering of two #include statements."""
-
-        if (
-            include1.inclname in oddly_ordered_inclnames
-            or include2.inclname in oddly_ordered_inclnames
-        ):
-            return
-
-        section1 = include1.section(inclname)
-        section2 = include2.section(inclname)
-        if (section1 > section2) or (
-            (section1 == section2)
-            and (include1.inclname.lower() > include2.inclname.lower())
-        ):
-            error(
-                filename,
-                str(include1.linenum) + ":" + str(include2.linenum),
-                include1.quote() + " should be included after " + include2.quote(),
-            )
-
     # Check the extracted #include statements, both individually, and the ordering of
     # adjacent pairs that live in the same block.
     def pair_traverse(prev, this):
         if isinstance(this, Include):
             check_include_statement(this)
-            if isinstance(prev, Include):
-                check_includes_order(prev, this)
         else:
             kids = this.style_relevant_kids()
             for prev2, this2 in zip([None] + kids[0:-1], kids):
@@ -851,22 +679,14 @@ def tarjan(V, E):
 
 
 def main():
-    if sys.argv[1:] == ["--fixup"]:
-        # Sort #include directives in-place.  Fixup mode doesn't solve
-        # all possible silliness that the script checks for; it's just a
-        # hack for the common case where renaming a header causes style
-        # errors.
-        fixup = True
-    elif sys.argv[1:] == []:
-        fixup = False
-    else:
+    if sys.argv[1:] != []:
         print(
             "TEST-UNEXPECTED-FAIL | check_spidermonkey_style.py | unexpected command "
             "line options: " + repr(sys.argv[1:])
         )
         sys.exit(1)
 
-    ok = check_style(fixup)
+    ok = check_style()
 
     if ok:
         print("TEST-PASS | check_spidermonkey_style.py | ok")

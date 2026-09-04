@@ -9,7 +9,7 @@ genai-settings-chat-claude-links = By choosing Anthropic Claude, you agree to th
 genai-settings-chat-copilot-links = By choosing Copilot, you agree to the <a data-l10n-name="link1">Copilot AI Experiences Terms</a> and <a data-l10n-name="link2">Microsoft Privacy Statement</a>.
 genai-settings-chat-gemini-links = By choosing Google Gemini, you agree to the <a data-l10n-name="link1">Google Terms of Service</a>, <a data-l10n-name="link2">Generative AI Prohibited Use Policy</a>, and <a data-l10n-name="link3">Gemini Apps Privacy Notice</a>.
 genai-settings-chat-huggingchat-links = By choosing HuggingChat, you agree to the <a data-l10n-name="link1">HuggingChat Privacy Notice</a> and <a data-l10n-name="link2">Hugging Face Privacy Policy</a>.
-genai-settings-chat-lechat-links = By choosing Le Chat Mistral, you agree to the Mistral AI <a data-l10n-name="link1">Terms of Service</a> and <a data-l10n-name="link2">Privacy Policy</a>.
+genai-settings-chat-lechat-links-2 = By choosing Mistral Vibe, you agree to the Mistral AI <a data-l10n-name="link1">Terms of Service</a> and <a data-l10n-name="link2">Privacy Policy</a>.
 genai-settings-chat-localhost-links = Bring your own private local chatbot such as <a data-l10n-name="link1">llamafile</a> from { -vendor-short-name }’s Innovation group.
 
 ## Chatbot prompts
@@ -46,6 +46,9 @@ genai-prompts-proofread =
 
 ## Chatbot menu shortcuts
 
+genai-menu-ask-smart-window =
+    .label = Ask…
+    .accesskey = z
 genai-menu-no-provider-2 =
     .label = Ask an AI Chatbot
     .accesskey = z
@@ -77,6 +80,8 @@ genai-shortcut-button =
 genai-menu-new-badge = New
 genai-menu-summarize-page = Summarize Page
 
+genai-input-ask-smart-window =
+    .placeholder = Ask…
 genai-input-ask-generic =
     .placeholder = Ask AI chatbot…
 # $provider (string) - name of the provider
@@ -167,8 +172,8 @@ genai-onboarding-gemini-tooltip =
     .title = Google Gemini
 genai-onboarding-huggingchat-tooltip =
     .title = HuggingChat
-genai-onboarding-lechat-tooltip =
-    .title = Le Chat Mistral
+genai-onboarding-lechat-tooltip-2 =
+    .title = Mistral Vibe
 
 ## Model Optin Component
 

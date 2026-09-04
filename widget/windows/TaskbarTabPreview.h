@@ -1,6 +1,4 @@
-/* vim: se cin sw=2 ts=2 et : */
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,8 +6,8 @@
 #ifndef _mozilla_widget_TaskbarTabPreview_h_
 #define _mozilla_widget_TaskbarTabPreview_h_
 
-#include "nsITaskbarTabPreview.h"
 #include "TaskbarPreview.h"
+#include "nsITaskbarTabPreview.h"
 
 namespace mozilla {
 namespace widget {

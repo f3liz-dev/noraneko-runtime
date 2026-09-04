@@ -7,6 +7,7 @@ const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   AboutWelcomeParent: "resource:///actors/AboutWelcomeParent.sys.mjs",
   ASRouter: "resource:///modules/asrouter/ASRouter.sys.mjs",
+  ASRouterTargeting: "resource:///modules/asrouter/ASRouterTargeting.sys.mjs",
   CustomizableUI:
     "moz-src:///browser/components/customizableui/CustomizableUI.sys.mjs",
   PageEventManager: "resource:///modules/asrouter/PageEventManager.sys.mjs",
@@ -366,7 +367,9 @@ export class FeatureCallout {
         let nextMessage = null;
         if (
           this.context === "chrome" &&
-          this.message?.trigger.id !== "featureCalloutCheck"
+          !lazy.ASRouterTargeting.getMessageTriggers(this.message).some(
+            t => t.id === "featureCalloutCheck"
+          )
         ) {
           if (
             this.config?.screens.some(s => s.id === this.currentScreen?.id) &&
@@ -481,11 +484,11 @@ export class FeatureCallout {
       case "popupshowing":
         // If another panel is showing, close the tour.
         if (
-          event.target.ownerGlobal === this.win &&
+          event.target.documentGlobal === this.win &&
           event.target !== this._container &&
           event.target.localName === "panel" &&
           event.target.id !== "ctrlTab-panel" &&
-          event.target.getAttribute("noautohide") !== "true"
+          !event.target.hasAttribute("noautohide")
         ) {
           this.endTour();
         }
@@ -499,7 +502,7 @@ export class FeatureCallout {
 
       case "unload":
         try {
-          this.teardownFeatureTourProgress();
+          this.endTour();
         } catch (error) {}
         break;
 
@@ -561,25 +564,56 @@ export class FeatureCallout {
    * | "rightcenter"
    * | "topcenter"
    * | "bottomcenter"
+   * | "north"
+   * | "south"
+   * | "west"
+   * | "east"
+   * | "northwest"
+   * | "northeast"
+   * | "southwest"
+   * | "southeast"
    * } PopupAttachmentPoint
-   *
-   * @see nsMenuPopupFrame
    *
    * Each attachment point corresponds to an attachment point on the edge of a
    * frame. For example, "topleft" corresponds to the frame's top left corner,
    * and "rightcenter" corresponds to the center of the right edge of the frame.
+   *
+   * @see nsMenuPopupFrame for the canonical alignment points. We also add some
+   * aliases based on cardinal directions (like on a compass) to make it easier
+   * to reason about. So north is equivalent to topcenter, southwest is
+   * equivalent to bottomleft, etc.
    */
 
   /**
    * @typedef {object} PanelPosition Specifies how the callout panel should be
    *   positioned relative to the anchor element, by providing which point on
    *   the callout should be aligned with which point on the anchor element.
+   *   Note that the arrow position depends on the *combination* of both
+   *   anchor_attachment and callout_attachment. For example, if the
+   *   anchor_attachment is bottomcenter and the callout_attachment is topright,
+   *   the arrow will be attached to the top edge of the callout, but towards
+   *   the right side of that edge. But if anchor_attachment is changed to
+   *   leftcenter, then the same callout_attachment of topright would put the
+   *   arrow on the right edge of the callout, towards the top. It's easy to
+   *   make a mistake, so you should always test your anchors. Note that
+   *   horizontal attachment points are reversed in RTL mode (right-to-left
+   *   scripts like Arabic). "leftcenter rightcenter" would put the callout to
+   *   the left of the anchor in LTR, but to the right of the anchor in RTL.
+   *   "bottomcenter topright" would put the callout under the anchor and
+   *   flowing to the left in LTR, but under the anchor and flowing to the right
+   *   in RTL.
    * @property {PopupAttachmentPoint} anchor_attachment
    * @property {PopupAttachmentPoint} callout_attachment
    * @property {string} [panel_position_string] The attachments joined into a
    *   string, e.g. "bottomleft topright". Passed to XULPopupElement::openPopup.
    *   This is not provided by JSON, but generated from anchor_attachment and
    *   callout_attachment.
+   * @property {string} [flip] The flip behavior to apply to the panel when it
+   *   would overflow the screen. "slide" makes the panel slide in the direction
+   *   it's overflowing, to keep it on screen. If it overflows in the same
+   *   direction it's aligned relative to the anchor, it will flip in that
+   *   direction. This is the default behavior. "none" just allows the panel to
+   *   bleed out of bounds, without flipping or sliding.
    * @property {number} [offset_x] Offset in pixels to apply to the callout
    *   position in the horizontal direction.
    * @property {number} [offset_y] The same in the vertical direction.
@@ -793,6 +827,7 @@ export class FeatureCallout {
    * - %triggerTab%: The <tab> element associated with the current browser.
    * - %triggeredTabBookmark%: Bookmark item in the toolbar matching the current tab's URL or label.
    * - ::%shadow%: Traverses nested shadow DOM boundaries.
+   * - ::%document%: Traverses into a content document.
    *
    * @param {string} selector
    * @returns {{scope: Element, selector: string} | null}
@@ -803,7 +838,7 @@ export class FeatureCallout {
 
     // %triggerTab%
     if (this.browser && normalizedSelector.includes("%triggerTab%")) {
-      const triggerTab = this.browser.ownerGlobal.gBrowser?.getTabForBrowser(
+      const triggerTab = this.browser.documentGlobal.gBrowser?.getTabForBrowser(
         this.browser
       );
       if (!triggerTab) {
@@ -818,7 +853,7 @@ export class FeatureCallout {
 
     // %triggeredTabBookmark%
     if (normalizedSelector.includes("%triggeredTabBookmark%")) {
-      const gBrowser = this.browser?.ownerGlobal?.gBrowser;
+      const gBrowser = this.browser?.documentGlobal?.gBrowser;
       const tab = gBrowser?.getTabForBrowser(this.browser);
       const url = this.browser?.currentURI?.spec;
       const label = tab?.label;
@@ -873,20 +908,27 @@ export class FeatureCallout {
       normalizedSelector = `:scope${postTokenSelector}`;
     }
 
-    // ::%shadow%
-    if (normalizedSelector.includes("::%shadow%")) {
-      let parts = normalizedSelector.split("::%shadow%");
-      for (let i = 0; i < parts.length; i++) {
+    // ::%shadow% and ::%document%
+    if (
+      normalizedSelector.includes("::%shadow%") ||
+      normalizedSelector.includes("::%document%")
+    ) {
+      let parts = normalizedSelector.split(/(::%shadow%|::%document%)/);
+      for (let i = 0; i < parts.length; i += 2) {
         normalizedSelector = parts[i].trim();
-        if (i === parts.length - 1) {
+        if (i + 1 >= parts.length) {
           break;
         }
         let el = scope.querySelector(normalizedSelector);
         if (!el) {
           break;
         }
-        if (el.shadowRoot) {
+        if (parts[i + 1] === "::%shadow%" && el.shadowRoot) {
           scope = el.shadowRoot;
+        } else if (parts[i + 1] === "::%document%" && el.contentDocument) {
+          scope = el.contentDocument;
+        } else {
+          break;
         }
       }
     }
@@ -913,16 +955,37 @@ export class FeatureCallout {
   }
 
   /** @see PopupAttachmentPoint */
-  _popupAttachmentPoints = [
-    "topleft",
-    "topright",
-    "bottomleft",
-    "bottomright",
-    "leftcenter",
-    "rightcenter",
-    "topcenter",
-    "bottomcenter",
-  ];
+  _convertPopupAttachmentPoint(point) {
+    switch (point) {
+      case "topleft":
+      case "topright":
+      case "bottomleft":
+      case "bottomright":
+      case "leftcenter":
+      case "rightcenter":
+      case "topcenter":
+      case "bottomcenter":
+        return point;
+      case "north":
+        return "topcenter";
+      case "south":
+        return "bottomcenter";
+      case "west":
+        return "leftcenter";
+      case "east":
+        return "rightcenter";
+      case "northwest":
+        return "topleft";
+      case "northeast":
+        return "topright";
+      case "southwest":
+        return "bottomleft";
+      case "southeast":
+        return "bottomright";
+      default:
+        return null;
+    }
+  }
 
   /**
    * Return a string representing the position of the panel relative to the
@@ -934,11 +997,10 @@ export class FeatureCallout {
    *   the panelPosition object is invalid.
    */
   _getPanelPositionString(panelPosition) {
-    const { anchor_attachment, callout_attachment } = panelPosition;
-    if (
-      !this._popupAttachmentPoints.includes(anchor_attachment) ||
-      !this._popupAttachmentPoints.includes(callout_attachment)
-    ) {
+    let { anchor_attachment, callout_attachment } = panelPosition;
+    anchor_attachment = this._convertPopupAttachmentPoint(anchor_attachment);
+    callout_attachment = this._convertPopupAttachmentPoint(callout_attachment);
+    if (!anchor_attachment || !callout_attachment) {
       return null;
     }
     let positionString = `${anchor_attachment} ${callout_attachment}`;
@@ -982,7 +1044,7 @@ export class FeatureCallout {
         case "end": {
           // Inline arrow, i.e. arrow is on one of the left/right edges.
           let isRTL =
-            this.ownerGlobal.getComputedStyle(this).direction === "rtl";
+            this.documentGlobal.getComputedStyle(this).direction === "rtl";
           let isRight = isRTL ^ (positionParts[1] === "start");
           let side = isRight ? "end" : "start";
           arrowPosition = `inline-${side}`;
@@ -1021,7 +1083,8 @@ export class FeatureCallout {
       return false;
     }
 
-    const { autohide, ignorekeys, padding } = this.currentScreen.content;
+    const { autohide, ignorekeys, padding, zap_border, zap_shadow } =
+      this.currentScreen.content;
     const {
       panel_position,
       hide_arrow,
@@ -1038,17 +1101,22 @@ export class FeatureCallout {
       }
     }
 
+    const flip = ["none", "both", "slide"].includes(panel_position?.flip)
+      ? panel_position?.flip
+      : "slide";
+
     if (!this._container?.parentElement) {
       if (needsPanel) {
         let fragment = this.win.MozXULElement.parseXULToFragment(`<panel
             class="panel-no-padding"
             orient="vertical"
             noautofocus="true"
-            flip="slide"
+            flip='${flip}'
             type="arrow"
             consumeoutsideclicks="never"
             norolluponanchor="true"
-            position="${panel_position.panel_position_string}"
+            nonnative=""
+            position="${panel_position?.panel_position_string}"
             ${hide_arrow ? "" : 'show-arrow=""'}
             ${autohide ? "" : 'noautohide="true"'}
             ${ignorekeys ? 'ignorekeys="true"' : ""}
@@ -1066,6 +1134,8 @@ export class FeatureCallout {
       } else {
         this._container.removeAttribute("hide-arrow");
       }
+      this._container.toggleAttribute("zap-border", zap_border);
+      this._container.toggleAttribute("zap-shadow", !needsPanel && zap_shadow);
       this._container.id = CONTAINER_ID;
       this._container.setAttribute(
         "aria-describedby",
@@ -1590,19 +1660,25 @@ export class FeatureCallout {
     const handleActorMessage =
       lazy.AboutWelcomeParent.prototype.onContentMessage.bind({});
     const getActionHandler = name => data =>
-      handleActorMessage(`AWPage:${name}`, data, this.doc);
-
+      handleActorMessage(`AWPage:${name}`, data, this.browser);
     const telemetryMessageHandler = getActionHandler("TELEMETRY_EVENT");
     const AWSendEventTelemetry = data => {
-      if (this.config?.metrics !== "block") {
-        return telemetryMessageHandler(data);
+      if (this.config?.metrics === "block") {
+        return null;
       }
-      return null;
+      if (this.config?.write_in_microsurvey) {
+        if (!data.event_context) {
+          data.event_context = {};
+        }
+        data.event_context.write_in_microsurvey = true;
+      }
+      return telemetryMessageHandler(data);
     };
     this._windowFuncs = {
       AWGetFeatureConfig: () => this.config,
       AWGetSelectedTheme: getActionHandler("GET_SELECTED_THEME"),
       AWGetInstalledAddons: getActionHandler("GET_INSTALLED_ADDONS"),
+      AWEnsureAddonInstalled: getActionHandler("ENSURE_ADDON_INSTALLED"),
       // Do not send telemetry if message config sets metrics as 'block'.
       AWSendEventTelemetry,
       AWSendToDeviceEmailsSupported: getActionHandler(
@@ -2027,7 +2103,7 @@ export class FeatureCallout {
       if (doc !== this.doc) {
         let windowIndex = [
           ...Services.wm.getEnumerator("navigator:browser"),
-        ].indexOf(target.ownerGlobal);
+        ].indexOf(target.documentGlobal);
         source = `window${windowIndex + 1}: ${source}`;
       }
     }
@@ -2230,7 +2306,7 @@ export class FeatureCallout {
         !!(
           this.theme.lwtNewtab !== false &&
           this.theme.simulateContent &&
-          ["themed-content", "newtab"].includes(this.theme.preset)
+          this.theme.preset === "newtab"
         )
       );
       for (const type of ["light", "dark", "hcm"]) {
@@ -2264,7 +2340,11 @@ export class FeatureCallout {
     "background",
     "color",
     "border",
+    "zap-border",
+    "zap-border-background",
     "accent-color",
+    "step-color",
+    "current-step-color",
     "button-background",
     "button-color",
     "button-border",
@@ -2294,235 +2374,25 @@ export class FeatureCallout {
 
   /** @type {{[key: string]: FeatureCalloutTheme}} */
   static themePresets = {
-    // For themed system pages like New Tab and Firefox View. Themed content
-    // colors inherit from the user's theme through contentTheme.js.
-    "themed-content": {
-      all: {
-        background:
-          "var(--newtab-background-color, var(--background-color-canvas)) linear-gradient(var(--newtab-background-color-secondary), var(--newtab-background-color-secondary))",
-        color: "var(--newtab-text-primary-color, var(--text-color))",
-        border:
-          "color-mix(in srgb, var(--newtab-background-color-secondary) 80%, #000)",
-        "accent-color": "var(--button-background-color-primary)",
-        "button-background": "color-mix(in srgb, transparent 93%, #000)",
-        "button-color": "var(--newtab-text-primary-color, var(--text-color))",
-        "button-border": "transparent",
-        "button-background-hover": "color-mix(in srgb, transparent 88%, #000)",
-        "button-color-hover":
-          "var(--newtab-text-primary-color, var(--text-color))",
-        "button-border-hover": "transparent",
-        "button-background-active": "color-mix(in srgb, transparent 80%, #000)",
-        "button-color-active":
-          "var(--newtab-text-primary-color, var(--text-color))",
-        "button-border-active": "transparent",
-        "primary-button-background": "var(--button-background-color-primary)",
-        "primary-button-color": "var(--button-text-color-primary)",
-        "primary-button-border": "var(--button-border-color-primary)",
-        "primary-button-background-hover":
-          "var(--button-background-color-primary-hover)",
-        "primary-button-color-hover": "var(--button-text-color-primary-hover)",
-        "primary-button-border-hover":
-          "var(--button-border-color-primary-hover)",
-        "primary-button-background-active":
-          "var(--button-background-color-primary-active)",
-        "primary-button-color-active":
-          "var(--button-text-color-primary-active)",
-        "primary-button-border-active":
-          "var(--button-border-color-primary-active)",
-        "link-color": "LinkText",
-        "link-color-hover": "LinkText",
-        "link-color-active": "ActiveText",
-        "link-color-visited": "VisitedText",
-        "dismiss-button-background":
-          "var(--newtab-background-color, var(--background-color-canvas)) linear-gradient(var(--newtab-background-color-secondary), var(--newtab-background-color-secondary))",
-        "dismiss-button-background-hover":
-          "var(--newtab-background-color, var(--background-color-canvas)) linear-gradient(color-mix(in srgb, currentColor 14%, var(--newtab-background-color-secondary)), color-mix(in srgb, currentColor 14%, var(--newtab-background-color-secondary)))",
-        "dismiss-button-background-active":
-          "var(--newtab-background-color, var(--background-color-canvas)) linear-gradient(color-mix(in srgb, currentColor 21%, var(--newtab-background-color-secondary)), color-mix(in srgb, currentColor 21%, var(--newtab-background-color-secondary)))",
-      },
-      dark: {
-        border:
-          "color-mix(in srgb, var(--newtab-background-color-secondary) 80%, #FFF)",
-        "button-background": "color-mix(in srgb, transparent 80%, #000)",
-        "button-background-hover": "color-mix(in srgb, transparent 65%, #000)",
-        "button-background-active": "color-mix(in srgb, transparent 55%, #000)",
-      },
-      hcm: {
-        background: "-moz-dialog",
-        color: "-moz-dialogtext",
-        border: "-moz-dialogtext",
-        "accent-color": "LinkText",
-        "button-background": "ButtonFace",
-        "button-color": "ButtonText",
-        "button-border": "ButtonText",
-        "button-background-hover": "ButtonText",
-        "button-color-hover": "ButtonFace",
-        "button-border-hover": "ButtonText",
-        "button-background-active": "ButtonText",
-        "button-color-active": "ButtonFace",
-        "button-border-active": "ButtonText",
-        "dismiss-button-background": "-moz-dialog",
-        "dismiss-button-background-hover":
-          "color-mix(in srgb, currentColor 14%, SelectedItem)",
-        "dismiss-button-background-active":
-          "color-mix(in srgb, currentColor 21%, SelectedItem)",
-      },
-    },
-    // PDF.js colors are from toolkit/components/pdfjs/content/web/viewer.css
-    pdfjs: {
-      all: {
-        background: "#FFF",
-        color: "rgb(12, 12, 13)",
-        border: "#CFCFD8",
-        "accent-color": "#0A84FF",
-        "button-background": "rgb(215, 215, 219)",
-        "button-color": "rgb(12, 12, 13)",
-        "button-border": "transparent",
-        "button-background-hover": "rgb(221, 222, 223)",
-        "button-color-hover": "rgb(12, 12, 13)",
-        "button-border-hover": "transparent",
-        "button-background-active": "rgb(221, 222, 223)",
-        "button-color-active": "rgb(12, 12, 13)",
-        "button-border-active": "transparent",
-        // use default primary button colors in _feature-callout-theme.scss
-        "link-color": "LinkText",
-        "link-color-hover": "LinkText",
-        "link-color-active": "ActiveText",
-        "link-color-visited": "VisitedText",
-        "dismiss-button-background": "#FFF",
-        "dismiss-button-background-hover":
-          "color-mix(in srgb, currentColor 14%, #FFF)",
-        "dismiss-button-background-active":
-          "color-mix(in srgb, currentColor 21%, #FFF)",
-      },
-      dark: {
-        background: "#1C1B22",
-        color: "#F9F9FA",
-        border: "#3A3944",
-        "button-background": "rgb(74, 74, 79)",
-        "button-color": "#F9F9FA",
-        "button-background-hover": "rgb(102, 102, 103)",
-        "button-color-hover": "#F9F9FA",
-        "button-background-active": "rgb(102, 102, 103)",
-        "button-color-active": "#F9F9FA",
-        "dismiss-button-background": "#1C1B22",
-        "dismiss-button-background-hover":
-          "color-mix(in srgb, currentColor 14%, #1C1B22)",
-        "dismiss-button-background-active":
-          "color-mix(in srgb, currentColor 21%, #1C1B22)",
-      },
-      hcm: {
-        background: "-moz-dialog",
-        color: "-moz-dialogtext",
-        border: "CanvasText",
-        "accent-color": "Highlight",
-        "button-background": "ButtonFace",
-        "button-color": "ButtonText",
-        "button-border": "ButtonText",
-        "button-background-hover": "Highlight",
-        "button-color-hover": "CanvasText",
-        "button-border-hover": "Highlight",
-        "button-background-active": "Highlight",
-        "button-color-active": "CanvasText",
-        "button-border-active": "Highlight",
-        "dismiss-button-background": "-moz-dialog",
-        "dismiss-button-background-hover":
-          "color-mix(in srgb, currentColor 14%, SelectedItem)",
-        "dismiss-button-background-active":
-          "color-mix(in srgb, currentColor 21%, SelectedItem)",
-      },
-    },
-    newtab: {
-      all: {
-        background:
-          "var(--newtab-background-color, #F9F9FB) linear-gradient(var(--newtab-background-color-secondary, #FFF), var(--newtab-background-color-secondary, #FFF))",
-        color: "var(--newtab-text-primary-color, WindowText)",
-        border:
-          "color-mix(in srgb, var(--newtab-background-color-secondary, #FFF) 80%, #000)",
-        "accent-color": "#0061e0",
-        "button-background": "color-mix(in srgb, transparent 93%, #000)",
-        "button-color": "var(--newtab-text-primary-color, WindowText)",
-        "button-border": "transparent",
-        "button-background-hover": "color-mix(in srgb, transparent 88%, #000)",
-        "button-color-hover": "var(--newtab-text-primary-color, WindowText)",
-        "button-border-hover": "transparent",
-        "button-background-active": "color-mix(in srgb, transparent 80%, #000)",
-        "button-color-active": "var(--newtab-text-primary-color, WindowText)",
-        "button-border-active": "transparent",
-        // use default primary button colors in _feature-callout-theme.scss
-        "link-color": "rgb(0, 97, 224)",
-        "link-color-hover": "rgb(0, 97, 224)",
-        "link-color-active": "color-mix(in srgb, rgb(0, 97, 224) 80%, #000)",
-        "link-color-visited": "rgb(0, 97, 224)",
-        "icon-success-color": "#2AC3A2",
-        "dismiss-button-background":
-          "var(--newtab-background-color, #F9F9FB) linear-gradient(var(--newtab-background-color-secondary, #FFF), var(--newtab-background-color-secondary, #FFF))",
-        "dismiss-button-background-hover":
-          "var(--newtab-background-color, #F9F9FB) linear-gradient(color-mix(in srgb, currentColor 14%, var(--newtab-background-color-secondary, #FFF)), color-mix(in srgb, currentColor 14%, var(--newtab-background-color-secondary, #FFF)))",
-        "dismiss-button-background-active":
-          "var(--newtab-background-color, #F9F9FB) linear-gradient(color-mix(in srgb, currentColor 21%, var(--newtab-background-color-secondary, #FFF)), color-mix(in srgb, currentColor 21%, var(--newtab-background-color-secondary, #FFF)))",
-      },
-      dark: {
-        "accent-color": "rgb(0, 221, 255)",
-        background:
-          "var(--newtab-background-color, #2B2A33) linear-gradient(var(--newtab-background-color-secondary, #42414D), var(--newtab-background-color-secondary, #42414D))",
-        border:
-          "color-mix(in srgb, var(--newtab-background-color-secondary, #42414D) 80%, #FFF)",
-        "button-background": "color-mix(in srgb, transparent 80%, #000)",
-        "button-background-hover": "color-mix(in srgb, transparent 65%, #000)",
-        "button-background-active": "color-mix(in srgb, transparent 55%, #000)",
-        "link-color": "rgb(0, 221, 255)",
-        "link-color-hover": "rgb(0,221,255)",
-        "link-color-active": "color-mix(in srgb, rgb(0, 221, 255) 60%, #FFF)",
-        "link-color-visited": "rgb(0, 221, 255)",
-        "icon-success-color": "#54FFBD",
-        "dismiss-button-background":
-          "var(--newtab-background-color, #2B2A33) linear-gradient(var(--newtab-background-color-secondary, #42414D), var(--newtab-background-color-secondary, #42414D))",
-        "dismiss-button-background-hover":
-          "var(--newtab-background-color, #2B2A33) linear-gradient(color-mix(in srgb, currentColor 14%, var(--newtab-background-color-secondary, #42414D)), color-mix(in srgb, currentColor 14%, var(--newtab-background-color-secondary, #42414D)))",
-        "dismiss-button-background-active":
-          "var(--newtab-background-color, #2B2A33) linear-gradient(color-mix(in srgb, currentColor 21%, var(--newtab-background-color-secondary, #42414D), color-mix(in srgb, currentColor 21%, var(--newtab-background-color-secondary, #42414D)))",
-      },
-      hcm: {
-        background: "-moz-dialog",
-        color: "-moz-dialogtext",
-        border: "-moz-dialogtext",
-        "accent-color": "SelectedItem",
-        "button-background": "ButtonFace",
-        "button-color": "ButtonText",
-        "button-border": "ButtonText",
-        "button-background-hover": "ButtonText",
-        "button-color-hover": "ButtonFace",
-        "button-border-hover": "ButtonText",
-        "button-background-active": "ButtonText",
-        "button-color-active": "ButtonFace",
-        "button-border-active": "ButtonText",
-        "link-color": "LinkText",
-        "link-color-hover": "LinkText",
-        "link-color-active": "ActiveText",
-        "link-color-visited": "VisitedText",
-        "dismiss-button-background": "-moz-dialog",
-        "dismiss-button-background-hover":
-          "color-mix(in srgb, currentColor 14%, SelectedItem)",
-        "dismiss-button-background-active":
-          "color-mix(in srgb, currentColor 21%, SelectedItem)",
-      },
-    },
     // These colors are intended to inherit the user's theme properties from the
     // main chrome window, for callouts to be anchored to chrome elements.
     // Specific schemes aren't necessary since the theme and frontend
     // stylesheets handle these variables' values.
     chrome: {
       all: {
-        // Use a gradient because it's possible (due to custom themes) that the
-        // arrowpanel-background will be semi-transparent, causing the arrow to
-        // show through the callout background. Put the Menu color behind the
-        // arrowpanel-background.
-        background:
-          "Menu linear-gradient(var(--arrowpanel-background), var(--arrowpanel-background))",
-        color: "var(--arrowpanel-color)",
-        border: "var(--arrowpanel-border-color)",
+        // Use image() because it's possible (due to custom themes) that the
+        // panel-background will be semi-transparent, causing the arrow to
+        // show through the callout background. Put the Field color behind the
+        // panel-background.
+        background: "Field image(var(--panel-background-color))",
+        color: "var(--panel-text-color)",
+        border: "var(--panel-border-color)",
+        "zap-border": "transparent",
+        "zap-border-background":
+          "image(var(--panel-background-color)) padding-box, image(Field) padding-box, var(--tab-border-color-accent, transparent) border-box",
         "accent-color": "var(--focus-outline-color)",
+        "step-color": "color-mix(in srgb, currentColor 50%, transparent)",
+        "current-step-color": "var(--button-background-color-primary)",
         // Button Background
         "button-background": "var(--button-background-color)",
         "button-background-hover": "var(--button-background-color-hover)",
@@ -2564,18 +2434,190 @@ export class FeatureCallout {
         "link-color-hover": "LinkText",
         "link-color-active": "ActiveText",
         "link-color-visited": "VisitedText",
-        "icon-success-color": "var(--attention-dot-color)",
+        "icon-success-color": "var(--color-accent-attention)",
         // Dismiss Button
         "dismiss-button-background":
-          "Menu linear-gradient(var(--arrowpanel-background), var(--arrowpanel-background))",
+          "Field image(var(--panel-background-color))",
         "dismiss-button-background-hover":
-          "Menu linear-gradient(color-mix(in srgb, currentColor 14%, var(--arrowpanel-background)))",
+          "Field image(color-mix(in srgb, currentColor 14%, var(--panel-background-color)))",
         "dismiss-button-background-active":
-          "Menu linear-gradient(color-mix(in srgb, currentColor 21%, var(--arrowpanel-background)))",
+          "Field image(color-mix(in srgb, currentColor 21%, var(--panel-background-color)))",
       },
       hcm: {
-        background: "var(--arrowpanel-background)",
-        "dismiss-button-background": "var(--arrowpanel-background)",
+        background: "var(--panel-background-color)",
+        "dismiss-button-background": "var(--panel-background-color)",
+        "dismiss-button-background-hover":
+          "color-mix(in srgb, currentColor 14%, SelectedItem)",
+        "dismiss-button-background-active":
+          "color-mix(in srgb, currentColor 21%, SelectedItem)",
+        "step-color": "var(--text-color, CanvasText)",
+        "current-step-color": "var(--text-color, CanvasText)",
+      },
+    },
+    // PDF.js colors are from toolkit/components/pdfjs/content/web/viewer.css
+    pdfjs: {
+      all: {
+        background: "#FFF",
+        color: "rgb(12, 12, 13)",
+        border: "#CFCFD8",
+        "zap-border": "transparent",
+        "zap-border-background":
+          "image(#FFF) padding-box, var(--tab-border-color-accent, transparent) border-box",
+        "accent-color": "#0A84FF",
+        "step-color": "color-mix(in srgb, currentColor 50%, transparent)",
+        "current-step-color": "#0A84FF",
+        "button-background": "rgb(215, 215, 219)",
+        "button-color": "rgb(12, 12, 13)",
+        "button-border": "transparent",
+        "button-background-hover": "rgb(221, 222, 223)",
+        "button-color-hover": "rgb(12, 12, 13)",
+        "button-border-hover": "transparent",
+        "button-background-active": "rgb(221, 222, 223)",
+        "button-color-active": "rgb(12, 12, 13)",
+        "button-border-active": "transparent",
+        // use default primary button colors in _feature-callout-theme.scss
+        "link-color": "LinkText",
+        "link-color-hover": "LinkText",
+        "link-color-active": "ActiveText",
+        "link-color-visited": "VisitedText",
+        "dismiss-button-background": "#FFF",
+        "dismiss-button-background-hover":
+          "color-mix(in srgb, currentColor 14%, #FFF)",
+        "dismiss-button-background-active":
+          "color-mix(in srgb, currentColor 21%, #FFF)",
+      },
+      dark: {
+        background: "#1C1B22",
+        color: "#F9F9FA",
+        border: "#3A3944",
+        "zap-border-background":
+          "image(#1C1B22) padding-box, var(--tab-border-color-accent, transparent) border-box",
+        "button-background": "rgb(74, 74, 79)",
+        "button-color": "#F9F9FA",
+        "button-background-hover": "rgb(102, 102, 103)",
+        "button-color-hover": "#F9F9FA",
+        "button-background-active": "rgb(102, 102, 103)",
+        "button-color-active": "#F9F9FA",
+        "dismiss-button-background": "#1C1B22",
+        "dismiss-button-background-hover":
+          "color-mix(in srgb, currentColor 14%, #1C1B22)",
+        "dismiss-button-background-active":
+          "color-mix(in srgb, currentColor 21%, #1C1B22)",
+      },
+      hcm: {
+        background: "-moz-dialog",
+        color: "-moz-dialogtext",
+        border: "CanvasText",
+        "accent-color": "Highlight",
+        "step-color": "CanvasText",
+        "current-step-color": "CanvasText",
+        "button-background": "ButtonFace",
+        "button-color": "ButtonText",
+        "button-border": "ButtonText",
+        "button-background-hover": "Highlight",
+        "button-color-hover": "CanvasText",
+        "button-border-hover": "Highlight",
+        "button-background-active": "Highlight",
+        "button-color-active": "CanvasText",
+        "button-border-active": "Highlight",
+        "dismiss-button-background": "-moz-dialog",
+        "dismiss-button-background-hover":
+          "color-mix(in srgb, currentColor 14%, SelectedItem)",
+        "dismiss-button-background-active":
+          "color-mix(in srgb, currentColor 21%, SelectedItem)",
+      },
+    },
+    newtab: {
+      all: {
+        background:
+          "var(--newtab-background-color, #F9F9FB) image(var(--newtab-background-color-secondary, #FFF))",
+        color: "var(--newtab-text-primary-color, WindowText)",
+        border:
+          "color-mix(in srgb, var(--newtab-background-color-secondary, #FFF) 80%, #000)",
+        "zap-border": "transparent",
+        "zap-border-background":
+          "image(var(--newtab-background-color-secondary, #FFF)) padding-box, image(var(--newtab-background-color, #F9F9FB)) padding-box, var(--tab-border-color-accent, transparent) border-box",
+        "accent-color": "var(--focus-outline-color)",
+        "step-color": "color-mix(in srgb, currentColor 50%, transparent)",
+        "current-step-color": "var(--button-background-color-primary)",
+        "button-background": "var(--button-background-color)",
+        "button-background-hover": "var(--button-background-color-hover)",
+        "button-background-active": "var(--button-background-color-active)",
+        "button-background-disabled": "var(--button-background-color-disabled)",
+        "button-color": "var(--button-text-color)",
+        "button-color-hover": "var(--button-text-color-hover)",
+        "button-color-active": "var(--button-text-color-active)",
+        "button-border": "var(--button-border-color)",
+        "button-border-color": "var(--button-border-color)",
+        "button-border-hover": "var(--button-border-color-hover)",
+        "button-border-active": "var(--button-border-color-active)",
+        "button-border-disabled": "var(--button-border-color-disabled)",
+        "primary-button-background": "var(--button-background-color-primary)",
+        "primary-button-background-hover":
+          "var(--button-background-color-primary-hover)",
+        "primary-button-background-active":
+          "var(--button-background-color-primary-active)",
+        "primary-button-background-disabled":
+          "var(--button-background-color-primary-disabled)",
+        "primary-button-color": "var(--button-text-color-primary)",
+        "primary-button-color-hover": "var(--button-text-color-primary)",
+        "primary-button-color-active": "var(--button-text-color-primary)",
+        "primary-button-color-disabled": "var(--button-text-color-primary)",
+        "primary-button-border": "var(--button-border-color-primary)",
+        "primary-button-border-hover":
+          "var(--button-border-color-primary-hover)",
+        "primary-button-border-active":
+          "var(--button-border-color-primary-active)",
+        "primary-button-border-disabled":
+          "var(--button-border-color-primary-disabled)",
+        // use default primary button colors in _feature-callout-theme.scss
+        "link-color": "LinkText",
+        "link-color-hover": "LinkText",
+        "link-color-active": "ActiveText",
+        "link-color-visited": "VisitedText",
+        "icon-success-color": "var(--color-accent-attention)",
+        "dismiss-button-background":
+          "var(--newtab-background-color, #F9F9FB) image(var(--newtab-background-color-secondary, #FFF))",
+        "dismiss-button-background-hover":
+          "var(--newtab-background-color, #F9F9FB) image(color-mix(in srgb, currentColor 14%, var(--newtab-background-color-secondary, #FFF)))",
+        "dismiss-button-background-active":
+          "var(--newtab-background-color, #F9F9FB) image(color-mix(in srgb, currentColor 21%, var(--newtab-background-color-secondary, #FFF)))",
+      },
+      dark: {
+        background:
+          "var(--newtab-background-color, #2B2A33) image(var(--newtab-background-color-secondary, #42414D))",
+        border:
+          "color-mix(in srgb, var(--newtab-background-color-secondary, #42414D) 80%, #FFF)",
+        "zap-border-background":
+          "image(var(--newtab-background-color-secondary, #42414D)) padding-box, image(var(--newtab-background-color, #2B2A33)) padding-box, var(--tab-border-color-accent, transparent) border-box",
+        "dismiss-button-background":
+          "var(--newtab-background-color, #2B2A33) image(var(--newtab-background-color-secondary, #42414D))",
+        "dismiss-button-background-hover":
+          "var(--newtab-background-color, #2B2A33) image(color-mix(in srgb, currentColor 14%, var(--newtab-background-color-secondary, #42414D)))",
+        "dismiss-button-background-active":
+          "var(--newtab-background-color, #2B2A33) image(color-mix(in srgb, currentColor 21%, var(--newtab-background-color-secondary, #42414D)))",
+      },
+      hcm: {
+        background: "-moz-dialog",
+        color: "-moz-dialogtext",
+        border: "-moz-dialogtext",
+        "accent-color": "SelectedItem",
+        "step-color": "CanvasText",
+        "current-step-color": "CanvasText",
+        "button-background": "ButtonFace",
+        "button-color": "ButtonText",
+        "button-border": "ButtonText",
+        "button-background-hover": "ButtonText",
+        "button-color-hover": "ButtonFace",
+        "button-border-hover": "ButtonText",
+        "button-background-active": "ButtonText",
+        "button-color-active": "ButtonFace",
+        "button-border-active": "ButtonText",
+        "link-color": "LinkText",
+        "link-color-hover": "LinkText",
+        "link-color-active": "ActiveText",
+        "link-color-visited": "VisitedText",
+        "dismiss-button-background": "-moz-dialog",
         "dismiss-button-background-hover":
           "color-mix(in srgb, currentColor 14%, SelectedItem)",
         "dismiss-button-background-active":

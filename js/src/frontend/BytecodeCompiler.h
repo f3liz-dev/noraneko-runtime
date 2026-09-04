@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -40,7 +38,7 @@
  * BytecodeEmitter.
  *
  * SharedContext.h: class Directives: this contains boolean flags for tracking
- * if we're in asm.js or "use strict" code. The "use strict" bit is stored in
+ * if we're in "use strict" code. The "use strict" bit is stored in
  * SharedContext, and additionally, the full Directives class is stored in
  * ParseContext - if a direcive is encountered while parsing, this is updated,
  * and checked in GeneralParser::functionDefinition, and if it changed, the

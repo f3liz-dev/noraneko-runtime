@@ -528,6 +528,16 @@
         return create_context_action("get_computed_role", context, {selectors});
     };
 
+    window.test_driver_internal.get_accessibility_properties_for_element = function(element) {
+        const selector = get_selector(element);
+        const context = get_context(element);
+        return create_context_action("get_accessibility_properties_for_element", context, {selector});
+    };
+
+    window.test_driver_internal.get_accessibility_properties_for_accessibility_node = function(accId, context=null) {
+        return create_context_action("get_accessibility_properties_for_accessibility_node", context, { accId });
+    };
+
     window.test_driver_internal.get_named_cookie = function(name, context=null) {
         return create_context_action("get_named_cookie", context, {name});
     };
@@ -643,6 +653,13 @@
 
     window.test_driver_internal.reset_fedcm_cooldown = function(context = null) {
         return create_context_action("reset_fedcm_cooldown", context, {});
+    };
+
+    window.test_driver_internal.set_virtual_wallet_behavior = function(action, protocol=null, response=null, context=null) {
+        return create_action("set_virtual_wallet_behavior", {
+            // Default to the current window.
+            context: context ?? window,
+            action, protocol, response});
     };
 
     window.test_driver_internal.create_virtual_sensor = function(sensor_type, sensor_params={}, context=null) {

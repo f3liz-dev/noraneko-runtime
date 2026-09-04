@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -13,6 +11,7 @@
 #include "ProfilerBacktrace.h"
 #include "ProfilerRustBindings.h"
 
+#include "js/Initialization.h"
 #include "js/ProfilingFrameIterator.h"
 #include "jsapi.h"
 #include "jsfriendapi.h"
@@ -27,7 +26,6 @@
 #include "nsXULAppAPI.h"
 #include "ProfilerCodeAddressService.h"
 
-#include <ostream>
 #include <type_traits>
 
 using namespace mozilla;
@@ -746,13 +744,14 @@ static void WriteSample(SpliceableJSONWriter& aWriter,
 
 static void StreamMarkerAfterKind(
     ProfileBufferEntryReader& aER,
-    ProcessStreamingContext& aProcessStreamingContext) {
+    ProcessStreamingContext& aProcessStreamingContext,
+    uint64_t aEntryPosition) {
   ThreadStreamingContext* threadData = nullptr;
   mozilla::base_profiler_markers_detail::DeserializeAfterKindAndStream(
       aER,
       [&](ProfilerThreadId aThreadId) -> baseprofiler::SpliceableJSONWriter* {
-        threadData =
-            aProcessStreamingContext.GetThreadStreamingContext(aThreadId);
+        threadData = aProcessStreamingContext.GetThreadStreamingContext(
+            aThreadId, aEntryPosition);
         return threadData ? &threadData->mMarkersDataWriter : nullptr;
       },
       [&](ProfileChunkedBuffer& aChunkedBuffer) {
@@ -884,7 +883,7 @@ class EntryGetter {
     if (type >= ProfileBufferEntry::Kind::LEGACY_LIMIT) {
       if (type == ProfileBufferEntry::Kind::Marker &&
           mStreamingContextForMarkers) {
-        StreamMarkerAfterKind(er, *mStreamingContextForMarkers);
+        StreamMarkerAfterKind(er, *mStreamingContextForMarkers, CurPos());
         if (!Has()) {
           return true;
         }
@@ -1105,14 +1104,18 @@ void ProfileBuffer::MaybeStreamExecutionTraceToJSON(
         aGetStreamingParametersForThreadCallback,
     double aSinceTime) const {
   JS::ExecutionTrace trace;
-  if (!JS_TracerSnapshotTrace(trace)) {
+  if (!JS_IsInitialized() || !JS_TracerSnapshotTrace(trace)) {
     return;
   }
 
   for (const JS::ExecutionTrace::TracedJSContext& context : trace.contexts) {
+    // An ExecutionTracer is owned by its JSContext and deregisters itself when
+    // that context is destroyed, so a traced context id always belongs to a
+    // thread that is still registered with the profiler. Trace events carry no
+    // buffer position, so use the maximum position to select that still-
+    // registered (latest-window) context for the thread id.
     Maybe<StreamingParametersForThread> streamingParameters =
-        std::forward<GetStreamingParametersForThreadCallback>(
-            aGetStreamingParametersForThreadCallback)(context.id);
+        aGetStreamingParametersForThreadCallback(context.id, UINT64_MAX);
 
     // Ignore samples that are for the wrong thread.
     if (!streamingParameters) {
@@ -1337,11 +1340,14 @@ ProfilerThreadId ProfileBuffer::DoStreamSamplesAndMarkersToJSON(
       MOZ_ASSERT(e.Get().IsThreadId());
 
       ProfilerThreadId threadId = e.Get().GetThreadId();
+      // Buffer position of this sample's ThreadId entry. OS thread ids are
+      // recycled across short-lived threads, so this position is needed to
+      // attribute the sample to the thread whose lifetime covers it.
+      const uint64_t entryPosition = e.CurPos();
       e.Next();
 
       Maybe<StreamingParametersForThread> streamingParameters =
-          std::forward<GetStreamingParametersForThreadCallback>(
-              aGetStreamingParametersForThreadCallback)(threadId);
+          aGetStreamingParametersForThreadCallback(threadId, entryPosition);
 
       // Ignore samples that are for the wrong thread.
       if (!streamingParameters) {
@@ -1618,7 +1624,9 @@ ProfilerThreadId ProfileBuffer::DoStreamSamplesAndMarkersToJSON(
 
           if (kind == ProfileBufferEntry::Kind::Marker &&
               aStreamingContextForMarkers) {
-            StreamMarkerAfterKind(er, *aStreamingContextForMarkers);
+            StreamMarkerAfterKind(
+                er, *aStreamingContextForMarkers,
+                it.CurrentBlockIndex().ConvertToProfileBufferIndex());
             continue;
           }
 
@@ -1686,7 +1694,9 @@ ProfilerThreadId ProfileBuffer::DoStreamSamplesAndMarkersToJSON(
 
           if (kind == ProfileBufferEntry::Kind::Marker &&
               aStreamingContextForMarkers) {
-            StreamMarkerAfterKind(er, *aStreamingContextForMarkers);
+            StreamMarkerAfterKind(
+                er, *aStreamingContextForMarkers,
+                it.CurrentBlockIndex().ConvertToProfileBufferIndex());
             continue;
           }
 
@@ -1721,7 +1731,9 @@ ProfilerThreadId ProfileBuffer::StreamSamplesToJSON(
 
   return DoStreamSamplesAndMarkersToJSON(
       aWriter.SourceFailureLatch(),
-      [&](ProfilerThreadId aReadThreadId) {
+      [&](ProfilerThreadId aReadThreadId, uint64_t /* aEntryPosition */) {
+        // This path streams a single, already-selected thread, so the sample
+        // position isn't needed to disambiguate thread ids.
         Maybe<StreamingParametersForThread> streamingParameters;
 #ifdef DEBUG
         ++processedCount;
@@ -1743,10 +1755,12 @@ ProfilerThreadId ProfileBuffer::StreamSamplesToJSON(
 void ProfileBuffer::StreamSamplesAndMarkersToJSON(
     ProcessStreamingContext& aProcessStreamingContext,
     mozilla::ProgressLogger aProgressLogger) const {
-  auto getStreamingParamsCallback = [&](ProfilerThreadId aReadThreadId) {
+  auto getStreamingParamsCallback = [&](ProfilerThreadId aReadThreadId,
+                                        uint64_t aEntryPosition) {
     Maybe<StreamingParametersForThread> streamingParameters;
     ThreadStreamingContext* threadData =
-        aProcessStreamingContext.GetThreadStreamingContext(aReadThreadId);
+        aProcessStreamingContext.GetThreadStreamingContext(aReadThreadId,
+                                                           aEntryPosition);
     if (threadData) {
       streamingParameters.emplace(
           threadData->mSamplesDataWriter, *threadData->mUniqueStacks,
@@ -2570,7 +2584,13 @@ nsTHashMap<SourceId, IndexIntoSourceTable>
 ProfileBuffer::StreamSourceTableToJSON(
     SpliceableJSONWriter& aWriter,
     const nsTArray<mozilla::JSSourceEntry>& aJSSourceEntries) const {
-  enum Schema : uint32_t { UUID = 0, FILENAME = 1 };
+  enum Schema : uint32_t {
+    ID = 0,
+    FILENAME = 1,
+    START_LINE = 2,
+    START_COLUMN = 3,
+    SOURCE_MAP_URL = 4
+  };
   nsTHashMap<SourceId, IndexIntoSourceTable> sourceIdToIndexMap;
 
   aWriter.StartObjectProperty("sources");
@@ -2578,8 +2598,11 @@ ProfileBuffer::StreamSourceTableToJSON(
     // Write the schema
     {
       JSONSchemaWriter schema(aWriter);
-      schema.WriteField("uuid");
+      schema.WriteField("id");
       schema.WriteField("filename");
+      schema.WriteField("startLine");
+      schema.WriteField("startColumn");
+      schema.WriteField("sourceMapURL");
     }
 
     // Write data array and build sourceId-to-index mapping.
@@ -2592,7 +2615,7 @@ ProfileBuffer::StreamSourceTableToJSON(
     uint32_t index = 0;
     for (const auto& entry : aJSSourceEntries) {
       IndexIntoSourceTable targetIndex;
-      auto hashEntry = hashToIndexMap.Lookup(entry.uuid);
+      auto hashEntry = hashToIndexMap.Lookup(entry.id);
 
       if (hashEntry) {
         // We've seen this hash before, reuse the existing index.
@@ -2604,13 +2627,21 @@ ProfileBuffer::StreamSourceTableToJSON(
           // TODO: Use AutoArraySchemaWithStringsWriter to write string indexes
           // into string table once we have "process global" string table.
           // Currently string tables are per-thread.
-          aWriter.StringElement(MakeStringSpan(entry.uuid.get()));
+          aWriter.StringElement(MakeStringSpan(entry.id.get()));
           aWriter.StringElement(MakeStringSpan(entry.sourceData.filePath()));
+          aWriter.IntElement(entry.sourceData.startLine());
+          aWriter.IntElement(entry.sourceData.startColumn());
+          if (entry.sourceData.sourceMapURLLength() > 0) {
+            aWriter.StringElement(
+                NS_ConvertUTF16toUTF8(entry.sourceData.sourceMapURL()));
+          }
+          // If you add a new element after sourceMapURL, make sure to write a
+          // null element for sourceMapURL when it's empty.
         }
         aWriter.EndArray();
 
         targetIndex = index;
-        hashToIndexMap.InsertOrUpdate(entry.uuid, index);
+        hashToIndexMap.InsertOrUpdate(entry.id, index);
         index++;
       }
 

@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2; -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -6,14 +5,15 @@
 #ifndef ScriptPreloader_inl_h
 #define ScriptPreloader_inl_h
 
-#include "mozilla/Attributes.h"
 #include "mozilla/Assertions.h"
-#include "mozilla/ResultExtensions.h"
+#include "mozilla/Attributes.h"
 #include "mozilla/dom/ScriptSettings.h"
-#include "nsString.h"
-#include "nsTArray.h"
+#include "mozilla/ResultExtensions.h"
 
 #include <prio.h>
+
+#include "nsString.h"
+#include "nsTArray.h"
 
 namespace mozilla {
 

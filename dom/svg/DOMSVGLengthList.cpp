@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -68,13 +66,6 @@ NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(DOMSVGLengthList)
   NS_WRAPPERCACHE_INTERFACE_MAP_ENTRY
   NS_INTERFACE_MAP_ENTRY(nsISupports)
 NS_INTERFACE_MAP_END
-
-void DOMSVGLengthList::IndexedSetter(uint32_t index, DOMSVGLength& newValue,
-                                     ErrorResult& aRv) {
-  // Need to take a ref to the return value so it does not leak.
-  RefPtr<DOMSVGLength> ignored = ReplaceItem(newValue, index, aRv);
-  (void)ignored;
-}
 
 JSObject* DOMSVGLengthList::WrapObject(JSContext* cx,
                                        JS::Handle<JSObject*> aGivenProto) {
@@ -191,6 +182,13 @@ already_AddRefed<DOMSVGLength> DOMSVGLengthList::IndexedGetter(
   return nullptr;
 }
 
+void DOMSVGLengthList::IndexedSetter(uint32_t aIndex, DOMSVGLength& aNewValue,
+                                     ErrorResult& aRv) {
+  // Need to take a ref to the return value so it does not leak.
+  RefPtr<DOMSVGLength> ignored = ReplaceItem(aNewValue, aIndex, aRv);
+  (void)ignored;
+}
+
 already_AddRefed<DOMSVGLength> DOMSVGLengthList::InsertItemBefore(
     DOMSVGLength& newItem, uint32_t index, ErrorResult& aRv) {
   if (IsAnimValList()) {
@@ -198,9 +196,8 @@ already_AddRefed<DOMSVGLength> DOMSVGLengthList::InsertItemBefore(
     return nullptr;
   }
 
-  index = std::min(index, LengthNoFlush());
-  if (index >= DOMSVGLength::MaxListIndex()) {
-    aRv.ThrowIndexSizeError("Index out of range");
+  if (LengthNoFlush() >= DOMSVGLength::MaxListIndex()) {
+    aRv.ThrowIndexSizeError("List too long");
     return nullptr;
   }
 
@@ -223,10 +220,15 @@ already_AddRefed<DOMSVGLength> DOMSVGLengthList::InsertItemBefore(
     }
   }
 
-  AutoChangeLengthListNotifier notifier(this);
-  // Now that we know we're inserting, keep animVal list in sync as necessary.
-  MaybeInsertNullInAnimValListAt(index);
+  index = std::min(index, LengthNoFlush());
 
+  // Keep animVal list in sync as necessary.
+  if (!MaybeInsertNullInAnimValListAt(index)) {
+    aRv.ThrowIndexSizeError("List too long");
+    return nullptr;
+  }
+
+  AutoChangeLengthListNotifier notifier(this);
   InternalList().InsertItem(index, domItem->ToSVGLength());
   MOZ_ALWAYS_TRUE(mItems.InsertElementAt(index, domItem.get(), fallible));
 
@@ -318,21 +320,26 @@ already_AddRefed<DOMSVGLength> DOMSVGLengthList::GetItemAt(uint32_t aIndex) {
   return result.forget();
 }
 
-void DOMSVGLengthList::MaybeInsertNullInAnimValListAt(uint32_t aIndex) {
+bool DOMSVGLengthList::MaybeInsertNullInAnimValListAt(uint32_t aIndex) {
   MOZ_ASSERT(!IsAnimValList(), "call from baseVal to animVal");
 
   if (!AnimListMirrorsBaseList()) {
-    return;
+    return true;
+  }
+  DOMSVGLengthList* animVal = mAList->mAnimVal;
+  MOZ_ASSERT(animVal, "AnimListMirrorsBaseList() promised a non-null animVal");
+
+  if (animVal->mItems.Length() >= DOMSVGLength::MaxListIndex()) {
+    return false;
   }
 
-  DOMSVGLengthList* animVal = mAList->mAnimVal;
-
-  MOZ_ASSERT(animVal, "AnimListMirrorsBaseList() promised a non-null animVal");
   MOZ_ASSERT(animVal->mItems.Length() == mItems.Length(),
              "animVal list not in sync!");
   MOZ_ALWAYS_TRUE(animVal->mItems.InsertElementAt(aIndex, nullptr, fallible));
 
   UpdateListIndicesFromIndex(animVal->mItems, aIndex + 1);
+
+  return true;
 }
 
 void DOMSVGLengthList::MaybeRemoveItemFromAnimValListAt(uint32_t aIndex) {

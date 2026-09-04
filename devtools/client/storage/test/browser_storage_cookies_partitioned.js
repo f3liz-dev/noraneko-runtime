@@ -6,10 +6,6 @@
 
 // Test that the Partitioned cookies are displayed.
 
-SpecialPowers.pushPrefEnv({
-  set: [["security.allow_eval_with_system_principal", true]],
-});
-
 const doctype = `<!DOCTYPE html>`;
 const cookieAttrs = `Secure;SameSite=None;Path=/`;
 
@@ -58,12 +54,9 @@ add_task(async function () {
     { name: "foo.Partition Key", dontMatch: true },
   ]);
 
-  const nestedExampleComFooId = getCookieId(
-    "foo",
-    "example.com",
-    "/",
-    "(https,example.com,f)"
-  );
+  const nestedExampleComFooId = getCookieId("foo", "example.com", "/", {
+    partitionKey: "(https,example.com,f)",
+  });
   await selectTableItem(nestedExampleComFooId);
   checkCell(nestedExampleComFooId, "value", "partitioned-nested");
   checkCell(nestedExampleComFooId, "partitionKey", "https://example.com");
@@ -74,9 +67,9 @@ add_task(async function () {
   await selectTreeItem(["cookies", "https://example.org"]);
   const thirdPartyPartitionedId = getCookieId(
     "fooThirdPartyPartitioned",
-    "example.org",
+    MAIN_DOMAIN,
     "/",
-    "(https,example.com)"
+    { partitionKey: "(https,example.com)" }
   );
   await selectTableItem(thirdPartyPartitionedId);
   checkCell(thirdPartyPartitionedId, "value", "partitioned-third-party");

@@ -313,7 +313,8 @@ void TlsConnectTestBase::SetupEch(std::shared_ptr<TlsAgent>& client,
                                   std::shared_ptr<TlsAgent>& server,
                                   HpkeKemId kem_id, bool expect_ech,
                                   bool set_client_config,
-                                  bool set_server_config, int max_name_len) {
+                                  bool set_server_config, int max_name_len,
+                                  bool compress_xtns) {
   EXPECT_TRUE(set_server_config || set_client_config);
   ScopedSECKEYPublicKey pub;
   ScopedSECKEYPrivateKey priv;
@@ -334,6 +335,10 @@ void TlsConnectTestBase::SetupEch(std::shared_ptr<TlsAgent>& client,
   if (set_client_config) {
     rv = SSL_SetClientEchConfigs(client->ssl_fd(), record.data(), record.len());
     ASSERT_EQ(SECSuccess, rv);
+    if (!compress_xtns) {
+      rv = SSLInt_SetEnableEchXtnCompression(client->ssl_fd(), PR_FALSE);
+      ASSERT_EQ(SECSuccess, rv);
+    }
   }
 
   /* Filter expect_ech, which typically defaults to true. Parameterized tests
@@ -448,12 +453,18 @@ void TlsConnectTestBase::ConnectWithCipherSuite(uint16_t cipher_suite) {
 }
 
 void TlsConnectTestBase::CheckConnected() {
-  // Have the client read handshake twice to make sure we get the
-  // NST and the ACK.
+  // Read until the client processes the ACK and releases its handshake cipher
+  // specs.  If the server retransmits its HS flight (e.g. due to timer expiry),
+  // out-of-epoch epoch2 records precede the NST+ACK in the client's buffer and
+  // are silently dropped one per Handshake() call.  The server flight has 5
+  // records, so 10 iterations is enough to handle one retransmit with margin.
   if (client_->version() >= SSL_LIBRARY_VERSION_TLS_1_3 &&
       variant_ == ssl_variant_datagram) {
-    client_->Handshake();
-    client_->Handshake();
+    static const int kMaxDtlsHandshakeDrainIterations = 10;
+    for (int i = 0; i < kMaxDtlsHandshakeDrainIterations; i++) {
+      client_->Handshake();
+      if (SSLInt_CountCipherSpecs(client_->ssl_fd()) == 2) break;
+    }
     auto suites = SSLInt_CountCipherSpecs(client_->ssl_fd());
     // Verify that we dropped the client's retransmission cipher suites.
     EXPECT_EQ(2, suites) << "Client has the wrong number of suites";

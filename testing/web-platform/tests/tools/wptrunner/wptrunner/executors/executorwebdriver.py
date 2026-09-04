@@ -36,6 +36,7 @@ from .protocol import (BaseProtocolPart,
                        SPCTransactionsProtocolPart,
                        RPHRegistrationsProtocolPart,
                        FedCMProtocolPart,
+                       DigitalCredentialsProtocolPart,
                        VirtualSensorProtocolPart,
                        BidiBluetoothProtocolPart,
                        BidiBrowsingContextProtocolPart,
@@ -81,7 +82,11 @@ class WebDriverBaseProtocolPart(BaseProtocolPart):
         return method(script, args=args)
 
     def set_timeout(self, timeout):
-        self.webdriver.timeouts.script = timeout
+        # TODO(webdriver/w3c#1949): The struct definition contradicts the
+        # algorithm on whether fractional timeouts are allowed. There's not a
+        # large difference for non-wdspec testing either way, so coerce to int
+        # until there's a resolution.
+        self.webdriver.timeouts.script = int(timeout)
 
     def create_window(self, type=None, **kwargs):
         # WebKitGTK-based browsers have issues when the test is opened in a new tab instead of a separate window
@@ -444,10 +449,15 @@ class WebDriverBidiWebExtensionsProtocolPart(WebExtensionsProtocolPart):
         else:
             params["value"] = value
 
-        return self.webdriver.loop.run_until_complete(self.webdriver.bidi_session.web_extension.install(params))
+        extension_id = self.parent.loop.run_until_complete(
+            self.webdriver.bidi_session.web_extension.install(
+                extension_data=params))
+        return extension_id
 
     def uninstall_web_extension(self, extension_id):
-        return self.webdriver.loop.run_until_complete(self.webdriver.bidi_session.web_extension.uninstall(extension_id))
+        return self.parent.loop.run_until_complete(
+            self.webdriver.bidi_session.web_extension.uninstall(
+                extension=extension_id))
 
     def _resolve_path(self, path):
         if self.parent.test_path is not None:
@@ -621,14 +631,7 @@ class WebDriverSendKeysProtocolPart(SendKeysProtocolPart):
         self.webdriver = self.parent.webdriver
 
     def send_keys(self, element, keys):
-        try:
-            return element.send_keys(keys)
-        except webdriver_error.UnknownErrorException as e:
-            # workaround https://bugs.chromium.org/p/chromedriver/issues/detail?id=1999
-            if (e.http_status != 500 or
-                e.status_code != "unknown error"):
-                raise
-            return element.send_element_command("POST", "value", {"value": list(keys)})
+        return element.send_keys(keys)
 
 
 class WebDriverActionSequenceProtocolPart(ActionSequenceProtocolPart):
@@ -968,6 +971,26 @@ class WebDriverDevicePostureProtocolPart(DevicePostureProtocolPart):
         return self.webdriver.send_session_command("DELETE", "deviceposture")
 
 
+class WebDriverBidiDigitalCredentialsProtocolPart(DigitalCredentialsProtocolPart):
+    def setup(self):
+        self.webdriver = self.parent.webdriver
+
+    async def set_virtual_wallet_behavior(self, action, protocol=None, response=None, context=None):
+        if context is None:
+            context = self.webdriver.current_window_handle
+
+        params = {"action": action, "context": context}
+        if protocol is not None:
+            params["protocol"] = protocol
+        if response is not None:
+            params["response"] = response
+
+        # send_command returns an awaitable resolving to the response future,
+        # which must itself be awaited to get the command result.
+        return await (await self.webdriver.bidi_session.send_command(
+            "digitalCredentials.setVirtualWalletBehavior", params))
+
+
 class WebDriverStorageProtocolPart(StorageProtocolPart):
     def setup(self):
         self.webdriver = self.parent.webdriver
@@ -1029,7 +1052,7 @@ class WebDriverWebExtensionsProtocolPart(WebExtensionsProtocolPart):
         if path is not None:
             path = self._resolve_path(path)
 
-        return self.webdriver.web_extensions.install(type, path, value)
+        return self.webdriver.web_extensions.install(type, path, value)["extension"]
 
     def uninstall_web_extension(self, extension_id):
         return self.webdriver.web_extensions.uninstall(extension_id)
@@ -1146,6 +1169,7 @@ class WebDriverBidiProtocol(WebDriverProtocol):
                   WebDriverBidiScriptProtocolPart,
                   WebDriverBidiWebExtensionsProtocolPart,
                   WebDriverBidiUserAgentClientHintsProtocolPart,
+                  WebDriverBidiDigitalCredentialsProtocolPart,
                   *(part for part in WebDriverProtocol.implements)
                   ]
 

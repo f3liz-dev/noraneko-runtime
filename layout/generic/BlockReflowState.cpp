@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -12,9 +10,12 @@
 
 #include "LayoutLogging.h"
 #include "TextOverflow.h"
-#include "fmt/format.h"
+#ifdef DEBUG
+#  include "fmt/base.h"
+#endif
 #include "mozilla/AutoRestore.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/ReflowInput.h"
 #include "mozilla/StaticPrefs_layout.h"
 #include "nsBlockFrame.h"
 #include "nsIFrameInlines.h"
@@ -63,6 +64,47 @@ BlockReflowState::BlockReflowState(
   }
   if (aBlockNeedsFloatManager) {
     mFlags.mBlockNeedsFloatManager = true;
+  }
+
+  // Determine the requested text-box-trim sides for this block by checking
+  // the request both from the block's ancestors (passed down via `ReflowInput`)
+  // and from the block itself.
+  mFlags.mShouldApplyTextBoxTrimStart =
+      aReflowInput.mFlags.mShouldApplyTextBoxTrimStart;
+  mFlags.mShouldApplyTextBoxTrimAtBlockEnd =
+      aReflowInput.mFlags.mShouldApplyTextBoxTrimAtBlockEnd;
+  mFlags.mShouldApplyTextBoxTrimAtFragmentEnd =
+      aReflowInput.mFlags.mShouldApplyTextBoxTrimAtFragmentEnd;
+
+  const StyleTextBoxTrim trim = mBlock->StyleTextReset()->mTextBoxTrim;
+  const bool selfTextBoxTrimStart = bool(trim & StyleTextBoxTrim::TRIM_START);
+  const bool selfTextBoxTrimEnd = bool(trim & StyleTextBoxTrim::TRIM_END);
+
+  // "When the box to which `text-box-trim` has been applied is split by
+  // fragmentation, whether trimming is applied per fragment or only to the
+  // start/end edges of its first/last fragments is determined by
+  // `box-decoration-break`."
+  //
+  // https://drafts.csswg.org/css-inline-3/#text-box-trim
+  const bool isBoxDecorationBreakClone =
+      aFrame->StyleBorder()->mBoxDecorationBreak ==
+      StyleBoxDecorationBreak::Clone;
+
+  if (selfTextBoxTrimStart) {
+    // This box can be always trimmed on the start side if it's the first
+    // fragment (or if the box is not fragmented at all). Otherwise, as a
+    // continuation, this fragment requires `box-decoration-break: clone`
+    // to be eligible.
+    mFlags.mShouldApplyTextBoxTrimStart =
+        !aFrame->GetPrevInFlow() || isBoxDecorationBreakClone;
+  }
+
+  if (selfTextBoxTrimEnd) {
+    // The last formatted line of this block should be trimmed directly.
+    // If the block is fragmented when reflowed, then non-last fragments
+    // should only be trimmed if `box-decoration-break` is `clone`.
+    mFlags.mShouldApplyTextBoxTrimAtBlockEnd = true;
+    mFlags.mShouldApplyTextBoxTrimAtFragmentEnd = isBoxDecorationBreakClone;
   }
 
   mFlags.mCanHaveOverflowMarkers = css::TextOverflow::CanHaveOverflowMarkers(

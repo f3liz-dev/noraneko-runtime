@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -15,17 +13,17 @@
 
 #include "vm/BuiltinObjectKind.h"
 #include "vm/CheckIsObjectKind.h"  // CheckIsObjectKind
-#ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
-#  include "vm/ErrorObject.h"
-#  include "vm/UsingHint.h"
-#endif
+#include "vm/ErrorObject.h"
+#include "vm/GeneratorResumeKind.h"  // GeneratorResumeKind
 #include "vm/Stack.h"
+#include "vm/UsingHint.h"
 
 namespace js {
 
 class WithScope;
 class EnvironmentIter;
 class PlainObject;
+class AbstractGeneratorObject;
 
 /*
  * Convert null/undefined |thisv| into the global lexical's |this| object, and
@@ -223,13 +221,14 @@ extern bool Execute(JSContext* cx, HandleScript script, HandleObject envChain,
 
 class ExecuteState;
 class InvokeState;
+class GeneratorResumeState;
 
 // RunState is passed to RunScript and RunScript then either passes it to the
 // interpreter or to the JITs. RunState contains all information we need to
 // construct an interpreter or JIT frame.
 class MOZ_RAII RunState {
  protected:
-  enum Kind { Execute, Invoke };
+  enum Kind { Execute, Invoke, GeneratorResume };
   Kind kind_;
 
   RootedScript script_;
@@ -240,6 +239,7 @@ class MOZ_RAII RunState {
  public:
   bool isExecute() const { return kind_ == Execute; }
   bool isInvoke() const { return kind_ == Invoke; }
+  bool isGeneratorResume() const { return kind_ == GeneratorResume; }
 
   ExecuteState* asExecute() const {
     MOZ_ASSERT(isExecute());
@@ -249,13 +249,16 @@ class MOZ_RAII RunState {
     MOZ_ASSERT(isInvoke());
     return (InvokeState*)this;
   }
+  GeneratorResumeState* asGeneratorResume() const {
+    MOZ_ASSERT(isGeneratorResume());
+    return (GeneratorResumeState*)this;
+  }
 
   JS::HandleScript script() const { return script_; }
 
   InterpreterFrame* pushInterpreterFrame(JSContext* cx);
   inline void setReturnValue(const Value& v);
 
- private:
   RunState(const RunState& other) = delete;
   RunState(const ExecuteState& other) = delete;
   RunState(const InvokeState& other) = delete;
@@ -304,11 +307,34 @@ class MOZ_RAII InvokeState final : public RunState {
   void setReturnValue(const Value& v) { args_.rval().set(v); }
 };
 
+// Used to resume a suspended generator or async function/module.
+class MOZ_RAII GeneratorResumeState final : public RunState {
+  Handle<AbstractGeneratorObject*> genObj_;
+  HandleValue resumeValue_;
+  GeneratorResumeKind resumeKind_;
+  MutableHandleValue result_;
+
+ public:
+  GeneratorResumeState(JSContext* cx, Handle<AbstractGeneratorObject*> genObj,
+                       HandleValue resumeValue, GeneratorResumeKind resumeKind,
+                       MutableHandleValue result);
+
+  Handle<AbstractGeneratorObject*> generator() const { return genObj_; }
+  HandleValue resumeValue() const { return resumeValue_; }
+  GeneratorResumeKind resumeKind() const { return resumeKind_; }
+
+  InterpreterFrame* pushInterpreterFrame(JSContext* cx);
+
+  void setReturnValue(const Value& v) { result_.set(v); }
+};
+
 inline void RunState::setReturnValue(const Value& v) {
   if (isInvoke()) {
     asInvoke()->setReturnValue(v);
-  } else {
+  } else if (isExecute()) {
     asExecute()->setReturnValue(v);
+  } else {
+    asGeneratorResume()->setReturnValue(v);
   }
 }
 
@@ -648,7 +674,6 @@ bool OptimizeSpreadCall(JSContext* cx, HandleValue arg,
 
 bool OptimizeGetIterator(Value arg, JSContext* cx);
 
-#ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
 enum class SyncDisposalClosureSlots : uint8_t {
   Method,
 };
@@ -661,7 +686,6 @@ bool AddDisposableResourceToCapability(JSContext* cx, JS::Handle<JSObject*> env,
                                        JS::Handle<JS::Value> val,
                                        JS::Handle<JS::Value> method,
                                        bool needsClosure, UsingHint hint);
-#endif
 
 ArrayObject* ArrayFromArgumentsObject(JSContext* cx,
                                       Handle<ArgumentsObject*> args);

@@ -1,5 +1,4 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -107,9 +106,10 @@ function monkeyPatchRemoteSettingsClients({ experiments = [] }) {
   // Settings server, which will cause test failures. Additionally, return
   // `experiments` from both Nimbus collections. These collections each only
   // support a subset of features -- the secureExperiments collection, e.g.,
-  // only supports recipes that have at least one of `newtabTrainhopAddon` and
-  // `prefFlips` -- but the `RemoteSettingsExperimentLoader` will filter out the
-  // recipes from each collection based on their supported features.
+  // only supports recipes that have at least one of `newtabTrainhopAddon`,
+  // `newtabTrainhopAddonDeployment` and `prefFlips`, but the
+  // `RemoteSettingsExperimentLoader` will filter out the recipes from each
+  // collection based on their supported features.
   lazy.RemoteSettingsClient.prototype.get = async function (options = {}) {
     const responseData =
       this === nimbusClients.experiments ||
@@ -313,6 +313,11 @@ export async function runBackgroundTask(commandLine) {
 
   // Most of the task is arranging configuration.
   await handleCommandLine(commandLine);
+
+  outputInfo({
+    chromeColorSchemeIsDark: Services.appinfo.chromeColorSchemeIsDark,
+    prefersReducedMotion: Services.appinfo.prefersReducedMotion,
+  });
 
   // Here's where we actually start Nimbus and the Firefox Messaging
   // System.

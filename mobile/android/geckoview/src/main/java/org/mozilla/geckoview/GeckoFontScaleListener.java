@@ -1,11 +1,9 @@
-/* -*- Mode: Java; c-basic-offset: 4; tab-width: 4; indent-tabs-mode: nil; -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 package org.mozilla.geckoview;
 
-import android.annotation.SuppressLint;
 import android.content.ContentResolver;
 import android.content.Context;
 import android.database.ContentObserver;
@@ -27,7 +25,6 @@ import org.mozilla.gecko.util.ThreadUtils;
   private static final float DEFAULT_FONT_SCALE = 1.0f;
 
   // We're referencing the *application* context, so this is in fact okay.
-  @SuppressLint("StaticFieldLeak")
   private static final GeckoFontScaleListener sInstance = new GeckoFontScaleListener();
 
   private Context mApplicationContext;

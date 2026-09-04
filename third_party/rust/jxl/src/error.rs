@@ -133,16 +133,12 @@ pub enum Error {
     // Generic arithmetic overflow. Prefer using other errors if possible.
     #[error("Arithmetic overflow")]
     ArithmeticOverflow,
-    #[error("Empty frame sequence")]
-    NoFrames,
     #[error(
         "Pipeline channel type mismatch: stage {0} channel {1}, expected {2:?} but found {3:?}"
     )]
     PipelineChannelTypeMismatch(String, usize, DataTypeTag, DataTypeTag),
     #[error("Invalid stage {0} after extend stage")]
     PipelineInvalidStageAfterExtend(String),
-    #[error("Channel {0} was not used in the render pipeline")]
-    PipelineChannelUnused(usize),
     #[error("Trying to copy rects of different size, src: {0}x{1} dst {2}x{3}")]
     CopyOfDifferentSize(usize, usize, usize, usize),
     #[error("LF quantization factor is too small: {0}")]
@@ -171,6 +167,10 @@ pub enum Error {
     PatchesOutOfBounds(String, usize, usize, usize),
     #[error("Patches cannot use frames saved post color transforms")]
     PatchesPostColorTransform(),
+    #[error(
+        "Patches with extra-channel upsampling {1} that does not match non-1 color upsampling ({0}) are unsupported"
+    )]
+    PatchesUnsupportedMixedUpsampling(u32, u32),
     #[error("Too many {0}: {1}, limit is {2}")]
     PatchesTooMany(String, usize, usize),
     #[error("Reference too large: {0}, limit is {1}")]
@@ -237,6 +237,8 @@ pub enum Error {
     HFBlockOutOfBounds,
     #[error("Invalid AC: nonzeros {0} is too large for {1} 8x8 blocks")]
     InvalidNumNonZeros(usize, usize),
+    #[error("Invalid AC: histogram index {0} is out of bounds (num_histograms = {1})")]
+    InvalidHistogramIndex(usize, usize),
     #[error("Invalid AC: {0} nonzeros after decoding block")]
     EndOfBlockResidualNonZeros(usize),
     #[error("Unknown transfer function for ICC profile")]
@@ -259,10 +261,6 @@ pub enum Error {
     IccUnsupportedTransferFunction,
     #[error("Table size too large when writing ICC: {0}")]
     IccTableSizeExceeded(usize),
-    #[error("Invalid CMS configuration: requested ICC but no CMS is configured")]
-    ICCOutputNoCMS,
-    #[error("Non-XYB image requires CMS to convert to different output color profile")]
-    NonXybOutputNoCMS,
     #[error("I/O error: {0}")]
     IOError(#[from] std::io::Error),
     #[error("Wrong buffer count: {0} buffers given, {1} buffers expected")]
@@ -275,22 +273,8 @@ pub enum Error {
     SaveDifferentDownsample((u8, u8), (u8, u8)),
     #[error("Image has {0} extra channels, more than the maximum of 256")]
     TooManyExtraChannels(usize),
-    #[error(
-        "CMS transform increases channel count from {in_channels} to {out_channels}, which is not supported"
-    )]
-    CmsChannelCountIncrease {
-        in_channels: usize,
-        out_channels: usize,
-    },
-    #[error(
-        "Cannot output extra channel {channel_index} ({channel_type:?}): it was consumed by CMS color conversion"
-    )]
-    CmsConsumedChannelRequested {
-        channel_index: usize,
-        channel_type: String,
-    },
-    #[error("CMS error: {0}")]
-    CmsError(String),
+    #[error("No LF frame for level {0}")]
+    NoLfFrame(u32),
 }
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;

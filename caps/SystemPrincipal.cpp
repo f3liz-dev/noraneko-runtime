@@ -1,18 +1,18 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 /* The privileged system principal. */
 
-#include "nscore.h"
 #include "SystemPrincipal.h"
+
 #include "mozilla/ClearOnShutdown.h"
 #include "nsCOMPtr.h"
-#include "nsReadableUtils.h"
 #include "nsCRT.h"
-#include "nsString.h"
 #include "nsIClassInfoImpl.h"
+#include "nsReadableUtils.h"
+#include "nsString.h"
+#include "nscore.h"
 #include "pratom.h"
 
 using namespace mozilla;

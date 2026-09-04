@@ -177,7 +177,7 @@ async function openTab(aURL) {
 
   // Select tab and make sure its browser is focused.
   gBrowser.selectedTab = tab;
-  tab.ownerGlobal.focus();
+  tab.documentGlobal.focus();
 
   let browser = gBrowser.getBrowserForTab(tab);
   await BrowserTestUtils.browserLoaded(browser);
@@ -204,8 +204,8 @@ async function assignCookiesUnderFirstParty(aURL, aFirstParty, aCookieValue) {
 async function generateCookies(aThirdParty) {
   // we generate two different cookies for two first party domains.
   let cookies = [];
-  cookies.push(Math.random().toString());
-  cookies.push(Math.random().toString());
+  cookies.push(`A=${Math.random().toString()}`);
+  cookies.push(`B=${Math.random().toString()}`);
 
   let firstSiteURL;
   let secondSiteURL;
@@ -323,7 +323,8 @@ async function doTestForAllTabsFavicon(
   await allTabsPopupShownPromise;
 
   await assertIconIsData(
-    gTabsPanel.allTabsViewTabs.lastElementChild.firstElementChild
+    [...gTabsPanel.allTabsViewTabs.querySelectorAll(".all-tabs-item")].at(-1)
+      .firstElementChild
   );
 
   // Close the popup of allTabs and wait until it's done.
@@ -361,7 +362,8 @@ async function doTestForAllTabsFavicon(
   await allTabsPopupShownPromise;
 
   await assertIconIsData(
-    gTabsPanel.allTabsViewTabs.lastElementChild.firstElementChild
+    [...gTabsPanel.allTabsViewTabs.querySelectorAll(".all-tabs-item")].at(-1)
+      .firstElementChild
   );
 
   // Close the popup of allTabs and wait until it's done.

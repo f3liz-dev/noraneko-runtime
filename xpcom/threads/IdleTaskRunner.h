@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,12 +5,13 @@
 #ifndef IdleTaskRunner_h
 #define IdleTaskRunner_h
 
+#include <functional>
+
 #include "mozilla/TimeStamp.h"
 #include "nsIEventTarget.h"
 #include "nsISupports.h"
 #include "nsITimer.h"
 #include "nsString.h"
-#include <functional>
 
 namespace mozilla {
 
@@ -94,6 +93,7 @@ class IdleTaskRunner {
   ~IdleTaskRunner();
   void CancelTimer();
   void SetTimerInternal(TimeDuration aDelay);
+  static void TimedOut(nsITimer* aTimer, void* aClosure);
 
   nsCOMPtr<nsITimer> mTimer;
   nsCOMPtr<nsITimer> mScheduleTimer;

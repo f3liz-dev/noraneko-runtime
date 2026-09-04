@@ -2,6 +2,7 @@
 //! [Serialize] for)
 
 use serde::Serializer;
+
 /// Useful for types that implement [Error][std::error::Error] and don't need any special
 /// treatment.
 pub fn serialize_generic_error<S: Serializer, E: std::error::Error>(

@@ -1,0 +1,15 @@
+{
+  "label": "paypal.com",
+  "bugs": {
+    "1939697": {
+      "issue": "broken-captcha",
+      "matches": ["*://www.paypal.com/myaccount/security/*"]
+    }
+  },
+  "interventions": [
+    {
+      "platforms": ["all"],
+      "ua_string": ["add_Chrome"]
+    }
+  ]
+}

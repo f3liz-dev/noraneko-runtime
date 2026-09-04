@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -13,7 +11,7 @@ namespace js {
 
 class BooleanObject : public NativeObject {
   /* Stores this Boolean object's [[PrimitiveValue]]. */
-  static const unsigned PRIMITIVE_VALUE_SLOT = 0;
+  JS_DEFINE_TYPED_SLOT(0, PRIMITIVE_VALUE_SLOT, Boolean);
 
   static const ClassSpec classSpec_;
 
@@ -29,13 +27,15 @@ class BooleanObject : public NativeObject {
   static inline BooleanObject* create(JSContext* cx, bool b,
                                       HandleObject proto = nullptr);
 
-  bool unbox() const { return getFixedSlot(PRIMITIVE_VALUE_SLOT).toBoolean(); }
+  bool unbox() const {
+    return getFixedSlotTyped(PRIMITIVE_VALUE_SLOT).toBoolean();
+  }
 
  private:
   static JSObject* createPrototype(JSContext* cx, JSProtoKey key);
 
-  inline void setPrimitiveValue(bool b) {
-    setFixedSlot(PRIMITIVE_VALUE_SLOT, BooleanValue(b));
+  inline void initPrimitiveValue(bool b) {
+    initFixedSlotTyped(PRIMITIVE_VALUE_SLOT, BooleanValue(b));
   }
 };
 

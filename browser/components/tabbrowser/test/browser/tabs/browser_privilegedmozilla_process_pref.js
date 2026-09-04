@@ -1,5 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/
  */
@@ -14,7 +12,7 @@
 // High and Low Privilege
 const TEST_HIGH1 = "https://example.org/";
 const TEST_HIGH2 = "https://test1.example.org/";
-// eslint-disable-next-line @microsoft/sdl/no-insecure-url
+// eslint-disable-next-line sdl/no-insecure-url
 const TEST_LOW1 = "http://example.org/";
 const TEST_LOW2 = "https://example.com/";
 

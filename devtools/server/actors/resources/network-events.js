@@ -15,17 +15,6 @@ const Targets = require("resource://devtools/server/actors/targets/index.js");
 
 const lazy = {};
 
-const { XPCOMUtils } = ChromeUtils.importESModule(
-  "resource://gre/modules/XPCOMUtils.sys.mjs",
-  { global: "contextual" }
-);
-XPCOMUtils.defineLazyPreferenceGetter(
-  lazy,
-  "responseBodyLimit",
-  "devtools.netmonitor.responseBodyLimit",
-  0
-);
-
 ChromeUtils.defineESModuleGetters(
   lazy,
   {
@@ -69,9 +58,17 @@ class NetworkEventWatcher {
     this.onNetworkEventUpdated = onUpdated;
     // Boolean to know if we keep previous document network events or not.
     this.persist = false;
+
+    // Retrive instantiation value for body limit from target configurations
+    const targetConfigurationActor =
+      this.watcherActor.getTargetConfigurationActor();
+    const bodyLimit = targetConfigurationActor.getNetworkBodyLimit();
+
     this.listener = new lazy.NetworkObserver({
-      decodeResponseBodies: true,
-      responseBodyLimit: lazy.responseBodyLimit,
+      // The responses will be decoded lazily when the Response details are
+      // requested by the UI.
+      decodeResponseBodies: false,
+      bodyLimit,
       ignoreChannelFunction: this.shouldIgnoreChannel.bind(this),
       onNetworkEvent: this.onNetworkEvent.bind(this),
     });
@@ -196,6 +193,14 @@ class NetworkEventWatcher {
     this.listener.removeOverride(url);
   }
 
+  setLocalModeMappings(mappings) {
+    this.listener.setLocalModeMappings(mappings);
+  }
+
+  setBodyLimit(bodyLimit) {
+    this.listener.setBodyLimit(bodyLimit);
+  }
+
   /**
    * Watch for previous document being unloaded in order to clear
    * all related network events, in case persist is disabled.
@@ -211,7 +216,7 @@ class NetworkEventWatcher {
     }
 
     const { innerWindowId } =
-      this.watcherActor.browserElement.browsingContext.currentWindowGlobal;
+      this.watcherActor.browsingContext.currentWindowGlobal;
 
     // When a navigation starts, destroy all network request actors as the UI should not longer show them.
     // We can easily destroy all requests which aren't navigation request.
@@ -363,6 +368,9 @@ class NetworkEventWatcher {
         resourceUpdates.mimeType = updateResource.mimeType;
         resourceUpdates.waitingTime = updateResource.waitingTime;
         resourceUpdates.isResolvedByTRR = updateResource.isResolvedByTRR;
+        if (Number.isInteger(updateResource.priority)) {
+          resourceUpdates.priority = updateResource.priority;
+        }
         resourceUpdates.proxyHttpVersion = updateResource.proxyHttpVersion;
         resourceUpdates.proxyStatus = updateResource.proxyStatus;
         resourceUpdates.proxyStatusText = updateResource.proxyStatusText;
@@ -381,20 +389,25 @@ class NetworkEventWatcher {
 
         break;
       case NETWORK_EVENT_TYPES.RESPONSE_CONTENT:
-        resourceUpdates.contentSize = updateResource.contentSize;
+        if (updateResource.contentSize !== undefined) {
+          resourceUpdates.contentSize = updateResource.contentSize;
+        }
         resourceUpdates.transferredSize = updateResource.transferredSize;
         resourceUpdates.mimeType = updateResource.mimeType;
         break;
       case NETWORK_EVENT_TYPES.RESPONSE_CONTENT_COMPLETE:
         resourceUpdates.extension = updateResource.extension;
         resourceUpdates.blockedReason = updateResource.blockedReason;
+        if (Number.isInteger(updateResource.priority)) {
+          resourceUpdates.priority = updateResource.priority;
+        }
+        resourceUpdates.truncated = updateResource.truncated;
         break;
       case NETWORK_EVENT_TYPES.EVENT_TIMINGS:
         resourceUpdates.totalTime = updateResource.totalTime;
         break;
       case NETWORK_EVENT_TYPES.SECURITY_INFO:
         resourceUpdates.securityState = updateResource.state;
-        resourceUpdates.isRacing = updateResource.isRacing;
         break;
     }
 
@@ -418,6 +431,7 @@ class NetworkEventWatcher {
     }
 
     if (
+      updateResource.updateType == NETWORK_EVENT_TYPES.REQUEST_POSTDATA ||
       updateResource.updateType == NETWORK_EVENT_TYPES.RESPONSE_START ||
       updateResource.updateType == NETWORK_EVENT_TYPES.RESPONSE_CONTENT ||
       isResponseComplete

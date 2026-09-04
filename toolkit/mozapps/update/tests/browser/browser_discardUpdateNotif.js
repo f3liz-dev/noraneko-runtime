@@ -39,6 +39,12 @@ add_task(async function aboutPrefs_foregroundCheck_discardUpdateNotif() {
         true,
         "An update avaliable doorhanger notification exists"
       );
+      // The panel may still be animating open, in which case its contents
+      // aren't focusable yet.
+      await BrowserTestUtils.waitForPopupEvent(
+        PanelUI.notificationPanel,
+        "shown"
+      );
       let dismissButton = getNotificationButton(
         window,
         AppMenuNotifications.activeNotification.id,
@@ -68,7 +74,7 @@ add_task(async function aboutPrefs_foregroundCheck_discardUpdateNotif() {
   let manualDesktopCheckbox = content.document.getElementById("manualDesktop");
   manualDesktopCheckbox.click();
   is(
-    manualDesktopCheckbox.selected,
+    manualDesktopCheckbox.checked,
     true,
     "Manual update option should be selected"
   );

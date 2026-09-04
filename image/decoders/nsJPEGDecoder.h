@@ -1,5 +1,4 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,9 +6,9 @@
 #ifndef mozilla_image_decoders_nsJPEGDecoder_h
 #define mozilla_image_decoders_nsJPEGDecoder_h
 
+#include "EXIF.h"
 #include "RasterImage.h"
 #include "SurfacePipe.h"
-#include "EXIF.h"
 
 // On Windows systems, RasterImage.h brings in 'windows.h', which defines INT32.
 // But the jpeg decoder has its own definition of INT32. To avoid build issues,

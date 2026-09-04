@@ -60,10 +60,13 @@ def output_file_with_key(objs, output_fd, options={}):
             return value.name
         if isinstance(value, Rate):  # `numerators` for an external Denominator metric
             args = []
-            for arg_name in jog.common_metric_data_args[:-1]:
+            for arg_name in jog.common_metric_data_args:
+                if arg_name == "dynamic_label":
+                    args.append(None)
+                    continue
                 args.append(getattr(value, arg_name))
-            args.append(None)
             return args
+        return type(value).__name__
         return json.dumps(value)
 
     # Process metrics

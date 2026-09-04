@@ -24,11 +24,10 @@ function test(constructor) {
     assertEq(Object.prototype.toString.call(proto2), "[object Iterator]");
 
     var expectedKeys = ["map", "filter", "take", "drop", "flatMap", "reduce", "toArray",
-                        "forEach", "some", "every", "find", "constructor",
-                        Symbol.iterator, Symbol.toStringTag];
-    if (getBuildConfiguration("explicit-resource-management")) {
-      expectedKeys.splice(expectedKeys.length - 1, 0, Symbol.dispose);
-    }
+                        "forEach", "some", "every", "find", "includes", "join",
+                        "chunks", "windows", "constructor", Symbol.iterator,
+                        Symbol.toStringTag];
+    expectedKeys.splice(expectedKeys.length - 1, 0, Symbol.dispose);
     assertDeepEq(Reflect.ownKeys(proto2), expectedKeys);
     assertEq(proto2[Symbol.iterator](), proto2);
 

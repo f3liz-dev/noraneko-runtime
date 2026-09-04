@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80: */
 // Copyright 2020 the V8 project authors. All rights reserved.
 // Redistribution and use in source and binary forms, with or without
 // modification, are permitted provided that the following conditions are
@@ -30,15 +28,17 @@
 #ifndef jit_loong64_Simulator_loong64_h
 #define jit_loong64_Simulator_loong64_h
 
-#ifdef JS_SIMULATOR_LOONG64
+#ifndef JS_SIMULATOR_LOONG64
+#  error "simulator disabled"
+#endif
 
-#  include "mozilla/Atomics.h"
+#include "mozilla/Atomics.h"
 
-#  include "jit/IonTypes.h"
-#  include "js/ProfilingFrameIterator.h"
-#  include "threading/Thread.h"
-#  include "vm/MutexIDs.h"
-#  include "wasm/WasmSignalHandlers.h"
+#include "jit/IonTypes.h"
+#include "js/ProfilingFrameIterator.h"
+#include "threading/Thread.h"
+#include "vm/MutexIDs.h"
+#include "wasm/WasmSignalHandlers.h"
 
 namespace js {
 
@@ -391,6 +391,12 @@ class Simulator {
   inline double readD(uint64_t addr, SimInstruction* instr);
   inline void writeD(uint64_t addr, double value, SimInstruction* instr);
 
+  template <typename T>
+  using AmoOp = T (*)(SharedMem<T*> addr, T val);
+
+  template <typename T>
+  void AtomicMemoryHelper(AmoOp<T> f, SimInstruction* instr);
+
   inline int32_t loadLinkedW(uint64_t addr, SimInstruction* instr);
   inline int storeConditionalW(uint64_t addr, int32_t value,
                                SimInstruction* instr);
@@ -521,10 +527,10 @@ class Simulator {
   void setCallResultDouble(double result);
   void setCallResultFloat(float result);
   void setCallResult(int64_t res);
-#  ifdef XP_DARWIN
+#ifdef XP_DARWIN
   // add a dedicated setCallResult for intptr_t on Darwin
   void setCallResult(intptr_t res);
-#  endif
+#endif
   void setCallResult(__int128 res);
 
   void callInternal(uint8_t* entry);
@@ -648,7 +654,5 @@ class SimulatorProcess {
 
 }  // namespace jit
 }  // namespace js
-
-#endif /* JS_SIMULATOR_LOONG64 */
 
 #endif /* jit_loong64_Simulator_loong64_h */

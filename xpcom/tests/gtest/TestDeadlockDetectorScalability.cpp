@@ -1,16 +1,13 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*-
- * vim: sw=2 ts=4 et :
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 // Avoid DMD-specific parts of MOZ_DEFINE_MALLOC_SIZE_OF
 #undef MOZ_DMD
 
-#include "nsIMemoryReporter.h"
-#include "mozilla/Mutex.h"
-
 #include "gtest/gtest.h"
+#include "mozilla/Mutex.h"
+#include "nsIMemoryReporter.h"
 
 //-----------------------------------------------------------------------------
 

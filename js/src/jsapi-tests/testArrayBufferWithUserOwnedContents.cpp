@@ -1,6 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- */
 
 #include <stdint.h>  // uint32_t
 
@@ -10,7 +7,7 @@
 #include "jsapi-tests/tests.h"
 #include "vm/ArrayBufferObject.h"
 
-char testData[] =
+alignas(js::ArrayBufferObject::ARRAY_BUFFER_ALIGNMENT) char testData[] =
     "1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 
 constexpr size_t testDataLength = sizeof(testData);

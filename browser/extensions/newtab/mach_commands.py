@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import textwrap
 import time
 from datetime import datetime, timedelta, timezone
 from enum import Enum
@@ -19,6 +20,9 @@ from zipfile import ZipFile
 import requests
 import yaml
 from colorama import Fore, Style
+from fluent.syntax import parse as fluent_parse
+from fluent.syntax import serialize as fluent_serialize
+from fluent.syntax.ast import Message, Resource
 from mach.decorators import (
     Command,
     CommandArgument,
@@ -39,6 +43,7 @@ sys.path.append(
 WEBEXT_METRICS_PATH = Path("browser", "extensions", "newtab", "webext-glue", "metrics")
 sys.path.append(str(WEBEXT_METRICS_PATH.absolute()))
 import glean_utils
+from gen_runtime_metrics import get_new_metrics, get_new_pings
 from run_glean_parser import parse_with_options
 
 FIREFOX_L10N_REPO = "https://github.com/mozilla-l10n/firefox-l10n.git"
@@ -51,8 +56,40 @@ COMPARE_TOOL_PATH = Path(
 )
 REPORT_PATH = Path(WEBEXT_LOCALES_PATH, "locales-report.json")
 REPORT_LEFT_JUSTIFY_CHARS = 15
+REPORT_WRAP_CHARS = 80
 FLUENT_FILE_ANCESTRY = Path("browser", "newtab")
 SUPPORTED_LOCALES_PATH = Path(WEBEXT_LOCALES_PATH, "supported-locales.json")
+
+# @backward-compat { version 155 }
+# The 13 homepage-settings strings live in preferences.ftl (canonical).
+# The newtab XPI still needs them in its bundled webext-glue/**/newtab.ftl
+# for the pre-155 fallback path in AboutPreferences.sys.mjs. Once 155
+# reaches Release, that fallback and this extract step can both be removed.
+PREFERENCES_EXTRACT_IDS = (
+    "home-homepage-title",
+    "home-homepage-new-windows",
+    "home-homepage-new-tabs",
+    "home-homepage-custom-homepage-button",
+    "home-custom-homepage-card-header",
+    "home-custom-homepage-address",
+    "home-custom-homepage-address-button",
+    "home-custom-homepage-no-results",
+    "home-custom-homepage-delete-address-button",
+    "home-custom-homepage-replace-with-prompt",
+    "home-custom-homepage-current-pages-button",
+    "home-custom-homepage-bookmarks-button",
+    "home-prefs-homepage-extension-option",
+)
+
+# @backward-compat { version 155 }
+# The l10n repo mirrors browser/locales/en-US/** under <locale>/browser/**,
+# so the "browser" component name is duplicated for files that themselves
+# live under a "browser/" subdirectory locally (see browser/locales/l10n.toml).
+PREFERENCES_FTL_ANCESTRY = Path("browser", "browser", "preferences")
+PREFERENCES_FTL_NAME = "preferences.ftl"
+LOCAL_PREFERENCES_EN_US_PATH = Path(
+    "browser", "locales", "en-US", "browser", "preferences", "preferences.ftl"
+)
 
 # We query whattrainisitnow.com to get some key dates for both beta and
 # release in order to compute whether or not strings have been available on
@@ -65,9 +102,11 @@ RELEASE_SCHEDULE_QUERY = (
 BETA_FALLBACK_THRESHOLD = timedelta(weeks=3)
 TASKCLUSTER_ROOT_URL = "https://firefox-ci-tc.services.mozilla.com"
 BEETMOVER_TASK_NAME = "beetmover-newtab"
+SIGNING_TASK_NAME = "release-signing-newtab"
 XPI_NAME = "newtab.xpi"
 BEETMOVER_ARTIFACT_PATH = f"public/build/{XPI_NAME}"
 ARCHIVE_ROOT_PATH = "https://ftp.mozilla.org"
+GIT2HG_URL = "https://lando.moz.tools/api/git2hg/firefox"
 
 
 class YamlType(Enum):
@@ -95,6 +134,10 @@ def run_mach(command_context, cmd, **kwargs):
     )
 
 
+def mach_argv(command_context):
+    return [sys.executable, os.path.join(command_context.topsrcdir, "mach")]
+
+
 @SubCommand(
     "newtab",
     "watch",
@@ -105,13 +148,13 @@ def watch(command_context):
 
     try:
         p1 = subprocess.Popen([
-            "./mach",
+            *mach_argv(command_context),
             "npm",
             "run",
             "watchmc",
             "--prefix=browser/extensions/newtab",
         ])
-        p2 = subprocess.Popen(["./mach", "watch"])
+        p2 = subprocess.Popen([*mach_argv(command_context), "watch"])
         processes.extend([p1, p2])
         print("Watching subprocesses started. Press Ctrl-C to terminate them.")
 
@@ -132,6 +175,41 @@ def watch(command_context):
         "npm",
         args=["run", "bundle", "--prefix=browser/extensions/newtab"],
     )
+
+
+# @backward-compat { version 155 }
+def _extract_preferences_messages(preferences_path):
+    """Return a serialized Fluent block containing the IDs in
+    PREFERENCES_EXTRACT_IDS from preferences_path, or an empty string if the
+    file is missing or has none of the target IDs."""
+    try:
+        source = Path(preferences_path).read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return ""
+    resource = fluent_parse(source)
+    wanted = set(PREFERENCES_EXTRACT_IDS)
+    picked = [
+        entry
+        for entry in resource.body
+        if isinstance(entry, Message) and entry.id.name in wanted
+    ]
+    if not picked:
+        return ""
+    return fluent_serialize(Resource(body=picked))
+
+
+# @backward-compat { version 155 }
+def _append_extract_to_webext_glue(webext_glue_ftl_path, extract_block):
+    """Append the extract block, with a header comment, to a webext-glue newtab.ftl file."""
+    if not extract_block:
+        return
+    header = (
+        "\n## Below strings are extracted from preferences.ftl by\n"
+        "## ./mach newtab update-locales - edit them in preferences.ftl.\n\n"
+    )
+    with open(webext_glue_ftl_path, "a", encoding="utf-8") as handle:
+        handle.write(header)
+        handle.write(extract_block)
 
 
 @SubCommand(
@@ -179,6 +257,15 @@ def update_locales(command_context):
             destination_file.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(fluent_file_abs_path, destination_file)
 
+            # @backward-compat { version 155 }
+            # Inject the homepage-settings strings sourced from preferences.ftl
+            # so the newtab XPI still has them for the pre-155 fallback path.
+            locale_preferences_path = (
+                root_dir / locale / PREFERENCES_FTL_ANCESTRY / PREFERENCES_FTL_NAME
+            )
+            extract_block = _extract_preferences_messages(locale_preferences_path)
+            _append_extract_to_webext_glue(destination_file, extract_block)
+
         # Now clean up the temporary directory.
         shutil.rmtree(clone_dir)
 
@@ -191,10 +278,25 @@ def update_locales(command_context):
     dest_en_ftl_path.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(LOCAL_EN_US_PATH, dest_en_ftl_path)
 
+    # @backward-compat { version 155 }
+    # Same as above, for the local en-US preferences.ftl.
+    en_us_extract = _extract_preferences_messages(LOCAL_PREFERENCES_EN_US_PATH)
+    _append_extract_to_webext_glue(dest_en_ftl_path, en_us_extract)
+
     # Step 4.5: Now compute the commit dates of each of the strings inside of
     # LOCAL_EN_US_PATH.
     print("Computing local message commit dates…")
     message_dates = get_message_dates(LOCAL_EN_US_PATH)
+
+    # @backward-compat { version 155 }
+    # The en-US source now also carries the preferences.ftl extract (see
+    # above), so its commit dates need to come from preferences.ftl's own
+    # history, or display_report() will KeyError on those message ids.
+    message_dates.update({
+        message_id: date
+        for message_id, date in get_message_dates(LOCAL_PREFERENCES_EN_US_PATH).items()
+        if message_id in PREFERENCES_EXTRACT_IDS
+    })
 
     # Step 5: Now compare that en-US Fluent file with all of the ones we just
     # cloned and create a report with how many strings are still missing.
@@ -276,10 +378,19 @@ def update_locales(command_context):
 @CommandArgument(
     "--details", default=None, help="Which locale to pull up details about"
 )
-def locales_report(command_context, details):
+@CommandArgument(
+    "--string",
+    dest="message_id",
+    default=None,
+    help="Show which locales are missing a specific Fluent message id",
+)
+def locales_report(command_context, details, message_id):
     with open(REPORT_PATH) as file:
         report = json.load(file)
-        display_report(report, details)
+        if message_id:
+            display_string_report(report, message_id)
+        else:
+            display_report(report, details)
 
 
 def get_message_dates(fluent_file_path):
@@ -474,6 +585,59 @@ def display_report(report, details=None):
     print(Style.RESET_ALL, end="")
 
 
+def display_string_report(report, message_id):
+    """Lists which locales are missing or have a specific Fluent message id.
+
+    This is the inverse of the --details view: instead of listing the missing
+    strings for one locale, it lists every locale missing one given string (and
+    the locales that have it). Computed entirely from the local
+    locales-report.json (no network access).
+    """
+    if message_id not in report["message_dates"]:
+        print(f"Unknown string '{message_id}'")
+        return
+
+    file_key = str(FLUENT_FILE_ANCESTRY.joinpath(FLUENT_FILE))
+    missing_locales = []
+    present_locales = []
+    for locale in sorted(report["locales"].keys(), key=lambda x: x.lower()):
+        missing = report["locales"][locale]["missing"]
+        # Entries may carry a ".attribute" suffix, so normalize to the message id.
+        missing_ids = {
+            entry.split(".")[0] for entry in (missing or {}).get(file_key, [])
+        }
+        if message_id in missing_ids:
+            missing_locales.append(locale)
+        else:
+            present_locales.append(locale)
+
+    total = len(report["locales"])
+    meta = report["meta"]
+    print("New Tab string report")
+    print(f"String: {message_id}")
+    print(f"Landed in en-US: {report['message_dates'][message_id]}")
+    print(f"Locales last updated: {meta['updated']}")
+    print(f"From {meta['repository']} - revision: {meta['revision']}")
+    print("------")
+    print(Fore.YELLOW + f"{len(missing_locales)}/{total} locales missing")
+    print(
+        textwrap.fill(
+            ", ".join(missing_locales),
+            width=REPORT_WRAP_CHARS,
+            break_on_hyphens=False,
+        )
+    )
+    print(Fore.GREEN + f"{len(present_locales)}/{total} locales present")
+    print(
+        textwrap.fill(
+            ", ".join(present_locales),
+            width=REPORT_WRAP_CHARS,
+            break_on_hyphens=False,
+        )
+    )
+    print(Style.RESET_ALL, end="")
+
+
 @SubCommand(
     "newtab",
     "channel-metrics-diff",
@@ -617,7 +781,6 @@ def process_yaml_file(main_yaml, compare_yaml, yaml_type: YamlType, temp_dir_pat
     # Remove $tags if present to avoid invalid tag lint error
     if "$tags" in new_yaml:
         del new_yaml["$tags"]
-    new_yaml["no_lint"] = ["COMMON_PREFIX"]
 
     yaml_content = yaml.dump(new_yaml, sort_keys=False)
     print(yaml_content)
@@ -628,60 +791,6 @@ def process_yaml_file(main_yaml, compare_yaml, yaml_type: YamlType, temp_dir_pat
         f.write(yaml_content)
 
     return file_path
-
-
-def get_new_metrics(main_yaml, compare_yaml):
-    """Compare main and comparison YAML files to find new metrics.
-
-    This function compares the metrics defined in the main branch against those in the comparison branch
-    (beta or release) and returns only the metrics that are new in the main branch.
-
-    Args:
-        main_yaml: The YAML content from the main branch containing metric definitions
-        compare_yaml: The YAML content from the comparison branch (beta/release) containing metric definitions
-
-    Returns:
-        dict: A dictionary containing only the metrics that are new in the main branch
-    """
-    new_metrics_yaml = {}
-    for category in main_yaml:
-        if category.startswith("$"):
-            new_metrics_yaml[category] = main_yaml[category]
-            continue
-        if category not in compare_yaml:
-            new_metrics_yaml[category] = main_yaml[category]
-            continue
-        new_metrics = {}
-        for metric in main_yaml[category]:
-            if metric not in compare_yaml[category]:
-                new_metrics[metric] = main_yaml[category][metric]
-        if new_metrics:
-            new_metrics_yaml[category] = new_metrics
-    return new_metrics_yaml
-
-
-def get_new_pings(main_yaml, compare_yaml):
-    """Compare main and comparison YAML files to find new pings.
-
-    This function compares the pings defined in the main branch against those in the comparison branch
-    (beta or release) and returns only the pings that are new in the main branch.
-
-    Args:
-        main_yaml: The YAML content from the main branch containing ping definitions
-        compare_yaml: The YAML content from the comparison branch (beta/release) containing ping definitions
-
-    Returns:
-        dict: A dictionary containing only the pings that are new in the main branch
-    """
-    new_pings_yaml = {}
-    for ping in main_yaml:
-        if ping.startswith("$"):
-            new_pings_yaml[ping] = main_yaml[ping]
-            continue
-        if ping not in compare_yaml:
-            new_pings_yaml[ping] = main_yaml[ping]
-            continue
-    return new_pings_yaml
 
 
 def check_existing_metrics(main_yaml, compare_yaml):
@@ -757,13 +866,20 @@ def check_existing_metrics(main_yaml, compare_yaml):
     "newtab",
     "trainhop-recipe",
     description="""Generates the appropriate trainhop recipe for the Nimbus
-newtabTrainhopAddon feature, given a Taskcluster shipping task group URL from
-ship-it""",
+newtabTrainhopAddonDeployment feature, given a Taskcluster shipping task group
+URL from ship-it""",
 )
 @CommandArgument(
     "taskcluster_group_url", help="The shipping Taskcluster task group URL from ship-it"
 )
-def trainhop_recipe(command_context, taskcluster_group_url):
+@CommandArgument(
+    "--for-table",
+    action="store_true",
+    help="""Also emit a skeleton train-hops.yaml entry (for the train-hop
+tracking table) with the addon version, release name, git and Mercurial
+revisions filled in, and the deployment dates and notes left as placeholders.""",
+)
+def trainhop_recipe(command_context, taskcluster_group_url, for_table):
     tc_root_url = urlparse(TASKCLUSTER_ROOT_URL)
     group_url = urlparse(taskcluster_group_url)
     if group_url.scheme != "https" or group_url.hostname != tc_root_url.hostname:
@@ -826,6 +942,92 @@ def trainhop_recipe(command_context, taskcluster_group_url):
     print(json.dumps(result, indent=2, sort_keys=True))
     print("\n")
 
+    if for_table:
+        build_task_id = get_build_task_id(task_group)
+        if not build_task_id:
+            print(
+                f"Could not find the build task via the {SIGNING_TASK_NAME} task. "
+                "Skipping the train-hops.yaml entry."
+            )
+            return 1
+
+        print(f"Found build task {build_task_id}")
+        git_sha = queue.task(build_task_id)["payload"]["env"]["NEWTAB_HEAD_REV"]
+        print(f"Got the git revision: {git_sha}")
+
+        mercurial_sha = git_sha_to_hg(git_sha)
+        print(f"Got the Mercurial revision: {mercurial_sha}")
+
+        entry = {
+            "version": addon_version,
+            # The release name is the second-to-last path segment of the
+            # beetmover destination, e.g. "newtab-154.2.0-build1".
+            "name": artifact_destination.split("/")[-2],
+            "git_sha": git_sha,
+            "mercurial_sha": mercurial_sha,
+            "deployed_release_25": "Pending",
+            "deployed_release_100": "Pending",
+            "deployed_beta_100": "Pending",
+            "notes": "TODO",
+        }
+
+        print("train-hops.yaml entry:\n\n")
+        print(format_table_entry(entry))
+        print("\n")
+
+
+def get_build_task_id(task_group):
+    """Returns the task ID of the build task that produced the newtab XPI.
+
+    This is found by locating the signing task within the shipping task group
+    and reading the upstream artifact that points back at the build task.
+    Returns None if no such task can be found.
+    """
+    for task in task_group["tasks"]:
+        if task["task"]["metadata"]["name"] == SIGNING_TASK_NAME:
+            upstream_artifacts = task["task"]["payload"].get("upstreamArtifacts", [])
+            for artifact in upstream_artifacts:
+                if BEETMOVER_ARTIFACT_PATH in artifact.get("paths", []):
+                    return artifact["taskId"]
+    return None
+
+
+def git_sha_to_hg(git_sha):
+    """Converts a firefox-main git revision to its Mercurial counterpart."""
+    response = requests.get(f"{GIT2HG_URL}/{git_sha}", timeout=10)
+    response.raise_for_status()
+    return response.json()["hg_hash"]
+
+
+class _TrainHopDumper(yaml.Dumper):
+    """A yaml.Dumper that indents block sequence entries under their parent.
+
+    PyYAML's default places the "- " of a sequence item at the parent key's
+    indent level; forcing indentless off reproduces the train-hops.yaml layout
+    where the dash sits one level in from train_hops.
+    """
+
+    def increase_indent(self, flow=False, indentless=False):
+        return super().increase_indent(flow, False)
+
+
+def format_table_entry(entry):
+    """Formats a train-hops.yaml list entry, ready to paste under train_hops.
+
+    entry is an ordered dict of the entry's fields; insertion order is
+    preserved in the output so it matches the existing entries.
+    """
+    body = yaml.dump(
+        [entry],
+        Dumper=_TrainHopDumper,
+        sort_keys=False,
+        default_flow_style=False,
+        # Avoid wrapping long scalars (e.g. the notes field) onto a second line.
+        width=float("inf"),
+        allow_unicode=True,
+    )
+    return textwrap.indent(body, "  ").rstrip()
+
 
 @SubCommand(
     "newtab",
@@ -840,7 +1042,7 @@ def bundle(command_context):
 
     try:
         proc = subprocess.Popen([
-            "./mach",
+            *mach_argv(command_context),
             "npm",
             "run",
             "bundle",
@@ -884,7 +1086,7 @@ def install(command_context):
 
     try:
         proc = subprocess.Popen([
-            "./mach",
+            *mach_argv(command_context),
             "npm",
             "install",
             "--prefix=browser/extensions/newtab",
@@ -942,7 +1144,7 @@ def get_unbranded_builds(command_context, channel):
         },
         "Linux 64-bit": {
             "namespace": f"gecko.v2.{repo}.latest.firefox.linux64-add-on-devel",
-            "artifact": "public/build/target.tar.bz2",
+            "artifact": "public/build/target.tar.xz",
         },
     }
 

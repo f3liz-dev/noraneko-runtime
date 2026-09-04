@@ -14,16 +14,22 @@ use std::{
 };
 
 use enum_map::Enum;
-use neqo_common::{hex, hex_with_len, qtrace, qwarn, Buffer, Decoder, Encoder};
-use neqo_crypto::{random, AeadTrait as _};
+use log::debug;
+use neqo_common::{
+    Buffer, Decoder, Encoder,
+    hex::{Hex, HexWithLen},
+    qtrace, qwarn,
+};
+use nss::{Mode, RecordProtectionOps as _, random};
 use strum::{EnumIter, FromRepr};
 
 use crate::{
+    Error, Res,
     cid::{ConnectionId, ConnectionIdDecoder, ConnectionIdRef},
     crypto::{CryptoDxState, CryptoStates, Epoch},
     frame::{FrameEncoder as _, FrameType},
+    scone::Bitrate,
     version::{self, Version},
-    Error, Res,
 };
 
 /// `MIN_INITIAL_PACKET_SIZE` is the smallest packet that can be used to establish
@@ -167,7 +173,7 @@ impl Builder<Vec<u8>> {
         encoder.encode_vec(1, scid);
         debug_assert_ne!(token.len(), 0);
         encoder.encode(token);
-        let tag = retry::use_aead(version, |aead| {
+        let tag = retry::use_aead(version, Mode::Encrypt, |aead| {
             let mut buf = vec![0; aead.expansion()];
             Ok(aead.encrypt(0, encoder.as_ref(), &[], &mut buf)?.to_vec())
         })?;
@@ -490,8 +496,8 @@ impl<B: Buffer> Builder<B> {
         qtrace!(
             "Packet build pn={} hdr={} body={}",
             self.pn,
-            hex(&self.encoder.as_ref()[self.header.clone()]),
-            hex(&self.encoder.as_ref()[self.header.end..])
+            Hex::new(&self.encoder.as_ref()[self.header.clone()]),
+            Hex::new(&self.encoder.as_ref()[self.header.end..])
         );
 
         // Add space for crypto expansion.
@@ -513,7 +519,7 @@ impl<B: Buffer> Builder<B> {
             self.encoder.as_mut()[j] ^= mask[i];
         }
 
-        qtrace!("Packet built {}", hex(&self.encoder));
+        qtrace!("Packet built {}", Hex::new(&self.encoder));
         Ok(self.encoder)
     }
 
@@ -577,6 +583,8 @@ pub struct Public<'a> {
     version: Option<version::Wire>,
     /// A reference to the entire packet, including the header.
     data: &'a mut [u8],
+    /// SCONE information, if present.
+    scone: Option<Bitrate>,
 }
 
 impl<'a> Public<'a> {
@@ -626,94 +634,141 @@ impl<'a> Public<'a> {
         data: &'a mut [u8],
         dcid_decoder: &dyn ConnectionIdDecoder,
     ) -> Res<(Self, &'a mut [u8])> {
-        let mut decoder = Decoder::new(data);
-        let first = Self::opt(decoder.decode_uint::<u8>())?;
+        Self::decode_inner(data, dcid_decoder, false)
+    }
 
-        if first & 0x80 == BIT_SHORT {
-            // Conveniently, this also guarantees that there is enough space
-            // for a connection ID of any size.
-            if decoder.remaining() < SAMPLE_OFFSET + SAMPLE_SIZE {
+    /// Like `decode()`, but allow unknown versions.
+    ///
+    /// # Errors
+    ///
+    /// This will return an error if the packet could not be decoded.
+    pub fn decode_server(
+        data: &'a mut [u8],
+        dcid_decoder: &dyn ConnectionIdDecoder,
+    ) -> Res<(Self, &'a mut [u8])> {
+        Self::decode_inner(data, dcid_decoder, true)
+    }
+
+    /// Decode the common parts of a packet.  This provides minimal parsing and validation.
+    /// Returns a tuple of a `Public` and a slice with any remainder from the datagram.
+    ///
+    /// # Errors
+    ///
+    /// This will return an error if the packet could not be decoded.
+    fn decode_inner(
+        mut data: &'a mut [u8],
+        dcid_decoder: &dyn ConnectionIdDecoder,
+        accept_other_version: bool,
+    ) -> Res<(Self, &'a mut [u8])> {
+        let mut scone: Option<Bitrate> = None;
+        loop {
+            let mut decoder = Decoder::new(data);
+            let first = Self::opt(decoder.decode_uint::<u8>())?;
+
+            if first & 0x80 == BIT_SHORT {
+                let dcid = Self::opt(dcid_decoder.decode_cid(&mut decoder))?.into();
+                if decoder.remaining() < SAMPLE_OFFSET + SAMPLE_SIZE {
+                    return Err(Error::InvalidPacket);
+                }
+                let header_len = decoder.offset();
+                return Ok((
+                    Self {
+                        packet_type: Type::Short,
+                        dcid,
+                        scid: None,
+                        token: Vec::new(),
+                        header_len,
+                        version: None,
+                        data,
+                        scone,
+                    },
+                    &mut [],
+                ));
+            }
+
+            // Generic long header.
+            let version = Self::opt(decoder.decode_uint())?;
+            let dcid = ConnectionIdRef::from(Self::opt(decoder.decode_vec(1))?);
+            let scid = ConnectionIdRef::from(Self::opt(decoder.decode_vec(1))?);
+
+            // Version negotiation.
+            match version {
+                0 => {
+                    return Ok((
+                        Self {
+                            packet_type: Type::VersionNegotiation,
+                            dcid: ConnectionId::from(dcid),
+                            scid: Some(ConnectionId::from(scid)),
+                            token: Vec::new(),
+                            header_len: decoder.offset(),
+                            version: None,
+                            data,
+                            scone,
+                        },
+                        &mut [],
+                    ));
+                }
+                Version::SCONE1 | Version::SCONE2 => {
+                    if scone.is_some() {
+                        return Err(Error::InvalidPacket);
+                    }
+                    let indication = Bitrate::from((first, version));
+                    debug!("Received SCONE indication {indication:x?}");
+                    // Note that this doesn't confirm that the connection ID matches.
+                    scone = Some(indication);
+                    let (_scone, remainder) = data.split_at_mut(decoder.offset());
+                    data = remainder;
+                    continue;
+                }
+                _ => {}
+            }
+
+            // Check that this is a long header from a supported version.
+            let Ok(version) = Version::try_from(version) else {
+                return if accept_other_version {
+                    Ok((
+                        Self {
+                            packet_type: Type::OtherVersion,
+                            dcid: ConnectionId::from(dcid),
+                            scid: Some(ConnectionId::from(scid)),
+                            token: Vec::new(),
+                            header_len: decoder.offset(),
+                            version: Some(version),
+                            data,
+                            scone,
+                        },
+                        &mut [],
+                    ))
+                } else {
+                    Err(Error::InvalidPacket)
+                };
+            };
+
+            if dcid.len() > ConnectionId::MAX_LEN || scid.len() > ConnectionId::MAX_LEN {
                 return Err(Error::InvalidPacket);
             }
-            let dcid = Self::opt(dcid_decoder.decode_cid(&mut decoder))?.into();
-            if decoder.remaining() < SAMPLE_OFFSET + SAMPLE_SIZE {
-                return Err(Error::InvalidPacket);
-            }
-            let header_len = decoder.offset();
+            let packet_type = Type::from_byte((first >> 4) & 3, version);
 
+            // The type-specific code includes a token.  This consumes the remainder of the packet.
+            let (token, header_len) = Public::decode_long(&mut decoder, packet_type, version)?;
+            let token = token.to_vec();
+            let dcid = ConnectionId::from(dcid);
+            let scid = Some(ConnectionId::from(scid));
+            let (data, remainder) = data.split_at_mut(decoder.offset());
             return Ok((
                 Self {
-                    packet_type: Type::Short,
+                    packet_type,
                     dcid,
-                    scid: None,
-                    token: vec![],
+                    scid,
+                    token,
                     header_len,
-                    version: None,
+                    version: Some(version.wire_version()),
                     data,
+                    scone,
                 },
-                &mut [],
+                remainder,
             ));
         }
-
-        // Generic long header.
-        let version = Self::opt(decoder.decode_uint())?;
-        let dcid = ConnectionIdRef::from(Self::opt(decoder.decode_vec(1))?).into();
-        let scid = ConnectionIdRef::from(Self::opt(decoder.decode_vec(1))?).into();
-
-        // Version negotiation.
-        if version == 0 {
-            return Ok((
-                Self {
-                    packet_type: Type::VersionNegotiation,
-                    dcid,
-                    scid: Some(scid),
-                    token: vec![],
-                    header_len: decoder.offset(),
-                    version: None,
-                    data,
-                },
-                &mut [],
-            ));
-        }
-
-        // Check that this is a long header from a supported version.
-        let Ok(version) = Version::try_from(version) else {
-            return Ok((
-                Self {
-                    packet_type: Type::OtherVersion,
-                    dcid,
-                    scid: Some(scid),
-                    token: vec![],
-                    header_len: decoder.offset(),
-                    version: Some(version),
-                    data,
-                },
-                &mut [],
-            ));
-        };
-
-        if dcid.len() > ConnectionId::MAX_LEN || scid.len() > ConnectionId::MAX_LEN {
-            return Err(Error::InvalidPacket);
-        }
-        let packet_type = Type::from_byte((first >> 4) & 3, version);
-
-        // The type-specific code includes a token.  This consumes the remainder of the packet.
-        let (token, header_len) = Public::decode_long(&mut decoder, packet_type, version)?;
-        let token = token.to_vec();
-        let end = data.len() - decoder.remaining();
-        let (data, remainder) = data.split_at_mut(end);
-        Ok((
-            Self {
-                packet_type,
-                dcid,
-                scid: Some(scid),
-                token,
-                header_len,
-                version: Some(version.wire_version()),
-                data,
-            },
-            remainder,
-        ))
     }
 
     /// Validate the given packet as though it were a retry.
@@ -733,7 +788,7 @@ impl<'a> Public<'a> {
         let mut encoder = Encoder::with_capacity(self.data.len());
         encoder.encode_vec(1, odcid);
         encoder.encode(header);
-        retry::use_aead(version, |aead| {
+        retry::use_aead(version, Mode::Decrypt, |aead| {
             let mut buf = vec![0; expansion];
             Ok(aead.decrypt(0, encoder.as_ref(), tag, &mut buf)?.is_empty())
         })
@@ -815,12 +870,6 @@ impl<'a> Public<'a> {
         }
     }
 
-    #[allow(
-        clippy::allow_attributes,
-        clippy::missing_asserts_for_indexing,
-        reason = "Checked, but clippy doesn't recognize it."
-        // FIXME: Check if MSRV >= 1.88 fixes this.
-    )]
     /// Decrypt the header of the packet.
     fn decrypt_header(&mut self, crypto: &CryptoDxState) -> Res<(bool, Number, Range<usize>)> {
         debug_assert_ne!(self.packet_type, Type::Retry);
@@ -835,7 +884,7 @@ impl<'a> Public<'a> {
         qtrace!(
             "{:?} unmask hdr={}",
             crypto.version(),
-            hex(&self.data[..sample_offset])
+            Hex::new(&self.data[..sample_offset])
         );
         let mask = crypto.compute_mask(sample)?;
 
@@ -866,7 +915,7 @@ impl<'a> Public<'a> {
         hdrbytes.end = self.header_len + pn_len;
         pn_encoded >>= 8 * (MAX_PACKET_NUMBER_LEN - pn_len);
 
-        qtrace!("unmasked hdr={}", hex(&self.data[hdrbytes.clone()]));
+        qtrace!("unmasked hdr={}", Hex::new(&self.data[hdrbytes.clone()]));
 
         let key_phase =
             self.packet_type == Type::Short && (first_byte & BIT_KEY_PHASE) == BIT_KEY_PHASE;
@@ -915,6 +964,21 @@ impl<'a> Public<'a> {
             Ok(v) => v,
             Err(e) => return Err((self, e).into()),
         };
+        // The two reserved bits in the first byte (0x0c for long headers, 0x18
+        // for short headers) are header protected, so they can only be checked
+        // now that both header and packet protection have been removed. A peer
+        // that sets either bit is a connection error of type PROTOCOL_VIOLATION.
+        //
+        // <https://www.rfc-editor.org/rfc/rfc9000.html#section-17.2>
+        // <https://www.rfc-editor.org/rfc/rfc9000.html#section-17.3.1>
+        let reserved = if self.packet_type.is_long() {
+            0x0c
+        } else {
+            0x18
+        };
+        if self.data[0] & reserved != 0 {
+            return Err((self, Error::ProtocolViolation).into());
+        }
         let data = &self.data[header_end..header_end + payload_len];
         // Helper for late errors where `self` is partially borrowed.
         let make_err = |error| DecryptionError {
@@ -936,6 +1000,7 @@ impl<'a> Public<'a> {
             dcid: self.dcid,
             scid: self.scid,
             data,
+            scone: self.scone,
         })
     }
 
@@ -963,8 +1028,8 @@ impl fmt::Debug for Public<'_> {
             f,
             "{:?}: {} {}",
             self.packet_type(),
-            hex_with_len(&self.data[..self.header_len]),
-            hex_with_len(&self.data[self.header_len..])
+            HexWithLen::new(&self.data[..self.header_len]),
+            HexWithLen::new(&self.data[self.header_len..])
         )
     }
 }
@@ -1021,6 +1086,7 @@ pub struct Decrypted<'a> {
     data: &'a [u8],
     dcid: ConnectionId,
     scid: Option<ConnectionId>,
+    scone: Option<Bitrate>,
 }
 
 impl Decrypted<'_> {
@@ -1054,6 +1120,11 @@ impl Decrypted<'_> {
             .expect("should only be called for long header packets")
             .as_cid_ref()
     }
+
+    #[must_use]
+    pub const fn scone(&self) -> Option<Bitrate> {
+        self.scone
+    }
 }
 
 impl Deref for Decrypted<'_> {
@@ -1064,7 +1135,7 @@ impl Deref for Decrypted<'_> {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "bench"))]
 pub const LIMIT: usize = 2048;
 
 #[cfg(all(test, not(feature = "disable-encryption")))]
@@ -1075,9 +1146,9 @@ mod tests {
     use test_fixture::{fixture_init, now};
 
     use crate::{
+        ConnectionId, EmptyConnectionIdGenerator, Error, RandomConnectionIdGenerator, Version,
         crypto::{CryptoDxState, CryptoStates},
         packet::{self, Builder, Public, Type},
-        ConnectionId, EmptyConnectionIdGenerator, Error, RandomConnectionIdGenerator, Version,
     };
 
     const CLIENT_CID: &[u8] = &[0x83, 0x94, 0xc8, 0xf0, 0x3e, 0x51, 0x57, 0x08];
@@ -1112,7 +1183,7 @@ mod tests {
     #[test]
     fn sample_server_initial() {
         fixture_init();
-        let mut prot = CryptoDxState::test_default();
+        let mut prot = CryptoDxState::test_default_write();
 
         // The spec uses PN=1, but our crypto refuses to skip packet numbers.
         // So burn an encryption:
@@ -1199,7 +1270,7 @@ mod tests {
         builder.pn(0, 1);
         builder.encode(SAMPLE_SHORT_PAYLOAD); // Enough payload for sampling.
         let packet = builder
-            .build(&mut CryptoDxState::test_default())
+            .build(&mut CryptoDxState::test_default_write())
             .expect("build");
         assert_eq!(packet.as_ref(), SAMPLE_SHORT);
     }
@@ -1230,10 +1301,9 @@ mod tests {
         assert!(!firsts.iter().all(is_set(packet::BIT_SPIN)));
     }
 
-    #[test]
-    fn decode_short() {
+    fn decode_sample_short(packet: &[u8]) {
         fixture_init();
-        let mut sample_short = SAMPLE_SHORT.to_vec();
+        let mut sample_short = packet.to_vec();
         let (packet, remainder) = Public::decode(&mut sample_short, &cid_mgr()).unwrap();
         assert_eq!(packet.packet_type(), Type::Short);
         assert!(remainder.is_empty());
@@ -1241,6 +1311,11 @@ mod tests {
             .decrypt(&mut CryptoStates::test_default(), now())
             .unwrap();
         assert_eq!(&decrypted[..], SAMPLE_SHORT_PAYLOAD);
+    }
+
+    #[test]
+    fn decode_short() {
+        decode_sample_short(SAMPLE_SHORT);
     }
 
     /// By telling the decoder that the connection ID is shorter than it really is, we get a
@@ -1256,26 +1331,85 @@ mod tests {
         .unwrap();
         assert_eq!(packet.packet_type(), Type::Short);
         assert!(remainder.is_empty());
-        assert!(packet
-            .decrypt(&mut CryptoStates::test_default(), now())
-            .is_err());
+        assert!(
+            packet
+                .decrypt(&mut CryptoStates::test_default(), now())
+                .is_err()
+        );
     }
 
     /// Saying that the connection ID is longer causes the initial decode to fail.
     #[test]
     fn decode_short_long_cid() {
         let mut sample_short = SAMPLE_SHORT.to_vec();
-        assert!(Public::decode(
-            &mut sample_short,
-            &RandomConnectionIdGenerator::new(SERVER_CID.len() + 1)
-        )
-        .is_err());
+        assert!(
+            Public::decode(
+                &mut sample_short,
+                &RandomConnectionIdGenerator::new(SERVER_CID.len() + 1)
+            )
+            .is_err()
+        );
+    }
+
+    /// A packet that authenticates but has a reserved bit set in the first byte
+    /// is a connection error of type `PROTOCOL_VIOLATION`. The bit is set before
+    /// the packet is encrypted so that it is covered by the AEAD and survives
+    /// header protection removal at the receiver. Each reserved bit is checked
+    /// on its own because the long and short header masks differ.
+    fn reject_reserved_bit(mut builder: Builder<Vec<u8>>, bit: u8) {
+        builder.as_mut()[0] |= bit;
+        let packet = builder
+            .build(&mut CryptoDxState::test_default_write())
+            .expect("build");
+        let mut buf = packet.as_ref().to_vec();
+        let (packet, _) = Public::decode(&mut buf, &cid_mgr()).unwrap();
+        match packet.decrypt(&mut CryptoStates::test_default(), now()) {
+            Err(e) => assert_eq!(e.error, Error::ProtocolViolation),
+            Ok(_) => panic!("reserved bit not rejected"),
+        }
+    }
+
+    #[test]
+    fn reserved_bits_short() {
+        fixture_init();
+        // Short header reserved bits are 0x18.
+        for bit in [0x10, 0x08] {
+            let mut builder = Builder::short(
+                Encoder::default(),
+                true,
+                Some(ConnectionId::from(SERVER_CID)),
+                packet::LIMIT,
+            );
+            builder.pn(0, 1);
+            builder.encode(SAMPLE_SHORT_PAYLOAD);
+            reject_reserved_bit(builder, bit);
+        }
+    }
+
+    #[test]
+    fn reserved_bits_long() {
+        fixture_init();
+        // Long header reserved bits are 0x0c.
+        for bit in [0x08, 0x04] {
+            let mut builder = Builder::long(
+                Encoder::default(),
+                Type::Initial,
+                Version::default(),
+                None::<&[u8]>,
+                Some(ConnectionId::from(SERVER_CID)),
+                packet::LIMIT,
+            );
+            builder.initial_token(&[]);
+            builder.pn(0, 1);
+            builder.encode(SAMPLE_INITIAL_PAYLOAD);
+            reject_reserved_bit(builder, bit);
+        }
     }
 
     #[test]
     fn build_two() {
         fixture_init();
-        let mut prot = CryptoDxState::test_default();
+        let mut prot = CryptoDxState::test_default_write();
         let mut builder = Builder::long(
             Encoder::default(),
             Type::Handshake,
@@ -1326,7 +1460,9 @@ mod tests {
         );
         builder.pn(0, 1);
         builder.encode([1, 2, 3]);
-        let packet = builder.build(&mut CryptoDxState::test_default()).unwrap();
+        let packet = builder
+            .build(&mut CryptoDxState::test_default_write())
+            .unwrap();
         assert_eq!(packet.as_ref(), EXPECTED);
     }
 
@@ -1393,7 +1529,9 @@ mod tests {
         builder.pn(0, 1);
         builder.enable_padding(true);
         assert!(builder.pad());
-        let encoder = builder.build(&mut CryptoDxState::test_default()).unwrap();
+        let encoder = builder
+            .build(&mut CryptoDxState::test_default_write())
+            .unwrap();
         let encoder_copy = encoder.clone();
 
         let limit_second = LIMIT - encoder.len();
@@ -1420,7 +1558,7 @@ mod tests {
         const MTU: usize = 1280;
         const FIRST_QUIC_PACKET: usize = 1236;
         fixture_init();
-        let crypto = CryptoDxState::test_default();
+        let crypto = CryptoDxState::test_default_write();
 
         let mut encoder = Encoder::default();
         encoder.pad_to(FIRST_QUIC_PACKET, 0);
@@ -1477,7 +1615,7 @@ mod tests {
         // Building should trigger the debug_assert in debug mode, returning
         // internal error in release mode.
         assert_eq!(
-            builder.build(&mut CryptoDxState::test_default()),
+            builder.build(&mut CryptoDxState::test_default_write()),
             Err(Error::Internal)
         );
     }
@@ -1715,16 +1853,56 @@ mod tests {
 
     #[test]
     fn decode_empty() {
-        neqo_crypto::init().unwrap();
+        nss::init().unwrap();
         let res = Public::decode(&mut [], &EmptyConnectionIdGenerator::default());
         assert!(res.is_err());
     }
 
     #[test]
     fn decode_too_short() {
-        neqo_crypto::init().unwrap();
+        nss::init().unwrap();
         let mut data = [179, 255, 0, 0, 29, 0, 0];
         let res = Public::decode(&mut data, &EmptyConnectionIdGenerator::default());
         assert!(res.is_err());
+    }
+
+    #[test]
+    fn ignore_scone() {
+        /// A minimal SCONE packet.
+        const SCONE1: &[u8] = &[0xff, 0x6f, 0x7d, 0xc0, 0xfd, 0x00, 0x00];
+        /// A generous SCONE packet, including a connection ID that is too long for QUIC v1/v2.
+        const SCONE2: &[u8] = &[
+            0xff, 0xef, 0x7d, 0xc0, 0xfd, 0x01, 0x00, 0x15, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00,
+        ];
+
+        let mut scone1 = SCONE1.to_vec();
+        scone1.extend_from_slice(SAMPLE_SHORT);
+        decode_sample_short(&scone1);
+        let mut scone2 = SCONE2.to_vec();
+        scone2.extend_from_slice(SAMPLE_SHORT);
+        decode_sample_short(&scone2);
+
+        // A SCONE-only packet is an error.
+        let mut scone_only = SCONE1.to_vec();
+        let res = Public::decode(&mut scone_only, &cid_mgr());
+        assert!(matches!(res, Err(Error::NoMoreData)));
+    }
+
+    #[test]
+    fn many_scones() {
+        // A long chain of valid SCONE1 long-header packets with empty CIDs.
+        const SCONE_PACKET: [u8; 7] = [0xff, 0x6f, 0x7d, 0xc0, 0xfd, 0x00, 0x00];
+        let mut data: Vec<u8> = SCONE_PACKET
+            .iter()
+            .copied()
+            .cycle()
+            .take(SCONE_PACKET.len() * 20_000)
+            .collect();
+        assert!(matches!(
+            Public::decode(&mut data, &cid_mgr()),
+            Err(Error::InvalidPacket)
+        ));
     }
 }

@@ -279,7 +279,7 @@ export class NetworkResponseListener {
   /**
    * Stores the received data, if request/response body logging is enabled. It
    * also does limit the number of stored bytes, based on the
-   * `devtools.netmonitor.responseBodyLimit` pref.
+   * `devtools.netmonitor.bodyLimit` pref.
    *
    * Learn more about nsIStreamListener at:
    * https://developer.mozilla.org/en/XPCOM_Interface_Reference/nsIStreamListener
@@ -447,18 +447,7 @@ export class NetworkResponseListener {
       this.#httpActivity,
       this.#decodedCertificateCache
     );
-    let isRacing = false;
-    try {
-      const channel = this.#httpActivity.channel;
-      if (channel instanceof Ci.nsICacheInfoChannel) {
-        isRacing = channel.isRacing();
-      }
-    } catch (err) {
-      // See the following bug for more details:
-      // https://bugzilla.mozilla.org/show_bug.cgi?id=1582589
-    }
-
-    this.#httpActivity.owner.addSecurityInfo(info, isRacing);
+    this.#httpActivity.owner.addSecurityInfo(info);
   }
 
   /**
@@ -658,6 +647,7 @@ export class NetworkResponseListener {
       extension,
       discardResponseBody: this.#httpActivity.discardResponseBody,
       truncated: this.#truncated,
+      channel: this.#httpActivity.channel,
     });
 
     // Make sure all the security and response content info are sent

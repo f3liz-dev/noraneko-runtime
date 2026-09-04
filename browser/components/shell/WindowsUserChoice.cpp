@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -28,6 +27,7 @@
 
 #include "nsDebug.h"
 #include "mozilla/UniquePtr.h"
+#include "nsID.h"
 #include "nsWindowsHelpers.h"
 
 #include "WindowsUserChoice.h"
@@ -410,6 +410,53 @@ bool CheckBrowserUserChoiceHashes() {
   }
 
   return true;
+}
+
+bool IsUserChoiceProtectionDriverRunning() {
+  nsAutoServiceHandle scm(
+      ::OpenSCManagerW(nullptr, nullptr, SC_MANAGER_CONNECT));
+  if (!scm) {
+    return false;
+  }
+
+  nsAutoServiceHandle ucpd(::OpenServiceW(scm, L"UCPD", SERVICE_QUERY_STATUS));
+  if (!ucpd) {
+    return false;
+  }
+
+  SERVICE_STATUS status;
+  if (!::QueryServiceStatus(ucpd, &status)) {
+    return false;
+  }
+
+  return status.dwCurrentState == SERVICE_RUNNING;
+}
+
+bool CanRenameUserChoiceAssociationKey(const wchar_t* aExt) {
+  auto keyPath = GetAssociationKeyPath(aExt);
+  if (!keyPath) {
+    return false;
+  }
+
+  HKEY rawAssocKey;
+  if (::RegOpenKeyExW(HKEY_CURRENT_USER, keyPath.get(), 0, KEY_READ | KEY_WRITE,
+                      &rawAssocKey) != ERROR_SUCCESS) {
+    return false;
+  }
+  nsAutoRegKey assocKey(rawAssocKey);
+
+  nsAutoString tempName =
+      NS_ConvertASCIItoUTF16(nsID::GenerateUUID().ToString().get());
+  if (::RegRenameKey(assocKey.get(), nullptr, tempName.get()) !=
+      ERROR_SUCCESS) {
+    return false;
+  }
+
+  // If the rename back fails, the association key keeps the temporary name,
+  // so return false even though the rename we were probing for worked. With
+  // no key named aExt, a UserChoice write has nothing to open so one-click is
+  // effectively disabled.
+  return ::RegRenameKey(assocKey.get(), nullptr, aExt) == ERROR_SUCCESS;
 }
 
 UniquePtr<wchar_t[]> FormatProgID(const wchar_t* aProgIDBase,

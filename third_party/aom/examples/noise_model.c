@@ -38,6 +38,7 @@
  *    --auto-alt-ref=2 --bit-depth=8 --film-grain-table=film_grain.tbl \
  *    -o denoised_with_grain_params.ivf denoised.854_480.yuv
  */
+#include <inttypes.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -303,6 +304,9 @@ int main(int argc, char *argv[]) {
   info.time_base.numerator = args.fps.den;
   info.time_base.denominator = args.fps.num;
 
+  if (!args.input) {
+    die("No input file specified\n");
+  }
   if (info.frame_width <= 0 || info.frame_height <= 0 ||
       (info.frame_width % 2) != 0 || (info.frame_height % 2) != 0) {
     die("Invalid frame size: %dx%d", info.frame_width, info.frame_height);

@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -30,10 +28,8 @@ JSErrNum js::ThrowMsgKindToErrNum(ThrowMsgKind kind) {
       return JSMSG_ASSIGN_TO_PRIVATE_METHOD;
     case ThrowMsgKind::DecoratorInvalidReturnType:
       return JSMSG_DECORATOR_INVALID_RETURN_TYPE;
-#ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
     case ThrowMsgKind::DisposeNotCallable:
       return JSMSG_DISPOSE_NOT_CALLABLE;
-#endif
   }
 
   MOZ_CRASH("Unexpected message kind");

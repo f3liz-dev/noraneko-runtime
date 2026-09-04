@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -518,7 +516,7 @@ struct DumpHeapTracer final : public JS::CallbackTracer, public WeakMapTracer {
             key.asCell(), kdelegate, value.asCell());
   }
 
-  void onChild(JS::GCCellPtr thing, const char* name) override;
+  bool onChild(JS::GCCellPtr thing, const char* name) override;
 };
 
 static char MarkDescriptor(js::gc::Cell* thing) {
@@ -581,18 +579,33 @@ static void DumpHeapVisitCell(JSRuntime* rt, void* data, JS::GCCellPtr cellptr,
     fprintf(dtrc->output, "\n");
   }
 
+  if (cellptr.is<JSObject>()) {
+    JSObject* obj = &cellptr.as<JSObject>();
+    if (obj->is<js::NativeObject>() && obj->getClass()->preservesWrapper()) {
+      JS::Value objectWrapperSlot =
+          JS::GetReservedSlot(obj, JS_OBJECT_WRAPPER_SLOT);
+      if (!objectWrapperSlot.isUndefined() && objectWrapperSlot.toPrivate()) {
+        fprintf(dtrc->output, "> %p %c Wrapped DOM Object\n",
+                objectWrapperSlot.toPrivate(),
+                MarkDescriptor(cellptr.asCell()));
+      }
+    }
+  }
+
   JS::TraceChildren(dtrc, cellptr);
 }
 
-void DumpHeapTracer::onChild(JS::GCCellPtr thing, const char* name) {
+bool DumpHeapTracer::onChild(JS::GCCellPtr thing, const char* name) {
   if (js::gc::IsInsideNursery(thing.asCell())) {
-    return;
+    return true;
   }
 
   char buffer[1024];
   context().getEdgeName(name, buffer, sizeof(buffer));
   fprintf(output, "%s%p %c %s\n", prefix, thing.asCell(),
           MarkDescriptor(thing.asCell()), buffer);
+
+  return true;
 }
 
 void js::DumpHeap(JSContext* cx, FILE* fp,

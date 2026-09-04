@@ -553,6 +553,24 @@ SECStatus SSLInt_SetRawEchConfigForRetry(PRFileDesc *fd, const uint8_t *buf,
   return SECSuccess;
 }
 
+const char *SSLInt_GetEchConfigPublicName(PRFileDesc *fd, unsigned int idx) {
+  sslSocket *ss = ssl_FindSocket(fd);
+  if (!ss) {
+    return NULL;
+  }
+  PRCList *cur = PR_LIST_HEAD(&ss->echConfigs);
+  for (unsigned int i = 0; i < idx; i++) {
+    cur = PR_NEXT_LINK(cur);
+    if (cur == &ss->echConfigs) {
+      return NULL;
+    }
+  }
+  if (cur == &ss->echConfigs) {
+    return NULL;
+  }
+  return ((sslEchConfig *)cur)->contents.publicName;
+}
+
 PRBool SSLInt_IsIp(PRUint8 *s, unsigned int len) { return tls13_IsIp(s, len); }
 
 SECStatus SSLInt_GetCertificateCompressionAlgorithm(
@@ -593,4 +611,13 @@ SECStatus SSLInt_GetCertificateCompressionAlgorithm(
     return SECSuccess;
   }
   return SECFailure;
+}
+
+SECStatus SSLInt_SetEnableEchXtnCompression(PRFileDesc *fd, PRBool enabled) {
+  sslSocket *ss = ssl_FindSocket(fd);
+  if (!ss) {
+    return SECFailure;
+  }
+  ss->opt.enableEchXtnCompression = enabled;
+  return SECSuccess;
 }

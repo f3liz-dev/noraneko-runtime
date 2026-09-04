@@ -85,12 +85,14 @@ private fun JsonReader.browsingSession(
     var tabPartitions: Map<String, TabPartition> = emptyMap()
     var selectedIndex: Int? = null
     var selectedTabId: String? = null
+    var isTranslationsEngineSupported: Boolean? = null
 
     while (hasNext()) {
         when (nextName()) {
             Keys.VERSION_KEY -> version = nextInt()
             Keys.SELECTED_SESSION_INDEX_KEY -> selectedIndex = nextInt()
             Keys.SELECTED_TAB_ID_KEY -> selectedTabId = nextStringOrNull()
+            Keys.TRANSLATIONS_ENGINE_IS_SUPPORTED_KEY -> isTranslationsEngineSupported = nextBooleanOrNull()
             Keys.SESSION_STATE_TUPLES_KEY -> tabs = tabs(engine, restoreSessionId, restoreParentId, predicate)
             Keys.TAB_PARTITIONS_KEY -> tabPartitions = tabPartitions()
         }
@@ -112,7 +114,7 @@ private fun JsonReader.browsingSession(
             selectedTabId = tabs.sortedByDescending { it.state.lastAccess }.first().state.id
         }
 
-        RecoverableBrowserState(tabs, selectedTabId, tabPartitions)
+        RecoverableBrowserState(tabs, selectedTabId, tabPartitions, isTranslationsEngineSupported)
     } else {
         null
     }
@@ -177,6 +179,7 @@ private fun JsonReader.tabSession(): RecoverableTab {
     var contextId: String? = null
     var lastAccess: Long? = null
     var createdAt: Long? = null
+    var lastVisibleAt: Long? = null
     var lastMediaUrl: String? = null
     var lastMediaAccess: Long? = null
     var mediaSessionActive: Boolean? = null
@@ -213,6 +216,7 @@ private fun JsonReader.tabSession(): RecoverableTab {
             Keys.SESSION_HISTORY_METADATA_REFERRER_URL -> historyMetadataReferrerUrl = nextStringOrNull()
             Keys.SESSION_LAST_ACCESS -> lastAccess = nextLong()
             Keys.SESSION_CREATED_AT -> createdAt = nextLong()
+            Keys.SESSION_LAST_VISIBLE_AT -> lastVisibleAt = nextLong()
             Keys.SESSION_LAST_MEDIA_URL -> lastMediaUrl = nextString()
             Keys.SESSION_LAST_MEDIA_SESSION_ACTIVE -> mediaSessionActive = nextBoolean()
             Keys.SESSION_LAST_MEDIA_ACCESS -> lastMediaAccess = nextLong()
@@ -253,6 +257,7 @@ private fun JsonReader.tabSession(): RecoverableTab {
             private = false, // We never serialize private sessions
             lastAccess = lastAccess ?: 0,
             createdAt = createdAt ?: 0,
+            lastVisibleAt = lastVisibleAt ?: 0,
             lastMediaAccessState = LastMediaAccessState(
                 lastMediaUrl ?: "",
                 lastMediaAccess = lastMediaAccess ?: 0,

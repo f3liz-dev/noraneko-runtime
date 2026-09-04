@@ -6,13 +6,17 @@
 #include "mozilla/ScopeExit.h"
 #include "mozilla/SpinEventLoopUntil.h"
 #include "mozilla/StaticPrefs_places.h"
+#include "mozilla/StaticPrefs_security.h"
 #include "mozilla/glean/PlacesMetrics.h"
+#include "mozilla/storage/SQLiteEncryption.h"
+#include "mozilla/storage/StoragePathUtil.h"
 
 #include "Database.h"
 
 #include "nsIInterfaceRequestorUtils.h"
 #include "nsIFile.h"
 
+#include "nsLocalFile.h"
 #include "nsNavBookmarks.h"
 #include "nsNavHistory.h"
 #include "nsPlacesTables.h"
@@ -21,6 +25,7 @@
 #include "nsPlacesMacros.h"
 #include "nsVariant.h"
 #include "SQLFunctions.h"
+#include "ScopedNSSTypes.h"
 #include "Helpers.h"
 #include "nsFaviconService.h"
 
@@ -334,12 +339,38 @@ nsresult SetupDurability(nsCOMPtr<mozIStorageConnection>& aDBConn,
 
 nsresult AttachDatabase(nsCOMPtr<mozIStorageConnection>& aDBConn,
                         const nsACString& aPath, const nsACString& aName) {
+  nsresult rv;
+  nsCString path;
+  path = aPath;
+
+  bool encryptionEnabled =
+      StaticPrefs::security_storage_encryption_sqlite_enabled();
+  if (encryptionEnabled) {
+    storage::EncryptionStatus encStatus;
+    rv = storage::GetDatabaseEncryptionStatus(path, encStatus);
+    NS_ENSURE_SUCCESS(rv, rv);
+
+    // Outside-profile DBs attach unencrypted. In-profile attach targets always
+    // pre-exist, so load the DEK (never create one).
+    if (encStatus == storage::EncryptionStatus::Encrypted) {
+      nsCString dbKey;
+      rv = storage::GetEncryptionKey(path, storage::OpenIntent::LoadExisting,
+                                     dbKey);
+      NS_ENSURE_SUCCESS(rv, rv);
+
+      storage::PreparePathForURI(path);
+      path = nsPrintfCString("file:%s?key=%s", path.get(), dbKey.get());
+    }
+  }
+
   nsCOMPtr<mozIStorageStatement> stmt;
-  nsresult rv = aDBConn->CreateStatement("ATTACH DATABASE :path AS "_ns + aName,
-                                         getter_AddRefs(stmt));
+  rv = aDBConn->CreateStatement("ATTACH DATABASE :path AS "_ns + aName,
+                                getter_AddRefs(stmt));
   NS_ENSURE_SUCCESS(rv, rv);
-  rv = stmt->BindUTF8StringByName("path"_ns, aPath);
+
+  rv = stmt->BindUTF8StringByName("path"_ns, path);
   NS_ENSURE_SUCCESS(rv, rv);
+
   rv = stmt->Execute();
   NS_ENSURE_SUCCESS(rv, rv);
 
@@ -598,6 +629,14 @@ nsresult Database::EnsureConnection() {
     rv = storage->OpenUnsharedDatabase(databaseFile,
                                        mozIStorageService::CONNECTION_DEFAULT,
                                        getter_AddRefs(mMainConn));
+    if (rv == NS_ERROR_STORAGE_IOERR || rv == NS_ERROR_FILE_IS_LOCKED ||
+        rv == NS_ERROR_STORAGE_BUSY) {
+      // Transient lock or I/O error (e.g. network filesystem, AV software):
+      // retry once before giving up.
+      rv = storage->OpenUnsharedDatabase(databaseFile,
+                                         mozIStorageService::CONNECTION_DEFAULT,
+                                         getter_AddRefs(mMainConn));
+    }
     if (NS_SUCCEEDED(rv) && !databaseExisted) {
       mDatabaseStatus = nsINavHistoryService::DATABASE_STATUS_CREATE;
     } else if (rv == NS_ERROR_FILE_CORRUPTED) {
@@ -1053,10 +1092,11 @@ nsresult Database::SetupDatabaseConnection(
     NS_ENSURE_SUCCESS(rv, rv);
     bool hasResult = false;
     rv = statement->ExecuteStep(&hasResult);
-    NS_ENSURE_TRUE(NS_SUCCEEDED(rv) && hasResult, NS_ERROR_FILE_CORRUPTED);
+    NS_ENSURE_SUCCESS(rv, rv);
+    NS_ENSURE_TRUE(hasResult, NS_ERROR_FILE_CORRUPTED);
     rv = statement->GetInt32(0, &mDBPageSize);
-    NS_ENSURE_TRUE(NS_SUCCEEDED(rv) && mDBPageSize > 0,
-                   NS_ERROR_FILE_CORRUPTED);
+    NS_ENSURE_SUCCESS(rv, rv);
+    NS_ENSURE_TRUE(mDBPageSize > 0, NS_ERROR_FILE_CORRUPTED);
   }
 
 #if !defined(HAVE_64BIT_BUILD)
@@ -1077,7 +1117,7 @@ nsresult Database::SetupDatabaseConnection(
   // Enable FOREIGN KEY support. This is a strict requirement.
   rv = mMainConn->ExecuteSimpleSQL(nsLiteralCString(
       MOZ_STORAGE_UNIQUIFY_QUERY_STR "PRAGMA foreign_keys = ON"));
-  NS_ENSURE_SUCCESS(rv, NS_ERROR_FILE_CORRUPTED);
+  NS_ENSURE_SUCCESS(rv, rv);
 #ifdef DEBUG
   {
     // There are a few cases where setting foreign_keys doesn't work:
@@ -1099,27 +1139,33 @@ nsresult Database::SetupDatabaseConnection(
   // Attach the favicons database to the main connection.
   rv = EnsureFaviconsDatabaseAttached(aStorage);
   if (NS_FAILED(rv)) {
-    // The favicons database may be corrupt.
-    // Set last corruption time in prefs for troubleshooting.
-    CheckedInt<int32_t> daysSinceEpoch = GetNow() / USEC_PER_DAY;
-    if (daysSinceEpoch.isValid()) {
-      Preferences::SetInt(PREF_DATABASE_FAVICONS_LASTCORRUPTION,
-                          daysSinceEpoch.value());
-    }
+    if (rv != NS_ERROR_FILE_CORRUPTED) {
+      // The failure is not due to corruption; retry once before giving up.
+      rv = EnsureFaviconsDatabaseAttached(aStorage);
+      NS_ENSURE_SUCCESS(rv, rv);
+    } else {
+      // The favicons database is corrupt.
+      // Set last corruption time in prefs for troubleshooting.
+      CheckedInt<int32_t> daysSinceEpoch = GetNow() / USEC_PER_DAY;
+      if (daysSinceEpoch.isValid()) {
+        Preferences::SetInt(PREF_DATABASE_FAVICONS_LASTCORRUPTION,
+                            daysSinceEpoch.value());
+      }
 
-    // Try to replace and reattach it.
-    nsCOMPtr<nsIFile> iconsFile;
-    rv = NS_GetSpecialDirectory(NS_APP_USER_PROFILE_50_DIR,
-                                getter_AddRefs(iconsFile));
-    NS_ENSURE_SUCCESS(rv, rv);
-    rv = iconsFile->Append(DATABASE_FAVICONS_FILENAME);
-    NS_ENSURE_SUCCESS(rv, rv);
-    rv = iconsFile->Remove(false);
-    if (NS_FAILED(rv) && rv != NS_ERROR_FILE_NOT_FOUND) {
-      return rv;
+      // Replace and reattach it.
+      nsCOMPtr<nsIFile> iconsFile;
+      rv = NS_GetSpecialDirectory(NS_APP_USER_PROFILE_50_DIR,
+                                  getter_AddRefs(iconsFile));
+      NS_ENSURE_SUCCESS(rv, rv);
+      rv = iconsFile->Append(DATABASE_FAVICONS_FILENAME);
+      NS_ENSURE_SUCCESS(rv, rv);
+      rv = iconsFile->Remove(false);
+      if (NS_FAILED(rv) && rv != NS_ERROR_FILE_NOT_FOUND) {
+        return rv;
+      }
+      rv = EnsureFaviconsDatabaseAttached(aStorage);
+      NS_ENSURE_SUCCESS(rv, rv);
     }
-    rv = EnsureFaviconsDatabaseAttached(aStorage);
-    NS_ENSURE_SUCCESS(rv, rv);
   }
 
   // Create favicons temp entities.
@@ -1356,12 +1402,28 @@ nsresult Database::InitSchema(bool* aDatabaseMigrated) {
       // The schema 84 migration was the same as 85, we had to re-run it to
       // correct issues with origin frecency.
 
+      // Firefox 147 uses schema version 84
+
       if (currentSchemaVersion < 85) {
         rv = MigrateV85Up();
         NS_ENSURE_SUCCESS(rv, rv);
       }
 
-      // Firefox 147 uses schema version 84
+      // Firefox 148 uses schema version 85
+
+      if (currentSchemaVersion < 86) {
+        rv = MigrateV86Up();
+        NS_ENSURE_SUCCESS(rv, rv);
+      }
+
+      // Firefox 150 uses schema version 86
+
+      if (currentSchemaVersion < 87) {
+        rv = MigrateV87Up();
+        NS_ENSURE_SUCCESS(rv, rv);
+      }
+
+      // Firefox 155 uses schema version 87
 
       // Schema Upgrades must add migration code here.
       // >>> IMPORTANT! <<<
@@ -2296,6 +2358,100 @@ nsresult Database::MigrateV85Up() {
       "SET recalc_frecency = 1 "
       "WHERE frecency > 1"_ns);
   NS_ENSURE_SUCCESS(rv, rv);
+  return NS_OK;
+}
+
+nsresult Database::MigrateV86Up() {
+  nsCOMPtr<mozIStorageStatement> stmt;
+
+  // Check and add block_until_ms if missing.
+  nsresult rv = mMainConn->CreateStatement(
+      "SELECT block_until_ms FROM moz_origins"_ns, getter_AddRefs(stmt));
+  if (NS_FAILED(rv)) {
+    rv = mMainConn->ExecuteSimpleSQL(
+        "ALTER TABLE moz_origins "
+        "ADD COLUMN block_until_ms INTEGER"_ns);
+    NS_ENSURE_SUCCESS(rv, rv);
+  }
+
+  // Check and add block_pages_until_ms if missing.
+  rv = mMainConn->CreateStatement(
+      "SELECT block_pages_until_ms FROM moz_origins"_ns, getter_AddRefs(stmt));
+  if (NS_FAILED(rv)) {
+    rv = mMainConn->ExecuteSimpleSQL(
+        "ALTER TABLE moz_origins "
+        "ADD COLUMN block_pages_until_ms INTEGER"_ns);
+    NS_ENSURE_SUCCESS(rv, rv);
+  }
+  return NS_OK;
+}
+
+nsresult Database::MigrateV87Up() {
+  // Invert the moz_origins UNIQUE constraint to (host, prefix), so the higher
+  // cardinality column comes first and queries only filtering on host, like the
+  // address bar ones, can use the index.
+
+  {
+    // The statement must be finalized before the table it reads is dropped.
+    nsCOMPtr<mozIStorageStatement> stmt;
+    nsresult rv = mMainConn->CreateStatement(
+        nsLiteralCString("SELECT 1 FROM sqlite_master "
+                         "WHERE type = 'table' AND name = 'moz_origins' "
+                         "AND sql LIKE '%UNIQUE (host, prefix)%'"),
+        getter_AddRefs(stmt));
+    NS_ENSURE_SUCCESS(rv, rv);
+    bool hasResult = false;
+    if (NS_SUCCEEDED(stmt->ExecuteStep(&hasResult)) && hasResult) {
+      // The constraint has already been inverted.
+      return NS_OK;
+    }
+  }
+
+  // The table must be rebuilt, but it can't be dropped while moz_places
+  // references it. Deferring the foreign keys allows the drop: it leaves every
+  // referencing page orphaned until the table is refilled, which resolves them
+  // again before the transaction commits.
+  nsresult rv =
+      mMainConn->ExecuteSimpleSQL("PRAGMA defer_foreign_keys = ON"_ns);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  rv = mMainConn->ExecuteSimpleSQL(
+      "CREATE TEMP TABLE moz_origins_stash_temp AS "
+      "SELECT * FROM moz_origins"_ns);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  rv = mMainConn->ExecuteSimpleSQL("DROP TABLE moz_origins"_ns);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  rv = mMainConn->ExecuteSimpleSQL(
+      "CREATE TABLE moz_origins ( "
+      "id INTEGER PRIMARY KEY, "
+      "prefix TEXT NOT NULL, "
+      "host TEXT NOT NULL, "
+      "frecency INTEGER NOT NULL, "
+      "recalc_frecency INTEGER NOT NULL DEFAULT 0, "
+      "alt_frecency INTEGER, "
+      "recalc_alt_frecency INTEGER NOT NULL DEFAULT 0, "
+      "block_until_ms INTEGER, "
+      "block_pages_until_ms INTEGER, "
+      "UNIQUE (host, prefix) "
+      ")"_ns);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  // Inserting the rows into a table with the same name as the original resolves
+  // the deferred constraint violations accumulated during the DROP.
+  rv = mMainConn->ExecuteSimpleSQL(
+      "INSERT INTO moz_origins "
+      "(id, prefix, host, frecency, recalc_frecency, alt_frecency, "
+      "recalc_alt_frecency, block_until_ms, block_pages_until_ms) "
+      "SELECT id, prefix, host, frecency, recalc_frecency, alt_frecency, "
+      "recalc_alt_frecency, block_until_ms, block_pages_until_ms "
+      "FROM moz_origins_stash_temp"_ns);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  rv = mMainConn->ExecuteSimpleSQL("DROP TABLE moz_origins_stash_temp"_ns);
+  NS_ENSURE_SUCCESS(rv, rv);
+
   return NS_OK;
 }
 

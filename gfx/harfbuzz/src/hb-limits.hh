@@ -58,6 +58,10 @@
 #define HB_MAX_CONTEXT_LENGTH 64
 #endif
 
+#ifndef HB_MAX_SYLLABLE_LENGTH
+#define HB_MAX_SYLLABLE_LENGTH 64
+#endif
+
 #ifndef HB_CLOSURE_MAX_STAGES
 /*
  * The maximum number of times a lookup can be applied during shaping.
@@ -81,7 +85,7 @@
 #endif
 
 #ifndef HB_MAX_FEATURE_INDICES
-#define HB_MAX_FEATURE_INDICES 1500
+#define HB_MAX_FEATURE_INDICES 8000
 #endif
 
 #ifndef HB_MAX_LOOKUP_VISIT_COUNT
@@ -106,6 +110,35 @@
 
 #ifndef HB_MAX_COMPOSITE_OPERATIONS_PER_GLYPH
 #define HB_MAX_COMPOSITE_OPERATIONS_PER_GLYPH 64
+#endif
+
+#ifndef HB_SVG_MAX_PATH_SEGMENTS
+#define HB_SVG_MAX_PATH_SEGMENTS 262144
+#endif
+
+#ifndef HB_GPU_DRAW_MAX_CURVES
+#define HB_GPU_DRAW_MAX_CURVES 65536
+#endif
+
+#ifndef HB_SVG_MAX_DOCUMENT_SIZE
+#define HB_SVG_MAX_DOCUMENT_SIZE ((size_t) 16 << 20)
+#endif
+
+#ifndef HB_RASTER_MAX_BUFFER_SIZE
+#define HB_RASTER_MAX_BUFFER_SIZE ((size_t) 1 << 30)
+#endif
+
+
+#ifndef HB_REPACKER_MAX_ITERATIONS
+#define HB_REPACKER_MAX_ITERATIONS 500
+#endif
+
+#ifndef HB_REPACKER_MAX_VERTICES
+#define HB_REPACKER_MAX_VERTICES 800000
+#endif
+
+#ifndef HB_REPACKER_MAX_SPACES
+#define HB_REPACKER_MAX_SPACES 8000
 #endif
 
 

@@ -1,5 +1,4 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -12,30 +11,34 @@
 #include <sysinfoapi.h>
 #include <winerror.h>
 #include <winuser.h>
+
 #include <utility>
 
 #include "ContentAnalysis.h"
+#include "WinUtils.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/BackgroundHangMonitor.h"
 #include "mozilla/Components.h"
+#include "mozilla/Logging.h"
+#include "mozilla/ProfilerLabels.h"
+#include "mozilla/StaticPrefs_widget.h"
+#include "mozilla/UniquePtr.h"
 #include "mozilla/dom/BrowsingContext.h"
 #include "mozilla/dom/CanonicalBrowsingContext.h"
 #include "mozilla/dom/Directory.h"
 #include "mozilla/dom/WindowGlobalParent.h"
-#include "mozilla/Logging.h"
 #include "mozilla/ipc/UtilityProcessManager.h"
-#include "mozilla/ProfilerLabels.h"
-#include "mozilla/StaticPrefs_widget.h"
-#include "mozilla/UniquePtr.h"
+#include "mozilla/widget/filedialog/WinFileDialogCommands.h"
+#include "mozilla/widget/filedialog/WinFileDialogParent.h"
 #include "nsArrayEnumerator.h"
+#include "nsCExternalHandlerService.h"
 #include "nsCRT.h"
 #include "nsEnumeratorUtils.h"
 #include "nsHashPropertyBag.h"
 #include "nsIContentAnalysis.h"
+#include "nsIExternalHelperAppService.h"
 #include "nsIFile.h"
 #include "nsISimpleEnumerator.h"
-#include "nsCExternalHandlerService.h"
-#include "nsIExternalHelperAppService.h"
 #include "nsNetUtil.h"
 #include "nsPIDOMWindow.h"
 #include "nsPrintfCString.h"
@@ -43,10 +46,6 @@
 #include "nsString.h"
 #include "nsToolkit.h"
 #include "nsWindow.h"
-#include "WinUtils.h"
-
-#include "mozilla/widget/filedialog/WinFileDialogCommands.h"
-#include "mozilla/widget/filedialog/WinFileDialogParent.h"
 
 using mozilla::LogLevel;
 using mozilla::UniquePtr;
@@ -56,7 +55,7 @@ using namespace mozilla::widget;
 template <typename Res>
 using FDPromise = filedialog::Promise<Res>;
 
-MOZ_RUNINIT UniquePtr<char16_t[], nsFilePicker::FreeDeleter>
+constinit UniquePtr<char16_t[], nsFilePicker::FreeDeleter>
     nsFilePicker::sLastUsedUnicodeDirectory;
 
 #define MAX_EXTENSION_LENGTH 10
@@ -106,13 +105,13 @@ NS_IMPL_ISUPPORTS(nsFilePicker, nsIFilePicker)
 
 NS_IMETHODIMP nsFilePicker::Init(
     mozilla::dom::BrowsingContext* aBrowsingContext, const nsAString& aTitle,
-    nsIFilePicker::Mode aMode) {
+    nsIFilePicker::Mode aMode, nsISupports* aGlobal) {
   // Don't attempt to open a real file-picker in headless mode.
   if (gfxPlatform::IsHeadless()) {
-    return nsresult::NS_ERROR_NOT_AVAILABLE;
+    return NS_ERROR_NOT_AVAILABLE;
   }
 
-  return nsBaseFilePicker::Init(aBrowsingContext, aTitle, aMode);
+  return nsBaseFilePicker::Init(aBrowsingContext, aTitle, aMode, aGlobal);
 }
 
 namespace mozilla::detail {
@@ -176,37 +175,42 @@ namespace {
 
 static RefPtr<FDPromise<Maybe<filedialog::Results>>> ShowFilePickerRemote(
     HWND parent, filedialog::FileDialogType type,
-    nsTArray<filedialog::Command> const& commands) {
+    nsTArray<filedialog::Command> const& commands, bool needsInputProtection) {
   using mozilla::widget::filedialog::sLogFileDialog;
-  return mozilla::detail::ShowRemote(
-      [parent, type,
-       commands = commands.Clone()](filedialog::WinFileDialogParent* p) {
-        MOZ_LOG(sLogFileDialog, LogLevel::Info,
-                ("%s: p = [%p]", __PRETTY_FUNCTION__, p));
-        return p->ShowFileDialogImpl(parent, type, commands);
-      });
-}
-
-static RefPtr<FDPromise<Maybe<nsString>>> ShowFolderPickerRemote(
-    HWND parent, nsTArray<filedialog::Command> const& commands) {
-  using mozilla::widget::filedialog::sLogFileDialog;
-  return mozilla::detail::ShowRemote([parent, commands = commands.Clone()](
+  return mozilla::detail::ShowRemote([parent, type, needsInputProtection,
+                                      commands = commands.Clone()](
                                          filedialog::WinFileDialogParent* p) {
     MOZ_LOG(sLogFileDialog, LogLevel::Info,
             ("%s: p = [%p]", __PRETTY_FUNCTION__, p));
-    return p->ShowFolderDialogImpl(parent, commands);
+    return p->ShowFileDialogImpl(parent, type, commands, needsInputProtection);
   });
+}
+
+static RefPtr<FDPromise<Maybe<nsString>>> ShowFolderPickerRemote(
+    HWND parent, nsTArray<filedialog::Command> const& commands,
+    bool needsInputProtection) {
+  using mozilla::widget::filedialog::sLogFileDialog;
+  return mozilla::detail::ShowRemote(
+      [parent, needsInputProtection,
+       commands = commands.Clone()](filedialog::WinFileDialogParent* p) {
+        MOZ_LOG(sLogFileDialog, LogLevel::Info,
+                ("%s: p = [%p]", __PRETTY_FUNCTION__, p));
+        return p->ShowFolderDialogImpl(parent, commands, needsInputProtection);
+      });
 }
 
 static RefPtr<FDPromise<Maybe<filedialog::Results>>> ShowFilePickerLocal(
     HWND parent, filedialog::FileDialogType type,
-    nsTArray<filedialog::Command> const& commands) {
-  return filedialog::SpawnFilePicker(parent, type, commands.Clone());
+    nsTArray<filedialog::Command> const& commands, bool needsInputProtection) {
+  return filedialog::SpawnFilePicker(parent, type, commands.Clone(),
+                                     needsInputProtection);
 }
 
 static RefPtr<FDPromise<Maybe<nsString>>> ShowFolderPickerLocal(
-    HWND parent, nsTArray<filedialog::Command> const& commands) {
-  return filedialog::SpawnFolderPicker(parent, commands.Clone());
+    HWND parent, nsTArray<filedialog::Command> const& commands,
+    bool needsInputProtection) {
+  return filedialog::SpawnFolderPicker(parent, commands.Clone(),
+                                       needsInputProtection);
 }
 
 }  // namespace
@@ -496,7 +500,8 @@ nsFilePicker::ShowFolderPicker(const nsString& aInitialDir) {
 
   return mozilla::detail::AsyncExecute(&mozilla::detail::ShowFolderPickerLocal,
                                        &mozilla::detail::ShowFolderPickerRemote,
-                                       shim.get(), commands)
+                                       shim.get(), commands,
+                                       IsContentInitiated())
       ->Map(NS_GetCurrentThread(), __PRETTY_FUNCTION__,
             [self = RefPtr(this), shim = std::move(shim),
              awps = std::move(awps)](Maybe<nsString> val) {
@@ -639,7 +644,8 @@ nsFilePicker::ShowFilePicker(const nsString& aInitialDir) {
 
   auto promise = mozilla::detail::AsyncExecute(
       &mozilla::detail::ShowFilePickerLocal,
-      &mozilla::detail::ShowFilePickerRemote, shim.get(), type, commands);
+      &mozilla::detail::ShowFilePickerRemote, shim.get(), type, commands,
+      IsContentInitiated());
 
   return promise->Map(
       mozilla::GetMainThreadSerialEventTarget(), __PRETTY_FUNCTION__,
@@ -1109,7 +1115,7 @@ void nsFilePicker::SendFailureNotification(nsFilePicker::ResultCode aResult,
     return;  // normal during XPCOM shutdown
   }
 
-  RefPtr<nsHashPropertyBag> props = new nsHashPropertyBag();
+  auto props = mozilla::MakeRefPtr<nsHashPropertyBag>();
   props->SetPropertyAsInterface(u"ctx"_ns, mBrowsingContext);
   props->SetPropertyAsUint32(u"mode"_ns, mMode);
   if (aFallback.isOk()) {

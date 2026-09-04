@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -19,13 +17,16 @@
 #include "nsTArrayForwardDeclare.h"
 #include "nsWrapperCache.h"
 
+class nsStyledElement;
 template <class T>
 class RefPtr;
 
 namespace mozilla {
 
+struct CSSPropertyId;
 class ErrorResult;
-struct StylePropertyTypedValueResult;
+struct StylePropertyTypedValueList;
+struct URLExtraData;
 
 namespace dom {
 
@@ -35,7 +36,10 @@ class OwningUndefinedOrCSSStyleValue;
 
 class StylePropertyMapReadOnly : public nsISupports, public nsWrapperCache {
  public:
-  StylePropertyMapReadOnly(Element* aElement, bool aComputed);
+  explicit StylePropertyMapReadOnly(nsStyledElement* aStyledElement);
+
+  explicit StylePropertyMapReadOnly(Element* aElement);
+
   explicit StylePropertyMapReadOnly(CSSStyleRule* aRule);
 
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
@@ -61,7 +65,7 @@ class StylePropertyMapReadOnly : public nsISupports, public nsWrapperCache {
 
   uint32_t GetIterableLength() const;
 
-  const nsACString& GetKeyAtIndex(uint32_t aIndex) const;
+  nsCString GetKeyAtIndex(uint32_t aIndex) const;
 
   nsTArray<RefPtr<CSSStyleValue>> GetValueAtIndex(uint32_t aIndex) const;
 
@@ -72,6 +76,10 @@ class StylePropertyMapReadOnly : public nsISupports, public nsWrapperCache {
   size_t SizeOfIncludingThis(MallocSizeOf aMallocSizeOf) const;
 
  protected:
+  // Factored out code for various functions above.
+  void GetAll(const CSSPropertyId&, nsTArray<RefPtr<CSSStyleValue>>& aRetVal,
+              ErrorResult& aRv) const;
+
   virtual ~StylePropertyMapReadOnly() = default;
 
   class Declarations {
@@ -81,20 +89,34 @@ class StylePropertyMapReadOnly : public nsISupports, public nsWrapperCache {
       Computed,
       Rule,
     };
-    Declarations(Element* aElement, bool aComputed)
-        : mElement(aElement),
-          mKind(aComputed ? Kind::Computed : Kind::Inline) {}
+    explicit Declarations(nsStyledElement* aStyledElement)
+        : mStyledElement(aStyledElement), mKind(Kind::Inline) {}
+
+    explicit Declarations(Element* aElement)
+        : mElement(aElement), mKind(Kind::Computed) {}
 
     explicit Declarations(CSSStyleRule* aRule)
         : mRule(aRule), mKind(Kind::Rule) {}
 
-    StylePropertyTypedValueResult Get(const nsACString& aProperty,
-                                      ErrorResult& aRv) const;
+    StylePropertyTypedValueList GetAll(const CSSPropertyId& aPropertyId,
+                                       ErrorResult& aRv) const;
 
+    bool Has(const CSSPropertyId& aPropertyId) const;
+    uint32_t Size() const;
+    bool GetKeyAt(uint32_t aIndex, CSSPropertyId& aId) const;
+
+    // Defined in StylePropertyMap.cpp
+    void Set(const CSSPropertyId& aPropertyId, const nsACString& aValue,
+             ErrorResult& aRv);
+    void Clear(ErrorResult& aRv);
+    void Delete(const CSSPropertyId& aPropertyId, ErrorResult& aRv);
+
+    URLExtraData* GetURLExtraData() const;
     void Unlink();
 
    private:
     union {
+      nsStyledElement* mStyledElement;
       Element* mElement;
       CSSStyleRule* mRule;
     };

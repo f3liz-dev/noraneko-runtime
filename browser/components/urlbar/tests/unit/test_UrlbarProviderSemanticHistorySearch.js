@@ -64,7 +64,10 @@ add_task(async function setup() {
 add_task(async function test_startQuery_adds_results() {
   const provider = new UrlbarProviderSemanticHistorySearch();
 
-  const queryContext = { searchString: "test page" };
+  const queryContext = {
+    searchString: "test page",
+    restrictInSearchMode: () => false,
+  };
 
   // Trigger isActive() to initialize the semantic manager
   Assert.ok(await provider.isActive(queryContext), "Provider should be active");
@@ -93,7 +96,7 @@ add_task(async function test_startQuery_adds_results() {
   Assert.equal(added[0].payload.url, url, "Correct URL should be used");
   Assert.equal(
     added[0].payload.icon,
-    UrlbarUtils.getIconForUrl(url),
+    UrlbarShared.getIconForUrl(url),
     "Correct icon should be used"
   );
   Assert.ok(added[0].payload.isBlockable, "Result should be blockable");
@@ -120,7 +123,10 @@ add_task(async function test_isActive_conditions() {
   const canUseStub = sinon.stub(semanticManager, "canUseSemanticSearch");
 
   const shortQuery = { searchString: "hi" };
-  const validQuery = { searchString: "hello world" };
+  const validQuery = {
+    searchString: "hello world",
+    restrictInSearchMode: () => false,
+  };
 
   // Pref is disabled
   Services.prefs.setBoolPref("browser.urlbar.suggest.history", false);
@@ -164,12 +170,62 @@ add_task(async function test_isActive_conditions() {
   );
 
   const historySearchMode = createContext("hello world", {
-    searchMode: { source: UrlbarUtils.RESULT_SOURCE.HISTORY },
+    searchMode: { source: UrlbarShared.RESULT_SOURCE.HISTORY },
   });
   Assert.ok(
     await provider.isActive(historySearchMode),
     "Should be active when in history search mode"
   );
+});
+
+add_task(async function test_isActive_smartbar_uses_sw_gate() {
+  const provider = new UrlbarProviderSemanticHistorySearch();
+
+  // Reset any leftover stubs from earlier tests so we control both gates.
+  if (semanticManager.canUseSemanticSearch.restore) {
+    semanticManager.canUseSemanticSearch.restore();
+  }
+
+  Services.prefs.setBoolPref("browser.urlbar.suggest.history", true);
+
+  const canUseStub = sinon.stub(semanticManager, "canUseSemanticSearch");
+  const swStub = sinon.stub(semanticManager, "isEnabledForSmartWindow");
+
+  const smartbarQuery = {
+    searchString: "hello world",
+    sapName: "smartbar",
+    restrictInSearchMode: () => false,
+  };
+  const urlbarQuery = {
+    searchString: "hello world",
+    sapName: "urlbar",
+    restrictInSearchMode: () => false,
+  };
+
+  canUseStub.get(() => false);
+  swStub.get(() => true);
+  Assert.ok(
+    await provider.isActive(smartbarQuery),
+    "Smartbar active when SW gate on (CW gate off)"
+  );
+  Assert.ok(
+    !(await provider.isActive(urlbarQuery)),
+    "Urlbar inactive when CW gate off (SW gate on)"
+  );
+
+  canUseStub.get(() => true);
+  swStub.get(() => false);
+  Assert.ok(
+    !(await provider.isActive(smartbarQuery)),
+    "Smartbar inactive when SW gate off (CW gate on)"
+  );
+  Assert.ok(
+    await provider.isActive(urlbarQuery),
+    "Urlbar active when CW gate on (SW gate off)"
+  );
+
+  canUseStub.restore();
+  swStub.restore();
 });
 
 add_task(async function test_switchTab() {
@@ -226,7 +282,7 @@ add_task(async function test_switchTab() {
   function AssertSwitchToTabResult(result, url, userContextId, groupId = null) {
     Assert.equal(
       result.type,
-      UrlbarUtils.RESULT_TYPE.TAB_SWITCH,
+      UrlbarShared.RESULT_TYPE.TAB_SWITCH,
       "Check result type"
     );
     Assert.equal(result.payload.url, url, "Check result URL");
@@ -238,13 +294,13 @@ add_task(async function test_switchTab() {
     Assert.equal(result.payload.tabGroup, groupId, "Check tab group");
     Assert.equal(
       result.payload.icon,
-      UrlbarUtils.getIconForUrl(url),
+      UrlbarShared.getIconForUrl(url),
       "Check icon"
     );
   }
   function isUrlResult(result, url) {
     return (
-      result.type === UrlbarUtils.RESULT_TYPE.URL && result.payload.url === url
+      result.type === UrlbarShared.RESULT_TYPE.URL && result.payload.url === url
     );
   }
 

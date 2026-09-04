@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -222,7 +221,7 @@ NS_IMETHODIMP WebTransportStreamProxy::GetStreamId(uint64_t* aId) {
   return NS_OK;
 }
 
-NS_IMETHODIMP WebTransportStreamProxy::SetSendOrder(Maybe<int64_t> aSendOrder) {
+NS_IMETHODIMP WebTransportStreamProxy::SetSendOrder(int64_t aSendOrder) {
   if (!OnSocketThread()) {
     return gSocketTransportService->Dispatch(NS_NewRunnableFunction(
         "SetSendOrder", [stream = mWebTransportStream, aSendOrder]() {
@@ -230,6 +229,17 @@ NS_IMETHODIMP WebTransportStreamProxy::SetSendOrder(Maybe<int64_t> aSendOrder) {
         }));
   }
   mWebTransportStream->SetSendOrder(aSendOrder);
+  return NS_OK;
+}
+
+NS_IMETHODIMP WebTransportStreamProxy::SetSendGroup(uint64_t aSendGroupId) {
+  if (!OnSocketThread()) {
+    return gSocketTransportService->Dispatch(NS_NewRunnableFunction(
+        "SetSendGroup", [stream = mWebTransportStream, aSendGroupId]() {
+          stream->SetSendGroup(aSendGroupId);
+        }));
+  }
+  mWebTransportStream->SetSendGroup(aSendGroupId);
   return NS_OK;
 }
 

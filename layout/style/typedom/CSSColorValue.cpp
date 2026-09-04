@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,12 +5,19 @@
 #include "mozilla/dom/CSSColorValue.h"
 
 #include "mozilla/ErrorResult.h"
+#include "mozilla/StaticPrefs_layout.h"
 #include "mozilla/dom/CSSColorValueBinding.h"
 
 namespace mozilla::dom {
 
 CSSColorValue::CSSColorValue(nsCOMPtr<nsISupports> aParent)
     : CSSStyleValue(std::move(aParent)) {}
+
+// static
+bool CSSColorValue::IsEnabled(JSContext*, JSObject*) {
+  return StaticPrefs::layout_css_typed_om_enabled() &&
+         StaticPrefs::layout_css_typed_om_color_enabled();
+}
 
 JSObject* CSSColorValue::WrapObject(JSContext* aCx,
                                     JS::Handle<JSObject*> aGivenProto) {

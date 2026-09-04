@@ -1,10 +1,10 @@
-/* -*- Mode: Java; c-basic-offset: 4; tab-width: 4; indent-tabs-mode: nil; -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 package org.mozilla.geckoview;
 
+import android.annotation.SuppressLint;
 import android.app.PendingIntent;
 import android.net.Uri;
 import android.os.Build;
@@ -302,6 +302,9 @@ import org.mozilla.gecko.util.WebAuthnUtils;
     return result;
   }
 
+  // ThreadConstraint false positive: runs in a GeckoResult continuation on the UI thread, which
+  // lint cannot model.
+  @SuppressLint("ThreadConstraint")
   @WrapForJNI(calledFrom = "gecko")
   private static GeckoResult<WebAuthnUtils.MakeCredentialResponse> webAuthnMakeCredential(
       final GeckoBundle credentialBundle,
@@ -511,6 +514,9 @@ import org.mozilla.gecko.util.WebAuthnUtils;
     return result;
   }
 
+  // ThreadConstraint false positive: runs in a GeckoResult continuation on the UI thread, which
+  // lint cannot model.
+  @SuppressLint("ThreadConstraint")
   @WrapForJNI(calledFrom = "gecko")
   private static GeckoResult<WebAuthnUtils.GetAssertionResponse> webAuthnGetAssertion(
       final ByteBuffer challenge,

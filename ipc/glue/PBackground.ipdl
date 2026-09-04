@@ -178,10 +178,11 @@ parent:
       nsString aURL,
       nullable nsIPrincipal aPrincipal,
       uint64_t aBrowsingContextID,
-      IPCClientInfo?  aClientInfo,
+      IPCClientInfo aClientInfo,
       bool aDedicated,
       bool aRequireUnreliable,
       uint32_t aCongestionControl,
+      nsString[] aProtocols,
       WebTransportHash[] aServerCertHashes,
       Endpoint<PWebTransportParent> aParentEndpoint)
       returns(nsresult rv, uint8_t aReliability); // Actually WebTransportReliabityMode enum

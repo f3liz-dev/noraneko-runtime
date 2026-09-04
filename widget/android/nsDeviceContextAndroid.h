@@ -1,14 +1,13 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 #ifndef nsDeviceContextAndroid_h_
 #define nsDeviceContextAndroid_h_
 
-#include "nsIDeviceContextSpec.h"
-#include "nsCOMPtr.h"
 #include "mozilla/gfx/Point.h"
 #include "mozilla/gfx/PrintPromise.h"
+#include "nsCOMPtr.h"
+#include "nsIDeviceContextSpec.h"
 
 class nsDeviceContextSpecAndroid final : public nsIDeviceContextSpec {
  private:
@@ -24,7 +23,8 @@ class nsDeviceContextSpecAndroid final : public nsIDeviceContextSpec {
   NS_IMETHOD Init(nsIPrintSettings* aPS, bool aIsPrintPreview) override;
   NS_IMETHOD BeginDocument(const nsAString& aTitle,
                            const nsAString& aPrintToFileName,
-                           int32_t aStartPage, int32_t aEndPage) override;
+                           mozilla::dom::WindowContext*, int32_t aStartPage,
+                           int32_t aEndPage) override;
   RefPtr<mozilla::gfx::PrintEndDocumentPromise> EndDocument() override;
   NS_IMETHOD BeginPage(const IntSize& aSizeInPoints) override { return NS_OK; }
   NS_IMETHOD EndPage() override { return NS_OK; }

@@ -1,4 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
 // Any copyright is dedicated to the Public Domain.
 // http://creativecommons.org/publicdomain/zero/1.0/
 "use strict";
@@ -16,6 +15,38 @@
 
 // Ensure that the appropriate initialization has happened.
 do_get_profile();
+
+var gPrompt = {
+  QueryInterface: ChromeUtils.generateQI(["nsIPrompt"]),
+
+  passwordToTry: "",
+  numPrompts: 0,
+
+  // This intentionally does not use arrow function syntax to avoid an issue
+  // where in the context of the arrow function, |this != gPrompt| due to
+  // how objects get wrapped when going across xpcom boundaries.
+  promptPassword(dialogTitle, text, password, checkMsg) {
+    this.numPrompts++;
+    if (this.numPrompts > 1) {
+      // don't keep retrying a bad password
+      return false;
+    }
+    equal(
+      text,
+      "Please authenticate to the security device (Test PKCS11 Tokeñ Label).",
+      "password prompt text should be as expected"
+    );
+    equal(checkMsg, null, "checkMsg should be null");
+    ok(this.passwordToTry, "passwordToTry should be non-null");
+    password.value = this.passwordToTry;
+    return true;
+  },
+};
+
+const gPromptFactory = {
+  QueryInterface: ChromeUtils.generateQI(["nsIPromptFactory"]),
+  getPrompt: () => gPrompt,
+};
 
 function checkBasicAttributes(token) {
   let bundle = Services.strings.createBundle(
@@ -50,61 +81,10 @@ function checkBasicAttributes(token) {
   );
 }
 
-/**
- * Checks the various password related features of the given token.
- * The token should already have been init with a password and be logged into.
- * The password of the token will be reset after calling this function.
- *
- * @param {nsIPK11Token} token
- *        The token to test.
- * @param {string} initialPW
- *        The password that the token should have been init with.
- */
-function checkPasswordFeaturesAndResetPassword(token, initialPW) {
-  ok(
-    !token.needsUserInit,
-    "Token should not need user init after setting a password"
+add_task(async function test_internal_token() {
+  let token = Cc["@mozilla.org/security/internalkeytoken;1"].createInstance(
+    Ci.nsIPKCS11Token
   );
-  ok(
-    token.hasPassword,
-    "Token should have a password after setting a password"
-  );
-
-  ok(
-    token.checkPassword(initialPW),
-    "checkPassword() should succeed if the correct initial password is given"
-  );
-  token.changePassword(initialPW, "newPW ÿ 一二三");
-  ok(
-    token.checkPassword("newPW ÿ 一二三"),
-    "checkPassword() should succeed if the correct new password is given"
-  );
-
-  ok(
-    !token.checkPassword("wrongPW"),
-    "checkPassword() should fail if an incorrect password is given"
-  );
-  ok(
-    !token.isLoggedIn(),
-    "Token should be logged out after an incorrect password was given"
-  );
-  ok(
-    !token.needsUserInit,
-    "Token should still be init with a password even if an incorrect " +
-      "password was given"
-  );
-
-  token.reset();
-  ok(token.needsUserInit, "Token should need password init after reset");
-  ok(!token.hasPassword, "Token should not have a password after reset");
-  ok(!token.isLoggedIn(), "Token should be logged out of after reset");
-}
-
-function run_test() {
-  let tokenDB = Cc["@mozilla.org/security/pk11tokendb;1"].getService(
-    Ci.nsIPK11TokenDB
-  );
-  let token = tokenDB.getInternalKeyToken();
   notEqual(token, null, "The internal token should be present");
   ok(
     token.isInternalKeyToken,
@@ -113,37 +93,78 @@ function run_test() {
 
   checkBasicAttributes(token);
 
-  ok(!token.isLoggedIn(), "Token should not be logged into yet");
+  ok(!token.isLoggedIn, "Token should not be logged into yet");
   // Test that attempting to log out even when the token was not logged into
   // does not result in an error.
-  token.logoutSimple();
-  ok(!token.isLoggedIn(), "Token should still not be logged into");
+  await token.logout();
+  ok(!token.isLoggedIn, "Token should still not be logged into");
   ok(
     !token.hasPassword,
     "Token should not have a password before it has been set"
   );
 
   let initialPW = "foo 1234567890`~!@#$%^&*()-_=+{[}]|\\:;'\",<.>/? 一二三";
-  token.initPassword(initialPW);
-  token.login(/* force */ false);
-  ok(token.isLoggedIn(), "Token should now be logged into");
+  await token.changePassword("", initialPW);
+  await token.login();
+  ok(token.isLoggedIn, "Token should now be logged into");
 
-  checkPasswordFeaturesAndResetPassword(token, initialPW);
-
-  // We reset the password previously, so we need to initialize again.
-  token.initPassword("arbitrary");
-  ok(
-    token.isLoggedIn(),
-    "Token should be logged into after initializing password again"
-  );
-  token.logoutSimple();
-  ok(
-    !token.isLoggedIn(),
-    "Token should be logged out after calling logoutSimple()"
-  );
+  await token.logout();
+  ok(!token.isLoggedIn, "Token should be logged out after calling logout()");
 
   ok(
-    token.needsLogin(),
-    "The internal token should always need authentication"
+    token.canHavePassword,
+    "The internal token should always be able to have a password"
   );
-}
+});
+
+add_task(async function test_external_token() {
+  MockRegistrar.register("@mozilla.org/prompter;1", gPromptFactory);
+
+  let libraryFile = Services.dirsvc.get("CurWorkD", Ci.nsIFile);
+  libraryFile.append("pkcs11testmodule");
+  libraryFile.append(ctypes.libraryName("pkcs11testmodule"));
+  await loadPKCS11Module(libraryFile, "PKCS11 Test Module", false);
+
+  let moduleDB = Cc["@mozilla.org/security/pkcs11moduledb;1"].getService(
+    Ci.nsIPKCS11ModuleDB
+  );
+  let testModule = await findModuleByName(moduleDB, "PKCS11 Test Module");
+  notEqual(testModule, null, "should be able to find test module");
+  let testSlot = findSlotByName(testModule, "Test PKCS11 Slot");
+  notEqual(testSlot, null, "should be able to find 'Test PKCS11 Slot'");
+  let testToken = testSlot.getToken();
+  notEqual(testToken, null, "should be able to get token from slot");
+  await testToken.logout();
+
+  let threw = false;
+  try {
+    await testToken.changePassword("wrong password", "password");
+  } catch (e) {
+    threw = true;
+  }
+  ok(
+    threw,
+    "trying to change the password with the wrong password should fail"
+  );
+
+  await testToken.changePassword("", "password");
+  ok(
+    testToken.isLoggedIn,
+    "changing the password successfully logs the token in"
+  );
+  await testToken.logout();
+
+  gPrompt.passwordToTry = "wrong password";
+  threw = false;
+  try {
+    await testToken.login();
+  } catch (e) {
+    threw = true;
+  }
+  ok(threw, "trying to log in with the wrong password should fail");
+
+  gPrompt.numPrompts = 0;
+  gPrompt.passwordToTry = "password";
+  await testToken.login();
+  ok(testToken.isLoggedIn, "should have logged in successfully");
+});

@@ -6,6 +6,17 @@ const { AddonTestUtils } = ChromeUtils.importESModule(
 
 AddonTestUtils.initMochitest(this);
 
+const AMO_TEST_HOST = "addons.allizom.org";
+// eslint-disable-next-line sdl/no-insecure-url
+const AMO_TEST_URL = `http://${AMO_TEST_HOST}/`;
+
+const amoServer = AddonTestUtils.createHttpServer({
+  hosts: [AMO_TEST_HOST],
+});
+amoServer.registerPrefixHandler("/", (request, response) => {
+  response.write("");
+});
+
 let promptService;
 
 const SUPPORT_URL = Services.urlFormatter.formatURL(
@@ -108,6 +119,7 @@ add_task(async function testExtensionList() {
     "The card is labelled by the heading"
   );
   let icon = card.querySelector(".addon-icon");
+  is_element_visible(icon, "Extension icon DOM element should not be hidden");
   ok(icon.src.endsWith("/test-icon.png"), "The icon is set");
 
   // Disable the extension.
@@ -321,10 +333,12 @@ add_task(async function testMouseSupport() {
   let panel = card.querySelector("panel-list");
 
   ok(!panel.open, "The panel is initially closed");
-  await BrowserTestUtils.synthesizeMouseAtCenter(
-    "addon-card[addon-id$='@mochi.test'] button[action='more-options']",
+  EventUtils.synthesizeMouseAtCenter(
+    AboutAddonsTestUtils.getAddonCardMoreOptionsButton(win, {
+      addonCard: card,
+    }),
     { type: "mousedown" },
-    win.docShell.browsingContext
+    win
   );
   ok(panel.open, "The panel is now open");
 
@@ -361,7 +375,10 @@ add_task(async function testKeyboardSupport() {
   is(card.addon.id, "test@mochi.test", "The right card is found");
 
   // Focus the more options menu button.
-  let moreOptionsButton = card.querySelector('[action="more-options"]');
+  let moreOptionsButton = AboutAddonsTestUtils.getAddonCardMoreOptionsButton(
+    win,
+    { addonCard: card }
+  );
   moreOptionsButton.focus();
   isFocused(moreOptionsButton, "The more options button is focused");
 
@@ -739,7 +756,10 @@ add_task(async function testSideloadRemoveButton() {
   let card = getCardByAddonId(doc, id);
 
   let moreOptionsPanel = card.querySelector("panel-list");
-  let moreOptionsButton = card.querySelector('[action="more-options"]');
+  let moreOptionsButton = AboutAddonsTestUtils.getAddonCardMoreOptionsButton(
+    win,
+    { addonCard: card }
+  );
   let panelOpened = BrowserTestUtils.waitForEvent(moreOptionsPanel, "shown");
   EventUtils.synthesizeMouseAtCenter(moreOptionsButton, {}, win);
   await panelOpened;
@@ -749,18 +769,16 @@ add_task(async function testSideloadRemoveButton() {
   ok(removeButton.disabled, "Remove is disabled");
   ok(!removeButton.hidden, "Remove is visible");
 
-  // Remove but cancel.
+  // Verify it cannot be uninstalled even if the remove button is somehow
+  // enabled (regression test for bug 1658768). When disabled, the click
+  // would trivially not register, so we temporarily enable the button.
+  removeButton.disabled = false;
   let prevented = BrowserTestUtils.waitForEvent(card, "remove-disabled");
-  // We intentionally turn off this a11y check, because the following click
-  // is purposefully targeting a disabled control to confirm the click event
-  // won't come through. It is not meant to be interactive and is not expected
-  // to be accessible, therefore the rule check shall be ignored by a11y_checks.
-  AccessibilityUtils.setEnv({ mustHaveAccessibleRule: false });
   removeButton.click();
-  AccessibilityUtils.resetEnv();
   await prevented;
+  removeButton.disabled = true;
 
-  // reopen the panel
+  // Reopen the panel.
   panelOpened = BrowserTestUtils.waitForEvent(moreOptionsPanel, "shown");
   EventUtils.synthesizeMouseAtCenter(moreOptionsButton, {}, win);
   await panelOpened;
@@ -823,6 +841,7 @@ add_task(async function testPluginIcons() {
   ok(!!icons.length, "There are some plugins listed");
 
   for (let icon of icons) {
+    is_element_visible(icon, "Plugins icon DOM element should not be hidden");
     is(icon.src, pluginIconUrl, "Plugins use the plugin icon");
   }
 
@@ -848,6 +867,7 @@ add_task(async function testExtensionGenericIcon() {
 
   let card = getCardByAddonId(doc, id);
   let icon = card.querySelector(".addon-icon");
+  is_element_visible(icon, "Extension icon DOM element should not be hidden");
   is(icon.src, extensionIconUrl, "Extensions without icon use the generic one");
 
   await extension.unload();
@@ -963,7 +983,9 @@ add_task(async function testDisabledDimming() {
 
   const normalize = val => Math.floor(val * 10);
   const getOpacity = card => {
-    let { opacity } = card.ownerGlobal.getComputedStyle(card.firstElementChild);
+    let { opacity } = card.documentGlobal.getComputedStyle(
+      card.firstElementChild
+    );
     return normalize(opacity);
   };
   const checkOpacity = (card, expected, msg) => {
@@ -1042,11 +1064,14 @@ add_task(async function testEmptyMessage() {
   ];
 
   for (let test of tests) {
+    info(`Testing list view type ${test.type}`);
+
     let win = await loadInitialView(test.type);
     let doc = win.document;
     let enabledSection = getSection(doc, `${test.type}-enabled-section`);
     let disabledSection = getSection(doc, `${test.type}-disabled-section`);
     const message = doc.querySelector("#empty-addons-message");
+    const emptyStatePromo = doc.querySelector("#empty-addons-promo");
 
     // Test if the correct locale has been applied.
     ok(
@@ -1056,7 +1081,17 @@ add_task(async function testEmptyMessage() {
 
     // With at least one enabled/disabled add-on (see testSectionHeadingKeys),
     // the message is hidden.
-    is_element_hidden(message, "Empty addons message hidden");
+    is_element_hidden(
+      message,
+      `Empty addons message hidden on list view type ${test.type}`
+    );
+
+    // Technically this would be always hidden unless browser.nova.enabled is
+    // set to true.
+    is_element_hidden(
+      emptyStatePromo,
+      `Empty addons promo hidden on list view type ${test.type}`
+    );
 
     // The test runner (Mochitest) relies on add-ons that should not be removed.
     // Simulate the scenario of zero add-ons by clearing all rendered sections.
@@ -1069,8 +1104,94 @@ add_task(async function testEmptyMessage() {
     }
 
     // Message should now be displayed
-    is_element_visible(message, "Empty addons message visible");
+    if (Services.prefs.getBoolPref("browser.nova.enabled")) {
+      switch (test.type) {
+        case "extension":
+          is_element_visible(
+            emptyStatePromo,
+            `Empty addons promo visible on list view type ${test.type}`
+          );
+          break;
+        case "theme": // eslint-disable-line no-fallthrough
+        // NOTE: Given that built-in themes are being preinstalled by default,
+        // is it really worth to have an promo to show for an unlikely empty
+        // theme list view?
+        case "plugin": // eslint-disable-line no-fallthrough
+        case "locale": // eslint-disable-line no-fallthrough
+        case "dictionary":
+          // NOTE: plugin, locale and dictionary category buttons should only
+          // be shown when there are addons of this type installed (or being
+          // installed) is it really worth to show a promo for the empty state
+          // of these lists?
+          //
+          // TODO(Bug 2050920): determine what to show for locale and dictionary
+          // types, because unlike plugins we do have AMO pages to direct users
+          // to.
+          todo(
+            false,
+            "Should we keep the old empty message or add new strings for " +
+              "per-type message and button label to set on the promo?"
+          );
+          is_element_hidden(
+            emptyStatePromo,
+            `Empty addons promo hidden on non empty list view type ${test.type}`
+          );
+          break;
+        default:
+          ok(false, `Unexpected list view type ${test.type}`);
+      }
+    } else {
+      is_element_visible(
+        message,
+        `Empty addons message visible on list view type ${test.type}`
+      );
+    }
 
     await closeView(win);
   }
+});
+
+add_task(async function testEmptyPromoButtonUtmContent() {
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["browser.nova.enabled", true],
+      ["extensions.getAddons.link.url", AMO_TEST_URL],
+    ],
+  });
+
+  let win = await loadInitialView("extension");
+  let doc = win.document;
+  let enabledSection = getSection(doc, "extension-enabled-section");
+  let disabledSection = getSection(doc, "extension-disabled-section");
+
+  // Simulate empty list so the promo is shown.
+  while (enabledSection.firstChild) {
+    enabledSection.firstChild.remove();
+  }
+  while (disabledSection.firstChild) {
+    disabledSection.firstChild.remove();
+  }
+
+  const emptyStatePromo = doc.querySelector("#empty-addons-promo");
+  is_element_visible(emptyStatePromo, "Empty state promo is visible");
+
+  let promoButton = emptyStatePromo.querySelector("moz-button");
+  ok(promoButton, "Found the promo button");
+
+  let tabbrowser = win.windowRoot.window.gBrowser;
+  let tabPromise = BrowserTestUtils.waitForNewTab(tabbrowser, url =>
+    url.startsWith(AMO_TEST_URL)
+  );
+  promoButton.click();
+  let tab = await tabPromise;
+  let tabUrl = new URL(tab.linkedBrowser.currentURI.spec);
+  Assert.deepEqual(
+    tabUrl.searchParams.getAll("utm_content"),
+    "find-more-promo-empty-list",
+    'empty promo button utm_content is "find-more-promo-empty-list"'
+  );
+  BrowserTestUtils.removeTab(tab);
+
+  await closeView(win);
+  await SpecialPowers.popPrefEnv();
 });

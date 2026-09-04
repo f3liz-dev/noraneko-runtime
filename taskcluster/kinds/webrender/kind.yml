@@ -30,27 +30,6 @@ task-defaults:
     use-python: default
 
 tasks:
-    lint-tidy:
-        description: Runs linting checks on WebRender code
-        worker-type: b-linux
-        worker:
-            docker-image: {in-tree: webrender}
-        run:
-            using: run-task
-            cwd: '{checkout}/gfx/wr'
-            command: >-
-                pushd /tmp &&
-                python3 -m pip install six &&
-                python3 -m pip install -e 'git+https://github.com/servo/servo.git@65a4d1646da46c37fe748add6dcf24b62ebb602a#egg=servo_tidy&subdirectory=python/tidy' &&
-                popd &&
-                servo-tidy
-        treeherder:
-            platform: linux64-qr/opt
-            symbol: WR(tidy)
-        when:
-            files-changed:
-                - 'gfx/wr/**'
-
     linux64-release:
         description: Runs release-mode WebRender CI tests on a Linux worker
         worker-type: b-linux
@@ -61,6 +40,7 @@ tasks:
                 - linux64-rust
                 - wrench-deps
         run:
+            clone-with: hg
             using: run-task
             command: >-
                 export PATH=$PATH:$MOZ_FETCHES_DIR/rustc/bin:${MOZ_FETCHES_DIR}/wrench-deps/meson &&
@@ -85,6 +65,7 @@ tasks:
                 - linux64-rust
                 - wrench-deps
         run:
+            clone-with: hg
             using: run-task
             command: >-
                 export PATH=$PATH:$MOZ_FETCHES_DIR/rustc/bin:${MOZ_FETCHES_DIR}/wrench-deps/meson &&
@@ -125,6 +106,7 @@ tasks:
                 - artifact: clang.tar.zst
                   dest: clang-mac
         run:
+            clone-with: hg
             using: run-task
             command: '$HOME/checkouts/gecko/taskcluster/scripts/misc/wrench-macos-build.sh'
         treeherder:
@@ -151,6 +133,7 @@ tasks:
                 - 'wrench-macos.tar.bz2'
                 - 'wrench-macos-headless.tar.bz2'
         run:
+            clone-with: hg
             using: run-task
             cwd: '{checkout}/gfx/wr'
             command: >-
@@ -181,6 +164,7 @@ tasks:
                 - macosx64-sdk
                 - wrench-deps
         run:
+            clone-with: hg
             using: run-task
             command: '$HOME/checkouts/gecko/taskcluster/scripts/misc/wr-cargotest-macos-build.sh'
         treeherder:
@@ -205,6 +189,7 @@ tasks:
             webrender-cargotest-macos-build:
                 - 'cargo-test-binaries.tar.bz2'
         run:
+            clone-with: hg
             using: run-task
             cwd: '{checkout}/gfx/wr'
             command: >-
@@ -220,7 +205,7 @@ tasks:
 
     windows:
         description: Runs WebRender CI tests on a Windows worker
-        worker-type: win11-64-24h2-source
+        worker-type: win11-64-25h2-source
         worker:
             max-run-time: 5400
             env:
@@ -232,6 +217,7 @@ tasks:
                 - vs
                 - wrench-deps
         run:
+            clone-with: hg
             using: run-task
             use-caches: false
             command: '$GECKO_PATH/taskcluster/scripts/misc/wrench-windows-tests.sh'
@@ -265,6 +251,7 @@ tasks:
                   name: public/build/six.tar.gz
                   path: /builds/worker/checkouts/gecko/third_party/python/six.tar.gz
         run:
+            clone-with: hg
             using: run-task
             cwd: '{checkout}/gfx/wr/wrench'
             command: >-
@@ -317,6 +304,7 @@ tasks:
                   name: public/build/six.tar.gz
                   path: /builds/worker/checkouts/gecko/third_party/python/six.tar.gz
         run:
+            clone-with: hg
             using: run-task
             cwd: '{checkout}/gfx/wr/wrench'
             command: >-
@@ -379,6 +367,7 @@ tasks:
                 - android34-avd-x86_64-linux
                 - linux64-jdk
         run:
+            clone-with: hg
             using: run-task
             tooltool-downloads: internal
             command: >-
@@ -427,6 +416,7 @@ tasks:
                 - android34-avd-x86_64-linux
                 - linux64-jdk
         run:
+            clone-with: hg
             using: run-task
             tooltool-downloads: internal
             command: >-
@@ -442,102 +432,6 @@ tasks:
                 - 'gfx/wr/**'
                 - 'testing/mozharness/scripts/android_*.py'
                 - 'testing/mozharness/configs/android/*.py'
-
-    android-hw-p5-debug:
-        description: Run debug wrench reftests on Android Pixel5
-        attributes:
-            build_platform: android
-        worker-type: t-bitbar-gw-unit-p5
-        worker:
-            max-run-time: 5400
-            artifacts:
-                - type: directory
-                  name: public/build/logs
-                  path: build/logs
-            env:
-                MOZHARNESS_SCRIPT: android_wrench.py
-                MOZHARNESS_CONFIG: android/wrench.py
-                MOZ_FETCHES_DIR: fetches
-                PYTHONPATH: "fetches/mozdevice:fetches/six"
-        dependencies:
-            webrender-wrench-android-debug: webrender-wrench-android-debug
-            android-build: build-android-aarch64/debug
-        fetches:
-            webrender-wrench-android-debug:
-                - artifact: 'wrench-debug.apk'
-                  extract: false
-                - 'reftests.tar.zst'
-                - 'mozdevice.tar.gz'
-                - 'six.tar.gz'
-            android-build:
-                - artifact: 'mozharness.zip'
-                  dest: 'mozharness'
-        run:
-            using: run-task
-            checkout: false
-            run-as-root: true
-            command: >-
-                export WRENCH_APK=$MOZ_FETCHES_DIR/wrench-debug.apk &&
-                export WRENCH_REFTESTS=$MOZ_FETCHES_DIR/reftests &&
-                export MOZHARNESS_PATH=$MOZ_FETCHES_DIR/mozharness &&
-                python3 ${MOZHARNESS_PATH}/scripts/${MOZHARNESS_SCRIPT} --config-file ${MOZHARNESS_PATH}/configs/${MOZHARNESS_CONFIG}
-        treeherder:
-            platform: android-hw-p5-13-0-aarch64/debug
-            symbol: WR(wrench)
-        when:
-            files-changed:
-                - 'gfx/wr/**'
-                - 'testing/mozharness/scripts/android_*.py'
-                - 'testing/mozharness/configs/android/*.py'
-                - 'testing/mozbase/mozdevice/**'
-
-    android-hw-p5-opt:
-        description: Run opt wrench reftests on Android Pixel5
-        attributes:
-            build_platform: android
-        worker-type: t-bitbar-gw-unit-p5
-        worker:
-            max-run-time: 5400
-            artifacts:
-                - type: directory
-                  name: public/build/logs
-                  path: build/logs
-            env:
-                MOZHARNESS_SCRIPT: android_wrench.py
-                MOZHARNESS_CONFIG: android/wrench.py
-                MOZ_FETCHES_DIR: fetches
-                PYTHONPATH: "fetches/mozdevice:fetches/six"
-        dependencies:
-            webrender-wrench-android-release: webrender-wrench-android-release
-            android-build: build-android-aarch64/opt
-        fetches:
-            webrender-wrench-android-release:
-                - artifact: 'wrench-release.apk'
-                  extract: false
-                - 'reftests.tar.zst'
-                - 'mozdevice.tar.gz'
-                - 'six.tar.gz'
-            android-build:
-                - artifact: 'mozharness.zip'
-                  dest: 'mozharness'
-        run:
-            using: run-task
-            checkout: false
-            run-as-root: true
-            command: >-
-                export WRENCH_APK=$MOZ_FETCHES_DIR/wrench-release.apk &&
-                export WRENCH_REFTESTS=$MOZ_FETCHES_DIR/reftests &&
-                export MOZHARNESS_PATH=$MOZ_FETCHES_DIR/mozharness &&
-                python3 ${MOZHARNESS_PATH}/scripts/${MOZHARNESS_SCRIPT} --config-file ${MOZHARNESS_PATH}/configs/${MOZHARNESS_CONFIG}
-        treeherder:
-            platform: android-hw-p5-13-0-aarch64/opt
-            symbol: WR(wrench)
-        when:
-            files-changed:
-                - 'gfx/wr/**'
-                - 'testing/mozharness/scripts/android_*.py'
-                - 'testing/mozharness/configs/android/*.py'
-                - 'testing/mozbase/mozdevice/**'
 
     android-hw-p6-debug:
         description: Run debug wrench reftests on Android Pixel6
@@ -569,6 +463,7 @@ tasks:
                 - artifact: 'mozharness.zip'
                   dest: 'mozharness'
         run:
+            clone-with: hg
             using: run-task
             checkout: false
             run-as-root: true
@@ -617,6 +512,7 @@ tasks:
                 - artifact: 'mozharness.zip'
                   dest: 'mozharness'
         run:
+            clone-with: hg
             using: run-task
             checkout: false
             run-as-root: true
@@ -665,6 +561,7 @@ tasks:
                 - artifact: 'mozharness.zip'
                   dest: 'mozharness'
         run:
+            clone-with: hg
             using: run-task
             checkout: false
             run-as-root: true
@@ -713,6 +610,7 @@ tasks:
                 - artifact: 'mozharness.zip'
                   dest: 'mozharness'
         run:
+            clone-with: hg
             using: run-task
             checkout: false
             run-as-root: true

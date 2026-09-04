@@ -1,14 +1,12 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-
-#include "frontend/ParseContext-inl.h"
 
 #include "frontend/CompilationStencil.h"  // ScopeContext
 #include "frontend/Parser.h"              // ParserBase
 #include "js/friend/ErrorMessages.h"      // JSMSG_*
+
+#include "frontend/ParseContext-inl.h"
 
 using mozilla::Maybe;
 using mozilla::Nothing;
@@ -33,12 +31,10 @@ const char* DeclarationKindString(DeclarationKind kind) {
       return "let";
     case DeclarationKind::Const:
       return "const";
-#ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
     case DeclarationKind::Using:
       return "using";
     case DeclarationKind::AwaitUsing:
       return "await using";
-#endif
     case DeclarationKind::Class:
       return "class";
     case DeclarationKind::Import:
@@ -179,8 +175,8 @@ void UsedNameTracker::rewind(RewindToken token) {
   scriptCounter_ = token.scriptId;
   scopeCounter_ = token.scopeId;
 
-  for (UsedNameMap::Range r = map_.all(); !r.empty(); r.popFront()) {
-    r.front().value().resetToScope(token.scriptId, token.scopeId);
+  for (auto iter = map_.iter(); !iter.done(); iter.next()) {
+    iter.get().value().resetToScope(token.scriptId, token.scopeId);
   }
 }
 
@@ -190,8 +186,8 @@ void UsedNameTracker::dump(ParserAtomsTable& table) {
 
   out.printf("Used names:\n");
 
-  for (UsedNameMap::Range r = map_.all(); !r.empty(); r.popFront()) {
-    const auto& item = r.front();
+  for (auto iter = map_.iter(); !iter.done(); iter.next()) {
+    const auto& item = iter.get();
 
     const auto& name = item.key();
     const auto& nameInfo = item.value();
@@ -232,14 +228,14 @@ void ParseContext::Scope::dump(ParseContext* pc, ParserBase* parser) {
   fprintf(stdout, "ParseScope %p", this);
 
   fprintf(stdout, "\n  decls:\n");
-  for (DeclaredNameMap::Range r = declared_->all(); !r.empty(); r.popFront()) {
-    auto index = r.front().key();
+  for (auto iter = declared_->iter(); !iter.done(); iter.next()) {
+    auto index = iter.get().key();
     UniqueChars bytes = parser->parserAtoms().toPrintableString(index);
     if (!bytes) {
       ReportOutOfMemory(pc->sc()->fc_);
       return;
     }
-    DeclaredNameInfo& info = r.front().value().wrapped;
+    DeclaredNameInfo& info = iter.get().value().wrapped;
     fprintf(stdout, "    %s %s%s\n", DeclarationKindString(info.kind()),
             bytes.get(), info.closedOver() ? " (closed over)" : "");
   }
@@ -316,16 +312,12 @@ static bool DeclarationKindIsCatchParameter(DeclarationKind kind) {
 
 bool ParseContext::Scope::addCatchParameters(ParseContext* pc,
                                              Scope& catchParamScope) {
-  if (pc->useAsmOrInsideUseAsm()) {
-    return true;
-  }
-
-  for (DeclaredNameMap::Range r = catchParamScope.declared_->all(); !r.empty();
-       r.popFront()) {
-    DeclarationKind kind = r.front().value()->kind();
-    uint32_t pos = r.front().value()->pos();
+  for (auto iter = catchParamScope.declared_->iter(); !iter.done();
+       iter.next()) {
+    DeclarationKind kind = iter.get().value()->kind();
+    uint32_t pos = iter.get().value()->pos();
     MOZ_ASSERT(DeclarationKindIsCatchParameter(kind));
-    auto name = r.front().key();
+    auto name = iter.get().key();
     AddDeclaredNamePtr p = lookupDeclaredNameForAdd(name);
     MOZ_ASSERT(!p);
     if (!addDeclaredName(pc, p, name, kind, pos)) {
@@ -338,19 +330,15 @@ bool ParseContext::Scope::addCatchParameters(ParseContext* pc,
 
 void ParseContext::Scope::removeCatchParameters(ParseContext* pc,
                                                 Scope& catchParamScope) {
-  if (pc->useAsmOrInsideUseAsm()) {
-    return;
-  }
-
-  for (DeclaredNameMap::Range r = catchParamScope.declared_->all(); !r.empty();
-       r.popFront()) {
-    auto name = r.front().key();
+  for (auto iter = catchParamScope.declared_->iter(); !iter.done();
+       iter.next()) {
+    auto name = iter.get().key();
     DeclaredNamePtr p = declared_->lookup(name);
     MOZ_ASSERT(p);
 
     // This check is needed because the catch body could have declared
     // vars, which would have been added to catchParamScope.
-    if (DeclarationKindIsCatchParameter(r.front().value()->kind())) {
+    if (DeclarationKindIsCatchParameter(iter.get().value()->kind())) {
       declared_->remove(p);
     }
   }
@@ -625,12 +613,6 @@ bool ParseContext::hasClosedOverFunctionSpecialName(
 
 bool ParseContext::declareFunctionThis(const UsedNameTracker& usedNames,
                                        bool canSkipLazyClosedOverBindings) {
-  // The asm.js validator does all its own symbol-table management so, as an
-  // optimization, avoid doing any work here.
-  if (useAsmOrInsideUseAsm()) {
-    return true;
-  }
-
   // Derived class constructors emit JSOp::CheckReturn, which requires
   // '.this' to be bound. Class field initializers implicitly read `.this`.
   // Therefore we unconditionally declare `.this` in all class constructors.
@@ -750,12 +732,6 @@ bool ParseContext::declareFunctionArgumentsObject(
 
 bool ParseContext::declareNewTarget(const UsedNameTracker& usedNames,
                                     bool canSkipLazyClosedOverBindings) {
-  // The asm.js validator does all its own symbol-table management so, as an
-  // optimization, avoid doing any work here.
-  if (useAsmOrInsideUseAsm()) {
-    return true;
-  }
-
   FunctionBox* funbox = functionBox();
   auto dotNewTarget = TaggedParserAtomIndex::WellKnown::dot_newTarget_();
 

@@ -23,6 +23,7 @@ export default class IPProtectionStatusBox extends MozLitElement {
     headerL10nId: { type: String },
     descriptionL10nId: { type: String },
     descriptionL10nArgs: { type: String },
+    descriptionSupportSlug: { type: String },
     type: { type: String },
   };
 
@@ -78,25 +79,44 @@ export default class IPProtectionStatusBox extends MozLitElement {
         href="chrome://browser/content/ipprotection/ipprotection-status-box.css"
       />
       <div id="content-container" class=${this.type}>
-        <span id="header">
-          <h1 id="title" data-l10n-id=${this.headerL10nId}></h1>
-          <slot name="icon"></slot>
-        </span>
-        <div id="content">
-          ${this.descriptionL10nId
-            ? html`<span
-                id="description"
-                data-l10n-id=${this.descriptionL10nId}
-                data-l10n-args=${this.descriptionL10nArgs}
-              ></span>`
-            : null}
-          <slot name="bandwidth"></slot>
-          <div id="location">
-            <slot name="location-icon"></slot>
-            <slot name="location"></slot>
+        <div id="header">
+          <div>
+            <h1
+              id="title"
+              class="heading-xlarge"
+              data-l10n-id=${this.headerL10nId}
+              data-l10n-attrs="aria-label"
+              tabindex="-1"
+              aria-live="polite"
+              aria-atomic="true"
+            ></h1>
+            <slot name="bandwidth"></slot>
+            <div id="content">
+              ${this.descriptionL10nId
+                ? html`<span
+                    id="description"
+                    data-l10n-id=${this.descriptionL10nId}
+                    data-l10n-args=${this.descriptionL10nArgs}
+                  >
+                    ${this.descriptionSupportSlug
+                      ? html` <a
+                          is="moz-support-link"
+                          data-l10n-name="learn-more-link"
+                          part="support-link"
+                          support-page=${this.descriptionSupportSlug}
+                        ></a>`
+                      : null}
+                  </span>`
+                : null}
+            </div>
+          </div>
+          <div>
+            <slot name="image"></slot>
           </div>
         </div>
+
         <slot name="action"></slot>
+        <slot name="location-action"></slot>
         <slot name="content"></slot>
       </div>
     `;

@@ -100,6 +100,11 @@ impl TestTokenCredential {
             signature,
             user,
             number_of_credentials: Some(1),
+            user_selected: None,
+            large_blob_key: None,
+            unsigned_extension_outputs: None,
+            ep_attestation: None,
+            att_stmt: None,
         })
     }
 }
@@ -455,6 +460,9 @@ impl VirtualFidoDevice for TestToken {
                         assertion: assertion.into(),
                         attachment: AuthenticatorAttachment::Unknown,
                         extensions: Default::default(),
+                        user_selected: None,
+                        large_blob_key: None,
+                        large_blob_array: None,
                     });
                     break;
                 }
@@ -481,6 +489,9 @@ impl VirtualFidoDevice for TestToken {
                     assertion: assertion.into(),
                     attachment: AuthenticatorAttachment::Unknown,
                     extensions: Default::default(),
+                    user_selected: None,
+                    large_blob_key: None,
+                    large_blob_array: None,
                 });
             }
         }
@@ -681,6 +692,9 @@ impl VirtualFidoDevice for TestToken {
                 auth_data,
             },
             extensions: Default::default(),
+            ep_attestation: None,
+            large_blob_key: None,
+            unsigned_extension_outputs: None,
         };
         Ok(result)
     }
@@ -810,6 +824,11 @@ impl TestTokenManager {
                 }
             };
         }
+    }
+
+    pub fn has_virtual_authenticator(&self, authenticator_id: &str) -> Result<bool, nsresult> {
+        let guard = self.state.lock().map_err(|_| NS_ERROR_FAILURE)?;
+        Ok(guard.contains_key(authenticator_id))
     }
 
     pub fn remove_virtual_authenticator(&self, authenticator_id: &str) -> Result<(), nsresult> {

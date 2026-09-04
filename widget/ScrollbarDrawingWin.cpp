@@ -1,15 +1,14 @@
-/* -*- Mode: C++; tab-width: 40; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "ScrollbarDrawingWin.h"
 
-#include "mozilla/gfx/Helpers.h"
+#include "Theme.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/StaticPrefs_widget.h"
+#include "mozilla/gfx/Helpers.h"
 #include "nsLayoutUtils.h"
-#include "Theme.h"
 #include "nsNativeTheme.h"
 
 namespace mozilla::widget {
@@ -61,7 +60,7 @@ LayoutDeviceIntSize ScrollbarDrawingWin::GetMinimumWidgetSize(
 const ComputedStyle* GetCustomScrollbarStyle(nsIFrame* aFrame) {
   const ComputedStyle* style = nsLayoutUtils::StyleForScrollbar(aFrame);
   if (style->StyleUI()->HasCustomScrollbars() ||
-      ScrollbarDrawing::IsScrollbarWidthThin(*style)) {
+      ScrollbarDrawing::IsScrollbarWidthThin(aFrame)) {
     return style;
   }
   bool useDarkScrollbar = !StaticPrefs::widget_disable_dark_scrollbar() &&
@@ -95,7 +94,7 @@ Maybe<nsITheme::Transparency> ScrollbarDrawingWin::GetScrollbarPartTransparency(
           break;
       }
     }
-    if (aFrame->PresContext()->UseOverlayScrollbars()) {
+    if (nsLayoutUtils::UseOverlayScrollbars(aFrame)) {
       return Some(nsITheme::eTransparent);
     }
   }

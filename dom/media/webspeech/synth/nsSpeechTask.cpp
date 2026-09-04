@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -11,12 +9,14 @@
 #include "SharedBuffer.h"
 #include "SpeechSynthesis.h"
 #include "nsGlobalWindowInner.h"
+#include "nsPIDOMWindowInlines.h"
 #include "nsSynthVoiceRegistry.h"
 #include "nsXULAppAPI.h"
 
 #undef LOG
 extern mozilla::LogModule* GetSpeechSynthLog();
-#define LOG(type, msg) MOZ_LOG(GetSpeechSynthLog(), type, msg)
+#define LOG(type, msg) \
+  MOZ_LOG_FMT(GetSpeechSynthLog(), type, MOZ_LOG_EXPAND_ARGS msg)
 
 #define AUDIO_TRACK 1
 
@@ -25,7 +25,7 @@ namespace mozilla::dom {
 // nsSpeechTask
 
 NS_IMPL_CYCLE_COLLECTION_WEAK(nsSpeechTask, mSpeechSynthesis, mUtterance,
-                              mCallback)
+                              mCallback, mAudioChannelAgent)
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(nsSpeechTask)
   NS_INTERFACE_MAP_ENTRY(nsISpeechTask)
@@ -101,6 +101,8 @@ nsresult nsSpeechTask::DispatchStartImpl(const nsAString& aUri) {
 
   CreateAudioChannelAgent();
 
+  StartMediaControl();
+
   mState = STATE_SPEAKING;
   mUtterance->mChosenVoiceURI = aUri;
   mUtterance->DispatchSpeechSynthesisEvent(u"start"_ns, 0, nullptr, 0, u""_ns);
@@ -125,6 +127,8 @@ nsresult nsSpeechTask::DispatchEndImpl(float aElapsedTime,
   LOG(LogLevel::Debug, ("nsSpeechTask::DispatchEndImpl"));
 
   DestroyAudioChannelAgent();
+
+  StopMediaControl();
 
   MOZ_ASSERT(mUtterance);
   if (NS_WARN_IF(mState == STATE_ENDED)) {
@@ -213,6 +217,8 @@ nsresult nsSpeechTask::DispatchErrorImpl(float aElapsedTime,
 
   DestroyAudioChannelAgent();
 
+  StopMediaControl();
+
   MOZ_ASSERT(mUtterance);
   if (NS_WARN_IF(mState == STATE_ENDED)) {
     return NS_ERROR_NOT_AVAILABLE;
@@ -271,9 +277,14 @@ nsresult nsSpeechTask::DispatchMarkImpl(const nsAString& aName,
   return NS_OK;
 }
 
+bool nsSpeechTask::IsPaused() const {
+  return mUtterance && mUtterance->IsPaused();
+}
+
 void nsSpeechTask::Pause() {
   MOZ_ASSERT(XRE_IsParentProcess());
 
+  RefPtr<nsSpeechTask> kungFuDeathGrip(this);
   if (mCallback) {
     DebugOnly<nsresult> rv = mCallback->OnPause();
     NS_WARNING_ASSERTION(NS_SUCCEEDED(rv), "Unable to call onPause() callback");
@@ -287,6 +298,7 @@ void nsSpeechTask::Pause() {
 void nsSpeechTask::Resume() {
   MOZ_ASSERT(XRE_IsParentProcess());
 
+  RefPtr<nsSpeechTask> kungFuDeathGrip(this);
   if (mCallback) {
     DebugOnly<nsresult> rv = mCallback->OnResume();
     NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
@@ -304,8 +316,8 @@ void nsSpeechTask::Cancel() {
 
   LOG(LogLevel::Debug, ("nsSpeechTask::Cancel"));
 
-  if (mCallback) {
-    DebugOnly<nsresult> rv = mCallback->OnCancel();
+  if (nsCOMPtr<nsISpeechTaskCallback> callback = mCallback) {
+    DebugOnly<nsresult> rv = callback->OnCancel();
     NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
                          "Unable to call onCancel() callback");
   }

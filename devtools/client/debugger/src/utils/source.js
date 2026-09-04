@@ -61,6 +61,10 @@ export function shouldBlackbox(source) {
     return false;
   }
 
+  if (source.isStyleSheet) {
+    return false;
+  }
+
   return true;
 }
 
@@ -160,6 +164,14 @@ export function isJavaScript(source, content) {
   return (
     javascriptLikeExtensions.has(extension) ||
     !!(contentType && contentType.includes("javascript"))
+  );
+}
+
+export function isNotPrettyPrintable(source, sourceContent) {
+  return (
+    !isJavaScript(source, sourceContent) &&
+    !source.isHTML &&
+    !source.isStyleSheet
   );
 }
 

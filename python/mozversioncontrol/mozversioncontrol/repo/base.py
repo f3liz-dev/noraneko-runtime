@@ -10,10 +10,12 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Callable, Optional, Union
 
-from mach.util import to_optional_path
+from mach.util import batch_paths, to_optional_path
 from mozfile import which
 
 from mozversioncontrol.errors import MissingVCSInfo, MissingVCSTool
+
+HG_TRY_URL = "ssh://hg.mozilla.org/try"
 
 
 def get_tool_path(tool: Optional[Union[str, Path]] = None):
@@ -66,17 +68,7 @@ class Repository(abc.ABC):
             )
         return relative_path.as_posix()
 
-    def _process_run_args(self, *args, **runargs):
-        return_codes = runargs.get("return_codes", [])
-        env = self._env
-        if "env" in runargs:
-            env = env.copy()
-            env.update(runargs["env"])
-
-        cmd = (str(self._tool),) + args
-        return (cmd, return_codes, env)
-
-    def _run(self, *args, encoding="utf-8", **runargs):
+    def _run(self, *args, encoding="utf-8", return_codes=None, **runargs):
         # Check if we have a tool, either hg or git. If this is a source release
         # we return "src", indicating we don't have a tool to use. This caused
         # jstests to fail before fixing, because it uses a packaged mozjs
@@ -84,28 +76,37 @@ class Repository(abc.ABC):
         if not self._tool:
             return "src"
 
-        (cmd, return_codes, env) = self._process_run_args(*args, **runargs)
-        stderr = runargs.get("stderr", None)
+        cmd = (str(self._tool),) + args
+        return_codes = return_codes or []
+
+        env = self._env
+        if extra_env := runargs.pop("env", None):
+            env = env.copy()
+            env.update(extra_env)
+
+        runargs.setdefault("stdout", subprocess.PIPE)
+        runargs.setdefault("check", True)
         try:
-            return subprocess.check_output(
-                cmd,
-                cwd=self.path,
-                encoding=encoding,
-                env=env,
-                stderr=stderr,
+            result = subprocess.run(  # noqa: PLW1510
+                cmd, cwd=self.path, encoding=encoding, env=env, **runargs
             )
+            return result.stdout
         except subprocess.CalledProcessError as e:
             if e.returncode in return_codes:
                 return ""
             raise
 
+    def _run_batched(self, *args, paths: list[Union[str, Path]], **runargs):
+        for batch in batch_paths(paths):
+            self._run(*args, *batch, **runargs)
+
     def _pipefrom(self, *args, encoding="utf-8"):
-        (cmd, _return_codes, env) = self._process_run_args(*args)
+        cmd = (str(self._tool),) + args
         return subprocess.Popen(
             cmd,
             cwd=self.path,
             encoding=encoding,
-            env=env,
+            env=self._env,
             stdout=subprocess.PIPE,
         ).stdout
 
@@ -135,7 +136,12 @@ class Repository(abc.ABC):
     @property
     @abc.abstractmethod
     def head_ref(self):
-        """Hash of HEAD revision."""
+        """Head reference."""
+
+    @property
+    @abc.abstractmethod
+    def head_rev(self):
+        """Head revision."""
 
     @property
     @abc.abstractmethod
@@ -183,6 +189,10 @@ class Repository(abc.ABC):
 
         If no email is configured, then None is returned.
         """
+
+    @abc.abstractmethod
+    def get_remote_url(self, remote=None, push=False):
+        """Return the URL for the specified remote."""
 
     @abc.abstractmethod
     def get_changed_files(self, diff_filter, mode="unstaged", rev=None):
@@ -266,10 +276,74 @@ class Repository(abc.ABC):
         """
 
     @abc.abstractmethod
+    def push(
+        self,
+        remote: Optional[str] = None,
+        ref: Optional[str] = None,
+        dest_branch: Optional[str] = None,
+        force: bool = False,
+        env: Optional[dict] = None,
+    ):
+        """Push to a remote repository.
+
+        `remote` specifies the remote to push to. If None, the default remote is used.
+        `ref` specifies the branch or ref to push. If None, the current branch/ref is used.
+        `dest_branch` specifies the destination branch name. If None, pushes ref to ref.
+        `force` whether to use a force push (default False).
+        `env` additional environment to set while pushing.
+        """
+
+    def add_note(
+        self,
+        note: str,
+        content: str,
+        commit: Optional[str] = None,
+    ):
+        """Attach a git note with `content` to `commit`.
+
+        `note` is the notes namespace under refs/notes/.
+        `content` is the data to store in the note.
+        `commit` is the commit to associage the note with (defaults to HEAD).
+        """
+        raise NotImplementedError
+
+    @abc.abstractmethod
+    def _resolve_try_branch(self) -> str:
+        pass
+
+    def _push_to_git_try(self, message, changed_files, remote):
+        dest_branch = self._resolve_try_branch()
+        email = self.get_user_email()
+        if not email:
+            raise ValueError(
+                "user.email is not configured; run 'git config user.email <email>'"
+            )
+
+        user_prefix = f"{email.split('@', 1)[0]}/"
+        if not dest_branch.startswith(user_prefix):
+            dest_branch = f"{user_prefix}{dest_branch}"
+
+        global_prefix = "user/"
+        if not dest_branch.startswith(global_prefix):
+            dest_branch = f"{global_prefix}{dest_branch}"
+
+        with self.try_commit(message, changed_files) as head:
+            self.push(
+                remote,
+                ref=head,
+                dest_branch=dest_branch,
+                force=True,
+            )
+
+    @abc.abstractmethod
+    def _push_to_hg_try(self, message, changed_files, remote, allow_log_capture):
+        pass
+
     def push_to_try(
         self,
         message: str,
         changed_files: dict[str, str] = {},
+        remote: str = HG_TRY_URL,
         allow_log_capture: bool = False,
     ):
         """Create a temporary commit, push it to try and clean it up
@@ -285,6 +359,10 @@ class Repository(abc.ABC):
         If `allow_log_capture` is set to `True`, then the push-to-try will be run using
         Popen instead of check_call so that the logs can be captured elsewhere.
         """
+        if HG_TRY_URL in remote:
+            self._push_to_hg_try(message, changed_files, remote, allow_log_capture)
+        else:
+            self._push_to_git_try(message, changed_files, remote)
 
     @abc.abstractmethod
     def update(self, ref):

@@ -14,9 +14,12 @@ class nsHtml5TreeBuilder;
 class nsHtml5Tokenizer;
 class nsIContent;
 namespace mozilla {
+template <typename T>
+class Maybe;
 namespace dom {
+class CustomElementRegistry;
 class Document;
-}
+}  // namespace dom
 }  // namespace mozilla
 
 class nsHtml5StringParser : public nsParserBase {
@@ -31,6 +34,7 @@ class nsHtml5StringParser : public nsParserBase {
 
   /**
    * Invoke the fragment parsing algorithm (innerHTML).
+   * https://html.spec.whatwg.org/#html-fragment-parsing-algorithm
    * DO NOT CALL from outside nsContentUtils.cpp.
    *
    * @param aSourceBuffer the string being set as innerHTML
@@ -44,11 +48,12 @@ class nsHtml5StringParser : public nsParserBase {
    * @param aAllowDeclarativeShadowRoots allow the creation of declarative
    * shadow roots.
    */
-  nsresult ParseFragment(const nsAString& aSourceBuffer,
-                         nsIContent* aTargetNode, nsAtom* aContextLocalName,
-                         int32_t aContextNamespace, bool aQuirks,
-                         bool aPreventScriptExecution,
-                         bool aAllowDeclarativeShadowRoots);
+  nsresult ParseFragment(
+      const nsAString& aSourceBuffer, nsIContent* aTargetNode,
+      nsAtom* aContextLocalName, int32_t aContextNamespace, bool aQuirks,
+      bool aPreventScriptExecution, bool aAllowDeclarativeShadowRoots,
+      mozilla::Maybe<RefPtr<mozilla::dom::CustomElementRegistry>>
+          aCustomElementRegistry);
 
   /**
    * Parse an entire HTML document from a source string.

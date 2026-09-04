@@ -1,17 +1,14 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #ifndef jit_riscv64_Architecture_riscv64_h
 #define jit_riscv64_Architecture_riscv64_h
 
-// JitSpewer.h is included through MacroAssembler implementations for other
-// platforms, so include it here to avoid inadvertent build bustage.
-#include "mozilla/MathAlgorithms.h"
+#include "mozilla/EnumSet.h"
 
 #include <algorithm>
+#include <bit>
 
 #include "jit/JitSpewer.h"
 #include "jit/shared/Architecture-shared.h"
@@ -20,8 +17,7 @@
 namespace js {
 namespace jit {
 
-static const uint32_t SimdMemoryAlignment =
-    16;  // Make it 4 to avoid a bunch of div-by-zero warnings
+static const uint32_t SimdMemoryAlignment = 16;
 
 // RISCV64 has 32 64-bit integer registers, x0 though x31.
 //  The program counter is not accessible as a register.
@@ -116,25 +112,23 @@ class Registers {
     t4 = x29,
     t5 = x30,
     t6 = x31,
-    invalid_reg,
   };
-  typedef uint8_t Code;
-  typedef RegisterID Encoding;
+  using Code = uint8_t;
+  using Encoding = uint8_t;
   union RegisterContent {
     uintptr_t r;
   };
 
-  typedef uint32_t SetType;
+  using SetType = uint32_t;
 
-  static uint32_t SetSize(SetType x) {
-    static_assert(sizeof(SetType) == 4, "SetType must be 32 bits");
-    return mozilla::CountPopulation32(x);
-  }
+  static uint32_t SetSize(SetType x) { return std::popcount(x); }
   static uint32_t FirstBit(SetType x) {
-    return mozilla::CountTrailingZeroes32(x);
+    MOZ_ASSERT(x);
+    return std::countr_zero(x);
   }
   static uint32_t LastBit(SetType x) {
-    return 31 - mozilla::CountLeadingZeroes32(x);
+    MOZ_ASSERT(x);
+    return std::bit_width(x) - 1;
   }
   static const char* GetName(uint32_t code) {
     static const char* const Names[] = {
@@ -151,7 +145,7 @@ class Registers {
   static Code FromName(const char*);
 
   static const Encoding StackPointer = sp;
-  static const Encoding Invalid = invalid_reg;
+  static const Code Invalid = 0xFF;
   static const uint32_t Total = 32;
   static const uint32_t TotalPhys = 32;
   static const uint32_t Allocatable = 24;
@@ -197,11 +191,11 @@ class Registers {
 };
 
 // Smallest integer type that can hold a register bitmask.
-typedef uint32_t PackedRegisterMask;
+using PackedRegisterMask = uint32_t;
 
 class FloatRegisters {
  public:
-  enum FPRegisterID {
+  enum FPRegisterID : uint8_t {
     f0 = 0,
     f1,
     f2,
@@ -234,7 +228,6 @@ class FloatRegisters {
     f29,
     f30,
     f31,
-    invalid_reg,
     ft0 = f0,
     ft1 = f1,
     ft2 = f2,
@@ -271,7 +264,7 @@ class FloatRegisters {
 
   enum Kind : uint8_t { Double, Single, NumTypes };
 
-  // (invalid << 7) | (kind << 5) | encoding
+  // Eight bits: (invalid << 7) | (kind << 5) | encoding
   using Code = uint8_t;
   using Encoding = FPRegisterID;
 
@@ -297,7 +290,7 @@ class FloatRegisters {
 
   using SetType = uint64_t;
 
-  static const Code Invalid = Code(0b10000000);
+  static const Code Invalid = Code(0b1'00'00000);
   static const uint32_t TotalPhys = 32;
   static const uint32_t Total = TotalPhys * NumTypes;
   static const uint32_t Allocatable = 23;
@@ -350,19 +343,18 @@ struct FloatRegister {
   using SetType = Codes::SetType;
 
   static uint32_t SetSize(SetType x) {
-    static_assert(sizeof(SetType) == 8, "SetType must be 64 bits");
     x |= x >> FloatRegisters::TotalPhys;
     x &= FloatRegisters::AllPhysMask;
-    return mozilla::CountPopulation32(x);
+    return std::popcount(x);
   }
 
   static uint32_t FirstBit(SetType x) {
-    static_assert(sizeof(SetType) == 8, "SetType must be 64 bits");
-    return mozilla::CountTrailingZeroes64(x);
+    MOZ_ASSERT(x);
+    return std::countr_zero(x);
   }
   static uint32_t LastBit(SetType x) {
-    static_assert(sizeof(SetType) == 8, "SetType must be 64 bits");
-    return 63 - mozilla::CountLeadingZeroes64(x);
+    MOZ_ASSERT(x);
+    return std::bit_width(x) - 1;
   }
 
   static FloatRegister FromCode(Code code) {
@@ -454,17 +446,15 @@ struct FloatRegister {
   }
   static Code FromName(const char* name);
 
-  // This is used in static initializers, so produce a bogus value instead of
-  // crashing.
   static uint32_t GetPushSizeInBytes(const TypedRegisterSet<FloatRegister>& s);
 
  private:
   using Kind = Codes::Kind;
   // These fields only hold valid values: an invalid register is always
   // represented as a valid encoding and kind with the invalid_ bit set.
-  Encoding encoding_;  // 32 encodings
-  Kind kind_;          // Double, Single; more later
-  bool invalid_;
+  Encoding encoding_ : 5;  // 32 encodings
+  Kind kind_ : 2;          // Double, Single; more later
+  bool invalid_ : 1;
 
  public:
   constexpr FloatRegister(Encoding encoding, Kind kind)
@@ -478,7 +468,7 @@ struct FloatRegister {
   }
 
   constexpr FloatRegister()
-      : encoding_(FloatRegisters::invalid_reg),
+      : encoding_(FloatRegisters::ft0),
         kind_(FloatRegisters::Double),
         invalid_(true) {}
 
@@ -511,22 +501,95 @@ FloatRegister::LiveAsIndexableSet<RegTypeName::Any>(SetType set) {
   return set;
 }
 
-inline bool hasUnaliasedDouble() { return false; }
 inline bool hasMultiAlias() { return false; }
 
 static constexpr uint32_t ShadowStackSpace = 0;
 static const uint32_t JumpImmediateRange = INT32_MAX;
 
-#ifdef JS_NUNBOX32
-static const int32_t NUNBOX32_TYPE_OFFSET = 4;
-static const int32_t NUNBOX32_PAYLOAD_OFFSET = 0;
-#endif
-
 static const uint32_t SpillSlotSize =
     std::max(sizeof(Registers::RegisterContent),
              sizeof(FloatRegisters::RegisterContent));
 
-inline uint32_t GetRISCV64Flags() { return 0; }
+enum class RVExtension : uint32_t {
+  // Flag when the extensions are initialized, so they can be atomically set.
+  Initialized,
+
+  // Extension for Address Generation
+  Zba,
+
+  // Extension for Basic Bit Manipulation
+  Zbb,
+
+  // Extension for Single-Bit Manipulation
+  Zbs,
+
+  // Extension for Half-Precision Floating-Point Conversions
+  Zfhmin,
+
+  // Extension for Additional Floating-Point Instructions
+  Zfa,
+
+  // Extension for Integer Conditional Operations
+  Zicond,
+};
+
+using RVExtensions = mozilla::EnumSet<RVExtension>;
+
+class RVFlags final {
+  // The override flags parsed from environment variables or from the
+  // --riscv-ext js shell argument. They are stable after startup: there is no
+  // programmatic way of setting these from JS.
+  static inline RVExtensions extensions{};
+
+ public:
+  RVFlags() = delete;
+
+  // RVFlags::Init is called from the JitContext constructor to read the
+  // hardware flags. This method must only be called once.
+  static void Init();
+
+  static bool IsInitialized() {
+    return extensions.contains(RVExtension::Initialized);
+  }
+
+  static uint32_t GetFlags() {
+    MOZ_ASSERT(IsInitialized());
+    return extensions.serialize();
+  }
+
+  static bool HasZbaExtension() {
+    return extensions.contains(RVExtension::Zba);
+  }
+
+  static bool HasZbbExtension() {
+    return extensions.contains(RVExtension::Zbb);
+  }
+
+  static bool HasZbsExtension() {
+    return extensions.contains(RVExtension::Zbs);
+  }
+
+  static bool HasZfhminExtension() {
+    return extensions.contains(RVExtension::Zfhmin);
+  }
+
+  static bool HasZfaExtension() {
+    return extensions.contains(RVExtension::Zfa);
+  }
+
+  static bool HasZicondExtension() {
+    return extensions.contains(RVExtension::Zicond);
+  }
+};
+
+// Register a string denoting RISCV extensions. During engine initialization,
+// these flags will then be used instead of the actual hardware capabilities.
+// This must be called before JS_Init and the passed string's buffer must
+// outlive the JS_Init call.
+void SetRISCV64ExtensionsString(const char* extensions);
+
+// Retrieve the RISCV extensions as a bitmask. They must have been set.
+inline uint32_t GetRISCV64Flags() { return RVFlags::GetFlags(); }
 
 }  // namespace jit
 }  // namespace js

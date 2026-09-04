@@ -6,6 +6,7 @@
 #define NeqoHttp3Conn_h_
 
 #include <cstdint>
+
 #include "mozilla/net/neqo_glue_ffi_generated.h"
 
 namespace mozilla {
@@ -18,12 +19,12 @@ class NeqoHttp3Conn final {
       const NetAddr& aLocalAddr, const NetAddr& aRemoteAddr,
       uint32_t aMaxTableSize, uint16_t aMaxBlockedStreams, uint64_t aMaxData,
       uint64_t aMaxStreamData, bool aVersionNegotiation, bool aWebTransport,
-      const nsACString& aQlogDir, uint32_t aProviderFlags,
-      uint32_t aIdleTimeout, NeqoHttp3Conn** aConn) {
+      const nsACString& aQlogDir, uint32_t aIdleTimeout, uint32_t aFastPto,
+      NeqoHttp3Conn** aConn) {
     return neqo_http3conn_new_use_nspr_for_io(
         &aOrigin, &aAlpn, &aLocalAddr, &aRemoteAddr, aMaxTableSize,
         aMaxBlockedStreams, aMaxData, aMaxStreamData, aVersionNegotiation,
-        aWebTransport, &aQlogDir, aProviderFlags, aIdleTimeout,
+        aWebTransport, &aQlogDir, aIdleTimeout, aFastPto,
         (const mozilla::net::NeqoHttp3Conn**)aConn);
   }
 
@@ -32,14 +33,14 @@ class NeqoHttp3Conn final {
                        uint32_t aMaxTableSize, uint16_t aMaxBlockedStreams,
                        uint64_t aMaxData, uint64_t aMaxStreamData,
                        bool aVersionNegotiation, bool aWebTransport,
-                       const nsACString& aQlogDir, uint32_t aProviderFlags,
-                       uint32_t aIdleTimeout, int64_t socket,
-                       bool aPMTUDEnabled, NeqoHttp3Conn** aConn) {
+                       const nsACString& aQlogDir, uint32_t aIdleTimeout,
+                       uint32_t aFastPto, int64_t socket, bool aPMTUDEnabled,
+                       NeqoHttp3Conn** aConn) {
     return neqo_http3conn_new(
         &aOrigin, &aAlpn, &aLocalAddr, &aRemoteAddr, aMaxTableSize,
         aMaxBlockedStreams, aMaxData, aMaxStreamData, aVersionNegotiation,
-        aWebTransport, &aQlogDir, aProviderFlags, aIdleTimeout, socket,
-        aPMTUDEnabled, (const mozilla::net::NeqoHttp3Conn**)aConn);
+        aWebTransport, &aQlogDir, aIdleTimeout, aFastPto, socket, aPMTUDEnabled,
+        (const mozilla::net::NeqoHttp3Conn**)aConn);
   }
 
   void Close(uint64_t aError) { neqo_http3conn_close(this, aError); }
@@ -182,15 +183,17 @@ class NeqoHttp3Conn final {
 
   nsresult WebTransportSendDatagram(uint64_t aSessionId,
                                     nsTArray<uint8_t>& aData,
-                                    uint64_t aTrackingId) {
-    return neqo_http3conn_webtransport_send_datagram(this, aSessionId, &aData,
-                                                     aTrackingId);
+                                    uint64_t aTrackingId, uint64_t aSendGroupId,
+                                    int64_t aSendOrder) {
+    return neqo_http3conn_webtransport_send_datagram(
+        this, aSessionId, &aData, aTrackingId, aSendGroupId, aSendOrder);
   }
 
   nsresult ConnectUdpSendDatagram(uint64_t aSessionId, nsTArray<uint8_t>& aData,
-                                  uint64_t aTrackingId) {
-    return neqo_http3conn_connect_udp_send_datagram(this, aSessionId, &aData,
-                                                    aTrackingId);
+                                  uint64_t aTrackingId, uint64_t aSendGroupId,
+                                  int64_t aSendOrder) {
+    return neqo_http3conn_connect_udp_send_datagram(
+        this, aSessionId, &aData, aTrackingId, aSendGroupId, aSendOrder);
   }
 
   nsresult WebTransportMaxDatagramSize(uint64_t aSessionId, uint64_t* aResult) {
@@ -198,10 +201,37 @@ class NeqoHttp3Conn final {
                                                          aResult);
   }
 
-  nsresult WebTransportSetSendOrder(uint64_t aSessionId,
-                                    Maybe<int64_t> aSendOrder) {
+  nsresult WebTransportSetSendOrder(uint64_t aSessionId, int64_t aSendOrder) {
     return neqo_http3conn_webtransport_set_sendorder(this, aSessionId,
-                                                     aSendOrder.ptrOr(nullptr));
+                                                     &aSendOrder);
+  }
+
+  nsresult WebTransportSetSendGroup(uint64_t aSessionId,
+                                    uint64_t aSendGroupId) {
+    return neqo_http3conn_webtransport_set_sendgroup(this, aSessionId,
+                                                     aSendGroupId);
+  }
+
+  nsresult RegisterWebTransportSendGroup(uint64_t aSessionId,
+                                         uint64_t aGroupId) {
+    return neqo_http3conn_webtransport_register_send_group(this, aSessionId,
+                                                           aGroupId);
+  }
+  nsresult GetWebTransportSessionProtocol(uint64_t aSessionId,
+                                          nsACString& aProtocol) {
+    return neqo_http3conn_webtransport_session_protocol(this, aSessionId,
+                                                        &aProtocol);
+  }
+
+  nsresult ExportWebTransportKeyingMaterial(
+      uint64_t aSessionId, const nsTArray<uint8_t>& aLabel,
+      const nsTArray<uint8_t>& aContext, nsTArray<uint8_t>& aKeyingMaterial) {
+    constexpr uint32_t kKeyingMaterialLength = 32;
+    aKeyingMaterial.SetLength(kKeyingMaterialLength);
+    return neqo_http3conn_export_keying_material(
+        this, aSessionId, aLabel.Elements(), aLabel.Length(),
+        aContext.Elements(), aContext.Length(), aKeyingMaterial.Elements(),
+        kKeyingMaterialLength);
   }
 
  private:

@@ -24,7 +24,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
   ContentBlockingPrefs:
     "moz-src:///browser/components/protections/ContentBlockingPrefs.sys.mjs",
   ContextualIdentityService:
-    "resource://gre/modules/ContextualIdentityService.sys.mjs",
+    "moz-src:///toolkit/components/contextualidentity/ContextualIdentityService.sys.mjs",
   DAPIncrementality: "resource://gre/modules/DAPIncrementality.sys.mjs",
   DAPTelemetrySender: "resource://gre/modules/DAPTelemetrySender.sys.mjs",
   DAPVisitCounter: "resource://gre/modules/DAPVisitCounter.sys.mjs",
@@ -50,13 +50,16 @@ ChromeUtils.defineESModuleGetters(lazy, {
   PdfJs: "resource://pdf.js/PdfJs.sys.mjs",
   PlacesBrowserStartup:
     "moz-src:///browser/components/places/PlacesBrowserStartup.sys.mjs",
+  PreonboardingSplash:
+    "resource:///modules/asrouter/PreonboardingSplash.sys.mjs",
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
   ProfileDataUpgrader:
     "moz-src:///browser/components/ProfileDataUpgrader.sys.mjs",
   RemoteSettings: "resource://services-settings/remote-settings.sys.mjs",
   SafeBrowsing: "resource://gre/modules/SafeBrowsing.sys.mjs",
   Sanitizer: "resource:///modules/Sanitizer.sys.mjs",
-  ScreenshotsUtils: "resource:///modules/ScreenshotsUtils.sys.mjs",
+  ScreenshotsUtils:
+    "moz-src:///browser/components/screenshots/ScreenshotsUtils.sys.mjs",
   SearchService: "moz-src:///toolkit/components/search/SearchService.sys.mjs",
   SearchSERPTelemetry:
     "moz-src:///browser/components/search/SearchSERPTelemetry.sys.mjs",
@@ -65,6 +68,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
   ShortcutUtils: "resource://gre/modules/ShortcutUtils.sys.mjs",
   SpecialMessageActions:
     "resource://messaging-system/lib/SpecialMessageActions.sys.mjs",
+  Spotlight: "resource:///modules/asrouter/Spotlight.sys.mjs",
   StartupOSIntegration:
     "moz-src:///browser/components/shell/StartupOSIntegration.sys.mjs",
   TelemetryReportingPolicy:
@@ -111,6 +115,7 @@ ChromeUtils.defineLazyGetter(
 
 if (AppConstants.MOZ_CRASHREPORTER) {
   ChromeUtils.defineESModuleGetters(lazy, {
+    CrashFileCleaner: "resource:///modules/ContentCrashHandlers.sys.mjs",
     UnsubmittedCrashHandler: "resource:///modules/ContentCrashHandlers.sys.mjs",
   });
 }
@@ -235,9 +240,7 @@ BrowserGlue.prototype = {
         lazy.PlacesBrowserStartup.backendInitComplete();
         break;
       case "browser-glue-test": // used by tests
-        if (data == "force-ui-migration") {
-          this._migrateUI();
-        } else if (data == "places-browser-init-complete") {
+        if (data == "places-browser-init-complete") {
           lazy.PlacesBrowserStartup.notifyIfInitializationComplete();
         } else if (data == "add-breaches-sync-handler") {
           this._addBreachesSyncHandler();
@@ -273,7 +276,7 @@ BrowserGlue.prototype = {
         // URI that it's been asked to load into a keyword search.
         let engine = null;
         try {
-          engine = lazy.SearchService.getEngineByName(
+          engine = lazy.SearchService.getEngineById(
             subject.QueryInterface(Ci.nsISupportsString).data
           );
         } catch (ex) {
@@ -620,6 +623,18 @@ BrowserGlue.prototype = {
         return false;
       }
 
+      // Bug 1635927: skip the early blank window when the user passes window
+      // sizing/positioning flags, otherwise the blank window's persisted size
+      // from xulstore is reused and the CLI values are silently dropped.
+      if (
+        cmdLine.findFlag("width", false) != -1 ||
+        cmdLine.findFlag("height", false) != -1 ||
+        cmdLine.findFlag("left", false) != -1 ||
+        cmdLine.findFlag("top", false) != -1
+      ) {
+        return false;
+      }
+
       // Until bug 1450626 and bug 1488384 are fixed, skip the blank window when
       // using a non-default theme.
       if (
@@ -861,9 +876,10 @@ BrowserGlue.prototype = {
         // This usually happens after the test harness is done collecting
         // test errors, thus we can't easily add a failure to it. The only
         // noticeable solution we have is crashing.
+        // See bug 2034905 for filename / fileName shenanigans.
         Cc["@mozilla.org/xpcom/debug;1"]
           .getService(Ci.nsIDebug2)
-          .abort(ex.filename, ex.lineNumber);
+          .abort(ex.filename || ex.fileName, ex.lineNumber);
       }
     }
 
@@ -922,6 +938,7 @@ BrowserGlue.prototype = {
     }
     this._windowsWereRestored = true;
 
+    lazy.PreonboardingSplash.maybeShowStartupSplash();
     lazy.BrowserUsageTelemetry.init();
     lazy.SearchSERPTelemetry.init();
 
@@ -953,6 +970,8 @@ BrowserGlue.prototype = {
     }
 
     if (AppConstants.MOZ_CRASHREPORTER) {
+      lazy.CrashFileCleaner.init();
+      lazy.CrashFileCleaner.scheduleCleanup();
       lazy.UnsubmittedCrashHandler.init();
       lazy.UnsubmittedCrashHandler.scheduleCheckForUnsubmittedCrashReports();
     }
@@ -1239,7 +1258,7 @@ BrowserGlue.prototype = {
         task: () => {
           let loginDetection = Cc[
             "@mozilla.org/login-detection-service;1"
-          ].createInstance(Ci.nsILoginDetectionService);
+          ].getService(Ci.nsILoginDetectionService);
           loginDetection.init();
         },
       },
@@ -1609,7 +1628,7 @@ BrowserGlue.prototype = {
     // Use an increasing number to keep track of the current state of the user's
     // profile, so we can move data around as needed as the browser evolves.
     // Completely unrelated to the current Firefox release number.
-    const APP_DATA_VERSION = 165;
+    const APP_DATA_VERSION = 179;
     const PREF = "browser.migration.version";
 
     let profileDataVersion = Services.prefs.getIntPref(PREF, -1);
@@ -1662,16 +1681,34 @@ BrowserGlue.prototype = {
     gBrowser.selectedTab = tab;
   },
 
-  _showSetToDefaultSpotlight(message, browser) {
-    const config = {
-      type: "SHOW_SPOTLIGHT",
-      data: message,
-    };
-
+  async _showSetToDefaultSpotlight(message, browser) {
+    let shown;
     try {
-      lazy.SpecialMessageActions.handleAction(config, browser);
+      shown = await lazy.Spotlight.showSpotlightDialog(browser, message);
     } catch (e) {
       console.error("Couldn't render spotlight", message, e);
+      return;
+    }
+
+    if (!shown) {
+      return;
+    }
+
+    Services.prefs.setCharPref(
+      "browser.shell.mostRecentDefaultPromptSeen",
+      Math.floor(Date.now() / 1000).toString()
+    );
+
+    try {
+      const win = browser.documentGlobal;
+      const shellService = win.getShellService();
+      const isNowDefault = shellService.isDefaultBrowser(false, false);
+      const resultEnum =
+        (isNowDefault ? 0 : 1) * 2 +
+        (shellService.shouldCheckDefaultBrowser ? 1 : 0);
+      Glean.browser.setDefaultResult.accumulateSingleSample(resultEnum);
+    } catch (ex) {
+      /* Don't break if telemetry is acting up. */
     }
   },
 
@@ -1741,8 +1778,20 @@ BrowserGlue.prototype = {
         setToDefaultFeature.getAllVariables();
 
       if (showSpotlightPrompt && message) {
-        // Show experimental message
-        this._showSetToDefaultSpotlight(message, win.gBrowser.selectedBrowser);
+        // Show experimental spotlight in place of the default browser prompt.
+        //
+        // Note: Spotlight.showSpotlightDialog guards on gDialogBox.isOpen and
+        // returns false without showing if another dialog is already open.
+        // This is safe here because DefaultBrowserCheck.prompt() (the control
+        // branch below) routes through gDialogBox via MODAL_TYPE_INTERNAL_WINDOW,
+        // so gDialogBox.isOpen prevents a spotlight from stacking on top of an
+        // already-showing prompt. In the treatment arm we never call the old
+        // prompt, so gDialogBox.isOpen will be false at this point and the
+        // spotlight will always show.
+        await this._showSetToDefaultSpotlight(
+          message,
+          win.gBrowser.selectedBrowser
+        );
         return;
       }
 

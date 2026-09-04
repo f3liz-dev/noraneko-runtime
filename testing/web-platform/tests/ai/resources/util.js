@@ -22,13 +22,13 @@ const kImageOptions = {
 
 const kValidAudioKeywords =
     ['audio', 'speech', 'sentence', 'single', 'segment'];
-const kValidCanvasImageKeywords = ['image', 'black', 'square', 'blank'];
+const kValidCanvasImageKeywords = ['image', 'red', 'green', 'blue', 'yellow', 'grid', 'color'];
 const kValidImageKeywords =
     ['image', 'computer', 'keyboard', 'desk', 'PC', 'monitor', 'screen'];
 const kValidSVGImageKeywords =
-    ['image', 'color', 'red', 'green', 'blue', 'black'];
+    ['image', 'red', 'green', 'blue', 'black'];
 const kValidVideoKeywords = [
-  'image', 'color', 'bip', 'black', 'white', 'yellow', 'green', 'blue', 'red',
+  'image', 'bip', 'black', 'white', 'yellow', 'green', 'blue', 'red',
   'video', 'screen'
 ];
 
@@ -278,9 +278,19 @@ async function createRewriter(options = {}) {
   return await Rewriter.create(options);
 }
 
+async function createEmbedder(options = {}) {
+  await test_driver.bless();
+  return await SemanticEmbedder.create(options);
+}
+
 async function createProofreader(options = {}) {
   await test_driver.bless();
   return await Proofreader.create(options);
+}
+
+async function createClassifier(options = {}) {
+  await test_driver.bless();
+  return await Classifier.create(options);
 }
 
 async function ensureLanguageModel(options = {}) {
@@ -290,6 +300,15 @@ async function ensureLanguageModel(options = {}) {
   // Yield PRECONDITION_FAILED if the API is unavailable on this device.
   assert_implements_optional(availability != 'unavailable', 'API unavailable');
 };
+
+async function ensureEmbedder(options = {}) {
+  assert_true(!!SemanticEmbedder);
+  const availability = await SemanticEmbedder.availability(options);
+  assert_in_array(availability, kValidAvailabilities);
+  // Yield PRECONDITION_FAILED if the API is unavailable on this device.
+  assert_implements_optional(availability != 'unavailable', 'API unavailable');
+};
+
 
 async function testDestroy(t, createMethod, options, instanceMethods) {
   const instance = await createMethod(options);
@@ -321,13 +340,6 @@ async function testCreateAbort(t, createMethod, options, instanceMethods) {
   }
 }
 
-// Helper function to check that 'actual' is within 'expected +/- delta'.
-function isValueInRange(actual, expected, delta = 5) {
-  const lowerBound = expected - delta;
-  const upperBound = expected + delta;
-  return actual >= lowerBound && actual <= upperBound;
-}
-
 function consumeTransientUserActivation() {
   const win = window.open('about:blank', '_blank');
   if (win)
@@ -345,4 +357,33 @@ function messageWithContent(prompt, type, value) {
     role: 'user',
     content: [{type: 'text', value: prompt}, {type: type, value: value}]
   }];
+}
+
+function createColorGridCanvas(width, height, isOffscreen = false) {
+  const canvas = isOffscreen
+    ? new OffscreenCanvas(width, height)
+    : document.createElement('canvas');
+
+  if (!isOffscreen) {
+    canvas.width = width;
+    canvas.height = height;
+  }
+
+  const context = canvas.getContext('2d');
+  const w2 = width / 2;
+  const h2 = height / 2;
+
+  context.fillStyle = 'red';
+  context.fillRect(0, 0, w2, h2);
+
+  context.fillStyle = 'green';
+  context.fillRect(w2, 0, w2, h2);
+
+  context.fillStyle = 'blue';
+  context.fillRect(0, h2, w2, h2);
+
+  context.fillStyle = 'yellow';
+  context.fillRect(w2, h2, w2, h2);
+
+  return canvas;
 }

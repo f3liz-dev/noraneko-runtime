@@ -5,10 +5,10 @@
 "use strict";
 
 const { IPPChannelFilter } = ChromeUtils.importESModule(
-  "moz-src:///browser/components/ipprotection/IPPChannelFilter.sys.mjs"
+  "moz-src:///toolkit/components/ipprotection/IPPChannelFilter.sys.mjs"
 );
 const { IPPNetworkErrorObserver } = ChromeUtils.importESModule(
-  "moz-src:///browser/components/ipprotection/IPPNetworkErrorObserver.sys.mjs"
+  "moz-src:///toolkit/components/ipprotection/IPPNetworkErrorObserver.sys.mjs"
 );
 
 add_task(async function test_createConnection_and_proxy() {
@@ -21,7 +21,7 @@ add_task(async function test_createConnection_and_proxy() {
   await using proxyInfo = withProxyServer(failConnect);
   // Create the IPP connection filter
   const filter = IPPChannelFilter.create();
-  filter.initialize("", proxyInfo.server);
+  filter.initialize(makePass(), proxyInfo.server);
   filter.start();
 
   const observer = new IPPNetworkErrorObserver();
@@ -44,4 +44,13 @@ add_task(async function test_createConnection_and_proxy() {
   Assert.equal(detail.httpStatus, 500);
   Assert.equal(detail.isolationKey, filter.isolationKey);
   Assert.equal(detail.level, "error");
+
+  // Tear down the channel filter and error observer even on failure so the
+  // channel filter doesn't continue intercepting navigation in subsequent
+  // test files (it would otherwise route example.com through the now-dead
+  // test proxy server and hang any later tab load).
+  registerCleanupFunction(() => {
+    filter.stop();
+    observer.stop();
+  });
 });

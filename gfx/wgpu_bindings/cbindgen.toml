@@ -81,6 +81,10 @@ style = "tag"
 prefix = "WGPU"
 renaming_overrides_prefixing = true
 exclude = [
+	# NOTE: Bindings for macOS that `wgpu` creates manually.
+	"dispatch_data_create",
+	"dispatch_release",
+
 	"LoadOpDontCare",
 	"Option_AdapterId",
 	"Option_BufferId",
@@ -119,9 +123,9 @@ include = ["BufferUsages"]
 
 [parse]
 parse_deps = true
-include = ["wgpu-core", "wgpu-types", "wgpu-hal"]
+include = ["naga-types", "wgpu-core", "wgpu-types", "wgpu-hal"]
 
-extra_bindings = ["wgpu-core", "wgpu-types", "wgpu-hal"]
+extra_bindings = ["naga-types", "wgpu-core", "wgpu-types", "wgpu-hal"]
 
 [fn]
 prefix = "WGPU_INLINE"

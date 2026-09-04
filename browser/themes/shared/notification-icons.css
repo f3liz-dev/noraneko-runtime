@@ -5,7 +5,7 @@
 @namespace html url("http://www.w3.org/1999/xhtml");
 
 #notification-popup-box {
-  height: calc(var(--urlbar-min-height) - 2 * var(--urlbar-container-border-padding));
+  height: var(--urlbar-basic-component-size);
   -moz-context-properties: fill, fill-opacity;
   fill: currentColor;
   fill-opacity: var(--urlbar-icon-fill-opacity);
@@ -77,6 +77,10 @@
   }
 }
 
+.persist-data-on-shutdown-icon {
+  list-style-image: url(chrome://browser/skin/controlcenter/3rdpartycookies.svg);
+}
+
 .desktop-notification-icon {
   list-style-image: url(chrome://browser/skin/notification-icons/desktop-notification.svg);
 
@@ -93,8 +97,8 @@
   }
 }
 
-.localhost-icon {
-  list-style-image: url(chrome://browser/skin/notification-icons/local-host.svg);
+.loopback-network-icon {
+  list-style-image: url(chrome://global/skin/icons/local-host.svg);
 
   &.blocked-permission-icon {
     list-style-image: url(chrome://browser/skin/notification-icons/local-host-blocked.svg);
@@ -192,6 +196,10 @@
 
 .midi-icon {
   list-style-image: url(chrome://browser/skin/notification-icons/midi.svg);
+}
+
+.serial-icon {
+  list-style-image: url(chrome://browser/skin/notification-icons/serial.svg);
 }
 
 #canvas-notification-icon,

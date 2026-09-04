@@ -1,27 +1,22 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/SandboxSettings.h"
-#include "mozISandboxSettings.h"
-#include "nsServiceManagerUtils.h"
-#include "nsAppRunner.h"
 
+#include "mozISandboxSettings.h"
 #include "mozilla/Components.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/StaticPrefs_media.h"
 #include "mozilla/StaticPrefs_network.h"
 #include "mozilla/StaticPrefs_security.h"
-#include "mozilla/StaticPrefs_webgl.h"
-
+#include "nsAppRunner.h"
+#include "nsServiceManagerUtils.h"
 #include "prenv.h"
 
 #ifdef XP_WIN
-#  include "mozilla/gfx/gfxVars.h"
-#  include "nsExceptionHandler.h"
 #  include "PDMFactory.h"
+#  include "nsExceptionHandler.h"
 #endif  // XP_WIN
 
 using namespace mozilla;
@@ -42,9 +37,6 @@ const char* ContentWin32kLockdownStateToString(
 
     case nsIXULRuntime::ContentWin32kLockdownState::PrefNotSet:
       return "Win32k Lockdown disabled -- Preference not set";
-
-    case nsIXULRuntime::ContentWin32kLockdownState::MissingRemoteWebGL:
-      return "Win32k Lockdown disabled -- Missing Remote WebGL";
 
     case nsIXULRuntime::ContentWin32kLockdownState::MissingNonNativeTheming:
       return "Win32k Lockdown disabled -- Missing Non-Native Theming";
@@ -120,23 +112,6 @@ nsIXULRuntime::ContentWin32kLockdownState GetContentWin32kLockdownState() {
 #endif  // XP_WIN
 }
 
-#if defined(XP_WIN)
-static bool IsWebglOutOfProcessEnabled() {
-  if (StaticPrefs::webgl_out_of_process_force()) {
-    return true;
-  }
-
-  // We have to check initialization state for gfxVars, because of early use in
-  // child processes. In rare cases this could lead to the incorrect sandbox
-  // level being reported, but not the incorrect one being set.
-  if (gfx::gfxVars::IsInitialized() && !gfx::gfxVars::AllowWebglOop()) {
-    return false;
-  }
-
-  return StaticPrefs::webgl_out_of_process();
-}
-#endif
-
 int GetEffectiveContentSandboxLevel() {
   if (PR_GetEnv("MOZ_DISABLE_CONTENT_SANDBOX")) {
     return 0;
@@ -180,8 +155,7 @@ int GetEffectiveContentSandboxLevel() {
   // Sandbox level 8, which uses a USER_RESTRICTED access token level, breaks if
   // prefs moving processing out of the content process are not the default.
   if (level >= 8 &&
-      (!IsWebglOutOfProcessEnabled() ||
-       !PDMFactory::AllDecodersAreRemote()
+      (!PDMFactory::AllDecodersAreRemote()
 #  if defined(MOZ_WEBRTC) && !defined(MOZ_THUNDERBIRD)
        // These are only relevant if webrtc is present. Thunderbird currently
        // compiles with webrtc, but doesn't use it.
@@ -198,9 +172,7 @@ int GetEffectiveContentSandboxLevel() {
 
 bool IsContentSandboxEnabled() { return GetEffectiveContentSandboxLevel() > 0; }
 
-bool IsGPUSandboxEnabled() {
-  return Preferences::GetInt("security.sandbox.gpu.level") > 0;
-}
+bool IsGPUSandboxEnabled() { return GetEffectiveGpuSandboxLevel() > 0; }
 
 int GetEffectiveSocketProcessSandboxLevel() {
   if (PR_GetEnv("MOZ_DISABLE_SOCKET_PROCESS_SANDBOX")) {
@@ -221,6 +193,10 @@ int GetEffectiveSocketProcessSandboxLevel() {
 }
 
 int GetEffectiveGpuSandboxLevel() {
+  if (PR_GetEnv("MOZ_DISABLE_GPU_SANDBOX")) {
+    return 0;
+  }
+
   return StaticPrefs::security_sandbox_gpu_level();
 }
 

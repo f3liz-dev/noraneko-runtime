@@ -63,7 +63,7 @@ async function saveAsHARWithContextMenu(monitor, { asString = false } = {}) {
 
   info("Mock the file picker dialog to save the HAR file to disk");
   const MockFilePicker = SpecialPowers.MockFilePicker;
-  MockFilePicker.init(window.browsingContext);
+  MockFilePicker.init();
   const nsiFile = new FileUtils.File(
     PathUtils.join(PathUtils.tempDir, `save_as_har-${Date.now()}.har`)
   );
@@ -71,8 +71,8 @@ async function saveAsHARWithContextMenu(monitor, { asString = false } = {}) {
   const path = nsiFile.path;
 
   info("Wait for the downloaded file to be fully saved to disk");
-  await BrowserTestUtils.waitForCondition(() => IOUtils.exists(path));
-  await BrowserTestUtils.waitForCondition(async () => {
+  await TestUtils.waitForCondition(() => IOUtils.exists(path));
+  await TestUtils.waitForCondition(async () => {
     const { size } = await IOUtils.stat(path);
     return size > 0;
   });

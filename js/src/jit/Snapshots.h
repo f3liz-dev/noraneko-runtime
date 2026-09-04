@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -445,16 +443,20 @@ class SnapshotWriter {
   // useful as value allocations are repeated frequently.
   using RVA = RValueAllocation;
   using RValueAllocMap = HashMap<RVA, uint32_t, RVA::Hasher, SystemAllocPolicy>;
-  RValueAllocMap allocMap_;
+
+  // Based on the measurements made in Bug 962555 comment 20, this length
+  // should be enough to prevent the reallocation of the hash table for at
+  // least half of the compilations.
+  RValueAllocMap allocMap_{32};
 
   // This is only used to assert sanity.
-  uint32_t allocWritten_;
+  uint32_t allocWritten_ = 0;
 
   // Used to report size of the snapshot in the spew messages.
   SnapshotOffset lastStart_;
 
  public:
-  SnapshotWriter();
+  SnapshotWriter() = default;
 
   SnapshotOffset startSnapshot(RecoverOffset recoverOffset, BailoutKind kind);
 #ifdef TRACK_SNAPSHOTS
@@ -483,11 +485,11 @@ class MNode;
 class RecoverWriter {
   CompactBufferWriter writer_;
 
-  uint32_t instructionCount_;
-  uint32_t instructionsWritten_;
+  uint32_t instructionCount_ = 0;
+  uint32_t instructionsWritten_ = 0;
 
  public:
-  SnapshotOffset startRecover(uint32_t instructionCount);
+  RecoverOffset startRecover(uint32_t instructionCount);
 
   void writeInstruction(const MNode* rp);
 
@@ -585,6 +587,10 @@ class RecoverReader {
   // data which is needed to decode the current instruction.
   RInstructionStorage rawData_;
 
+  // Cached number of operands of the current instruction. Matches
+  // instruction()->numOperands().
+  uint32_t numOperands_;
+
  private:
   void readRecoverHeader();
   void readInstruction();
@@ -606,6 +612,8 @@ class RecoverReader {
   const RInstruction* instruction() const {
     return reinterpret_cast<const RInstruction*>(rawData_.addr());
   }
+
+  uint32_t numOperands() const { return numOperands_; }
 };
 
 }  // namespace jit

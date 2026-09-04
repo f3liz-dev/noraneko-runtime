@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -204,6 +202,7 @@ class DebuggerObject : public NativeObject {
   static const JSPropertySpec properties_[];
   static const JSPropertySpec promiseProperties_[];
   static const JSFunctionSpec methods_[];
+  static const JSFunctionSpec fuzzing_unsafe_methods_[];
 
   PromiseObject* promise() const;
 
@@ -219,6 +218,42 @@ class DebuggerObject : public NativeObject {
   [[nodiscard]] static bool getErrorReport(JSContext* cx,
                                            HandleObject maybeError,
                                            JSErrorReport*& report);
+};
+
+// An opaque wrapper around a private name symbol, returned by
+// DebuggerObject.prototype.getOwnPrivateProperties. The underlying PrivateName
+// symbol must never be exposed to script (handing one to e.g. a Proxy
+// operation trips assertions), so it is kept in an internal slot. Consumers can
+// read the field's display name (e.g. "#x") via the `description` getter, and
+// can pass the wrapper itself to
+// DebuggerObject.prototype.getOwnPropertyDescriptor to obtain the property's
+// value.
+class DebuggerPrivateName : public NativeObject {
+ public:
+  static const JSClass class_;
+
+  static NativeObject* initClass(JSContext* cx, Handle<GlobalObject*> global,
+                                 HandleObject debugCtor);
+  static DebuggerPrivateName* create(JSContext* cx, HandleObject proto,
+                                     Handle<JS::Symbol*> privateName,
+                                     Handle<NativeObject*> debugger);
+
+  JS::Symbol* privateName() const {
+    return getReservedSlot(SYMBOL_SLOT).toSymbol();
+  }
+  Debugger* owner() const;
+
+ private:
+  enum { SYMBOL_SLOT, OWNER_SLOT, RESERVED_SLOTS };
+
+  static const JSPropertySpec properties_[];
+  static const JSFunctionSpec methods_[];
+
+  [[nodiscard]] static bool construct(JSContext* cx, unsigned argc, Value* vp);
+  [[nodiscard]] static bool descriptionGetter(JSContext* cx, unsigned argc,
+                                              Value* vp);
+  [[nodiscard]] static bool toStringMethod(JSContext* cx, unsigned argc,
+                                           Value* vp);
 };
 
 } /* namespace js */

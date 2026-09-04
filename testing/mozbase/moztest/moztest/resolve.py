@@ -8,12 +8,12 @@ import pickle
 import sys
 from abc import ABCMeta, abstractmethod
 from collections import defaultdict
-from functools import lru_cache
+from functools import cache
 
 import mozpack.path as mozpath
 from manifestparser import TestManifest, combine_fields
 from mozbuild.base import MozbuildObject
-from mozbuild.testing import REFTEST_FLAVORS, TEST_MANIFESTS
+from mozbuild.testing import REFTEST_FLAVORS, TEST_MANIFESTS, install_test_files
 from mozpack.files import FileFinder
 
 here = os.path.abspath(os.path.dirname(__file__))
@@ -72,14 +72,14 @@ TEST_SUITES = {
         "aliases": ("mn",),
         "build_flavor": "marionette",
         "mach_command": "marionette-test",
-        "kwargs": {"tests": None},
+        "kwargs": {"tests": None, "subsuite": "integration"},
         "task_regex": ["marionette($|.*(-1|[^0-9])$)"],
     },
     "marionette-unittest": {
         "aliases": ("mnself",),
         "build_flavor": "marionette",
         "mach_command": "marionette-test",
-        "kwargs": {"tests": None},
+        "kwargs": {"tests": None, "subsuite": "unittest"},
         "task_regex": ["marionette($|.*(-1|[^0-9])$)"],
     },
     "mochitest-a11y": {
@@ -104,6 +104,34 @@ TEST_SUITES = {
         "kwargs": {"flavor": "browser-chrome", "test_paths": None},
         "task_regex": [
             "mochitest-browser-chrome($|.*(-1|[^0-9])$)",
+            "test-verify($|.*(-1|[^0-9])$)",
+        ],
+    },
+    "mochitest-browser-chrome-thunderbird": {
+        "aliases": ("bct",),
+        "build_flavor": "browser-chrome",
+        "mach_command": "mochitest",
+        "kwargs": {
+            "flavor": "browser-chrome",
+            "subsuite": "thunderbird",
+            "test_paths": None,
+        },
+        "task_regex": [
+            "mochitest-browser-chrome-thunderbird($|.*(-1|[^0-9])$)",
+            "test-verify($|.*(-1|[^0-9])$)",
+        ],
+    },
+    "mochitest-browser-chrome-thunderbird-a11y": {
+        "aliases": ("bct",),
+        "build_flavor": "browser-chrome",
+        "mach_command": "mochitest",
+        "kwargs": {
+            "flavor": "browser-chrome",
+            "subsuite": "thunderbird",
+            "test_paths": None,
+        },
+        "task_regex": [
+            "mochitest-browser-chrome-thunderbird-a11y($|.*(-1|[^0-9])$)",
             "test-verify($|.*(-1|[^0-9])$)",
         ],
     },
@@ -163,6 +191,19 @@ TEST_SUITES = {
             "test-verify($|.*(-1|[^0-9])$)",
         ],
     },
+    "mochitest-devtools-compat": {
+        "aliases": ("dtbc", "devtools-compat"),
+        "build_flavor": "browser-chrome",
+        "mach_command": "mochitest",
+        "kwargs": {
+            "flavor": "browser-chrome",
+            "subsuite": "devtools-compat",
+            "test_paths": None,
+        },
+        "task_regex": [
+            "devtools-compat($|.*(-1|[^0-9])$)",
+        ],
+    },
     "mochitest-browser-a11y": {
         "aliases": ("ba", "browser-a11y"),
         "build_flavor": "browser-chrome",
@@ -212,6 +253,20 @@ TEST_SUITES = {
         },
         "task_regex": [
             "mochitest-browser-translations($|.*(-1|[^0-9])$)",
+            "test-verify($|.*(-1|[^0-9])$)",
+        ],
+    },
+    "mochitest-browser-chrome-ml-models": {
+        "aliases": ("bc-ml", "browser-ml-models"),
+        "build_flavor": "browser-chrome",
+        "mach_command": "mochitest",
+        "kwargs": {
+            "flavor": "browser-chrome",
+            "subsuite": "ml-models",
+            "test_paths": None,
+        },
+        "task_regex": [
+            "mochitest-browser-chrome-ml-models($|.*(-1|[^0-9])$)",
             "test-verify($|.*(-1|[^0-9])$)",
         ],
     },
@@ -295,18 +350,13 @@ TEST_SUITES = {
             "test-verify-gpu($|.*(-1|[^0-9])$)",
         ],
     },
-    "robocop": {
-        "mach_command": "robocop",
-        "kwargs": {"test_paths": None},
-        "task_regex": ["robocop($|.*(-1|[^0-9])$)"],
-    },
     "web-platform-tests": {
         "aliases": ("wpt",),
         "mach_command": "web-platform-tests",
         "build_flavor": "web-platform-tests",
         "kwargs": {"subsuite": "testharness"},
         "task_regex": [
-            "web-platform-tests(?!-crashtest|-reftest|-wdspec|-print)"
+            "web-platform-tests(?!-crashtest|-reftest|-wdspec|-print|-aam)"
             "($|.*(-1|[^0-9])$)",
             "test-verify-wpt",
         ],
@@ -350,6 +400,16 @@ TEST_SUITES = {
             "test-verify-wpt",
         ],
     },
+    "web-platform-tests-aam": {
+        "aliases": ("wpt",),
+        "mach_command": "web-platform-tests",
+        "build_flavor": "web-platform-tests",
+        "kwargs": {"subsuite": "aamtest"},
+        "task_regex": [
+            "web-platform-tests-aam($|.*(-1|[^0-9])$)",
+            "test-verify-wpt",
+        ],
+    },
     "valgrind": {
         "aliases": ("v",),
         "mach_command": "valgrind-test",
@@ -374,6 +434,7 @@ TEST_SUITES = {
         "build_flavor": "fenix",
         "mach_command": "android-test",
         "kwargs": {"subproject": "fenix"},
+        "root_path": "mobile/android/fenix",
         "task_regex": ["(ui-)?test-apk-fenix($|.*(-1|[^0-9])$)"],
     },
     "focus": {
@@ -381,6 +442,7 @@ TEST_SUITES = {
         "build_flavor": "focus",
         "mach_command": "android-test",
         "kwargs": {"subproject": "focus"},
+        "root_path": "mobile/android/focus-android",
         "task_regex": ["(ui-)?test-apk-focus($|.*(-1|[^0-9])$)"],
     },
     "android-components": {
@@ -388,6 +450,7 @@ TEST_SUITES = {
         "build_flavor": "android-components",
         "mach_command": "android-test",
         "kwargs": {"subproject": "android-components"},
+        "root_path": "mobile/android/android-components",
         "task_regex": ["(build|test)-components($|.*(-1|[^0-9])$)"],
     },
     "geckoview": {
@@ -395,6 +458,7 @@ TEST_SUITES = {
         "build_flavor": "geckoview",
         "mach_command": "geckoview-junit",
         "kwargs": {"no_install": False, "mach_test": True},
+        "root_path": "mobile/android/geckoview",
         "task_regex": ["geckoview-junit($|.*(-1|[^0-9])$)"],
     },
     "junit": {
@@ -416,6 +480,10 @@ Arguments:
     kwargs (dict): Arguments needed to pass into the mach command.
     task_regex (list): A list of regexes used to filter task labels that run
                        this suite.
+    root_path (str): Source-relative directory path for this suite's project
+                     root. When ``mach test`` receives this exact path, it
+                     dispatches the suite directly instead of enumerating
+                     individual test files.
 """
 
 for i in range(1, MOCHITEST_TOTAL_CHUNKS + 1):
@@ -446,8 +514,7 @@ _test_flavors = {
     "crashtest": "crashtest",
     "firefox-ui-functional": "firefox-ui-functional",
     "firefox-ui-update": "firefox-ui-update",
-    "marionette-integration": "marionette-integration",
-    "marionette-unittest": "marionette-unittest",
+    "marionette": "marionette",
     "mochitest": "mochitest-plain",
     "puppeteer": "puppeteer",
     "python": "python",
@@ -464,14 +531,17 @@ _test_flavors = {
 _test_subsuites = {
     ("browser-chrome", "a11y"): "mochitest-browser-a11y",
     ("browser-chrome", "devtools"): "mochitest-devtools-chrome",
+    ("browser-chrome", "devtools-compat"): "mochitest-devtools-compat",
     ("browser-chrome", "media-bc"): "mochitest-browser-media",
+    ("browser-chrome", "ml-models"): "mochitest-browser-chrome-ml-models",
     ("browser-chrome", "remote"): "mochitest-remote",
     ("browser-chrome", "screenshots"): "mochitest-browser-screenshots",
     ("browser-chrome", "translations"): "mochitest-browser-translations",
     ("chrome", "gpu"): "mochitest-chrome-gpu",
+    ("marionette", "integration"): "marionette-integration",
+    ("marionette", "unittest"): "marionette-unittest",
     ("mochitest", "gpu"): "mochitest-plain-gpu",
     ("mochitest", "media"): "mochitest-media",
-    ("mochitest", "robocop"): "robocop",
     ("mochitest", "webgl1-core"): "mochitest-webgl1-core",
     ("mochitest", "webgl1-ext"): "mochitest-webgl1-ext",
     ("mochitest", "webgl2-core"): "mochitest-webgl2-core",
@@ -483,6 +553,7 @@ _test_subsuites = {
     ("web-platform-tests", "print-reftest"): "web-platform-tests-print-reftest",
     ("web-platform-tests", "reftest"): "web-platform-tests-reftest",
     ("web-platform-tests", "wdspec"): "web-platform-tests-wdspec",
+    ("web-platform-tests", "aamtest"): "web-platform-tests-aam",
 }
 
 
@@ -555,6 +626,17 @@ class BuildBackendLoader(TestLoader):
             from mozbuild.gen_test_backend import gen_test_backend
 
             gen_test_backend()
+            # Only install when a prior full build has emitted the harness
+            # install manifest.
+            harness_manifest = mozpath.join(
+                self.topobjdir, "_build_manifests", "install", "_tests"
+            )
+            if os.path.isfile(harness_manifest):
+                install_test_files(
+                    mozpath.normpath(self.topsrcdir),
+                    self.topobjdir,
+                    "_tests",
+                )
 
         all_tests = os.path.join(self.topobjdir, "all-tests.pkl")
         test_defaults = os.path.join(self.topobjdir, "test-defaults.pkl")
@@ -629,6 +711,41 @@ class TestManifestLoader(TestLoader):
         for test in sorted(manifest.tests, key=lambda x: x.get("path")):
             test["manifest_relpath"] = test["manifest"][len(self.topsrcdir) + 1 :]
             yield test
+
+        # Sub-manifests with no file-based tests (e.g. those containing only
+        # data: URL tests, which ReftestManifest skips) would otherwise be
+        # invisible to the taskgraph manifest loader. Yield a placeholder so
+        # they still get scheduled.
+        manifests_with_tests = {t["manifest"] for t in manifest.tests}
+        for manifest_path, info in sorted(manifest.manifests.items()):
+            # Skip the top-level manifest: it is the task entry point and
+            # needs no placeholder.
+            if manifest_path == manifest.path:
+                continue
+            # has_test_lines excludes include-only manifests: manifest.sys.mjs
+            # skips include recursion when MOZHARNESS_TEST_PATHS is set, so
+            # they would run 0 tests if directly targeted. Their sub-manifests
+            # are already scheduled independently.
+            if manifest_path not in manifests_with_tests and info["has_test_lines"]:
+                relpath = manifest_path[len(self.topsrcdir) + 1 :]
+                placeholder = {
+                    "path": manifest_path,
+                    "here": os.path.dirname(manifest_path),
+                    "manifest": manifest_path,
+                    "manifest_relpath": relpath,
+                    "name": os.path.basename(manifest_path),
+                    "head": "",
+                    "support-files": "",
+                    "subsuite": "",
+                }
+                skip_if = (
+                    info["tests_skip_if"]
+                    if info["tests_skip_if"] is not None
+                    else info["include_skip_if"]
+                )
+                if skip_if:
+                    placeholder["skip-if"] = skip_if
+                yield placeholder
 
     def __call__(self):
         for path, name, key, value in self.reader.find_variables_from_ast(
@@ -735,7 +852,7 @@ class TestResolver(MozbuildObject):
                 self._test_dirs.add(test["dir_relpath"])
         return self._test_dirs
 
-    @lru_cache(maxsize=1024)
+    @cache
     def _get_metadata_paths(self, metadata_base, dir_path):
 
         paths = []
@@ -910,7 +1027,7 @@ class TestResolver(MozbuildObject):
                 candidate_paths |= {
                     t["file_relpath"]
                     for t in self.tests
-                    if mozpath.normpath(t[key]) == path
+                    if key in t and mozpath.normpath(t[key]) == path
                 }
                 continue
 
@@ -956,18 +1073,19 @@ class TestResolver(MozbuildObject):
         for root, dirs, paths in os.walk(test_path):
             for filename in fnmatch.filter(paths, "*.spec.js"):
                 path = os.path.join(root, filename)
+                relpath = mozpath.relpath(mozpath.normpath(path), self.topsrcdir)
                 self._tests.append({
                     "path": os.path.abspath(path),
                     "flavor": "puppeteer",
                     "here": os.path.dirname(path),
                     "manifest": None,
-                    "name": path,
-                    "file_relpath": path,
+                    "name": relpath,
+                    "file_relpath": relpath,
                     "head": "",
                     "support-files": "",
                     "subsuite": "puppeteer",
-                    "dir_relpath": os.path.dirname(path),
-                    "srcdir_relpath": path,
+                    "dir_relpath": mozpath.dirname(relpath),
+                    "srcdir_relpath": relpath,
                 })
 
         self._puppeteer_loaded = True
@@ -978,26 +1096,30 @@ class TestResolver(MozbuildObject):
 
         self._reset_state()
 
-        test_path = os.path.join(
-            self.topsrcdir, "mobile", "android", "fenix", "app", "src", "test", "java"
+        app_dir = os.path.join(self.topsrcdir, "mobile", "android", "fenix", "app")
+        test_subdirs = (
+            os.path.join("src", "test", "java"),
+            os.path.join("src", "test", "kotlin"),
         )
-        for root, dirs, paths in os.walk(test_path):
-            if "test" in root:
+        for root, dirs, paths in os.walk(app_dir):
+            if any(sd in root for sd in test_subdirs):
                 for filename in fnmatch.filter(paths, "*.kt"):
                     path = os.path.join(root, filename)
+                    relpath = mozpath.relpath(mozpath.normpath(path), self.topsrcdir)
                     self._tests.append({
                         "path": os.path.abspath(path),
                         "flavor": "fenix",
                         "here": os.path.dirname(path),
                         "manifest": None,
-                        "name": path,
-                        "file_relpath": path,
+                        "name": relpath,
+                        "file_relpath": relpath,
                         "head": "",
                         "support-files": "",
                         "subsuite": "",
-                        "dir_relpath": os.path.dirname(path),
-                        "srcdir_relpath": path,
+                        "dir_relpath": mozpath.dirname(relpath),
+                        "srcdir_relpath": relpath,
                     })
+            dirs[:] = [d for d in dirs if d != "build"]
 
         self._fenix_loaded = True
 
@@ -1021,18 +1143,19 @@ class TestResolver(MozbuildObject):
             if "test" in root:
                 for filename in fnmatch.filter(paths, "*.kt"):
                     path = os.path.join(root, filename)
+                    relpath = mozpath.relpath(mozpath.normpath(path), self.topsrcdir)
                     self._tests.append({
                         "path": os.path.abspath(path),
                         "flavor": "focus",
                         "here": os.path.dirname(path),
                         "manifest": None,
-                        "name": path,
-                        "file_relpath": path,
+                        "name": relpath,
+                        "file_relpath": relpath,
                         "head": "",
                         "support-files": "",
                         "subsuite": "",
-                        "dir_relpath": os.path.dirname(path),
-                        "srcdir_relpath": path,
+                        "dir_relpath": mozpath.dirname(relpath),
+                        "srcdir_relpath": relpath,
                     })
 
         self._focus_loaded = True
@@ -1052,18 +1175,19 @@ class TestResolver(MozbuildObject):
             if test_subdir_path in root:
                 for filename in fnmatch.filter(paths, "*.kt"):
                     path = os.path.join(root, filename)
+                    relpath = mozpath.relpath(mozpath.normpath(path), self.topsrcdir)
                     self._tests.append({
                         "path": os.path.abspath(path),
                         "flavor": "android-components",
                         "here": os.path.dirname(path),
                         "manifest": None,
-                        "name": path,
-                        "file_relpath": path,
+                        "name": relpath,
+                        "file_relpath": relpath,
                         "head": "",
                         "support-files": "",
                         "subsuite": "",
-                        "dir_relpath": os.path.dirname(path),
-                        "srcdir_relpath": path,
+                        "dir_relpath": mozpath.dirname(relpath),
+                        "srcdir_relpath": relpath,
                     })
 
         self._ac_loaded = True
@@ -1087,18 +1211,19 @@ class TestResolver(MozbuildObject):
             if "test" in root:
                 for filename in fnmatch.filter(paths, "*.kt"):
                     path = os.path.join(root, filename)
+                    relpath = mozpath.relpath(mozpath.normpath(path), self.topsrcdir)
                     self._tests.append({
                         "path": os.path.abspath(path),
                         "flavor": "geckoview",
                         "here": os.path.dirname(path),
                         "manifest": None,
-                        "name": path,
-                        "file_relpath": path,
+                        "name": relpath,
+                        "file_relpath": relpath,
                         "head": "",
                         "support-files": "",
                         "subsuite": "",
-                        "dir_relpath": os.path.dirname(path),
-                        "srcdir_relpath": path,
+                        "dir_relpath": mozpath.dirname(relpath),
+                        "srcdir_relpath": relpath,
                     })
 
         self._geckooview_junit_loaded = True
@@ -1181,6 +1306,7 @@ class TestResolver(MozbuildObject):
         self._reset_state()
 
         wpt_path = os.path.join(self.topsrcdir, "testing", "web-platform")
+        old_path = sys.path[:]
         sys.path = [wpt_path] + sys.path
 
         import logging
@@ -1199,6 +1325,9 @@ class TestResolver(MozbuildObject):
             update=True,
             logger=logger,
         )
+
+        sys.path = old_path
+
         if not manifests:
             print("Loading wpt manifest failed")
             return
@@ -1315,6 +1444,16 @@ class TestResolver(MozbuildObject):
             else:
                 yield test
 
+    @staticmethod
+    @cache
+    def _path_to_suite():
+        """Build a reverse map from root_path to suite name from TEST_SUITES."""
+        return {
+            v["root_path"]: suite
+            for suite, v in TEST_SUITES.items()
+            if "root_path" in v
+        }
+
     def resolve_metadata(self, what):
         """Resolve tests based on the given metadata. If not specified, metadata
         from outgoing files will be used instead.
@@ -1337,8 +1476,15 @@ class TestResolver(MozbuildObject):
             if suitefound:
                 continue
 
-            # Now look for file/directory matches in the TestResolver.
+            # If the path matches a suite's root_path, resolve it as a suite
+            # rather than enumerating individual test files.
             relpath = self._wrap_path_argument(entry).relpath()
+            suite_name = self._path_to_suite().get(mozpath.normpath(relpath))
+            if suite_name:
+                run_suites.add(suite_name)
+                continue
+
+            # Now look for file/directory matches in the TestResolver.
             # since either path or tag can be defined (but not both), here we assume
             # one or none are defined, but not both
             tests = list(self.resolve_tests(paths=[relpath]))

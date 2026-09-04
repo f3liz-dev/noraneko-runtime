@@ -1,6 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: sw=2 ts=8 et :
- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,17 +7,17 @@
 
 #include <stdint.h>
 
-#include "mozilla/widget/IMEData.h"
-#include "mozilla/ipc/IPCForwards.h"
+#include "Units.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/CheckedInt.h"
 #include "mozilla/EventForwards.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/ToString.h"
 #include "mozilla/WritingModes.h"
+#include "mozilla/ipc/IPCForwards.h"
+#include "mozilla/widget/IMEData.h"
 #include "nsString.h"
 #include "nsTArray.h"
-#include "Units.h"
 
 class nsIWidget;
 

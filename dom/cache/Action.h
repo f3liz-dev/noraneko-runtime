@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -47,7 +45,7 @@ class Action : public SafeRefCounted<Action> {
   };
 
   // virtual because deleted through base class pointer
-  virtual ~Action();
+  virtual ~Action() = default;
 
   // Execute operations on the target thread.  Once complete call
   // Resolver::Resolve().  This can be done sync or async.
@@ -87,7 +85,7 @@ class Action : public SafeRefCounted<Action> {
   MOZ_DECLARE_REFCOUNTED_TYPENAME(cache::Action)
 
  protected:
-  Action();
+  Action() = default;
 
   // Check if this Action has been canceled.  May be called from any thread,
   // but typically used from the target thread.
@@ -95,7 +93,7 @@ class Action : public SafeRefCounted<Action> {
 
  private:
   // Accessible from any thread.
-  Atomic<bool> mCanceled;
+  Atomic<bool> mCanceled{false};
 };
 
 }  // namespace mozilla::dom::cache

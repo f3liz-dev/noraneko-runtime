@@ -4,7 +4,6 @@
 
 package org.mozilla.fenix.benchmark
 
-import android.content.Intent
 import androidx.benchmark.macro.BaselineProfileMode
 import androidx.benchmark.macro.CompilationMode
 import androidx.benchmark.macro.StartupMode
@@ -17,10 +16,9 @@ import org.junit.runner.RunWith
 import org.mozilla.fenix.benchmark.utils.HtmlAsset
 import org.mozilla.fenix.benchmark.utils.MockWebServerRule
 import org.mozilla.fenix.benchmark.utils.TARGET_PACKAGE
-import org.mozilla.fenix.benchmark.utils.flingToBeginning
-import org.mozilla.fenix.benchmark.utils.flingToEnd
+import org.mozilla.fenix.benchmark.utils.browserPageScrollJourney
 import org.mozilla.fenix.benchmark.utils.measureRepeatedDefault
-import org.mozilla.fenix.benchmark.utils.uri
+import org.mozilla.fenix.benchmark.utils.url
 
 /**
  * This test class benchmarks the speed of scrolling on web content. Run this benchmark to verify how effective
@@ -73,22 +71,7 @@ class BaselineProfilesBrowserPageScrollBenchmark {
                 pressHome()
             },
         ) {
-            val intent = Intent(Intent.ACTION_VIEW)
-            intent.data = mockRule.uri(HtmlAsset.LONG)
-            intent.setPackage(packageName)
-
-            startActivityAndWait(intent = intent)
-
-            device.flingToEnd(
-                scrollableId = "$packageName:id/engineView",
-                maxSwipes = 1,
-            )
-
-            device.flingToBeginning(
-                scrollableId = "$packageName:id/engineView",
-                maxSwipes = 1,
-            )
-
+            browserPageScrollJourney(url = mockRule.url(HtmlAsset.LONG))
             killProcess()
         }
 }

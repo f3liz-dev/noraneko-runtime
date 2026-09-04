@@ -1,15 +1,12 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "RenderExternalTextureHost.h"
 
+#include "GLContext.h"
 #include "mozilla/gfx/Logging.h"
 #include "mozilla/layers/ImageDataSerializer.h"
-
-#include "GLContext.h"
 
 namespace mozilla {
 namespace wr {
@@ -54,11 +51,15 @@ RenderExternalTextureHost::~RenderExternalTextureHost() {
 
 bool RenderExternalTextureHost::CreateSurfaces() {
   if (!IsYUV()) {
+    auto stride = layers::ImageDataSerializer::GetRGBStride(
+        mDescriptor.get_RGBDescriptor());
+    if (stride.isNothing()) {
+      gfxCriticalNote << "Invalid stride";
+      return false;
+    }
+
     mSurfaces[0] = gfx::Factory::CreateWrappingDataSourceSurface(
-        GetBuffer(),
-        layers::ImageDataSerializer::GetRGBStride(
-            mDescriptor.get_RGBDescriptor()),
-        mSize, mFormat);
+        GetBuffer(), stride.value(), mSize, mFormat);
   } else {
     const layers::YCbCrDescriptor& desc = mDescriptor.get_YCbCrDescriptor();
     const gfx::SurfaceFormat surfaceFormat =
@@ -126,7 +127,14 @@ bool RenderExternalTextureHost::IsReadyForDeletion() {
 
   auto& textureSource = mTextureSources[0];
   if (textureSource) {
-    return textureSource->Sync(false);
+    if (textureSource->Sync(/* aBlocking */ true)) {
+      return true;
+    }
+    if (mGL && mGL->MakeCurrent() && !mGL->IsDestroyed()) {
+      mGL->fFinish();
+      return true;
+    }
+    return false;
   }
 
   return true;
@@ -153,7 +161,11 @@ wr::WrExternalImage RenderExternalTextureHost::Lock(uint8_t aChannelIndex,
 
 void RenderExternalTextureHost::PrepareForUse() { mTextureUpdateNeeded = true; }
 
-void RenderExternalTextureHost::Unlock() {}
+void RenderExternalTextureHost::Unlock() {
+  if (mInitialized && mTextureSources[0]) {
+    mTextureSources[0]->MaybeFenceTexture();
+  }
+}
 
 void RenderExternalTextureHost::UpdateTexture(size_t aIndex) {
   MOZ_ASSERT(mSurfaces[aIndex]);
@@ -213,6 +225,17 @@ gfx::YUVRangedColorSpace RenderExternalTextureHost::GetYUVColorSpace() const {
   }
 }
 
+gfx::TransferFunction RenderExternalTextureHost::GetTransferFunction() const {
+  switch (mDescriptor.type()) {
+    case layers::BufferDescriptor::TYCbCrDescriptor:
+      return mDescriptor.get_YCbCrDescriptor().transferFunction();
+    case layers::BufferDescriptor::TRGBDescriptor:
+      return mDescriptor.get_RGBDescriptor().transferFunction();
+    default:
+      return gfx::TransferFunction::BT709;
+  }
+};
+
 bool RenderExternalTextureHost::MapPlane(RenderCompositor* aCompositor,
                                          uint8_t aChannelIndex,
                                          PlaneInfo& aPlaneInfo) {
@@ -252,7 +275,12 @@ bool RenderExternalTextureHost::MapPlane(RenderCompositor* aCompositor,
     default: {
       const layers::RGBDescriptor& desc = mDescriptor.get_RGBDescriptor();
       aPlaneInfo.mData = mBuffer;
-      aPlaneInfo.mStride = layers::ImageDataSerializer::GetRGBStride(desc);
+      auto stride = layers::ImageDataSerializer::GetRGBStride(desc);
+      if (stride.isNothing()) {
+        gfxCriticalNote << "Invalid stride";
+        return false;
+      }
+      aPlaneInfo.mStride = stride.value();
       aPlaneInfo.mSize = desc.size();
       break;
     }

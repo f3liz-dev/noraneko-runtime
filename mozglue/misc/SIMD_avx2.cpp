@@ -1,4 +1,3 @@
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -158,7 +157,7 @@ template <typename TValue>
 const TValue* FindInBufferAVX2(const TValue* ptr, TValue value, size_t length) {
   static_assert(sizeof(TValue) == 1 || sizeof(TValue) == 2 ||
                 sizeof(TValue) == 4 || sizeof(TValue) == 8);
-  static_assert(std::is_unsigned<TValue>::value);
+  static_assert(std::is_unsigned_v<TValue>);
 
   // Load our needle into a 32-byte register
   __m256i needle;

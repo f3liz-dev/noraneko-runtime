@@ -1,22 +1,22 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsColorPicker.h"
 
-#include <algorithm>
 #include <shlwapi.h>
 
+#include <algorithm>
+
+#include "WidgetUtils.h"
+#include "WinUtils.h"
 #include "mozilla/AutoRestore.h"
 #include "mozilla/dom/BrowsingContext.h"
 #include "mozilla/dom/CanonicalBrowsingContext.h"
 #include "nsIWidget.h"
-#include "nsString.h"
-#include "WidgetUtils.h"
-#include "WinUtils.h"
 #include "nsPIDOMWindow.h"
+#include "nsString.h"
 
 using namespace mozilla::widget;
 
@@ -181,10 +181,6 @@ void AsyncColorChooser::Update(COLORREF aColor) {
 
 ///////////////////////////////////////////////////////////////////////////////
 // nsIColorPicker
-
-nsColorPicker::nsColorPicker() {}
-
-nsColorPicker::~nsColorPicker() {}
 
 NS_IMPL_ISUPPORTS(nsColorPicker, nsIColorPicker)
 

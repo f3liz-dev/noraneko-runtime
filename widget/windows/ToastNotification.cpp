@@ -1,32 +1,36 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sts=2 sw=2 et cin: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "ToastNotification.h"
 
+// clang-format off
 #include <windows.h>
 #include <appmodel.h>
 #include <ktmw32.h>
+#include <shellapi.h>
 #include <windows.foundation.h>
 #include <wrl/client.h>
+// clang-format on
 
 #include "ErrorList.h"
+#include "ToastNotificationHandler.h"
+#include "ToastNotificationHeaderOnlyUtils.h"
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/Buffer.h"
-#include "mozilla/dom/Promise.h"
 #include "mozilla/DynamicallyLinkedFunctionPtr.h"
 #include "mozilla/ErrorResult.h"
-#include "mozilla/mscom/COMWrappers.h"
-#include "mozilla/mscom/Utils.h"
-#include "mozilla/widget/WinRegistry.h"
 #include "mozilla/Logging.h"
 #include "mozilla/Services.h"
 #include "mozilla/WidgetUtils.h"
+#include "mozilla/dom/Promise.h"
+#include "mozilla/mscom/COMWrappers.h"
+#include "mozilla/mscom/Utils.h"
+#include "mozilla/widget/WinRegistry.h"
 #include "nsAppRunner.h"
-#include "nsComponentManagerUtils.h"
 #include "nsCOMPtr.h"
+#include "nsComponentManagerUtils.h"
+#include "nsIAlertsService.h"
 #include "nsIAlertsServiceRust.h"
 #include "nsIObserverService.h"
 #include "nsIWindowMediator.h"
@@ -36,8 +40,6 @@
 #include "nsWindowsHelpers.h"
 #include "nsXREDirProvider.h"
 #include "prenv.h"
-#include "ToastNotificationHandler.h"
-#include "ToastNotificationHeaderOnlyUtils.h"
 
 namespace mozilla {
 namespace widget {
@@ -372,6 +374,12 @@ ToastNotification::GetManualDoNotDisturb(bool* aRet) {
 NS_IMETHODIMP
 ToastNotification::ShowAlert(nsIAlertNotification* aAlert,
                              nsIObserver* aAlertListener) {
+  return NS_ERROR_NOT_IMPLEMENTED;  // Implemented in nsAlertsService
+}
+
+NS_IMETHODIMP
+ToastNotification::ShowAlertWithCallbacks(nsIAlertNotification* aAlert,
+                                          nsIAlertCallbacks* aAlertCallbacks) {
   NS_ENSURE_ARG(aAlert);
 
   if (mSuppressForScreenSharing) {
@@ -458,8 +466,8 @@ ToastNotification::ShowAlert(nsIAlertNotification* aAlert,
   }
 
   NS_ENSURE_TRUE(mAumid.isSome(), NS_ERROR_UNEXPECTED);
-  RefPtr<ToastNotificationHandler> handler = new ToastNotificationHandler(
-      this, mAumid.ref(), aAlert, aAlertListener, name, cookie, title, text,
+  auto handler = MakeRefPtr<ToastNotificationHandler>(
+      this, mAumid.ref(), aAlert, aAlertCallbacks, name, cookie, title, text,
       hostPort, textClickable, requireInteraction, actions, isSystemPrincipal,
       opaqueRelaunchData, inPrivateBrowsing, isSilent, imagePlacement,
       imagePath);
@@ -527,7 +535,7 @@ ToastNotification::GetXmlStringForWindowsAlert(nsIAlertNotification* aAlert,
   bool isSystemPrincipal = principal && principal->IsSystemPrincipal();
 
   NS_ENSURE_TRUE(mAumid.isSome(), NS_ERROR_UNEXPECTED);
-  RefPtr<ToastNotificationHandler> handler = new ToastNotificationHandler(
+  auto handler = MakeRefPtr<ToastNotificationHandler>(
       this, mAumid.ref(), aAlert, nullptr /* aAlertListener */, name, cookie,
       title, text, hostPort, textClickable, requireInteraction, actions,
       isSystemPrincipal, opaqueRelaunchData, inPrivateBrowsing, isSilent);
@@ -577,8 +585,7 @@ RefPtr<ToastHandledPromise> ToastNotification::VerifyTagPresentOrFallback(
           ("External windowsTag '%s' is not handled",
            NS_ConvertUTF16toUTF8(aWindowsTag).get()));
 
-  RefPtr<ToastHandledPromise::Private> fallbackPromise =
-      new ToastHandledPromise::Private(__func__);
+  auto fallbackPromise = MakeRefPtr<ToastHandledPromise::Private>(__func__);
 
   // TODO: Bug 1806005 - At time of writing this function is called in a call
   // stack containing `WndProc` callback on an STA thread. As a result attempts
@@ -841,6 +848,31 @@ ToastNotification::RemoveAllNotificationsForInstall() {
       (void)NS_WARN_IF(FAILED(hr));
     }
   }();
+
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+ToastNotification::IsFullscreen(bool* aRetVal) {
+  *aRetVal = false;
+
+  QUERY_USER_NOTIFICATION_STATE state{QUNS_ACCEPTS_NOTIFICATIONS};
+  if (FAILED(SHQueryUserNotificationState(&state))) {
+    // If the user notification state cannot be queried, fall back to reporting
+    // non-fullscreen so notifications aren't suppressed
+    return NS_OK;
+  }
+
+  switch (state) {
+    case QUNS_BUSY:
+    case QUNS_RUNNING_D3D_FULL_SCREEN:
+    case QUNS_PRESENTATION_MODE:
+      *aRetVal = true;
+      break;
+    default:
+      // Treat any state not listed above as non-fullscreen
+      break;
+  }
 
   return NS_OK;
 }

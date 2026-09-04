@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -185,7 +183,6 @@ struct ClassInfo {
   MACRO(Objects, NonHeap, objectsGCBufferSlots)                    \
   MACRO(Objects, NonHeap, objectsGCBufferElementsNormal)           \
   MACRO(Objects, MallocHeap, objectsMallocHeapElementsArrayBuffer) \
-  MACRO(Objects, MallocHeap, objectsMallocHeapElementsAsmJS)       \
   MACRO(Objects, MallocHeap, objectsMallocHeapGlobalData)          \
   MACRO(Objects, MallocHeap, objectsMallocHeapMisc)                \
   MACRO(Objects, NonHeap, objectsNonHeapElementsNormal)            \
@@ -505,6 +502,7 @@ struct RuntimeSizes {
   MACRO(_, MallocHeap, scriptData)                  \
   MACRO(_, MallocHeap, wasmRuntime)                 \
   MACRO(_, Ignore, wasmGuardPages)                  \
+  MACRO(_, NonHeap, wasmContStacks)                 \
   MACRO(_, MallocHeap, jitLazyLink)
 
   RuntimeSizes() { allScriptSources.emplace(); }
@@ -624,10 +622,13 @@ struct UnusedGCThingSizes {
 };
 
 struct GCBufferStats {
-#define FOR_EACH_SIZE(MACRO)          \
-  MACRO(Other, MallocHeap, usedBytes) \
-  MACRO(Other, MallocHeap, freeBytes) \
-  MACRO(Other, MallocHeap, adminBytes)
+#define FOR_EACH_SIZE(MACRO)           \
+  MACRO(Other, MallocHeap, usedBytes)  \
+  MACRO(Other, MallocHeap, freeBytes)  \
+  MACRO(Other, MallocHeap, adminBytes) \
+  MACRO(Other, Ignore, totalChunks)    \
+  MACRO(Other, Ignore, freeRegions)    \
+  MACRO(Other, Ignore, largeAllocs)
 
   GCBufferStats() = default;
   GCBufferStats(GCBufferStats&& other) = default;
@@ -751,6 +752,11 @@ struct ZoneStats {
   mozilla::Maybe<StringsHashMap> allStrings;
   js::Vector<NotableStringInfo, 0, js::SystemAllocPolicy> notableStrings;
   bool isTotals = true;
+
+  // Set when string deduplication was stopped early due to a time budget.
+  // When true, |notableStrings| only reflects strings seen before the cutoff.
+  bool stringsDeduplicationTruncated = false;
+  size_t stringsTotalCount = 0;
 
 #undef FOR_EACH_SIZE
 };

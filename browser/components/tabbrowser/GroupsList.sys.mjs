@@ -4,15 +4,24 @@
 
 import { PrivateBrowsingUtils } from "resource://gre/modules/PrivateBrowsingUtils.sys.mjs";
 import { TabMetrics } from "moz-src:///browser/components/tabbrowser/TabMetrics.sys.mjs";
+import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 
 const MAX_INITIAL_ITEMS = 5;
+
+const lazy = {};
+XPCOMUtils.defineLazyPreferenceGetter(
+  lazy,
+  "tabGroupsAlternateMenu",
+  "browser.tabs.groups.alternateMenu",
+  false
+);
 
 export class GroupsPanel {
   constructor({ view, containerNode, showAll = false }) {
     this.view = view;
     this.#showAll = showAll;
     this.containerNode = containerNode;
-    this.win = containerNode.ownerGlobal;
+    this.win = containerNode.documentGlobal;
     this.doc = containerNode.ownerDocument;
     this.panelMultiView = null;
     this.view.addEventListener("ViewShowing", this);
@@ -73,7 +82,7 @@ export class GroupsPanel {
       case "allTabsGroupView_selectGroup": {
         let group = this.win.gBrowser.getTabGroupById(tabGroupId);
         group.select();
-        group.ownerGlobal.focus();
+        group.documentGlobal.focus();
         break;
       }
 
@@ -97,6 +106,12 @@ export class GroupsPanel {
 
   #showAll;
   #populate() {
+    if (lazy.tabGroupsAlternateMenu) {
+      this.containerNode.replaceChildren();
+      this.#setupListeners();
+      return;
+    }
+
     let fragment = this.doc.createDocumentFragment();
 
     let openGroups = this.win.gBrowser.getAllTabGroups({
@@ -168,15 +183,19 @@ export class GroupsPanel {
 
     row.style.setProperty(
       "--tab-group-color",
-      `var(--tab-group-color-${group.color})`
+      `var(--tab-group-${group.color})`
     );
     row.style.setProperty(
       "--tab-group-color-invert",
-      `var(--tab-group-color-${group.color}-invert)`
+      `var(--tab-group-${group.color}-invert)`
     );
     row.style.setProperty(
       "--tab-group-color-pale",
-      `var(--tab-group-color-${group.color}-pale)`
+      `var(--tab-group-${group.color}-pale)`
+    );
+    row.style.setProperty(
+      "--tab-group-background-color",
+      `var(--tab-group-${group.color})`
     );
     let button = doc.createXULElement("toolbarbutton");
     button.setAttribute(

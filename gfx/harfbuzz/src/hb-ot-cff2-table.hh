@@ -58,7 +58,7 @@ struct CFF2FDSelect
     return_trace (true);
   }
 
-  unsigned int get_size (unsigned int num_glyphs) const
+  size_t get_size (unsigned int num_glyphs) const
   {
     switch (format)
     {
@@ -130,7 +130,7 @@ struct CFF2ItemVariationStore
     return_trace (true);
   }
 
-  unsigned int get_size () const { return HBUINT16::static_size + size; }
+  size_t get_size () const { return HBUINT16::static_size + size; }
 
   HBUINT16	size;
   ItemVariationStore  varStore;
@@ -343,6 +343,12 @@ struct cff2_private_dict_opset_subset_t : dict_opset_t
 
       case OpCode_Subrs:
 	dictval.subrsOffset = env.argStack.pop_int ();
+	env.clear_args ();
+	break;
+
+      case OpCode_vsindexdict:
+	env.process_vsindex ();
+	dictval.ivs = env.get_ivs ();
 	env.clear_args ();
 	break;
 

@@ -20,6 +20,7 @@ const l10nMap = new Map([
   ["viewHistorySidebar", "sidebar-menu-history-label"],
   ["viewTabsSidebar", "sidebar-menu-synced-tabs-label"],
   ["viewBookmarksSidebar", "sidebar-menu-bookmarks-label"],
+  ["viewOpenTabsSidebar", "sidebar-menu-open-tabs-label"],
   ["viewCPMSidebar", "sidebar-menu-contextual-password-manager-label"],
 ]);
 const VISIBILITY_SETTING_PREF = "sidebar.visibility";
@@ -90,6 +91,7 @@ export class SidebarCustomize extends SidebarPage {
     visibilityInput: "#hide-sidebar",
     verticalTabsInput: "#vertical-tabs",
     expandOnHoverInput: "#expand-on-hover",
+    openToolsFromSidebarInput: "#open-tools-from-sidebar",
   };
 
   connectedCallback() {
@@ -217,12 +219,11 @@ export class SidebarCustomize extends SidebarPage {
         <sidebar-panel-header data-l10n-id="sidebar-menu-customize-header" data-l10n-attrs="heading" view="viewCustomizeSidebar">
         </sidebar-panel-header>
         <div class="sidebar-panel-scrollable-content">
-          <moz-fieldset class="customize-group no-end-margin" data-l10n-id="sidebar-settings">
+          <moz-fieldset class="customize-group no-end-margin" data-l10n-id="sidebar-settings2">
             <moz-checkbox
               type="checkbox"
               id="vertical-tabs"
               name="verticalTabs"
-              iconsrc="chrome://browser/skin/sidebar-collapsed.svg"
               data-l10n-id="sidebar-vertical-tabs"
               @change=${this.#handleTabDirectionChange}
               ?checked=${this.verticalTabsEnabled}
@@ -261,6 +262,21 @@ export class SidebarCustomize extends SidebarPage {
             )}
             </moz-checkbox>
           </moz-fieldset>
+          <moz-fieldset
+            class="customize-group medium-top-margin no-end-margin no-label"
+            ?disabled=${this.verticalTabsEnabled}
+          >
+            <moz-checkbox
+              type="checkbox"
+              id="open-tools-from-sidebar"
+              name="openToolsFromSidebar"
+              data-l10n-id="sidebar-open-tools-from-sidebar"
+              @change=${this.#handleOpenToolsFromSidebarChange}
+              ?checked=${
+                this.verticalTabsEnabled || this.visibility !== "hide-launcher"
+              }
+            ></moz-checkbox>
+          </moz-fieldset>
           <moz-fieldset class="customize-group medium-top-margin no-label">
             <moz-checkbox
               type="checkbox"
@@ -271,7 +287,7 @@ export class SidebarCustomize extends SidebarPage {
               ?checked=${!this.isPositionStart}
           ></moz-checkbox>
           </moz-fieldset>
-          <moz-fieldset class="customize-group tools" data-l10n-id="sidebar-customize-firefox-tools-header">
+          <moz-fieldset class="customize-group tools" data-l10n-id="sidebar-customize-firefox-tools-header2">
             ${this.getWindow()
               .SidebarController.getTools()
               .map(tool => this.toolInputTemplate(tool))}
@@ -282,7 +298,7 @@ export class SidebarCustomize extends SidebarPage {
               html`<div class="customize-group">
                 <h4
                   class="customize-extensions-heading"
-                  data-l10n-id="sidebar-customize-extensions-header"
+                  data-l10n-id="sidebar-customize-extensions-header2"
                 ></h4>
                 <div role="list" class="extensions">
                   ${extensions.map(extension =>
@@ -298,23 +314,23 @@ export class SidebarCustomize extends SidebarPage {
                       href="about:addons"
                       @click=${this.manageAddons}
                       @keydown=${this.manageAddons}
-                      data-l10n-id="sidebar-manage-extensions"
+                      data-l10n-id="sidebar-manage-extensions2"
                     >
                     </a>
                   </div>
                 </div>
               </div>`
           )}
-          <div id="manage-settings">
-            <img src="chrome://browser/skin/preferences/category-general.svg" class="icon" role="presentation" />
-            <a
-              href="about:preferences"
-              @click=${this.openFirefoxSettings}
-              @keydown=${this.openFirefoxSettings}
-              data-l10n-id="sidebar-customize-firefox-settings"
-            >
-            </a>
-          </div>
+        </div>
+        <div id="manage-settings">
+          <img src="chrome://browser/skin/preferences/category-general.svg" class="icon" role="presentation" />
+          <a
+            href="about:preferences"
+            @click=${this.openFirefoxSettings}
+            @keydown=${this.openFirefoxSettings}
+            data-l10n-id="sidebar-customize-firefox-settings"
+          >
+          </a>
         </div>
       </div>
     `;
@@ -329,6 +345,17 @@ export class SidebarCustomize extends SidebarPage {
     );
     Glean.sidebarCustomize.sidebarDisplay.record({
       preference: e.target.checked ? "hide" : "always",
+    });
+  }
+
+  #handleOpenToolsFromSidebarChange(e) {
+    e.stopPropagation();
+    // Checked: tools open from the launcher (the horizontal-tabs default).
+    // Unchecked: the launcher is replaced by the panel switcher dropdown.
+    this.visibility = e.target.checked ? "hide-on-close" : "hide-launcher";
+    Services.prefs.setStringPref(VISIBILITY_SETTING_PREF, this.visibility);
+    Glean.sidebarCustomize.sidebarDisplay.record({
+      preference: e.target.checked ? "always" : "hide",
     });
   }
 

@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,6 +6,10 @@
 
 #include <algorithm>
 
+#include "Decoder.h"
+#include "IDecodingTask.h"
+#include "RasterImage.h"
+#include "mozilla/AppShutdown.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/Monitor.h"
 #include "mozilla/ProfilerLabels.h"
@@ -15,7 +18,6 @@
 #include "mozilla/StaticPrefs_image.h"
 #include "mozilla/TaskController.h"
 #include "mozilla/TimeStamp.h"
-#include "mozilla/AppShutdown.h"
 #include "nsCOMPtr.h"
 #include "nsIObserverService.h"
 #include "nsThreadManager.h"
@@ -23,12 +25,9 @@
 #include "nsXPCOMCIDInternal.h"
 #include "prsystem.h"
 
-#include "Decoder.h"
-#include "IDecodingTask.h"
-#include "RasterImage.h"
-
 #if defined(XP_WIN)
 #  include <objbase.h>
+
 #  include "mozilla/WindowsProcessMitigations.h"
 #endif
 
@@ -149,7 +148,9 @@ class DecodingTask final : public Task {
         mTask(aTask) {}
 
   TaskResult Run() override {
-    mTask->Run();
+    if (MOZ_LIKELY(!DecodePool::IsShuttingDown())) {
+      mTask->Run();
+    }
     return TaskResult::Complete;
   }
 

@@ -105,6 +105,10 @@ open class FocusApplication : Application(), Provider {
 
                 // Remove stale temporary uploaded files.
                 components.fileUploadsDirCleaner.cleanUploadsDirectory()
+
+                withContext(ioDispatcher) {
+                    components.settings.deleteObsoleteCookieBannerDataIfNeeded()
+                }
             }
         }
     }
@@ -230,12 +234,12 @@ open class FocusApplication : Application(), Provider {
      */
     @OpenForTesting
     open fun finishSetupMegazord(dispatcher: CoroutineDispatcher = ioDispatcher) {
-        applicationScope.launch(dispatcher) {
-            // We need to use an unwrapped client because native components do not support private
-            // requests.
-            @Suppress("Deprecation")
-            RustHttpConfig.setClient(lazy { components.client.unwrap() })
+        // We need to use an unwrapped client because native components do not support private
+        // requests.
+        @Suppress("Deprecation")
+        RustHttpConfig.setClient(lazy { components.client.unwrap() })
 
+        applicationScope.launch(dispatcher) {
             // Now viaduct (the RustHttp client) is initialized we can ask Nimbus to fetch
             // experiments recipes from the server.
             finishNimbusInitialization(components.experiments)
@@ -319,16 +323,18 @@ open class FocusApplication : Application(), Provider {
         WebExtensionSupport.initialize(
             components.engine,
             components.store,
-            onNewTabOverride = { _, engineSession, url ->
+            isInPrivateBrowsingMode = { true },
+            onNewTabOverride = { _, engineSession, url, selected, isPrivate ->
                 components.tabsUseCases.addTab(
                     url = url,
-                    selectTab = true,
+                    selectTab = selected,
                     engineSession = engineSession,
-                    private = true,
+                    private = isPrivate,
                 )
             },
         )
     }
 
-    override val workManagerConfiguration = Builder().setMinimumLoggingLevel(INFO).build()
+    override val workManagerConfiguration
+        get() = Builder().setMinimumLoggingLevel(INFO).build()
 }

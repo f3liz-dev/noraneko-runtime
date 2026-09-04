@@ -100,7 +100,7 @@ newtab:
       Recorded when newtab UI is opened via `about:newtab` or `about:home` or
       `about:welcome` and has been made visible (see `visibility_event_rcvd_ts`
       in
-      [detect-user-session-start.js](https://searchfox.org/mozilla-central/source/browser/components/newtab/content-src/lib/detect-user-session-start.js)).
+      [detect-user-session-start.js](https://searchfox.org/firefox-main/source/browser/components/newtab/content-src/lib/detect-user-session-start.js)).
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1766887
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1786670
@@ -741,6 +741,26 @@ newtab:
     send_in_pings:
       - newtab
 
+  sections_learn_more:
+    type: event
+    description: >
+      Recorded when the "Learn more" option in the sections context menu
+      is clicked.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2034869
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2034869
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - ini@mozilla.com
+      - sdowne@mozilla.com
+    expires: never
+    extra_keys:
+      newtab_visit_id: *newtab_visit_id
+    send_in_pings:
+      - newtab
+
   inline_selection_impression:
     type: event
     description: >
@@ -1192,7 +1212,7 @@ newtab:
         type: string
       widget_size: &widget_size
         description: >
-          Size of widget (e.g., mini, small, medium).
+          Size of widget (e.g., small, medium, large).
         type: string
     send_in_pings:
       - newtab
@@ -1303,12 +1323,31 @@ newtab:
       widget_size: *widget_size
       action_type:
         description: >
-          Type of container action. (hide_all, toggle_maximize)
+          Type of container action. (hide_all, change_size_all,
+          change_row_visibility, feedback)
         type: string
       action_value:
         description: >
           Optional value for the action.
         type: string
+    send_in_pings:
+      - newtab
+
+  widgets_enabled_list:
+    type: string_list
+    description: >
+      The list of widget telemetry names currently enabled by the user.
+      Recorded at startup and whenever a widget is enabled or disabled.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2015530
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2015530
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - mcrawford@mozilla.com
+    expires: never
+    lifetime: application
     send_in_pings:
       - newtab
 
@@ -1356,6 +1395,26 @@ newtab:
       - technical
     notification_emails:
       - mconley@Mozilla.com
+    expires: never
+    send_in_pings:
+      - newtab
+
+  scroll:
+    lifetime: ping
+    type: boolean
+    description: >
+      Whether the user scrolled more than SCROLL_TELEMETRY_THRESHOLD pixels
+      during a newtab session. Absent if no qualifying scroll occurred during
+      the session.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2049897
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2049897
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - sdowne@mozilla.com
+      - jbrown@mozilla.com
     expires: never
     send_in_pings:
       - newtab
@@ -1697,6 +1756,32 @@ topsites:
     send_in_pings:
       - newtab
 
+  change_display:
+    type: event
+    description: >
+      Recorded when the user changes the number of topsite rows to display,
+      using the row selector in the newtab customize menu.
+      Corresponds to the receipt of a dispatched `SET_PREF` action for the
+      `topSitesRows` pref by `TelemetryFeed`.
+      Changes made from about:preferences are not recorded here.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2060323
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2060323
+    data_sensitivity: [interaction]
+    notification_emails:
+      - sdowne@mozilla.com
+      - jbrown@mozilla.com
+    expires: never
+    extra_keys:
+      rows:
+        description: >
+          The number of topsite rows the user just selected.
+        type: quantity
+      newtab_visit_id: *newtab_visit_id
+    send_in_pings:
+      - newtab
+
   pref_changed:
     type: event
     description: >
@@ -1789,6 +1874,25 @@ topsites:
       - web_activity
     notification_emails:
       - gleonard@mozilla.com
+    expires: never
+    send_in_pings:
+      - newtab
+
+  pinned_count:
+    lifetime: application
+    type: quantity
+    unit: integer
+    description: >
+      The number of pinned top site tiles at the time of the newtab session.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2049528
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2049528
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - sdowne@mozilla.com
+      - jbrown@mozilla.com
     expires: never
     send_in_pings:
       - newtab
@@ -2187,67 +2291,6 @@ pocket:
       send_in_pings:
         - newtab
 
-
-  shim:
-    type: text
-    lifetime: ping
-    description: |
-      Opaque partner identifier for a given ad impression or engagement action,
-      unique per market and region.
-      Pocket
-      [proxies requests to ad partners](https://github.com/Pocket/proxy-server/)
-      and provides them solely with market, region, and action to generate these
-      shims. Thus, though the contents of this field are obscure, they cannot
-      identify clients.
-      At time of writing this information is a comma-separated trio.
-      The first item is an index into the proxy server's list of acceptable http
-      endpoints for contacting the ad service. The second item is a
-      several-hundred-byte base64-encoded JSON-encoded struct with fields for,
-      amongst other things, market and region. The third is unknown, but appears
-      to be a signature or checksum.
-      This shim should not be sent with the client_id.
-    bugs:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1862670
-    data_reviews:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1862670
-    data_sensitivity:
-      - stored_content # Required for text type, and to encourage scrutiny
-    notification_emails:
-      - chutten@mozilla.com
-      - najiang@mozilla.com
-    expires: never
-    send_in_pings:
-      - spoc
-
-  fetch_timestamp:
-    type: datetime
-    lifetime: ping
-    description: |
-      Timestamp of when the spoc was fetched by the client
-    bugs:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1887655
-    data_reviews:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1887655
-    notification_emails:
-      - dmueller@mozilla.com
-    expires: never
-    send_in_pings:
-      - spoc
-
-  newtab_creation_timestamp:
-    type: datetime
-    lifetime: ping
-    description: |
-      Timestamp of when this instance of the newtab was first visible to the user.
-    bugs:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1887655
-    data_reviews:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1887655
-    notification_emails:
-      - dmueller@mozilla.com
-    expires: never
-    send_in_pings:
-      - spoc
 
 newtab_content:
 
@@ -2888,856 +2931,6 @@ newtab_content:
     send_in_pings:
       - newtab-content
 
-top_sites: # Replacement for PingCentre "topsites-impression|click" pings.
-  ping_type:
-    type: string
-    description: >
-      The ping's type. In other situations might be designated by an event's
-      name or an interaction field. E.g. "topsites-impression",
-      "topsites-click".
-    bugs:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1836283
-    data_reviews:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1836283
-    data_sensitivity:
-      - interaction
-    notification_emails:
-      - najiang@mozilla.com
-    expires: never
-    send_in_pings:
-      - top-sites
-
-  position:
-    type: quantity
-    unit: topsite position
-    description: >
-      The position (1-based) of the topsites item being interatcted with.
-    bugs:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1836283
-    data_reviews:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1836283
-    data_sensitivity:
-      - interaction
-    notification_emails:
-      - najiang@mozilla.com
-    expires: never
-    send_in_pings:
-      - top-sites
-
-  source:
-    type: string
-    description: >
-      The source of the interaction. Always set to "newtab".
-    bugs:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1836283
-    data_reviews:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1836283
-    data_sensitivity:
-      - interaction
-    notification_emails:
-      - najiang@mozilla.com
-    expires: never
-    send_in_pings:
-      - top-sites
-
-  tile_id:
-    type: string
-    description: >
-      String-encoded number for the tile's sponsored tile id.
-    bugs:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1836283
-    data_reviews:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1836283
-    data_sensitivity:
-      - interaction
-    notification_emails:
-      - najiang@mozilla.com
-    expires: never
-    send_in_pings:
-      - top-sites
-
-  reporting_url:
-    type: url
-    description: >
-      The url to report this interaction to.
-    bugs:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1836283
-    data_reviews:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1836283
-    data_sensitivity:
-      - web_activity
-    notification_emails:
-      - najiang@mozilla.com
-    expires: never
-    send_in_pings:
-      - top-sites
-
-  advertiser:
-    type: string
-    description: >
-      The name of the advertiser providing the sponsored TopSite.
-    bugs:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1836283
-    data_reviews:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1836283
-    data_sensitivity:
-      - interaction
-      - web_activity
-    notification_emails:
-      - najiang@mozilla.com
-    expires: never
-    send_in_pings:
-      - top-sites
-
-  context_id:
-    type: uuid
-    description: >
-      An identifier to identify users for Contextual Services user interaction pings.
-    bugs:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1836283
-    data_reviews:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1836283
-    data_sensitivity:
-      - technical
-    notification_emails:
-      - najiang@mozilla.com
-    expires: never
-    send_in_pings:
-      - top-sites
-
-activity_stream:
-  end_session:
-    type: event
-    description: >
-      This is recorded with every session ended in Activity Stream.
-      This event was generated to correspond to the Legacy Telemetry event
-      activity_stream.end#session.
-    bugs:
-      - https://bugzil.la/1429497
-      - https://bugzil.la/1429489
-    data_reviews:
-      - https://bugzil.la/1429497
-      - https://bugzil.la/1429489
-    notification_emails:
-      - najiang@mozilla.com
-      - msamuel@mozilla.com
-    expires: never
-    extra_keys:
-      value:
-        description: >
-          The session duration. Mirrors to the Legacy Telemetry
-          event's `value` parameter.
-        type: quantity
-      addon_version:
-        description: >
-          The Activity Stream addon version.
-        type: string
-      session_id:
-        description: >
-          The ID of the Activity Stream session in which the event occurred
-        type: string
-      page:
-        description: >
-          about:home or about_newtab - the page where the event occurred
-        type: string
-      user_prefs:
-        description: >
-          An integer representaing a user's A-S settings.
-        type: quantity
-    telemetry_mirror: Activity_stream_End_Session
-
-  event_block:
-    type: event
-    description: >
-      This is recorded with every user interaction on Activity Stream
-      elements.
-      This event was generated to correspond to the Legacy Telemetry event
-      activity_stream.event#BLOCK.
-    bugs: &activity_stream_event_bugs
-      - https://bugzil.la/1429497
-      - https://bugzil.la/1429489
-      - https://bugzil.la/1514732
-    data_reviews: &activity_stream_event_data_reviews
-      - https://bugzil.la/1429497
-      - https://bugzil.la/1429489
-      - https://bugzil.la/1514732
-    notification_emails: &activity_stream_event_emails
-      - najiang@mozilla.com
-      - msamuel@mozilla.com
-      - rrosario@mozilla.com
-    expires: never
-    extra_keys: &activity_stream_event_extra
-      value:
-        description: >
-          The `value` of the event. Mirrors to the Legacy Telemetry
-          event's `value` parameter.
-        type: string
-      addon_version:
-        description: >
-          The Activity Stream addon version.
-        type: string
-      session_id:
-        description: >
-          The ID of the Activity Stream session in which the event occurred
-        type: string
-      page:
-        description: >
-          about:home or about_newtab - the page where the event occurred
-        type: string
-      user_prefs:
-        description: >
-          An integer representaing a user's A-S settings.
-        type: quantity
-      action_position:
-        description: >
-          The index of card receiving interactions.
-        type: quantity
-    telemetry_mirror: Activity_stream_Event_Block
-
-  event_bookmark_add:
-    type: event
-    description: >
-      This is recorded with every user interaction on Activity Stream
-      elements.
-      This event was generated to correspond to the Legacy Telemetry event
-      activity_stream.event#BOOKMARK_ADD.
-    bugs: *activity_stream_event_bugs
-    data_reviews: *activity_stream_event_data_reviews
-    notification_emails: *activity_stream_event_emails
-    expires: never
-    extra_keys: *activity_stream_event_extra
-    telemetry_mirror: Activity_stream_Event_BookmarkAdd
-
-  event_bookmark_delete:
-    type: event
-    description: >
-      This is recorded with every user interaction on Activity Stream
-      elements.
-      This event was generated to correspond to the Legacy Telemetry event
-      activity_stream.event#BOOKMARK_DELETE.
-    bugs: *activity_stream_event_bugs
-    data_reviews: *activity_stream_event_data_reviews
-    notification_emails: *activity_stream_event_emails
-    expires: never
-    extra_keys: *activity_stream_event_extra
-    telemetry_mirror: Activity_stream_Event_BookmarkDelete
-
-  event_click:
-    type: event
-    description: >
-      This is recorded with every user interaction on Activity Stream
-      elements.
-      This event was generated to correspond to the Legacy Telemetry event
-      activity_stream.event#CLICK.
-    bugs: *activity_stream_event_bugs
-    data_reviews: *activity_stream_event_data_reviews
-    notification_emails: *activity_stream_event_emails
-    expires: never
-    extra_keys: *activity_stream_event_extra
-    telemetry_mirror: Activity_stream_Event_Click
-
-  event_click_privacy_info:
-    type: event
-    description: >
-      This is recorded with every user interaction on Activity Stream
-      elements.
-      This event was generated to correspond to the Legacy Telemetry event
-      activity_stream.event#CLICK_PRIVACY_INFO.
-    bugs: *activity_stream_event_bugs
-    data_reviews: *activity_stream_event_data_reviews
-    notification_emails: *activity_stream_event_emails
-    expires: never
-    extra_keys: *activity_stream_event_extra
-    telemetry_mirror: Activity_stream_Event_ClickPrivacyInfo
-
-  event_close_newtab_prefs:
-    type: event
-    description: >
-      This is recorded with every user interaction on Activity Stream
-      elements.
-      This event was generated to correspond to the Legacy Telemetry event
-      activity_stream.event#CLOSE_NEWTAB_PREFS.
-    bugs: *activity_stream_event_bugs
-    data_reviews: *activity_stream_event_data_reviews
-    notification_emails: *activity_stream_event_emails
-    expires: never
-    extra_keys: *activity_stream_event_extra
-    telemetry_mirror: Activity_stream_Event_CloseNewtabPrefs
-
-  event_show_personalize:
-    type: event
-    description: >
-      This is recorded with every user interaction on Activity Stream
-      elements.
-      This event was generated to correspond to the Legacy Telemetry event
-      activity_stream.event#SHOW_PERSONALIZE.
-    bugs: *activity_stream_event_bugs
-    data_reviews: *activity_stream_event_data_reviews
-    notification_emails: *activity_stream_event_emails
-    expires: never
-    extra_keys: *activity_stream_event_extra
-    telemetry_mirror: Activity_stream_Event_ShowPersonalize
-
-  event_hide_personalize:
-    type: event
-    description: >
-      This is recorded with every user interaction on Activity Stream
-      elements.
-      This event was generated to correspond to the Legacy Telemetry event
-      activity_stream.event#HIDE_PERSONALIZE.
-    bugs: *activity_stream_event_bugs
-    data_reviews: *activity_stream_event_data_reviews
-    notification_emails: *activity_stream_event_emails
-    expires: never
-    extra_keys: *activity_stream_event_extra
-    telemetry_mirror: Activity_stream_Event_HidePersonalize
-
-  event_delete:
-    type: event
-    description: >
-      This is recorded with every user interaction on Activity Stream
-      elements.
-      This event was generated to correspond to the Legacy Telemetry event
-      activity_stream.event#DELETE.
-    bugs: *activity_stream_event_bugs
-    data_reviews: *activity_stream_event_data_reviews
-    notification_emails: *activity_stream_event_emails
-    expires: never
-    extra_keys: *activity_stream_event_extra
-    telemetry_mirror: Activity_stream_Event_Delete
-
-  event_delete_confirm:
-    type: event
-    description: >
-      This is recorded with every user interaction on Activity Stream
-      elements.
-      This event was generated to correspond to the Legacy Telemetry event
-      activity_stream.event#DELETE_CONFIRM.
-    bugs: *activity_stream_event_bugs
-    data_reviews: *activity_stream_event_data_reviews
-    notification_emails: *activity_stream_event_emails
-    expires: never
-    extra_keys: *activity_stream_event_extra
-    telemetry_mirror: Activity_stream_Event_DeleteConfirm
-
-  event_dialog_cancel:
-    type: event
-    description: >
-      This is recorded with every user interaction on Activity Stream
-      elements.
-      This event was generated to correspond to the Legacy Telemetry event
-      activity_stream.event#DIALOG_CANCEL.
-    bugs: *activity_stream_event_bugs
-    data_reviews: *activity_stream_event_data_reviews
-    notification_emails: *activity_stream_event_emails
-    expires: never
-    extra_keys: *activity_stream_event_extra
-    telemetry_mirror: Activity_stream_Event_DialogCancel
-
-  event_dialog_open:
-    type: event
-    description: >
-      This is recorded with every user interaction on Activity Stream
-      elements.
-      This event was generated to correspond to the Legacy Telemetry event
-      activity_stream.event#DIALOG_OPEN.
-    bugs: *activity_stream_event_bugs
-    data_reviews: *activity_stream_event_data_reviews
-    notification_emails: *activity_stream_event_emails
-    expires: never
-    extra_keys: *activity_stream_event_extra
-    telemetry_mirror: Activity_stream_Event_DialogOpen
-
-  event_drag:
-    type: event
-    description: >
-      This is recorded with every user interaction on Activity Stream
-      elements.
-      This event was generated to correspond to the Legacy Telemetry event
-      activity_stream.event#DRAG.
-    bugs: *activity_stream_event_bugs
-    data_reviews: *activity_stream_event_data_reviews
-    notification_emails: *activity_stream_event_emails
-    expires: never
-    extra_keys: *activity_stream_event_extra
-    telemetry_mirror: Activity_stream_Event_Drag
-
-  event_drop:
-    type: event
-    description: >
-      This is recorded with every user interaction on Activity Stream
-      elements.
-      This event was generated to correspond to the Legacy Telemetry event
-      activity_stream.event#DROP.
-    bugs: *activity_stream_event_bugs
-    data_reviews: *activity_stream_event_data_reviews
-    notification_emails: *activity_stream_event_emails
-    expires: never
-    extra_keys: *activity_stream_event_extra
-    telemetry_mirror: Activity_stream_Event_Drop
-
-  event_impression:
-    type: event
-    description: >
-      This is recorded with every user interaction on Activity Stream
-      elements.
-      This event was generated to correspond to the Legacy Telemetry event
-      activity_stream.event#IMPRESSION.
-    bugs: *activity_stream_event_bugs
-    data_reviews: *activity_stream_event_data_reviews
-    notification_emails: *activity_stream_event_emails
-    expires: never
-    extra_keys: *activity_stream_event_extra
-    telemetry_mirror: Activity_stream_Event_Impression
-
-  event_migration_cancel:
-    type: event
-    description: >
-      This is recorded with every user interaction on Activity Stream
-      elements.
-      This event was generated to correspond to the Legacy Telemetry event
-      activity_stream.event#MIGRATION_CANCEL.
-    bugs: *activity_stream_event_bugs
-    data_reviews: *activity_stream_event_data_reviews
-    notification_emails: *activity_stream_event_emails
-    expires: never
-    extra_keys: *activity_stream_event_extra
-    telemetry_mirror: Activity_stream_Event_MigrationCancel
-
-  event_migration_start:
-    type: event
-    description: >
-      This is recorded with every user interaction on Activity Stream
-      elements.
-      This event was generated to correspond to the Legacy Telemetry event
-      activity_stream.event#MIGRATION_START.
-    bugs: *activity_stream_event_bugs
-    data_reviews: *activity_stream_event_data_reviews
-    notification_emails: *activity_stream_event_emails
-    expires: never
-    extra_keys: *activity_stream_event_extra
-    telemetry_mirror: Activity_stream_Event_MigrationStart
-
-  event_open_newtab_prefs:
-    type: event
-    description: >
-      This is recorded with every user interaction on Activity Stream
-      elements.
-      This event was generated to correspond to the Legacy Telemetry event
-      activity_stream.event#OPEN_NEWTAB_PREFS.
-    bugs: *activity_stream_event_bugs
-    data_reviews: *activity_stream_event_data_reviews
-    notification_emails: *activity_stream_event_emails
-    expires: never
-    extra_keys: *activity_stream_event_extra
-    telemetry_mirror: Activity_stream_Event_OpenNewtabPrefs
-
-  event_open_new_window:
-    type: event
-    description: >
-      This is recorded with every user interaction on Activity Stream
-      elements.
-      This event was generated to correspond to the Legacy Telemetry event
-      activity_stream.event#OPEN_NEW_WINDOW.
-    bugs: *activity_stream_event_bugs
-    data_reviews: *activity_stream_event_data_reviews
-    notification_emails: *activity_stream_event_emails
-    expires: never
-    extra_keys: *activity_stream_event_extra
-    telemetry_mirror: Activity_stream_Event_OpenNewWindow
-
-  event_open_private_window:
-    type: event
-    description: >
-      This is recorded with every user interaction on Activity Stream
-      elements.
-      This event was generated to correspond to the Legacy Telemetry event
-      activity_stream.event#OPEN_PRIVATE_WINDOW.
-    bugs: *activity_stream_event_bugs
-    data_reviews: *activity_stream_event_data_reviews
-    notification_emails: *activity_stream_event_emails
-    expires: never
-    extra_keys: *activity_stream_event_extra
-    telemetry_mirror: Activity_stream_Event_OpenPrivateWindow
-
-  event_pin:
-    type: event
-    description: >
-      This is recorded with every user interaction on Activity Stream
-      elements.
-      This event was generated to correspond to the Legacy Telemetry event
-      activity_stream.event#PIN.
-    bugs: *activity_stream_event_bugs
-    data_reviews: *activity_stream_event_data_reviews
-    notification_emails: *activity_stream_event_emails
-    expires: never
-    extra_keys: *activity_stream_event_extra
-    telemetry_mirror: Activity_stream_Event_Pin
-
-  event_pocket_thumbs_down:
-    type: event
-    description: >
-      This is recorded with every user interaction on Activity Stream
-      elements.
-      This event was generated to correspond to the Legacy Telemetry event
-      activity_stream.event#POCKET_THUMBS_DOWN.
-    bugs: *activity_stream_event_bugs
-    data_reviews: *activity_stream_event_data_reviews
-    notification_emails: *activity_stream_event_emails
-    expires: never
-    extra_keys: *activity_stream_event_extra
-    telemetry_mirror: Activity_stream_Event_PocketThumbsDown
-
-  event_pocket_thumbs_up:
-    type: event
-    description: >
-      This is recorded with every user interaction on Activity Stream
-      elements.
-      This event was generated to correspond to the Legacy Telemetry event
-      activity_stream.event#POCKET_THUMBS_UP.
-    bugs: *activity_stream_event_bugs
-    data_reviews: *activity_stream_event_data_reviews
-    notification_emails: *activity_stream_event_emails
-    expires: never
-    extra_keys: *activity_stream_event_extra
-    telemetry_mirror: Activity_stream_Event_PocketThumbsUp
-
-  event_pref_changed:
-    type: event
-    description: >
-      This is recorded with every user interaction on Activity Stream
-      elements.
-      This event was generated to correspond to the Legacy Telemetry event
-      activity_stream.event#PREF_CHANGED.
-    bugs: *activity_stream_event_bugs
-    data_reviews: *activity_stream_event_data_reviews
-    notification_emails: *activity_stream_event_emails
-    expires: never
-    extra_keys: *activity_stream_event_extra
-    telemetry_mirror: Activity_stream_Event_PrefChanged
-
-  event_preview_request:
-    type: event
-    description: >
-      This is recorded with every user interaction on Activity Stream
-      elements.
-      This event was generated to correspond to the Legacy Telemetry event
-      activity_stream.event#PREVIEW_REQUEST.
-    bugs: *activity_stream_event_bugs
-    data_reviews: *activity_stream_event_data_reviews
-    notification_emails: *activity_stream_event_emails
-    expires: never
-    extra_keys: *activity_stream_event_extra
-    telemetry_mirror: Activity_stream_Event_PreviewRequest
-
-  event_search:
-    type: event
-    description: >
-      This is recorded with every user interaction on Activity Stream
-      elements.
-      This event was generated to correspond to the Legacy Telemetry event
-      activity_stream.event#SEARCH.
-    bugs: *activity_stream_event_bugs
-    data_reviews: *activity_stream_event_data_reviews
-    notification_emails: *activity_stream_event_emails
-    expires: never
-    extra_keys: *activity_stream_event_extra
-    telemetry_mirror: Activity_stream_Event_Search
-
-  event_search_edit_add:
-    type: event
-    description: >
-      This is recorded with every user interaction on Activity Stream
-      elements.
-      This event was generated to correspond to the Legacy Telemetry event
-      activity_stream.event#SEARCH_EDIT_ADD.
-    bugs: *activity_stream_event_bugs
-    data_reviews: *activity_stream_event_data_reviews
-    notification_emails: *activity_stream_event_emails
-    expires: never
-    extra_keys: *activity_stream_event_extra
-    telemetry_mirror: Activity_stream_Event_SearchEditAdd
-
-  event_search_edit_close:
-    type: event
-    description: >
-      This is recorded with every user interaction on Activity Stream
-      elements.
-      This event was generated to correspond to the Legacy Telemetry event
-      activity_stream.event#SEARCH_EDIT_CLOSE.
-    bugs: *activity_stream_event_bugs
-    data_reviews: *activity_stream_event_data_reviews
-    notification_emails: *activity_stream_event_emails
-    expires: never
-    extra_keys: *activity_stream_event_extra
-    telemetry_mirror: Activity_stream_Event_SearchEditClose
-
-  event_search_edit_delete:
-    type: event
-    description: >
-      This is recorded with every user interaction on Activity Stream
-      elements.
-      This event was generated to correspond to the Legacy Telemetry event
-      activity_stream.event#SEARCH_EDIT_DELETE.
-    bugs: *activity_stream_event_bugs
-    data_reviews: *activity_stream_event_data_reviews
-    notification_emails: *activity_stream_event_emails
-    expires: never
-    extra_keys: *activity_stream_event_extra
-    telemetry_mirror: Activity_stream_Event_SearchEditDelete
-
-  event_search_handoff:
-    type: event
-    description: >
-      This is recorded with every user interaction on Activity Stream
-      elements.
-      This event was generated to correspond to the Legacy Telemetry event
-      activity_stream.event#SEARCH_HANDOFF.
-    bugs: *activity_stream_event_bugs
-    data_reviews: *activity_stream_event_data_reviews
-    notification_emails: *activity_stream_event_emails
-    expires: never
-    extra_keys: *activity_stream_event_extra
-    telemetry_mirror: Activity_stream_Event_SearchHandoff
-
-  event_show_privacy_info:
-    type: event
-    description: >
-      This is recorded with every user interaction on Activity Stream
-      elements.
-      This event was generated to correspond to the Legacy Telemetry event
-      activity_stream.event#SHOW_PRIVACY_INFO.
-    bugs: *activity_stream_event_bugs
-    data_reviews: *activity_stream_event_data_reviews
-    notification_emails: *activity_stream_event_emails
-    expires: never
-    extra_keys: *activity_stream_event_extra
-    telemetry_mirror: Activity_stream_Event_ShowPrivacyInfo
-
-  event_skipped_signin:
-    type: event
-    description: >
-      This is recorded with every user interaction on Activity Stream
-      elements.
-      This event was generated to correspond to the Legacy Telemetry event
-      activity_stream.event#SKIPPED_SIGNIN.
-    bugs: *activity_stream_event_bugs
-    data_reviews: *activity_stream_event_data_reviews
-    notification_emails: *activity_stream_event_emails
-    expires: never
-    extra_keys: *activity_stream_event_extra
-    telemetry_mirror: Activity_stream_Event_SkippedSignin
-
-  event_submit_email:
-    type: event
-    description: >
-      This is recorded with every user interaction on Activity Stream
-      elements.
-      This event was generated to correspond to the Legacy Telemetry event
-      activity_stream.event#SUBMIT_EMAIL.
-    bugs: *activity_stream_event_bugs
-    data_reviews: *activity_stream_event_data_reviews
-    notification_emails: *activity_stream_event_emails
-    expires: never
-    extra_keys: *activity_stream_event_extra
-    telemetry_mirror: Activity_stream_Event_SubmitEmail
-
-  event_disclaimer_acked:
-    type: event
-    description: >
-      This is recorded with every user interaction on Activity Stream
-      elements.
-      This event was generated to correspond to the Legacy Telemetry event
-      activity_stream.event#DISCLAIMER_ACKED.
-    bugs: *activity_stream_event_bugs
-    data_reviews: *activity_stream_event_data_reviews
-    notification_emails: *activity_stream_event_emails
-    expires: never
-    extra_keys: *activity_stream_event_extra
-    telemetry_mirror: Activity_stream_Event_DisclaimerAcked
-
-  event_menu_add_search:
-    type: event
-    description: >
-      This is recorded with every user interaction on Activity Stream
-      elements.
-      This event was generated to correspond to the Legacy Telemetry event
-      activity_stream.event#MENU_ADD_SEARCH.
-    bugs: *activity_stream_event_bugs
-    data_reviews: *activity_stream_event_data_reviews
-    notification_emails: *activity_stream_event_emails
-    expires: never
-    extra_keys: *activity_stream_event_extra
-    telemetry_mirror: Activity_stream_Event_MenuAddSearch
-
-  event_menu_add_topsite:
-    type: event
-    description: >
-      This is recorded with every user interaction on Activity Stream
-      elements.
-      This event was generated to correspond to the Legacy Telemetry event
-      activity_stream.event#MENU_ADD_TOPSITE.
-    bugs: *activity_stream_event_bugs
-    data_reviews: *activity_stream_event_data_reviews
-    notification_emails: *activity_stream_event_emails
-    expires: never
-    extra_keys: *activity_stream_event_extra
-    telemetry_mirror: Activity_stream_Event_MenuAddTopsite
-
-  event_menu_collapse:
-    type: event
-    description: >
-      This is recorded with every user interaction on Activity Stream
-      elements.
-      This event was generated to correspond to the Legacy Telemetry event
-      activity_stream.event#MENU_COLLAPSE.
-    bugs: *activity_stream_event_bugs
-    data_reviews: *activity_stream_event_data_reviews
-    notification_emails: *activity_stream_event_emails
-    expires: never
-    extra_keys: *activity_stream_event_extra
-    telemetry_mirror: Activity_stream_Event_MenuCollapse
-
-  event_menu_expand:
-    type: event
-    description: >
-      This is recorded with every user interaction on Activity Stream
-      elements.
-      This event was generated to correspond to the Legacy Telemetry event
-      activity_stream.event#MENU_EXPAND.
-    bugs: *activity_stream_event_bugs
-    data_reviews: *activity_stream_event_data_reviews
-    notification_emails: *activity_stream_event_emails
-    expires: never
-    extra_keys: *activity_stream_event_extra
-    telemetry_mirror: Activity_stream_Event_MenuExpand
-
-  event_menu_manage:
-    type: event
-    description: >
-      This is recorded with every user interaction on Activity Stream
-      elements.
-      This event was generated to correspond to the Legacy Telemetry event
-      activity_stream.event#MENU_MANAGE.
-    bugs: *activity_stream_event_bugs
-    data_reviews: *activity_stream_event_data_reviews
-    notification_emails: *activity_stream_event_emails
-    expires: never
-    extra_keys: *activity_stream_event_extra
-    telemetry_mirror: Activity_stream_Event_MenuManage
-
-  event_menu_move_down:
-    type: event
-    description: >
-      This is recorded with every user interaction on Activity Stream
-      elements.
-      This event was generated to correspond to the Legacy Telemetry event
-      activity_stream.event#MENU_MOVE_DOWN.
-    bugs: *activity_stream_event_bugs
-    data_reviews: *activity_stream_event_data_reviews
-    notification_emails: *activity_stream_event_emails
-    expires: never
-    extra_keys: *activity_stream_event_extra
-    telemetry_mirror: Activity_stream_Event_MenuMoveDown
-
-  event_menu_move_up:
-    type: event
-    description: >
-      This is recorded with every user interaction on Activity Stream
-      elements.
-      This event was generated to correspond to the Legacy Telemetry event
-      activity_stream.event#MENU_MOVE_UP.
-    bugs: *activity_stream_event_bugs
-    data_reviews: *activity_stream_event_data_reviews
-    notification_emails: *activity_stream_event_emails
-    expires: never
-    extra_keys: *activity_stream_event_extra
-    telemetry_mirror: Activity_stream_Event_MenuMoveUp
-
-  event_menu_privacy_notice:
-    type: event
-    description: >
-      This is recorded with every user interaction on Activity Stream
-      elements.
-      This event was generated to correspond to the Legacy Telemetry event
-      activity_stream.event#MENU_PRIVACY_NOTICE.
-    bugs: *activity_stream_event_bugs
-    data_reviews: *activity_stream_event_data_reviews
-    notification_emails: *activity_stream_event_emails
-    expires: never
-    extra_keys: *activity_stream_event_extra
-    telemetry_mirror: Activity_stream_Event_MenuPrivacyNotice
-
-  event_menu_remove:
-    type: event
-    description: >
-      This is recorded with every user interaction on Activity Stream
-      elements.
-      This event was generated to correspond to the Legacy Telemetry event
-      activity_stream.event#MENU_REMOVE.
-    bugs: *activity_stream_event_bugs
-    data_reviews: *activity_stream_event_data_reviews
-    notification_emails: *activity_stream_event_emails
-    expires: never
-    extra_keys: *activity_stream_event_extra
-    telemetry_mirror: Activity_stream_Event_MenuRemove
-
-  event_top_sites_edit:
-    type: event
-    description: >
-      This is recorded with every user interaction on Activity Stream
-      elements.
-      This event was generated to correspond to the Legacy Telemetry event
-      activity_stream.event#TOP_SITES_EDIT.
-    bugs: *activity_stream_event_bugs
-    data_reviews: *activity_stream_event_data_reviews
-    notification_emails: *activity_stream_event_emails
-    expires: never
-    extra_keys: *activity_stream_event_extra
-    telemetry_mirror: Activity_stream_Event_TopSitesEdit
-
-  event_top_sites_edit_close:
-    type: event
-    description: >
-      This is recorded with every user interaction on Activity Stream
-      elements.
-      This event was generated to correspond to the Legacy Telemetry event
-      activity_stream.event#TOP_SITES_EDIT_CLOSE.
-    bugs: *activity_stream_event_bugs
-    data_reviews: *activity_stream_event_data_reviews
-    notification_emails: *activity_stream_event_emails
-    expires: never
-    extra_keys: *activity_stream_event_extra
-    telemetry_mirror: Activity_stream_Event_TopSitesEditClose
-
-  event_topsite_sponsor_info:
-    type: event
-    description: >
-      This is recorded with every user interaction on Activity Stream
-      elements.
-      This event was generated to correspond to the Legacy Telemetry event
-      activity_stream.event#TOPSITE_SPONSOR_INFO.
-    bugs: *activity_stream_event_bugs
-    data_reviews: *activity_stream_event_data_reviews
-    notification_emails: *activity_stream_event_emails
-    expires: never
-    extra_keys: *activity_stream_event_extra
-    telemetry_mirror: Activity_stream_Event_TopsiteSponsorInfo
-
-  event_unpin:
-    type: event
-    description: >
-      This is recorded with every user interaction on Activity Stream
-      elements.
-      This event was generated to correspond to the Legacy Telemetry event
-      activity_stream.event#UNPIN.
-    bugs: *activity_stream_event_bugs
-    data_reviews: *activity_stream_event_data_reviews
-    notification_emails: *activity_stream_event_emails
-    expires: never
-    extra_keys: *activity_stream_event_extra
-    telemetry_mirror: Activity_stream_Event_Unpin
-
 deletion.request:
   impression_id:
     type: string
@@ -3809,3 +3002,130 @@ contextual.services.topsites:
       - najiang@mozilla.com
     expires: never
     telemetry_mirror: CONTEXTUAL_SERVICES_TOPSITES_CLICK
+
+# Mirrors the ads_client category defined by the vendored component in
+# third_party/application-services/components/ads-client/metrics.yaml. That file
+# is only consumed by the mobile Glean gradle plugin, so desktop has to
+# redeclare the metrics here to get them into FOG. Keep both in sync: the labels
+# come from MozAdsTelemetryWrapper in the component's src/ffi/telemetry.rs.
+# Bug 2012752 is adding a way for shared Rust components to record metrics
+# directly; once that lands on Desktop this duplication can go away.
+ads_client:
+  build_cache_error:
+    type: labeled_string
+    description: >
+      Errors encountered when building the HTTP cache, labeled by error type.
+      The string value contains the error message or error type.
+    labels:
+      - builder_error
+      - database_error
+      - empty_db_path
+      - invalid_max_size
+      - invalid_ttl
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2058567
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2058567
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - ahanot@mozilla.com
+      - llisi@mozilla.com
+      - toast@mozilla.com
+    expires: never
+
+  client_error:
+    type: labeled_string
+    description: >
+      Errors encountered when using the ads client, labeled by operation type.
+      The string value contains the error message or error type. Errors are
+      recorded even if they are propagated to the consumer.
+    labels:
+      - record_click
+      - record_impression
+      - report_ad
+      - request_ads
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2058567
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2058567
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - ahanot@mozilla.com
+      - llisi@mozilla.com
+      - toast@mozilla.com
+    expires: never
+
+  client_operation_total:
+    type: labeled_counter
+    description: >
+      The total number of operations attempted by the ads client, labeled by
+      operation type. Used as the denominator for client_operation_success_rate.
+    labels:
+      - new
+      - record_click
+      - record_impression
+      - report_ad
+      - request_ads
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2058567
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2058567
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - ahanot@mozilla.com
+      - llisi@mozilla.com
+      - toast@mozilla.com
+    expires: never
+
+  deserialization_error:
+    type: labeled_string
+    description: >
+      Deserialization errors encountered when parsing AdResponse data,
+      labeled by error type. The string value contains the error message or
+      details. Invalid ad items are skipped but these errors are tracked for
+      monitoring data quality issues.
+    labels:
+      - invalid_ad_item
+      - invalid_array
+      - invalid_structure
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2058567
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2058567
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - ahanot@mozilla.com
+      - llisi@mozilla.com
+      - toast@mozilla.com
+    expires: never
+
+  http_cache_outcome:
+    type: labeled_string
+    description: >
+      The total number of outcomes encountered during read operations on the
+      http cache, labeled by type. The string value contains the error message
+      or error type.
+    labels:
+      - cleanup_failed
+      - hit
+      - lookup_failed
+      - miss_not_cacheable
+      - miss_stored
+      - no_cache
+      - store_failed
+      - trim_failed
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2058567
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=2058567
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - ahanot@mozilla.com
+      - llisi@mozilla.com
+      - toast@mozilla.com
+    expires: never

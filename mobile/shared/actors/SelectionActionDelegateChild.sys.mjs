@@ -4,12 +4,6 @@
 
 import { GeckoViewActorChild } from "resource://gre/modules/GeckoViewActorChild.sys.mjs";
 
-const lazy = {};
-
-ChromeUtils.defineESModuleGetters(lazy, {
-  LayoutUtils: "resource://gre/modules/LayoutUtils.sys.mjs",
-});
-
 const MAGNIFIER_PREF = "layout.accessiblecaret.magnifier.enabled";
 const ACCESSIBLECARET_HEIGHT_PREF = "layout.accessiblecaret.height";
 const PREFS = [MAGNIFIER_PREF, ACCESSIBLECARET_HEIGHT_PREF];
@@ -195,12 +189,13 @@ export class SelectionActionDelegateChild extends GeckoViewActorChild {
   }
 
   _getDefaultMagnifierPoint(aEvent) {
-    const rect = lazy.LayoutUtils.rectToScreenRect(aEvent.target.ownerGlobal, {
-      left: aEvent.clientX,
-      top: aEvent.clientY - this._accessiblecaretHeight,
-      width: 0,
-      height: 0,
-    });
+    const win = aEvent.target.documentGlobal || aEvent.target;
+    const rect = win.windowUtils.toScreenRect(
+      aEvent.clientX,
+      aEvent.clientY - this._accessiblecaretHeight,
+      0,
+      0
+    );
     return { x: rect.left, y: rect.top };
   }
 
@@ -217,26 +212,20 @@ export class SelectionActionDelegateChild extends GeckoViewActorChild {
     ) {
       // <input> element. Use vertical center position of input element.
       const bounds = focus.getBoundingClientRect();
-      const rect = lazy.LayoutUtils.rectToScreenRect(
-        aEvent.target.ownerGlobal,
-        {
-          left: aEvent.clientX,
-          top: bounds.top,
-          width: 0,
-          height: bounds.height,
-        }
+      const rect = win.windowUtils.toScreenRect(
+        aEvent.clientX,
+        bounds.top,
+        0,
+        bounds.height
       );
       return { x: rect.left, y: rect.top + rect.height / 2 };
     }
 
-    if (win.HTMLTextAreaElement?.isInstance(focus)) {
-      // TODO:
-      // <textarea> element. How to get better selection bounds?
-      return this._getDefaultMagnifierPoint(aEvent);
-    }
+    const selection = win.HTMLTextAreaElement?.isInstance(focus)
+      ? focus.editor.selection
+      : win.getSelection();
 
-    const selection = win.getSelection();
-    if (selection.rangeCount != 1) {
+    if (!selection || selection.rangeCount != 1) {
       // When selecting text using accessible caret, selection count will be 1.
       // This situation means that current selection isn't into text.
       return this._getDefaultMagnifierPoint(aEvent);
@@ -258,9 +247,11 @@ export class SelectionActionDelegateChild extends GeckoViewActorChild {
       return { left: aEvent.clientX, top: y, width: 0, height: 0 };
     })();
 
-    const rect = lazy.LayoutUtils.rectToScreenRect(
-      aEvent.target.ownerGlobal,
-      bounds
+    const rect = win.windowUtils.toScreenRect(
+      bounds.left,
+      bounds.top,
+      bounds.width,
+      bounds.height
     );
     return { x: rect.left, y: rect.top };
   }
@@ -339,9 +330,12 @@ export class SelectionActionDelegateChild extends GeckoViewActorChild {
         if (!boundingRect) {
           return null;
         }
-        const rect = lazy.LayoutUtils.rectToScreenRect(
-          aEvent.target.ownerGlobal,
-          boundingRect
+        const win = aEvent.target.documentGlobal || aEvent.target;
+        const rect = win.windowUtils.toScreenRect(
+          boundingRect.left,
+          boundingRect.top,
+          boundingRect.width,
+          boundingRect.height
         );
         return {
           left: rect.left,

@@ -17,6 +17,7 @@
 
 #include "api/rtp_headers.h"
 #include "api/units/data_rate.h"
+#include "api/units/data_size.h"
 #include "api/units/time_delta.h"
 #include "api/units/timestamp.h"
 #include "modules/remote_bitrate_estimator/packet_arrival_map.h"
@@ -41,10 +42,14 @@ class TransportSequenceNumberFeedbackGenenerator
  public:
   TransportSequenceNumberFeedbackGenenerator(
       RtpTransportFeedbackGenerator::RtcpSender feedback_sender);
-  ~TransportSequenceNumberFeedbackGenenerator();
+  ~TransportSequenceNumberFeedbackGenenerator() override;
 
   void OnReceivedPacket(const RtpPacketReceived& packet) override;
-  void OnSendBandwidthEstimateChanged(DataRate estimate) override;
+
+  void OnSendBandwidthEstimateChanged(
+      DataRate estimate,
+      bool is_bandwidth_limited,
+      std::optional<DataSize> transport_overhead) override;
 
   TimeDelta Process(Timestamp now) override;
 

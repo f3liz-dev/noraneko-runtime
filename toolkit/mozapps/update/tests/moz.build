@@ -1,10 +1,10 @@
-# -*- Mode: python; indent-tabs-mode: nil; tab-width: 40 -*-
-# vim: set filetype=python:
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 FINAL_TARGET = "_tests/xpcshell/toolkit/mozapps/update/tests/data"
+
+TEST_DIRS += ["gtest"]
 
 if not CONFIG["MOZ_SUITE"]:
     BROWSER_CHROME_MANIFESTS += [
@@ -36,6 +36,18 @@ SimplePrograms(
 
 if CONFIG["OS_ARCH"] == "WINNT":
     SimplePrograms(["test_file_change_mtime", "test_file_hold_open"])
+
+if CONFIG["MOZ_WIDGET_TOOLKIT"] == "cocoa":
+    MacOSBundle(
+        f"!/{FINAL_TARGET}/callback_app.app",
+        skeleton="macbuild/Contents",
+        binaries=[
+            (
+                f"!/{FINAL_TARGET}/TestAUSHelper",
+                "TestAUSHelper",
+            )
+        ],
+    )
 
 LOCAL_INCLUDES += [
     "/toolkit/mozapps/update",

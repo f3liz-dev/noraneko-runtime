@@ -3,6 +3,8 @@ prefs = ["gfx.font_loader.delay=0"]
 run-if = [
   "buildapp == 'browser'",
 ]
+subsuite = "integration"
+tags = "os_integration"
 
 ["test_accessiblecaret_cursor_mode.py"]
 skip-if = [
@@ -12,6 +14,3 @@ skip-if = [
 ]
 
 ["test_accessiblecaret_selection_mode.py"]
-skip-if = [
-  "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11'", # Bug 1968697
-]

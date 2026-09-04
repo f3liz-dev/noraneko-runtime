@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- *
+/*
  * Copyright 2015 Mozilla Foundation
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -287,6 +285,22 @@ OpKind wasm::Classify(OpBytes op) {
       return OpKind::BrOnNonNull;
     case Op::RefEq:
       return OpKind::Comparison;
+#  ifdef ENABLE_WASM_JSPI
+    case Op::ContNew:
+      return OpKind::ContNew;
+    case Op::ContBind:
+      return OpKind::ContBind;
+    case Op::Suspend:
+      return OpKind::Suspend;
+    case Op::Resume:
+      return OpKind::Resume;
+    case Op::ResumeThrow:
+      return OpKind::ResumeThrow;
+    case Op::ResumeThrowRef:
+      return OpKind::ResumeThrowRef;
+    case Op::Switch:
+      return OpKind::Switch;
+#  endif  // ENABLE_WASM_JSPI
     case Op::GcPrefix: {
       switch (GcOp(op.b1)) {
         case GcOp::Limit:
@@ -660,6 +674,12 @@ OpKind wasm::Classify(OpBytes op) {
           return OpKind::TableGrow;
         case MiscOp::TableSize:
           return OpKind::TableSize;
+        case MiscOp::I64Add128:
+        case MiscOp::I64Sub128:
+          return OpKind::BinaryI128;
+        case MiscOp::I64MulWideS:
+        case MiscOp::I64MulWideU:
+          return OpKind::BinaryI64Wide;
       }
       break;
     }
@@ -752,50 +772,12 @@ OpKind wasm::Classify(OpBytes op) {
         case MozOp::Limit:
           // Reject Limit for the MozPrefix encoding
           break;
-        case MozOp::TeeGlobal:
-          return OpKind::TeeGlobal;
-        case MozOp::I32BitNot:
-        case MozOp::I32Abs:
-        case MozOp::I32Neg:
-          return OpKind::Unary;
-        case MozOp::I32Min:
-        case MozOp::I32Max:
-        case MozOp::F64Mod:
-        case MozOp::F64Pow:
-        case MozOp::F64Atan2:
-          return OpKind::Binary;
-        case MozOp::F64SinNative:
-        case MozOp::F64SinFdlibm:
-        case MozOp::F64CosNative:
-        case MozOp::F64CosFdlibm:
-        case MozOp::F64TanNative:
-        case MozOp::F64TanFdlibm:
-        case MozOp::F64Asin:
-        case MozOp::F64Acos:
-        case MozOp::F64Atan:
-        case MozOp::F64Exp:
-        case MozOp::F64Log:
-          return OpKind::Unary;
-        case MozOp::I32TeeStore8:
-        case MozOp::I32TeeStore16:
-        case MozOp::I64TeeStore8:
-        case MozOp::I64TeeStore16:
-        case MozOp::I64TeeStore32:
-        case MozOp::I32TeeStore:
-        case MozOp::I64TeeStore:
-        case MozOp::F32TeeStore:
-        case MozOp::F64TeeStore:
-        case MozOp::F32TeeStoreF64:
-        case MozOp::F64TeeStoreF32:
-          return OpKind::TeeStore;
-        case MozOp::OldCallDirect:
-          return OpKind::OldCallDirect;
-        case MozOp::OldCallIndirect:
-          return OpKind::OldCallIndirect;
         case MozOp::CallBuiltinModuleFunc:
           return OpKind::CallBuiltinModuleFunc;
-        case MozOp::StackSwitch:
-          return OpKind::StackSwitch;
+#  ifdef ENABLE_WASM_JSPI
+        case MozOp::GuardSuspending:
+          return OpKind::GuardSuspending;
+#  endif
       }
       break;
     }
@@ -1206,6 +1188,22 @@ const char* OpBytes::toString() const {
       return "ref.eq";
     case Op::BrOnNonNull:
       return "br_on_non_null";
+#ifdef ENABLE_WASM_JSPI
+    case Op::ContNew:
+      return "cont.new";
+    case Op::ContBind:
+      return "cont.bind";
+    case Op::Suspend:
+      return "suspend";
+    case Op::Resume:
+      return "resume";
+    case Op::ResumeThrow:
+      return "resume_throw";
+    case Op::ResumeThrowRef:
+      return "resume_throw_ref";
+    case Op::Switch:
+      return "switch";
+#endif
     case Op::GcPrefix: {
       switch (GcOp(b1)) {
         case GcOp::StructNew:

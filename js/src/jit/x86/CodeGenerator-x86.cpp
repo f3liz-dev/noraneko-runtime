@@ -1,12 +1,12 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "jit/x86/CodeGenerator-x86.h"
 
 #include "mozilla/DebugOnly.h"
+
+#include <bit>
 
 #include "builtin/Number.h"
 #include "jit/CodeGenerator.h"
@@ -53,7 +53,7 @@ void CodeGenerator::visitBoxFloatingPoint(LBoxFloatingPoint* box) {
   masm.moveValue(TypedOrValueRegister(box->type(), in), out);
 
   if (JitOptions.spectreValueMasking) {
-    Register scratch = ToRegister(box->temp1());
+    Register scratch = ToRegister(box->temp0());
     masm.move32(Imm32(JSVAL_TAG_CLEAR), scratch);
     masm.cmp32Move32(Assembler::Below, scratch, out.typeReg(), scratch,
                      out.typeReg());
@@ -419,9 +419,11 @@ void CodeGenerator::visitWasmCompareExchangeI64(LWasmCompareExchangeI64* ins) {
   MOZ_ASSERT(ToOutRegister64(ins).low == eax);
   MOZ_ASSERT(ToOutRegister64(ins).high == edx);
 
-  masm.append(ins->mir()->access(), wasm::TrapMachineInsn::Atomic,
-              FaultingCodeOffset(masm.currentOffset()));
+  auto before = masm.currentOffset();
   masm.lock_cmpxchg8b(edx, eax, ecx, ebx, srcAddr);
+  auto after = masm.currentOffset();
+  masm.appendAndVerify(ins->mir()->access(), wasm::TrapMachineInsn::Atomic,
+                       FaultingCodeRange(before, after));
 }
 
 template <typename T>
@@ -443,9 +445,12 @@ void CodeGeneratorX86::emitWasmStoreOrExchangeAtomicI64(
 
   Label again;
   masm.bind(&again);
-  masm.append(access, wasm::TrapMachineInsn::Atomic,
-              FaultingCodeOffset(masm.currentOffset()));
+  auto before = masm.currentOffset();
   masm.lock_cmpxchg8b(edx, eax, ecx, ebx, srcAddr);
+  auto after = masm.currentOffset();
+  masm.appendAndVerify(access, wasm::TrapMachineInsn::Atomic,
+                       FaultingCodeRange(before, after));
+
   masm.j(Assembler::Condition::NonZero, &again);
 }
 
@@ -517,10 +522,8 @@ class OutOfLineTruncate : public OutOfLineCodeBase<CodeGeneratorX86> {
   LDefinition* tempFloat() { return ins_->getTemp(0); }
 
   const wasm::TrapSiteDesc& trapSiteDesc() const {
-    if (ins_->isTruncateDToInt32()) {
-      return ins_->toTruncateDToInt32()->mir()->trapSiteDesc();
-    }
-
+    MOZ_ASSERT(ins_->isWasmBuiltinTruncateDToInt32(),
+               "Wasm only uses WasmBuiltinTruncateDToInt32");
     return ins_->toWasmBuiltinTruncateDToInt32()->mir()->trapSiteDesc();
   }
 };
@@ -543,10 +546,8 @@ class OutOfLineTruncateFloat32 : public OutOfLineCodeBase<CodeGeneratorX86> {
   LDefinition* tempFloat() { return ins_->getTemp(0); }
 
   const wasm::TrapSiteDesc& trapSiteDesc() const {
-    if (ins_->isTruncateFToInt32()) {
-      return ins_->toTruncateDToInt32()->mir()->trapSiteDesc();
-    }
-
+    MOZ_ASSERT(ins_->isWasmBuiltinTruncateFToInt32(),
+               "Wasm only uses WasmBuiltinTruncateFToInt32");
     return ins_->toWasmBuiltinTruncateFToInt32()->mir()->trapSiteDesc();
   }
 };
@@ -834,7 +835,7 @@ void CodeGenerator::visitMulI64(LMulI64* lir) {
       default:
         if (constant > 0) {
           // Use shift if constant is power of 2.
-          int32_t shift = mozilla::FloorLog2(constant);
+          int32_t shift = mozilla::FloorLog2(uint64_t(constant));
           if (int64_t(1) << shift == constant) {
             masm.lshift64(Imm32(shift), lhs);
             return;
@@ -1321,8 +1322,8 @@ void CodeGenerator::visitMulIntPtr(LMulIntPtr* ins) {
     }
 
     // Use shift if constant is a power of 2.
-    if (constant > 0 && mozilla::IsPowerOfTwo(uintptr_t(constant))) {
-      uint32_t shift = mozilla::FloorLog2(constant);
+    if (constant > 0 && std::has_single_bit(uintptr_t(constant))) {
+      uint32_t shift = mozilla::FloorLog2(uintptr_t(constant));
       masm.lshiftPtr(Imm32(shift), lhs);
       return;
     }

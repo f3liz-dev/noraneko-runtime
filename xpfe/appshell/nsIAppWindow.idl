@@ -1,5 +1,4 @@
-/* -*- Mode: IDL; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -103,13 +102,7 @@ interface nsIAppWindow : nsISupports
    */
   void lockAspectRatio(in boolean aShouldLock);
 
-  attribute uint32_t chromeFlags;
-
-  /**
-   * Begin assuming |chromeFlags| don't change hereafter, and assert
-   * if they do change.  The state change is one-way and idempotent.
-   */
-  void assumeChromeFlagsAreFrozen();
+  readonly attribute uint32_t chromeFlags;
 
   /**
    * Create a new window.

@@ -7,8 +7,8 @@
 
 add_task(async function autosettings() {
   let result = new UrlbarResult({
-    type: UrlbarUtils.RESULT_TYPE.TIP,
-    source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+    type: UrlbarShared.RESULT_TYPE.TIP,
+    source: UrlbarShared.RESULT_SOURCE.OTHER_LOCAL,
     payload: {
       type: "test",
       titleL10n: { id: "urlbar-search-tips-confirm" },
@@ -22,8 +22,8 @@ add_task(async function autosettings() {
 
 add_task(async function ui() {
   let result = new UrlbarResult({
-    type: UrlbarUtils.RESULT_TYPE.TIP,
-    source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+    type: UrlbarShared.RESULT_TYPE.TIP,
+    source: UrlbarShared.RESULT_SOURCE.OTHER_LOCAL,
     payload: {
       type: "test",
       icon: "chrome://global/skin/icons/search-glass.svg",
@@ -41,7 +41,7 @@ add_task(async function ui() {
       ],
       helpUrl: "https://example.com/help",
       helpL10n: {
-        id: "urlbar-result-menu-tip-get-help",
+        id: "urlbar-result-menu-tip-get-help2",
       },
     },
   });
@@ -61,7 +61,10 @@ add_task(async function ui() {
 
   info("Check the container");
   let row = await UrlbarTestUtils.waitForAutocompleteResultAt(window, 0);
-  Assert.ok(row.hasAttribute("rich-suggestion"));
+  Assert.equal(
+    row.hasAttribute("rich-suggestion"),
+    !Services.prefs.getBoolPref("browser.nova.enabled")
+  );
 
   info("Check the icon");
   let icon = row.querySelector(".urlbarView-favicon");
@@ -102,10 +105,10 @@ add_task(async function ui() {
   });
   Assert.ok(help);
   Assert.deepEqual(document.l10n.getAttributes(help), {
-    id: "urlbar-result-menu-tip-get-help",
+    id: "urlbar-result-menu-tip-get-help2",
     args: null,
   });
-  gURLBar.view.resultMenu.hidePopup(true);
+  gURLBar.view.resultMenu.hide();
 
   info("Check the hidden components");
   let url = row.querySelector(".urlbarView-url");
@@ -128,8 +131,8 @@ add_task(async function learn_more() {
     let provider = new UrlbarTestUtils.TestProvider({
       results: [
         new UrlbarResult({
-          type: UrlbarUtils.RESULT_TYPE.TIP,
-          source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+          type: UrlbarShared.RESULT_TYPE.TIP,
+          source: UrlbarShared.RESULT_SOURCE.OTHER_LOCAL,
           payload: {
             type: "test",
             titleL10n: { id: "urlbar-search-tips-confirm" },

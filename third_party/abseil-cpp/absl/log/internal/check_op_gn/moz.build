@@ -9,9 +9,14 @@
 COMPILE_FLAGS["OS_INCLUDES"] = []
 AllowCompilerWarnings()
 
+CXXFLAGS += [
+    "-Wno-comma",
+    "-Wno-tautological-type-limit-compare"
+]
+
 DEFINES["ABSL_ALLOCATOR_NOTHROW"] = "1"
 
-FINAL_LIBRARY = "xul"
+FINAL_LIBRARY = "abseil"
 
 
 LOCAL_INCLUDES += [
@@ -46,6 +51,12 @@ if CONFIG["OS_TARGET"] == "Android":
 
     OS_LIBS += [
         "log"
+    ]
+
+if CONFIG["OS_TARGET"] == "Darwin":
+
+    OS_LIBS += [
+        "-framework Foundation"
     ]
 
 if CONFIG["OS_TARGET"] == "Linux":

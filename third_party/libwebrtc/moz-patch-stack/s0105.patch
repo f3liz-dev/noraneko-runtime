@@ -1,31 +1,24 @@
 From: Michael Froman <mfroman@mozilla.com>
-Date: Tue, 29 Oct 2024 18:20:00 +0000
-Subject: Bug 1925119 - add dcsctp to libwebrtc build. r=bwc,webrtc-reviewers
+Date: Tue, 13 May 2025 22:39:00 +0000
+Subject: Bug 1966238 - (fix-bf85c38fb3) fix build for our added 'pid' field in
+ DesktopCapturer::Source r?pehrsons!
 
-Differential Revision: https://phabricator.services.mozilla.com/D225892
-Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/90a33b06e51017d25542a95c2a460bfed41c553b
+Differential Revision: https://phabricator.services.mozilla.com/D249164
+Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/b6b37905a574e7706d98eb683e6800c9525815e7
 ---
- BUILD.gn | 3 ++-
- 1 file changed, 2 insertions(+), 1 deletion(-)
+ modules/desktop_capture/mac/screen_capturer_sck.mm | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
 
-diff --git a/BUILD.gn b/BUILD.gn
-index 12d21030c5..a10af8f53a 100644
---- a/BUILD.gn
-+++ b/BUILD.gn
-@@ -570,6 +570,7 @@ if (!build_with_chromium) {
-       "call",
-       "common_audio",
-       "common_video",
-+      ":dcsctp",
-       "logging:rtc_event_log_api",
-       "media",
-       "modules",
-@@ -855,7 +856,7 @@ if (rtc_include_tests && !build_with_chromium) {
- # Build target for standalone dcsctp
- rtc_static_library("dcsctp") {
-   # Only the root target should depend on this.
--  visibility = [ "//:default" ]
-+  visibility = [ "//:default", "//libwebrtc:webrtc" ]
-   sources = []
-   complete_static_lib = true
-   suppressed_configs += [ "//chromium/build/config/compiler:thin_archive" ]
+diff --git a/modules/desktop_capture/mac/screen_capturer_sck.mm b/modules/desktop_capture/mac/screen_capturer_sck.mm
+index 6a31c6a56f..0691aba3e4 100644
+--- a/modules/desktop_capture/mac/screen_capturer_sck.mm
++++ b/modules/desktop_capture/mac/screen_capturer_sck.mm
+@@ -442,7 +442,7 @@ bool ScreenCapturerSck::GetSourceList(SourceList* sources) {
+   sources->clear();
+   EnsurePickerHandle();
+   if (picker_handle_) {
+-    sources->push_back({picker_handle_->Source(), std::string()});
++    sources->push_back({picker_handle_->Source(), 0, std::string()});
+   }
+   return true;
+ }

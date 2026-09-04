@@ -1,23 +1,63 @@
-From: Michael Froman <mfroman@mozilla.com>
-Date: Tue, 15 Oct 2024 16:46:00 -0500
-Subject: Bug 1924098 - (fix-e432503389) upstream changed signature of
- LibvpxVp9Encoder::InitAndSetControlSettings
+From: Jan Grulich <jgrulich@redhat.com>
+Date: Mon, 14 Apr 2025 16:37:00 +0000
+Subject: Bug 1954903 - Update libwebrtc GN configs r=webrtc-reviewers,mjf
 
-Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/fadad7695efe0d9cc6b999a613b9e1f536e660bd
+Update GN config files for the special handling in gn_processor.py for
+gbm, drm and PipeWire libraries.
+
+Also remove libwebrtc/third_party/[gbm,drm,pipewire] libs for which we
+now have a special handling in gn_processor.py.
+
+Differential Revision: https://phabricator.services.mozilla.com/D242101
+Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/506d4efaf2dc29472623beff64cc2bd0d5555afd
 ---
- modules/video_coding/codecs/vp9/libvpx_vp9_encoder.cc | 2 +-
- 1 file changed, 1 insertion(+), 1 deletion(-)
+ modules/desktop_capture/BUILD.gn | 4 ++++
+ modules/portal/BUILD.gn          | 4 +---
+ modules/video_capture/BUILD.gn   | 2 +-
+ 3 files changed, 6 insertions(+), 4 deletions(-)
 
-diff --git a/modules/video_coding/codecs/vp9/libvpx_vp9_encoder.cc b/modules/video_coding/codecs/vp9/libvpx_vp9_encoder.cc
-index d0c7f1fc9f..55fa94dc51 100644
---- a/modules/video_coding/codecs/vp9/libvpx_vp9_encoder.cc
-+++ b/modules/video_coding/codecs/vp9/libvpx_vp9_encoder.cc
-@@ -1340,7 +1340,7 @@ int LibvpxVp9Encoder::UpdateCodecFrameSize(
-   // bugs in trying to do it the "right" way, we basically re-do
-   // the initialization.
-   vpx_codec_destroy(encoder_); // clean up old state
--  int result = InitAndSetControlSettings(&codec_);
-+  int result = InitAndSetControlSettings();
-   if (result == WEBRTC_VIDEO_CODEC_OK) {
-     // TODO: Mozilla rates have become much more complicated, we need to store
-     // more state or find another way of doing this.
+diff --git a/modules/desktop_capture/BUILD.gn b/modules/desktop_capture/BUILD.gn
+index 9aa4950938..9d34ca4777 100644
+--- a/modules/desktop_capture/BUILD.gn
++++ b/modules/desktop_capture/BUILD.gn
+@@ -853,6 +853,10 @@ rtc_library("desktop_capture") {
+       "../../rtc_base:sanitizer",
+       "../portal",
+     ]
++
++    if (build_with_mozilla) {
++      defines += [ "WEBRTC_USE_PIPEWIRE" ]
++    }
+   }
+ 
+   if (rtc_enable_win_wgc) {
+diff --git a/modules/portal/BUILD.gn b/modules/portal/BUILD.gn
+index 0a463c7619..7f91839dfd 100644
+--- a/modules/portal/BUILD.gn
++++ b/modules/portal/BUILD.gn
+@@ -143,11 +143,9 @@ if (!build_with_mozilla) {
+       deps -= [ ":pipewire_stubs" ]
+       defines -= [ "WEBRTC_DLOPEN_PIPEWIRE" ]
+       public_deps = [
+-        "../../third_party/pipewire",
+-        "../../third_party/drm",
+-        "../../third_party/gbm",
+         "../../third_party/libepoxy"
+       ]
++      defines += [ "WEBRTC_USE_PIPEWIRE" ]
+     }
+   }
+ }
+diff --git a/modules/video_capture/BUILD.gn b/modules/video_capture/BUILD.gn
+index 71001ed063..13dc70e799 100644
+--- a/modules/video_capture/BUILD.gn
++++ b/modules/video_capture/BUILD.gn
+@@ -118,7 +118,7 @@ if (!build_with_chromium || is_linux || is_chromeos) {
+         ]
+         if (build_with_mozilla) {
+           configs -= [ "../portal:pipewire_base" ]
+-          public_deps = [ "../../third_party/pipewire" ]
++          defines = [ "WEBRTC_USE_PIPEWIRE" ]
+         }
+       }
+     }

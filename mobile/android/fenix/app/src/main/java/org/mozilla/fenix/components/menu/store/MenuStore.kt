@@ -40,10 +40,11 @@ private fun reducer(state: MenuState, action: MenuAction): MenuState {
         is MenuAction.CustomMenuItemAction,
         is MenuAction.CustomizeReaderView,
         is MenuAction.Navigate,
-        is MenuAction.OnCFRShown,
-        is MenuAction.OnCFRDismiss,
+        is MenuAction.OnSummarizationMenuExposed,
+        is MenuAction.MoveToNonPrivateTab,
         -> state
 
+        is MenuAction.OnMoreMenuClicked -> state.copy(isMoreMenuExpanded = !state.isMoreMenuExpanded)
         is MenuAction.RequestDesktopSite -> state.copy(isDesktopMode = true)
 
         is MenuAction.RequestMobileSite -> state.copy(isDesktopMode = false)
@@ -85,6 +86,14 @@ private fun reducer(state: MenuState, action: MenuAction): MenuState {
         is MenuAction.UpdateAvailableAddons -> state.copyWithExtensionMenuState {
             it.copy(availableAddons = action.availableAddons)
         }
+
+        is MenuAction.InitializeSummarizationMenuState -> state.copyWithSummarizationMenuState {
+            action.state
+        }
+
+        is MenuAction.UpdateIPProtectionMenuState -> state.copy(
+            ipProtectionMenuState = action.state,
+        )
     }
 }
 
@@ -100,4 +109,10 @@ internal inline fun MenuState.copyWithExtensionMenuState(
     crossinline update: (ExtensionMenuState) -> ExtensionMenuState,
 ): MenuState {
     return this.copy(extensionMenuState = update(this.extensionMenuState))
+}
+
+private inline fun MenuState.copyWithSummarizationMenuState(
+    crossinline update: (SummarizationMenuState) -> SummarizationMenuState,
+): MenuState {
+    return this.copy(summarizationMenuState = update(this.summarizationMenuState))
 }

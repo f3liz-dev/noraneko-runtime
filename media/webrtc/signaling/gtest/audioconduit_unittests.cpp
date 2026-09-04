@@ -1,17 +1,13 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #define GTEST_HAS_RTTI 0
-#include "gtest/gtest.h"
-
-#include "api/audio_codecs/opus/audio_encoder_opus_config.h"
 #include "AudioConduit.h"
 #include "Canonicals.h"
-
 #include "MockCall.h"
+#include "api/audio_codecs/opus/audio_encoder_opus_config.h"
+#include "gtest/gtest.h"
 
 using namespace mozilla;
 using namespace testing;
@@ -725,6 +721,7 @@ TEST_F(AudioConduitTest, TestSetLocalRTPExtensions) {
     RtpExtList extensions;
     webrtc::RtpExtension extension;
     extension.uri = webrtc::RtpExtension::kAudioLevelUri;
+    extension.id = webrtc::RtpHeaderExtensionId(1);
     extensions.emplace_back(extension);
     aControl.mLocalRecvRtpExtensions = extensions;
     aControl.mLocalSendRtpExtensions = extensions;
@@ -741,6 +738,7 @@ TEST_F(AudioConduitTest, TestSetLocalRTPExtensions) {
     RtpExtList extensions;
     webrtc::RtpExtension extension;
     extension.uri = webrtc::RtpExtension::kCsrcAudioLevelsUri;
+    extension.id = webrtc::RtpHeaderExtensionId(1);
     extensions.emplace_back(extension);
     aControl.mLocalRecvRtpExtensions = extensions;
     aControl.mLocalSendRtpExtensions = extensions;
@@ -755,6 +753,7 @@ TEST_F(AudioConduitTest, TestSetLocalRTPExtensions) {
     RtpExtList extensions;
     webrtc::RtpExtension extension;
     extension.uri = webrtc::RtpExtension::kMidUri;
+    extension.id = webrtc::RtpHeaderExtensionId(1);
     extensions.emplace_back(extension);
     aControl.mLocalRecvRtpExtensions = extensions;
     aControl.mLocalSendRtpExtensions = extensions;

@@ -21,7 +21,7 @@ async function openLoginForm(megalist, isFromMenuDropdown = true) {
 
   let button = null;
   if (isFromMenuDropdown) {
-    await BrowserTestUtils.waitForCondition(
+    await TestUtils.waitForCondition(
       () => megalist.querySelector("#more-options-menubutton"),
       "menu button failed to render"
     );
@@ -36,7 +36,7 @@ async function openLoginForm(megalist, isFromMenuDropdown = true) {
     button = megalist.querySelector(".empty-state-add-password");
   }
 
-  const loginFormPromise = BrowserTestUtils.waitForCondition(
+  const loginFormPromise = TestUtils.waitForCondition(
     () => megalist.querySelector("login-form"),
     "Login form failed to load."
   );
@@ -46,9 +46,9 @@ async function openLoginForm(megalist, isFromMenuDropdown = true) {
 
 function addLogin(megalist, { origin, username, password }) {
   const loginForm = megalist.querySelector("login-form");
-  setInputValue(loginForm, "login-origin-field", origin);
-  setInputValue(loginForm, "login-username-field", username);
-  setInputValue(loginForm, "login-password-field", password);
+  setInputValue(loginForm, "moz-input-url", origin);
+  setInputValue(loginForm, "moz-input-text", username);
+  setInputValue(loginForm, "moz-input-password", password);
   const saveButton = loginForm.shadowRoot.querySelector(
     "moz-button[type=primary]"
   );
@@ -59,7 +59,7 @@ function addLogin(megalist, { origin, username, password }) {
 function waitForPopup(megalist, element) {
   info(`Wait for ${element} popup`);
   const loginForm = megalist.querySelector("login-form");
-  const popupPromise = BrowserTestUtils.waitForCondition(
+  const popupPromise = TestUtils.waitForCondition(
     () =>
       loginForm.shadowRoot
         .querySelector(`${element}`)
@@ -74,7 +74,7 @@ function waitForRecords(count) {
   const sidebar = document.getElementById("sidebar");
   const megalistComponent =
     sidebar.contentDocument.querySelector("megalist-alpha");
-  return BrowserTestUtils.waitForCondition(
+  return TestUtils.waitForCondition(
     () => megalistComponent.records.length == count,
     `records did not he ${count} elements`
   );
@@ -82,7 +82,7 @@ function waitForRecords(count) {
 
 function getScrollPromise(megalist) {
   const scrollingElement = megalist.ownerDocument.scrollingElement;
-  const scrollPromise = BrowserTestUtils.waitForCondition(
+  const scrollPromise = TestUtils.waitForCondition(
     () => scrollingElement.scrollTopMax == scrollingElement.scrollTop,
     "Did not scroll to new login."
   );
@@ -154,7 +154,7 @@ add_task(async function test_add_login_empty_origin() {
 
   const megalist = await openPasswordsSidebar();
   await waitForSnapshots();
-  await openLoginForm(megalist);
+  await openLoginForm(megalist, false);
   addLogin(megalist, {
     ...TEST_LOGIN_1,
     origin: "",
@@ -174,9 +174,9 @@ add_task(async function test_add_login_empty_password_and_resubmit() {
   await waitForSnapshots();
   await openLoginForm(megalist, false);
   const loginForm = megalist.querySelector("login-form");
-  setInputValue(loginForm, "login-origin-field", TEST_LOGIN_1.origin);
-  setInputValue(loginForm, "login-username-field", TEST_LOGIN_1.username);
-  setInputValue(loginForm, "login-password-field", "");
+  setInputValue(loginForm, "moz-input-url", TEST_LOGIN_1.origin);
+  setInputValue(loginForm, "moz-input-text", TEST_LOGIN_1.username);
+  setInputValue(loginForm, "moz-input-password", "");
 
   const saveButton = loginForm.shadowRoot.querySelector(
     "moz-button[type=primary]"
@@ -204,8 +204,8 @@ add_task(async function test_add_login_empty_password_and_resubmit() {
   is(logins.length, 0, "No login was added after submitting form.");
 
   info("Entering a valid password clears the warning.");
-  setInputValue(loginForm, "login-password-field", TEST_LOGIN_1.password);
-  await BrowserTestUtils.waitForCondition(
+  setInputValue(loginForm, "moz-input-password", TEST_LOGIN_1.password);
+  await TestUtils.waitForCondition(
     () =>
       !loginForm.shadowRoot
         .querySelector("password-warning")
@@ -227,13 +227,13 @@ add_task(async function test_edit_login_empty_password_requires_new_value() {
 
   const passwordCard = megalist.querySelector("password-card");
   await waitForReauth(() => passwordCard.editBtn.click());
-  await BrowserTestUtils.waitForCondition(
+  await TestUtils.waitForCondition(
     () => megalist.querySelector("login-form"),
     "Login form failed to render in edit mode."
   );
 
   let loginForm = megalist.querySelector("login-form");
-  setInputValue(loginForm, "login-password-field", "");
+  setInputValue(loginForm, "moz-input-password", "");
 
   const saveButton = loginForm.shadowRoot.querySelector(
     "moz-button[type=primary]"
@@ -242,18 +242,17 @@ add_task(async function test_edit_login_empty_password_requires_new_value() {
   saveButton.buttonEl.click();
   await waitForPopup(megalist, "password-warning");
 
-  const passwordField = loginForm.shadowRoot.querySelector(
-    "login-password-field"
-  );
-  await BrowserTestUtils.waitForCondition(
-    () => passwordField.input.value === "",
+  const passwordField =
+    loginForm.shadowRoot.querySelector("moz-input-password");
+  await TestUtils.waitForCondition(
+    () => passwordField.inputEl.value === "",
     "Password input should remain empty after an invalid submission."
   );
   is(passwordField.value, "", "Password component state cleared.");
 
   info("Trying to save again after the first error.");
   saveButton.buttonEl.click();
-  await BrowserTestUtils.waitForCondition(() => {
+  await TestUtils.waitForCondition(() => {
     const form = megalist.querySelector("login-form");
     return (
       form &&
@@ -277,7 +276,7 @@ add_task(async function test_edit_login_empty_password_requires_new_value() {
   LoginTestUtils.clearData();
   info("Closing the sidebar");
   SidebarController.hide();
-  const closeWithoutSavingButton = await BrowserTestUtils.waitForCondition(() =>
+  const closeWithoutSavingButton = await TestUtils.waitForCondition(() =>
     megalist
       .querySelector("notification-message-bar")
       ?.shadowRoot.querySelector("moz-message-bar")
@@ -339,6 +338,36 @@ add_task(async function test_passwords_add_password_empty_state() {
 
   LoginTestUtils.clearData();
 
+  info("Closing the sidebar");
+  SidebarController.hide();
+});
+
+add_task(async function test_password_reveal_button_hidden() {
+  const megalist = await openPasswordsSidebar();
+  await waitForSnapshots();
+  await openLoginForm(megalist, false);
+
+  const loginForm = megalist.querySelector("login-form");
+  const passwordField =
+    loginForm.shadowRoot.querySelector("moz-input-password");
+  await passwordField.updateComplete;
+  const input = passwordField.inputEl;
+
+  let revealButton;
+  await TestUtils.waitForCondition(() => {
+    revealButton = InspectorUtils.getChildrenForNode(input, true, false).find(
+      node => node.localName === "button"
+    );
+    return !!revealButton;
+  }, "Native password reveal button should be created in the input.");
+
+  is(
+    input.documentGlobal.getComputedStyle(revealButton).display,
+    "none",
+    "Native password reveal button is hidden by the megalist agent sheet."
+  );
+
+  LoginTestUtils.clearData();
   info("Closing the sidebar");
   SidebarController.hide();
 });

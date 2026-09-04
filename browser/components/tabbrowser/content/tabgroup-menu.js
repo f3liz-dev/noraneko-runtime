@@ -13,6 +13,9 @@
   const { TabStateFlusher } = ChromeUtils.importESModule(
     "resource:///modules/sessionstore/TabStateFlusher.sys.mjs"
   );
+  const { ContentSharingUtils } = ChromeUtils.importESModule(
+    "moz-src:///browser/components/sharing/ContentSharingUtils.sys.mjs"
+  );
 
   ChromeUtils.importESModule(
     "chrome://browser/content/genai/content/model-optin.mjs",
@@ -49,25 +52,28 @@
     static AI_ICON = "chrome://global/skin/icons/highlights.svg";
 
     static headerSection = /*html*/ `
-      <html:div  id="tab-group-default-header">
-        <html:div class="panel-header" >
-          <html:h1
-            id="tab-group-editor-title-create"
-            class="tab-group-create-mode-only"
-            data-l10n-id="tab-group-editor-title-create">
-          </html:h1>
-          <html:h1
-            id="tab-group-editor-title-edit"
-            class="tab-group-edit-mode-only"
-            data-l10n-id="tab-group-editor-title-edit">
-          </html:h1>
-        </html:div>
+      <html:div class="panel-header" >
+        <html:h1
+          id="tab-group-editor-title-create"
+          class="tab-group-create-mode-only"
+          data-l10n-id="tab-group-editor-title-create">
+        </html:h1>
+        <html:h1
+          id="tab-group-editor-title-edit"
+          class="tab-group-edit-mode-only"
+          data-l10n-id="tab-group-editor-title-edit">
+        </html:h1>
+        <html:h1
+          id="tab-group-editor-title-suggest"
+          data-l10n-id="tab-group-editor-title-suggest"
+          hidden=""
+        ></html:h1>
       </html:div>
     `;
 
     static editActions = /*html*/ `
       <html:div
-        class="panel-body tab-group-edit-actions tab-group-edit-mode-only">
+        class="tab-group-edit-actions tab-group-edit-mode-only">
         <toolbarbutton
           tabindex="0"
           id="tabGroupEditor_addNewTabInGroup"
@@ -82,6 +88,20 @@
         </toolbarbutton>
         <toolbarbutton
           tabindex="0"
+          id="tabGroupEditor_shareTabGroup"
+          class="subviewbutton"
+          badged="true"
+          data-l10n-id="tab-group-editor-action-share-group"
+          hidden="">
+          <html:moz-badge type="new" move-after-stack="true"></html:moz-badge>
+        </toolbarbutton>
+        <toolbarbutton
+          tabindex="0"
+          id="tabGroupEditor_copyAllLinks"
+          class="subviewbutton">
+        </toolbarbutton>
+        <toolbarbutton
+          tabindex="0"
           id="tabGroupEditor_saveAndCloseGroup"
           class="subviewbutton"
           data-l10n-id="tab-group-editor-action-save">
@@ -92,11 +112,7 @@
           class="subviewbutton"
           data-l10n-id="tab-group-editor-action-ungroup">
         </toolbarbutton>
-      </html:div>
-
-      <toolbarseparator class="tab-group-edit-mode-only" />
-
-      <html:div class="tab-group-edit-mode-only panel-body tab-group-delete">
+        <toolbarseparator class="tab-group-edit-mode-only" />
         <toolbarbutton
           tabindex="0"
           id="tabGroupEditor_deleteGroup"
@@ -106,16 +122,10 @@
       </html:div>
     `;
 
-    static suggestionsHeader = /*html*/ `
-      <html:div id="tab-group-suggestions-heading" hidden="true">
-        <html:div class="panel-header">
-          <html:h1 data-l10n-id="tab-group-editor-title-suggest"></html:h1>
-        </html:div>
-      </html:div>
-    `;
-
     static suggestionsSection = /*html*/ `
-      <html:div id="tab-group-suggestions-container" hidden="true">
+      <html:div id="tab-group-suggestions-container"
+        class="panel-subview-body"
+        hidden="">
 
         <html:moz-checkbox
           checked=""
@@ -129,7 +139,7 @@
           data-l10n-id="tab-group-editor-information-message">
         </html:p>
 
-        <html:moz-button-group class="panel-body tab-group-create-actions">
+        <html:moz-button-group class="panel-footer tab-group-create-actions">
           <html:moz-button
             id="tab-group-cancel-suggestions-button"
             data-l10n-id="tab-group-editor-cancel">
@@ -148,6 +158,7 @@
       <html:moz-button
         hidden="true"
         id="tab-group-suggestion-button"
+        class="subviewbutton"
         type="icon ghost"
         data-l10n-id="tab-group-editor-smart-suggest-button-create">
       </html:moz-button>
@@ -167,7 +178,7 @@
 
     static defaultActions = /*html*/ `
       <html:moz-button-group
-        class="tab-group-create-actions tab-group-create-mode-only"
+        class="tab-group-create-actions tab-group-create-mode-only panel-footer"
         id="tab-group-default-actions">
         <html:moz-button
           id="tab-group-editor-button-cancel"
@@ -182,7 +193,10 @@
     `;
 
     static loadingActions = /*html*/ `
-      <html:moz-button-group id="tab-group-suggestions-load-actions" hidden="true">
+      <html:moz-button-group
+        id="tab-group-suggestions-load-actions"
+        class="panel-footer"
+        hidden="">
         <html:moz-button
           id="tab-group-suggestions-load-cancel"
           data-l10n-id="tab-group-editor-cancel">
@@ -192,27 +206,25 @@
 
     static optinSection = /*html*/ `
       <html:div
-        id="tab-group-suggestions-optin-container">
+        id="tab-group-suggestions-optin-container" hidden="">
       </html:div>
     `;
 
     static markup = /*html*/ `
-    <panel
+      <panel
         type="arrow"
-        class="tab-group-editor-panel"
+        class="tab-group-editor-panel panel-no-padding"
         orient="vertical"
         role="dialog"
         ignorekeys="true"
         norolluponanchor="true">
 
         ${this.headerSection}
-        ${this.suggestionsHeader}
 
         <toolbarseparator />
 
         <html:div
-          class="panel-body
-          tab-group-editor-name">
+          class="tab-group-editor-name">
           <html:label
             for="tab-group-name"
             data-l10n-id="tab-group-editor-name-label">
@@ -226,45 +238,45 @@
           />
         </html:div>
 
+        <html:div id="tab-group-main" class="panel-subview-body">
+          <html:div id="tab-group-properties-and-actions">
+            <html:div
+              class="tab-group-editor-swatches"
+              role="radiogroup"
+              data-l10n-id="tab-group-editor-color-selector"
+            />
 
-      <html:div id="tab-group-main">
-        <html:div
-          class="panel-body tab-group-editor-swatches"
-          role="radiogroup"
-          data-l10n-id="tab-group-editor-color-selector"
-        />
+            <toolbarseparator class="tab-group-edit-mode-only"/>
 
-        <toolbarseparator class="tab-group-edit-mode-only"/>
+            ${this.editActions}
 
-        ${this.editActions}
+            <toolbarseparator id="tab-group-suggestions-separator" hidden="true"/>
 
-        <toolbarseparator id="tab-group-suggestions-separator" hidden="true"/>
+            ${this.suggestionsButton}
 
-        ${this.suggestionsButton}
+            <html:div id="tab-group-suggestions-message-container" hidden="true">
+              <html:moz-button
+                disabled="true"
+                type="icon ghost"
+                id="tab-group-suggestions-message"
+                data-l10n-id="tab-group-editor-no-tabs-found-title">
+              </html:moz-button>
+              <html:p
+                data-l10n-id="tab-group-editor-no-tabs-found-message">
+              </html:p>
+            </html:div>
 
-        <html:div id="tab-group-suggestions-message-container" hidden="true">
-          <html:moz-button
-            disabled="true"
-            type="icon ghost"
-            id="tab-group-suggestions-message"
-            data-l10n-id="tab-group-editor-no-tabs-found-title">
-          </html:moz-button>
-          <html:p
-            data-l10n-id="tab-group-editor-no-tabs-found-message">
-          </html:p>
+            ${this.defaultActions}
+
+          </html:div>
+
+          ${this.loadingSection}
+          ${this.loadingActions}
+          ${this.suggestionsSection}
+          ${this.optinSection}
         </html:div>
-
-        ${this.defaultActions}
-
-      </html:div>
-
-      ${this.loadingSection}
-      ${this.loadingActions}
-      ${this.suggestionsSection}
-      ${this.optinSection}
-
-    </panel>
-       `;
+      </panel>
+    `;
 
     static State = {
       // Standard create mode (No AI UI)
@@ -294,12 +306,14 @@
     };
 
     #tabGroupMain;
+    #tabGroupPropertiesActions;
     #activeGroup;
     #cancelButton;
     #commandButtons;
     #createButton;
     #createMode;
     #keepNewlyCreatedGroup;
+    #nameContainer;
     #nameField;
     #panel;
     #swatches;
@@ -307,7 +321,8 @@
     #defaultActions;
     #suggestionState = MozTabbrowserTabGroupMenu.State.CREATE_STANDARD_INITIAL;
     #suggestionsHeading;
-    #defaultHeader;
+    #createTabGroupHeading;
+    #editTabGroupHeading;
     /** @type {string} */
     #initialTabGroupName;
     #suggestionsContainer;
@@ -386,6 +401,7 @@
       );
       this.#panel = this.querySelector("panel");
       this.#nameField = this.querySelector("#tab-group-name");
+      this.#nameContainer = this.querySelector(".tab-group-editor-name");
       this.#panel.addEventListener("click", e => {
         if (e.target !== this.#nameField) {
           this.#nameField.blur();
@@ -394,9 +410,17 @@
       this.#swatchesContainer = this.querySelector(
         ".tab-group-editor-swatches"
       );
-      this.#defaultHeader = this.querySelector("#tab-group-default-header");
+      this.#createTabGroupHeading = this.querySelector(
+        "#tab-group-editor-title-create"
+      );
+      this.#editTabGroupHeading = this.querySelector(
+        "#tab-group-editor-title-edit"
+      );
       this.#defaultActions = this.querySelector("#tab-group-default-actions");
       this.#tabGroupMain = this.querySelector("#tab-group-main");
+      this.#tabGroupPropertiesActions = this.querySelector(
+        "#tab-group-properties-and-actions"
+      );
       this.#initSuggestions();
 
       this.#populateSwatches();
@@ -440,11 +464,13 @@
         moveGroupToNewWindow: document.getElementById(
           "tabGroupEditor_moveGroupToNewWindow"
         ),
+        copyAllLinks: document.getElementById("tabGroupEditor_copyAllLinks"),
         ungroupTabs: document.getElementById("tabGroupEditor_ungroupTabs"),
         saveAndCloseGroup: document.getElementById(
           "tabGroupEditor_saveAndCloseGroup"
         ),
         deleteGroup: document.getElementById("tabGroupEditor_deleteGroup"),
+        shareTabGroup: document.getElementById("tabGroupEditor_shareTabGroup"),
       };
 
       this.#commandButtons.addNewTabInGroup.addEventListener("command", () => {
@@ -454,28 +480,50 @@
       this.#commandButtons.moveGroupToNewWindow.addEventListener(
         "command",
         () => {
-          gBrowser.replaceGroupWithWindow(this.activeGroup);
+          gBrowser.replaceGroupWithWindow(this.activeGroup, {
+            metricsContext: gBrowser.TabMetrics.userTriggeredContext(
+              gBrowser.TabMetrics.METRIC_SOURCE.TAB_GROUP_MENU
+            ),
+          });
         }
       );
 
+      this.#commandButtons.copyAllLinks.addEventListener("command", () => {
+        let links = this.#getGroupLinks(this.activeGroup);
+        if (links.length) {
+          BrowserUtils.copyLinks(links);
+        }
+        Glean.tabgroup.groupInteractions.copy_all_links.add(1);
+        this.close();
+      });
+
       this.#commandButtons.ungroupTabs.addEventListener("command", () => {
-        this.activeGroup.ungroupTabs({
-          isUserTriggered: true,
-          telemetrySource: TabMetrics.METRIC_SOURCE.TAB_GROUP_MENU,
-        });
-      });
-
-      this.#commandButtons.saveAndCloseGroup.addEventListener("command", () => {
-        this.activeGroup.saveAndClose({ isUserTriggered: true });
-      });
-
-      this.#commandButtons.deleteGroup.addEventListener("command", () => {
-        gBrowser.removeTabGroup(
-          this.activeGroup,
+        this.activeGroup.ungroupTabs(
           TabMetrics.userTriggeredContext(
             TabMetrics.METRIC_SOURCE.TAB_GROUP_MENU
           )
         );
+      });
+
+      this.#commandButtons.saveAndCloseGroup.addEventListener("command", () => {
+        this.activeGroup.saveAndClose(
+          TabMetrics.userTriggeredContext(
+            TabMetrics.METRIC_SOURCE.TAB_GROUP_MENU
+          )
+        );
+      });
+
+      this.#commandButtons.deleteGroup.addEventListener("command", () => {
+        gBrowser.removeTabGroup(this.activeGroup, {
+          metricsContext: TabMetrics.userTriggeredContext(
+            TabMetrics.METRIC_SOURCE.TAB_GROUP_MENU
+          ),
+        });
+      });
+
+      this.#commandButtons.shareTabGroup.addEventListener("command", () => {
+        ContentSharingUtils.handleShareTabGroup(this.activeGroup);
+        this.close();
       });
 
       this.panel.addEventListener("popupshown", this);
@@ -490,7 +538,7 @@
         Services.locale.appLocaleAsBCP47.startsWith("en") &&
         this.smartTabGroupsUserEnabled &&
         this.smartTabGroupsFeatureConfigEnabled &&
-        !PrivateBrowsingUtils.isWindowPrivate(this.ownerGlobal) &&
+        !PrivateBrowsingUtils.isWindowPrivate(this.documentGlobal) &&
         this.mlEnabled
       );
     }
@@ -555,6 +603,7 @@
           ? MozTabbrowserTabGroupMenu.State.CREATE_AI_INITIAL
           : MozTabbrowserTabGroupMenu.State.EDIT_AI_INITIAL;
         this.#setFormToDisabled(false);
+        this.#suggestionsOptinContainer.hidden = true;
       });
 
       // On Cancel Model Download
@@ -568,6 +617,7 @@
             ? MozTabbrowserTabGroupMenu.State.CREATE_AI_INITIAL
             : MozTabbrowserTabGroupMenu.State.EDIT_AI_INITIAL;
           this.#setFormToDisabled(false);
+          this.#suggestionsOptinContainer.hidden = true;
         }
       );
 
@@ -591,6 +641,7 @@
         }
       );
 
+      this.#suggestionsOptinContainer.hidden = false;
       this.#suggestionsOptinContainer.appendChild(this.#suggestionsOptin);
     }
 
@@ -620,7 +671,7 @@
 
       // Init Suggestions UI
       this.#suggestionsHeading = this.querySelector(
-        "#tab-group-suggestions-heading"
+        "#tab-group-editor-title-suggest"
       );
       this.#suggestionsContainer = this.querySelector(
         "#tab-group-suggestions-container"
@@ -702,11 +753,11 @@
         label.htmlFor = input.id;
         label.style.setProperty(
           "--tabgroup-swatch-color",
-          `var(--tab-group-color-${colorCode})`
+          `var(--tab-group-${colorCode})`
         );
         label.style.setProperty(
           "--tabgroup-swatch-color-invert",
-          `var(--tab-group-color-${colorCode}-invert)`
+          `var(--tab-group-${colorCode}-invert)`
         );
         this.#swatchesContainer.append(input, label);
         this.#swatches.push(input);
@@ -733,6 +784,7 @@
           ? "tab-group-editor-title-create"
           : "tab-group-editor-title-edit"
       );
+      this.#commandButtons.copyAllLinks.hidden = enableCreateMode;
       this.#createMode = enableCreateMode;
     }
 
@@ -836,6 +888,8 @@
         ? MozTabbrowserTabGroupMenu.State.CREATE_AI_INITIAL
         : MozTabbrowserTabGroupMenu.State.CREATE_STANDARD_INITIAL;
 
+      this.#maybeUpdateLayoutForNova();
+
       this.#panel.openPopup(group.firstChild, {
         position: this.#panelPosition,
       });
@@ -879,19 +933,40 @@
         ? MozTabbrowserTabGroupMenu.State.EDIT_AI_INITIAL
         : MozTabbrowserTabGroupMenu.State.EDIT_STANDARD_INITIAL;
 
+      this.#maybeUpdateLayoutForNova();
+
       this.#panel.openPopup(group.firstChild, {
         position: this.#panelPosition,
       });
       document.getElementById("tabGroupEditor_moveGroupToNewWindow").disabled =
         gBrowser.openTabs.length == this.activeGroup?.tabs.length;
+      let linkCount = this.#getGroupLinks(this.activeGroup).length;
+      document.l10n.setAttributes(
+        this.#commandButtons.copyAllLinks,
+        "tab-group-editor-action-copy-links",
+        { linkCount }
+      );
+      this.#commandButtons.copyAllLinks.disabled = !linkCount;
       this.#maybeDisableOrHideSaveButton();
+    }
+
+    #maybeUpdateLayoutForNova() {
+      const isNovaEnabled = Services.prefs.getBoolPref(
+        "browser.nova.enabled",
+        false
+      );
+      if (isNovaEnabled) {
+        this.#nameContainer.before(this.#swatchesContainer);
+      } else {
+        this.#tabGroupPropertiesActions.prepend(this.#swatchesContainer);
+      }
     }
 
     #maybeDisableOrHideSaveButton() {
       const saveAndCloseGroup = document.getElementById(
         "tabGroupEditor_saveAndCloseGroup"
       );
-      if (PrivateBrowsingUtils.isWindowPrivate(this.ownerGlobal)) {
+      if (PrivateBrowsingUtils.isWindowPrivate(this.documentGlobal)) {
         saveAndCloseGroup.hidden = true;
         return;
       }
@@ -928,6 +1003,9 @@
       for (const button of Object.values(this.#commandButtons)) {
         button.tooltipText = button.label;
       }
+
+      this.#commandButtons.shareTabGroup.hidden =
+        !ContentSharingUtils.isEnabled;
     }
 
     on_popuphidden() {
@@ -944,10 +1022,11 @@
             this.#handleMlTelemetry("save-popup-hidden");
           }
         } else {
-          this.activeGroup.ungroupTabs({
-            isUserTriggered: true,
-            telemetrySource: TabMetrics.METRIC_SOURCE.CANCEL_TAB_GROUP_CREATION,
-          });
+          this.activeGroup.ungroupTabs(
+            TabMetrics.userTriggeredContext(
+              TabMetrics.METRIC_SOURCE.CANCEL_TAB_GROUP_CREATION
+            )
+          );
         }
       }
       if (this.#nameField.disabled) {
@@ -1004,7 +1083,32 @@
         window.removeEventListener("TabOpen", onTabOpened);
       };
       window.addEventListener("TabOpen", onTabOpened);
+      // The tab group menu can be invoked on a window that isn't the OS-level
+      // frontmost window (most reproducibly on macOS in a multi-monitor
+      // setup). Raise the window so the new tab's focusUrlBar request can
+      // actually land OS keyboard focus on the address bar. Bug 2039674
+      // tracks routing this through URILoadingHelper instead.
+      window.focus();
       gBrowser.addAdjacentNewTab(lastTab);
+    }
+
+    /**
+     * @param {MozTabbrowserTabGroup} group
+     * @returns {Array<{url: string, title: string}>}
+     */
+    #getGroupLinks(group) {
+      let links = [];
+      for (let tab of group.tabs) {
+        let browser = tab.linkedBrowser;
+        let shareableURL = BrowserUtils.getShareableURL(browser.currentURI);
+        if (shareableURL) {
+          links.push({
+            url: gURLBar.makeURIReadable(shareableURL).displaySpec,
+            title: browser.contentTitle,
+          });
+        }
+      }
+      return links;
     }
 
     /**
@@ -1263,9 +1367,10 @@
      * @param {boolean} value
      */
     #setSuggestModeSuggestionState(value) {
-      this.#setElementVisibility(this.#tabGroupMain, !value);
+      this.#setElementVisibility(this.#tabGroupPropertiesActions, !value);
+      this.#setElementVisibility(this.#createTabGroupHeading, !value);
+      this.#setElementVisibility(this.#editTabGroupHeading, !value);
       this.#setElementVisibility(this.#suggestionsHeading, value);
-      this.#setElementVisibility(this.#defaultHeader, !value);
       this.#panel.classList.toggle("tab-group-editor-panel-expanded", value);
     }
 
@@ -1283,6 +1388,7 @@
       this.#showSmartSuggestionsContainer(false);
       if (this.#suggestionsOptinContainer) {
         this.#suggestionsOptinContainer.replaceChildren();
+        this.#suggestionsOptinContainer.hidden = true;
       }
     }
 

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -18,14 +16,14 @@
 #include "mozilla/Span.h"       // for mozilla::Span
 #include "mozilla/TextUtils.h"  // for mozilla::IsAscii and via Latin1.h for
                                 // encoding_rs_mem.h and MOZ_HAS_JSRUST.
-#include "mozilla/Types.h"      // for MFBT_API
+#include <limits.h>             // for CHAR_BIT
+#include <stddef.h>             // for size_t
+#include <stdint.h>             // for uint8_t
 
-#include <limits>    // for std::numeric_limits
-#include <limits.h>  // for CHAR_BIT
-#include <stddef.h>  // for size_t
-#include <stdint.h>  // for uint8_t
+#include "mozilla/Types.h"  // for MFBT_API
 
 #if MOZ_HAS_JSRUST()
+#  include <limits>  // for std::numeric_limits
 // Can't include mozilla/Encoding.h here.
 extern "C" {
 // Declared as uint8_t instead of char to match declaration in another header.
@@ -587,6 +585,32 @@ inline Maybe<char32_t> DecodeOneUtf8CodePoint(const Utf8Unit aLeadUnit,
                                               Iter* aIter,
                                               const EndIter& aEnd) {
   return DecodeOneUtf8CodePointInline(aLeadUnit, aIter, aEnd);
+}
+
+/**
+ * As above, but replacing invalid codepoints by replacement characters in the
+ * same way all Gecko string conversions do.
+ */
+template <typename Iter, typename EndIter>
+inline char32_t LossyDecodeOneUtf8CodePoint(const Utf8Unit aLeadUnit,
+                                            Iter* aIter, const EndIter& aEnd) {
+  return DecodeOneUtf8CodePointInline(
+             aLeadUnit, aIter, aEnd, [&] { (*aIter)++; },
+             [&](uint8_t aUnitsAvailable, uint8_t) {
+               // Not enough units: only the bytes that are actually
+               // continuation bytes belong to the subpart (the count isn't
+               // validated upfront).
+               uint8_t n = 1;
+               while (n < aUnitsAvailable &&
+                      IsTrailingUnit(Utf8Unit((*aIter)[n]))) {
+                 ++n;
+               }
+               (*aIter) += n;
+             },
+             [&](uint8_t aUnitsObserved) { (*aIter) += aUnitsObserved - 1; },
+             [&](char32_t, uint8_t) { (*aIter)++; },
+             [&](char32_t, uint8_t) { (*aIter)++; })
+      .valueOr(0xfffdu);
 }
 
 }  // namespace mozilla

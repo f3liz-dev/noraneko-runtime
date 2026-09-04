@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -92,8 +90,9 @@ class InternalJobQueue : public JS::JobQueue {
   ~InternalJobQueue() = default;
 
   // JS::JobQueue methods.
-  bool getHostDefinedData(JSContext* cx,
-                          JS::MutableHandle<JSObject*> data) const override;
+  bool getHostDefinedData(
+      JSContext* cx, JS::MutableHandle<JSObject*> incumbentGlobal,
+      JS::MutableHandle<JSObject*> optionalHostDefinedData) const override;
 
   bool getHostDefinedGlobal(JSContext*,
                             JS::MutableHandle<JSObject*>) const override;
@@ -185,6 +184,7 @@ struct MicroTaskQueueSet {
 
   JS::GenericMicroTask popFront();
   JS::GenericMicroTask popDebugFront();
+  JS::GenericMicroTask peekFront();
 
   bool empty() { return microTaskQueue.empty() && debugMicroTaskQueue.empty(); }
 
@@ -285,6 +285,14 @@ struct JS_PUBLIC_API JSContext : public JS::RootingContext,
   /* Clear the pending exception (if any) due to OOM. */
   void recoverFromOutOfMemory();
 
+  // Clears a pending OOM or over-recursion exception. Documents that the
+  // preceding operation is only fallible due to resource exhaustion, not
+  // spec-related reasons.
+  void recoverFromResourceExhaustion() {
+    MOZ_ASSERT(isThrowingOutOfMemory() || isThrowingOverRecursed());
+    clearPendingException();
+  }
+
   void reportAllocOverflow();
 
   // Accessors for immutable runtime data.
@@ -305,6 +313,7 @@ struct JS_PUBLIC_API JSContext : public JS::RootingContext,
     return nativeStackLimit[kind];
   }
   JS::NativeStackLimit stackLimitForJitCode(JS::StackKind kind);
+  bool stackContainsAddress(uintptr_t address, JS::StackKind kind);
   size_t gcSystemPageSize() { return js::gc::SystemPageSize(); }
 
   /*
@@ -372,12 +381,16 @@ struct JS_PUBLIC_API JSContext : public JS::RootingContext,
   js::SymbolRegistry& symbolRegistry() { return runtime_->symbolRegistry(); }
 
   // Methods to access other runtime data that checks locking internally.
-  js::gc::AtomMarkingRuntime& atomMarking() { return runtime_->gc.atomMarking; }
-  void markAtom(JSAtom* atom) { atomMarking().markAtom(this, atom); }
-  void markAtom(JS::Symbol* symbol) { atomMarking().markAtom(this, symbol); }
-  void markId(jsid id) { atomMarking().markId(this, id); }
-  void markAtomValue(const js::Value& value) {
-    atomMarking().markAtomValue(this, value);
+  js::gc::AtomRefRuntime& atomReferences() {
+    return runtime_->gc.atomReferences;
+  }
+  void recordRef(JSAtom* atom) { atomReferences().recordRef(this, atom); }
+  void recordRef(JS::Symbol* symbol) {
+    atomReferences().recordRef(this, symbol);
+  }
+  void recordRefToId(jsid id) { atomReferences().recordRefToId(this, id); }
+  void recordRefToValue(const js::Value& value) {
+    atomReferences().recordRefToValue(this, value);
   }
 
   // Interface for recording telemetry metrics.
@@ -619,10 +632,21 @@ struct JS_PUBLIC_API JSContext : public JS::RootingContext,
   mozilla::Atomic<bool, mozilla::SequentiallyConsistent>
       suppressProfilerSampling;
 
+  // While sampling is suppressed, whether the sampler may still read tenured
+  // script data (e.g. line/column) via ProfilingStackFrame::script(). Most
+  // suppression sites leave this false because the script pointers may be
+  // unsafe, notably during the compacting phase of GC where scripts are being
+  // relocated. Minor GC sets it because it does not move scripts. Read from
+  // the sampler thread, written from the main thread, hence atomic.
+  mozilla::Atomic<bool, mozilla::SequentiallyConsistent>
+      allowProfilerScriptAccess_;
+
  public:
   bool isProfilerSamplingEnabled() const { return !suppressProfilerSampling; }
   void disableProfilerSampling() { suppressProfilerSampling = true; }
   void enableProfilerSampling() { suppressProfilerSampling = false; }
+  bool allowProfilerScriptAccess() const { return allowProfilerScriptAccess_; }
+  void setAllowProfilerScriptAccess(bool b) { allowProfilerScriptAccess_ = b; }
 
  private:
   js::wasm::Context wasm_;
@@ -1004,8 +1028,17 @@ struct JS_PUBLIC_API JSContext : public JS::RootingContext,
   }
 
  public:
-  // Assert the arguments are in this context's realm (for scripts),
-  // compartment (for objects) or zone (for strings, symbols).
+  // [SMDOC] Argument Compatibility Conventions
+  //
+  // The convention within SpiderMonkey is that if a function takes a JSContext*
+  // argument, all the other arguments are in the same compartment as the
+  // JSContext for objects, same-realm for scripts, and same-zone for strings
+  // and symbols.
+  //
+  // Exceptions to this are allowed, but should be documented explicitly in
+  // some fashion (e.g. naming the parameter `unwrappedFoo`)
+  //
+  // The below `check` functions are used for dynamic enforcement.
   template <class... Args>
   inline void check(const Args&... args);
   template <class... Args>
@@ -1253,7 +1286,7 @@ class MOZ_RAII AutoUnsafeCallWithABI {
 #ifdef JS_CHECK_UNSAFE_CALL_WITH_ABI
   JSContext* cx_;
   bool nested_;
-  bool checkForPendingException_;
+  bool checkForPendingException_ = false;
 #endif
   JS::AutoCheckCannotGC nogc;
 

@@ -8,12 +8,15 @@ import android.content.Context
 import android.net.ConnectivityManager
 import androidx.annotation.VisibleForTesting
 import androidx.core.content.getSystemService
+import androidx.core.net.toUri
 import androidx.navigation.NavController
 import mozilla.components.browser.errorpages.ErrorPages
 import mozilla.components.browser.errorpages.ErrorType
+import mozilla.components.browser.state.state.selectedOrDefaultSearchEngine
 import mozilla.components.concept.engine.EngineSession
 import mozilla.components.concept.engine.request.RequestInterceptor
 import mozilla.components.concept.engine.utils.ABOUT_HOME_URL
+import mozilla.components.feature.search.ext.buildSearchUrl
 import mozilla.components.support.ktx.kotlin.isContentUrl
 import org.mozilla.fenix.GleanMetrics.ErrorPage
 import org.mozilla.fenix.ext.components
@@ -22,6 +25,7 @@ import java.lang.ref.WeakReference
 
 class AppRequestInterceptor(
     private val context: Context,
+    private val isPrivateForSession: (EngineSession) -> Boolean = { false },
 ) : RequestInterceptor {
 
     private var navController: WeakReference<NavController>? = null
@@ -42,22 +46,29 @@ class AppRequestInterceptor(
         isDirectNavigation: Boolean,
         isSubframeRequest: Boolean,
     ): RequestInterceptor.InterceptionResponse? {
+        interceptErrorPageAction(uri)?.let { return it }
+
         if (interceptAboutHomeRequest(uri)) {
             // Let the original request proceed.
             return null
         }
 
         val services = context.components.services
-        return services.appLinksInterceptor.onLoadRequest(
-            engineSession,
-            uri,
-            lastUri,
-            hasUserGesture,
-            isSameDomain,
-            isRedirect,
-            isDirectNavigation,
-            isSubframeRequest,
-        )
+        return listOf(
+            services.appLinksInterceptor,
+            services.storyUTMRequestInterceptor,
+        ).firstNotNullOfOrNull {
+            it.onLoadRequest(
+                engineSession,
+                uri,
+                lastUri,
+                hasUserGesture,
+                isSameDomain,
+                isRedirect,
+                isDirectNavigation,
+                isSubframeRequest,
+            )
+        }
     }
 
     override fun onErrorRequest(
@@ -70,10 +81,14 @@ class AppRequestInterceptor(
 
         ErrorPage.visitedError.record(ErrorPage.VisitedErrorExtra(improvedErrorType.name))
 
+        val archiveActionEnabled = context.components.settings.isWaybackMachineEnabled
+
         // Record additional telemetry for content URI not found
         if (uri?.isContentUrl() == true && improvedErrorType == ErrorType.ERROR_FILE_NOT_FOUND) {
             ErrorPage.visitedError.record(ErrorPage.VisitedErrorExtra(errorType = "ERROR_CONTENT_URI_NOT_FOUND"))
         }
+
+        val isPrivate = isPrivateForSession(session)
 
         val errorPageUri = ErrorPages.createUrlEncodedErrorPage(
             context = context,
@@ -82,9 +97,52 @@ class AppRequestInterceptor(
             htmlResource = riskLevel.htmlRes,
             titleOverride = { type -> getErrorPageTitle(context, type) },
             descriptionOverride = { type -> getErrorPageDescription(context, type) },
+            isPrivate = isPrivate,
+            archiveActionEnabled = archiveActionEnabled,
         )
 
         return RequestInterceptor.ErrorResponse(errorPageUri)
+    }
+
+    /**
+     * Intercepts navigations the error page makes to the [ERROR_PAGE_ACTION_SCHEME] sentinel
+     * scheme to hand archive actions back to native code: searching the web for the failed page
+     * with the user's default search engine, or opening a located archived copy. Returns `null`
+     * for any other [uri] so normal navigation proceeds.
+     */
+    private fun interceptErrorPageAction(uri: String): RequestInterceptor.InterceptionResponse? {
+        if (!uri.startsWith("$ERROR_PAGE_ACTION_SCHEME://")) {
+            return null
+        }
+
+        val parsed = uri.toUri()
+        return when (parsed.host) {
+            ERROR_PAGE_ACTION_ATTEMPT -> {
+                ErrorPage.archiveButtonClicked.record()
+                RequestInterceptor.InterceptionResponse.Deny
+            }
+            ERROR_PAGE_ACTION_SEARCH -> {
+                val query = parsed.getQueryParameter("q").orEmpty()
+                val searchEngine = context.components.core.store.state.search
+                    .selectedOrDefaultSearchEngine
+                if (query.isEmpty() || searchEngine == null) {
+                    RequestInterceptor.InterceptionResponse.Deny
+                } else {
+                    ErrorPage.archiveSearchWebSelected.record()
+                    RequestInterceptor.InterceptionResponse.Url(searchEngine.buildSearchUrl(query))
+                }
+            }
+            ERROR_PAGE_ACTION_OPEN -> {
+                val archiveUrl = parsed.getQueryParameter("url").orEmpty()
+                if (archiveUrl.isEmpty()) {
+                    RequestInterceptor.InterceptionResponse.Deny
+                } else {
+                    ErrorPage.archivedVersionOpened.record()
+                    RequestInterceptor.InterceptionResponse.Url(archiveUrl)
+                }
+            }
+            else -> RequestInterceptor.InterceptionResponse.Deny
+        }
     }
 
     /**
@@ -134,6 +192,7 @@ class AppRequestInterceptor(
         ErrorType.ERROR_NET_INTERRUPT,
         ErrorType.ERROR_NET_TIMEOUT,
         ErrorType.ERROR_CONNECTION_REFUSED,
+        ErrorType.ERROR_LOCAL_NETWORK_ACCESS_DENIED,
         ErrorType.ERROR_UNKNOWN_SOCKET_TYPE,
         ErrorType.ERROR_REDIRECT_LOOP,
         ErrorType.ERROR_OFFLINE,
@@ -195,5 +254,11 @@ class AppRequestInterceptor(
     companion object {
         internal const val LOW_AND_MEDIUM_RISK_ERROR_PAGES = "low_and_medium_risk_error_pages.html"
         internal const val HIGH_RISK_ERROR_PAGES = "high_risk_error_pages.html"
+
+        @VisibleForTesting
+        internal const val ERROR_PAGE_ACTION_SCHEME = "firefox-error-action"
+        private const val ERROR_PAGE_ACTION_ATTEMPT = "attempt"
+        private const val ERROR_PAGE_ACTION_SEARCH = "search"
+        private const val ERROR_PAGE_ACTION_OPEN = "open"
     }
 }

@@ -2,11 +2,11 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from mozbuild.util import memoize
+import functools
+
+from mozilla_taskgraph.util.attributes import release_level as _release_level
 from taskgraph.util.attributes import keymatch
 from taskgraph.util.keyed_by import evaluate_keyed_by
-
-from gecko_taskgraph.util.attributes import release_level as _release_level
 
 WORKER_TYPES = {
     "gce/gecko-1-b-linux": ("docker-worker", "linux"),
@@ -18,7 +18,7 @@ WORKER_TYPES = {
 }
 
 
-@memoize
+@functools.cache
 def _get(graph_config, alias, level, release_level, project):
     """Get the configuration for this worker_type alias: {provisioner,
     worker-type, implementation, os}"""
@@ -93,7 +93,7 @@ def get_worker_type(graph_config, parameters, worker_type):
         graph_config,
         worker_type,
         parameters["level"],
-        _release_level(parameters),
+        _release_level(graph_config["release-branches"], parameters),
         parameters.get("project"),
     )
     return worker_config["provisioner"], worker_config["worker-type"]

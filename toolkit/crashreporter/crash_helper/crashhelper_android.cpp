@@ -8,26 +8,16 @@
 #include <fcntl.h>
 #include <sys/socket.h>
 #include <sys/un.h>
+#include <unistd.h>
 
 #include "mozilla/crash_helper_ffi_generated.h"
 
 #define CRASH_HELPER_LOGTAG "GeckoCrashHelper"
 
-extern "C" JNIEXPORT jboolean JNICALL
-Java_org_mozilla_gecko_crashhelper_CrashHelper_set_1breakpad_1opts(
-    JNIEnv* jenv, jclass, jint breakpad_fd) {
-  // Enable passing credentials on the Breakpad server socket. We'd love to do
-  // it inside CrashHelper.java but the Java methods require an Android API
-  // version that's too recent for us.
-  const int val = 1;
-  int res = setsockopt(breakpad_fd, SOL_SOCKET, SO_PASSCRED, &val, sizeof(val));
-  return res >= 0;
-}
-
 extern "C" JNIEXPORT void JNICALL
 Java_org_mozilla_gecko_crashhelper_CrashHelper_crash_1generator(
-    JNIEnv* jenv, jclass, jint pid, jint breakpad_fd, jstring minidump_path,
-    jint server_fd) {
+    JNIEnv* jenv, jclass, jstring build_id, jint pid, jint breakpad_fd,
+    jstring minidump_path, jint server_fd) {
   // The breakpad server socket needs to be put in non-blocking mode, we do it
   // here as the Rust code that picks it up won't touch it anymore and just
   // pass it along to Breakpad.
@@ -35,6 +25,8 @@ Java_org_mozilla_gecko_crashhelper_CrashHelper_crash_1generator(
   if (flags == -1) {
     __android_log_print(ANDROID_LOG_FATAL, CRASH_HELPER_LOGTAG,
                         "Unable to get the Breakpad pipe file options");
+    close(breakpad_fd);
+    close(server_fd);
     return;
   }
 
@@ -42,12 +34,17 @@ Java_org_mozilla_gecko_crashhelper_CrashHelper_crash_1generator(
   if (res == -1) {
     __android_log_print(ANDROID_LOG_FATAL, CRASH_HELPER_LOGTAG,
                         "Unable to set the Breakpad pipe in non-blocking mode");
+    close(breakpad_fd);
+    close(server_fd);
     return;
   }
 
+  const char* build_id_str = jenv->GetStringUTFChars(build_id, nullptr);
   const char* minidump_path_str =
       jenv->GetStringUTFChars(minidump_path, nullptr);
   const RawIPCConnector pipe = {.socket = server_fd};
-  crash_generator_logic_android(pid, breakpad_fd, minidump_path_str, pipe);
+  crash_generator_logic_android(build_id_str, pid, breakpad_fd,
+                                minidump_path_str, pipe);
   jenv->ReleaseStringUTFChars(minidump_path, minidump_path_str);
+  jenv->ReleaseStringUTFChars(build_id, build_id_str);
 }

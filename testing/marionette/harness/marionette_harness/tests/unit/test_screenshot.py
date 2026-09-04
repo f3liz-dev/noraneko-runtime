@@ -5,6 +5,7 @@
 import base64
 import hashlib
 import struct
+import sys
 import tempfile
 import unittest
 
@@ -32,6 +33,11 @@ box = inline(
 input = inline("<body><input id='text-input'></input></body>")
 long = inline("<body style='height: 300vh'><p style='margin-top: 100vh'>foo</p></body>")
 short = inline("<body style='height: 10vh'></body>")
+partially_visible = inline(
+    "<body style='height: 300vh'>"
+    "<div id='abs' style='position:absolute;margin-top:200px;width:20px;height:100vh;background:green'></div>"
+    "</body>"
+)
 svg = inline(
     """
     <svg xmlns="http://www.w3.org/2000/svg" height="20" width="20">
@@ -246,6 +252,38 @@ class TestScreenCaptureContent(WindowManagerMixin, ScreenCaptureTestCase):
         self.assertNotEqual(before, after)
         self.assertGreater(self.page_y_offset, 0)
 
+    def assert_readback_viewport(self, screenshot):
+        # The captured region is the composited content area, which can differ
+        # from the content viewport by a device pixel due to rounding.
+        width, height = self.get_image_dimensions(screenshot)
+        expected_width, expected_height = self.scale(self.viewport_dimensions)
+        self.assertAlmostEqual(width, expected_width, delta=2)
+        self.assertAlmostEqual(height, expected_height, delta=2)
+
+    @unittest.skipIf(sys.platform.startswith("darwin"), "Not supported on MacOS")
+    def test_readback_viewport(self):
+        self.marionette.navigate(short)
+        with self.marionette.using_prefs({"remote.screenshot.use_readback": True}):
+            screenshot = self.marionette.screenshot(full=False)
+        self.assert_readback_viewport(screenshot)
+
+    @unittest.skipIf(sys.platform.startswith("darwin"), "Not supported on MacOS")
+    def test_readback_full_page_degrades_to_viewport(self):
+        # Readback can only return composited pixels, so a full-document
+        # capture degrades to the viewport instead of the scroll dimensions.
+        self.marionette.navigate(long)
+        with self.marionette.using_prefs({"remote.screenshot.use_readback": True}):
+            screenshot = self.marionette.screenshot()
+        self.assert_readback_viewport(screenshot)
+
+    @unittest.skipIf(sys.platform.startswith("darwin"), "Not supported on MacOS")
+    def test_readback_element_degrades_to_viewport(self):
+        self.marionette.navigate(box)
+        el = self.marionette.find_element(By.TAG_NAME, "div")
+        with self.marionette.using_prefs({"remote.screenshot.use_readback": True}):
+            screenshot = self.marionette.screenshot(element=el)
+        self.assert_readback_viewport(screenshot)
+
     def test_formats(self):
         self.marionette.navigate(box)
 
@@ -281,8 +319,8 @@ class TestScreenCaptureContent(WindowManagerMixin, ScreenCaptureTestCase):
         self.assertNotEqual(before, self.page_y_offset)
 
     def test_scroll_off(self):
-        self.marionette.navigate(long)
-        el = self.marionette.find_element(By.TAG_NAME, "p")
+        self.marionette.navigate(partially_visible)
+        el = self.marionette.find_element(By.ID, "abs")
         before = self.page_y_offset
         self.marionette.screenshot(element=el, format="hash", scroll=False)
         self.assertEqual(before, self.page_y_offset)

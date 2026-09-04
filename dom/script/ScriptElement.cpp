@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -131,6 +129,10 @@ void ScriptElement::ContentAppended(nsIContent* aFirstNewContent,
     return;
   }
   UpdateTrustWorthiness(aInfo.mMutationEffectOnScript);
+  // moveBefore() must not run the script.
+  if (aInfo.mOldParent) {
+    return;
+  }
   MaybeProcessScript(nullptr /* aParser */);
 }
 
@@ -140,6 +142,10 @@ void ScriptElement::ContentInserted(nsIContent* aChild,
     return;
   }
   UpdateTrustWorthiness(aInfo.mMutationEffectOnScript);
+  // moveBefore() must not run the script.
+  if (aInfo.mOldParent) {
+    return;
+  }
   MaybeProcessScript(nullptr /* aParser */);
 }
 
@@ -249,7 +255,9 @@ bool ScriptElement::MaybeProcessScript(const nsAString& aSourceText) {
   if (!type.IsEmpty()) {
     if (!nsContentUtils::IsJavascriptMIMEType(type) &&
         !type.LowerCaseEqualsASCII("module") &&
-        !type.LowerCaseEqualsASCII("importmap")) {
+        !type.LowerCaseEqualsASCII("importmap") &&
+        !(StaticPrefs::dom_speculation_rules_enabled() &&
+          type.LowerCaseEqualsASCII("speculationrules"))) {
 #ifdef DEBUG
       // There is a WebGL convention to store strings they need inside script
       // tags with these specific unknown script types, so don't warn for them.

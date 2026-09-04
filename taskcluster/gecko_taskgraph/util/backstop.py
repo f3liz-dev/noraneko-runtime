@@ -4,10 +4,9 @@
 
 
 from taskcluster.exceptions import TaskclusterRestFailure
-from taskgraph.util.taskcluster import find_task_id, get_artifact
+from taskgraph.util.taskcluster import find_task_id, get_artifact, state_task
 
 from gecko_taskgraph.util.attributes import INTEGRATION_PROJECTS, TRY_PROJECTS
-from gecko_taskgraph.util.taskcluster import state_task
 
 BACKSTOP_PUSH_INTERVAL = 20
 BACKSTOP_TIME_INTERVAL = 60 * 4  # minutes
@@ -47,7 +46,7 @@ def is_backstop(
 
     # Backstops not used / supported on Github yet.
     if params["repository_type"] == "git":
-        return True
+        return False
 
     project = params["project"]
     if project in TRY_PROJECTS:
@@ -55,9 +54,7 @@ def is_backstop(
     if project not in integration_projects:
         return True
 
-    # This push was explicitly set to run nothing (e.g via DONTBUILD), so
-    # shouldn't be a backstop candidate.
-    if params["target_tasks_method"] == "nothing":
+    if params.get("dontbuild"):
         return False
 
     # Find the last backstop to compute push and time intervals.

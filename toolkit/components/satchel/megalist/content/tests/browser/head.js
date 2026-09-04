@@ -141,7 +141,7 @@ async function openPasswordsSidebar(aWindow = window) {
 async function checkAllLoginsRendered(megalist) {
   info("Check that all logins are rendered.");
   const logins = await Services.logins.getAllLogins();
-  await BrowserTestUtils.waitForCondition(() => {
+  await TestUtils.waitForCondition(() => {
     const passwordsList = megalist.querySelector(".passwords-list");
     return (
       passwordsList?.querySelectorAll("password-card").length === logins.length
@@ -151,11 +151,11 @@ async function checkAllLoginsRendered(megalist) {
   ok(true, `${logins.length} password cards are rendered.`);
 }
 
-async function addLocalOriginLogin() {
+async function addNavigableOriginLogin() {
   LoginTestUtils.addLogin({
     username: "john",
     password: "pass4",
-    origin: "about:preferences#privacy",
+    origin: "https://example.com",
   });
 }
 
@@ -178,7 +178,7 @@ async function ensureNoNotifications(megalist, notificationId) {
 
 function waitForNotification(megalist, notificationId) {
   info(`Wait for notification with id ${notificationId}.`);
-  const notifcationPromise = BrowserTestUtils.waitForCondition(() => {
+  const notifcationPromise = TestUtils.waitForCondition(() => {
     const notifMsgBars = Array.from(
       megalist.querySelectorAll("notification-message-bar")
     );
@@ -222,8 +222,8 @@ async function checkNotificationInteractionTelemetry(
 function setInputValue(loginForm, fieldElement, value) {
   info(`Filling ${fieldElement} with value '${value}'.`);
   const field = loginForm.shadowRoot.querySelector(fieldElement);
-  field.input.value = value;
-  field.input.dispatchEvent(
+  field.inputEl.value = value;
+  field.inputEl.dispatchEvent(
     new InputEvent("input", {
       composed: true,
       bubbles: true,
@@ -232,7 +232,7 @@ function setInputValue(loginForm, fieldElement, value) {
 }
 
 function getMegalistParent() {
-  const megalistChromeWindow = gBrowser.ownerGlobal[0];
+  const megalistChromeWindow = gBrowser.documentGlobal[0];
   return megalistChromeWindow.browsingContext.currentWindowGlobal.getActor(
     "Megalist"
   );
@@ -279,14 +279,14 @@ function waitForSnapshots() {
   const sidebar = document.getElementById("sidebar");
   const megalistComponent =
     sidebar.contentDocument.querySelector("megalist-alpha");
-  return BrowserTestUtils.waitForCondition(
+  return TestUtils.waitForCondition(
     () => megalistComponent.header,
     "Megalist header loaded."
   );
 }
 
 async function checkEmptyState(selector, megalist) {
-  return await BrowserTestUtils.waitForCondition(() => {
+  return await TestUtils.waitForCondition(() => {
     const emptyStateCard = megalist.querySelector(".empty-state-card");
     return !!emptyStateCard?.querySelector(selector);
   }, "Empty state card failed to render");

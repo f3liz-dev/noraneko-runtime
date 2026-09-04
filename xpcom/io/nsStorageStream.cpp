@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -12,20 +10,21 @@
  * with the attendant performance loss and heap fragmentation.
  */
 
-#include "mozilla/Mutex.h"
-#include "nsAlgorithm.h"
 #include "nsStorageStream.h"
-#include "nsSegmentedBuffer.h"
-#include "nsStreamUtils.h"
+
+#include "mozilla/Likely.h"
+#include "mozilla/Logging.h"
+#include "mozilla/MathAlgorithms.h"
+#include "mozilla/Mutex.h"
+#include "mozilla/ipc/InputStreamUtils.h"
+#include "nsAlgorithm.h"
 #include "nsCOMPtr.h"
 #include "nsICloneableInputStream.h"
-#include "nsIInputStream.h"
 #include "nsIIPCSerializableInputStream.h"
+#include "nsIInputStream.h"
 #include "nsISeekableStream.h"
-#include "mozilla/Logging.h"
-#include "mozilla/Likely.h"
-#include "mozilla/MathAlgorithms.h"
-#include "mozilla/ipc/InputStreamUtils.h"
+#include "nsSegmentedBuffer.h"
+#include "nsStreamUtils.h"
 
 using mozilla::MutexAutoLock;
 using mozilla::ipc::InputStreamParams;
@@ -132,8 +131,8 @@ nsStorageStream::Close() {
     mSegmentedBuffer->ReallocLastSegment(segmentOffset);
   }
 
-  mWriteCursor = 0;
-  mSegmentEnd = 0;
+  mWriteCursor = nullptr;
+  mSegmentEnd = nullptr;
 
   LOG(("nsStorageStream [%p] Close mWriteCursor=%p mSegmentEnd=%p\n", this,
        mWriteCursor, mSegmentEnd));
@@ -201,7 +200,7 @@ nsStorageStream::Write(const char* aBuffer, uint32_t aCount,
     if (!availableInSegment) {
       mWriteCursor = mSegmentedBuffer->AppendNewSegment();
       if (!mWriteCursor) {
-        mSegmentEnd = 0;
+        mSegmentEnd = nullptr;
         return NS_ERROR_OUT_OF_MEMORY;
       }
       mLastSegmentNum++;
@@ -328,8 +327,8 @@ nsresult nsStorageStream::Seek(int32_t aPosition) {
 
   // Special handling for seek to start-of-buffer
   if (aPosition == 0) {
-    mWriteCursor = 0;
-    mSegmentEnd = 0;
+    mWriteCursor = nullptr;
+    mSegmentEnd = nullptr;
     LOG(("nsStorageStream [%p] Seek mWriteCursor=%p mSegmentEnd=%p\n", this,
          mWriteCursor, mSegmentEnd));
     return NS_OK;
@@ -363,14 +362,8 @@ class nsStorageInputStream final : public nsIInputStream,
                                    public nsIIPCSerializableInputStream,
                                    public nsICloneableInputStream {
  public:
-  nsStorageInputStream(nsStorageStream* aStorageStream, uint32_t aSegmentSize)
-      : mStorageStream(aStorageStream),
-        mReadCursor(0),
-        mSegmentEnd(0),
-        mSegmentNum(0),
-        mSegmentSize(aSegmentSize),
-        mLogicalCursor(0),
-        mStatus(NS_OK) {}
+  explicit nsStorageInputStream(nsStorageStream* aStorageStream)
+      : mStorageStream(aStorageStream), mLogicalCursor(0), mStatus(NS_OK) {}
 
   NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSIINPUTSTREAM
@@ -389,19 +382,8 @@ class nsStorageInputStream final : public nsIInputStream,
 
  private:
   RefPtr<nsStorageStream> mStorageStream;
-  uint32_t mReadCursor;     // Next memory location to read byte, or 0
-  uint32_t mSegmentEnd;     // One byte past end of current buffer segment
-  uint32_t mSegmentNum;     // Segment number containing read cursor
-  uint32_t mSegmentSize;    // All segments, except the last, are of this size
   uint32_t mLogicalCursor;  // Logical offset into stream
   nsresult mStatus;
-
-  uint32_t SegNum(uint32_t aPosition) MOZ_REQUIRES(mStorageStream->mMutex) {
-    return aPosition >> mStorageStream->mSegmentSizeLog2;
-  }
-  uint32_t SegOffset(uint32_t aPosition) {
-    return aPosition & (mSegmentSize - 1);
-  }
 };
 
 NS_IMPL_ISUPPORTS(nsStorageInputStream, nsIInputStream, nsISeekableStream,
@@ -416,8 +398,7 @@ nsStorageStream::NewInputStream(int32_t aStartingOffset,
     return NS_ERROR_NOT_INITIALIZED;
   }
 
-  RefPtr<nsStorageInputStream> inputStream =
-      new nsStorageInputStream(this, mSegmentSize);
+  RefPtr inputStream = mozilla::MakeRefPtr<nsStorageInputStream>(this);
 
   inputStream->mStorageStream->mMutex.AssertCurrentThreadOwns();
   nsresult rv = inputStream->Seek(aStartingOffset);
@@ -465,35 +446,27 @@ nsStorageInputStream::ReadSegments(nsWriteSegmentFun aWriter, void* aClosure,
     return mStatus;
   }
 
-  uint32_t count, availableInSegment, remainingCapacity, bytesConsumed;
+  uint32_t count, remainingCapacity, bytesConsumed;
   nsresult rv;
 
   remainingCapacity = aCount;
   while (remainingCapacity) {
     const char* cur = nullptr;
+    uint32_t curLen = 0;
     {
       MutexAutoLock lock(mStorageStream->mMutex);
-      availableInSegment = mSegmentEnd - mReadCursor;
-      if (!availableInSegment) {
-        uint32_t available = mStorageStream->mLogicalLength - mLogicalCursor;
-        if (!available) {
-          break;
-        }
 
-        // We have data in the stream, but if mSegmentEnd is zero, then we
-        // were likely constructed prior to any data being written into
-        // the stream.  Therefore, if mSegmentEnd is non-zero, we should
-        // move into the next segment; otherwise, we should stay in this
-        // segment so our input state can be updated and we can properly
-        // perform the initial read.
-        if (mSegmentEnd > 0) {
-          mSegmentNum++;
-        }
-        mReadCursor = 0;
-        mSegmentEnd = XPCOM_MIN(mSegmentSize, available);
-        availableInSegment = mSegmentEnd;
+      if (mLogicalCursor >= mStorageStream->mLogicalLength) {
+        break;
       }
-      cur = mStorageStream->mSegmentedBuffer->GetSegment(mSegmentNum);
+
+      uint32_t segmentNum = mStorageStream->SegNum(mLogicalCursor);
+      uint32_t offset = mStorageStream->SegOffset(mLogicalCursor);
+
+      cur = mStorageStream->mSegmentedBuffer->GetSegment(segmentNum) + offset;
+      curLen = XPCOM_MIN(mStorageStream->mSegmentSize - offset,
+                         mStorageStream->mLogicalLength - mLogicalCursor);
+
       mStorageStream->mActiveSegmentBorrows++;
     }
     auto dropBorrow = mozilla::MakeScopeExit([&] {
@@ -501,14 +474,13 @@ nsStorageInputStream::ReadSegments(nsWriteSegmentFun aWriter, void* aClosure,
       mStorageStream->mActiveSegmentBorrows--;
     });
 
-    count = XPCOM_MIN(availableInSegment, remainingCapacity);
-    rv = aWriter(this, aClosure, cur + mReadCursor, aCount - remainingCapacity,
-                 count, &bytesConsumed);
+    count = XPCOM_MIN(curLen, remainingCapacity);
+    rv = aWriter(this, aClosure, cur, aCount - remainingCapacity, count,
+                 &bytesConsumed);
     if (NS_FAILED(rv) || (bytesConsumed == 0)) {
       break;
     }
     remainingCapacity -= bytesConsumed;
-    mReadCursor += bytesConsumed;
     mLogicalCursor += bytesConsumed;
   }
 
@@ -590,10 +562,6 @@ nsresult nsStorageInputStream::Seek(uint32_t aPosition) {
     return NS_OK;
   }
 
-  mSegmentNum = SegNum(aPosition);
-  mReadCursor = SegOffset(aPosition);
-  uint32_t available = length - aPosition;
-  mSegmentEnd = mReadCursor + XPCOM_MIN(mSegmentSize - mReadCursor, available);
   mLogicalCursor = aPosition;
   return NS_OK;
 }
@@ -651,8 +619,8 @@ void nsStorageInputStream::Serialize(InputStreamParams& aParams,
   MOZ_ASSERT(NS_SUCCEEDED(rv));
 
   StringInputStreamParams params;
-  params.data() = combined;
-  aParams = params;
+  params.data() = std::move(combined);
+  aParams = std::move(params);
 }
 
 bool nsStorageInputStream::Deserialize(const InputStreamParams& aParams) {
@@ -675,7 +643,7 @@ nsStorageInputStream::Clone(nsIInputStream** aCloneOut) {
 
 nsresult NS_NewStorageStream(uint32_t aSegmentSize, uint32_t aMaxSize,
                              nsIStorageStream** aResult) {
-  RefPtr<nsStorageStream> storageStream = new nsStorageStream();
+  RefPtr storageStream = mozilla::MakeRefPtr<nsStorageStream>();
   nsresult rv = storageStream->Init(aSegmentSize, aMaxSize);
   if (NS_FAILED(rv)) {
     return rv;

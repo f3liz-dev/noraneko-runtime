@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -30,18 +29,14 @@
 #  ifdef MOZ_WIDGET_ANDROID
 #    include <android/native_window.h>
 #    include <android/native_window_jni.h>
+
 #    include "mozilla/jni/Utils.h"
 #    include "mozilla/widget/AndroidCompositorWidget.h"
 #  endif
 
-#  define GLES2_LIB "libGLESv2.so"
-#  define GLES2_LIB2 "libGLESv2.so.2"
-
 #elif defined(XP_WIN)
 #  include "mozilla/widget/WinCompositorWidget.h"
 #  include "nsIFile.h"
-
-#  define GLES2_LIB "libGLESv2.dll"
 
 #  ifndef WIN32_LEAN_AND_MEAN
 #    define WIN32_LEAN_AND_MEAN 1
@@ -52,33 +47,35 @@
 #  error "Platform not recognized"
 #endif
 
-#include "gfxCrashReporterUtils.h"
-#include "gfxFailure.h"
-#include "gfxPlatform.h"
-#include "gfxUtils.h"
 #include "GLBlitHelper.h"
 #include "GLContextEGL.h"
 #include "GLContextProvider.h"
 #include "GLLibraryEGL.h"
 #include "GLLibraryLoader.h"
+#include "ScopedGLHelpers.h"
+#include "gfxCrashReporterUtils.h"
+#include "gfxFailure.h"
+#include "gfxPlatform.h"
+#include "gfxUtils.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/Services.h"
 #include "mozilla/StaticPrefs_gfx.h"
-#include "mozilla/gfx/gfxVars.h"
+#include "mozilla/StaticPrefs_gl.h"
 #include "mozilla/gfx/BuildConstants.h"
 #include "mozilla/gfx/Logging.h"
+#include "mozilla/gfx/gfxVars.h"
 #include "mozilla/layers/CompositorOptions.h"
 #include "mozilla/widget/CompositorWidget.h"
 #include "nsDebug.h"
 #include "nsIWidget.h"
 #include "nsThreadUtils.h"
-#include "ScopedGLHelpers.h"
 
 #if defined(MOZ_WIDGET_GTK)
 #  include "mozilla/widget/GtkCompositorWidget.h"
 #  if defined(MOZ_WAYLAND)
 #    include <gdk/gdkwayland.h>
 #    include <wayland-egl.h>
+
 #    include "mozilla/WidgetUtilsGtk.h"
 #    include "mozilla/widget/nsWaylandDisplay.h"
 #  endif
@@ -105,7 +102,7 @@ class WaylandOffscreenGLSurface {
   struct wl_egl_window* mEGLWindow = nullptr;
 };
 
-MOZ_RUNINIT static nsTHashMap<nsPtrHashKey<void>, WaylandOffscreenGLSurface*>
+constinit static nsTHashMap<nsPtrHashKey<void>, WaylandOffscreenGLSurface*>
     sWaylandOffscreenGLSurfaces;
 
 void DeleteWaylandOffscreenGLSurface(EGLSurface surface) {
@@ -192,7 +189,7 @@ static EGLSurface CreateSurfaceFromNativeWindow(
   newSurface = egl.mLib->fCreateWindowSurface(display, config, nativeWindow, 0);
   ANativeWindow_release(nativeWindow);
 #else
-  newSurface = egl.fCreateWindowSurface(config, window, 0);
+  newSurface = egl.fCreateWindowSurface(config, window, nullptr);
 #endif
   if (!newSurface) {
     const auto err = egl.mLib->fGetError();
@@ -227,7 +224,8 @@ already_AddRefed<GLContext> GLContextEGLFactory::CreateImpl(
     gfxCriticalNote << "Failed[3] to load EGL library: " << failureId.get();
     return nullptr;
   }
-  const auto egl = lib->CreateDisplay(true, false, &failureId);
+  const auto egl = lib->CreateDisplay(
+      EGLCreateDisplayFlags{.mForceAccel = true}, &failureId);
   if (!egl) {
     gfxCriticalNote << "Failed[3] to create EGL library  display: "
                     << failureId.get();
@@ -548,21 +546,17 @@ void GLContextEGL::SetDamage(const nsIntRegion& aDamageRegion) {
 
 void GLContextEGL::GetWSIInfo(nsCString* const out) const {
   out->AppendLiteral("EGL_VENDOR: ");
-  out->Append(
-      (const char*)mEgl->mLib->fQueryString(mEgl->mDisplay, LOCAL_EGL_VENDOR));
+  out->Append(mEgl->mLib->fQueryString(mEgl->mDisplay, LOCAL_EGL_VENDOR));
 
   out->AppendLiteral("\nEGL_VERSION: ");
-  out->Append(
-      (const char*)mEgl->mLib->fQueryString(mEgl->mDisplay, LOCAL_EGL_VERSION));
+  out->Append(mEgl->mLib->fQueryString(mEgl->mDisplay, LOCAL_EGL_VERSION));
 
   out->AppendLiteral("\nEGL_EXTENSIONS: ");
-  out->Append((const char*)mEgl->mLib->fQueryString(mEgl->mDisplay,
-                                                    LOCAL_EGL_EXTENSIONS));
+  out->Append(mEgl->mLib->fQueryString(mEgl->mDisplay, LOCAL_EGL_EXTENSIONS));
 
 #ifndef ANDROID  // This query will crash some old android.
   out->AppendLiteral("\nEGL_EXTENSIONS(nullptr): ");
-  out->Append(
-      (const char*)mEgl->mLib->fQueryString(nullptr, LOCAL_EGL_EXTENSIONS));
+  out->Append(mEgl->mLib->fQueryString(nullptr, LOCAL_EGL_EXTENSIONS));
 #endif
 }
 
@@ -572,6 +566,49 @@ bool GLContextEGL::HasExtBufferAge() const {
 
 bool GLContextEGL::HasKhrPartialUpdate() const {
   return mEgl->IsExtensionSupported(EGLExtension::KHR_partial_update);
+}
+
+EGLint GLContextEGL::GetBindToTextureTargetANGLE() const {
+  if (mBindToTextureTargetANGLE) {
+    return *mBindToTextureTargetANGLE;
+  }
+
+  if (!mEgl->IsExtensionSupported(
+          mozilla::gl::EGLExtension::ANGLE_iosurface_client_buffer)) {
+    gfxCriticalErrorOnce()
+        << "Extension EGL_ANGLE_iosurface_client_buffer not supported";
+    mBindToTextureTargetANGLE.emplace(LOCAL_EGL_TEXTURE_2D);
+    return LOCAL_EGL_TEXTURE_2D;
+  }
+
+  EGLint eglTarget;
+  if (!mEgl->fGetConfigAttrib(
+          mSurfaceConfig, LOCAL_EGL_BIND_TO_TEXTURE_TARGET_ANGLE, &eglTarget)) {
+    const EGLint err = mEgl->mLib->fGetError();
+    gfxCriticalErrorOnce()
+        << "Querying EGL_BIND_TO_TEXTURE_TARGET_ANGLE failed: "
+        << gfx::hexa(err);
+    mBindToTextureTargetANGLE.emplace(LOCAL_EGL_TEXTURE_2D);
+    return LOCAL_EGL_TEXTURE_2D;
+  }
+  mBindToTextureTargetANGLE.emplace(eglTarget);
+  return eglTarget;
+}
+
+GLenum GLContextEGL::GetPreferredMacIOSurfaceTextureTarget() const {
+  const auto eglTarget = GetBindToTextureTargetANGLE();
+  switch (eglTarget) {
+    case LOCAL_EGL_TEXTURE_2D:
+      return LOCAL_GL_TEXTURE_2D;
+      break;
+    case LOCAL_EGL_TEXTURE_RECTANGLE_ANGLE:
+      return LOCAL_GL_TEXTURE_RECTANGLE_ARB;
+      break;
+    default:
+      gfxCriticalErrorOnce() << "Unexpected EGL_BIND_TO_TEXTURE_TARGET_ANGLE: "
+                             << gfx::hexa(eglTarget);
+      return LOCAL_GL_TEXTURE_2D;
+  }
 }
 
 GLint GLContextEGL::GetBufferAge() const {
@@ -586,8 +623,6 @@ GLint GLContextEGL::GetBufferAge() const {
 
   return 0;
 }
-
-#define LOCAL_EGL_CONTEXT_PROVOKING_VERTEX_DONT_CARE_MOZ 0x6000
 
 RefPtr<GLContextEGL> GLContextEGL::CreateGLContext(
     const std::shared_ptr<EglDisplay> egl, const GLContextDesc& desc,
@@ -644,14 +679,6 @@ RefPtr<GLContextEGL> GLContextEGL::CreateGLContext(
   if (!debugFlags && flags & CreateContextFlags::NO_VALIDATION &&
       egl->IsExtensionSupported(EGLExtension::KHR_create_context_no_error)) {
     required_attribs.push_back(LOCAL_EGL_CONTEXT_OPENGL_NO_ERROR_KHR);
-    required_attribs.push_back(LOCAL_EGL_TRUE);
-  }
-
-  if (flags & CreateContextFlags::PROVOKING_VERTEX_DONT_CARE &&
-      egl->IsExtensionSupported(
-          EGLExtension::MOZ_create_context_provoking_vertex_dont_care)) {
-    required_attribs.push_back(
-        LOCAL_EGL_CONTEXT_PROVOKING_VERTEX_DONT_CARE_MOZ);
     required_attribs.push_back(LOCAL_EGL_TRUE);
   }
 
@@ -827,7 +854,7 @@ EGLSurface GLContextEGL::CreateWaylandOffscreenSurface(
   if (!eglwindow) return nullptr;
 
   const auto surface = egl.fCreateWindowSurface(
-      config, reinterpret_cast<EGLNativeWindowType>(eglwindow), 0);
+      config, reinterpret_cast<EGLNativeWindowType>(eglwindow), nullptr);
   if (surface) {
     MOZ_DIAGNOSTIC_ASSERT(!sWaylandOffscreenGLSurfaces.Contains(surface));
     sWaylandOffscreenGLSurfaces.LookupOrInsert(
@@ -1225,9 +1252,18 @@ already_AddRefed<GLContext> GLContextProviderEGL::CreateHeadless(
     const GLContextCreateDesc& desc, nsACString* const out_failureId) {
   bool useSoftwareDisplay =
       static_cast<bool>(desc.flags & CreateContextFlags::FORBID_HARDWARE);
-  const auto display = useSoftwareDisplay
-                           ? CreateSoftwareEglDisplay(out_failureId)
-                           : DefaultEglDisplay(out_failureId);
+  const bool useHighPowerDisplay =
+      (desc.flags & CreateContextFlags::HIGH_POWER) &&
+      StaticPrefs::gl_allow_high_power();
+
+  std::shared_ptr<EglDisplay> display;
+  if (useSoftwareDisplay) {
+    display = CreateSoftwareEglDisplay(out_failureId);
+  } else if (useHighPowerDisplay) {
+    display = CreateHighPowerEglDisplay(out_failureId);
+  } else {
+    display = DefaultEglDisplay(out_failureId);
+  }
   if (!display) {
     return nullptr;
   }

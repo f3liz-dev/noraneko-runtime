@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -599,7 +598,7 @@ class XSLTProcessRequest final : public nsIRequest {
   void Done() { mState = nullptr; }
 
  private:
-  ~XSLTProcessRequest() {}
+  ~XSLTProcessRequest() = default;
   txExecutionState* mState;
 };
 NS_IMPL_ISUPPORTS(XSLTProcessRequest, nsIRequest)
@@ -1264,7 +1263,8 @@ already_AddRefed<txMozillaXSLTProcessor> txMozillaXSLTProcessor::Constructor(
   nsISupports* supports = aGlobal.GetAsSupports();
   nsCOMPtr<nsPIDOMWindowInner> win = do_QueryInterface(supports);
   if (win && win->GetExtantDoc()) {
-    win->GetExtantDoc()->WarnOnceAbout(DeprecatedOperations::eXSLTDeprecated);
+    win->GetExtantDoc()->WarnOnceAndReportAbout(
+        DeprecatedOperations::eXSLTDeprecated);
   }
   RefPtr<txMozillaXSLTProcessor> processor =
       new txMozillaXSLTProcessor(supports);

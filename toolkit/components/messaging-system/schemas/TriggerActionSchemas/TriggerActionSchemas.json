@@ -31,6 +31,24 @@
                 "type": "string"
               },
               "description": "List of regular expression patterns to match against URLs"
+            },
+            "context": {
+              "type": "object",
+              "properties": {
+                "visitsCount": {
+                  "type": "number",
+                  "description": "Number of times the matched URL has been visited this session"
+                },
+                "url": {
+                  "type": "string",
+                  "description": "The full spec of the URL that was navigated to"
+                },
+                "host": {
+                  "type": "string",
+                  "description": "The host (nsIURI.host) of the URL that was navigated to"
+                }
+              },
+              "additionalProperties": false
             }
           },
           "required": ["id"],
@@ -75,12 +93,48 @@
           "properties": {
             "id": {
               "type": "string",
+              "enum": ["bookmarkAdded"]
+            }
+          },
+          "required": ["id"],
+          "additionalProperties": false,
+          "description": "Fires when the user adds a bookmark through any UI path. Bulk and non-interactive sources and tag operations are ignored, and it fires at most once per operation. Does not fire in private windows."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
               "enum": ["openBookmarkedURL"]
             }
           },
           "required": ["id"],
           "additionalProperties": false,
           "description": "Happens every time the user adds a bookmark from the URL bar star icon"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "enum": ["visitBookmarkedURL"]
+            }
+          },
+          "required": ["id"],
+          "additionalProperties": false,
+          "description": "Fires when the user navigates to a URL that is already bookmarked. Does not fire in private windows."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "enum": ["userBookmarkFolderActivity"]
+            }
+          },
+          "required": ["id"],
+          "additionalProperties": false,
+          "description": "Happens when the user either creates a new bookmark folder or saves a bookmark into a user-created folder. Does not fire for tag operations or while a private window is active."
         },
         {
           "type": "object",
@@ -269,6 +323,10 @@
                 "currentTabsOpen": {
                   "type": "integer",
                   "description": "The number of tabs open in the browser"
+                },
+                "actionSource": {
+                  "type": "string",
+                  "description": "Optional source attribution propagated from a tab marker (tab.smartWindowActionSource). Absent from context when no caller has tagged the tab."
                 }
               }
             }
@@ -408,30 +466,6 @@
           "properties": {
             "id": {
               "type": "string",
-              "enum": ["cookieBannerDetected"]
-            }
-          },
-          "additionalProperties": false,
-          "required": ["id"],
-          "description": "Happens when Firefox detects a cookie consent banner that could otherwise be handled by Cookie Banner Handling"
-        },
-        {
-          "type": "object",
-          "properties": {
-            "id": {
-              "type": "string",
-              "enum": ["cookieBannerHandled"]
-            }
-          },
-          "additionalProperties": false,
-          "required": ["id"],
-          "description": "Happens when Firefox automatically engages with a cookie consent banner"
-        },
-        {
-          "type": "object",
-          "properties": {
-            "id": {
-              "type": "string",
               "enum": ["messagesLoaded"]
             }
           },
@@ -445,6 +479,16 @@
             "id": {
               "type": "string",
               "enum": ["pageActionInUrlbar"]
+            },
+            "params": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "Hosts to match against the current tab's host"
+            },
+            "patterns": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "URL patterns to match against the current tab's URL"
             }
           },
           "additionalProperties": false,
@@ -545,6 +589,18 @@
           "properties": {
             "id": {
               "type": "string",
+              "enum": ["ipProtectionBandwidthReset"]
+            }
+          },
+          "additionalProperties": false,
+          "required": ["id"],
+          "description": "Fires when the IP protection bandwidth quota resets at the start of a new month"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
               "enum": ["selectableProfilesUpdated"]
             },
             "context": {
@@ -596,6 +652,18 @@
           "additionalProperties": false,
           "required": ["id"],
           "description": "Occurs every time a user opens a new Smart Window tab."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "enum": ["nimbusUpdate"]
+            }
+          },
+          "additionalProperties": false,
+          "required": ["id"],
+          "description": "Fired after the Nimbus experiment enrollment listener finishes loading messages from the messaging-experiments provider. Used for messages that should be processed immediately upon experiment enrollment, such as moments page messages."
         }
       ]
     }

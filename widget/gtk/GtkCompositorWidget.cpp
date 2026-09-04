@@ -1,12 +1,11 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "GtkCompositorWidget.h"
 
-#include "mozilla/gfx/gfxVars.h"
 #include "mozilla/WidgetUtilsGtk.h"
+#include "mozilla/gfx/gfxVars.h"
 #include "mozilla/widget/PlatformWidgetTypes.h"
 #include "nsWindow.h"
 
@@ -50,6 +49,8 @@ GtkCompositorWidget::GtkCompositorWidget(
         (void*)mWidget.get(), (void*)mWidget);
   }
 #endif
+  auto size = LayoutDeviceIntSize(aInitData.InitialClientSize());
+  LOG("  client size %d x %d", size.width, size.height);
 }
 
 GtkCompositorWidget::~GtkCompositorWidget() {
@@ -143,18 +144,15 @@ LayoutDeviceIntRegion GtkCompositorWidget::GetTransparentRegion() {
 
 #ifdef MOZ_WAYLAND
 mozilla::layers::NativeLayerRoot* GtkCompositorWidget::GetNativeLayerRoot() {
-  if (gfx::gfxVars::UseWebRenderCompositor()) {
-    if (!mNativeLayerRoot) {
-      LOG("GtkCompositorWidget::GetNativeLayerRoot [%p] create",
-          (void*)mWidget.get());
-      MOZ_ASSERT(mWidget && mWidget->GetMozContainer());
-      mNativeLayerRoot = layers::NativeLayerRootWayland::Create(
-          MOZ_WL_SURFACE(mWidget->GetMozContainer()));
-      mNativeLayerRoot->Init();
-    }
-    return mNativeLayerRoot;
+  if (!mNativeLayerRoot) {
+    LOG("GtkCompositorWidget::GetNativeLayerRoot [%p] create",
+        (void*)mWidget.get());
+    MOZ_ASSERT(mWidget && mWidget->GetMozContainer());
+    mNativeLayerRoot = layers::NativeLayerRootWayland::Create(
+        MOZ_WL_SURFACE(mWidget->GetMozContainer()));
+    mNativeLayerRoot->Init();
   }
-  return nullptr;
+  return mNativeLayerRoot;
 }
 #endif
 

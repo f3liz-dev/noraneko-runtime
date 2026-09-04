@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-*/
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -57,6 +56,12 @@ static nsresult MapRv(int aRv) {
   }
 }
 
+static bool DataSurfaceCoversSize(DataSourceSurface* aSurface,
+                                  const IntSize& aSize) {
+  const IntSize surfaceSize = aSurface->GetSize();
+  return surfaceSize.width >= aSize.width && surfaceSize.height >= aSize.height;
+}
+
 namespace mozilla {
 
 already_AddRefed<SourceSurface> GetSourceSurface(Image* aImage) {
@@ -84,6 +89,10 @@ nsresult ConvertToI420(Image* aImage, uint8_t* aDestY, int aDestStrideY,
   }
 
   const IntSize imageSize = aImage->GetSize();
+  if (!IsImageDimensionSupportedForConversion(imageSize)) {
+    return NS_ERROR_INVALID_ARG;
+  }
+
   auto srcPixelCount = CheckedInt<int32_t>(imageSize.width) * imageSize.height;
   auto dstPixelCount = CheckedInt<int32_t>(aDestSize.width) * aDestSize.height;
   if (!srcPixelCount.isValid() || !dstPixelCount.isValid()) {
@@ -176,6 +185,11 @@ nsresult ConvertToI420(Image* aImage, uint8_t* aDestY, int aDestStrideY,
     RefPtr<DataSourceSurface> dataSurface = surface->GetDataSurface();
     if (!dataSurface) {
       return NS_ERROR_FAILURE;
+    }
+
+    if (!DataSurfaceCoversSize(dataSurface, imageSize)) {
+      NS_WARNING("ConvertToI420: Source surface smaller than image size");
+      return NS_ERROR_INVALID_ARG;
     }
 
     surfaceMap.emplace(dataSurface, DataSourceSurface::READ);
@@ -464,6 +478,11 @@ nsresult ConvertToNV12(layers::Image* aImage, uint8_t* aDestY, int aDestStrideY,
     return NS_ERROR_INVALID_ARG;
   }
 
+  const gfx::IntSize imageSize = aImage->GetSize();
+  if (!IsImageDimensionSupportedForConversion(imageSize)) {
+    return NS_ERROR_INVALID_ARG;
+  }
+
   if (const PlanarYCbCrData* data = GetPlanarYCbCrData(aImage)) {
     const ImageUtils imageUtils(aImage);
     Maybe<dom::ImageBitmapFormat> format = imageUtils.GetFormat();
@@ -480,7 +499,7 @@ nsresult ConvertToNV12(layers::Image* aImage, uint8_t* aDestY, int aDestStrideY,
     PlanarYCbCrData i420Source = *data;
     gfx::AlignedArray<uint8_t> scaledI420Buffer;
 
-    if (aDestSize != aImage->GetSize()) {
+    if (aDestSize != imageSize) {
       const int32_t halfWidth = CeilingOfHalf(aDestSize.width);
       const uint32_t halfHeight = CeilingOfHalf(aDestSize.height);
 
@@ -551,6 +570,11 @@ nsresult ConvertToNV12(layers::Image* aImage, uint8_t* aDestY, int aDestStrideY,
   RefPtr<DataSourceSurface> data = surf->GetDataSurface();
   if (!data) {
     return NS_ERROR_FAILURE;
+  }
+
+  if (!DataSurfaceCoversSize(data, aImage->GetSize())) {
+    NS_WARNING("ConvertToNV12: Source surface smaller than image size");
+    return NS_ERROR_INVALID_ARG;
   }
 
   DataSourceSurface::ScopedMap map(data, DataSourceSurface::READ);
@@ -730,6 +754,13 @@ nsresult ConvertToRGBA(Image* aImage, const SurfaceFormat& aDestFormat,
 
   DataSourceSurface::ScopedMap destMap(dest, gfx::DataSourceSurface::WRITE);
   if (!destMap.IsMapped()) {
+    return NS_ERROR_FAILURE;
+  }
+
+  // SwizzleData reads the source over the destination's extent, so the source
+  // surface must be at least as large as the destination.
+  if (src->GetSize().width < dest->GetSize().width ||
+      src->GetSize().height < dest->GetSize().height) {
     return NS_ERROR_FAILURE;
   }
 

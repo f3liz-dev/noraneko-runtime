@@ -106,14 +106,20 @@ async function clickOnJumpToDebuggerIconForNode(
   }
 
   const onDebuggerSelected = toolbox.once(`jsdebugger-selected`);
-  EventUtils.synthesizeMouse(debuggerIcon, 2, 2, {}, debuggerIcon.ownerGlobal);
+  EventUtils.synthesizeMouse(
+    debuggerIcon,
+    2,
+    2,
+    {},
+    debuggerIcon.documentGlobal
+  );
 
   const dbg = await onDebuggerSelected;
   ok(true, "The debugger was opened");
 
   let source;
   info("Wait for source to be opened");
-  await BrowserTestUtils.waitForCondition(
+  await TestUtils.waitForCondition(
     () => {
       source = dbg._selectors.getSelectedSource(dbg._getState());
       return !!source;

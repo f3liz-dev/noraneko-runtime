@@ -1,20 +1,20 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "XULFormControlAccessible.h"
 
-#include "LocalAccessible-inl.h"
-#include "HTMLFormControlAccessible.h"
-#include "nsAccUtils.h"
 #include "DocAccessible.h"
+#include "HTMLFormControlAccessible.h"
+#include "LocalAccessible-inl.h"
 #include "Relation.h"
-#include "mozilla/a11y/Role.h"
 #include "States.h"
 #include "TreeWalker.h"
 #include "XULMenuAccessible.h"
-
+#include "mozilla/a11y/Role.h"
+#include "mozilla/dom/Element.h"
+#include "nsAccUtils.h"
+#include "nsIContentInlines.h"
 #include "nsIDOMXULButtonElement.h"
 #include "nsIDOMXULMenuListElement.h"
 #include "nsIDOMXULRadioGroupElement.h"
@@ -22,7 +22,6 @@
 #include "nsIFrame.h"
 #include "nsMenuPopupFrame.h"
 #include "nsNameSpaceManager.h"
-#include "mozilla/dom/Element.h"
 
 using namespace mozilla::a11y;
 
@@ -40,7 +39,7 @@ XULButtonAccessible::XULButtonAccessible(nsIContent* aContent,
   }
 }
 
-XULButtonAccessible::~XULButtonAccessible() {}
+XULButtonAccessible::~XULButtonAccessible() = default;
 
 ////////////////////////////////////////////////////////////////////////////////
 // XULButtonAccessible: nsISupports

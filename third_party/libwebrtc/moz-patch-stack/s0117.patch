@@ -1,26 +1,25 @@
-From: Michael Froman <mfroman@mozilla.com>
-Date: Wed, 16 Jul 2025 21:08:00 +0300
-Subject: Bug 1974813 - turn off rust in libwebrtc since we don't use any
- libwebrtc rust code. r=ng?
+From: Landry Breuil <landry@rhaalovely.net>
+Date: Mon, 27 Oct 2025 17:42:00 +0000
+Subject: Bug 1994630: fix build on OpenBSD/arm64 after bug 1988042 r=mjf
 
-Note: no moz.build changes are caused by this change.
+we return false on BSD in Supports(), so no need to include something which doesn't exist
 
-Differential Revision: https://phabricator.services.mozilla.com/D257316
-Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/14ee98c4832a55bf32116c925540ab0f53e46cd3
+Differential Revision: https://phabricator.services.mozilla.com/D268827
+Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/6bcf80824ecafc424e41b136705ba08370d66254
 ---
- .gn | 2 +-
+ rtc_base/cpu_info.cc | 2 +-
  1 file changed, 1 insertion(+), 1 deletion(-)
 
-diff --git a/.gn b/.gn
-index 269ca2f5a7..e30bfefddf 100644
---- a/.gn
-+++ b/.gn
-@@ -89,7 +89,7 @@ default_args = {
-   use_fuzztest_wrapper = false
- 
-   # Enable Rust in WebRTC
--  enable_rust = true
-+  enable_rust = false # Mozilla
-   enable_rust_cxx = true
-   enable_chromium_prelude = true
- 
+diff --git a/rtc_base/cpu_info.cc b/rtc_base/cpu_info.cc
+index a0f289e2ed..fb8c47794b 100644
+--- a/rtc_base/cpu_info.cc
++++ b/rtc_base/cpu_info.cc
+@@ -38,7 +38,7 @@
+ #if defined(WEBRTC_ARCH_X86_FAMILY) && defined(_MSC_VER)
+ #include <intrin.h>
+ #endif
+-#if defined(WEBRTC_ARCH_ARM_FAMILY) && (defined(WEBRTC_LINUX) || defined(WEBRTC_BSD))
++#if defined(WEBRTC_ARCH_ARM_FAMILY) && defined(WEBRTC_LINUX)
+ #include <asm/hwcap.h>
+ #include <sys/auxv.h>
+ #endif

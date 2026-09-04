@@ -46,7 +46,6 @@ support-files = [
   "highlighter-test-actor.js",
   "leakhunt.js",
   "shared-head.js",
-  "telemetry-test-helpers.js",
   "test-mocked-module.js",
   "testactors.js",
   "!/devtools/client/debugger/test/mochitest/shared-head.js",
@@ -135,6 +134,7 @@ skip-if = [
 ["browser_html_tooltip-01.js"]
 
 ["browser_html_tooltip-02.js"]
+support-files = ["doc_html_tooltip-02-iframe.html"]
 skip-if = [
   "os == 'linux' && os_version == '24.04' && arch == 'x86_64' && display == 'x11' && opt && a11y_checks", # Bug 1721159
 ]
@@ -188,7 +188,15 @@ skip-if = [
 
 ["browser_inplace-editor_autocomplete_02.js"]
 
+["browser_inplace-editor_autocomplete_anchor_function.js"]
+
+["browser_inplace-editor_autocomplete_anchor_size_function.js"]
+
+["browser_inplace-editor_autocomplete_color_function.js"]
+
 ["browser_inplace-editor_autocomplete_css_variable.js"]
+
+["browser_inplace-editor_autocomplete_gradient_functions.js"]
 
 ["browser_inplace-editor_autocomplete_offset.js"]
 

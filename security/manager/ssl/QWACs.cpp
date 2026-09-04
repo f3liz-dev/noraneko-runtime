@@ -2,8 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "nsIX509CertDB.h"
-
 #include "CryptoTask.h"
 #include "QWACTrustDomain.h"
 #include "mozilla/dom/Promise.h"
@@ -13,6 +11,7 @@
 #include "mozpkix/pkixtypes.h"
 #include "mozpkix/pkixutil.h"
 #include "nsIX509Cert.h"
+#include "nsIX509CertDB.h"
 #include "nsNSSCertificateDB.h"
 
 using namespace mozilla::pkix;
@@ -151,7 +150,8 @@ bool CertHasPolicyFrom(Input cert, const nsTArray<Input>& policies) {
   // certificatePolicies ::= SEQUENCE SIZE (1..MAX) OF PolicyInformation
   // PolicyInformation ::= SEQUENCE {
   //   policyIdentifier   CertPolicyId,
-  //   ...
+  //   policyQualifiers   SEQUENCE SIZE (1..MAX) OF
+  //                           PolicyQualifierInfo OPTIONAL }
   // }
   // CertPolicyId ::= OBJECT IDENTIFIER
   bool foundPolicy = false;
@@ -169,6 +169,17 @@ bool CertHasPolicyFrom(Input cert, const nsTArray<Input>& policies) {
                      foundPolicy = true;
                    }
                  }
+
+                 // The policy may have policyQualifiers. For unrelated
+                 // policies, it doesn't make sense to validate the qualifiers.
+                 // For related policies, the relevant specifications don't
+                 // mention qualifiers one way or another. For maximum
+                 // compatibility, we don't validate qualifiers if present. As
+                 // a consequence, `policyInformationContents` must be skipped
+                 // to the end to consume its input (so `NestedOf` won't return
+                 // an error in such cases).
+                 policyInformationContents.SkipToEnd();
+
                  return Success;
                });
   if (rv != Success) {

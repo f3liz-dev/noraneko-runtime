@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -21,7 +19,8 @@ using namespace mozilla::dom;
 
 namespace mozilla::dom {
 
-NS_IMPL_CYCLE_COLLECTION(ResponsiveImageSelector, mOwnerNode)
+NS_IMPL_CYCLE_COLLECTION(ResponsiveImageSelector, mOwnerNode,
+                         mSelectedCandidateURL)
 
 static bool ParseInteger(const nsAString& aString, int32_t& aInt) {
   nsContentUtils::ParseHTMLIntegerResultFlags parseResult;
@@ -291,9 +290,6 @@ bool ResponsiveImageSelector::SelectImage(bool aReselect) {
   if (overrideDPPX > 0) {
     displayDensity = overrideDPPX;
   }
-  if (doc->ShouldResistFingerprinting(RFPTarget::WindowDevicePixelRatio)) {
-    displayDensity = nsRFPService::GetDevicePixelRatioAtZoom(1);
-  }
 
   // Per spec, "In a UA-specific manner, choose one image source"
   // - For now, select the lowest density greater than displayDensity, otherwise
@@ -362,6 +358,9 @@ bool ResponsiveImageSelector::ComputeFinalWidthForCurrentViewport(
   }
   nscoord effectiveWidth =
       presShell->StyleSet()->EvaluateSourceSizeList(mServoSourceSizeList.get());
+  if (mAutoWidth != -1) {
+    effectiveWidth = mAutoWidth;
+  }
 
   *aWidth =
       nsPresContext::AppUnitsToDoubleCSSPixels(std::max(effectiveWidth, 0));
@@ -488,7 +487,7 @@ void ResponsiveImageDescriptors::AddDescriptor(const nsAString& aDescriptor) {
             nsContentUtils::ParseHTMLFloatingPointNumber(valueStr)) {
       if (*possibleDensity >= 0.0 && mWidth.isNothing() &&
           mDensity.isNothing() && mFutureCompatHeight.isNothing()) {
-        mDensity = possibleDensity;
+        mDensity = std::move(possibleDensity);
       } else {
         // Valid density descriptor, but height or width or density were already
         // seen, or it parsed to less than zero, which is an error per spec

@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -23,11 +22,9 @@ PR_BEGIN_EXTERN_C
  *  of NSPR.  All routines operate on a pointer to this opaque entity.
  */
 
-
 typedef struct PRRWLock PRRWLock;
 
 #define PR_RWLOCK_RANK_NONE 0
-
 
 /***********************************************************************
 ** FUNCTION:    PR_NewRWLock
@@ -41,7 +38,8 @@ typedef struct PRRWLock PRRWLock;
 **   is returned.
 **
 ***********************************************************************/
-NSPR_API(PRRWLock*) PR_NewRWLock(PRUint32 lock_rank, const char *lock_name);
+NSPR_API(PRRWLock*)
+PR_NewRWLock(PRUint32 lock_rank, const char* lock_name);
 
 /***********************************************************************
 ** FUNCTION:    PR_DestroyRWLock
@@ -51,7 +49,8 @@ NSPR_API(PRRWLock*) PR_NewRWLock(PRUint32 lock_rank, const char *lock_name);
 ** OUTPUTS:     void
 ** RETURN:      None
 ***********************************************************************/
-NSPR_API(void) PR_DestroyRWLock(PRRWLock *lock);
+NSPR_API(void)
+PR_DestroyRWLock(PRRWLock* lock);
 
 /***********************************************************************
 ** FUNCTION:    PR_RWLock_Rlock
@@ -61,7 +60,8 @@ NSPR_API(void) PR_DestroyRWLock(PRRWLock *lock);
 ** OUTPUTS:     void
 ** RETURN:      None
 ***********************************************************************/
-NSPR_API(void) PR_RWLock_Rlock(PRRWLock *lock);
+NSPR_API(void)
+PR_RWLock_Rlock(PRRWLock* lock);
 
 /***********************************************************************
 ** FUNCTION:    PR_RWLock_Wlock
@@ -71,7 +71,8 @@ NSPR_API(void) PR_RWLock_Rlock(PRRWLock *lock);
 ** OUTPUTS:     void
 ** RETURN:      None
 ***********************************************************************/
-NSPR_API(void) PR_RWLock_Wlock(PRRWLock *lock);
+NSPR_API(void)
+PR_RWLock_Wlock(PRRWLock* lock);
 
 /***********************************************************************
 ** FUNCTION:    PR_RWLock_Unlock
@@ -81,7 +82,8 @@ NSPR_API(void) PR_RWLock_Wlock(PRRWLock *lock);
 ** OUTPUTS:     void
 ** RETURN:      void
 ***********************************************************************/
-NSPR_API(void) PR_RWLock_Unlock(PRRWLock *lock);
+NSPR_API(void)
+PR_RWLock_Unlock(PRRWLock* lock);
 
 PR_END_EXTERN_C
 

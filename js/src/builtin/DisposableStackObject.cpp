@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -35,9 +33,10 @@ using namespace js;
   MOZ_ASSERT_IF(initialDisposeCapability.isObject(),
                 initialDisposeCapability.toObject().is<ArrayObject>());
 
-  obj->initReservedSlot(DisposableStackObject::DISPOSABLE_RESOURCE_STACK_SLOT,
-                        initialDisposeCapability);
-  obj->initReservedSlot(
+  obj->initReservedSlotTyped(
+      DisposableStackObject::DISPOSABLE_RESOURCE_STACK_SLOT,
+      initialDisposeCapability);
+  obj->initReservedSlotTyped(
       DisposableStackObject::STATE_SLOT,
       JS::Int32Value(int32_t(DisposableStackObject::DisposableState::Pending)));
 
@@ -211,7 +210,7 @@ using namespace js;
   // Step 6. Set newDisposableStack.[[DisposeCapability]] to
   // disposableStack.[[DisposeCapability]].
   JS::Rooted<JS::Value> existingDisposeCapability(
-      cx, disposableStack->getReservedSlot(
+      cx, disposableStack->getReservedSlotTyped(
               DisposableStackObject::DISPOSABLE_RESOURCE_STACK_SLOT));
   DisposableStackObject* newDisposableStack =
       DisposableStackObject::create(cx, nullptr, existingDisposeCapability);

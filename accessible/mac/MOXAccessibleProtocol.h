@@ -1,5 +1,4 @@
 /* clang-format off */
-/* -*- Mode: Objective-C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* clang-format on */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -81,6 +80,9 @@
 // AXChildren
 - (NSArray* _Nullable)moxUnignoredChildren;
 
+// AXChildrenInNavigationOrder
+- (NSArray* _Nullable)moxChildrenInNavigationOrder;
+
 // AXParent
 - (id _Nullable)moxUnignoredParent;
 
@@ -153,8 +155,8 @@
 // AXLinkedUIElements
 - (NSArray* _Nullable)moxLinkedUIElements;
 
-// AXARIAControls
-- (NSArray* _Nullable)moxARIAControls;
+// AXDetailsElements
+- (NSArray* _Nullable)moxDetailsElements;
 
 // AXDOMIdentifier
 - (NSString* _Nullable)moxDOMIdentifier;
@@ -206,6 +208,12 @@
 
 // AXMaxValue
 - (id _Nullable)moxMaxValue;
+
+// AXBrailleRoleDescription
+- (NSString* _Nullable)moxARIABrailleRoleDescription;
+
+// AXBrailleLabel
+- (NSString* _Nullable)moxARIABrailleLabel;
 
 // Webkit also implements the following:
 // // AXCaretBrowsingEnabled

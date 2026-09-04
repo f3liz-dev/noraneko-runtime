@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,10 +5,9 @@
 #ifndef mozilla_widget_Screen_h
 #define mozilla_widget_Screen_h
 
-#include "nsIScreen.h"
-
 #include "Units.h"
 #include "mozilla/HalScreenConfiguration.h"  // For hal::ScreenOrientation
+#include "nsIScreen.h"
 
 namespace mozilla {
 namespace dom {
@@ -31,8 +28,10 @@ class Screen final : public nsIScreen {
   Screen(LayoutDeviceIntRect aRect, LayoutDeviceIntRect aAvailRect,
          uint32_t aPixelDepth, uint32_t aColorDepth, uint32_t aRefreshRate,
          DesktopToLayoutDeviceScale aContentsScale,
-         CSSToLayoutDeviceScale aDefaultCssScale, float aDpi, IsPseudoDisplay,
-         IsHDR, hal::ScreenOrientation = hal::ScreenOrientation::None,
+         CSSToLayoutDeviceScale aDefaultCssScale, float aDpi,
+         IsPseudoDisplay aIsPseudoDisplay, IsHDR aIsHDR,
+         float aSDRContentBrightness, float aHDRPeakBrightness,
+         hal::ScreenOrientation = hal::ScreenOrientation::None,
          OrientationAngle = 0);
   explicit Screen(const dom::ScreenDetails& aScreenDetails);
   Screen(const Screen& aOther);
@@ -62,6 +61,8 @@ class Screen final : public nsIScreen {
   CSSToLayoutDeviceScale GetCSSToLayoutDeviceScale(IncludeOSZoom) const;
 
   bool GetIsHDR() const { return mIsHDR; }
+  float GetSDRContentBrightness() const { return mSDRContentBrightness; }
+  float GetHDRPeakBrightness() const { return mHDRPeakBrightness; }
 
  private:
   virtual ~Screen() = default;
@@ -80,6 +81,8 @@ class Screen final : public nsIScreen {
   const OrientationAngle mOrientationAngle;
   const bool mIsPseudoDisplay;
   const bool mIsHDR;
+  const float mSDRContentBrightness;
+  const float mHDRPeakBrightness;
 };
 
 }  // namespace widget

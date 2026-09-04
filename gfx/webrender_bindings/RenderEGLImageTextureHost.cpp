@@ -1,16 +1,14 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "RenderEGLImageTextureHost.h"
 
-#include "mozilla/gfx/Logging.h"
 #include "GLContextEGL.h"
 #include "GLLibraryEGL.h"
 #include "GLReadTexImageHelper.h"
 #include "OGLShaderConfig.h"
+#include "mozilla/gfx/Logging.h"
 
 namespace mozilla {
 namespace wr {
@@ -169,7 +167,7 @@ bool RenderEGLImageTextureHost::WaitSync() {
     }
     // We do not need to delete sync here. It is deleted by
     // SharedSurface_EGLImage.
-    mSync = 0;
+    mSync = nullptr;
   }
 
   MOZ_ASSERT(

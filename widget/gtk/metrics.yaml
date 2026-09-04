@@ -28,7 +28,10 @@ widget:
     notification_emails:
       - mnakano.birchill@mozilla.com
     expires: never
+    lifetime: application
     telemetry_mirror: WIDGET_IME_NAME_ON_LINUX
+    no_lint:
+      - GIFFT_NON_PING_LIFETIME
 
   gtk_version:
     type: string
@@ -43,4 +46,22 @@ widget:
     notification_emails:
       - layout-telemetry-alerts@mozilla.com
     expires: never
+    lifetime: application
     telemetry_mirror: WIDGET_GTK_VERSION
+    no_lint:
+      - GIFFT_NON_PING_LIFETIME
+
+  desktop_environment:
+    type: string
+    description: >
+      If known, the current desktop environment being used by this user. This
+      could be 'gnome', 'kde', 'mate', and so on, or an empty string if not
+      known.
+    bugs:
+      - https://bugzil.la/2023324
+    data_reviews:
+      - https://bugzil.la/2023324
+    notification_emails:
+      - drubino@mozilla.com
+    expires: never
+    lifetime: application

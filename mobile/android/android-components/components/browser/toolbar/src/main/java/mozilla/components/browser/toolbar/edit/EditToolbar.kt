@@ -20,6 +20,7 @@ import androidx.core.content.ContextCompat
 import androidx.core.view.inputmethod.EditorInfoCompat
 import androidx.core.view.isVisible
 import kotlinx.coroutines.CoroutineExceptionHandler
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.asCoroutineDispatcher
 import mozilla.components.browser.toolbar.AsyncFilterListener
@@ -31,6 +32,8 @@ import mozilla.components.concept.toolbar.AutocompleteDelegate
 import mozilla.components.concept.toolbar.Toolbar
 import mozilla.components.support.base.log.logger.Logger
 import mozilla.components.support.base.utils.NamedThreadFactory
+import mozilla.components.support.ktx.android.content.pixelSizeFor
+import mozilla.components.support.ktx.android.view.pixelSizeFor
 import mozilla.components.support.ktx.android.view.showKeyboard
 import mozilla.components.ui.autocomplete.InlineAutocompleteEditText
 import java.util.concurrent.Executors
@@ -81,14 +84,16 @@ class EditToolbar internal constructor(
         @param:ColorInt val suggestionForeground: Int?,
     )
 
-    private val autocompleteDispatcher = SupervisorJob() +
+    private val autocompleteScope = CoroutineScope(
+        SupervisorJob() +
         Executors.newFixedThreadPool(
             AUTOCOMPLETE_QUERY_THREADS,
             NamedThreadFactory("EditToolbar"),
         ).asCoroutineDispatcher() +
         CoroutineExceptionHandler { _, throwable ->
             logger.error("Error while processing autocomplete input", throwable)
-        }
+        },
+    )
 
     @VisibleForTesting(otherwise = PRIVATE)
     internal val views = EditToolbarViews(
@@ -118,7 +123,7 @@ class EditToolbar internal constructor(
 
             setUrlGoneMargin(
                 ConstraintSet.END,
-                context.resources.getDimensionPixelSize(R.dimen.mozac_browser_toolbar_url_gone_margin_end),
+                context.pixelSizeFor(R.dimen.mozac_browser_toolbar_url_gone_margin_end),
             )
 
             setOnDispatchKeyEventPreImeListener { event ->
@@ -237,10 +242,13 @@ class EditToolbar internal constructor(
 
     internal var editListener: Toolbar.OnEditListener? = null
 
+    private var currentFilterListener: AsyncFilterListener? = null
+
     internal fun setAutocompleteListener(filter: suspend (String, AutocompleteDelegate) -> Unit) {
-        views.url.setOnFilterListener(
-            AsyncFilterListener(views.url, autocompleteDispatcher, filter),
-        )
+        currentFilterListener?.close()
+        val listener = AsyncFilterListener(views.url, autocompleteScope, filter)
+        currentFilterListener = listener
+        views.url.setOnFilterListener(listener)
     }
 
     /**
@@ -360,7 +368,7 @@ class EditToolbar internal constructor(
         } else {
             setUrlGoneMargin(
                 ConstraintSet.END,
-                rootView.resources.getDimensionPixelSize(
+                rootView.pixelSizeFor(
                     R.dimen.mozac_browser_toolbar_url_gone_margin_end,
                 ),
             )

@@ -1,5 +1,3 @@
-/* -*- mode: js; indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set sts=2 sw=2 et tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -200,8 +198,8 @@ export class NativeApp extends EventEmitter {
    * Open a connection to a native messaging host.
    *
    * @param {number} portId A unique internal ID that identifies the port.
-   * @param {import("ExtensionParent.sys.mjs").NativeMessenger} port Parent NativeMessenger used to send messages.
-   * @returns {import("ExtensionParent.sys.mjs").ParentPort}
+   * @param {import("./ExtensionParent.sys.mjs").NativeMessenger} port Parent NativeMessenger used to send messages.
+   * @returns {import("./ExtensionParent.sys.mjs").ParentPort}
    */
   onConnect(portId, port) {
     // eslint-disable-next-line

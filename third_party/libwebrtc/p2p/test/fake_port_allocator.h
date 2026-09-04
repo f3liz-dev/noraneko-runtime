@@ -13,9 +13,11 @@
 
 #include <cstdint>
 #include <memory>
+#include <utility>
 #include <vector>
 
 #include "absl/base/nullability.h"
+#include "absl/functional/any_invocable.h"
 #include "absl/memory/memory.h"
 #include "absl/strings/string_view.h"
 #include "api/candidate.h"
@@ -30,10 +32,12 @@
 #include "rtc_base/async_packet_socket.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/ip_address.h"
+#include "rtc_base/net_helpers.h"
 #include "rtc_base/net_test_helpers.h"
 #include "rtc_base/network.h"
 #include "rtc_base/socket_factory.h"
 #include "rtc_base/task_queue_for_test.h"
+#include "rtc_base/weak_ptr.h"
 
 namespace webrtc {
 
@@ -106,14 +110,14 @@ class FakePortAllocatorSession : public PortAllocatorSession {
         allocator_(allocator),
         network_thread_(network_thread),
         factory_(factory),
-        ipv4_network_("network", "unittest", IPAddress(INADDR_LOOPBACK), 32),
-        ipv6_network_("network", "unittest", IPAddress(in6addr_loopback), 64),
+        ipv4_network_("network", "unittest", GetLoopbackIP(AF_INET), 32),
+        ipv6_network_("network", "unittest", GetLoopbackIP(AF_INET6), 64),
         port_(),
         port_config_count_(0),
         stun_servers_(allocator->stun_servers()),
         turn_servers_(allocator->turn_servers()) {
-    ipv4_network_.AddIP(IPAddress(INADDR_LOOPBACK));
-    ipv6_network_.AddIP(IPAddress(in6addr_loopback));
+    ipv4_network_.AddIP(GetLoopbackIP(AF_INET));
+    ipv6_network_.AddIP(GetLoopbackIP(AF_INET6));
   }
 
   void SetCandidateFilter(uint32_t filter) override {
@@ -126,17 +130,18 @@ class FakePortAllocatorSession : public PortAllocatorSession {
           (HasIPv6Enabled() && (flags() & PORTALLOCATOR_ENABLE_IPV6))
               ? ipv6_network_
               : ipv4_network_;
-      port_.reset(TestUDPPort::Create({.env = env_,
-                                       .network_thread = network_thread_,
-                                       .socket_factory = factory_,
-                                       .network = &network,
-                                       .ice_username_fragment = username(),
-                                       .ice_password = password()},
-                                      0, 0, false));
+      port_.reset(
+          TestUDPPort::Create({.env = env_,
+                               .network_thread = network_thread_,
+                               .socket_factory = factory_,
+                               .network = &network,
+                               .ice_username_fragment = username(),
+                               .ice_password = password(),
+                               .ice_tiebreaker = allocator_->ice_tiebreaker()},
+                              0, 0, false));
       RTC_DCHECK(port_);
-      port_->SetIceTiebreaker(allocator_->ice_tiebreaker());
       port_->SubscribePortDestroyed(
-          [this](PortInterface* port) { OnPortDestroyed(port); });
+          this, [this](PortInterface* port) { OnPortDestroyed(port); });
       AddPort(port_.get());
     }
     ++port_config_count_;
@@ -186,7 +191,8 @@ class FakePortAllocatorSession : public PortAllocatorSession {
   void AddPort(Port* port) {
     port->set_component(component());
     port->set_generation(generation());
-    port->SubscribePortComplete([this](Port* port) { OnPortComplete(port); });
+    port->SubscribePortComplete(this,
+                                [this](Port* port) { OnPortComplete(port); });
     port->PrepareAddress();
     ready_ports_.push_back(port);
     NotifyPortReady(this, port);
@@ -253,15 +259,32 @@ class FakePortAllocator : public PortAllocator {
   bool MdnsObfuscationEnabled() const override {
     return mdns_obfuscation_enabled_;
   }
+
   void SetMdnsObfuscationEnabledForTesting(bool enabled) {
     mdns_obfuscation_enabled_ = enabled;
   }
+
+  void DiscardCandidatePool() override {
+    PortAllocator::DiscardCandidatePool();
+    if (on_candidate_pool_discarded_) {
+      on_candidate_pool_discarded_();
+    }
+  }
+
+  void SetOnDiscardCandidatePool(
+      absl::AnyInvocable<void()> on_candidate_pool_discarded) {
+    on_candidate_pool_discarded_ = std::move(on_candidate_pool_discarded);
+  }
+
+  WeakPtr<FakePortAllocator> NewWeakPtr() { return weak_factory_.GetWeakPtr(); }
 
  private:
   const Environment env_;
   TaskQueueBase* absl_nonnull network_thread_;
   BasicPacketSocketFactory factory_;
   bool mdns_obfuscation_enabled_ = false;
+  absl::AnyInvocable<void()> on_candidate_pool_discarded_;
+  WeakPtrFactory<FakePortAllocator> weak_factory_{this};
 };
 
 }  //  namespace webrtc

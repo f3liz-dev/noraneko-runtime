@@ -5,25 +5,30 @@
 package org.mozilla.fenix.home
 
 import android.content.Context
-import android.view.View
 import androidx.annotation.VisibleForTesting
+import androidx.compose.material3.SnackbarHostState
 import androidx.navigation.NavController
 import kotlinx.coroutines.CoroutineScope
 import mozilla.components.browser.state.selector.findTab
 import mozilla.components.browser.state.selector.normalTabs
 import mozilla.components.browser.state.selector.privateTabs
 import mozilla.components.browser.state.store.BrowserStore
+import mozilla.components.concept.engine.utils.ABOUT_HOME_URL
 import mozilla.components.feature.tabs.TabsUseCases
 import mozilla.components.support.base.feature.LifecycleAwareFeature
 import org.mozilla.fenix.R
 import org.mozilla.fenix.browser.browsingmode.BrowsingModeManager
 import org.mozilla.fenix.components.usecases.FenixBrowserUseCases
+import org.mozilla.fenix.ext.actualInactiveTabs
+import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.ext.tabClosedUndoMessage
 import org.mozilla.fenix.ext.tabsClosedUndoMessage
+import org.mozilla.fenix.home.HomeScreenViewModel.Companion.ALL_ACTIVE_NORMAL_TABS
 import org.mozilla.fenix.home.HomeScreenViewModel.Companion.ALL_NORMAL_TABS
 import org.mozilla.fenix.home.HomeScreenViewModel.Companion.ALL_PRIVATE_TABS
 import org.mozilla.fenix.utils.Settings
 import org.mozilla.fenix.utils.allowUndo
+import org.mozilla.fenix.utils.getUndoDelay
 
 /**
  * Delegate to handle tab removal and undo actions in the homepage.
@@ -36,7 +41,7 @@ import org.mozilla.fenix.utils.allowUndo
  * @param tabsUseCases The [TabsUseCases] instance to perform tab actions.
  * @param fenixBrowserUseCases [FenixBrowserUseCases] used for adding new homepage tabs.
  * @param settings [Settings] used to check the application shared preferences.
- * @param snackBarParentView The [View] to find a parent from for displaying the snackbar.
+ * @param snackbarHostState The [SnackbarHostState] used to display snackbars.
  * @param viewLifecycleScope The [CoroutineScope] to use for launching coroutines.
  */
 @Suppress("LongParameterList")
@@ -49,7 +54,7 @@ class TabsCleanupFeature(
     private val tabsUseCases: TabsUseCases,
     private val fenixBrowserUseCases: FenixBrowserUseCases,
     private val settings: Settings,
-    private val snackBarParentView: View,
+    private val snackbarHostState: SnackbarHostState,
     private val viewLifecycleScope: CoroutineScope,
 ) : LifecycleAwareFeature {
 
@@ -58,7 +63,7 @@ class TabsCleanupFeature(
      */
     override fun start() {
         viewModel.sessionToDelete?.also {
-            if (it == ALL_NORMAL_TABS || it == ALL_PRIVATE_TABS) {
+            if (it == ALL_NORMAL_TABS || it == ALL_PRIVATE_TABS || it == ALL_ACTIVE_NORMAL_TABS) {
                 removeAllTabsAndShowSnackbar(it)
             } else {
                 removeTabAndShowSnackbar(it)
@@ -79,20 +84,22 @@ class TabsCleanupFeature(
     @VisibleForTesting
     internal fun showUndoSnackbar(message: String, onCancel: () -> Unit) {
         viewLifecycleScope.allowUndo(
-            view = snackBarParentView,
+            snackbarHostState = snackbarHostState,
             message = message,
             undoActionTitle = context.getString(R.string.snackbar_deleted_undo),
             onCancel = onCancel,
             operation = {},
+            undoDelay = context.components.settings.getUndoDelay(),
         )
     }
 
     private fun removeAllTabsAndShowSnackbar(sessionCode: String) {
-        if (sessionCode == ALL_PRIVATE_TABS) {
-            tabsUseCases.removePrivateTabs()
-        } else {
-            tabsUseCases.removeNormalTabs()
-        }
+        val tabsCount = when (sessionCode) {
+                ALL_PRIVATE_TABS -> removeAllPrivateTabs()
+                ALL_NORMAL_TABS -> removeAllNormalTabs()
+                ALL_ACTIVE_NORMAL_TABS -> removeAllActiveNormalTabs()
+                else -> return
+            }
 
         var tabId: String? = null
         if (settings.enableHomepageAsNewTab) {
@@ -105,11 +112,28 @@ class TabsCleanupFeature(
         }
 
         showUndoSnackbar(
-            message = context.tabsClosedUndoMessage(private = sessionCode == ALL_PRIVATE_TABS),
+            message = context.tabsClosedUndoMessage(
+                count = tabsCount,
+            ),
             onCancel = {
                 onUndoAllTabsRemoved(tabId)
             },
         )
+    }
+
+    private fun removeAllPrivateTabs(): Int =
+        browserStore.state.privateTabs.size.also { tabsUseCases.removePrivateTabs() }
+
+    private fun removeAllNormalTabs(): Int = browserStore.state.normalTabs.size.also { tabsUseCases.removeNormalTabs() }
+
+    private fun removeAllActiveNormalTabs(): Int {
+        val inactiveTabIds = browserStore.state.actualInactiveTabs(settings = settings).map { it.id }.toSet()
+        val normalTabIds = browserStore.state.normalTabs.map { it.id }
+        val tabsToRemove = normalTabIds.filter { it !in inactiveTabIds }
+
+        tabsUseCases.removeTabs(ids = tabsToRemove, excludedTabIds = inactiveTabIds)
+
+        return tabsToRemove.size
     }
 
     /**
@@ -125,6 +149,9 @@ class TabsCleanupFeature(
         if (tabId?.isNotBlank() == true) {
             tabsUseCases.removeTab.invoke(tabId)
         }
+        navController.navigate(
+            HomeFragmentDirections.actionGlobalBrowser(null),
+        )
     }
 
     private fun removeTabAndShowSnackbar(sessionId: String) {
@@ -138,7 +165,9 @@ class TabsCleanupFeature(
             browserStore.state.normalTabs.size > 1
         }
 
-        tabsUseCases.removeTab(sessionId)
+        val inactiveTabs = browserStore.state.actualInactiveTabs(settings = settings)
+
+        tabsUseCases.removeTab(tabId = sessionId, excludedTabIds = inactiveTabs.map { it.id }.toSet())
 
         var tabId = ""
         if (settings.enableHomepageAsNewTab && !hasTabsRemaining) {
@@ -153,7 +182,10 @@ class TabsCleanupFeature(
         showUndoSnackbar(
             message = context.tabClosedUndoMessage(tab.content.private),
             onCancel = {
-                onUndoTabRemoved(tabId)
+                onUndoTabRemoved(
+                    tabId = tabId,
+                    isRestoringHomepageTab = tab.content.url == ABOUT_HOME_URL,
+                )
             },
         )
     }
@@ -161,19 +193,24 @@ class TabsCleanupFeature(
     /**
      * Callback invoked when the remove tab action is cancelled.
      *
-     * @param tabId Optional ID of the tab that should be removed after the tab removal is
-     * undone.
+     * @param tabId Optional ID of the tab that should be removed after the tab removal is undone.
+     * @param isRestoringHomepageTab Whether the restored tab is a homepage tab.
      */
     @VisibleForTesting
-    internal fun onUndoTabRemoved(tabId: String?) {
+    internal fun onUndoTabRemoved(
+        tabId: String?,
+        isRestoringHomepageTab: Boolean = false,
+    ) {
         tabsUseCases.undo.invoke()
 
         if (tabId?.isNotBlank() == true) {
             tabsUseCases.removeTab.invoke(tabId)
         }
 
-        navController.navigate(
-            HomeFragmentDirections.actionGlobalBrowser(null),
-        )
+        // The homepage is already shown when the removed tab is undone. Only navigate to the browser
+        // when restoring a non-homepage tab.
+        if (!isRestoringHomepageTab) {
+            navController.navigate(HomeFragmentDirections.actionGlobalBrowser(null))
+        }
     }
 }

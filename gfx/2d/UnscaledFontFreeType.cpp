@@ -1,13 +1,12 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "UnscaledFontFreeType.h"
+
+#include "Logging.h"
 #include "NativeFontResourceFreeType.h"
 #include "ScaledFontFreeType.h"
-#include "Logging.h"
 #include "StackArray.h"
 
 #include FT_MULTIPLE_MASTERS_H
@@ -15,10 +14,10 @@
 
 #include <dlfcn.h>
 #include <fcntl.h>
-#include <unistd.h>
-#include <sys/types.h>
-#include <sys/stat.h>
 #include <sys/mman.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <unistd.h>
 
 namespace mozilla::gfx {
 
@@ -210,7 +209,7 @@ already_AddRefed<ScaledFont> UnscaledFontFreeType::CreateScaledFont(
     ApplyVariationsToFace(aVariations, aNumVariations, face->GetFace());
   }
 
-  RefPtr<ScaledFontFreeType> scaledFont = new ScaledFontFreeType(
+  RefPtr scaledFont = MakeRefPtr<ScaledFontFreeType>(
       std::move(face), this, aGlyphSize, instanceData.mApplySyntheticBold);
 
   return scaledFont.forget();
@@ -232,8 +231,8 @@ already_AddRefed<UnscaledFont> UnscaledFontFreeType::CreateFromFontDescriptor(
     return nullptr;
   }
   const char* path = reinterpret_cast<const char*>(aData);
-  RefPtr<UnscaledFont> unscaledFont =
-      new UnscaledFontFreeType(std::string(path, aDataLength), aIndex);
+  RefPtr unscaledFont =
+      MakeRefPtr<UnscaledFontFreeType>(std::string(path, aDataLength), aIndex);
   return unscaledFont.forget();
 }
 

@@ -11,9 +11,8 @@ ChromeUtils.defineESModuleGetters(this, {
   SearchUtils: "moz-src:///toolkit/components/search/SearchUtils.sys.mjs",
   TelemetryTestUtils: "resource://testing-common/TelemetryTestUtils.sys.mjs",
   UrlbarPrefs: "moz-src:///browser/components/urlbar/UrlbarPrefs.sys.mjs",
-  UrlbarResult: "moz-src:///browser/components/urlbar/UrlbarResult.sys.mjs",
+  UrlbarResult: "chrome://browser/content/urlbar/UrlbarResult.mjs",
   UrlbarUtils: "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs",
-  UrlbarView: "moz-src:///browser/components/urlbar/UrlbarView.sys.mjs",
   sinon: "resource://testing-common/Sinon.sys.mjs",
 });
 
@@ -29,8 +28,13 @@ add_setup(async () => {
 });
 
 registerCleanupFunction(async () => {
-  document.getElementById("searchbar-new").handleRevert();
+  let searchbar = document.getElementById("searchbar-new");
+  searchbar.handleRevert();
   await SearchbarTestUtils.promisePopupClose(window);
+  // The search bar and its view live as long as the window, so query contexts
+  // cached by this test would be picked up by tests running after it.
+  searchbar.view.queryContextCache.clear();
   await gCUITestUtils.removeSearchBar();
+  await SearchbarTestUtils.formHistory.clear();
   Services.prefs.clearUserPref("browser.search.widget.lastUsed");
 });

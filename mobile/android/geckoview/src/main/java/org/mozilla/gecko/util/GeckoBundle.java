@@ -1,5 +1,4 @@
-/* -*- Mode: Java; c-basic-offset: 4; tab-width: 4; indent-tabs-mode: nil; -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -19,14 +18,12 @@ import java.util.Iterator;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
-import org.mozilla.gecko.annotation.RobocopTarget;
 import org.mozilla.gecko.annotation.WrapForJNI;
 
 /**
  * A lighter-weight version of Bundle that adds support for type coercion (e.g. int to double) in
  * order to better cooperate with JS objects.
  */
-@RobocopTarget
 public final class GeckoBundle implements Parcelable {
   private static final String LOGTAG = "GeckoBundle";
   private static final boolean DEBUG = false;

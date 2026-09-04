@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -36,19 +34,19 @@ class DisplayNamesObject : public NativeObject {
   static const JSClass class_;
   static const JSClass& protoClass_;
 
-  static constexpr uint32_t LOCALE = 0;
-  static constexpr uint32_t CALENDAR = 1;
-  static constexpr uint32_t OPTIONS = 2;
-  static constexpr uint32_t LOCALE_DISPLAY_NAMES_SLOT = 3;
+  JS_DEFINE_TYPED_SLOT(0, LOCALE, Object, String, Undefined);
+  JS_DEFINE_TYPED_SLOT(1, CALENDAR, String, Undefined);
+  JS_DEFINE_TYPED_SLOT(2, OPTIONS, Int32, Undefined);
+  JS_DEFINE_TYPED_SLOT(3, LOCALE_DISPLAY_NAMES_SLOT, Private, Undefined);
   static constexpr uint32_t SLOT_COUNT = 4;
 
   // Estimated memory use for ULocaleDisplayNames (see IcuMemoryUsage).
   static constexpr size_t EstimatedMemoryUse = 1238;
 
-  bool isLocaleResolved() const { return getFixedSlot(LOCALE).isString(); }
+  bool isLocaleResolved() const { return getFixedSlotTyped(LOCALE).isString(); }
 
   JSObject* getRequestedLocales() const {
-    const auto& slot = getFixedSlot(LOCALE);
+    const auto& slot = getFixedSlotTyped(LOCALE);
     if (slot.isUndefined()) {
       return nullptr;
     }
@@ -56,11 +54,11 @@ class DisplayNamesObject : public NativeObject {
   }
 
   void setRequestedLocales(JSObject* requestedLocales) {
-    setFixedSlot(LOCALE, ObjectValue(*requestedLocales));
+    setFixedSlotTyped(LOCALE, ObjectValue(*requestedLocales));
   }
 
   JSLinearString* getLocale() const {
-    const auto& slot = getFixedSlot(LOCALE);
+    const auto& slot = getFixedSlotTyped(LOCALE);
     if (slot.isUndefined()) {
       return nullptr;
     }
@@ -68,11 +66,11 @@ class DisplayNamesObject : public NativeObject {
   }
 
   void setLocale(JSLinearString* locale) {
-    setFixedSlot(LOCALE, StringValue(locale));
+    setFixedSlotTyped(LOCALE, StringValue(locale));
   }
 
   JSLinearString* getCalendar() const {
-    const auto& slot = getFixedSlot(CALENDAR);
+    const auto& slot = getFixedSlotTyped(CALENDAR);
     if (slot.isUndefined()) {
       return nullptr;
     }
@@ -80,7 +78,7 @@ class DisplayNamesObject : public NativeObject {
   }
 
   void setCalendar(JSLinearString* calendar) {
-    setFixedSlot(CALENDAR, StringValue(calendar));
+    setFixedSlotTyped(CALENDAR, StringValue(calendar));
   }
 
   DisplayNamesOptions getOptions() const;
@@ -88,7 +86,7 @@ class DisplayNamesObject : public NativeObject {
   void setOptions(const DisplayNamesOptions& options);
 
   mozilla::intl::DisplayNames* getDisplayNames() const {
-    const auto& slot = getFixedSlot(LOCALE_DISPLAY_NAMES_SLOT);
+    const auto& slot = getFixedSlotTyped(LOCALE_DISPLAY_NAMES_SLOT);
     if (slot.isUndefined()) {
       return nullptr;
     }
@@ -96,7 +94,7 @@ class DisplayNamesObject : public NativeObject {
   }
 
   void setDisplayNames(mozilla::intl::DisplayNames* displayNames) {
-    setFixedSlot(LOCALE_DISPLAY_NAMES_SLOT, PrivateValue(displayNames));
+    setFixedSlotTyped(LOCALE_DISPLAY_NAMES_SLOT, PrivateValue(displayNames));
   }
 
  private:

@@ -1,171 +1,6 @@
-# -*- Mode: python; c-basic-offset: 4; indent-tabs-mode: nil; tab-width: 40 -*-
-# vim: set filetype=python:
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
-
-option(
-    "--with-windows-version",
-    nargs=1,
-    default="603",
-    help="Windows SDK version to target. Win 8.1 (603) is currently "
-    "the minimum supported version",
-)
-
-
-@depends("--with-windows-version")
-@imports(_from="__builtin__", _import="ValueError")
-def valid_windows_version(value):
-    if not value:
-        die("Cannot build with --without-windows-version")
-    try:
-        version = int(value[0], 16)
-        if version in (0x603,):
-            return version
-    except ValueError:
-        pass
-
-    die("Invalid value for --with-windows-version (%s)", value[0])
-
-
-option(env="WINDOWSSDKDIR", nargs=1, help="Directory containing the Windows SDK")
-
-
-@depends(
-    "WINDOWSSDKDIR", "WINSYSROOT", winsysroot, target_windows_abi, host_windows_abi
-)
-def windows_sdk_dir(
-    value, winsysroot_env, winsysroot, target_windows_abi, host_windows_abi
-):
-    if value:
-        if winsysroot_env:
-            die("WINDOWSSDKDIR and WINSYSROOT cannot be set together.")
-        if winsysroot:
-            die("WINDOWSSDKDIR cannot be set when using the bootstrapped WINSYSROOT")
-        return value
-    if target_windows_abi != "msvc" and host_windows_abi != "msvc":
-        return ()
-
-    if winsysroot:
-        return [os.path.join(winsysroot, "Windows Kits", "10")]
-
-    return set(
-        normalize_path(x[1])
-        for x in get_registry_values(
-            r"HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows Kits\Installed Roots"
-            r"\KitsRoot*",
-            get_32_and_64_bit=True,
-        )
-    )
-
-
-@imports("glob")
-def get_sdk_dirs(sdk, subdir):
-    def get_dirs_containing(sdk, stem, subdir):
-        return [
-            os.path.dirname(p) for p in glob.glob(os.path.join(sdk, stem, "*", subdir))
-        ]
-
-    def categorize(dirs):
-        return {os.path.basename(d): d for d in dirs}
-
-    include_dirs = categorize(get_dirs_containing(sdk, "Include", subdir))
-    lib_dirs = categorize(get_dirs_containing(sdk, "Lib", subdir))
-
-    valid_versions = sorted(set(include_dirs) & set(lib_dirs), reverse=True)
-    return [
-        namespace(
-            path=sdk,
-            lib=lib_dirs[vv],
-            include=include_dirs[vv],
-        )
-        for vv in valid_versions
-    ]
-
-
-@imports(_from="mozshellutil", _import="quote")
-def valid_windows_sdk_dir_result(value):
-    if value:
-        return "0x%04x in %s" % (value.version, quote(value.path))
-
-
-@depends(
-    target_windows_abi,
-    host_windows_abi,
-    windows_sdk_dir,
-    valid_windows_version,
-    "WINDOWSSDKDIR",
-)
-@checking("for Windows SDK", valid_windows_sdk_dir_result)
-@imports(_from="__builtin__", _import="Exception")
-@imports(_from="__builtin__", _import="open")
-def valid_windows_sdk_dir(
-    target_windows_abi,
-    host_windows_abi,
-    windows_sdk_dir,
-    target_version,
-    windows_sdk_dir_env,
-):
-    if target_windows_abi != "msvc" and host_windows_abi != "msvc":
-        return None
-    if windows_sdk_dir_env:
-        windows_sdk_dir_env = windows_sdk_dir_env[0]
-    sdks = {}
-    for d in windows_sdk_dir:
-        sdklist = get_sdk_dirs(d, "um")
-        for sdk in sdklist:
-            maxver = None
-            winsdkver = os.path.join(sdk.include, "um", "winsdkver.h")
-            with open(winsdkver) as fh:
-                for line in fh.readlines():
-                    if line.startswith("#define"):
-                        line = line.split(None, 2)
-                        assert line.pop(0) == "#define"
-                        if line.pop(0) == "WINVER_MAXVER":
-                            maxver = line.pop(0)
-                            break
-
-            if maxver:
-                try:
-                    maxver = int(maxver, 0)
-                except Exception:
-                    pass
-                else:
-                    sdks[d] = maxver, sdk
-                    break
-
-        if d == windows_sdk_dir_env and d not in sdks:
-            raise FatalCheckError(
-                "Error while checking the version of the SDK in "
-                "WINDOWSSDKDIR (%s). Please verify it contains a valid and "
-                "complete SDK installation." % windows_sdk_dir_env
-            )
-
-    valid_sdks = sorted(sdks, key=lambda x: sdks[x][0], reverse=True)
-    if valid_sdks:
-        biggest_version, sdk = sdks[valid_sdks[0]]
-    if not valid_sdks or biggest_version < target_version:
-        if windows_sdk_dir_env:
-            raise FatalCheckError(
-                "You are targeting Windows version 0x%04x, but your SDK only "
-                "supports up to version 0x%04x. Install and use an updated SDK, "
-                "or target a lower version using --with-windows-version. "
-                "Alternatively, try running the Windows SDK Configuration Tool "
-                "and selecting a newer SDK. See "
-                "https://developer.mozilla.org/En/Windows_SDK_versions for "
-                "details on fixing this." % (target_version, biggest_version)
-            )
-
-        raise FatalCheckError(
-            "Cannot find a Windows SDK for version >= 0x%04x." % target_version
-        )
-
-    return namespace(
-        path=sdk.path,
-        include=sdk.include,
-        lib=sdk.lib,
-        version=biggest_version,
-    )
 
 
 @imports(_from="mozshellutil", _import="quote")
@@ -174,7 +9,7 @@ def valid_ucrt_sdk_dir_result(value):
         return "%s in %s" % (value.version, quote(value.path))
 
 
-@depends(windows_sdk_dir, "WINDOWSSDKDIR", target_windows_abi, host_windows_abi)
+@depends(windows_sdk_dir, "WINDOWSSDKDIR", target.abi, host.abi)
 @checking("for Universal CRT SDK", valid_ucrt_sdk_dir_result)
 @imports("os")
 @imports(_import="mozpack.path", _as="mozpath")
@@ -259,31 +94,6 @@ def valid_ucrt_sdk_dir(
     )
 
 
-@depends(target_windows_abi, host_windows_abi, vc_toolchain_search_path)
-@imports("os")
-def vc_path(target_windows_abi, host_windows_abi, vc_toolchain_search_path):
-    if target_windows_abi != "msvc" and host_windows_abi != "msvc":
-        return
-
-    # In clang-cl builds, we need the headers and libraries from an MSVC installation.
-    vc_program = find_program("cl.exe", paths=vc_toolchain_search_path)
-    if not vc_program:
-        die("Cannot find a Visual C++ install for e.g. ATL headers.")
-
-    result = os.path.dirname(vc_program)
-    while True:
-        next, p = os.path.split(result)
-        if next == result:
-            die(
-                "Cannot determine the Visual C++ directory the compiler (%s) "
-                "is in" % vc_program
-            )
-        result = next
-        if p.lower() == "bin":
-            break
-    return os.path.normpath(result)
-
-
 @depends(vc_path, valid_windows_sdk_dir, valid_ucrt_sdk_dir)
 @imports("os")
 def include_path(vc_path, windows_sdk_dir, ucrt_sdk_dir):
@@ -310,12 +120,9 @@ def include_path(vc_path, windows_sdk_dir, ucrt_sdk_dir):
             "Please install them." % windows_sdk_dir.path
         )
 
-    includes = []
-    include_env = os.environ.get("INCLUDE")
-    if include_env:
-        includes.append(include_env)
-    includes.extend(
-        (
+    configured_includes = [
+        normalize_path_list_entry(p)
+        for p in (
             os.path.join(vc_path, "include"),
             atlmfc_dir,
             os.path.join(windows_sdk_dir.include, "shared"),
@@ -324,7 +131,31 @@ def include_path(vc_path, windows_sdk_dir, ucrt_sdk_dir):
             cppwinrt_dir,
             os.path.join(ucrt_sdk_dir.include, "ucrt"),
         )
-    )
+    ]
+    # Bug 2040992: INCLUDE gets exported by make to subprocesses, so
+    # reentrant configure invocations (e.g. Gradle's :machConfigure) can
+    # see a different INCLUDE than the original ./mach configure. Since
+    # INCLUDE flows into autoconf.mk, capturing those differences would
+    # churn it between invocations from different entry points, which
+    # causes rebuilds through PP_TARGETS like .cargo/config.toml. So we
+    # skip entries already in the configured set, while preserving any
+    # extra entries the user added.
+    configured_set = set(configured_includes)
+    seen_extra_includes = set()
+    extra_includes = []
+    # INCLUDE is an MSVC/clang-cl variable and is always ";"-separated,
+    # regardless of the host OS. Do not use os.pathsep here: on a POSIX
+    # host (e.g. the Linux worker used for win64 cross-compiles) os.pathsep
+    # is ":", which would mis-parse and mis-serialize INCLUDE and prevent
+    # the compiler from finding the Windows SDK / CRT headers.
+    for p in os.environ.get("INCLUDE", "").split(";"):
+        normalized = normalize_path_list_entry(p)
+        if normalized and normalized not in configured_set:
+            if normalized in seen_extra_includes:
+                continue
+            seen_extra_includes.add(normalized)
+            extra_includes.append(normalized)
+    includes = extra_includes + configured_includes
     # Set in the environment for old-configure
     includes = ";".join(includes)
     os.environ["INCLUDE"] = includes
@@ -578,15 +409,52 @@ set_define("WINVER", depends(WINVER)(lambda WINVER: f"0x{WINVER}"))
 set_define("_WIN32_WINNT", depends(WINVER)(lambda WINVER: f"0x{WINVER}"))
 set_define("_WIN32_IE", "0x0A00")
 
+
+# Default linker stack-size flag for Windows EXEs.
+@depends(target.cpu, moz_debug)
+def win32_exe_default_ldflags(cpu, debug):
+    if cpu != "x86":
+        # Normal operation on 64-bit Windows needs 2 MB of stack. (Bug 582910)
+        # ASAN requires 6 MB of stack.
+        # Setting the stack to 8 MB to match the capability of other systems
+        # to deal with frame construction for unreasonably deep DOM trees
+        # with worst-case styling. This uses address space unnecessarily for
+        # non-main threads, but that should be tolerable on 64-bit systems.
+        # (Bug 256180)
+        return ["-STACK:8388608"]
+    if debug:
+        # In debug builds, layout code has extra logging helpers on the stack,
+        # which can go over the 1.5MB limit on some deeply-nested crashtests.
+        return ["-STACK:2097152"]
+    # Since this setting affects the default stack size for non-main
+    # threads, too, to avoid burning the address space, increase only
+    # 512 KB over the default. Just enough to be able to deal with
+    # reasonable styling applied to DOM trees whose depth is near what
+    # Blink's HTML parser can output, esp.
+    # layout/base/crashtests/507119.html (Bug 256180)
+    return ["-STACK:1572864"]
+
+
+# The mingw linker takes GCC-compatible driver syntax, so wrap each flag.
+@depends(win32_exe_default_ldflags)
+def win32_exe_default_ldflags_mingw(flags):
+    return ["-Wl,-Xlink=" + f for f in flags]
+
+
 with only_when(depends(c_compiler)(lambda c: c.type == "clang-cl")):
-    set_config("MSVC_C_RUNTIME_DLL", "vcruntime140.dll")
-    set_config(
-        "MSVC_C_RUNTIME_1_DLL",
-        "vcruntime140_1.dll",
-        when=depends(target)(lambda target: target.cpu != "x86"),
+    msvc_c_runtime_dll = dependable("vcruntime140.dll")
+    msvc_c_runtime_1_dll = depends(target)(
+        lambda target: "vcruntime140_1.dll" if target.cpu != "x86" else None
     )
-    set_config("MSVC_CXX_RUNTIME_DLL", "msvcp140.dll")
-    set_config("MSVC_CXX_RUNTIME_ATOMIC_WAIT_DLL", "msvcp140_atomic_wait.dll")
+    msvc_cxx_runtime_dll = dependable("msvcp140.dll")
+    msvc_cxx_runtime_atomic_wait_dll = dependable("msvcp140_atomic_wait.dll")
+
+    set_config("MSVC_C_RUNTIME_DLL", msvc_c_runtime_dll)
+    set_config("MSVC_C_RUNTIME_1_DLL", msvc_c_runtime_1_dll)
+    set_config("MSVC_CXX_RUNTIME_DLL", msvc_cxx_runtime_dll)
+    set_config(
+        "MSVC_CXX_RUNTIME_ATOMIC_WAIT_DLL", msvc_cxx_runtime_atomic_wait_dll
+    )
 
     # Disable warnings about using MSVC-specific secure CRT functions.
     set_define("_CRT_SECURE_NO_WARNINGS", True)
@@ -609,6 +477,8 @@ with only_when(depends(c_compiler)(lambda c: c.type == "clang-cl")):
         "WIN32_GUI_EXE_LDFLAGS",
         ["-SUBSYSTEM:WINDOWS,{}".format(win32_subsystem_version())],
     )
+
+    set_config("WIN32_EXE_DEFAULT_LDFLAGS", win32_exe_default_ldflags)
 
     add_flag("-Gy")
     add_flag("-Zc:inline")
@@ -642,6 +512,8 @@ with only_when(target_is_windows & depends(c_compiler)(lambda c: c.type != "clan
 
     set_config("WIN32_CONSOLE_EXE_LDFLAGS", ["-mconsole"])
     set_config("WIN32_GUI_EXE_LDFLAGS", ["-mwindows"])
+
+    set_config("WIN32_EXE_DEFAULT_LDFLAGS", win32_exe_default_ldflags_mingw)
 
     # Silence problematic clang warnings
     add_flag("-Wno-incompatible-ms-struct", compiler=cxx_compiler)

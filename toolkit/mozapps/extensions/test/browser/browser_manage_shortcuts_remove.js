@@ -23,7 +23,7 @@ function getShortcutByName(doc, extension, name) {
 
 async function waitForShortcutSet(input, expected) {
   let doc = input.ownerDocument;
-  await BrowserTestUtils.waitForCondition(
+  await TestUtils.waitForCondition(
     () => input.getAttribute("shortcut") == expected,
     `Shortcut should be set to ${JSON.stringify(expected)}`
   );
@@ -43,7 +43,8 @@ function removeButtonForInput(input) {
 
 function checkHasRemoveButton(input, expected) {
   let removeButton = removeButtonForInput(input);
-  let visibility = input.ownerGlobal.getComputedStyle(removeButton).visibility;
+  let visibility =
+    input.documentGlobal.getComputedStyle(removeButton).visibility;
   if (expected) {
     is(visibility, "visible", "Remove button should be visible");
   } else {

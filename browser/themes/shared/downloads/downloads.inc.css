@@ -44,14 +44,17 @@
   /* Leave space for the 32x32 icon with 16px vertical padding, and/or
    * the text in the item, with the same padding, whichever is bigger: */
   min-height: max(48px, calc(16px + 2em));
-  padding-inline-end: 4px;
-  margin: 0 0 8px;
-  border-radius: var(--border-radius-small);
+  padding-inline-end: var(--space-xsmall);
+  margin: 0 0 var(--space-small);
+  border-radius: var(--border-radius-medium);
+  @media not -moz-pref("browser.nova.enabled") {
+    border-radius: var(--border-radius-small);
+  }
 }
 
 .downloadMainArea {
-  padding-block: 8px;
-  padding-inline-start: 4px;
+  padding-block: var(--space-small);
+  padding-inline-start: var(--space-xsmall);
   border-radius: var(--border-radius-small);
 }
 
@@ -93,12 +96,8 @@
   margin-inline-end: 0.7em;
 }
 
-#downloadsPanel-blockedSubview-buttons {
-  margin-top: 1.5em;
-}
-
 #downloadsSummary {
-  background: var(--arrowpanel-dimmed);
+  background: var(--panel-background-color-dimmed);
   border-top: 1px solid var(--panel-separator-color);
   /* Reserve the same space as the button and separator in download items. */
   padding-inline-end: 59px;
@@ -128,8 +127,8 @@
 }
 
 .downloadTypeIcon {
-  width: 32px;
-  height: 32px;
+  width: var(--size-item-large);
+  height: var(--size-item-large);
 }
 
 #downloadsSummaryDescription,
@@ -166,24 +165,28 @@
 
 .downloadButton {
   appearance: none;
-  min-width: 32px;
-  height: 32px;
+  min-width: var(--size-item-large);
+  height: var(--size-item-large);
   margin: 0;
-  margin-inline-start: 4px;
+  margin-inline-start: var(--space-xsmall);
   border: 1px solid transparent;
   padding: 0;
   color: var(--button-text-color-ghost);
   background-color: var(--button-background-color-ghost);
-  border-radius: var(--border-radius-small);
+  border-radius: var(--border-radius-circle);
   --button-background-color-hover: var(--button-background-color-ghost-hover);
   --button-hover-color: var(--button-text-color-ghost-hover);
-  --button-background-color-active: var(--button-background-color-ghost-acitve);
+  --button-background-color-active: var(--button-background-color-ghost-active);
   --button-active-color: var(--button-text-color-ghost-active);
+
+  @media not -moz-pref("browser.nova.enabled") {
+    border-radius: var(--border-radius-small);
+  }
 }
 
 .downloadButton > .button-box > .button-icon {
-  width: 16px;
-  height: 16px;
+  width: var(--size-item-small);
+  height: var(--size-item-small);
   margin: 1px;
   -moz-context-properties: fill;
   fill: currentColor;
@@ -246,15 +249,62 @@
 
 /*** Blocked subview ***/
 #downloadsPanel-blockedSubview-title {
-  font-size: calc(100% * var(--downloads-item-font-size-factor));
-  margin-bottom: 1.5em;
+  font-weight: var(--font-weight-heading);
+  @media not -moz-pref("browser.nova.enabled") {
+    font-size: calc(100% * var(--downloads-item-font-size-factor));
+    font-weight: normal;
+    margin-block-end: var(--space-xlarge);
+  }
+}
+
+#downloadsPanel-blockedSubview-buttons {
+  margin-block-start: var(--space-large);
+  @media not -moz-pref("browser.nova.enabled") {
+    margin-block-start: var(--space-xlarge);
+  }
 }
 
 #downloadsPanel-blockedSubview-details1,
 #downloadsPanel-blockedSubview-details2 {
-  font-size: calc(100% * var(--downloads-item-font-size-factor));
-  margin-bottom: 0.5em;
-  opacity: var(--downloads-item-details-opacity);
+  color: var(--text-color-deemphasized);
+  margin-block-end: 0;
+  @media not -moz-pref("browser.nova.enabled") {
+    margin-block-end: var(--space-small);
+    font-size: calc(100% * var(--downloads-item-font-size-factor));
+  }
+}
+
+@media -moz-pref("browser.nova.enabled") {
+  #downloadsPanel-blockedSubview {
+    padding: var(--space-small);
+
+    .subviewbutton-back {
+      padding: var(--space-small);
+    }
+
+    > .panel-view-body-unscrollable {
+      padding: var(--space-small);
+    }
+  }
+
+  /* TODO: Bug 2056428 - Post-Nova this should be removed along with the defunct styles
+   * for icons in the blocked subview.
+   */
+  .downloadsPanel-blockedSubview-image {
+    display: none;
+  }
+
+  .downloadsPanel-blockedSubview-title-box {
+    margin-block: var(--space-xsmall);
+  }
+
+  #downloadsPanel-blockedSubview-buttons {
+    justify-content: flex-start;
+
+    .footer-button {
+      padding: var(--space-small) var(--space-xlarge);
+    }
+  }
 }
 
 /*** Toolbarseparator ***/

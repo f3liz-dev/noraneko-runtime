@@ -3,11 +3,18 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 import argparse
+import logging
 import os
 import subprocess
-from enum import Enum
+import sys
+from collections import namedtuple
 
+import mozpack.path as mozpath
 from mach.decorators import Command, CommandArgument, SubCommand
+from mozbuild.backend.configenvironment import ConfigEnvironment
+from mozbuild.util import get_rust_build_kind
+from mozpack.copier import FileCopier
+from mozpack.files import FileFinder
 
 CPP_PATH = "toolkit/components/uniffi-js/GeneratedScaffolding.cpp"
 JS_DIR = "toolkit/components/uniffi-bindgen-gecko-js/components/generated"
@@ -15,72 +22,175 @@ FIXTURE_JS_DIR = "toolkit/components/uniffi-bindgen-gecko-js/tests/generated"
 DOCS_PATH = "docs/rust-components/api/js/"
 
 
-"""Library to generate bindings from"""
+UniffiTargets = namedtuple(
+    "UniffiTargets",
+    [
+        "binary_path",
+        "library_path",
+        "fixtures_library_path",
+        "embedded_uniffi_bindgen_path",
+        "megazord_path",
+    ],
+)
 
 
-class SourceLibrary(Enum):
-    GKRUST_UNIFFI_COMPONENTS = "gkrust-uniffi-components"
-    UNIFFI_BINDINGS_BINDGEN_TESTS = "uniffi-bindgen-gecko-js-test-fixtures"
+def _uniffi_objdir(topsrcdir):
+    return mozpath.join(topsrcdir, "obj-uniffi-generate")
 
 
-def cargo_args_for_library(source_library):
-    if source_library == SourceLibrary.GKRUST_UNIFFI_COMPONENTS:
-        return []
-    elif source_library == SourceLibrary.UNIFFI_BINDINGS_BINDGEN_TESTS:
-        return ["--all-features"]
-    raise ValueError(source_library)
+def build_uniffi_targets(command_context):
+    # Use a dedicated objdir so we can run this without the user having to change their mozconfig.
+    uniffi_objdir = _uniffi_objdir(command_context.topsrcdir)
+
+    command_context.log(
+        logging.WARNING,
+        "uniffi-generate",
+        {"objdir": uniffi_objdir},
+        "Using dedicated uniffi objdir: {objdir}",
+    )
+
+    env = os.environ.copy()
+    env["MOZCONFIG"] = mozpath.join(
+        command_context.topsrcdir,
+        "toolkit/components/uniffi-bindgen-gecko-js/uniffi-mozconfig",
+    )
+    env["MOZ_OBJDIR"] = uniffi_objdir
+    mach_path = mozpath.join(command_context.topsrcdir, "mach")
+
+    subprocess.check_call(
+        [
+            sys.executable,
+            mach_path,
+            "build",
+            "pre-export",
+            "export",
+            "recurse_uniffi-target",
+        ],
+        env=env,
+        cwd=command_context.topsrcdir,
+    )
+
+    config = ConfigEnvironment.from_config_status(
+        mozpath.join(uniffi_objdir, "config.status")
+    )
+    substs = config.substs
+    rust_build_kind = get_rust_build_kind(substs)
+
+    binary_path = mozpath.join(
+        uniffi_objdir, "dist", "host", "bin", "uniffi-bindgen-gecko-js"
+    )
+
+    # Like "$uniffi_objdir/aarch64-apple-darwin/debug/libgkrust_uniffi_components.a".
+    lib_prefix = substs["LIB_PREFIX"]
+    lib_suffix = substs["LIB_SUFFIX"]
+    library_path = mozpath.join(
+        uniffi_objdir,
+        substs["RUST_TARGET"],
+        rust_build_kind,
+        f"{lib_prefix}gkrust_uniffi_components.{lib_suffix}",
+    )
+    fixtures_library_path = mozpath.join(
+        uniffi_objdir,
+        substs["RUST_TARGET"],
+        rust_build_kind,
+        f"{lib_prefix}uniffi_bindgen_gecko_js_test_fixtures.{lib_suffix}",
+    )
+
+    embedded_uniffi_bindgen_path = mozpath.join(
+        uniffi_objdir,
+        "dist",
+        "host",
+        "bin",
+        f"embedded-uniffi-bindgen{substs['HOST_BIN_SUFFIX']}",
+    )
+
+    # Read the staticlib, not the cdylib: bindgen extracts the `UNIFFI_META_*`
+    # statics, but the cdylib (linked from the staticlib via megazord_stub.c)
+    # drops any that the stub doesn't reference. The staticlib keeps them all.
+    # Like "$uniffi_objdir/aarch64-apple-darwin/release-megazord/libmegazord.a".
+    megazord_build_kind = get_rust_build_kind(substs, megazord=True)
+    megazord_path = mozpath.join(
+        uniffi_objdir,
+        substs["RUST_TARGET"],
+        megazord_build_kind,
+        f"{lib_prefix}megazord.{lib_suffix}",
+    )
+
+    return UniffiTargets(
+        binary_path=binary_path,
+        library_path=library_path,
+        fixtures_library_path=fixtures_library_path,
+        embedded_uniffi_bindgen_path=embedded_uniffi_bindgen_path,
+        megazord_path=megazord_path,
+    )
 
 
-def build_gkrust_uniffi_library(command_context, source_library):
-    uniffi_root = crate_root(command_context)
-    print("Building gkrust-uniffi-components")
+COMPONENT_MAPPING = {
+    "mozilla/appservices/adsclient": "components/ads-client",
+    "mozilla/appservices/autofill": "components/autofill",
+    "mozilla/appservices/crashtest": "components/crashtest",
+    "mozilla/appservices/errorsupport": "components/errorsupport",
+    "mozilla/appservices/fxaclient": "components/fxaclient",
+    "mozilla/appservices/init_rust_components": "components/init_rust_components",
+    "mozilla/appservices/logins": "components/logins",
+    "mozilla/appservices/merino": "components/merino",
+    "mozilla/appservices/places": "components/places",
+    "mozilla/appservices/push": "components/push",
+    "mozilla/appservices/relay": "components/relay",
+    "mozilla/appservices/remotesettings": "components/remotesettings",
+    "mozilla/appservices/remotetabs": "components/tabs",
+    "mozilla/appservices/rust_log_forwarder": "components/rust-log-forwarder",
+    "mozilla/appservices/search": "components/search",
+    "mozilla/appservices/suggest": "components/suggest",
+    "mozilla/appservices/sync15": "components/sync15",
+    "mozilla/appservices/syncmanager": "components/syncmanager",
+    "mozilla/appservices/tracing": "components/tracing",
+    "mozilla/appservices/viaduct": "components/viaduct",
+    "org/mozilla/experiments/nimbus": "components/nimbus",
+}
+
+
+def generate_android(command_context, uniffi_targets):
+    uniffi_objdir = _uniffi_objdir(command_context.topsrcdir)
+    android_objdir = mozpath.join(
+        uniffi_objdir, "toolkit/components/uniffi-bindgen-gecko-js/android"
+    )
+
     cmdline = [
-        "cargo",
-        "build",
-        "--release",
-        "--manifest-path",
-        os.path.join(command_context.topsrcdir, "Cargo.toml"),
-        "--package",
-        source_library.value,
-    ] + cargo_args_for_library(source_library)
-    print(cmdline)
-    subprocess.check_call(cmdline, cwd=uniffi_root)
-    print()
-
-    out_dir = os.path.join(command_context.topsrcdir, "target", "release")
-    basename = format(source_library.value.replace("-", "_"))
-    filename_candidates = [
-        # Linux / Darwin
-        f"lib{basename}.a",
-        # Windows
-        f"{basename}.lib",
-        # Some other combinations, just in case
-        f"{basename}.a",
-        f"lib{basename}.lib",
+        uniffi_targets.embedded_uniffi_bindgen_path,
+        "generate",
+        "--no-format",
+        "--language",
+        "kotlin",
+        "--out-dir",
+        android_objdir,
+        uniffi_targets.megazord_path,
     ]
-    for filename in filename_candidates:
-        candidate = os.path.join(out_dir, filename)
-        if os.path.exists(candidate):
-            return candidate
-    raise Exception(f"Can't find gkrust_uniffi library in {out_dir}")
+    subprocess.check_call(cmdline, cwd=command_context.topsrcdir)
 
+    # Copy generated Kotlin files to app-services Android Gradle project structure.
 
-def build_uniffi_bindgen_gecko_js(command_context):
-    uniffi_root = crate_root(command_context)
-    print("Building uniffi-bindgen-gecko-js")
-    cmdline = [
-        "cargo",
-        "build",
-        "--release",
-        "--manifest-path",
-        os.path.join(command_context.topsrcdir, "Cargo.toml"),
-        "--package",
-        "uniffi-bindgen-gecko-js",
-    ]
-    subprocess.check_call(cmdline, cwd=uniffi_root)
-    print()
-    return os.path.join(
-        command_context.topsrcdir, "target", "release", "uniffi-bindgen-gecko-js"
+    copier = FileCopier()
+    for source_dir, target_component in COMPONENT_MAPPING.items():
+        source_base = mozpath.join(android_objdir, source_dir)
+        if not os.path.isdir(source_base):
+            raise Exception(
+                f"COMPONENT_MAPPING entry '{source_dir}' has no generated bindings "
+                f"at '{source_base}'. The mapping is out of sync with the megazord."
+            )
+        target_base = mozpath.join(
+            target_component,
+            "android/src/main/java",
+            source_dir,
+        )
+        for p, f in FileFinder(source_base).find("**"):
+            copier.add(mozpath.join(target_base, p), f)
+
+    copier.copy(
+        mozpath.join(
+            command_context.topsrcdir,
+            "toolkit/components/uniffi-bindgen-gecko-js/android",
+        ),
     )
 
 
@@ -95,33 +205,20 @@ def uniffi(command_context, *runargs, **lintargs):
     return 1
 
 
-def crate_root(command_context):
-    return os.path.join(
-        command_context.topsrcdir, "toolkit", "components", "uniffi-bindgen-gecko-js"
-    )
-
-
 @SubCommand(
     "uniffi",
     "generate",
     description="Generate/regenerate bindings",
 )
 def generate_command(command_context):
-    library_path = build_gkrust_uniffi_library(
-        command_context,
-        SourceLibrary.GKRUST_UNIFFI_COMPONENTS,
-    )
-    fixtures_library_path = build_gkrust_uniffi_library(
-        command_context,
-        SourceLibrary.UNIFFI_BINDINGS_BINDGEN_TESTS,
-    )
-    binary_path = build_uniffi_bindgen_gecko_js(command_context)
+    uniffi_targets = build_uniffi_targets(command_context)
+
     cmdline = [
-        binary_path,
+        uniffi_targets.binary_path,
         "--library-path",
-        library_path,
+        uniffi_targets.library_path,
         "--fixtures-library-path",
-        fixtures_library_path,
+        uniffi_targets.fixtures_library_path,
         "generate",
         "--js-dir",
         JS_DIR,
@@ -133,6 +230,9 @@ def generate_command(command_context):
         DOCS_PATH,
     ]
     subprocess.check_call(cmdline, cwd=command_context.topsrcdir)
+
+    generate_android(command_context, uniffi_targets)
+
     return 0
 
 
@@ -143,21 +243,14 @@ def generate_command(command_context):
 )
 @CommandArgument("args", nargs=argparse.REMAINDER)
 def pipeline_command(command_context, args):
-    library_path = build_gkrust_uniffi_library(
-        command_context,
-        SourceLibrary.GKRUST_UNIFFI_COMPONENTS,
-    )
-    fixtures_library_path = build_gkrust_uniffi_library(
-        command_context,
-        SourceLibrary.UNIFFI_BINDINGS_BINDGEN_TESTS,
-    )
-    binary_path = build_uniffi_bindgen_gecko_js(command_context)
+    uniffi_targets = build_uniffi_targets(command_context)
+
     cmdline = [
-        binary_path,
+        uniffi_targets.binary_path,
         "--library-path",
-        library_path,
+        uniffi_targets.library_path,
         "--fixtures-library-path",
-        fixtures_library_path,
+        uniffi_targets.fixtures_library_path,
         "pipeline",
     ] + args
     subprocess.check_call(cmdline, cwd=command_context.topsrcdir)

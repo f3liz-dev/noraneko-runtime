@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 // Copyright (c) 2006-2008 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
@@ -127,8 +125,8 @@ class Pickle {
 
   template <class T>
   [[nodiscard]] bool ReadScalar(PickleIterator* iter, T* result) const {
-    static_assert(std::is_arithmetic<T>::value);
-    static_assert(!std::is_same<typename std::remove_cv<T>::type, bool>::value);
+    static_assert(std::is_arithmetic_v<T>);
+    static_assert(!std::is_same_v<std::remove_cv_t<T>, bool>);
 
     DCHECK(iter);
 
@@ -174,8 +172,8 @@ class Pickle {
 
   template <class T>
   bool WriteScalar(const T& value) {
-    static_assert(std::is_arithmetic<T>::value);
-    static_assert(!std::is_same<typename std::remove_cv<T>::type, bool>::value);
+    static_assert(std::is_arithmetic_v<T>);
+    static_assert(!std::is_same_v<std::remove_cv_t<T>, bool>);
     return WriteBytes(&value, sizeof(value));
   }
 
@@ -196,8 +194,9 @@ class Pickle {
   bool WriteWString(const std::wstring& value);
   bool WriteData(const char* data, uint32_t length);
 
-  // Takes ownership of data
-  bool WriteBytesZeroCopy(void* data, uint32_t data_len, uint32_t capacity);
+  // Takes ownership of data.
+  // data_len and capacity must be within the range of uint32_t
+  bool WriteBytesZeroCopy(void* data, size_t data_len, size_t capacity);
 
   bool WriteSentinel(uint32_t sentinel)
 #ifdef MOZ_PICKLE_SENTINEL_CHECKING
@@ -251,18 +250,19 @@ class Pickle {
   // a power of 2.
   template <uint32_t alignment>
   struct ConstantAligner {
-    static uint32_t align(int bytes) {
+    static uint32_t align(size_t bytes) {
       static_assert((alignment & (alignment - 1)) == 0,
                     "alignment must be a power of two");
+      MOZ_RELEASE_ASSERT(bytes <= UINT32_MAX - (alignment - 1));
       return (bytes + (alignment - 1)) & ~static_cast<uint32_t>(alignment - 1);
     }
   };
 
-  static uint32_t AlignInt(int bytes) {
+  static uint32_t AlignInt(size_t bytes) {
     return ConstantAligner<sizeof(memberAlignmentType)>::align(bytes);
   }
 
-  static uint32_t AlignCapacity(int bytes) {
+  static uint32_t AlignCapacity(size_t bytes) {
     return ConstantAligner<kSegmentAlignment>::align(bytes);
   }
 

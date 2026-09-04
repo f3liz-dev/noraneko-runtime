@@ -78,6 +78,11 @@ sealed class MenuAction : Action {
     data object FindInPage : MenuAction()
 
     /**
+     * [MenuAction] dispatched to move the current private tab to a non-private tab.
+     */
+    data object MoveToNonPrivateTab : MenuAction()
+
+    /**
      * [MenuAction] dispatched when it's a new installation of Firefox.
      */
     data object MenuBanner : MenuAction()
@@ -172,14 +177,28 @@ sealed class MenuAction : Action {
     data object RequestMobileSite : MenuAction()
 
     /**
-     * [MenuAction] dispatched to show the menu CFR.
+     * [MenuAction] dispatched when the menu is clicked.
      */
-    data object OnCFRShown : MenuAction()
+    data object OnMoreMenuClicked : MenuAction()
 
     /**
-     * [MenuAction] dispatched when the menu CFR is dismissed.
+     * [MenuAction] dispatched to record that the summarize page menu has been exposed to the user
      */
-    data object OnCFRDismiss : MenuAction()
+    data object OnSummarizationMenuExposed : MenuAction()
+
+    /**
+     * [MenuAction] dispatched to initialize the state of the summarize page menu.
+     *
+     * @property state The [SummarizationMenuState] to set up
+     */
+    data class InitializeSummarizationMenuState(val state: SummarizationMenuState) : MenuAction()
+
+    /**
+     * [MenuAction] dispatched to update the IP protection menu item state.
+     *
+     * @property state The new [IPProtectionMenuState].
+     */
+    data class UpdateIPProtectionMenuState(val state: IPProtectionMenuState) : MenuAction()
 
     /**
      * [MenuAction] dispatched when a navigation event occurs for a specific destination.
@@ -201,6 +220,11 @@ sealed class MenuAction : Action {
          * [Navigate] action dispatched when navigating to the settings.
          */
         data object Settings : Navigate()
+
+        /**
+         * [Navigate] action dispatched when navigating to the homepage settings.
+         */
+        data object CustomizeHomepage : Navigate()
 
         /**
          * [Navigate] action dispatched when navigating to bookmarks.
@@ -320,5 +344,10 @@ sealed class MenuAction : Action {
          * [Navigate] action dispatched when stopping the current page from loading.
          */
         data object Stop : Navigate()
+
+        /**
+         * [Navigate] action dispatched when navigating to the IP Protection settings screen.
+         */
+        data object IPProtectionSettings : Navigate()
     }
 }

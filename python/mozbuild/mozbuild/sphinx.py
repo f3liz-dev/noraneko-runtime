@@ -182,6 +182,14 @@ def export_mots(config_path):
     # Create export directory if it does not exist.
     path.parent.mkdir(parents=True, exist_ok=True)
 
+    # Remove stale exports left over from a previous format (e.g. an
+    # index.rst from before the switch to Markdown). Sphinx would otherwise
+    # treat both as the same document and fail with a "multiple files found"
+    # warning.
+    for stale in path.parent.glob(f"{path.stem}.*"):
+        if stale != path:
+            stale.unlink()
+
     # Write changes to disk.
     with path.open("w", encoding="utf-8") as f:
         f.write(output)
@@ -227,18 +235,24 @@ class Searchfox(ReferenceRole):
 
         See :searchfox:`firefox-beta:browser/base/content/browser-places.js`
         for more details.
+
+    To pin to a specific revision, include ``/rev/<sha>`` in the source:
+
+        See :searchfox:`firefox-main/rev/<sha>:browser/components/BrowserGlue.sys.mjs#42`
+        for more details.
     """
 
     def run(self):
-        base = "https://searchfox.org/{source}/source/{path}"
-
         if ":" in self.target:
             source, path = self.target.split(":", 1)
         else:
             source = "firefox-main"
             path = self.target
 
-        url = base.format(source=source, path=path)
+        if "/rev/" not in source:
+            source = f"{source}/source"
+
+        url = f"https://searchfox.org/{source}/{path}"
 
         if self.has_explicit_title:
             title = self.title

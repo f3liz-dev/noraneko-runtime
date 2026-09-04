@@ -26,10 +26,10 @@ import org.mozilla.fenix.components.IntentProcessorType
 import org.mozilla.fenix.components.getType
 import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.ext.isIntentInternal
-import org.mozilla.fenix.ext.settings
 import org.mozilla.fenix.perf.MarkersActivityLifecycleCallbacks
 import org.mozilla.fenix.perf.StartupTimeline
 import org.mozilla.fenix.shortcut.NewTabShortcutIntentProcessor
+import org.mozilla.fenix.shortcut.UninstallShortcutIntentProcessor
 
 /**
  * Processes incoming intents and sends them to the corresponding activity.
@@ -76,7 +76,7 @@ class IntentReceiverActivity : Activity() {
     fun processIntent(intent: Intent) {
         // Call process for side effects, short on the first that returns true
 
-        var private = settings().openLinksInAPrivateTab
+        var private = components.settings.openLinksInAPrivateTab
         if (!private) {
             // if PRIVATE_BROWSING_MODE is already set to true, honor that
             private = intent.getBooleanExtra(PRIVATE_BROWSING_MODE, false)
@@ -100,6 +100,10 @@ class IntentReceiverActivity : Activity() {
 
         val processor = getIntentProcessors(private).firstOrNull { it.process(intent) }
         val intentProcessorType = components.intentProcessors.getType(processor)
+
+        if (intentProcessorType.shouldOpenToBrowser(intent)) {
+            components.core.engine.speculativeCreateSession(private = private)
+        }
 
         launch(intent, intentProcessorType)
     }
@@ -149,7 +153,8 @@ class IntentReceiverActivity : Activity() {
             components.intentProcessors.webNotificationsIntentProcessor +
             components.intentProcessors.passwordManagerIntentProcessor +
             modeDependentProcessors +
-            NewTabShortcutIntentProcessor()
+            NewTabShortcutIntentProcessor() +
+            UninstallShortcutIntentProcessor()
     }
 
     private fun addReferrerInformation(intent: Intent) {

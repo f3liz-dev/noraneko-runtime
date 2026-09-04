@@ -4,7 +4,7 @@
 // Checks the UPDATE_ASK tip.
 //
 // The update parts of this test are adapted from:
-// https://searchfox.org/mozilla-central/source/toolkit/mozapps/update/tests/browser/browser_aboutDialog_fc_downloadOptIn.js
+// https://searchfox.org/firefox-main/source/toolkit/mozapps/update/tests/browser/browser_aboutDialog_fc_downloadOptIn.js
 
 "use strict";
 
@@ -61,7 +61,7 @@ add_task(async function test() {
   // restart the browser.
   await doUpdateTest({
     searchString: SEARCH_STRINGS.UPDATE,
-    tip: UrlbarProviderInterventions.TIP_TYPE.UPDATE_ASK,
+    tip: UrlbarShared.INTERVENTION_TIP_TYPE.UPDATE_ASK,
     title: /^A new version of .+ is available\.$/,
     button: "Install and Restart to Update",
     awaitCallback() {

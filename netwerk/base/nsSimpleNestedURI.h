@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -13,9 +12,9 @@
 #define nsSimpleNestedURI_h_
 
 #include "nsCOMPtr.h"
-#include "nsSimpleURI.h"
 #include "nsINestedURI.h"
 #include "nsIURIMutator.h"
+#include "nsSimpleURI.h"
 
 namespace mozilla {
 namespace net {
@@ -39,7 +38,7 @@ class nsSimpleNestedURI : public nsSimpleURI, public nsINestedURI {
                                   bool* result) override;
   virtual already_AddRefed<nsSimpleURI> StartClone() override;
   NS_IMETHOD Mutate(nsIURIMutator** _retval) override;
-  NS_IMETHOD_(void) Serialize(ipc::URIParams& aParams) override;
+  virtual void Serialize(ipc::URIParams& aParams) override;
 
   // nsISerializable overrides
   NS_IMETHOD Read(nsIObjectInputStream* aStream) override;
@@ -52,6 +51,10 @@ class nsSimpleNestedURI : public nsSimpleURI, public nsINestedURI {
   nsresult SetQuery(const nsACString& aQuery) override;
   nsresult SetRef(const nsACString& aRef) override;
   bool Deserialize(const mozilla::ipc::URIParams&);
+
+  // Returns true if aInnerURI is the inner URI our own spec implies.
+  virtual bool IsValidInnerURI(nsIURI* aInnerURI);
+
   nsresult ReadPrivate(nsIObjectInputStream* stream);
 
  public:

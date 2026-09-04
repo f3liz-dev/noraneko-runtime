@@ -4,10 +4,10 @@
 
 #include "ImageDecoderSupport.h"
 
-#include "imgITools.h"
-#include "gfxUtils.h"
 #include "AndroidGraphics.h"
 #include "JavaExceptions.h"
+#include "gfxUtils.h"
+#include "imgITools.h"
 #include "mozilla/gfx/Point.h"
 #include "mozilla/gfx/Swizzle.h"
 #include "mozilla/java/ImageWrappers.h"
@@ -149,8 +149,7 @@ NS_IMPL_ISUPPORTS(ImageCallbackHelper, imgIContainerCallback,
                                               int32_t aDesiredLength,
                                               jni::Object::Param aResult) {
   auto result = java::GeckoResult::LocalRef(aResult);
-  RefPtr<ImageCallbackHelper> helper =
-      new ImageCallbackHelper(result, aDesiredLength);
+  auto helper = MakeRefPtr<ImageCallbackHelper>(result, aDesiredLength);
 
   nsresult rv = DecodeInternal(aUri->ToString(), helper, helper);
   if (NS_FAILED(rv)) {

@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -233,6 +232,10 @@ void MarkerSchema::Stream(JSONWriter& aWriter,
       aWriter.BoolProperty("isStackBased", true);
     }
 
+    if (!mColorField.empty()) {
+      aWriter.StringProperty("colorField", mColorField);
+    }
+
     aWriter.StartArrayProperty("display");
     {
       for (Location location : mLocations) {
@@ -350,6 +353,8 @@ Span<const char> MarkerSchema::FormatToStringSpan(
       return mozilla::MakeStringSpan("integer");
     case Format::Decimal:
       return mozilla::MakeStringSpan("decimal");
+    case Format::Hexadecimal:
+      return mozilla::MakeStringSpan("hexadecimal");
     case Format::Flow:
       return mozilla::MakeStringSpan("flow-id");
     case Format::TerminatingFlow:

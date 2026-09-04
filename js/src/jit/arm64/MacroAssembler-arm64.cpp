@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -8,6 +6,8 @@
 
 #include "mozilla/MathAlgorithms.h"
 #include "mozilla/Maybe.h"
+
+#include <bit>
 
 #include "jit/arm64/MoveEmitter-arm64.h"
 #include "jit/arm64/SharedICRegisters-arm64.h"
@@ -68,14 +68,14 @@ static constexpr int32_t PayloadSize(JSValueType type) {
 }
 #endif
 
-static void AssertValidPayload(MacroAssemblerCompat& masm, JSValueType type,
+static void AssertValidPayload(MacroAssembler& masm, JSValueType type,
                                Register payload, Register scratch) {
 #ifdef DEBUG
   // All bits above the payload must be zeroed.
   Label upperBitsZeroed;
   masm.Lsr(ARMRegister(scratch, 64), ARMRegister(payload, 64),
            PayloadSize(type));
-  masm.Cbz(ARMRegister(scratch, 64), &upperBitsZeroed);
+  masm.branchTestPtr(Assembler::Zero, scratch, scratch, &upperBitsZeroed);
   masm.breakpoint();
   masm.bind(&upperBitsZeroed);
 #endif
@@ -90,7 +90,7 @@ void MacroAssemblerCompat::tagValue(JSValueType type, Register payload,
     vixl::UseScratchRegisterScope temps(this);
     Register scratch = temps.AcquireX().asUnsized();
 
-    AssertValidPayload(*this, type, payload, scratch);
+    AssertValidPayload(asMasm(), type, payload, scratch);
   }
 #endif
 
@@ -103,7 +103,7 @@ void MacroAssemblerCompat::boxValue(JSValueType type, Register src,
   MOZ_ASSERT(type != JSVAL_TYPE_UNDEFINED && type != JSVAL_TYPE_NULL);
   MOZ_ASSERT(src != dest);
 
-  AssertValidPayload(*this, type, src, dest);
+  AssertValidPayload(asMasm(), type, src, dest);
 
   Orr(ARMRegister(dest, 64), ARMRegister(src, 64),
       Operand(ImmShiftedTag(type).value));
@@ -167,7 +167,7 @@ void MacroAssemblerCompat::boxValue(Register type, Register src,
     Label upperBitsZeroed;
     Lsr(ARMRegister(scratch, 64), ARMRegister(src, 64),
         ARMRegister(scratch, 64));
-    Cbz(ARMRegister(scratch, 64), &upperBitsZeroed);
+    asMasm().branchTestPtr(Assembler::Zero, scratch, scratch, &upperBitsZeroed);
     breakpoint();
     bind(&upperBitsZeroed);
   }
@@ -256,7 +256,7 @@ BufferOffset MacroAssemblerCompat::movePatchablePtr(ImmPtr ptr, Register dest) {
   // Scratch space for generating the load instruction.
   //
   // allocLiteralLoadEntry() will use InsertIndexIntoTag() to store a temporary
-  // index to the corresponding PoolEntry in the instruction itself.
+  // index to the corresponding pool entry in the instruction itself.
   //
   // That index will be fixed up later when finishPool()
   // walks over all marked loads and calls PatchConstantPoolLoad().
@@ -282,7 +282,7 @@ BufferOffset MacroAssemblerCompat::movePatchablePtr(ImmWord ptr,
   // Scratch space for generating the load instruction.
   //
   // allocLiteralLoadEntry() will use InsertIndexIntoTag() to store a temporary
-  // index to the corresponding PoolEntry in the instruction itself.
+  // index to the corresponding pool entry in the instruction itself.
   //
   // That index will be fixed up later when finishPool()
   // walks over all marked loads and calls PatchConstantPoolLoad().
@@ -503,7 +503,7 @@ void MacroAssemblerCompat::handleFailureWithHandlerTail(
 
   // Found a wasm catch handler, restore state and jump to it.
   bind(&wasmCatch);
-  wasm::GenerateJumpToCatchHandler(asMasm(), PseudoStackPointer, r0, r1);
+  wasm::GenerateJumpToCatchHandler(asMasm(), PseudoStackPointer, r0, r1, r2);
 
   MOZ_ASSERT(GetStackPointer64().Is(PseudoStackPointer64));
 }
@@ -797,42 +797,42 @@ void MacroAssemblerCompat::wasmLoadImpl(const wasm::MemoryAccessDesc& access,
   // GenerateAtomicOperations.py
   asMasm().memoryBarrierBefore(access.sync());
 
-  FaultingCodeOffset fco;
+  FaultingCodeRange fcr;
   switch (access.type()) {
     case Scalar::Int8:
-      fco = Ldrsb(SelectGPReg(outany, out64), srcAddr);
+      fcr = Ldrsb(SelectGPReg(outany, out64), srcAddr);
       break;
     case Scalar::Uint8:
-      fco = Ldrb(SelectGPReg(outany, out64), srcAddr);
+      fcr = Ldrb(SelectGPReg(outany, out64), srcAddr);
       break;
     case Scalar::Int16:
-      fco = Ldrsh(SelectGPReg(outany, out64), srcAddr);
+      fcr = Ldrsh(SelectGPReg(outany, out64), srcAddr);
       break;
     case Scalar::Uint16:
-      fco = Ldrh(SelectGPReg(outany, out64), srcAddr);
+      fcr = Ldrh(SelectGPReg(outany, out64), srcAddr);
       break;
     case Scalar::Int32:
       if (out64 != Register64::Invalid()) {
-        fco = Ldrsw(SelectGPReg(outany, out64), srcAddr);
+        fcr = Ldrsw(SelectGPReg(outany, out64), srcAddr);
       } else {
-        fco = Ldr(SelectGPReg(outany, out64, 32), srcAddr);
+        fcr = Ldr(SelectGPReg(outany, out64, 32), srcAddr);
       }
       break;
     case Scalar::Uint32:
-      fco = Ldr(SelectGPReg(outany, out64, 32), srcAddr);
+      fcr = Ldr(SelectGPReg(outany, out64, 32), srcAddr);
       break;
     case Scalar::Int64:
-      fco = Ldr(SelectGPReg(outany, out64), srcAddr);
+      fcr = Ldr(SelectGPReg(outany, out64), srcAddr);
       break;
     case Scalar::Float32:
       // LDR does the right thing also for access.isZeroExtendSimd128Load()
-      fco = Ldr(SelectFPReg(outany, out64, 32), srcAddr);
+      fcr = Ldr(SelectFPReg(outany, out64, 32), srcAddr);
       break;
     case Scalar::Float64:
       if (access.isSplatSimd128Load() || access.isWidenSimd128Load()) {
         ScratchSimd128Scope scratch_(asMasm());
         ARMFPRegister scratch = Simd1D(scratch_);
-        fco = Ldr(scratch, srcAddr);
+        fcr = Ldr(scratch, srcAddr);
         if (access.isSplatSimd128Load()) {
           Dup(SelectFPReg(outany, out64, 128).V2D(), scratch, 0);
         } else {
@@ -862,11 +862,11 @@ void MacroAssemblerCompat::wasmLoadImpl(const wasm::MemoryAccessDesc& access,
         }
       } else {
         // LDR does the right thing also for access.isZeroExtendSimd128Load()
-        fco = Ldr(SelectFPReg(outany, out64, 64), srcAddr);
+        fcr = Ldr(SelectFPReg(outany, out64, 64), srcAddr);
       }
       break;
     case Scalar::Simd128:
-      fco = Ldr(SelectFPReg(outany, out64, 128), srcAddr);
+      fcr = Ldr(SelectFPReg(outany, out64, 128), srcAddr);
       break;
     case Scalar::Uint8Clamped:
     case Scalar::BigInt64:
@@ -876,7 +876,8 @@ void MacroAssemblerCompat::wasmLoadImpl(const wasm::MemoryAccessDesc& access,
       MOZ_CRASH("unexpected array type");
   }
 
-  append(access, wasm::TrapMachineInsnForLoad(byteSize(access.type())), fco);
+  asMasm().appendAndVerify(
+      access, wasm::TrapMachineInsnForLoad(byteSize(access.type())), fcr);
 
   asMasm().memoryBarrierAfter(access.sync());
 }
@@ -893,7 +894,7 @@ static bool IsLSImmediateOffset(uint64_t address, size_t accessByteSize) {
 
   // The access size is always a power of 2, so computing the log amounts to
   // counting trailing zeroes.
-  unsigned logAccessSize = mozilla::CountTrailingZeroes32(accessByteSize);
+  unsigned logAccessSize = std::countr_zero(accessByteSize);
   return (MacroAssemblerCompat::IsImmLSUnscaled(int64_t(address)) ||
           MacroAssemblerCompat::IsImmLSScaled(int64_t(address), logAccessSize));
 }
@@ -946,31 +947,31 @@ void MacroAssemblerCompat::wasmStoreImpl(const wasm::MemoryAccessDesc& access,
   // GenerateAtomicOperations.py
   asMasm().memoryBarrierBefore(access.sync());
 
-  FaultingCodeOffset fco;
+  FaultingCodeRange fcr;
   switch (access.type()) {
     case Scalar::Int8:
     case Scalar::Uint8:
-      fco = Strb(SelectGPReg(valany, val64), dstAddr);
+      fcr = Strb(SelectGPReg(valany, val64), dstAddr);
       break;
     case Scalar::Int16:
     case Scalar::Uint16:
-      fco = Strh(SelectGPReg(valany, val64), dstAddr);
+      fcr = Strh(SelectGPReg(valany, val64), dstAddr);
       break;
     case Scalar::Int32:
     case Scalar::Uint32:
-      fco = Str(SelectGPReg(valany, val64), dstAddr);
+      fcr = Str(SelectGPReg(valany, val64), dstAddr);
       break;
     case Scalar::Int64:
-      fco = Str(SelectGPReg(valany, val64), dstAddr);
+      fcr = Str(SelectGPReg(valany, val64), dstAddr);
       break;
     case Scalar::Float32:
-      fco = Str(SelectFPReg(valany, val64, 32), dstAddr);
+      fcr = Str(SelectFPReg(valany, val64, 32), dstAddr);
       break;
     case Scalar::Float64:
-      fco = Str(SelectFPReg(valany, val64, 64), dstAddr);
+      fcr = Str(SelectFPReg(valany, val64, 64), dstAddr);
       break;
     case Scalar::Simd128:
-      fco = Str(SelectFPReg(valany, val64, 128), dstAddr);
+      fcr = Str(SelectFPReg(valany, val64, 128), dstAddr);
       break;
     case Scalar::Uint8Clamped:
     case Scalar::BigInt64:
@@ -980,7 +981,8 @@ void MacroAssemblerCompat::wasmStoreImpl(const wasm::MemoryAccessDesc& access,
       MOZ_CRASH("unexpected array type");
   }
 
-  append(access, wasm::TrapMachineInsnForStore(byteSize(access.type())), fco);
+  asMasm().appendAndVerify(
+      access, wasm::TrapMachineInsnForStore(byteSize(access.type())), fcr);
 
   asMasm().memoryBarrierAfter(access.sync());
 }
@@ -989,7 +991,7 @@ void MacroAssemblerCompat::wasmStoreAbsolute(
     const wasm::MemoryAccessDesc& access, AnyRegister value, Register64 value64,
     Register memoryBase, uint64_t address) {
   // See comments in wasmLoadAbsolute.
-  unsigned logAccessSize = mozilla::CountTrailingZeroes32(access.byteSize());
+  unsigned logAccessSize = std::countr_zero(access.byteSize());
   if (address > INT64_MAX || !(IsImmLSScaled(int64_t(address), logAccessSize) ||
                                IsImmLSUnscaled(int64_t(address)))) {
     vixl::UseScratchRegisterScope temps(this);
@@ -1617,7 +1619,6 @@ CodeOffset MacroAssembler::call(Label* label) {
 
 void MacroAssembler::call(ImmPtr imm) {
   // This sync has been observed (and is expected) to be necessary.
-  // eg testcase: asm.js/testTimeout5.js
   syncStackPtr();
   vixl::UseScratchRegisterScope temps(this);
   const Register scratch = temps.AcquireX().asUnsized();
@@ -1650,6 +1651,9 @@ CodeOffset MacroAssembler::call(const Address& addr) {
 }
 
 void MacroAssembler::call(JitCode* c) {
+  // CodeFromJump doesn't support nop sequences.
+  AutoForbidNops afn(this);
+
   vixl::UseScratchRegisterScope temps(this);
   const ARMRegister scratch64 = temps.AcquireX();
   // This sync has been observed (and is expected) to be necessary.
@@ -2057,6 +2061,23 @@ void MacroAssembler::branchTestNaNValue(Condition cond, const ValueOperand& val,
   B(label, cond);
 }
 
+void MacroAssembler::testValueSet(Condition cond, const ValueOperand& lhs,
+                                  const Value& rhs, Register dest) {
+  MOZ_ASSERT(cond == Equal || cond == NotEqual);
+  MOZ_ASSERT(!rhs.isNaN());
+
+  if (!rhs.isGCThing()) {
+    Cmp(ARMRegister(lhs.valueReg(), 64), Operand(rhs.asRawBits()));
+  } else {
+    vixl::UseScratchRegisterScope temps(this);
+    const ARMRegister scratch64 = temps.AcquireX();
+    MOZ_ASSERT(scratch64.asUnsized() != lhs.valueReg());
+    moveValue(rhs, ValueOperand(scratch64.asUnsized()));
+    Cmp(ARMRegister(lhs.valueReg(), 64), scratch64);
+  }
+  emitSet(cond, dest);
+}
+
 // ========================================================================
 // Memory access primitives.
 template <typename T>
@@ -2089,12 +2110,12 @@ void MacroAssembler::comment(const char* msg) { Assembler::comment(msg); }
 // ========================================================================
 // wasm support
 
-FaultingCodeOffset MacroAssembler::wasmTrapInstruction() {
+FaultingCodeRange MacroAssembler::wasmTrapInstruction() {
   AutoForbidPoolsAndNops afp(this,
                              /* max number of instructions in scope = */ 1);
-  FaultingCodeOffset fco = FaultingCodeOffset(currentOffset());
+  FaultingCodeRange fcr = FaultingCodeRange(currentOffset());
   Unreachable();
-  return fco;
+  return fcr;
 }
 
 void MacroAssembler::wasmBoundsCheck32(Condition cond, Register index,
@@ -2585,7 +2606,7 @@ static void LoadExclusive(MacroAssembler& masm,
   // AutoForbidPoolsAndNops ensures that the metadata is emitted at the
   // address of the ldxr*.  Note that the use of AutoForbidPoolsAndNops is now
   // a "second class" solution; the right way to do this would be to have the
-  // masm.<LoadInsn> calls produce an FaultingCodeOffset, and hand that value to
+  // masm.<LoadInsn> calls produce a FaultingCodeRange, and hand that value to
   // `masm.append`.
   MOZ_ASSERT(ptr.IsImmediateOffset() && ptr.offset() == 0);
 
@@ -2595,11 +2616,12 @@ static void LoadExclusive(MacroAssembler& masm,
         AutoForbidPoolsAndNops afp(
             &masm,
             /* max number of instructions in scope = */ 1);
-        if (access) {
-          masm.append(*access, wasm::TrapMachineInsn::Load8,
-                      FaultingCodeOffset(masm.currentOffset()));
-        }
+        auto before = masm.currentOffset();
         masm.Ldxrb(W(dest), ptr);
+        if (access) {
+          masm.appendAndVerify(*access, wasm::TrapMachineInsn::Load8,
+                               FaultingCodeRange(before));
+        }
       }
       if (signExtend) {
         masm.Sbfm(R(dest, targetWidth), R(dest, targetWidth), 0, 7);
@@ -2611,11 +2633,12 @@ static void LoadExclusive(MacroAssembler& masm,
         AutoForbidPoolsAndNops afp(
             &masm,
             /* max number of instructions in scope = */ 1);
-        if (access) {
-          masm.append(*access, wasm::TrapMachineInsn::Load16,
-                      FaultingCodeOffset(masm.currentOffset()));
-        }
+        auto before = masm.currentOffset();
         masm.Ldxrh(W(dest), ptr);
+        if (access) {
+          masm.appendAndVerify(*access, wasm::TrapMachineInsn::Load16,
+                               FaultingCodeRange(before));
+        }
       }
       if (signExtend) {
         masm.Sbfm(R(dest, targetWidth), R(dest, targetWidth), 0, 15);
@@ -2627,11 +2650,12 @@ static void LoadExclusive(MacroAssembler& masm,
         AutoForbidPoolsAndNops afp(
             &masm,
             /* max number of instructions in scope = */ 1);
-        if (access) {
-          masm.append(*access, wasm::TrapMachineInsn::Load32,
-                      FaultingCodeOffset(masm.currentOffset()));
-        }
+        auto before = masm.currentOffset();
         masm.Ldxr(W(dest), ptr);
+        if (access) {
+          masm.appendAndVerify(*access, wasm::TrapMachineInsn::Load32,
+                               FaultingCodeRange(before));
+        }
       }
       if (targetWidth == Width::_64 && signExtend) {
         masm.Sbfm(X(dest), X(dest), 0, 31);
@@ -2643,11 +2667,12 @@ static void LoadExclusive(MacroAssembler& masm,
         AutoForbidPoolsAndNops afp(
             &masm,
             /* max number of instructions in scope = */ 1);
-        if (access) {
-          masm.append(*access, wasm::TrapMachineInsn::Load64,
-                      FaultingCodeOffset(masm.currentOffset()));
-        }
+        auto before = masm.currentOffset();
         masm.Ldxr(X(dest), ptr);
+        if (access) {
+          masm.appendAndVerify(*access, wasm::TrapMachineInsn::Load64,
+                               FaultingCodeRange(before));
+        }
       }
       break;
     }
@@ -2717,10 +2742,7 @@ static void CompareExchange(MacroAssembler& masm,
     masm.memoryBarrierBefore(sync);
     {
       AutoForbidPoolsAndNops afp(&masm, /* number of insns = */ 1);
-      if (access) {
-        masm.append(*access, wasm::TrapMachineInsn::Atomic,
-                    FaultingCodeOffset(masm.currentOffset()));
-      }
+      auto before = masm.currentOffset();
       switch (byteSize(type)) {
         case 1:
           masm.Casalb(R(output, targetWidth), R(newval, targetWidth), ptr);
@@ -2734,6 +2756,10 @@ static void CompareExchange(MacroAssembler& masm,
           break;
         default:
           MOZ_CRASH("CompareExchange unsupported type");
+      }
+      if (access) {
+        masm.appendAndVerify(*access, wasm::TrapMachineInsn::Atomic,
+                             FaultingCodeRange(before));
       }
     }
     masm.memoryBarrierAfter(sync);
@@ -2785,10 +2811,7 @@ static void AtomicExchange(MacroAssembler& masm,
     masm.memoryBarrierBefore(sync);
     {
       AutoForbidPoolsAndNops afp(&masm, /* number of insns = */ 1);
-      if (access) {
-        masm.append(*access, wasm::TrapMachineInsn::Atomic,
-                    FaultingCodeOffset(masm.currentOffset()));
-      }
+      auto before = masm.currentOffset();
       switch (byteSize(type)) {
         case 1:
           masm.Swpalb(R(value, targetWidth), R(output, targetWidth), ptr);
@@ -2802,6 +2825,10 @@ static void AtomicExchange(MacroAssembler& masm,
           break;
         default:
           MOZ_CRASH("AtomicExchange unsupported type");
+      }
+      if (access) {
+        masm.appendAndVerify(*access, wasm::TrapMachineInsn::Atomic,
+                             FaultingCodeRange(before));
       }
     }
     masm.memoryBarrierAfter(sync);
@@ -2853,10 +2880,7 @@ static void AtomicFetchOp(MacroAssembler& masm,
 #define FETCH_OP_CASE(op, arg)                                                \
   {                                                                           \
     AutoForbidPoolsAndNops afp(&masm, /* num insns = */ 1);                   \
-    if (access) {                                                             \
-      masm.append(*access, wasm::TrapMachineInsn::Atomic,                     \
-                  FaultingCodeOffset(masm.currentOffset()));                  \
-    }                                                                         \
+    auto before = masm.currentOffset();                                       \
     switch (byteSize(type)) {                                                 \
       case 1:                                                                 \
         if (wantResult) {                                                     \
@@ -2882,6 +2906,10 @@ static void AtomicFetchOp(MacroAssembler& masm,
         break;                                                                \
       default:                                                                \
         MOZ_CRASH("AtomicFetchOp unsupported type");                          \
+    }                                                                         \
+    if (access) {                                                             \
+      masm.appendAndVerify(*access, wasm::TrapMachineInsn::Atomic,            \
+                           FaultingCodeRange(before));                        \
     }                                                                         \
   }
 
@@ -3797,10 +3825,10 @@ void MacroAssembler::shiftIndex32AndAdd(Register indexTemp32, int shift,
 
 void MacroAssembler::wasmMarkCallAsSlow() {
   // Use mov() instead of Mov() to ensure this no-op move isn't elided.
-  vixl::MacroAssembler::mov(x28, x28);
+  vixl::MacroAssembler::mov(x20, x20);
 }
 
-const int32_t SlowCallMarker = 0xaa1c03fc;
+const int32_t SlowCallMarker = 0xaa1403f4;  // mov x20, x20
 
 void MacroAssembler::wasmCheckSlowCallsite(Register ra, Label* notSlow,
                                            Register temp1, Register temp2) {

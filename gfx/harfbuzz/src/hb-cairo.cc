@@ -166,6 +166,29 @@ hb_cairo_pop_transform (hb_paint_funcs_t *pfuncs HB_UNUSED,
   cairo_restore (cr);
 }
 
+static void
+hb_cairo_fill_glyph (hb_paint_funcs_t *pfuncs HB_UNUSED,
+		     void *paint_data,
+		     hb_codepoint_t glyph,
+		     hb_font_t *font,
+		     hb_bool_t use_foreground,
+		     hb_color_t color,
+		     void *user_data HB_UNUSED)
+{
+  hb_cairo_context_t *c = (hb_cairo_context_t *) paint_data;
+  cairo_t *cr = c->cr;
+
+  cairo_save (cr);
+
+  cairo_new_path (cr);
+  hb_font_draw_glyph (font, glyph, hb_cairo_draw_get_funcs (), cr);
+  cairo_close_path (cr);
+  _hb_cairo_set_source_color (c, use_foreground, color);
+  cairo_fill (cr);
+
+  cairo_restore (cr);
+}
+
 static hb_bool_t
 hb_cairo_paint_color_glyph (hb_paint_funcs_t *pfuncs HB_UNUSED,
 			    void *paint_data,
@@ -227,6 +250,33 @@ hb_cairo_push_clip_rectangle (hb_paint_funcs_t *pfuncs HB_UNUSED,
   cairo_clip (cr);
 }
 
+static hb_draw_funcs_t *
+hb_cairo_push_clip_path_start (hb_paint_funcs_t *pfuncs HB_UNUSED,
+			       void *paint_data,
+			       void **draw_data,
+			       void *user_data HB_UNUSED)
+{
+  hb_cairo_context_t *c = (hb_cairo_context_t *) paint_data;
+  cairo_t *cr = c->cr;
+
+  cairo_save (cr);
+  cairo_new_path (cr);
+  *draw_data = cr;
+  return hb_cairo_draw_get_funcs ();
+}
+
+static void
+hb_cairo_push_clip_path_end (hb_paint_funcs_t *pfuncs HB_UNUSED,
+			     void *paint_data,
+			     void *user_data HB_UNUSED)
+{
+  hb_cairo_context_t *c = (hb_cairo_context_t *) paint_data;
+  cairo_t *cr = c->cr;
+
+  cairo_close_path (cr);
+  cairo_clip (cr);
+}
+
 static void
 hb_cairo_pop_clip (hb_paint_funcs_t *pfuncs HB_UNUSED,
 		   void *paint_data,
@@ -276,23 +326,7 @@ hb_cairo_paint_color (hb_paint_funcs_t *pfuncs HB_UNUSED,
   hb_cairo_context_t *c = (hb_cairo_context_t *) paint_data;
   cairo_t *cr = c->cr;
 
-  if (use_foreground)
-  {
-#ifdef HAVE_CAIRO_USER_SCALED_FONT_GET_FOREGROUND_SOURCE
-    double r, g, b, a;
-    cairo_pattern_t *foreground = cairo_user_scaled_font_get_foreground_source (c->scaled_font);
-    if (cairo_pattern_get_rgba (foreground, &r, &g, &b, &a) == CAIRO_STATUS_SUCCESS)
-      cairo_set_source_rgba (cr, r, g, b, a * hb_color_get_alpha (color) / 255.);
-    else
-#endif
-      cairo_set_source_rgba (cr, 0, 0, 0, hb_color_get_alpha (color) / 255.);
-  }
-  else
-    cairo_set_source_rgba (cr,
-			   hb_color_get_red (color) / 255.,
-			   hb_color_get_green (color) / 255.,
-			   hb_color_get_blue (color) / 255.,
-			   hb_color_get_alpha (color) / 255.);
+  _hb_cairo_set_source_color (c, use_foreground, color);
   cairo_paint (cr);
 }
 
@@ -425,9 +459,12 @@ static struct hb_cairo_paint_funcs_lazy_loader_t : hb_paint_funcs_lazy_loader_t<
 
     hb_paint_funcs_set_push_transform_func (funcs, hb_cairo_push_transform, nullptr, nullptr);
     hb_paint_funcs_set_pop_transform_func (funcs, hb_cairo_pop_transform, nullptr, nullptr);
+    hb_paint_funcs_set_fill_glyph_func (funcs, hb_cairo_fill_glyph, nullptr, nullptr);
     hb_paint_funcs_set_color_glyph_func (funcs, hb_cairo_paint_color_glyph, nullptr, nullptr);
     hb_paint_funcs_set_push_clip_glyph_func (funcs, hb_cairo_push_clip_glyph, nullptr, nullptr);
     hb_paint_funcs_set_push_clip_rectangle_func (funcs, hb_cairo_push_clip_rectangle, nullptr, nullptr);
+    hb_paint_funcs_set_push_clip_path_start_func (funcs, hb_cairo_push_clip_path_start, nullptr, nullptr);
+    hb_paint_funcs_set_push_clip_path_end_func (funcs, hb_cairo_push_clip_path_end, nullptr, nullptr);
     hb_paint_funcs_set_pop_clip_func (funcs, hb_cairo_pop_clip, nullptr, nullptr);
     hb_paint_funcs_set_push_group_func (funcs, hb_cairo_push_group, nullptr, nullptr);
     hb_paint_funcs_set_pop_group_func (funcs, hb_cairo_pop_group, nullptr, nullptr);
@@ -602,10 +639,10 @@ hb_cairo_render_glyph (cairo_scaled_font_t  *scaled_font,
 
   hb_position_t x_scale, y_scale;
   hb_font_get_scale (font, &x_scale, &y_scale);
+
   cairo_scale (cr,
 	       +1. / (x_scale ? x_scale : 1),
 	       -1. / (y_scale ? y_scale : 1));
-
   if (hb_font_draw_glyph_or_fail (font, glyph, hb_cairo_draw_get_funcs (), cr))
     cairo_fill (cr);
 
@@ -645,8 +682,11 @@ hb_cairo_render_color_glyph (cairo_scaled_font_t  *scaled_font,
   c.cr = cr;
   c.color_cache = (hb_map_t *) cairo_scaled_font_get_user_data (scaled_font, &color_cache_key);
 
-  if (!hb_font_paint_glyph_or_fail (font, glyph, hb_cairo_paint_get_funcs (), &c, palette, color))
-    return CAIRO_STATUS_USER_FONT_NOT_IMPLEMENTED;
+  /* Synthesizing variant: mono glyphs render here too via the
+   * fill_glyph foreground fallback inside hb_font_paint_glyph.
+   * Callers that want the cheaper outline path for mono fonts set
+   * CAIRO_COLOR_MODE_NO_COLOR on the font options instead. */
+  hb_font_paint_glyph (font, glyph, hb_cairo_paint_get_funcs (), &c, palette, color);
 
   return CAIRO_STATUS_SUCCESS;
 }
@@ -881,7 +921,6 @@ hb_cairo_font_face_get_scale_factor (cairo_font_face_t *font_face)
 	 cairo_font_face_get_user_data (font_face,
 					&hb_cairo_scale_factor_user_data_key);
 }
-
 
 /**
  * hb_cairo_glyphs_from_buffer:

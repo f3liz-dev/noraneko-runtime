@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 // Copyright (c) 2006-2008 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
@@ -9,9 +7,17 @@
 
 #include "base/basictypes.h"
 #include "base/process_util.h"
+#include "nsLiteralString.h"
 #ifdef XP_UNIX
 #  include "mozilla/UniquePtrExtensions.h"
 #endif
+
+// Fixed signature recorded via the CrashSignatureOverrideForTesting annotation
+// when the parent deliberately crashes a child hanging at shutdown, so these
+// crashes group under one signature across platforms. Shared by the
+// platform-specific implementations.
+inline constexpr nsLiteralCString kShutdownHangCrashSignature =
+    "child process hang at shutdown"_ns;
 
 class ProcessWatcher {
  public:

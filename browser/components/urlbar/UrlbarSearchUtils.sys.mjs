@@ -10,15 +10,20 @@
  */
 
 /**
- * @typedef {typeof import("UrlbarUtils.sys.mjs").UrlbarUtils.RESULT_SOURCE} RESULT_SOURCE
+ * @import {UrlbarShared} from "chrome://browser/content/urlbar/UrlbarShared.mjs"
  * @import {SearchEngine} from "moz-src:///toolkit/components/search/SearchEngine.sys.mjs"
  */
 
 import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 
 const lazy = XPCOMUtils.declareLazy({
+  AppProvidedConfigEngine:
+    "moz-src:///toolkit/components/search/ConfigSearchEngine.sys.mjs",
+  ConfigSearchEngine:
+    "moz-src:///toolkit/components/search/ConfigSearchEngine.sys.mjs",
   SearchService: "moz-src:///toolkit/components/search/SearchService.sys.mjs",
   UrlUtils: "resource://gre/modules/UrlUtils.sys.mjs",
+  UrlbarShared: "chrome://browser/content/urlbar/UrlbarShared.mjs",
   UrlbarUtils: "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs",
   separatePrivateDefaultUIEnabled: {
     pref: "browser.search.separatePrivateDefault.ui.enabled",
@@ -173,8 +178,11 @@ class SearchUtils {
       return [];
     }
 
+    let engines = await lazy.SearchService.getVisibleEngines();
+    let orderedEngines = this.#orderEnginesForAliases(engines);
+
     let tokenAliasEngines = [];
-    for (let engine of await lazy.SearchService.getVisibleEngines()) {
+    for (let engine of orderedEngines) {
       let tokenAliases = this._aliasesForEngine(engine).filter(a =>
         a.startsWith("@")
       );
@@ -263,7 +271,7 @@ class SearchUtils {
       let resultDomain = engine.searchUrlDomain;
       // For config engines, sanitize the data in a few special cases to make
       // analysis easier.
-      if (!engine.isConfigEngine) {
+      if (!(engine instanceof lazy.ConfigSearchEngine)) {
         scalarKey = "other";
       } else if (resultDomain.includes("amazon.")) {
         // Group all the localized Amazon sites together.
@@ -276,7 +284,7 @@ class SearchUtils {
       }
     } else if (searchMode.source) {
       scalarKey =
-        lazy.UrlbarUtils.getResultSourceName(searchMode.source) || "other";
+        lazy.UrlbarShared.getResultSourceName(searchMode.source) || "other";
       scalarKey += searchMode.restrictType ? `_${searchMode.restrictType}` : "";
     }
 
@@ -287,7 +295,7 @@ class SearchUtils {
    *
    * @param {UrlbarResult} result
    *   The result to evaluate
-   * @param {Values<typeof lazy.UrlbarUtils.RESULT_SOURCE>[]} [allowedSources]
+   * @param {Values<typeof UrlbarShared.RESULT_SOURCE>[]} [allowedSources]
    *   Array of allowed result sources. if defined, the result must be from one
    *   of these sources to be evaluated as a SERP, otherwise this will return
    *   false.
@@ -306,10 +314,61 @@ class SearchUtils {
     }
   }
 
+  /**
+   * Test-only function to reset the init promise, allowing init() to re-run
+   * _initInternal() on the next call. Use this after manipulating SearchService
+   * initialization state in tests to ensure UrlbarSearchUtils re-initializes
+   * against the restored service.
+   */
+  resetInitPromiseForTests() {
+    this._initPromise = null;
+  }
+
   async _initInternal() {
     await lazy.SearchService.init();
     await this._refreshEnginesByAlias();
     Services.obs.addObserver(this, SEARCH_ENGINE_TOPIC, true);
+  }
+
+  /**
+   * Orders engines into the precedence used to resolve duplicate engine aliases.
+   * This specific order is used so that if there are duplicates, we try and
+   * reflect what the user would expect.
+   *
+   * 1) The default engine
+   * 2) The private default
+   * 3) Application-provided engines
+   * 4) Any remaining engines (Add-on, OpenSearch, User)
+   *
+   * @param {SearchEngine[]} engines
+   *   The engines to order, typically the visible engines from the search
+   *   service.
+   * @returns {IterableIterator<SearchEngine>}
+   *   The engines ordered by alias precedence.
+   */
+  #orderEnginesForAliases(engines) {
+    let orderedEngines = new Set();
+
+    orderedEngines.add(lazy.SearchService.defaultEngine);
+    orderedEngines.add(lazy.SearchService.defaultPrivateEngine);
+
+    // Now add the application provided engines. Generally if there's a duplicate
+    // within these, it will be because the duplicate was added by an add-on or
+    // other search engine. Hence we prefer the application provided one, unless
+    // the other engine has been set as duplicate.
+    for (let engine of engines) {
+      if (engine instanceof lazy.AppProvidedConfigEngine) {
+        orderedEngines.add(engine);
+      }
+    }
+
+    // For any other engines, we add them if the alias doesn't exist
+    // yet.
+    for (let engine of engines) {
+      orderedEngines.add(engine);
+    }
+
+    return orderedEngines.values();
   }
 
   async _refreshEnginesByAlias() {
@@ -317,12 +376,23 @@ class SearchUtils {
     // class is for O(1) case-insensitive lookup for search aliases, which is
     // facilitated by _enginesByAlias.
     this._enginesByAlias = new Map();
-    for (let engine of await lazy.SearchService.getVisibleEngines()) {
-      if (!engine.hidden) {
-        for (let alias of this._aliasesForEngine(engine)) {
-          this._enginesByAlias.set(alias, engine);
-        }
-      }
+    let engines = await lazy.SearchService.getVisibleEngines();
+    let orderedEngines = this.#orderEnginesForAliases(engines);
+
+    for (let engine of orderedEngines) {
+      this.#addAliasesForEngine(engine);
+    }
+  }
+
+  /**
+   * Adds the aliases for the engine to the engines by alias map, if the alias
+   * does not already exist within the map.
+   *
+   * @param {SearchEngine} engine
+   */
+  #addAliasesForEngine(engine) {
+    for (let alias of this._aliasesForEngine(engine)) {
+      this._enginesByAlias.getOrInsert(alias, engine);
     }
   }
 
@@ -409,6 +479,7 @@ class SearchUtils {
       case "engine-changed":
       case "engine-removed":
       case "engine-default":
+      case "engine-default-private":
         this._refreshEnginesByAliasPromise = this._refreshEnginesByAlias();
         break;
     }

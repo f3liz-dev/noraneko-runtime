@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,12 +9,12 @@
 
 #include "mozilla/WeakPtr.h"
 
-#include "nsStubMutationObserver.h"
 #include "nsHashKeys.h"
 #include "nsIObserver.h"
 #include "nsMenuBarX.h"
-#include "nsTHashMap.h"
 #include "nsString.h"
+#include "nsStubMutationObserver.h"
+#include "nsTHashMap.h"
 
 class nsMenuItemX;
 class nsChangeObserver;
@@ -36,7 +35,9 @@ enum {
   eCommand_ID_Update = 7,
   eCommand_ID_TouchBar = 8,
   eCommand_ID_Account = 9,
-  eCommand_ID_Last = 10
+  eCommand_ID_SetAsDefault = 10,
+  eCommand_ID_ReferralsPage = 11,
+  eCommand_ID_Last = 12
 };
 
 // The menu group owner observes DOM mutations, notifies registered

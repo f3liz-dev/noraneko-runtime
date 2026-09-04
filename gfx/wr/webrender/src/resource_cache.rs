@@ -479,6 +479,13 @@ pub struct ResourceCache {
     cached_glyph_dimensions: GlyphDimensionsCache,
     glyph_rasterizer: GlyphRasterizer,
 
+    /// Whether each font template contains embedded bitmap strikes. Computed
+    /// once when the template is added (on the render backend thread, the same
+    /// thread that builds frames) so text runs can decide lock-free at frame
+    /// time whether a transformed bitmap font needs the local-raster path
+    /// (bug 2055177).
+    font_bitmap_strikes: FastHashMap<FontKey, bool>,
+
     /// The set of images that aren't present or valid in the texture cache,
     /// and need to be rasterized and/or uploaded this frame. This includes
     /// both blobs and regular images.
@@ -541,6 +548,7 @@ impl ResourceCache {
                 weak_fonts: WeakTable::new(),
             },
             cached_glyph_dimensions: FastHashMap::default(),
+            font_bitmap_strikes: FastHashMap::default(),
             texture_cache,
             picture_textures,
             state: State::Idle,
@@ -931,16 +939,26 @@ impl ResourceCache {
             self.resources.weak_fonts.insert(Arc::downgrade(data));
             self.font_templates_memory += data.len();
         }
+        let has_bitmap_strikes = self.glyph_rasterizer.template_has_bitmap_strikes(&template);
+        self.font_bitmap_strikes.insert(font_key, has_bitmap_strikes);
         self.glyph_rasterizer.add_font(font_key, template.clone());
         self.resources.fonts.templates.add_font(font_key, template);
     }
 
     pub fn delete_font_template(&mut self, font_key: FontKey) {
         self.glyph_rasterizer.delete_font(font_key);
+        self.font_bitmap_strikes.remove(&font_key);
         if let Some(FontTemplate::Raw(data, _)) = self.resources.fonts.templates.delete_font(&font_key) {
             self.font_templates_memory -= data.len();
         }
         self.cached_glyphs.delete_fonts(&[font_key]);
+    }
+
+    /// Whether the given font template contains embedded bitmap strikes. Cheap,
+    /// lock-free lookup for use during frame building; defaults to `false` for
+    /// unknown fonts (treated as ordinary vector glyphs).
+    pub fn font_has_bitmap_strikes(&self, font_key: FontKey) -> bool {
+        self.font_bitmap_strikes.get(&font_key).copied().unwrap_or(false)
     }
 
     pub fn delete_font_instance(&mut self, instance_key: FontInstanceKey) {
@@ -1474,7 +1492,7 @@ impl ResourceCache {
     }
 
     pub fn begin_frame(&mut self, stamp: FrameStamp, profile: &mut TransactionProfile) {
-        profile_scope!("begin_frame");
+        tracy_rs::profile_scope!("begin_frame");
         debug_assert_eq!(self.state, State::Idle);
         self.state = State::AddResources;
         self.texture_cache.begin_frame(stamp, profile);
@@ -1502,7 +1520,7 @@ impl ResourceCache {
         gpu_buffer: &mut GpuBufferBuilder,
         profile: &mut TransactionProfile,
     ) {
-        profile_scope!("block_until_all_resources_added");
+        tracy_rs::profile_scope!("block_until_all_resources_added");
 
         debug_assert_eq!(self.state, State::AddResources);
         self.state = State::QueryResources;
@@ -1560,7 +1578,7 @@ impl ResourceCache {
     }
 
     fn update_texture_cache(&mut self, gpu_buffer: &mut GpuBufferBuilder) {
-        profile_scope!("update_texture_cache");
+        tracy_rs::profile_scope!("update_texture_cache");
 
         if self.fallback_handle == TextureCacheHandle::invalid() {
             let fallback_color = if self.debug_fallback_pink {
@@ -1831,7 +1849,7 @@ impl ResourceCache {
 
     pub fn end_frame(&mut self, profile: &mut TransactionProfile) {
         debug_assert_eq!(self.state, State::QueryResources);
-        profile_scope!("end_frame");
+        tracy_rs::profile_scope!("end_frame");
         self.state = State::Idle;
 
         // GC the render target pool, if it's currently > 64 MB in size.

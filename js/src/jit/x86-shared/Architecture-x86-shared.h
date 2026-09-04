@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -11,13 +9,11 @@
 #  error "Unsupported architecture!"
 #endif
 
-#include "mozilla/MathAlgorithms.h"
-
 #include <algorithm>
+#include <bit>
 #include <string.h>
 
 #include "jit/shared/Architecture-shared.h"
-
 #include "jit/x86-shared/Constants-x86-shared.h"
 
 namespace js {
@@ -74,15 +70,14 @@ class Registers {
   static const uint32_t Allocatable = 14;
 #endif
 
-  static uint32_t SetSize(SetType x) {
-    static_assert(sizeof(SetType) <= 4, "SetType must be, at most, 32 bits");
-    return mozilla::CountPopulation32(x);
-  }
+  static uint32_t SetSize(SetType x) { return std::popcount(x); }
   static uint32_t FirstBit(SetType x) {
-    return mozilla::CountTrailingZeroes32(x);
+    MOZ_ASSERT(x);
+    return std::countr_zero(x);
   }
   static uint32_t LastBit(SetType x) {
-    return 31 - mozilla::CountLeadingZeroes32(x);
+    MOZ_ASSERT(x);
+    return std::bit_width(x) - 1;
   }
 
   static Code FromName(const char* name) {
@@ -169,7 +164,7 @@ class FloatRegisters {
   // high lanes of the SIMD registers.  See the DumpAllRegs() implementations,
   // for example.
 
-  enum ContentType {
+  enum ContentType : uint8_t {
     Single,   // 32-bit float.
     Double,   // 64-bit double.
     Simd128,  // 128-bit Wasm SIMD type.
@@ -279,34 +274,23 @@ struct FloatRegister {
     x |= x >> Codes::TotalPhys;
     x &= Codes::AllPhysMask;
     static_assert(Codes::AllPhysMask <= 0xffff,
-                  "We can safely use CountPopulation32");
-    return mozilla::CountPopulation32(x);
+                  "Optimizable to 32-bit std::popcount");
+    return std::popcount(x);
   }
-
-#if defined(JS_CODEGEN_X86)
   static uint32_t FirstBit(SetType x) {
-    static_assert(sizeof(SetType) == 4, "SetType must be 32 bits");
-    return mozilla::CountTrailingZeroes32(x);
+    MOZ_ASSERT(x);
+    return std::countr_zero(x);
   }
   static uint32_t LastBit(SetType x) {
-    return 31 - mozilla::CountLeadingZeroes32(x);
+    MOZ_ASSERT(x);
+    return std::bit_width(x) - 1;
   }
-
-#elif defined(JS_CODEGEN_X64)
-  static uint32_t FirstBit(SetType x) {
-    static_assert(sizeof(SetType) == 8, "SetType must be 64 bits");
-    return mozilla::CountTrailingZeroes64(x);
-  }
-  static uint32_t LastBit(SetType x) {
-    return 63 - mozilla::CountLeadingZeroes64(x);
-  }
-#endif
 
  private:
   // Note: These fields are using one extra bit to make the invalid enumerated
   // values fit, and thus prevent a warning.
   Codes::Encoding reg_ : 5;
-  Codes::ContentType type_ : 3;
+  Codes::ContentType type_ : 2;
   bool isInvalid_ : 1;
 
   // Constants used for exporting/importing the float register code.
@@ -452,10 +436,6 @@ inline FloatRegister::SetType
 FloatRegister::LiveAsIndexableSet<RegTypeName::Any>(SetType set) {
   return set;
 }
-
-// Arm/D32 has double registers that can NOT be treated as float32
-// and this requires some dances in lowering.
-inline bool hasUnaliasedDouble() { return false; }
 
 // On ARM, Dn aliases both S2n and S2n+1, so if you need to convert a float32
 // to a double as a temporary, you need a temporary double register.

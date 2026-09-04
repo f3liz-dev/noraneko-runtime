@@ -5,12 +5,36 @@ run-if = [
   "os != 'android'",
 ]
 
+["test_AutoTabGrouping.js"]
+
 ["test_ChatConversation.js"]
 
 ["test_ChatMessage.js"]
 
+["test_ChatModelChoice.js"]
+
 ["test_ChatStore.js"]
 
+["test_ChatStoreToolResults.js"]
+
+["test_ChatSwitchModel.js"]
+
+["test_FeedbackModal.js"]
+
+["test_MonitorUIUtils.js"]
+
+["test_SmartWindowTelemetry.js"]
+
+["test_TabManagementService.js"]
+
+["test_ToolActionLog.js"]
+
+["test_ToolUI.js"]
+
+["test_ToolUIUpdate.js"]
+
 ["test_chat-utils.js"]
+
+["test_ui_modules_AIWindow_placesEvents.js"]
 
 ["theme_aiwindow.js"]

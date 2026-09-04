@@ -1,16 +1,12 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "DOMtoATK.h"
+
 #include "nsUTF8Utils.h"
 
-namespace mozilla {
-namespace a11y {
-
-namespace DOMtoATK {
+namespace mozilla::a11y::DOMtoATK {
 
 void AddBOMs(nsACString& aDest, const nsACString& aSource) {
   uint32_t destlength = 0;
@@ -145,7 +141,4 @@ gchar* Convert(const nsAString& aStr) {
   return g_strdup(cautoStrBOMs.get());
 }
 
-}  // namespace DOMtoATK
-
-}  // namespace a11y
-}  // namespace mozilla
+}  // namespace mozilla::a11y::DOMtoATK

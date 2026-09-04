@@ -1,5 +1,3 @@
-# -*- Mode: python; indent-tabs-mode: nil; tab-width: 40 -*-
-# vim: set filetype=python:
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -13,7 +11,9 @@ UNIFIED_SOURCES += [
     "TestBSPTree.cpp",
     "TestBufferRotation.cpp",
     "TestConfigManager.cpp",
+    "TestConvolutionFilter.cpp",
     "TestCoord.cpp",
+    "TestCopyPlane.cpp",
     "TestFontFallback.cpp",
     "TestFontOverlapPrevention.cpp",
     "TestGfxWidgets.cpp",
@@ -29,6 +29,10 @@ UNIFIED_SOURCES += [
     "TestTreeTraversal.cpp",
     "TestVsync.cpp",
     "TestYUVtoRGB32.cpp",
+]
+
+SOURCES += [
+    "SwizzleGeneric.cpp",
 ]
 
 if CONFIG["OS_TARGET"] != "Android":
@@ -61,6 +65,7 @@ UNIFIED_SOURCES += [
 # notice embedded in the profiles should be reviewed to ensure there are
 # no known restrictions on distribution.
 TEST_HARNESS_FILES.gtest += [
+    "../../qcms/profiles/displaycal-lut-stripped.icc",
     "../../qcms/profiles/lcms_samsung_syncmaster.icc",
     "../../qcms/profiles/lcms_thinkpad_w540.icc",
 ]
@@ -77,6 +82,7 @@ LOCAL_INCLUDES += [
     "/gfx/qcms",
     "/gfx/thebes",
     "/layout/base",
+    "/third_party/xsimd/include",
 ]
 
 FINAL_LIBRARY = "xul-gtest"

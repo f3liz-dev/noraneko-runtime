@@ -5,6 +5,10 @@ support-files = [
   "!/toolkit/components/translations/tests/browser/shared-head.js",
   "!/toolkit/components/translations/tests/browser/translations-test.mjs",
 ]
+prefs = [
+  # The Browser languages section is now hitting AMO on page load
+  "extensions.getAddons.langpacks.url=https://mochi.test:8000/langpacks",
+]
 
 ["browser_translations_full_page_ai_feature_app_menu.js"]
 
@@ -23,6 +27,14 @@ support-files = [
 ["browser_translations_full_page_intersection_find_bar_move_tab_to_new_window.js"]
 
 ["browser_translations_full_page_intersection_find_bar_multi_tab.js"]
+
+["browser_translations_full_page_intersection_iframe_content_eager.js"]
+
+["browser_translations_full_page_intersection_iframe_find_bar.js"]
+
+["browser_translations_full_page_intersection_iframe_lazy.js"]
+
+["browser_translations_full_page_intersection_iframe_mutations_lazy.js"]
 
 ["browser_translations_full_page_intersection_lazy.js"]
 

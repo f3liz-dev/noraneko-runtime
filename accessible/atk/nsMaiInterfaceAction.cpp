@@ -1,17 +1,14 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "InterfaceInitFuncs.h"
-
 #include "LocalAccessible-inl.h"
-#include "nsMai.h"
-#include "mozilla/Likely.h"
-#include "nsAccessibilityService.h"
 #include "Relation.h"
 #include "RemoteAccessible.h"
+#include "mozilla/Likely.h"
+#include "nsAccessibilityService.h"
+#include "nsMai.h"
 #include "nsString.h"
 
 using namespace mozilla;
@@ -75,7 +72,7 @@ static const gchar* getActionDescriptionCB(AtkAction* aAction,
   Accessible* acc = GetInternalObj(atkObject);
   if (!acc) {
     // If we don't have an Accessible, we can't have any actions.
-    return 0;
+    return nullptr;
   }
 
   if (aActionIndex < acc->ActionCount()) {
@@ -110,7 +107,7 @@ static const gchar* getActionNameCB(AtkAction* aAction, gint aActionIndex) {
   Accessible* acc = GetInternalObj(atkObject);
   if (!acc) {
     // If we don't have an Accessible, we can't have any actions.
-    return 0;
+    return nullptr;
   }
 
   if (aActionIndex < acc->ActionCount()) {

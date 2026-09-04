@@ -22,7 +22,7 @@ import mozilla.components.concept.sync.Device
 import mozilla.components.concept.sync.DeviceConstellation
 import mozilla.components.concept.sync.DeviceType
 import mozilla.components.concept.sync.OAuthAccount
-import mozilla.components.service.fxa.SyncEngine
+import mozilla.components.concept.sync.SyncEngine
 import mozilla.components.service.fxa.manager.FxaAccountManager
 import mozilla.components.service.fxa.sync.SyncReason
 import mozilla.components.support.test.any
@@ -49,13 +49,14 @@ class SyncedTabsStorageTest {
         store = BrowserStore(
             BrowserState(
                 tabs = listOf(
-                    createTab(id = "tab1", url = "https://www.mozilla.org", lastAccess = 123L),
-                    createTab(id = "tab2", url = "https://www.foo.bar", lastAccess = 124L),
+                    createTab(id = "tab1", url = "https://www.mozilla.org", lastAccess = 123L, createdAt = 123L),
+                    createTab(id = "tab2", url = "https://www.foo.bar", lastAccess = 124L, createdAt = 124L),
                     createTab(
                         id = "private",
                         url = "https://private.tab",
                         private = true,
                         lastAccess = 125L,
+                        createdAt = 125L,
                     ),
                 ),
                 selectedTabId = "tab1",
@@ -264,8 +265,8 @@ class SyncedTabsStorageTest {
         val store = BrowserStore(
             BrowserState(
                 tabs = listOf(
-                    createTab(id = "tab1", url = "https://www.mozilla.org", lastAccess = 123L),
-                    createTab(id = "tab2", url = "https://www.foo.bar", lastAccess = 124L),
+                    createTab(id = "tab1", url = "https://www.mozilla.org", lastAccess = 123L, createdAt = 123L),
+                    createTab(id = "tab2", url = "https://www.foo.bar", lastAccess = 124L, createdAt = 124L),
                 ),
                 selectedTabId = "tab1",
             ),
@@ -305,8 +306,8 @@ class SyncedTabsStorageTest {
         val store = BrowserStore(
             BrowserState(
                 tabs = listOf(
-                    createUnloadedTab(id = "tab1", url = "https://www.mozilla.org", lastAccess = 123L),
-                    createUnloadedTab(id = "tab2", url = "https://www.foo.bar", lastAccess = 124L),
+                    createUnloadedTab(id = "tab1", url = "https://www.mozilla.org", lastAccess = 123L, createdAt = 123L),
+                    createUnloadedTab(id = "tab2", url = "https://www.foo.bar", lastAccess = 124L, createdAt = 124L),
                 ),
                 selectedTabId = "tab1",
             ),
@@ -373,8 +374,8 @@ class SyncedTabsStorageTest {
         val store = BrowserStore(
             BrowserState(
                 tabs = listOf(
-                    createTab(id = "tab1", url = "https://www.mozilla.org", lastAccess = 123L),
-                    createTab(id = "tab2", url = "https://www.foo.bar", lastAccess = 124L),
+                    createTab(id = "tab1", url = "https://www.mozilla.org", lastAccess = 123L, createdAt = 123L),
+                    createTab(id = "tab2", url = "https://www.foo.bar", lastAccess = 124L, createdAt = 124L),
                 ),
                 selectedTabId = "tab1",
             ),
@@ -409,7 +410,8 @@ class SyncedTabsStorageTest {
         )
     }
 
-    private fun createUnloadedTab(id: String, url: String, lastAccess: Long) = createTab(id = id, url = url, lastAccess = lastAccess).run {
-        copy(content = this.content.copy(loading = true))
-    }
+    private fun createUnloadedTab(id: String, url: String, lastAccess: Long, createdAt: Long = lastAccess) =
+        createTab(id = id, url = url, lastAccess = lastAccess, createdAt = createdAt).run {
+            copy(content = this.content.copy(loading = true))
+        }
 }

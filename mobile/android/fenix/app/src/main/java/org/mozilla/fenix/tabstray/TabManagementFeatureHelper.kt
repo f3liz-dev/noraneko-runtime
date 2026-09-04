@@ -4,6 +4,7 @@
 
 package org.mozilla.fenix.tabstray
 
+import androidx.compose.runtime.staticCompositionLocalOf
 import org.mozilla.fenix.Config
 import org.mozilla.fenix.nimbus.FxNimbus
 
@@ -18,9 +19,29 @@ interface TabManagementFeatureHelper {
     val openingAnimationEnabled: Boolean
 
     /**
-     * Whether the Tab Search feature is enabled.
+     * Whether the Tab Groups feature is enabled.
      */
-    val tabSearchEnabled: Boolean
+    val tabGroupsEnabled: Boolean
+
+    /**
+     * Whether drag and drop is enabled for the Tab Groups feature.
+     */
+    val tabGroupsDragAndDropEnabled: Boolean
+
+    /**
+     * Determines whether the "Ungroup" item is displayed in a tab group's three dot menu.
+     */
+    val ungroupTabGroupEnabled: Boolean
+
+    /**
+     * Whether onboarding is enabled for the Tab Groups feature.
+     */
+    val tabGroupsOnboardingEnabled: Boolean
+
+    /**
+     * Control whether reorder happens live during a drag and drop action for Tab Groups.
+     */
+    val tabGroupsLiveReorderEnabled: Boolean
 }
 
 /**
@@ -31,11 +52,22 @@ data object DefaultTabManagementFeatureHelper : TabManagementFeatureHelper {
     override val openingAnimationEnabled: Boolean
         get() = Config.channel.isDebug || FxNimbus.features.tabManagementEnhancements.value().openingAnimationEnabled
 
-    override val tabSearchEnabled: Boolean
-        get() = when {
-            Config.channel.isNightlyOrDebug -> true
-            Config.channel.isBeta -> FxNimbus.features.tabSearch.value().enabled
-            Config.channel.isRelease -> FxNimbus.features.tabSearch.value().enabled
-            else -> false
-        }
+    override val tabGroupsEnabled: Boolean
+        get() = Config.channel.isDebug || FxNimbus.features.tabGroups.value().enabled
+
+    override val tabGroupsDragAndDropEnabled: Boolean
+        get() = Config.channel.isDebug || FxNimbus.features.tabGroupsDragAndDrop.value().enabled
+
+    override val tabGroupsLiveReorderEnabled: Boolean
+        get() = FxNimbus.features.tabGroupsLiveReorder.value().enabled
+
+    override val ungroupTabGroupEnabled: Boolean
+        get() = false
+
+    override val tabGroupsOnboardingEnabled: Boolean
+        get() = Config.channel.isDebug || FxNimbus.features.tabGroupsOnboarding.value().enabled
+}
+
+val LocalTabManagementFeatureHelper = staticCompositionLocalOf<TabManagementFeatureHelper> {
+    DefaultTabManagementFeatureHelper
 }

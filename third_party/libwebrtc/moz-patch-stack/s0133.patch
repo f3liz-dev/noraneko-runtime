@@ -1,25 +1,28 @@
-From: Andreas Pehrson <apehrson@mozilla.com>
-Date: Fri, 5 Dec 2025 11:12:00 +0000
-Subject: Bug 1931210 - Log SCK startCaptureWithCompletionHandler error code.
- r=jib
+From: Landry Breuil <landry@openbsd.org>
+Date: Wed, 15 Apr 2026 13:31:00 +0000
+Subject: Bug 2030612 - define AOM_EFLAG_FREEZE_INTERNAL_STATE if not defined
+ r=mjf
 
-Differential Revision: https://phabricator.services.mozilla.com/D268351
-Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/330a55d5a7ff5e7c694772810697fde59f0c742b
+fixes build with system-av1/aom after bug 2029247
+
+Differential Revision: https://phabricator.services.mozilla.com/D293051
+Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/70d2379819582d44092dee15e1e45ddbc9cd3f22
 ---
- modules/desktop_capture/mac/screen_capturer_sck.mm | 3 ++-
- 1 file changed, 2 insertions(+), 1 deletion(-)
+ modules/video_coding/codecs/av1/libaom_av1_encoder.cc | 4 ++++
+ 1 file changed, 4 insertions(+)
 
-diff --git a/modules/desktop_capture/mac/screen_capturer_sck.mm b/modules/desktop_capture/mac/screen_capturer_sck.mm
-index 0d0750f63e..8ec1d182a3 100644
---- a/modules/desktop_capture/mac/screen_capturer_sck.mm
-+++ b/modules/desktop_capture/mac/screen_capturer_sck.mm
-@@ -590,7 +590,8 @@ void ScreenCapturerSck::StartWithFilter(SCContentFilter* __strong filter) {
-         // this handler.
-         permanent_error_ = true;
-         RTC_LOG(LS_ERROR) << "ScreenCapturerSck " << this
--                          << " Starting failed.";
-+                          << " Starting failed with error code " << error.code
-+                          << ".";
-       } else {
-         RTC_LOG(LS_INFO) << "ScreenCapturerSck " << this << " Capture started.";
-       }
+diff --git a/modules/video_coding/codecs/av1/libaom_av1_encoder.cc b/modules/video_coding/codecs/av1/libaom_av1_encoder.cc
+index f66ee6463a..fd61d744d6 100644
+--- a/modules/video_coding/codecs/av1/libaom_av1_encoder.cc
++++ b/modules/video_coding/codecs/av1/libaom_av1_encoder.cc
+@@ -67,6 +67,10 @@
+ #define AOM_EFLAG_CALCULATE_PSNR (1 << 3)
+ #endif
+ 
++#ifndef AOM_EFLAG_FREEZE_INTERNAL_STATE
++#define AOM_EFLAG_FREEZE_INTERNAL_STATE (1 << 2)
++#endif
++
+ #if defined(WEBRTC_ENCODER_PSNR_STATS)
+ constexpr bool kEnablePsnrStats = true;
+ #else

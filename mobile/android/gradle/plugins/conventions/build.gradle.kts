@@ -3,13 +3,13 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 plugins {
-    alias(libs.plugins.kotlin.dsl)
-    alias(libs.plugins.kotlin.serialization)
+    `kotlin-dsl`
+    alias(libs.plugins.android.lint.plugin)
+    // kotlin-dsl builds against Gradle's embedded Kotlin, and warns if another version is applied.
+    id("org.jetbrains.kotlin.plugin.serialization") version embeddedKotlinVersion
 }
 
-dependencies {
-    implementation(libs.kaml)
-}
+group = "org.mozilla"
 
 val mozconfig = gradle.extra["mozconfig"] as Map<*, *>
 val topobjdir = mozconfig["topobjdir"] as String
@@ -25,4 +25,32 @@ gradlePlugin {
         id = "org.mozilla.conventions.project"
         implementationClass = "org.mozilla.conventions.ProjectPlugin"
     }
+    plugins.register("org.mozilla.conventions.mach-tasks") {
+        id = "org.mozilla.conventions.mach-tasks"
+        implementationClass = "org.mozilla.conventions.MachTasksPlugin"
+    }
+    plugins.register("org.mozilla.conventions.zip-test-reports") {
+        id = "org.mozilla.conventions.zip-test-reports"
+        implementationClass = "org.mozilla.conventions.ZipTestReportsPlugin"
+    }
+}
+
+tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
+    compilerOptions {
+        allWarningsAsErrors.set(true)
+    }
+}
+
+dependencies {
+    implementation(libs.kaml)
+    compileOnly(libs.android.gradle.plugin)
+    testImplementation(platform(libs.junit.bom))
+    testImplementation(libs.junit.jupiter)
+    testRuntimeOnly(libs.junit.platform.launcher)
+
+    lintChecks(libs.androidx.lint)
+}
+
+tasks.test {
+    useJUnitPlatform()
 }

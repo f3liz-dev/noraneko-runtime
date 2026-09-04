@@ -13,12 +13,15 @@
 #include <algorithm>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <utility>
 
 #include "api/environment/environment.h"
 #include "api/media_types.h"
+#include "api/rtp_parameters.h"
 #include "api/sequence_checker.h"
 #include "api/units/data_rate.h"
+#include "api/units/data_size.h"
 #include "api/units/time_delta.h"
 #include "api/units/timestamp.h"
 #include "modules/congestion_controller/remb_throttler.h"
@@ -102,14 +105,19 @@ ReceiveSideCongestionController::ReceiveSideCongestionController(
       {&force_send_rfc8888_feedback},
       env.field_trials().Lookup("WebRTC-RFC8888CongestionControlFeedback"));
   if (force_send_rfc8888_feedback) {
-    EnableSendCongestionControlFeedbackAccordingToRfc8888();
+    SetPreferredRtcpCcAckType(RtcpFeedbackType::CCFB);
   }
 }
 
-void ReceiveSideCongestionController::
-    EnableSendCongestionControlFeedbackAccordingToRfc8888() {
+void ReceiveSideCongestionController::SetPreferredRtcpCcAckType(
+    RtcpFeedbackType preferred_rtcp_cc_ack_type) {
   RTC_DCHECK_RUN_ON(&sequence_checker_);
-  send_rfc8888_congestion_feedback_ = true;
+  send_rfc8888_congestion_feedback_ =
+      (preferred_rtcp_cc_ack_type == RtcpFeedbackType::CCFB);
+  RTC_LOG_F(LS_INFO) << " Sending "
+                     << (send_rfc8888_congestion_feedback_ ? " RFC8888"
+                                                           : " TWCC")
+                     << " RTCP feedback.";
 }
 
 void ReceiveSideCongestionController::OnReceivedPacket(
@@ -121,14 +129,6 @@ void ReceiveSideCongestionController::OnReceivedPacket(
   if (send_rfc8888_congestion_feedback_) {
     RTC_DCHECK_RUN_ON(&sequence_checker_);
     congestion_control_feedback_generator_.OnReceivedPacket(packet);
-    // TODO(https://bugs.webrtc.org/374197376): Utilize RFC 8888 feedback, which
-    // provides comprehensive details similar to transport-cc. To ensure a
-    // smooth transition, we will continue using transport sequence number
-    // feedback temporarily. Once validation is complete, we will fully
-    // transition to using RFC 8888 feedback exclusively.
-    if (has_transport_sequence_number) {
-      transport_sequence_number_feedback_generator_.OnReceivedPacket(packet);
-    }
     return;
   }
   if (media_type == MediaType::AUDIO && !has_transport_sequence_number) {
@@ -157,12 +157,20 @@ ReceiveSideCongestionController::GetCongestionControllerStatsPerSsrc() const {
 }
 
 void ReceiveSideCongestionController::OnBitrateChanged(int bitrate_bps) {
+  OnBitrateChanged(DataRate::BitsPerSec(bitrate_bps),
+                   /*is_bandwidth_limited=*/true,
+                   /*transport_overhead=*/std::nullopt);
+}
+
+void ReceiveSideCongestionController::OnBitrateChanged(
+    DataRate target_rate,
+    bool is_bandwidth_limited,
+    std::optional<DataSize> transport_overhead) {
   RTC_DCHECK_RUN_ON(&sequence_checker_);
-  DataRate send_bandwidth_estimate = DataRate::BitsPerSec(bitrate_bps);
   transport_sequence_number_feedback_generator_.OnSendBandwidthEstimateChanged(
-      send_bandwidth_estimate);
+      target_rate, is_bandwidth_limited, transport_overhead);
   congestion_control_feedback_generator_.OnSendBandwidthEstimateChanged(
-      send_bandwidth_estimate);
+      target_rate, is_bandwidth_limited, transport_overhead);
 }
 
 TimeDelta ReceiveSideCongestionController::MaybeProcess() {

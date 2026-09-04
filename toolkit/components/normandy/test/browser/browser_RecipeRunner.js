@@ -25,9 +25,6 @@ const { CleanupManager } = ChromeUtils.importESModule(
 const { ActionsManager } = ChromeUtils.importESModule(
   "resource://normandy/lib/ActionsManager.sys.mjs"
 );
-const { Uptake } = ChromeUtils.importESModule(
-  "resource://normandy/lib/Uptake.sys.mjs"
-);
 
 const { RemoteSettings } = ChromeUtils.importESModule(
   "resource://services-settings/remote-settings.sys.mjs"
@@ -133,12 +130,8 @@ decorate_task(
 
 decorate_task(
   withStub(FilterExpressions, "eval"),
-  withStub(Uptake, "reportRecipe"),
   withStub(NormandyApi, "verifyObjectSignature"),
-  async function test_getRecipeSuitability_canHandleExceptions({
-    evalStub,
-    reportRecipeStub,
-  }) {
+  async function test_getRecipeSuitability_canHandleExceptions({ evalStub }) {
     evalStub.throws("this filter was broken somehow");
     const someRecipe = {
       id: "1",
@@ -152,9 +145,6 @@ decorate_task(
       BaseAction.suitability.FILTER_ERROR,
       "broken filters are reported"
     );
-    Assert.deepEqual(reportRecipeStub.args, [
-      [someRecipe, Uptake.RECIPE_FILTER_BROKEN],
-    ]);
   }
 );
 
@@ -258,7 +248,6 @@ decorate_task(
 );
 
 decorate_task(
-  withStub(Uptake, "reportRunner"),
   withStub(ActionsManager.prototype, "finalize"),
   NormandyTestUtils.withMockRecipeCollection([]),
   async function testRunEvents() {
@@ -274,194 +263,10 @@ decorate_task(
   }
 );
 
-decorate_task(
-  withStub(RecipeRunner, "getCapabilities"),
-  withStub(NormandyApi, "verifyObjectSignature"),
-  NormandyTestUtils.withMockRecipeCollection([{ id: 1 }]),
-  async function test_run_includesCapabilities({ getCapabilitiesStub }) {
-    getCapabilitiesStub.returns(new Set(["test-capability"]));
-    await RecipeRunner.run();
-    ok(getCapabilitiesStub.called, "getCapabilities should be called");
-  }
-);
-
-decorate_task(
-  withStub(NormandyApi, "verifyObjectSignature"),
-  withStub(ActionsManager.prototype, "processRecipe"),
-  withStub(ActionsManager.prototype, "finalize"),
-  withStub(Uptake, "reportRecipe"),
-  async function testReadFromRemoteSettings({
-    verifyObjectSignatureStub,
-    processRecipeStub,
-    reportRecipeStub,
-  }) {
-    const matchRecipe = {
-      id: 1,
-      name: "match",
-      action: "matchAction",
-      filter_expression: "true",
-    };
-    const noMatchRecipe = {
-      id: 2,
-      name: "noMatch",
-      action: "noMatchAction",
-      filter_expression: "false",
-    };
-    const missingRecipe = {
-      id: 3,
-      name: "missing",
-      action: "missingAction",
-      filter_expression: "true",
-    };
-
-    const db = await RecipeRunner._remoteSettingsClientForTesting.db;
-    const fakeSig = { signature: "abc" };
-    await db.importChanges({}, Date.now(), [
-      { id: "match", recipe: matchRecipe, signature: fakeSig },
-      {
-        id: "noMatch",
-        recipe: noMatchRecipe,
-        signature: fakeSig,
-      },
-      {
-        id: "missing",
-        recipe: missingRecipe,
-        signature: fakeSig,
-      },
-    ]);
-
-    let recipesFromRS = (
-      await RecipeRunner._remoteSettingsClientForTesting.get()
-    ).map(({ recipe }) => recipe);
-    // Sort the records by id so that they match the order in the assertion
-    recipesFromRS.sort((a, b) => a.id - b.id);
-    Assert.deepEqual(
-      recipesFromRS,
-      [matchRecipe, noMatchRecipe, missingRecipe],
-      "The recipes should be accesible from Remote Settings"
-    );
-
-    await RecipeRunner.run();
-
-    Assert.deepEqual(
-      verifyObjectSignatureStub.args,
-      [
-        [matchRecipe, fakeSig, "recipe"],
-        [missingRecipe, fakeSig, "recipe"],
-        [noMatchRecipe, fakeSig, "recipe"],
-      ],
-      "all recipes should have their signature verified"
-    );
-    Assert.deepEqual(
-      processRecipeStub.args,
-      [
-        [matchRecipe, BaseAction.suitability.FILTER_MATCH],
-        [missingRecipe, BaseAction.suitability.FILTER_MATCH],
-        [noMatchRecipe, BaseAction.suitability.FILTER_MISMATCH],
-      ],
-      "Recipes should be reported with the correct suitabilities"
-    );
-    Assert.deepEqual(
-      reportRecipeStub.args,
-      [[noMatchRecipe, Uptake.RECIPE_DIDNT_MATCH_FILTER]],
-      "Filtered-out recipes should be reported"
-    );
-  }
-);
-
-decorate_task(
-  withStub(NormandyApi, "verifyObjectSignature"),
-  withStub(ActionsManager.prototype, "processRecipe"),
-  withStub(RecipeRunner, "getCapabilities"),
-  async function testReadFromRemoteSettings({
-    processRecipeStub,
-    getCapabilitiesStub,
-  }) {
-    getCapabilitiesStub.returns(new Set(["compatible"]));
-    const compatibleRecipe = {
-      name: "match",
-      filter_expression: "true",
-      capabilities: ["compatible"],
-    };
-    const incompatibleRecipe = {
-      name: "noMatch",
-      filter_expression: "true",
-      capabilities: ["incompatible"],
-    };
-
-    const db = await RecipeRunner._remoteSettingsClientForTesting.db;
-    const fakeSig = { signature: "abc" };
-    await db.importChanges(
-      {},
-      Date.now(),
-      [
-        {
-          id: "match",
-          recipe: compatibleRecipe,
-          signature: fakeSig,
-        },
-        {
-          id: "noMatch",
-          recipe: incompatibleRecipe,
-          signature: fakeSig,
-        },
-      ],
-      {
-        clear: true,
-      }
-    );
-
-    await RecipeRunner.run();
-
-    Assert.deepEqual(
-      processRecipeStub.args,
-      [
-        [compatibleRecipe, BaseAction.suitability.FILTER_MATCH],
-        [incompatibleRecipe, BaseAction.suitability.CAPABILITIES_MISMATCH],
-      ],
-      "recipes should be marked if their capabilities aren't compatible"
-    );
-  }
-);
-
-decorate_task(
-  withStub(ActionsManager.prototype, "processRecipe"),
-  withStub(NormandyApi, "verifyObjectSignature"),
-  withStub(Uptake, "reportRecipe"),
-  NormandyTestUtils.withMockRecipeCollection(),
-  async function testBadSignatureFromRemoteSettings({
-    processRecipeStub,
-    verifyObjectSignatureStub,
-    reportRecipeStub,
-    mockRecipeCollection,
-  }) {
-    verifyObjectSignatureStub.throws(new Error("fake signature error"));
-    const badSigRecipe = {
-      id: 1,
-      name: "badSig",
-      action: "matchAction",
-      filter_expression: "true",
-    };
-    await mockRecipeCollection.addRecipes([badSigRecipe]);
-
-    await RecipeRunner.run();
-
-    Assert.deepEqual(processRecipeStub.args, [
-      [badSigRecipe, BaseAction.suitability.SIGNATURE_ERROR],
-    ]);
-    Assert.deepEqual(
-      reportRecipeStub.args,
-      [[badSigRecipe, Uptake.RECIPE_INVALID_SIGNATURE]],
-      "The recipe should have its uptake status recorded"
-    );
-  }
-);
-
 // Test init() during normal operation
 decorate_task(
   withPrefEnv({
     set: [
-      ["datareporting.healthreport.uploadEnabled", true], // telemetry enabled
       ["app.normandy.dev_mode", false],
       ["app.normandy.first_run", false],
     ],
@@ -481,10 +286,7 @@ decorate_task(
 // test init() in dev mode
 decorate_task(
   withPrefEnv({
-    set: [
-      ["datareporting.healthreport.uploadEnabled", true], // telemetry enabled
-      ["app.normandy.dev_mode", true],
-    ],
+    set: [["app.normandy.dev_mode", true]],
   }),
   withStub(RecipeRunner, "run"),
   withStub(RecipeRunner, "registerTimer"),
@@ -508,7 +310,6 @@ decorate_task(
 decorate_task(
   withPrefEnv({
     set: [
-      ["datareporting.healthreport.uploadEnabled", true], // telemetry enabled
       ["app.normandy.dev_mode", false],
       ["app.normandy.first_run", true],
     ],
@@ -687,21 +488,6 @@ decorate_task(
 );
 
 decorate_task(
-  withStub(RecipeRunner._remoteSettingsClientForTesting, "get"),
-  async function testRunCanRunOnlyOnce({ getStub }) {
-    getStub.returns(
-      // eslint-disable-next-line mozilla/no-arbitrary-setTimeout
-      new Promise(resolve => setTimeout(() => resolve([]), 10))
-    );
-
-    // Run 2 in parallel.
-    await Promise.all([RecipeRunner.run(), RecipeRunner.run()]);
-
-    is(getStub.callCount, 1, "run() is no-op if already running");
-  }
-);
-
-decorate_task(
   withPrefEnv({
     set: [
       // Enable update timer logs.
@@ -713,7 +499,6 @@ decorate_task(
   }),
   withSpy(RecipeRunner, "run"),
   withStub(ActionsManager.prototype, "finalize"),
-  withStub(Uptake, "reportRunner"),
   async function testSyncDelaysTimer({ runSpy }) {
     // Mark any existing timer as having run just now.
     for (const { value } of Services.catMan.enumerateCategory("update-timer")) {
@@ -809,7 +594,6 @@ decorate_task(async function testAutomaticCapabilities() {
 
 // Test that recipe runner won't run if Normandy hasn't been initialized.
 decorate_task(
-  withStub(Uptake, "reportRunner"),
   withStub(ActionsManager.prototype, "finalize"),
   NormandyTestUtils.withMockRecipeCollection([]),
   async function testRunEvents() {
@@ -849,20 +633,6 @@ decorate_task(
       finalizeSpy.args,
       [[{ noRecipes: true }]],
       "Action manager should know there were no recipes received"
-    );
-  }
-);
-
-// If some recipes are found on the server, the action manager should be informed of that
-decorate_task(
-  withSpy(ActionsManager.prototype, "finalize"),
-  NormandyTestUtils.withMockRecipeCollection([{ id: 1 }]),
-  async function testSomeRecipes({ finalizeSpy }) {
-    await RecipeRunner.run();
-    Assert.deepEqual(
-      finalizeSpy.args,
-      [[{ noRecipes: false }]],
-      "Action manager should know there were recipes received"
     );
   }
 );

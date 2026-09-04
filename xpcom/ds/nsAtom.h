@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -12,6 +10,7 @@
 #include "mozilla/Atomics.h"
 #include "mozilla/Char16.h"
 #include "mozilla/MemoryReporting.h"
+#include "mozilla/TextUtils.h"
 #include "nsISupports.h"
 #include "nsString.h"
 
@@ -36,6 +35,27 @@ class nsDynamicAtom;
 //
 class nsAtom {
  public:
+  // Returns true if ToLowercaseASCII would return the string unchanged.
+  //
+  // This is deliberately a plain loop rather than std::all_of: gGkAtoms calls
+  // this for every static atom within a single constant expression, and
+  // std::all_of costs enough extra constexpr steps to exceed the default
+  // -fconstexpr-steps budget with some standard library implementations.
+  static constexpr bool ComputeIsAsciiLowercase(const char16_t* aString,
+                                                const uint32_t aLength) {
+    for (uint32_t i = 0; i < aLength; ++i) {
+      if (mozilla::IsAsciiUppercaseAlpha(aString[i])) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  template <size_t N>
+  static constexpr bool ComputeIsAsciiLowercase(const char16_t (&aString)[N]) {
+    return ComputeIsAsciiLowercase(aString, N - 1);
+  }
+
   void AddSizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf,
                               mozilla::AtomsSizes& aSizes) const;
 
@@ -45,7 +65,7 @@ class nsAtom {
   }
 
   bool Equals(const nsAString& aString) const {
-    return Equals(aString.BeginReading(), aString.Length());
+    return Equals(aString.Data(), aString.Length());
   }
 
   bool IsStatic() const { return mIsStatic; }
@@ -55,7 +75,7 @@ class nsAtom {
   inline const nsDynamicAtom* AsDynamic() const;
   inline nsDynamicAtom* AsDynamic();
 
-  char16ptr_t GetUTF16String() const;
+  inline char16ptr_t GetUTF16String() const;
 
   uint32_t GetLength() const { return mLength; }
 
@@ -110,10 +130,7 @@ class nsAtom {
   const uint32_t mHash;
 };
 
-// This class would be |final| if it wasn't for nsCSSAnonBoxPseudoStaticAtom
-// and nsCSSPseudoElementStaticAtom, which are trivial subclasses used to
-// ensure only certain static atoms are passed to certain functions.
-class nsStaticAtom : public nsAtom {
+class nsStaticAtom final : public nsAtom {
  public:
   // These are deleted so it's impossible to RefPtr<nsStaticAtom>. Raw
   // nsStaticAtom pointers should be used instead.
@@ -227,6 +244,10 @@ MozExternalRefCountType nsAtom::Release() {
   return IsStatic() ? 1 : AsDynamic()->Release();
 }
 
+char16ptr_t nsAtom::GetUTF16String() const {
+  return IsStatic() ? AsStatic()->String() : AsDynamic()->String();
+}
+
 // The four forms of NS_Atomize (for use with |RefPtr<nsAtom>|) return the
 // atom for the string given. At any given time there will always be one atom
 // representing a given string. Atoms are intended to make string comparison
@@ -287,7 +308,9 @@ class nsAutoAtomCString : public nsAutoCString {
 class nsDependentAtomString : public nsDependentString {
  public:
   explicit nsDependentAtomString(const nsAtom* aAtom)
-      : nsDependentString(aAtom->GetUTF16String(), aAtom->GetLength()) {}
+      : nsDependentString(
+            aAtom->GetUTF16String(), aAtom->GetLength(),
+            aAtom->IsStatic() ? DataFlags::LITERAL : DataFlags::STRINGBUFFER) {}
 };
 
 // Checks if the ascii chars in a given atom are already lowercase.

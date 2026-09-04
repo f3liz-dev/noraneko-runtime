@@ -1,21 +1,19 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set sw=2 ts=8 et tw=80 : */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 // HttpLog.h should generally be included first
-#include "HttpLog.h"
+#include "Http2WebTransportSession.h"
 
 #include "Capsule.h"
 #include "CapsuleEncoder.h"
-#include "Http2WebTransportSession.h"
-#include "Http2WebTransportStream.h"
 #include "Http2Session.h"
+#include "Http2WebTransportStream.h"
+#include "HttpLog.h"
 #include "mozilla/net/NeqoHttp3Conn.h"
-#include "nsIWebTransport.h"
-#include "nsIOService.h"
 #include "nsHttp.h"
+#include "nsIOService.h"
+#include "nsIWebTransport.h"
 
 namespace mozilla::net {
 
@@ -76,9 +74,35 @@ uint64_t Http2WebTransportSessionImpl::GetStreamId() const { return mStreamId; }
 
 void Http2WebTransportSessionImpl::GetMaxDatagramSize() {}
 
+nsresult Http2WebTransportSessionImpl::ExportKeyingMaterial(
+    const nsTArray<uint8_t>& aLabel, const nsTArray<uint8_t>& aContext,
+    nsTArray<uint8_t>& aKeyingMaterial) {
+  // TODO: Implement exportKeyingMaterial for HTTP/2 WebTransport
+  // HTTP/2 WebTransport over TLS should support this via the underlying TLS
+  // connection, but the implementation is not yet available.
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+nsresult Http2WebTransportSessionImpl::RegisterSendGroup(uint64_t aGroupId) {
+  // HTTP/2 WebTransport doesn't support send group scheduling.
+  return NS_OK;
+}
+
+void Http2WebTransportSessionImpl::GetNegotiatedProtocol(
+    nsACString& aProtocol) {
+  // TODO: Implement protocol negotiation for HTTP/2 WebTransport
+  aProtocol.Truncate();
+}
+
 void Http2WebTransportSessionImpl::SendDatagram(nsTArray<uint8_t>&& aData,
-                                                uint64_t aTrackingId) {
-  LOG(("Http2WebTransportSession::SendDatagram %p", this));
+                                                uint64_t aTrackingId,
+                                                uint64_t aSendGroupId,
+                                                int64_t aSendOrder) {
+  LOG(("Http2WebTransportSessionImpl::SendDatagram %p, sendGroup=%" PRIu64
+       ", sendOrder=%" PRId64,
+       this, aSendGroupId, aSendOrder));
+  // Note: Http2 WebTransport doesn't support sendGroup/sendOrder prioritization
+  // yet. These parameters are accepted for API compatibility but not used.
 
   Capsule capsule = Capsule::WebTransportDatagram(std::move(aData));
 
@@ -367,9 +391,12 @@ bool Http2WebTransportSessionImpl::OnCapsule(Capsule&& aCapsule) {
       LOG(("Handling DATAGRAM\n"));
       WebTransportDatagramCapsule& datagram =
           aCapsule.GetWebTransportDatagramCapsule();
-      if (nsCOMPtr<WebTransportSessionEventListenerInternal> listener =
-              do_QueryInterface(mListener)) {
-        listener->OnDatagramReceivedInternal(std::move(datagram.mPayload));
+      if (RefPtr<WebTransportSessionEventListener> baseListener =
+              GetListener()) {
+        if (nsCOMPtr<WebTransportSessionEventListenerInternal> listener =
+                do_QueryInterface(baseListener)) {
+          listener->OnDatagramReceivedInternal(std::move(datagram.mPayload));
+        }
       }
       break;
     }
@@ -434,8 +461,8 @@ bool Http2WebTransportSessionImpl::HandleStreamStopSendingCapsule(
 
   uint8_t wtError = Http3ErrorToWebTransportError(stopSending.mErrorCode);
   nsresult rv = GetNSResultFromWebTransportError(wtError);
-  if (mListener) {
-    mListener->OnStopSending(aId, rv);
+  if (RefPtr<WebTransportSessionEventListener> listener = GetListener()) {
+    listener->OnStopSending(aId, rv);
   }
   return true;
 }
@@ -450,12 +477,14 @@ bool Http2WebTransportSessionImpl::HandleStreamResetCapsule(
   WebTransportResetStreamCapsule& reset =
       aCapsule.GetWebTransportResetStreamCapsule();
 
-  stream->OnReset(reset.mReliableSize);
+  if (NS_FAILED(stream->OnReset(reset.mReliableSize))) {
+    return false;
+  }
 
   uint8_t wtError = Http3ErrorToWebTransportError(reset.mErrorCode);
   nsresult rv = GetNSResultFromWebTransportError(wtError);
-  if (mListener) {
-    mListener->OnResetReceived(aId, rv);
+  if (RefPtr<WebTransportSessionEventListener> listener = GetListener()) {
+    listener->OnResetReceived(aId, rv);
   }
 
   return true;
@@ -474,7 +503,8 @@ void Http2WebTransportSessionImpl::OnStreamDataSent(StreamId aId,
 void Http2WebTransportSessionImpl::OnError(uint64_t aError) {
   LOG(("Http2WebTransportSessionImpl::OnError %p aError=%" PRIu64, this,
        aError));
-  // To be implemented.
+  // XXX This should also tear down the HTTP/2 tunnel via mHandler.
+  Close(NS_ERROR_NET_RESET);
 }
 
 bool Http2WebTransportSessionImpl::ProcessIncomingStreamCapsule(
@@ -510,9 +540,11 @@ bool Http2WebTransportSessionImpl::ProcessIncomingStreamCapsule(
       return false;
     }
     mIncomingStreams.InsertOrUpdate(newStreamID, stream);
-    if (nsCOMPtr<WebTransportSessionEventListenerInternal> listener =
-            do_QueryInterface(mListener)) {
-      listener->OnIncomingStreamAvailableInternal(stream);
+    if (RefPtr<WebTransportSessionEventListener> baseListener = GetListener()) {
+      if (nsCOMPtr<WebTransportSessionEventListenerInternal> listener =
+              do_QueryInterface(baseListener)) {
+        listener->OnIncomingStreamAvailableInternal(stream);
+      }
     }
   }
 
@@ -565,7 +597,7 @@ void Http2WebTransportSession::CloseStream(nsresult aReason) {
 
 nsresult Http2WebTransportSession::GenerateHeaders(nsCString& aCompressedData,
                                                    uint8_t& aFirstFrameFlags) {
-  nsHttpRequestHead* head = mTransaction->RequestHead();
+  const nsHttpRequestHead* head = mTransaction->RequestHead();
 
   nsAutoCString authorityHeader;
   nsresult rv = head->GetHeader(nsHttp::Host, authorityHeader);

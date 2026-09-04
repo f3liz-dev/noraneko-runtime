@@ -86,6 +86,11 @@ async function updateTopSites(condition, searchShortcuts = false) {
     let sites = AboutNewTab.getTopSites();
     return condition(sites);
   }, "Waiting for top sites to be updated");
+
+  let feed = AboutNewTab.activityStream?.store?.feeds.get(
+    "feeds.system.topsites"
+  );
+  await feed?._latestRefreshPromise;
 }
 
 /**
@@ -290,7 +295,7 @@ async function doImpressionOnlyTest({
       if (
         !otherRow &&
         (r.result.payload.url ||
-          (r.result.type == UrlbarUtils.RESULT_TYPE.SEARCH &&
+          (r.result.type == UrlbarShared.RESULT_TYPE.SEARCH &&
             (r.result.payload.query || r.result.payload.suggestion))) &&
         r.hasAttribute("row-selectable")
       ) {
@@ -599,6 +604,7 @@ function assertQuickSuggestPing(expectedPing) {
     "requestId",
     "source",
     "contextId",
+    "suggestionId",
   ];
 
   Assert.ok(
@@ -618,7 +624,7 @@ function assertQuickSuggestPing(expectedPing) {
   }
 
   let expectedValueOverrides = {
-    contextId: expectedPingContextId(),
+    contextId: null,
   };
 
   for (let key of expectedKeys) {

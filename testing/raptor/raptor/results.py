@@ -27,6 +27,8 @@ KNOWN_TEST_MODIFIERS = [
     "cold",
     "webrender",
     "bytecode-cached",
+    "simpleperf",
+    "etw-profile",
 ]
 NON_FIREFOX_OPTS = ("webrender", "bytecode-cached", "fission")
 NON_FIREFOX_BROWSERS = ("chrome", "custom-car", "safari", "safari-tp")
@@ -47,6 +49,10 @@ class PerftestResultsHandler(metaclass=ABCMeta):
         fission=True,
         perfstats=False,
         test_bytecode_cache=False,
+        simpleperf=False,
+        etw_profile=False,
+        samply_profile=False,
+        perf_profile=False,
         extra_summary_methods=[],
         **kwargs,
     ):
@@ -65,6 +71,10 @@ class PerftestResultsHandler(metaclass=ABCMeta):
         self.chimera = chimera
         self.perfstats = perfstats
         self.test_bytecode_cache = test_bytecode_cache
+        self.simpleperf = simpleperf
+        self.etw_profile = etw_profile
+        self.samply_profile = samply_profile
+        self.perf_profile = perf_profile
         self.existing_results = None
         self.extra_summary_methods = extra_summary_methods
 
@@ -86,8 +96,7 @@ class PerftestResultsHandler(metaclass=ABCMeta):
                 # Don't add an option/tag for the base test case
                 if self.conditioned_profile != "settled":
                     extra_options.append(
-                        "condprof-%s"
-                        % self.conditioned_profile.replace("artifact:", "")
+                        f"condprof-{self.conditioned_profile.replace('artifact:', '')}"
                     )
             if self.fission_enabled:
                 extra_options.append("fission")
@@ -99,6 +108,14 @@ class PerftestResultsHandler(metaclass=ABCMeta):
                 extra_options.append("cold")
             if self.test_bytecode_cache:
                 extra_options.append("bytecode-cached")
+            if self.simpleperf:
+                extra_options.append("simpleperf")
+            if self.etw_profile:
+                extra_options.append("etw-profile")
+            if self.samply_profile:
+                extra_options.append("samply-profile")
+            if self.perf_profile:
+                extra_options.append("perf-profile")
             extra_options.append("webrender")
         else:
             for modifier, name in modifiers:
@@ -108,8 +125,7 @@ class PerftestResultsHandler(metaclass=ABCMeta):
                     extra_options.append(name)
                 else:
                     raise Exception(
-                        "Unknown test modifier %s was provided as an extra option"
-                        % name
+                        f"Unknown test modifier {name} was provided as an extra option"
                     )
 
         # Bug 1770225: Make this more dynamic, this will fail us again in the future
@@ -173,8 +189,8 @@ class PerftestResultsHandler(metaclass=ABCMeta):
                                'proportional': proportional}}
         """
         LOG.info(
-            "RaptorResultsHandler.add_supporting_data received %s data"
-            % supporting_data["type"]
+            "RaptorResultsHandler.add_supporting_data received "
+            f"{supporting_data['type']} data"
         )
         if self.supporting_data is None:
             self.supporting_data = []
@@ -213,8 +229,8 @@ class PerftestResultsHandler(metaclass=ABCMeta):
             return True
         elif output_perfdata != expected_perfherder:
             LOG.critical(
-                "PERFHERDER_DATA was seen %d times, expected %d."
-                % (output_perfdata, expected_perfherder)
+                f"PERFHERDER_DATA was seen {output_perfdata} times, "
+                f"expected {expected_perfherder}."
             )
             return False
 
@@ -222,7 +238,7 @@ class PerftestResultsHandler(metaclass=ABCMeta):
         schema_path = os.path.join(
             external_tools_path, "performance-artifact-schema.json"
         )
-        LOG.info("Validating PERFHERDER_DATA against %s" % schema_path)
+        LOG.info(f"Validating PERFHERDER_DATA against {schema_path}")
         try:
             with builtins.open(schema_path, encoding="utf-8") as f:
                 schema = json.load(f)
@@ -251,7 +267,7 @@ class RaptorResultsHandler(PerftestResultsHandler):
             self.build_extra_options([
                 (
                     self.conditioned_profile,
-                    "condprof-%s" % self.conditioned_profile,
+                    f"condprof-{self.conditioned_profile}",
                 ),
                 (self.fission_enabled, "fission"),
             ])
@@ -726,16 +742,16 @@ class BrowsertimeResultsHandler(PerftestResultsHandler):
             # when doing actions, we append a .X for each additional pageload in a scenario
             extra = ""
             if len(page_count) > 0:
-                extra = ".%s" % page_count[page_counter % len(page_count)]
+                extra = f".{page_count[page_counter % len(page_count)]}"
             url_parts = raw_result["info"]["url"].split("/")
             page_counter += 1
 
-            bt_url = "%s%s/%s," % ("/".join(url_parts[:-1]), extra, url_parts[-1])
+            bt_url = f"{'/'.join(url_parts[:-1])}{extra}/{url_parts[-1]},"
             bt_result = {
                 "bt_ver": bt_ver,
                 "browser": bt_browser,
                 "url": (bt_url,),
-                "name": "%s%s" % (test_name, extra),
+                "name": f"{test_name}{extra}",
                 "measurements": {},
                 "statistics": {},
             }
@@ -909,18 +925,18 @@ class BrowsertimeResultsHandler(PerftestResultsHandler):
                 self.result_dir_for_test(test), "browsertime.json"
             )
             if os.path.exists(bt_res_json):
-                LOG.info("found browsertime results at %s" % bt_res_json)
+                LOG.info(f"found browsertime results at {bt_res_json}")
             else:
-                LOG.critical("unable to find browsertime results at %s" % bt_res_json)
+                LOG.critical(f"unable to find browsertime results at {bt_res_json}")
                 return False
 
             try:
                 with builtins.open(bt_res_json, encoding="utf8") as f:
                     raw_btresults = json.load(f)
             except Exception as e:
-                LOG.error("Exception reading %s" % bt_res_json)
+                LOG.error(f"Exception reading {bt_res_json}")
                 # XXX this should be replaced by a traceback call
-                LOG.error("Exception: %s %s" % (type(e).__name__, str(e)))
+                LOG.error(f"Exception: {type(e).__name__} {e}")
                 raise
 
             # Split the chimera videos here for local testing
@@ -959,9 +975,9 @@ class BrowsertimeResultsHandler(PerftestResultsHandler):
                     with builtins.open(bt_res_json, "w", encoding="utf8") as f:
                         json.dump(raw_btresults, f)
                 except Exception as e:
-                    LOG.error("Exception reading %s" % bt_res_json)
+                    LOG.error(f"Exception reading {bt_res_json}")
                     # XXX this should be replaced by a traceback call
-                    LOG.error("Exception: %s %s" % (type(e).__name__, str(e)))
+                    LOG.error(f"Exception: {type(e).__name__} {e}")
                     raise
 
                 # If extra profiler run is enabled, split its browsertime.json
@@ -981,9 +997,9 @@ class BrowsertimeResultsHandler(PerftestResultsHandler):
                             )
                     except Exception as e:
                         LOG.info(
-                            "Exception reading and writing %s" % bt_profiling_res_json
+                            f"Exception reading and writing {bt_profiling_res_json}"
                         )
-                        LOG.info("Exception: %s %s" % (type(e).__name__, str(e)))
+                        LOG.info(f"Exception: {type(e).__name__} {e}")
 
             if not run_local:
                 extra_options = self.build_extra_options()
@@ -1081,6 +1097,10 @@ class BrowsertimeResultsHandler(PerftestResultsHandler):
 
                     # Add the support class to the result
                     new_result["support_class"] = test.get("support_class", None)
+                    new_result["simpleperf"] = test.get("simpleperf", False)
+                    new_result["etw-profile"] = test.get("etw_profile", False)
+                    new_result["samply-profile"] = test.get("samply_profile", False)
+                    new_result["perf-profile"] = test.get("perf_profile", False)
 
                     return new_result
 
@@ -1092,7 +1112,7 @@ class BrowsertimeResultsHandler(PerftestResultsHandler):
                     new_result = _new_standard_result(new_result, subtest_unit="mAh")
                     new_result["extra_options"].append("power")
 
-                    LOG.info("parsed new power result: %s" % str(new_result))
+                    LOG.info(f"parsed new power result: {new_result}")
                     return new_result
 
                 def _new_custom_result(new_result):
@@ -1101,14 +1121,14 @@ class BrowsertimeResultsHandler(PerftestResultsHandler):
                         new_result, subtest_unit=test.get("subtest_unit", "ms")
                     )
 
-                    LOG.info("parsed new custom result: %s" % str(new_result))
+                    LOG.info(f"parsed new custom result: {new_result}")
                     return new_result
 
                 def _new_pageload_result(new_result):
                     new_result["type"] = "pageload"
                     new_result = _new_standard_result(new_result)
 
-                    LOG.info("parsed new pageload result: %s" % str(new_result))
+                    LOG.info(f"parsed new pageload result: {new_result}")
                     return new_result
 
                 def _new_benchmark_result(new_result):
@@ -1118,7 +1138,7 @@ class BrowsertimeResultsHandler(PerftestResultsHandler):
                         new_result, subtest_unit=test.get("subtest_unit", "ms")
                     )
                     new_result["gather_cpuTime"] = test.get("gather_cpuTime", None)
-                    LOG.info("parsed new benchmark result: %s" % str(new_result))
+                    LOG.info(f"parsed new benchmark result: {new_result}")
                     return new_result
 
                 def _is_supporting_data(res):
@@ -1134,18 +1154,31 @@ class BrowsertimeResultsHandler(PerftestResultsHandler):
                     else:
                         self.results.append(_new_pageload_result(new_result))
                 elif test["type"] == "benchmark":
-                    for i, item in enumerate(self.results):
-                        if item["name"] == test["name"] and not _is_supporting_data(
-                            item
-                        ):
-                            # add page cycle custom measurements to the existing results
-                            for measurement in new_result["measurements"].items():
-                                self.results[i]["measurements"][measurement[0]].extend(
-                                    measurement[1]
-                                )
-                            break
+                    if test.get("simpleperf"):
+                        for i, item in enumerate(self.results):
+                            if item["name"] == test["name"] and not _is_supporting_data(
+                                item
+                            ):
+                                for key, value in new_result["measurements"].items():
+                                    self.results[i]["measurements"].setdefault(
+                                        key, []
+                                    ).extend(value)
+                                break
+                        else:
+                            self.results.append(_new_benchmark_result(new_result))
                     else:
-                        self.results.append(_new_benchmark_result(new_result))
+                        for i, item in enumerate(self.results):
+                            if item["name"] == test["name"] and not _is_supporting_data(
+                                item
+                            ):
+                                # add page cycle custom measurements to the existing results
+                                for measurement in new_result["measurements"].items():
+                                    self.results[i]["measurements"][
+                                        measurement[0]
+                                    ].extend(measurement[1])
+                                break
+                        else:
+                            self.results.append(_new_benchmark_result(new_result))
 
         # now have all results gathered from all browsertime test URLs; format them for output
         output = BrowsertimeOutput(
@@ -1163,7 +1196,7 @@ class BrowsertimeResultsHandler(PerftestResultsHandler):
             LOG.critical(
                 "TEST-UNEXPECTED-FAIL | Some visual metrics have an erroneous value of 0."
             )
-            LOG.info("Visual metric tests failed: %s" % str(self.failed_vismets))
+            LOG.info(f"Visual metric tests failed: {self.failed_vismets}")
 
         validate_success = True
         if not self.gecko_profile:

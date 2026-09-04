@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -12,25 +10,25 @@
  *****************************************************************************
  */
 
-#include "nsCOMPtr.h"
-#include "nsIFile.h"
-#include "nsProcess.h"
-#include "prio.h"
-#include "prenv.h"
-#include "nsCRT.h"
-#include "nsThreadUtils.h"
-#include "nsIObserverService.h"
-#include "nsXULAppAPI.h"
-#include "mozilla/Services.h"
-
 #include <stdlib.h>
 
+#include "mozilla/Services.h"
+#include "nsCOMPtr.h"
+#include "nsCRT.h"
+#include "nsIFile.h"
+#include "nsIObserverService.h"
+#include "nsProcess.h"
+#include "nsThreadUtils.h"
+#include "nsXULAppAPI.h"
+#include "prenv.h"
+#include "prio.h"
+
 #if defined(PROCESSMODEL_WINAPI)
-#  include "nsString.h"
-#  include "nsLiteralString.h"
-#  include "nsReadableUtils.h"
 #  include "mozilla/AssembleCmdLine.h"
 #  include "mozilla/UniquePtrExtensions.h"
+#  include "nsLiteralString.h"
+#  include "nsReadableUtils.h"
+#  include "nsString.h"
 #else
 #  ifdef XP_MACOSX
 #    include <crt_externs.h>
@@ -40,11 +38,11 @@
 #    ifndef XP_MACOSX
 #      include "base/process_util.h"
 #    endif
-#    include <sys/wait.h>
 #    include <sys/errno.h>
+#    include <sys/wait.h>
 #  endif
-#  include <sys/types.h>
 #  include <signal.h>
+#  include <sys/types.h>
 #endif
 
 using namespace mozilla;

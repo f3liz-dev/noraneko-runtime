@@ -12,6 +12,8 @@
 [DEFAULT]
 # browser tests
 
+["include:../../../../../browser/components/aiwindow/ui/test/marionette/manifest.toml"]
+
 ["include:../../../../../browser/components/backup/tests/marionette/manifest.toml"]
 
 ["include:../../../../../browser/components/customizableui/test/marionette/manifest.toml"]
@@ -45,6 +47,10 @@
 # extensions tests
 
 ["include:../../../../../extensions/pref/autoconfig/test/marionette/manifest.toml"]
+
+# ipc tests
+
+["include:../../../../../ipc/glue/test/marionette/manifest.toml"]
 
 # js tests
 

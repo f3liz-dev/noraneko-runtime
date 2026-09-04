@@ -24,7 +24,7 @@
 
 #include "absl/algorithm/container.h"
 #include "api/create_modular_peer_connection_factory.h"
-#include "api/environment/environment_factory.h"
+#include "api/environment/environment.h"
 #include "api/jsep.h"
 #include "api/media_types.h"
 #include "api/peer_connection_interface.h"
@@ -44,7 +44,6 @@
 #include "p2p/base/p2p_constants.h"
 #include "p2p/base/transport_info.h"
 #include "p2p/test/fake_port_allocator.h"
-#include "pc/channel_interface.h"
 #include "pc/media_session.h"
 #include "pc/peer_connection_wrapper.h"
 #include "pc/rtp_media_utils.h"
@@ -55,7 +54,9 @@
 #include "rtc_base/checks.h"
 #include "rtc_base/ref_counted_object.h"
 #include "rtc_base/thread.h"
+#include "test/create_test_environment.h"
 #include "test/gtest.h"
+#include "test/run_loop.h"
 #ifdef WEBRTC_ANDROID
 #include "pc/test/android_test_initializer.h"
 #endif
@@ -88,13 +89,13 @@ RtpTransceiver* RtpTransceiverInternal(
 MediaSendChannelInterface* SendChannelInternal(
     scoped_refptr<RtpTransceiverInterface> transceiver) {
   auto transceiver_internal = RtpTransceiverInternal(transceiver);
-  return transceiver_internal->channel()->media_send_channel();
+  return transceiver_internal->media_send_channel();
 }
 
 MediaReceiveChannelInterface* ReceiveChannelInternal(
     scoped_refptr<RtpTransceiverInterface> transceiver) {
   auto transceiver_internal = RtpTransceiverInternal(transceiver);
-  return transceiver_internal->channel()->media_receive_channel();
+  return transceiver_internal->media_receive_channel();
 }
 
 FakeVideoMediaSendChannel* VideoMediaSendChannel(
@@ -163,6 +164,8 @@ class PeerConnectionMediaBaseTest : public ::testing::Test {
       std::unique_ptr<FakeMediaEngine> media_engine) {
     auto* media_engine_ptr = media_engine.get();
 
+    Environment env = CreateTestEnvironment();
+
     PeerConnectionFactoryDependencies factory_dependencies;
 
     factory_dependencies.network_thread = Thread::Current();
@@ -171,11 +174,12 @@ class PeerConnectionMediaBaseTest : public ::testing::Test {
     EnableFakeMedia(factory_dependencies, std::move(media_engine));
     factory_dependencies.event_log_factory =
         std::make_unique<RtcEventLogFactory>();
+    factory_dependencies.env = env;
     auto pc_factory =
         CreateModularPeerConnectionFactory(std::move(factory_dependencies));
 
     auto fake_port_allocator =
-        std::make_unique<FakePortAllocator>(CreateEnvironment(), vss_.get());
+        std::make_unique<FakePortAllocator>(env, vss_.get());
     auto observer = std::make_unique<MockPeerConnectionObserver>();
     auto modified_config = config;
     modified_config.sdp_semantics = sdp_semantics_;
@@ -246,7 +250,7 @@ class PeerConnectionMediaBaseTest : public ::testing::Test {
   }
 
   std::unique_ptr<VirtualSocketServer> vss_;
-  AutoSocketServerThread main_;
+  test::RunLoop main_;
   const SdpSemantics sdp_semantics_;
 };
 
@@ -1045,7 +1049,7 @@ TEST_P(PeerConnectionMediaInvalidMediaTest, FailToSetLocalAnswer) {
 void RemoveVideoContentAndUnbundle(SessionDescription* desc) {
   // Removing BUNDLE is easier than removing the content in there.
   desc->RemoveGroupByName("BUNDLE");
-  auto content_name = GetFirstVideoContent(desc)->mid();
+  std::string content_name = GetFirstVideoContent(desc)->mid();
   desc->RemoveContentByName(content_name);
   desc->RemoveTransportInfoByName(content_name);
 }
@@ -1065,7 +1069,7 @@ void ReverseMediaContent(SessionDescription* desc) {
 }
 
 void ChangeMediaTypeAudioToVideo(SessionDescription* desc) {
-  auto audio_mid = GetFirstAudioContent(desc)->mid();
+  std::string audio_mid = GetFirstAudioContent(desc)->mid();
   desc->RemoveContentByName(audio_mid);
   auto* video_content = GetFirstVideoContent(desc);
   desc->AddContent(audio_mid, video_content->type,
@@ -1377,10 +1381,10 @@ TEST_P(PeerConnectionMediaTest, RedFmtpPayloadTypeMustMatchBaseCodecs) {
       CreateAudioCodec(120, "foo", kDefaultAudioClockRateHz, 1));
   callee_fake_codecs.push_back(
       CreateAudioCodec(121, kRedCodecName, kDefaultAudioClockRateHz, 1));
-  callee_fake_codecs.push_back(
-      CreateAudioCodec(122, "bar", kDefaultAudioClockRateHz, 1));
   callee_fake_codecs.back().SetParam(kCodecParamNotInNameValueFormat,
                                      "122/122");
+  callee_fake_codecs.push_back(
+      CreateAudioCodec(122, "bar", kDefaultAudioClockRateHz, 1));
   auto callee_fake_engine = std::make_unique<FakeMediaEngine>();
   callee_fake_engine->SetAudioCodecs(callee_fake_codecs);
   auto callee = CreatePeerConnectionWithAudio(std::move(callee_fake_engine));
@@ -1577,11 +1581,10 @@ TEST_F(PeerConnectionMediaTestUnifiedPlan,
   auto codecs =
       caller->pc_factory()->GetRtpSenderCapabilities(MediaType::AUDIO).codecs;
   auto codecs_only_rtx_red_fec = codecs;
-  std::erase_if(
-      codecs_only_rtx_red_fec, [](const RtpCodecCapability& codec) {
-        return !(codec.name == kRtxCodecName || codec.name == kRedCodecName ||
-                 codec.name == kUlpfecCodecName);
-      });
+  std::erase_if(codecs_only_rtx_red_fec, [](const RtpCodecCapability& codec) {
+    return !(codec.name == kRtxCodecName || codec.name == kRedCodecName ||
+             codec.name == kUlpfecCodecName);
+  });
   ASSERT_THAT(codecs_only_rtx_red_fec.size(), Gt(0));
   auto result = transceiver->SetCodecPreferences(codecs_only_rtx_red_fec);
   EXPECT_EQ(RTCErrorType::INVALID_MODIFICATION, result.type());
@@ -1653,11 +1656,10 @@ TEST_F(PeerConnectionMediaTestUnifiedPlan,
   auto codecs =
       caller->pc_factory()->GetRtpSenderCapabilities(MediaType::VIDEO).codecs;
   auto codecs_only_rtx_red_fec = codecs;
-  std::erase_if(
-      codecs_only_rtx_red_fec, [](const RtpCodecCapability& codec) {
-        return !(codec.name == kRtxCodecName || codec.name == kRedCodecName ||
-                 codec.name == kUlpfecCodecName);
-      });
+  std::erase_if(codecs_only_rtx_red_fec, [](const RtpCodecCapability& codec) {
+    return !(codec.name == kRtxCodecName || codec.name == kRedCodecName ||
+             codec.name == kUlpfecCodecName);
+  });
 
   auto result = transceiver->SetCodecPreferences(codecs_only_rtx_red_fec);
   EXPECT_EQ(RTCErrorType::INVALID_MODIFICATION, result.type());

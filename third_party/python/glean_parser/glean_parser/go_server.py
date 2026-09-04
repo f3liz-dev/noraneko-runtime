@@ -11,14 +11,19 @@ This outputter is different from the rest of the outputters in that the code it
 generates does not use the Glean SDK. It is meant to be used to collect events
 in server-side environments. In these environments SDK assumptions to measurement
 window and connectivity don't hold.
+
 Generated code takes care of assembling pings with metrics, and serializing to messages
-conforming to Glean schema.
+conforming to Glean schema. The transport is selected with the `transport` option
+on the `go_server` outputter (`-s transport=...`):
+- `logging` (default): Logs to stdout in MozLog format for ingestion via GCP log routing
+- `pubsub`: Builds messages for direct publishing to GCP Pub/Sub topics
+- `combined`: Emits both in a single file (sharing common types) for gradual migration
 
 Warning: this outputter supports limited set of metrics,
 see `SUPPORTED_METRIC_TYPES` below.
 
 Generated code creates two methods for each ping (`RecordPingX` and `RecordPingXWithoutUserInfo`)
-that are used for submitting (logging) them.
+that are used for submitting events.
 If pings have `event` metrics assigned, they can be passed to these methods.
 """
 
@@ -32,7 +37,15 @@ from . import util
 
 # Adding a metric here will require updating the `generate_metric_type` function
 # and require adjustments to `metrics` variables the the template.
-SUPPORTED_METRIC_TYPES = ["string", "quantity", "event", "datetime", "boolean", "string_list"]
+SUPPORTED_METRIC_TYPES = [
+    "string",
+    "quantity",
+    "event",
+    "datetime",
+    "boolean",
+    "labeled_boolean",  # static labels only; dynamic labels are not supported
+    "string_list",
+]
 
 
 def generate_ping_type_name(ping_name: str) -> str:
@@ -80,8 +93,33 @@ def clean_string(s: str) -> str:
     return s.replace("\n", " ").rstrip()
 
 
+def validate_labeled_boolean(metric: metrics.Metric) -> bool:
+    """
+    Validate that a labeled_boolean metric has static labels defined.
+
+    The Go server outputter requires labels to be listed in metrics.yaml
+    because it generates a Go struct with a field per label at build time.
+    Dynamic labels are not supported.
+
+    Returns:
+        bool: True if valid, False otherwise
+    """
+    if not getattr(metric, "ordered_labels", None):
+        print(
+            "❌ Ignoring labeled_boolean metric without static labels: "
+            + f"{metric.name}."
+            + " Define labels in metrics.yaml to use this metric type."
+        )
+        return False
+
+    return True
+
+
 def output_go(
-    objs: metrics.ObjectTree, output_dir: Path, options: Optional[Dict[str, Any]]
+    objs: metrics.ObjectTree,
+    output_dir: Path,
+    options: Optional[Dict[str, Any]],
+    transport: str = "logging",
 ) -> None:
     """
     Given a tree of objects, output Go code to `output_dir`.
@@ -92,6 +130,9 @@ def output_go(
     :param objects: A tree of objects (metrics and pings) as returned from
         `parser.parse_objects`.
     :param output_dir: Path to an output directory to write to.
+    :param transport: Transport mode - one of "logging" (Cloud Logging, the
+        default), "pubsub" (Pub/Sub direct publishing), or "combined" (both in
+        a single file, sharing common types).
     """
 
     template = util.get_jinja2_template(
@@ -111,6 +152,9 @@ def output_go(
     # unique list of event metrics used in any ping
     event_metrics: List[metrics.Metric] = []
 
+    # unique list of labeled_boolean metrics used in any ping
+    labeled_boolean_metrics: List[metrics.Metric] = []
+
     # Go through all metrics in objs and build a map of
     # ping->list of metric categories->list of metrics
     # for easier processing in the template.
@@ -127,9 +171,21 @@ def output_go(
                     )
                     continue
 
+                # Validate labeled_boolean metrics
+                if metric.type == "labeled_boolean" and not validate_labeled_boolean(
+                    metric
+                ):
+                    continue
+
                 for ping in metric.send_in_pings:
                     if metric.type == "event" and metric not in event_metrics:
                         event_metrics.append(metric)
+
+                    if (
+                        metric.type == "labeled_boolean"
+                        and metric not in labeled_boolean_metrics
+                    ):
+                        labeled_boolean_metrics.append(metric)
 
                     metrics_by_type = ping_to_metrics[ping]
                     metrics_list = metrics_by_type.setdefault(metric.type, [])
@@ -149,6 +205,45 @@ def output_go(
     with filepath.open("w", encoding="utf-8") as fd:
         fd.write(
             template.render(
-                parser_version=__version__, pings=ping_to_metrics, events=event_metrics
+                parser_version=__version__,
+                pings=ping_to_metrics,
+                events=event_metrics,
+                labeled_booleans=labeled_boolean_metrics,
+                transport=transport,
             )
         )
+
+
+def _resolve_transport(default: str, options: Optional[Dict[str, Any]]) -> str:
+    if not options:
+        return default
+    transport = options.get("transport")
+    if transport is None:
+        return default
+    if transport not in ("logging", "pubsub", "combined"):
+        raise ValueError(
+            f"Invalid transport '{transport}'."
+            " Must be one of: logging, pubsub, combined."
+        )
+    return transport
+
+
+def output_go_logger(
+    objs: metrics.ObjectTree, output_dir: Path, options: Optional[Dict[str, Any]] = None
+) -> None:
+    """
+    Given a tree of objects, output server Go code.
+
+    Defaults to the Cloud Logging transport; pass `-s transport=pubsub` for
+    direct Pub/Sub publishing, or `-s transport=combined` to emit both in a
+    single file (sharing common types) for a gradual logging->pubsub migration.
+
+    :param objects: A tree of objects (metrics and pings) as returned from
+        `parser.parse_objects`.
+    :param output_dir: Path to an output directory to write to.
+    :param options: options dictionary. Supports `transport` key with values
+        `logging` (default), `pubsub`, or `combined`.
+    """
+    output_go(
+        objs, output_dir, options, transport=_resolve_transport("logging", options)
+    )

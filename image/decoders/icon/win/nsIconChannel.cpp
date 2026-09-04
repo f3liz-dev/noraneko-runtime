@@ -1,51 +1,49 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "nsIconChannel.h"
+
+#include "DecodePool.h"
+#include "Decoder.h"
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/Monitor.h"
 #include "mozilla/SyncRunnable.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/WindowsProcessMitigations.h"
 #include "mozilla/dom/ContentChild.h"
+#include "mozilla/dom/ParentProcessChannelHandle.h"
 #include "mozilla/ipc/ByteBuf.h"
-
+#include "nsCExternalHandlerService.h"
 #include "nsComponentManagerUtils.h"
-#include "nsIconChannel.h"
-#include "nsIIconURI.h"
-#include "nsIInterfaceRequestor.h"
-#include "nsIInterfaceRequestorUtils.h"
-#include "nsString.h"
-#include "nsReadableUtils.h"
-#include "nsMimeTypes.h"
-#include "nsIURL.h"
-#include "nsIPipe.h"
-#include "nsNetCID.h"
+#include "nsContentSecurityManager.h"
+#include "nsContentUtils.h"
+#include "nsDirectoryServiceDefs.h"
+#include "nsIAsyncInputStream.h"
+#include "nsIAsyncOutputStream.h"
 #include "nsIFile.h"
 #include "nsIFileURL.h"
 #include "nsIIconURI.h"
-#include "nsIAsyncInputStream.h"
-#include "nsIAsyncOutputStream.h"
+#include "nsIInterfaceRequestor.h"
+#include "nsIInterfaceRequestorUtils.h"
 #include "nsIMIMEService.h"
-#include "nsCExternalHandlerService.h"
-#include "nsDirectoryServiceDefs.h"
-#include "nsProxyRelease.h"
-#include "nsContentSecurityManager.h"
-#include "nsContentUtils.h"
+#include "nsIPipe.h"
+#include "nsIURL.h"
+#include "nsMimeTypes.h"
+#include "nsNetCID.h"
 #include "nsNetUtil.h"
+#include "nsProxyRelease.h"
+#include "nsReadableUtils.h"
+#include "nsString.h"
 #include "nsThreadUtils.h"
 
-#include "Decoder.h"
-#include "DecodePool.h"
-
 // we need windows.h to read out registry information...
-#include <windows.h>
+#include <objbase.h>
 #include <shellapi.h>
 #include <shlobj.h>
-#include <objbase.h>
 #include <wchar.h>
+#include <windows.h>
 
 using namespace mozilla;
 using namespace mozilla::image;
@@ -157,8 +155,14 @@ static nsresult ExtractIconPathInfoFromUrl(nsIURI* aUrl,
         do_GetService(NS_MIMESERVICE_CONTRACTID, &rv));
     NS_ENSURE_SUCCESS(rv, rv);
 
+    // fileExt is a placeholder file name such as ".html", so a lone "." means
+    // there is no extension at all. The mime service wants a bare extension.
+    const uint32_t dotlessIndex =
+        !fileExt.IsEmpty() && fileExt.First() == '.' ? 1 : 0;
+
     nsAutoCString defFileExt;
-    mimeService->GetPrimaryExtension(contentType, fileExt, defFileExt);
+    mimeService->GetPrimaryExtension(
+        contentType, Substring(fileExt, dotlessIndex), defFileExt);
     // If the mime service does not know about this mime type, we show
     // the generic icon.
     // In any case, we need to insert a '.' before the extension.
@@ -477,7 +481,7 @@ static nsresult GetIconHandleFromURLBlocking(nsIMozIconURI* aUrl,
 }
 
 static RefPtr<HIconPromise> GetIconHandleFromURLAsync(nsIMozIconURI* aUrl) {
-  RefPtr<HIconPromise::Private> promise = new HIconPromise::Private(__func__);
+  auto promise = MakeRefPtr<HIconPromise::Private>(__func__);
 
   nsAutoCString stockIcon;
   aUrl->GetStockIcon(stockIcon);
@@ -522,8 +526,7 @@ static RefPtr<HIconPromise> GetIconHandleFromURLAsync(nsIMozIconURI* aUrl) {
 
 static RefPtr<nsIconChannel::ByteBufPromise> GetIconBufferFromURLAsync(
     nsIMozIconURI* aUrl) {
-  RefPtr<nsIconChannel::ByteBufPromise::Private> promise =
-      new nsIconChannel::ByteBufPromise::Private(__func__);
+  auto promise = MakeRefPtr<nsIconChannel::ByteBufPromise::Private>(__func__);
 
   GetIconHandleFromURLAsync(aUrl)->Then(
       GetCurrentSerialEventTarget(), __func__,
@@ -555,7 +558,7 @@ NS_IMPL_ISUPPORTS(nsIconChannel, nsIChannel, nsIRequest, nsIRequestObserver,
                   nsIStreamListener)
 
 // nsIconChannel methods
-nsIconChannel::nsIconChannel() {}
+nsIconChannel::nsIconChannel() = default;
 
 nsIconChannel::~nsIconChannel() {
   if (mLoadInfo) {
@@ -939,6 +942,26 @@ nsIconChannel::SetLoadInfo(nsILoadInfo* aLoadInfo) {
 }
 
 NS_IMETHODIMP
+nsIconChannel::GetParentProcessChannelHandle(
+    mozilla::dom::ParentProcessChannelHandle** aValue) {
+  NS_IF_ADDREF(*aValue = mParentProcessChannelHandle);
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsIconChannel::SetParentProcessChannelHandle(
+    mozilla::dom::ParentProcessChannelHandle* aValue) {
+  if (XRE_IsParentProcess()) {
+    MOZ_ASSERT_UNREACHABLE(
+        "SetParentProcessChannelHandle in the parent process would leak");
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+
+  mParentProcessChannelHandle = aValue;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
 nsIconChannel::GetNotificationCallbacks(
     nsIInterfaceRequestor** aNotificationCallbacks) {
   *aNotificationCallbacks = mCallbacks.get();
@@ -961,16 +984,16 @@ nsIconChannel::GetSecurityInfo(nsITransportSecurityInfo** aSecurityInfo) {
 
 // nsIRequestObserver methods
 NS_IMETHODIMP nsIconChannel::OnStartRequest(nsIRequest* aRequest) {
-  if (mListener) {
-    return mListener->OnStartRequest(this);
+  if (nsCOMPtr<nsIStreamListener> listener = mListener) {
+    return listener->OnStartRequest(this);
   }
   return NS_OK;
 }
 
 NS_IMETHODIMP
 nsIconChannel::OnStopRequest(nsIRequest* aRequest, nsresult aStatus) {
-  if (mListener) {
-    mListener->OnStopRequest(this, aStatus);
+  if (nsCOMPtr<nsIStreamListener> listener = mListener) {
+    listener->OnStopRequest(this, aStatus);
     mListener = nullptr;
   }
 
@@ -989,8 +1012,8 @@ nsIconChannel::OnStopRequest(nsIRequest* aRequest, nsresult aStatus) {
 NS_IMETHODIMP
 nsIconChannel::OnDataAvailable(nsIRequest* aRequest, nsIInputStream* aStream,
                                uint64_t aOffset, uint32_t aCount) {
-  if (mListener) {
-    return mListener->OnDataAvailable(this, aStream, aOffset, aCount);
+  if (nsCOMPtr<nsIStreamListener> listener = mListener) {
+    return listener->OnDataAvailable(this, aStream, aOffset, aCount);
   }
   return NS_OK;
 }

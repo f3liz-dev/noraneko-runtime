@@ -1,22 +1,21 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "NSSSocketControl.h"
 
-#include "ssl.h"
-#include "sslexp.h"
-#include "nsISocketProvider.h"
-#include "secerr.h"
 #include "mozilla/Base64.h"
+#include "mozilla/StaticPrefs_network.h"
 #include "mozilla/dom/Promise.h"
 #include "mozilla/glean/SecurityManagerSslMetrics.h"
-#include "mozilla/StaticPrefs_network.h"
+#include "nsISocketProvider.h"
 #include "nsNSSCallbacks.h"
 #include "nsNSSComponent.h"
 #include "nsProxyRelease.h"
+#include "secerr.h"
+#include "ssl.h"
+#include "sslexp.h"
 
 using namespace mozilla;
 using namespace mozilla::psm;
@@ -42,8 +41,6 @@ NSSSocketControl::NSSSocketControl(
       mIsFullHandshake(false),
       mNotedTimeUntilReady(false),
       mEchExtensionStatus(EchExtensionStatus::kNotPresent),
-      mSentMlkemShare(false),
-      mHasTls13HandshakeSecrets(false),
       mIsShortWritePending(false),
       mShortWritePendingByte(0),
       mShortWriteOriginalAmount(-1),
@@ -121,18 +118,6 @@ void NSSSocketControl::NoteTimeUntilReady() {
 void NSSSocketControl::SetHandshakeCompleted() {
   COMMON_SOCKET_CONTROL_ASSERT_ON_OWNING_THREAD();
   if (!mHandshakeCompleted) {
-    enum HandshakeType {
-      Resumption = 1,
-      FalseStarted = 2,
-      ChoseNotToFalseStart = 3,
-      NotAllowedToFalseStart = 4,
-    };
-
-    HandshakeType handshakeType = !IsFullHandshake() ? Resumption
-                                  : mFalseStarted    ? FalseStarted
-                                  : mFalseStartCallbackCalled
-                                      ? ChoseNotToFalseStart
-                                      : NotAllowedToFalseStart;
     // This will include TCP and proxy tunnel wait time
     if (mKeaGroupName.isSome()) {
       glean::ssl::time_until_handshake_finished_keyed_by_ka.Get(*mKeaGroupName)
@@ -142,10 +127,17 @@ void NSSSocketControl::SetHandshakeCompleted() {
     // If the handshake is completed for the first time from just 1 callback
     // that means that TLS session resumption must have been used.
     glean::ssl::resumed_session
-        .EnumGet(static_cast<glean::ssl::ResumedSessionLabel>(handshakeType ==
-                                                              Resumption))
+        .EnumGet(
+            static_cast<glean::ssl::ResumedSessionLabel>(!IsFullHandshake()))
         .Add();
-    glean::ssl_handshake::completed.AccumulateSingleSample(handshakeType);
+
+    using glean::tls_handshake::CompletedLabel;
+    CompletedLabel handshakeType =
+        !IsFullHandshake()          ? CompletedLabel::eResumed
+        : mFalseStarted             ? CompletedLabel::eFalseStarted
+        : mFalseStartCallbackCalled ? CompletedLabel::eFalseStartNotChosen
+                                    : CompletedLabel::eFalseStartNotAllowed;
+    glean::tls_handshake::completed.EnumGet(handshakeType).Add();
   }
 
   // Remove the plaintext layer as it is not needed anymore.

@@ -1,8 +1,12 @@
 "use strict";
 
 ChromeUtils.defineESModuleGetters(this, {
+  CONTAINER_COLORS:
+    "moz-src:///toolkit/components/contextualidentity/ContextualIdentityService.sys.mjs",
+  CONTAINER_COLOR_ALIASES:
+    "moz-src:///toolkit/components/contextualidentity/ContextualIdentityService.sys.mjs",
   ContextualIdentityService:
-    "resource://gre/modules/ContextualIdentityService.sys.mjs",
+    "moz-src:///toolkit/components/contextualidentity/ContextualIdentityService.sys.mjs",
   ExtensionPreferencesManager:
     "resource://gre/modules/ExtensionPreferencesManager.sys.mjs",
   AddonManager: "resource://gre/modules/AddonManager.sys.mjs",
@@ -46,6 +50,114 @@ add_task(async function test_contextualIdentities_without_permissions() {
   await extension.startup();
   await extension.awaitFinish("contextualIdentities_without_permission");
   await extension.unload();
+});
+
+add_task(async function test_contextualIdentities_supported_colors_and_icons() {
+  // Pin the pref so the expected color codes below are deterministic.
+  Services.prefs.setBoolPref("browser.nova.enabled", false);
+
+  // The API must expose exactly the palette the service considers supported,
+  // in the same order, so it can't silently drift from the source of truth.
+  const expectedColors = ContextualIdentityService.containerColors.map(
+    name => ({
+      color: name,
+      colorCode: ContextualIdentityService.getContainerColorCode(name),
+    })
+  );
+  const expectedIcons = ContextualIdentityService.containerIcons.map(name => ({
+    icon: name,
+    iconUrl: ContextualIdentityService.getContainerIconURL(name),
+  }));
+
+  async function background(expected) {
+    let colors = await browser.contextualIdentities.getSupportedColors();
+    browser.test.assertEq(
+      JSON.stringify(expected.colors),
+      JSON.stringify(colors),
+      "getSupportedColors mirrors the colors supported by the browser"
+    );
+
+    let icons = await browser.contextualIdentities.getSupportedIcons();
+    browser.test.assertEq(
+      JSON.stringify(expected.icons),
+      JSON.stringify(icons),
+      "getSupportedIcons mirrors the icons supported by the browser"
+    );
+
+    // Shape checks that don't depend on the values computed in the parent, so a
+    // service returning a well-formed object with garbage values is caught too.
+    const hexMatch = /^#[0-9a-f]{6}$/;
+    for (let entry of colors) {
+      browser.test.assertTrue(
+        hexMatch.test(entry.colorCode),
+        `colorCode for ${entry.color} is a hex value (${entry.colorCode})`
+      );
+    }
+    const iconMatch = /^resource:\/\/usercontext-content\/[a-z]+[.]svg$/;
+    for (let entry of icons) {
+      browser.test.assertTrue(
+        iconMatch.test(entry.iconUrl),
+        `iconUrl for ${entry.icon} has the expected shape (${entry.iconUrl})`
+      );
+
+      // An extension must actually be able to load the icon, so check the URL
+      // resolves to a decodable image of the expected size.
+      const img = new Image();
+      img.src = entry.iconUrl;
+      try {
+        await img.decode();
+      } catch (e) {
+        browser.test.fail(`Failed to load image: ${img.src} - ${e}`);
+      }
+      browser.test.assertEq(
+        32,
+        img.naturalWidth,
+        `Expected width for ${entry.icon}`
+      );
+      browser.test.assertEq(
+        32,
+        img.naturalHeight,
+        `Expected height for ${entry.icon}`
+      );
+    }
+
+    // Independent anchors with known values, so a totally broken source of
+    // truth can't make the equality checks above trivially pass.
+    browser.test.assertTrue(
+      colors.some(c => c.color === "blue" && c.colorCode === "#37adff"),
+      "blue is exposed with its expected color code"
+    );
+    browser.test.assertTrue(
+      icons.some(
+        i =>
+          i.icon === "fingerprint" &&
+          i.iconUrl === "resource://usercontext-content/fingerprint.svg"
+      ),
+      "fingerprint is exposed with its expected icon url"
+    );
+
+    browser.test.notifyPass("contextualIdentities_supported");
+  }
+
+  let extension = ExtensionTestUtils.loadExtension({
+    useAddonManager: "temporary",
+    background: `(${background})(${JSON.stringify({
+      colors: expectedColors,
+      icons: expectedIcons,
+    })})`,
+    manifest: {
+      browser_specific_settings: {
+        gecko: { id: "supported@thing.com" },
+      },
+      permissions: ["contextualIdentities"],
+    },
+  });
+
+  await extension.startup();
+  await extension.awaitFinish("contextualIdentities_supported");
+  await extension.unload();
+
+  Services.prefs.clearUserPref("browser.nova.enabled");
 });
 
 add_task(async function test_contextualIdentity_events() {
@@ -159,6 +271,172 @@ add_task(async function test_contextualIdentity_events() {
   Services.prefs.clearUserPref(CONTAINERS_PREF);
 });
 
+add_task(async function test_contextualIdentity_site_associations() {
+  async function background() {
+    function nextEvent() {
+      return new Promise(resolve => {
+        const listener = changeInfo => {
+          browser.contextualIdentities.onSiteAssociationChanged.removeListener(
+            listener
+          );
+          resolve(changeInfo);
+        };
+        browser.contextualIdentities.onSiteAssociationChanged.addListener(
+          listener
+        );
+      });
+    }
+
+    browser.test.assertEq(
+      null,
+      await browser.contextualIdentities.getSiteAssociation({
+        site: "example.com",
+      }),
+      "No association by default"
+    );
+
+    let addedPromise = nextEvent();
+    await browser.contextualIdentities.setSiteAssociation({
+      site: "example.com",
+      cookieStoreId: "firefox-container-1",
+    });
+    let added = await addedPromise;
+    browser.test.assertEq("example.com", added.site, "add event site");
+    browser.test.assertEq(
+      "firefox-container-1",
+      added.cookieStoreId,
+      "add event cookieStoreId"
+    );
+
+    browser.test.assertDeepEq(
+      { site: "example.com", cookieStoreId: "firefox-container-1" },
+      await browser.contextualIdentities.getSiteAssociation({
+        site: "example.com",
+      }),
+      "Association was set"
+    );
+
+    browser.test.assertDeepEq(
+      { site: "example.com", cookieStoreId: "firefox-container-1" },
+      await browser.contextualIdentities.getSiteAssociation({
+        site: "EXAMPLE.com",
+      }),
+      "The returned site is normalized"
+    );
+
+    let list = await browser.contextualIdentities.querySiteAssociations({});
+    browser.test.assertEq(1, list.length, "One association");
+    browser.test.assertEq("example.com", list[0].site, "queried site");
+    browser.test.assertEq(
+      "firefox-container-1",
+      list[0].cookieStoreId,
+      "queried cookieStoreId"
+    );
+
+    browser.test.assertEq(
+      0,
+      (
+        await browser.contextualIdentities.querySiteAssociations({
+          cookieStoreId: "firefox-container-2",
+        })
+      ).length,
+      "No associations for another container"
+    );
+
+    await browser.test.assertRejects(
+      browser.contextualIdentities.setSiteAssociation({
+        site: "example.com",
+        cookieStoreId: "firefox-default",
+      }),
+      "Invalid contextual identity: firefox-default",
+      "Cannot associate a site with the default store"
+    );
+
+    await browser.test.assertRejects(
+      browser.contextualIdentities.querySiteAssociations({
+        cookieStoreId: "bogus",
+      }),
+      "Invalid contextual identity: bogus",
+      "Filtering by an invalid store rejects"
+    );
+
+    for (let site of ["", "example.com/path", "*.example.com"]) {
+      await browser.test.assertRejects(
+        browser.contextualIdentities.setSiteAssociation({
+          site,
+          cookieStoreId: "firefox-container-1",
+        }),
+        `Invalid site: ${site}`,
+        `${site} is rejected as a site`
+      );
+
+      await browser.test.assertRejects(
+        browser.contextualIdentities.getSiteAssociation({ site }),
+        `Invalid site: ${site}`,
+        `${site} is rejected when getting an association`
+      );
+    }
+
+    await browser.contextualIdentities.setSiteAssociation({
+      site: "BÜCHER.example",
+      cookieStoreId: "firefox-container-2",
+    });
+    browser.test.assertDeepEq(
+      {
+        site: "xn--bcher-kva.example",
+        cookieStoreId: "firefox-container-2",
+      },
+      await browser.contextualIdentities.getSiteAssociation({
+        site: "bücher.example",
+      }),
+      "An IDN site is returned encoded as ASCII"
+    );
+    await browser.contextualIdentities.removeSiteAssociation({
+      site: "bücher.example",
+    });
+
+    let removedPromise = nextEvent();
+    await browser.contextualIdentities.removeSiteAssociation({
+      site: "example.com",
+    });
+    let removed = await removedPromise;
+    browser.test.assertEq("example.com", removed.site, "remove event site");
+    browser.test.assertFalse(
+      "cookieStoreId" in removed,
+      "remove event omits cookieStoreId"
+    );
+
+    browser.test.assertEq(
+      null,
+      await browser.contextualIdentities.getSiteAssociation({
+        site: "example.com",
+      }),
+      "Association was removed"
+    );
+
+    browser.test.notifyPass("site_associations");
+  }
+
+  let extension = ExtensionTestUtils.loadExtension({
+    background,
+    useAddonManager: "temporary",
+    manifest: {
+      browser_specific_settings: {
+        gecko: { id: "site-associations@thing.com" },
+      },
+      permissions: ["contextualIdentities"],
+    },
+  });
+
+  Services.prefs.setBoolPref(CONTAINERS_PREF, true);
+
+  await extension.startup();
+  await extension.awaitFinish("site_associations");
+  await extension.unload();
+
+  Services.prefs.clearUserPref(CONTAINERS_PREF);
+});
+
 add_task(async function test_contextualIdentity_with_permissions() {
   async function background() {
     let ci;
@@ -212,6 +490,18 @@ add_task(async function test_contextualIdentity_with_permissions() {
       browser.contextualIdentities.query({}),
       "Contextual identities are currently disabled",
       "Throws when containers are disabled"
+    );
+
+    await browser.test.assertRejects(
+      browser.contextualIdentities.getSupportedColors(),
+      "Contextual identities are currently disabled",
+      "getSupportedColors throws when containers are disabled"
+    );
+
+    await browser.test.assertRejects(
+      browser.contextualIdentities.getSupportedIcons(),
+      "Contextual identities are currently disabled",
+      "getSupportedIcons throws when containers are disabled"
     );
 
     await listenForMessage("containers-state-change", true);
@@ -556,11 +846,21 @@ add_task(
         browser.contextualIdentities.onRemoved.addListener(() => {
           browser.test.sendMessage("removed");
         });
+        browser.contextualIdentities.onSiteAssociationChanged.addListener(
+          changeInfo => {
+            browser.test.sendMessage("site-association-changed", changeInfo);
+          }
+        );
         browser.test.sendMessage("ready");
       },
     });
 
-    const EVENTS = ["onCreated", "onUpdated", "onRemoved"];
+    const EVENTS = [
+      "onCreated",
+      "onUpdated",
+      "onRemoved",
+      "onSiteAssociationChanged",
+    ];
 
     await extension.startup();
     await extension.awaitMessage("ready");
@@ -588,6 +888,44 @@ add_task(
       });
     }
 
+    // onSiteAssociationChanged does not share its registrar with the events
+    // above, so check that it primes and wakes the background on its own.
+    // The onCreated call above is still tracked as a pending listener, which
+    // would otherwise reset the idle timer instead of terminating.
+    await extension.terminateBackground({ disableResetIdleForTest: true });
+    for (let event of EVENTS) {
+      assertPersistentListeners(extension, "contextualIdentities", event, {
+        primed: true,
+      });
+    }
+
+    ContextualIdentityService.setSiteAssociation(
+      "example.com",
+      identity.userContextId
+    );
+
+    await extension.awaitMessage("ready");
+    Assert.deepEqual(
+      await extension.awaitMessage("site-association-changed"),
+      {
+        site: "example.com",
+        cookieStoreId: `firefox-container-${identity.userContextId}`,
+      },
+      "A new association woke the background and was delivered"
+    );
+    for (let event of EVENTS) {
+      assertPersistentListeners(extension, "contextualIdentities", event, {
+        primed: false,
+      });
+    }
+
+    ContextualIdentityService.removeSiteAssociation("example.com");
+    Assert.deepEqual(
+      await extension.awaitMessage("site-association-changed"),
+      { site: "example.com" },
+      "A removed association is delivered without a cookieStoreId"
+    );
+
     ContextualIdentityService.remove(identity.userContextId);
     await extension.awaitMessage("removed");
 
@@ -604,3 +942,170 @@ add_task(
     await extension.unload();
   }
 );
+
+add_task(async function test_contextualIdentity_color_api_names() {
+  // Every color name accepted by the API, see
+  // https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/API/contextualIdentities/ContextualIdentity#color
+  const inputColors = [
+    // Colors since inception of contextualIdentities:
+    "blue",
+    "turquoise",
+    "green",
+    "yellow",
+    "orange",
+    "red",
+    "pink",
+    "purple",
+    "toolbar",
+    // New colors in version 153:
+    "cyan",
+    "violet",
+    "gray",
+  ];
+
+  // Inputs that resolve to a different name. Inputs not listed here are
+  // expected to be returned unchanged.
+  const RENAMED_COLORS = {
+    turquoise: "cyan",
+    toolbar: "gray",
+  };
+
+  // Forward coverage: every internal color name and alias must be listed
+  // above, so this test has to be updated whenever the set of names changes.
+  for (let { name } of CONTAINER_COLORS) {
+    ok(
+      inputColors.includes(name),
+      `internal color "${name}" is covered by the API test`
+    );
+  }
+  for (let legacy of Object.keys(CONTAINER_COLOR_ALIASES)) {
+    ok(
+      inputColors.includes(legacy),
+      `internal alias "${legacy}" is covered by the API test`
+    );
+  }
+
+  let expectations = inputColors.map(input => [
+    input,
+    RENAMED_COLORS[input] ?? input,
+  ]);
+
+  async function background(colorExpectations) {
+    let { cookieStoreId } = await browser.contextualIdentities.create({
+      name: "color-api",
+      color: "blue",
+      icon: "circle",
+    });
+
+    for (let [input, expected] of colorExpectations) {
+      let updated = await browser.contextualIdentities.update(cookieStoreId, {
+        color: input,
+      });
+      browser.test.assertEq(
+        expected,
+        updated.color,
+        `update() with "${input}" returns "${expected}"`
+      );
+
+      let fetched = await browser.contextualIdentities.get(cookieStoreId);
+      browser.test.assertEq(
+        expected,
+        fetched.color,
+        `get() after "${input}" returns "${expected}"`
+      );
+    }
+
+    await browser.contextualIdentities.remove(cookieStoreId);
+    browser.test.notifyPass("color-api-names");
+  }
+
+  let extension = ExtensionTestUtils.loadExtension({
+    useAddonManager: "temporary",
+    background: `(${background})(${JSON.stringify(expectations)})`,
+    manifest: {
+      browser_specific_settings: { gecko: { id: "color-api@mozilla.org" } },
+      permissions: ["contextualIdentities"],
+    },
+  });
+
+  await extension.startup();
+  await extension.awaitFinish("color-api-names");
+  await extension.unload();
+});
+
+add_task(async function test_contextualIdentity_color_aliases_api() {
+  Services.prefs.setBoolPref("browser.nova.enabled", false);
+
+  async function background() {
+    function setNova(value) {
+      return new Promise(resolve => {
+        browser.test.onMessage.addListener(function listener(msg) {
+          if (msg === "nova-updated") {
+            browser.test.onMessage.removeListener(listener);
+            resolve();
+          }
+        });
+        browser.test.sendMessage("set-nova", value);
+      });
+    }
+
+    let cyan = await browser.contextualIdentities.create({
+      name: "alias-cyan",
+      color: "turquoise",
+      icon: "circle",
+    });
+    browser.test.assertEq("cyan", cyan.color, "turquoise is returned as cyan");
+    browser.test.assertEq(
+      "#00c79a",
+      cyan.colorCode,
+      "nova off: cyan returns the legacy code"
+    );
+
+    let gray = await browser.contextualIdentities.create({
+      name: "alias-gray",
+      color: "red",
+      icon: "circle",
+    });
+    gray = await browser.contextualIdentities.update(gray.cookieStoreId, {
+      name: "alias-gray",
+      color: "toolbar",
+      icon: "circle",
+    });
+    browser.test.assertEq("gray", gray.color, "toolbar is returned as gray");
+
+    await setNova(true);
+
+    cyan = await browser.contextualIdentities.get(cyan.cookieStoreId);
+    browser.test.assertEq("cyan", cyan.color, "name stays cyan with nova on");
+    browser.test.assertEq(
+      "#10a4ca",
+      cyan.colorCode,
+      "nova on: the same container returns the refreshed code"
+    );
+
+    await browser.contextualIdentities.remove(cyan.cookieStoreId);
+    await browser.contextualIdentities.remove(gray.cookieStoreId);
+
+    browser.test.notifyPass("color-aliases");
+  }
+
+  let extension = ExtensionTestUtils.loadExtension({
+    useAddonManager: "temporary",
+    background,
+    manifest: {
+      browser_specific_settings: { gecko: { id: "color-aliases@mozilla.org" } },
+      permissions: ["contextualIdentities"],
+    },
+  });
+
+  extension.onMessage("set-nova", value => {
+    Services.prefs.setBoolPref("browser.nova.enabled", value);
+    extension.sendMessage("nova-updated");
+  });
+
+  await extension.startup();
+  await extension.awaitFinish("color-aliases");
+  await extension.unload();
+
+  Services.prefs.clearUserPref("browser.nova.enabled");
+});

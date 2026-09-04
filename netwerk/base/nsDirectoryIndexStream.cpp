@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set sw=2 sts=2 et cin: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -13,12 +11,13 @@
 
  */
 
-#include "nsEscape.h"
 #include "nsDirectoryIndexStream.h"
+
 #include "mozilla/Logging.h"
-#include "prtime.h"
+#include "nsEscape.h"
 #include "nsIFile.h"
 #include "nsNativeCharsetUtils.h"
+#include "prtime.h"
 
 // NOTE: This runs on the _file transport_ thread.
 // The problem is that now that we're actually doing something with the data,

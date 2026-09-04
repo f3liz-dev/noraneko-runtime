@@ -1,20 +1,16 @@
-/* -*- Mode: C++; tab-width: 40; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "IMEData.h"
 
-#include <sstream>
-
 #include "ContentData.h"
-#include "gfxFontUtils.h"
 #include "TextEvents.h"
-
+#include "gfxFontUtils.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/ToString.h"
+#include "mozilla/Utf16.h"
 #include "mozilla/WritingModes.h"
-
 #include "nsPrintfCString.h"
 #include "nsString.h"
 
@@ -34,6 +30,10 @@ PrintStringDetail::PrintStringDetail(const Maybe<StringType>& aMaybeString,
 
 PrintStringDetail::PrintStringDetail(const nsAString& aString,
                                      uint32_t aMaxLength /* = UINT32_MAX */) {
+  if (aString.IsVoid()) {
+    Assign("<void>");
+    return;
+  }
   Assign("\"");
   const uint32_t kFirstHalf =
       aString.Length() <= aMaxLength ? UINT32_MAX : (aMaxLength + 1) / 2;
@@ -44,23 +44,23 @@ PrintStringDetail::PrintStringDetail(const nsAString& aString,
       AppendLiteral(" ");
     }
     char32_t ch = aString.CharAt(i);
-    if (NS_IS_HIGH_SURROGATE(ch) && i + 1 < aString.Length() &&
-        NS_IS_LOW_SURROGATE(aString.CharAt(i + 1))) {
-      ch = SURROGATE_TO_UCS4(ch, aString.CharAt(i + 1));
+    if (mozilla::IsHighSurrogate(ch) && i + 1 < aString.Length() &&
+        mozilla::IsLowSurrogate(aString.CharAt(i + 1))) {
+      ch = mozilla::SurrogateToUCS4(ch, aString.CharAt(i + 1));
     }
     Append(PrintCharData(ch));
     if (i + 1 == kFirstHalf) {
       AppendLiteral(" ...");
       i = aString.Length() - kSecondHalf - 1;
-      if (NS_IS_LOW_SURROGATE(aString.CharAt(i)) &&
-          NS_IS_HIGH_SURROGATE(aString.CharAt(i - 1))) {
+      if (mozilla::IsLowSurrogate(aString.CharAt(i)) &&
+          mozilla::IsHighSurrogate(aString.CharAt(i - 1))) {
         if (i - 1 <= kFirstHalf) {
           i++;
         } else {
           i--;
         }
       }
-    } else if (!IS_IN_BMP(ch)) {
+    } else if (!mozilla::IsInBMP(ch)) {
       i++;
     }
   }
@@ -158,20 +158,20 @@ nsCString PrintStringDetail::PrintCharData(char32_t aChar) {
       if (aChar < ' ' || (aChar >= 0x80 && aChar < 0xA0)) {
         return nsPrintfCString("Control (0x%04X)", aChar);
       }
-      if (NS_IS_HIGH_SURROGATE(aChar)) {
+      if (mozilla::IsHighSurrogate(aChar)) {
         return nsPrintfCString("High Surrogate (0x%04X)", aChar);
       }
-      if (NS_IS_LOW_SURROGATE(aChar)) {
+      if (mozilla::IsLowSurrogate(aChar)) {
         return nsPrintfCString("Low Surrogate (0x%04X)", aChar);
       }
       if (gfxFontUtils::IsVarSelector(aChar)) {
-        return IS_IN_BMP(aChar)
+        return mozilla::IsInBMP(aChar)
                    ? nsPrintfCString("Variant Selector (0x%04X)", aChar)
                    : nsPrintfCString("Variant Selector (0x%08X)", aChar);
       }
       nsAutoString utf16Str;
       AppendUCS4ToUTF16(aChar, utf16Str);
-      return IS_IN_BMP(aChar)
+      return mozilla::IsInBMP(aChar)
                  ? nsPrintfCString("'%s' (0x%04X)",
                                    NS_ConvertUTF16toUTF8(utf16Str).get(), aChar)
                  : nsPrintfCString("'%s' (0x%08X)",
@@ -179,6 +179,15 @@ nsCString PrintStringDetail::PrintCharData(char32_t aChar) {
                                    aChar);
     }
   }
+}
+
+std::string format_as(const PrintStringDetail& aDetails) {
+  return std::string(aDetails.get());
+}
+
+std::ostream& operator<<(std::ostream& aStream,
+                         const PrintStringDetail& aDetails) {
+  return aStream << format_as(aDetails);
 }
 
 namespace widget {

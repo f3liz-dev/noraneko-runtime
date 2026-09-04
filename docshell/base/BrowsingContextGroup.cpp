@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -221,7 +219,8 @@ void BrowsingContextGroup::Subscribe(ContentParent* aProcess) {
 
   nsTArray<OriginAgentClusterInitializer> useOriginAgentCluster;
   for (auto& entry : mUseOriginAgentCluster) {
-    if (!aProcess->ValidatePrincipal(entry.GetKey())) {
+    if (!aProcess->ValidatePrincipal(
+            entry.GetKey(), {ValidatePrincipalOptions::AllowNotLoadedOrigin})) {
       continue;
     }
 
@@ -711,7 +710,8 @@ void BrowsingContextGroup::SetUseOriginAgentClusterFromNetwork(
   EachParent([&](ContentParent* aContentParent) {
     // If this ContentParent can never load this principal, don't send it the
     // information.
-    if (!aContentParent->ValidatePrincipal(aPrincipal)) {
+    if (!aContentParent->ValidatePrincipal(
+            aPrincipal, {ValidatePrincipalOptions::AllowNotLoadedOrigin})) {
       return;
     }
 
@@ -739,10 +739,11 @@ Maybe<bool> BrowsingContextGroup::UsesOriginAgentCluster(
 
   // If this assertion fails, we may return `Nothing()` below unexpectedly, as
   // the parent process may have chosen to not process-switch.
+  RefPtr<LoadedOriginSet> loadedOrigins = CurrentLoadedOriginSet();
   MOZ_DIAGNOSTIC_ASSERT(
       XRE_IsParentProcess() ||
-          ValidatePrincipalCouldPotentiallyBeLoadedBy(
-              aPrincipal, ContentChild::GetSingleton()->GetRemoteType(), {}),
+          loadedOrigins->ValidatePrincipal(
+              aPrincipal, {ValidatePrincipalOptions::AllowNotLoadedOrigin}),
       "Attempting to create document with unexpected principal");
 
   if (auto entry = mUseOriginAgentCluster.Lookup(aPrincipal)) {

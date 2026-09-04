@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -9,15 +7,15 @@
 #ifndef js_String_h
 #define js_String_h
 
-#include "js/shadow/String.h"  // JS::shadow::String
+#include "mozilla/Assertions.h"  // MOZ_ASSERT
+#include "mozilla/Attributes.h"  // MOZ_ALWAYS_INLINE
+#include "mozilla/Likely.h"      // MOZ_LIKELY
+#include "mozilla/Maybe.h"       // mozilla::Maybe
+#include "mozilla/Range.h"       // mozilla::Range
+#include "mozilla/RefPtr.h"      // RefPtr
+#include "mozilla/Span.h"        // mozilla::Span
 
-#include "mozilla/Assertions.h"    // MOZ_ASSERT
-#include "mozilla/Attributes.h"    // MOZ_ALWAYS_INLINE
-#include "mozilla/Likely.h"        // MOZ_LIKELY
-#include "mozilla/Maybe.h"         // mozilla::Maybe
-#include "mozilla/Range.h"         // mozilla::Range
-#include "mozilla/RefPtr.h"        // RefPtr
-#include "mozilla/Span.h"          // mozilla::Span
+#include "js/shadow/String.h"      // JS::shadow::String
                                    // std::tuple
 #include "mozilla/StringBuffer.h"  // mozilla::StringBuffer
 

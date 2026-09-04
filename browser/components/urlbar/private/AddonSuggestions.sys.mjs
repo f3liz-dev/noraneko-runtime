@@ -10,8 +10,8 @@ ChromeUtils.defineESModuleGetters(lazy, {
   AddonManager: "resource://gre/modules/AddonManager.sys.mjs",
   QuickSuggest: "moz-src:///browser/components/urlbar/QuickSuggest.sys.mjs",
   UrlbarPrefs: "moz-src:///browser/components/urlbar/UrlbarPrefs.sys.mjs",
-  UrlbarResult: "moz-src:///browser/components/urlbar/UrlbarResult.sys.mjs",
-  UrlbarUtils: "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs",
+  UrlbarResult: "chrome://browser/content/urlbar/UrlbarResult.mjs",
+  UrlbarShared: "chrome://browser/content/urlbar/UrlbarShared.mjs",
 });
 
 const UTM_PARAMS = {
@@ -20,9 +20,9 @@ const UTM_PARAMS = {
 };
 
 const RESULT_MENU_COMMAND = {
+  DISMISS: "dismiss",
   MANAGE: "manage",
   NOT_INTERESTED: "not_interested",
-  NOT_RELEVANT: "not_relevant",
   SHOW_LESS_FREQUENTLY: "show_less_frequently",
 };
 
@@ -81,10 +81,10 @@ export class AddonSuggestions extends SuggestProvider {
     }
 
     return new lazy.UrlbarResult({
-      type: lazy.UrlbarUtils.RESULT_TYPE.URL,
-      source: lazy.UrlbarUtils.RESULT_SOURCE.SEARCH,
+      type: lazy.UrlbarShared.RESULT_TYPE.URL,
+      source: lazy.UrlbarShared.RESULT_SOURCE.SEARCH,
       isBestMatch: true,
-      isNovaSuggestion: true,
+      isBottomUrlSuggestion: true,
       suggestedIndex: 1,
       richSuggestionIconSize: 24,
       payload: {
@@ -116,29 +116,29 @@ export class AddonSuggestions extends SuggestProvider {
       commands.push({
         name: RESULT_MENU_COMMAND.SHOW_LESS_FREQUENTLY,
         l10n: {
-          id: "urlbar-result-menu-show-less-frequently",
+          id: "urlbar-result-menu-show-less-frequently2",
         },
       });
     }
 
     commands.push(
       {
-        name: RESULT_MENU_COMMAND.NOT_RELEVANT,
+        name: RESULT_MENU_COMMAND.DISMISS,
         l10n: {
-          id: "urlbar-result-menu-dismiss-suggestion",
+          id: "urlbar-result-menu-dismiss-suggestion2",
         },
       },
       {
         name: RESULT_MENU_COMMAND.NOT_INTERESTED,
         l10n: {
-          id: "firefox-suggest-command-dont-show-addons",
+          id: "firefox-suggest-command-dont-show-addons2",
         },
       },
       { name: "separator" },
       {
         name: RESULT_MENU_COMMAND.MANAGE,
         l10n: {
-          id: "urlbar-result-menu-manage-firefox-suggest",
+          id: "urlbar-result-menu-manage-firefox-suggest2",
         },
       }
     );
@@ -153,27 +153,24 @@ export class AddonSuggestions extends SuggestProvider {
         // "manage" is handled by UrlbarInput, no need to do anything here.
         break;
       // selType == "dismiss" when the user presses the dismiss key shortcut.
-      case "dismiss":
-      case RESULT_MENU_COMMAND.NOT_RELEVANT:
+      case RESULT_MENU_COMMAND.DISMISS:
         lazy.QuickSuggest.dismissResult(result);
-        result.acknowledgeDismissalL10n = {
-          id: "firefox-suggest-dismissal-acknowledgment-one",
-        };
-        controller.removeResult(result);
+        controller.removeResult(result, {
+          acknowledgeDismissalL10n: {
+            id: "firefox-suggest-dismissal-acknowledgment-one",
+          },
+        });
         break;
       case RESULT_MENU_COMMAND.NOT_INTERESTED:
         lazy.UrlbarPrefs.set("suggest.addons", false);
-        result.acknowledgeDismissalL10n = {
-          id: "urlbar-result-dismissal-acknowledgment-all",
-        };
-        controller.removeResult(result);
+        controller.removeResult(result, {
+          acknowledgeDismissalL10n: {
+            id: "urlbar-result-dismissal-acknowledgment-all",
+          },
+        });
         break;
       case RESULT_MENU_COMMAND.SHOW_LESS_FREQUENTLY:
-        controller.view.acknowledgeFeedback(result);
-        this.incrementShowLessFrequentlyCount();
-        if (!this.canShowLessFrequently) {
-          controller.view.invalidateResultMenuCommands();
-        }
+        this.handleShowLessFrequently(controller, result);
         lazy.UrlbarPrefs.set(
           "addons.minKeywordLength",
           searchString.length + 1

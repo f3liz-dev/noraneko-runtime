@@ -12,7 +12,7 @@ use crate::context::{ThreadLocalStyleContext, TraversalStatistics};
 use crate::dom::{SendNode, TElement, TNode};
 use crate::parallel;
 use crate::scoped_tls::ScopedTLS;
-use crate::traversal::{DomTraversal, PerLevelTraversalData, PreTraverseToken};
+use crate::traversal::{DomTraversal, PreTraverseToken};
 use std::collections::VecDeque;
 use std::time::Instant;
 
@@ -23,7 +23,7 @@ fn should_report_statistics() -> bool {
 
 #[cfg(feature = "gecko")]
 fn should_report_statistics() -> bool {
-    unsafe { crate::gecko_bindings::structs::ServoTraversalStatistics_sActive }
+    unsafe { !crate::gecko_bindings::structs::ServoTraversalStatistics_sSingleton.is_null() }
 }
 
 #[cfg(feature = "servo")]
@@ -37,9 +37,7 @@ fn report_statistics(stats: &PerThreadTraversalStatistics) {
     // to update the statistics in a global variable.
     unsafe {
         debug_assert!(crate::gecko_bindings::bindings::Gecko_IsMainThread());
-        let gecko_stats = std::ptr::addr_of_mut!(
-            crate::gecko_bindings::structs::ServoTraversalStatistics_sSingleton
-        );
+        let gecko_stats = crate::gecko_bindings::structs::ServoTraversalStatistics_sSingleton;
         (*gecko_stats).mElementsTraversed += stats.elements_traversed;
         (*gecko_stats).mElementsStyled += stats.elements_styled;
         (*gecko_stats).mElementsMatched += stats.elements_matched;
@@ -126,13 +124,14 @@ where
     let send_root = unsafe { SendNode::new(root.as_node()) };
     with_pool_in_place_scope(work_unit_max, pool, |maybe_scope| {
         let mut tlc = scoped_tls.ensure(parallel::create_thread_local_context);
+        tlc.current_dom_depth = send_root.depth();
+
         let mut context = StyleContext {
             shared: traversal.shared_context(),
             thread_local: &mut tlc,
         };
 
         let mut discovered = VecDeque::with_capacity(work_unit_max * 2);
-        let current_dom_depth = send_root.depth();
         let opaque_root = send_root.opaque();
         discovered.push_back(send_root);
         parallel::style_trees(
@@ -140,7 +139,6 @@ where
             discovered,
             opaque_root,
             work_unit_max,
-            PerLevelTraversalData { current_dom_depth },
             maybe_scope,
             traversal,
             &scoped_tls,

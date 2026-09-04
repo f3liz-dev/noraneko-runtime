@@ -4,6 +4,7 @@ subsuite = "devtools"
 support-files = [
   "array_json.json",
   "array_json.json^headers^",
+  "breadcrumb.json",
   "csp_json.json",
   "csp_json.json^headers^",
   "doc_with_json_in_iframe.html",
@@ -11,6 +12,8 @@ support-files = [
   "head.js",
   "invalid_json.json",
   "invalid_json.json^headers^",
+  "jsonl_no_contenttype.jsonl",
+  "jsonl_no_contenttype.jsonl^headers^",
   "manifest_json.json",
   "manifest_json.json^headers^",
   "passthrough-sw.js",
@@ -20,7 +23,6 @@ support-files = [
   "valid_json.json^headers^",
   "!/devtools/client/framework/test/head.js",
   "!/devtools/client/shared/test/shared-head.js",
-  "!/devtools/client/shared/test/telemetry-test-helpers.js",
 ]
 
 ["browser_json_refresh.js"]
@@ -28,6 +30,8 @@ support-files = [
 ["browser_jsonview_access_data.js"]
 
 ["browser_jsonview_array_buckets.js"]
+
+["browser_jsonview_breadcrumb.js"]
 
 ["browser_jsonview_bug_1380828.js"]
 
@@ -68,6 +72,8 @@ skip-if = [
 ["browser_jsonview_initial_focus.js"]
 
 ["browser_jsonview_invalid_json.js"]
+
+["browser_jsonview_jsonl.js"]
 
 ["browser_jsonview_manifest.js"]
 

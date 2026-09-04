@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode:nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -17,6 +16,8 @@
 #include "mozilla/XREAppData.h"
 #include "mozilla/GRefPtr.h"
 #include "mozilla/GUniquePtr.h"
+
+#include "nsGTKToolkit.h"
 
 #include <dlfcn.h>
 #include <gdk/gdk.h>
@@ -51,15 +52,33 @@ nsAlertsIconListener::notify_notification_set_hint_t
     nsAlertsIconListener::notify_notification_set_hint = nullptr;
 nsAlertsIconListener::notify_notification_set_timeout_t
     nsAlertsIconListener::notify_notification_set_timeout = nullptr;
+nsAlertsIconListener::notify_notification_get_activation_token_t
+    nsAlertsIconListener::notify_notification_get_activation_token = nullptr;
+
+void nsAlertsIconListener::MaybeSetActivationToken(
+    NotifyNotification* aNotification) {
+  if (!notify_notification_get_activation_token) {
+    return;
+  }
+  const char* token = notify_notification_get_activation_token(aNotification);
+  if (token) {
+    nsGTKToolkit* toolkit = nsGTKToolkit::GetToolkit();
+    if (toolkit) {
+      toolkit->SetActivationToken(nsDependentCString(token));
+    }
+  }
+}
 
 static void notify_action_cb(NotifyNotification* notification, gchar* action,
                              gpointer user_data) {
+  nsAlertsIconListener::MaybeSetActivationToken(notification);
   nsAlertsIconListener* alert = static_cast<nsAlertsIconListener*>(user_data);
   alert->SendCallback();
 }
 
 static void notify_nondefault_action_cb(NotifyNotification* notification,
                                         gchar* action, gpointer user_data) {
+  nsAlertsIconListener::MaybeSetActivationToken(notification);
   nsAlertsIconListener* alert = static_cast<nsAlertsIconListener*>(user_data);
   nsCString actionName(action);
 
@@ -140,6 +159,9 @@ nsAlertsIconListener::nsAlertsIconListener(
         libNotifyHandle, "notify_notification_set_hint");
     notify_notification_set_timeout = (notify_notification_set_timeout_t)dlsym(
         libNotifyHandle, "notify_notification_set_timeout");
+    notify_notification_get_activation_token =
+        (notify_notification_get_activation_token_t)dlsym(
+            libNotifyHandle, "notify_notification_get_activation_token");
     if (!notify_is_initted || !notify_init || !notify_get_server_caps ||
         !notify_notification_new || !notify_notification_show ||
         !notify_notification_set_icon_from_pixbuf ||
@@ -234,25 +256,24 @@ nsresult nsAlertsIconListener::ShowAlert(imgIContainer* aImage) {
     return NS_ERROR_FAILURE;
   }
 
-  if (mAlertListener) {
-    mAlertListener->Observe(nullptr, "alertshow", mAlertCookie.get());
+  if (mAlertCallbacks) {
+    mAlertCallbacks->OnAlertShow();
   }
 
   return NS_OK;
 }
 
 void nsAlertsIconListener::SendCallback() {
-  if (mAlertListener) {
-    mAlertListener->Observe(nullptr, "alertclickcallback", mAlertCookie.get());
+  if (mAlertCallbacks) {
+    mAlertCallbacks->OnAlertClick(nullptr);
   }
 }
 
 void nsAlertsIconListener::SendActionCallback(const nsAString& aActionName) {
-  if (mAlertListener) {
+  if (mAlertCallbacks) {
     nsCOMPtr<nsIAlertAction> alertAction;
     mAlertNotification->GetAction(aActionName, getter_AddRefs(alertAction));
-    mAlertListener->Observe(alertAction, "alertclickcallback",
-                            mAlertCookie.get());
+    mAlertCallbacks->OnAlertClick(alertAction);
   }
 }
 
@@ -300,7 +321,7 @@ nsresult nsAlertsIconListener::Close() {
 }
 
 nsresult nsAlertsIconListener::InitAlert(nsIAlertNotification* aAlert,
-                                         nsIObserver* aAlertListener) {
+                                         nsIAlertCallbacks* aAlertCallbacks) {
   if (!libNotifyHandle) return NS_ERROR_FAILURE;
 
   if (!notify_is_initted()) {
@@ -397,10 +418,7 @@ nsresult nsAlertsIconListener::InitAlert(nsIAlertNotification* aAlert,
         NS_ERROR_FAILURE);
   }
 
-  mAlertListener = aAlertListener;
-
-  rv = aAlert->GetCookie(mAlertCookie);
-  NS_ENSURE_SUCCESS(rv, rv);
+  mAlertCallbacks = aAlertCallbacks;
 
   nsCOMPtr<imgIContainer> image;
   MOZ_TRY(aAlert->GetImage(getter_AddRefs(image)));
@@ -409,7 +427,7 @@ nsresult nsAlertsIconListener::InitAlert(nsIAlertNotification* aAlert,
 }
 
 void nsAlertsIconListener::NotifyFinished() {
-  if (nsCOMPtr<nsIObserver> alertListener = mAlertListener.forget()) {
-    alertListener->Observe(nullptr, "alertfinished", mAlertCookie.get());
+  if (nsCOMPtr<nsIAlertCallbacks> alertCallbacks = mAlertCallbacks.forget()) {
+    alertCallbacks->OnAlertFinished();
   }
 }

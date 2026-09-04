@@ -27,6 +27,7 @@
   <string name="teaser">ການທ່ອງເວັບສ່ວນຕົວແບບອັດຕະໂນມັດ.\nທ່ອງເວັບ ແລະ ລົບລ້າງປະຫວັດການໃຊ້ງານອອກ.</string>
   <!-- "Snackbar" shown after the user has pressed the 'erase' button at the end of a browsing session -->
   <string name="feedback_erase">ປະຫວັດການທ່ອງເວັບຂອງທ່ານໄດ້ຖືກລຶບອອກແລ້ວ.</string>
+  <!-- "Snackbar" shown after the user has pressed the 'erase' button at the end of a browsing session -->
   <string name="feedback_erase2">ລຶບລ້າງປະຫວັດການທ່ອງເວັບແລ້ວ</string>
   <!-- "Snackbar" shown after the user has pressed the 'erase' button at the end of a custom tab browsing session -->
   <string name="feedback_erase_custom_tab">ແທັບຂອງປະຫວັດການທ່ອງເວັບໄດ້ຖືກລຶບອອກແລ້ວ.</string>
@@ -129,6 +130,9 @@
   -->
   <string name="shortcut_erase_and_open_long_label">ລຶບ ແລະ ເປີດ %1$s</string>
   <!--
+    These labels are selected per variant through manifestPlaceholders in build.gradle, so
+    UnusedResources does not see the ones for the variants it is not analyzing.
+
     This is the label of an action we offer when the user selects text in other third-party apps.
     Focus is hard coded since we can't use variables in this context.
     Do not translate or transliterate Focus.
@@ -139,24 +143,24 @@
     Klar is hard coded since we can't use variables in this context.
     Do not translate or transliterate Klar.
   -->
-  <string name="text_selection_search_action_klar" tools:ignore="BrandUsage">ຊອກຫາຢູ່ໃນ Klar</string>
+  <string name="text_selection_search_action_klar" tools:ignore="BrandUsage,UnusedResources">ຊອກຫາຢູ່ໃນ Klar</string>
   <!--
     This is the label of an action we offer when the user selects text in other third-party apps.
     Focus Beta is hard coded since we can't use variables in this context.
     Do not translate or transliterate Focus Beta.
   -->
-  <string name="text_selection_search_action_focus_beta" tools:ignore="BrandUsage">ຊອກຫາໃນ Focus Beta</string>
+  <string name="text_selection_search_action_focus_beta" tools:ignore="BrandUsage,UnusedResources">ຊອກຫາໃນ Focus Beta</string>
   <!--
     This is the label of an action we offer when the user selects text in other third-party apps.
     Focus Nightly is hard coded since we can't use variables in this context.
     Do not translate or transliterate Focus Nightly.
   -->
-  <string name="text_selection_search_action_focus_nightly" tools:ignore="BrandUsage">ຊອກຫາໃນ Focus Nightly</string>
+  <string name="text_selection_search_action_focus_nightly" tools:ignore="BrandUsage,UnusedResources">ຊອກຫາໃນ Focus Nightly</string>
   <!--
     Content of about focus. %1$s is the name of the app (for example "Firefox Focus" or "Firefox Klar").
     %2$s is the url for the learn-more link.
   -->
-  <string name="about_content" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s ເຮັດໃຫ້ທ່ານສາມາດຄວບຄູມໄດ້.</p>\n<p>ໃຊ້ເປັນແບບບຣາວເຊີສ່ວນຕົວ:\n<ul>\n<li>ຄົ້ນຫາ ແລະ ທ່ອງເວັບພາຍໃນແອັບ</li>\n<li>ບັອກຕົວຕິດຕາມ (ຫລື ອັບເດດການຕັ້ງຄ່າເພື່ອອະນຸຍາດຕົວຕິດຕາມ)</li>\n<li>ລຶບຄຸກກີ້ລວມທັງປະຫວັດການຄົ້ນຫາ ແລະ ການທ່ອງເວັບອອກ</li>\n</ul> </p>\n<p>%1$s ໄດ້ຮັບການສ້າງຂື້ນມາຈາກ Mozilla. ພາລະກິດຂອງພວກເຮົາແມ່ນສົ່ງເສີມການນຳໃຊ້ອິນເຕີເນັດທີ່ສົມບູນ ແລະ ເປີດກ້ວາງ<br/>\n<a href=\"%2$s\">ຮຽນຮູ້ເພີ່ມເຕີ່ມ</a></p>]]></string>
+  <string name="about_content" tools:ignore="BrandUsage,IncorrectStraightDoubleQuote"><![CDATA[<p>%1$s ເຮັດໃຫ້ທ່ານສາມາດຄວບຄູມໄດ້.</p>\n<p>ໃຊ້ເປັນແບບບຣາວເຊີສ່ວນຕົວ:\n<ul>\n<li>ຄົ້ນຫາ ແລະ ທ່ອງເວັບພາຍໃນແອັບ</li>\n<li>ບັອກຕົວຕິດຕາມ (ຫລື ອັບເດດການຕັ້ງຄ່າເພື່ອອະນຸຍາດຕົວຕິດຕາມ)</li>\n<li>ລຶບຄຸກກີ້ລວມທັງປະຫວັດການຄົ້ນຫາ ແລະ ການທ່ອງເວັບອອກ</li>\n</ul> </p>\n<p>%1$s ໄດ້ຮັບການສ້າງຂື້ນມາຈາກ Mozilla. ພາລະກິດຂອງພວກເຮົາແມ່ນສົ່ງເສີມການນຳໃຊ້ອິນເຕີເນັດທີ່ສົມບູນ ແລະ ເປີດກ້ວາງ<br/>\n<a href=\"%2$s\">ຮຽນຮູ້ເພີ່ມເຕີ່ມ</a></p>]]></string>
   <!-- A link to SUMO at the bottom of About Focus screen. -->
   <string name="about_screen_learn_more">ສຶກສາເພີ່ມເຕີມ</string>
   <!-- Header for the Privacy and Security settings menu -->
@@ -251,7 +255,7 @@
   <!-- "Hint" text for the "custom autocomplete URL" input field. Shown when the field is empty. -->
   <string name="preference_autocomplete_add_hint">ວາງ ຫລື ປ້ອນ URL</string>
   <!-- Example how a custom domain autocomplete URL be added (e.g. without http://) -->
-  <string name="preference_autocomplete_add_example2">ຕົວຢ່າງ: mozilla.org</string>
+  <string name="preference_autocomplete_add_example2" tools:ignore="BrandUsage">ຕົວຢ່າງ: mozilla.org</string>
   <!-- To be removed once the new hint has been translated -->
   <string name="preference_autocomplete_add_example">ຕົວຢ່າງ: example.com</string>
   <!-- Confirmation "snackbar" shown after a new custom autocomplete URL has been added. -->
@@ -323,15 +327,15 @@
     %1$s will be replaced by the app name (e.g. Firefox Focus)
   -->
   <string name="preference_default_browser2">ຕັ້ງ %1$s ໃຫ້ເປັນບຣາວເຊີຫລັກ</string>
-  <string name="preference_category_mozilla">Mozilla</string>
+  <string name="preference_category_mozilla" tools:ignore="BrandUsage">Mozilla</string>
   <string name="preference_mozilla_telemetry2">ສົ່ງຂໍ້ມູນການນຳໃຊ້</string>
   <!-- A link to SUMO at the end of the summary (preference_mozilla_telemetry_summary2) of the "Send anonymous usage data" setting. -->
   <string name="preference_mozilla_telemetry_summary">ຮຽນຮູ້ເພີ່ມເຕີມ</string>
   <!-- %1$s will be replaced with the name of the app (e.g. Firefox Focus) -->
-  <string name="preference_mozilla_telemetry_summary2">Mozilla ພະຍາຍາມທີ່ຈະເກັບຮວບຮ່ວມສະເພາະສິ່ງທີ່ຈຳເປັນຕໍ່ການປັບປູງ %1$s ສຳລັບທຸກໆຄົນ.</string>
+  <string name="preference_mozilla_telemetry_summary2" tools:ignore="BrandUsage">Mozilla ພະຍາຍາມທີ່ຈະເກັບຮວບຮ່ວມສະເພາະສິ່ງທີ່ຈຳເປັນຕໍ່ການປັບປູງ %1$s ສຳລັບທຸກໆຄົນ.</string>
   <!-- Preference switch for daily usage ping data collection -->
   <string name="preference_daily_usage_ping_title">ping ການນໍາໃຊ້ປະຈໍາວັນ</string>
-  <string name="preference_daily_usage_ping_description">ນີ້ຊ່ວຍໃຫ້ Mozilla ຄາດຄະເນຜູ້ໃຊ້ງານທີ່ມີການເຄື່ອນໄຫວ.</string>
+  <string name="preference_daily_usage_ping_description" tools:ignore="BrandUsage">ນີ້ຊ່ວຍໃຫ້ Mozilla ຄາດຄະເນຜູ້ໃຊ້ງານທີ່ມີການເຄື່ອນໄຫວ.</string>
   <string name="preference_daily_usage_ping_learn_more">ຮຽນຮູ້ເພີ່ມເຕີມ</string>
   <!-- In-app link (in settings) to Focus privacy notice. -->
   <string name="preference_privacy_notice">ນະໂຍບາຍຄວາມເປັນສ່ວນຕົວ</string>
@@ -584,6 +588,23 @@
   <string name="security_popup_security_verified">ກວດສອບໂດຍ: %1$s</string>
   <!-- Content Description of Security Icon in toolbar -->
   <string name="site_security_icon_content_description">ຄວາມປອດໄພຂອງເວັບໄຊທ໌</string>
+  <!--
+    Text shown in Security Information Popup
+
+    %1$s will be replaced with the organization for which the certificate
+    used by the site was issued. For example, the certificate in use by
+    the site https://eidas.ec.europa.eu/ was issued to "The European
+    Commission".
+  -->
+  <string name="qualified_identity">ໄດ້ອອກໃບຢັ້ງຢືນໃຫ້ %1$s ແລ້ວ</string>
+  <!--
+    The European Union eIDAS Regulation specifies a type of certificate
+    called a "qualified website authentication certificate" (QWAC) and
+    requires that browsers identify and indicate such certificates. This
+    text was paraphrased from ETSI TS 119 411-5 V2.1.1 section 6.3 and
+    indicates that the website uses a QWAC.
+  -->
+  <string name="qualified_text">ມີຄຸນສົມບັດຕາມທີ່ໄດ້ລະບຸໄວ້ໃນລະບຽບການ (EU) 2024/1183.</string>
   <string name="preference_autocomplete_duplicate_url_error">URL ນີ້ມີຢູ່ແລ້ວ</string>
   <!-- Label for the Find in page button -->
   <string name="find_in_page">ຄົ້ນຫາໃນເພຈ</string>
@@ -814,7 +835,7 @@
   <!-- Label for button to close the tab -->
   <string name="tab_crash_report_close_tab_button_label">ປິດແທັບ</string>
   <!-- Label for the checkbox to send the tab crash report to Mozilla -->
-  <string name="crash_report_send_crash_label">ສົ່ງລາຍງານການຂັດຂ້ອງໄປຫາ Mozilla</string>
+  <string name="crash_report_send_crash_label" tools:ignore="BrandUsage">ສົ່ງລາຍງານການຂັດຂ້ອງໄປຫາ Mozilla</string>
   <!-- Tracking protection bottom sheet -->
 
   <!-- Label for the total number of trackers blocked. %s is the app install date. -->
@@ -879,12 +900,16 @@
     %2$s is a URL to a support article. Contains a button that will redirect the user to Privacy & Security Screen.
   -->
   <string name="errorpage_httpsonly_message2" tools:ignore="IncorrectStraightDoubleQuote"><![CDATA[%1$s ພະຍາຍາມໃຊ້ການເຊື່ອມຕໍ່ HTTPS ທຸກຄັ້ງທີ່ເປັນໄປໄດ້ເພື່ອຄວາມປອດໄພຫຼາຍຂຶ້ນ. <a href=\"%2$s\">ສຶກສາເພີ່ມເຕີມ</a> <br/><br/> ປ່ຽນການຕັ້ງຄ່ານີ້ໃນການຕັ້ງຄ່າ > ຄວາມເປັນສ່ວນຕົວ & amp; ຄວາມປອດໄພ > ຄວາມປອດໄພ.]]></string>
-  <!-- The document title and heading of the error page shown when a website has an invalid or expired SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_bad_cert_title">ການເຊື່ອມຕໍ່ບໍ່ປອດໄພ</string>
+  <!--
+    The strings below override AC defaults and are only referenced from there.
+
+    The document title and heading of the error page shown when a website has an invalid or expired SSL certificate.
+  -->
+  <string name="mozac_browser_errorpages_security_bad_cert_title" tools:ignore="UnusedResources">ການເຊື່ອມຕໍ່ບໍ່ປອດໄພ</string>
   <!-- The error message shown when a website has an invalid or expired SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_bad_cert_message"><![CDATA[\u0020ສິງນີ້ອາດຈະເປັນບັນຫາທີ່ເກີດມາຈາກການຄອນຟິກເຊີເວີຜິດ ຫລື ມັນອາດຈະເກີດມາຈາກການທີ່ມີບາງຄົນພະຍາຍາມປອມແປງເຊີເວີ.<br/><br/>\nຖ້າຫາກວ່າທ່ານເຄີຍເຊື່ອມຕໍ່ກັບເຊີເວີນີ້ໄດ້ສຳເລັດມາກ່ອນ ຂໍ້ຜິດພາດນີ້ອາດຈະເກີດຂື້ນພຽງຊົ່ວຄາວ ແລະ ທ່ານສາມາດລອງເຂົ້າໃຫມ່ໃນພາຍຫລັງ.\u0020]]></string>
+  <string name="mozac_browser_errorpages_security_bad_cert_message" tools:ignore="UnusedResources"><![CDATA[\u0020ສິງນີ້ອາດຈະເປັນບັນຫາທີ່ເກີດມາຈາກການຄອນຟິກເຊີເວີຜິດ ຫລື ມັນອາດຈະເກີດມາຈາກການທີ່ມີບາງຄົນພະຍາຍາມປອມແປງເຊີເວີ.<br/><br/>\nຖ້າຫາກວ່າທ່ານເຄີຍເຊື່ອມຕໍ່ກັບເຊີເວີນີ້ໄດ້ສຳເລັດມາກ່ອນ ຂໍ້ຜິດພາດນີ້ອາດຈະເກີດຂື້ນພຽງຊົ່ວຄາວ ແລະ ທ່ານສາມາດລອງເຂົ້າໃຫມ່ໃນພາຍຫລັງ.\u0020]]></string>
   <!-- The advanced certificate information shown when a website has an invalid SSL certificate. The %1$s will be replaced by the app name and %2$s will be replaced by website URL. It's only shown when a website has an invalid SSL certificate. -->
-  <string name="mozac_browser_errorpages_security_bad_cert_techInfo"><![CDATA[<label>ມີບາງຄົນອາດຈະກຳລັງປອມແປງເວັບໄຊທ ແລະ ທ່ານບໍ່ຄວນຈະເຂົ້າໄປ.</label> <br><br>\n<label>ເວັບໄຊທຈະຢັ້ງຢືນຕົວຕົນຜ່ານທາງໃບຮັບຮອງ. %1$s ບໍ່ຫນ້າເຊື່ອຖື <b>%2$s</b> ເພາະວ່າຜູ້ອອກໃບຮັບຮອງຂອງພວກເຂົາແມ່ນບໍເປັນທີ່ຮູ້ຈັກ, ໃບຮັບຮອງແມ່ນສ້າງຂື້ນມາເອງ ຫລື ເຊີເວີບໍ່ໄດ້ສົ່ງໃບຮັບຮອງທີ່ຖືກຕ້ອງມາໃຫ້.</label>]]></string>
+  <string name="mozac_browser_errorpages_security_bad_cert_techInfo" tools:ignore="UnusedResources"><![CDATA[<label>ມີບາງຄົນອາດຈະກຳລັງປອມແປງເວັບໄຊທ ແລະ ທ່ານບໍ່ຄວນຈະເຂົ້າໄປ.</label> <br><br>\n<label>ເວັບໄຊທຈະຢັ້ງຢືນຕົວຕົນຜ່ານທາງໃບຮັບຮອງ. %1$s ບໍ່ຫນ້າເຊື່ອຖື <b>%2$s</b> ເພາະວ່າຜູ້ອອກໃບຮັບຮອງຂອງພວກເຂົາແມ່ນບໍເປັນທີ່ຮູ້ຈັກ, ໃບຮັບຮອງແມ່ນສ້າງຂື້ນມາເອງ ຫລື ເຊີເວີບໍ່ໄດ້ສົ່ງໃບຮັບຮອງທີ່ຖືກຕ້ອງມາໃຫ້.</label>]]></string>
   <!--
     Sessions List
 

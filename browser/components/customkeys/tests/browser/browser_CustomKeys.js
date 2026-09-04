@@ -3,6 +3,10 @@
 
 "use strict";
 
+const { CustomKeys } = ChromeUtils.importESModule(
+  "moz-src:///browser/components/customkeys/CustomKeys.sys.mjs"
+);
+
 /**
  * Test the behavior of assigning keys, resetting keys, etc. via the CustomKeys module. The UI is tested separately.
  */
@@ -13,6 +17,12 @@ add_setup(async function () {
   // there is a race condition where they sometimes won't be handled again in
   // the parent process afterward.
   const tab = await BrowserTestUtils.openNewForegroundTab(gBrowser);
+  // This test exercises the legacy bookmarks sidebar panel; opt out of the
+  // updated bookmarks panel so the expected document/element ids are present.
+  // TODO(Bug 2039395): adapt this test to the new bookmarks sidebar panel and remove this sidebar.updateBookmarks.enabled pushPrefEnv)
+  await SpecialPowers.pushPrefEnv({
+    set: [["sidebar.updatedBookmarks.enabled", false]],
+  });
   registerCleanupFunction(function () {
     CustomKeys.resetAll();
     BrowserTestUtils.removeTab(tab);
@@ -258,6 +268,95 @@ add_task(async function testResetAll() {
   gBrowser.selectedBrowser.focus();
   await focused;
   ok(true, "Tab document browser got focus");
+});
+
+// Test that clearing all keys clears shortcuts that haven't been customized.
+add_task(async function testClearAll() {
+  // Move focus into chrome so that accel+l to focus the URL bar reliably occurs
+  // immediately. We need this guarantee because we want to test when pressing
+  // accel+l does nothing, so we can't rely on an event for that test.
+  info("Focusing selected tab");
+  let focused = BrowserTestUtils.waitForEvent(gBrowser.selectedTab, "focus");
+  gBrowser.selectedTab.focus();
+  await focused;
+
+  is(
+    CustomKeys.getDefaultKey("focusURLBar"),
+    null,
+    "focusURLBar is not customized"
+  );
+  // key_duplicateTab has no default shortcut, so clearing it is a no-op and it
+  // must not be reported as customized.
+  is(
+    CustomKeys.getDefaultKey("key_duplicateTab"),
+    null,
+    "key_duplicateTab is not customized"
+  );
+
+  info("Clearing all keys");
+  CustomKeys.clearAll();
+  Assert.deepEqual(
+    CustomKeys.getDefaultKey("focusURLBar"),
+    { modifiers: "accel", key: "L" },
+    "focusURLBar is cleared"
+  );
+  is(
+    CustomKeys.getDefaultKey("key_duplicateTab"),
+    null,
+    "key_duplicateTab is still not customized"
+  );
+
+  info("Pressing accel+L");
+  EventUtils.synthesizeKey("L", { accelKey: true }, window);
+  is(
+    document.activeElement,
+    gBrowser.selectedTab,
+    "Selected tab still focused"
+  );
+
+  info("Resetting all keys");
+  CustomKeys.resetAll();
+  // Restore focus to the document so the next test's precondition holds.
+  focused = BrowserTestUtils.waitForEvent(gBrowser.selectedBrowser, "focus");
+  gBrowser.selectedBrowser.focus();
+  await focused;
+});
+
+// Test that key_duplicateTab (which has no default binding) can be assigned
+// and triggers tab duplication.
+add_task(async function testDuplicateTab() {
+  is(
+    document.activeElement,
+    gBrowser.selectedBrowser,
+    "Tab document browser is focused"
+  );
+
+  is(
+    CustomKeys.getDefaultKey("key_duplicateTab"),
+    null,
+    "key_duplicateTab is not customized"
+  );
+  info(`Assigning key_duplicateTab to ${consts.unusedDisplay}`);
+  CustomKeys.changeKey("key_duplicateTab", {
+    modifiers: consts.unusedModifiers,
+    key: consts.unusedKey,
+  });
+
+  const originalTab = gBrowser.selectedTab;
+  const originalUrl = originalTab.linkedBrowser.currentURI.spec;
+  const newTabPromise = BrowserTestUtils.waitForNewTab(
+    gBrowser,
+    originalUrl,
+    true
+  );
+  info(`Pressing ${consts.unusedDisplay}`);
+  EventUtils.synthesizeKey(consts.unusedKey, consts.unusedOptions, window);
+  const newTab = await newTabPromise;
+  isnot(newTab, originalTab, "The new tab is different from the original");
+
+  BrowserTestUtils.removeTab(newTab);
+  info("Resetting all keys");
+  CustomKeys.resetAll();
 });
 
 // Test that changes apply to other windows.

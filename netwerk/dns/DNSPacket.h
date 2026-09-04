@@ -5,14 +5,14 @@
 #ifndef mozilla_net_DNSPacket_h_
 #define mozilla_net_DNSPacket_h_
 
+#include <functional>
+
+#include "DNS.h"
+#include "DNSByTypeRecord.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/Result.h"
 #include "nsClassHashtable.h"
 #include "nsIDNSService.h"
-#include "DNS.h"
-#include "DNSByTypeRecord.h"
-
-#include <functional>
 
 namespace mozilla {
 namespace net {
@@ -74,7 +74,8 @@ class DNSPacket {
   static nsresult ParseHTTPS(uint16_t aRDLen, struct SVCB& aParsed,
                              unsigned int aIndex, const unsigned char* aBuffer,
                              unsigned int aBodySize,
-                             const nsACString& aOriginHost);
+                             const nsACString& aOriginHost,
+                             bool aAllowRFC1918 = true);
   void SetNativePacket(bool aNative) { mNativePacket = aNative; }
 
   static nsresult GetQname(nsACString& aQname, unsigned int& aIndex,
@@ -85,7 +86,8 @@ class DNSPacket {
   nsresult PassQName(unsigned int& index, const unsigned char* aBuffer);
   static nsresult ParseSvcParam(unsigned int svcbIndex, uint16_t key,
                                 SvcFieldValue& field, uint16_t length,
-                                const unsigned char* aBuffer);
+                                const unsigned char* aBuffer,
+                                bool aAllowRFC1918 = true);
   nsresult DecodeInternal(
       nsCString& aHost, enum TrrType aType, nsCString& aCname,
       bool aAllowRFC1918, DOHresp& aResp, TypeRecordResultType& aTypeResult,

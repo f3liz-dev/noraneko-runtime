@@ -26,15 +26,26 @@ add_task(async function test_updates_post_policy() {
 });
 
 add_task(async function test_update_preferences_ui() {
-  let tab = await BrowserTestUtils.openNewForegroundTab(
-    gBrowser,
-    "about:preferences"
+  let settingsRedesignEnabled = Services.prefs.getBoolPref(
+    "browser.settings-redesign.enabled",
+    false
   );
+  let prefUrl = settingsRedesignEnabled
+    ? "about:preferences#about"
+    : "about:preferences";
+  let tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, prefUrl);
 
   await SpecialPowers.spawn(tab.linkedBrowser, [], async function () {
-    let setting = content.document.getElementById("updateSettingsContainer");
+    let settingControl = content.document.getElementById(
+      "setting-control-installationFieldset"
+    );
+    await ContentTaskUtils.waitForMutationCondition(
+      settingControl,
+      { attributes: true, attributeFilter: ["hidden"] },
+      () => settingControl.hidden
+    );
     is(
-      setting.hidden,
+      settingControl.hidden,
       true,
       "Update choices should be disabled when app update is locked by policy"
     );
@@ -47,7 +58,7 @@ add_task(async function test_update_about_ui() {
   let aboutDialog = await waitForAboutDialog();
   let panelId = "policyDisabled";
 
-  await BrowserTestUtils.waitForCondition(
+  await TestUtils.waitForCondition(
     () => aboutDialog.gAppUpdater?.selectedPanel?.id == panelId,
     'Waiting for expected panel ID - expected "' + panelId + '"'
   );
@@ -113,7 +124,7 @@ add_task(async function test_no_update_intervention() {
       fireInputEvent: true,
     });
     for (let result of context.results) {
-      Assert.notEqual(result.type, UrlbarUtils.RESULT_TYPE.TIP);
+      Assert.notEqual(result.type, UrlbarShared.RESULT_TYPE.TIP);
     }
     await UrlbarTestUtils.promisePopupClose(window, () =>
       window.gURLBar.blur()

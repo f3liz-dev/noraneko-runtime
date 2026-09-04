@@ -1,27 +1,25 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
 #include "SandboxTest.h"
 
+#include "GMPService.h"
+#include "SandboxTestingChild.h"
+#include "SandboxTestingParent.h"
 #include "mozilla/Components.h"
 #include "mozilla/Preferences.h"
-#include "SandboxTestingParent.h"
-#include "SandboxTestingChild.h"
-#include "mozilla/dom/ContentParent.h"
-#include "mozilla/gfx/GPUProcessManager.h"
-#include "mozilla/gfx/GPUChild.h"
-#include "mozilla/net/SocketProcessParent.h"
-#include "mozilla/RDDProcessManager.h"
 #include "mozilla/RDDChild.h"
+#include "mozilla/RDDProcessManager.h"
+#include "mozilla/dom/ContentParent.h"
+#include "mozilla/gfx/GPUChild.h"
+#include "mozilla/gfx/GPUProcessManager.h"
+#include "mozilla/gmp/GMPTypes.h"
+#include "mozilla/ipc/Endpoint.h"
 #include "mozilla/ipc/UtilityProcessManager.h"
 #include "mozilla/ipc/UtilityProcessParent.h"
 #include "mozilla/ipc/UtilityProcessSandboxing.h"
-#include "GMPService.h"
-#include "mozilla/gmp/GMPTypes.h"
-#include "mozilla/ipc/Endpoint.h"
+#include "mozilla/net/SocketProcessParent.h"
 #include "nsIOService.h"
 
 #ifdef XP_WIN

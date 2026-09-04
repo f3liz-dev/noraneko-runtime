@@ -1,5 +1,3 @@
-// -*- indent-tabs-mode: nil; js-indent-level: 2 -*-
-
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -124,11 +122,6 @@ window.addEventListener("contextmenu", e => {
     `)
     );
     popup = document.documentElement.lastElementChild;
-    popup
-      .querySelector("#textbox-contextmenu-reveal-password")
-      .addEventListener("command", function () {
-        popup.triggerNode.revealPassword = !popup.triggerNode.revealPassword;
-      });
   }
 
   goUpdateGlobalEditMenuItems(true);
@@ -139,6 +132,10 @@ window.addEventListener("contextmenu", e => {
   let revealPassword = popup.querySelector(
     "#textbox-contextmenu-reveal-password"
   );
+  // Reassigned on every contextmenu so it acts on the current target.
+  revealPassword.oncommand = () => {
+    target.revealPassword = !target.revealPassword;
+  };
   revealPassword.hidden = !isPasswordInput;
   if (isPasswordInput) {
     if (target.revealPassword) {

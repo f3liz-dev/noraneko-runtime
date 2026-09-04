@@ -1,41 +1,61 @@
 From: Michael Froman <mfroman@mozilla.com>
-Date: Thu, 11 Sep 2025 14:17:00 -0500
-Subject: Bug 1988042 - add BSD support to new version of libwebrtc's
- cpu_info.cc r?ng!
+Date: Sun, 28 Dec 2025 15:36:00 -0600
+Subject: Bug 2006933 - (fix-d381cc8b23) fix base-toolchains build
 
-Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/e3b37acb8816aefb9134a68cafad8c7d5e145179
+Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/ff7279205c599769b913c9359873562896b80799
 ---
- rtc_base/cpu_info.cc | 7 +++++--
- 1 file changed, 5 insertions(+), 2 deletions(-)
+ modules/rtp_rtcp/source/rtp_format.cc | 15 +++++++--------
+ 1 file changed, 7 insertions(+), 8 deletions(-)
 
-diff --git a/rtc_base/cpu_info.cc b/rtc_base/cpu_info.cc
-index 0ce48a02f1..f0bff56911 100644
---- a/rtc_base/cpu_info.cc
-+++ b/rtc_base/cpu_info.cc
-@@ -29,14 +29,14 @@
- #include <unistd.h>
- #elif defined(WEBRTC_FUCHSIA)
- #include <zircon/syscalls.h>
--#elif defined(WEBRTC_LINUX)
-+#elif defined(WEBRTC_LINUX) || defined(WEBRTC_BSD)
- #include <unistd.h>
- #endif  // WEBRTC_LINUX
- 
- #if defined(WEBRTC_ARCH_X86_FAMILY) && defined(_MSC_VER)
- #include <intrin.h>
+diff --git a/modules/rtp_rtcp/source/rtp_format.cc b/modules/rtp_rtcp/source/rtp_format.cc
+index 5d3c880aff..6363c92da6 100644
+--- a/modules/rtp_rtcp/source/rtp_format.cc
++++ b/modules/rtp_rtcp/source/rtp_format.cc
+@@ -36,32 +36,31 @@ std::unique_ptr<RtpPacketizer> RtpPacketizer::Create(
+     PayloadSizeLimits limits,
+     // Codec-specific details.
+     const RTPVideoHeader& rtp_video_header) {
+-  using enum PacketizationFormat;
+   switch (format) {
+-    case kRaw: {
++    case PacketizationFormat::kRaw: {
+       return std::make_unique<RtpPacketizerGeneric>(payload, limits);
+     }
+-    case kH264: {
++    case PacketizationFormat::kH264: {
+       const auto& h264 =
+           std::get<RTPVideoHeaderH264>(rtp_video_header.video_type_header);
+       return std::make_unique<RtpPacketizerH264>(payload, limits,
+                                                  h264.packetization_mode);
+     }
+-    case kVP8: {
++    case PacketizationFormat::kVP8: {
+       const auto& vp8 =
+           std::get<RTPVideoHeaderVP8>(rtp_video_header.video_type_header);
+       return std::make_unique<RtpPacketizerVp8>(payload, limits, vp8);
+     }
+-    case kVP9: {
++    case PacketizationFormat::kVP9: {
+       const auto& vp9 =
+           std::get<RTPVideoHeaderVP9>(rtp_video_header.video_type_header);
+       return std::make_unique<RtpPacketizerVp9>(payload, limits, vp9);
+     }
+-    case kAV1:
++    case PacketizationFormat::kAV1:
+       return std::make_unique<RtpPacketizerAv1>(
+           payload, limits, rtp_video_header.frame_type,
+           rtp_video_header.is_last_frame_in_picture);
+-    case kH265: {
++    case PacketizationFormat::kH265: {
+ #ifdef RTC_ENABLE_H265
+       return std::make_unique<RtpPacketizerH265>(payload, limits);
+ #else
+@@ -69,7 +68,7 @@ std::unique_ptr<RtpPacketizer> RtpPacketizer::Create(
+                                                     rtp_video_header);
  #endif
--#if defined(WEBRTC_ARCH_ARM_FAMILY) && defined(WEBRTC_LINUX)
-+#if defined(WEBRTC_ARCH_ARM_FAMILY) && (defined(WEBRTC_LINUX) || defined(WEBRTC_BSD))
- #include <asm/hwcap.h>
- #include <sys/auxv.h>
- #endif
-@@ -176,6 +176,9 @@ bool Supports(ISA instruction_set_architecture) {
-   if (instruction_set_architecture == ISA::kNeon) {
- #if defined(WEBRTC_ANDROID)
-     return 0 != (android_getCpuFeatures() & ANDROID_CPU_ARM_FEATURE_NEON);
-+#elif defined(WEBRTC_BSD)
-+    // OpenBSD does not have getauxval() and does not have /proc reading
-+    return false;
- #elif defined(WEBRTC_LINUX)
-     uint64_t hwcap = 0;
-     hwcap = getauxval(AT_HWCAP);
+     }
+-    case kGeneric: {
++    case PacketizationFormat::kGeneric: {
+       return std::make_unique<RtpPacketizerGeneric>(payload, limits,
+                                                     rtp_video_header);
+     }

@@ -1,5 +1,4 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,10 +6,9 @@
 #ifndef INC_NSVERIFICATIONJOB_H
 #define INC_NSVERIFICATIONJOB_H
 
-#include "nspr.h"
-
 #include "nsIX509Cert.h"
 #include "nsProxyRelease.h"
+#include "nspr.h"
 
 class nsBaseVerificationJob {
  public:

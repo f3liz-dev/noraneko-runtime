@@ -1,6 +1,10 @@
 [DEFAULT]
 support-files = ["clipboard_helper.js"]
 tags = "os_integration"
+prefs = [
+  "dom.clipboard.customFormatSupport.enabled=true",
+  "clipboard.readCustomFormatsFromClipboard.enabled=true",
+]
 
 ["test_AltGr_key_events_in_web_content_on_windows.html"]
 run-if = [
@@ -33,6 +37,14 @@ support-files = ["file_test_clipboard.js"]
 
 ["test_clipboard_asyncSetData.html"]
 support-files = ["file_test_clipboard_asyncSetData.js"]
+
+["test_clipboard_getDataIfSmallerThan_ca_disabled.html"]
+support-files = "file_test_clipboard_getDataIfSmallerThan.js"
+subsuite = "clipboard_ca_disabled"
+
+["test_clipboard_getDataIfSmallerThan_ca_enabled.html"]
+support-files = "file_test_clipboard_getDataIfSmallerThan.js"
+subsuite = "clipboard_ca_enabled"
 
 ["test_clipboard_getDataSnapshot.html"]
 support-files = ["file_test_clipboard_getDataSnapshot.js"]
@@ -86,6 +98,8 @@ skip-if = [
   "os == 'android'", #  Fx on android does not currently support DND
 ]
 
+["test_ime_state_contenteditable_false.html"]
+
 ["test_keypress_event_with_alt_on_mac.html"]
 run-if = [
   "os == 'mac'",
@@ -101,6 +115,11 @@ run-if = [
   "os == 'mac'",
 ]
 support-files = ["!/gfx/layers/apz/test/mochitest/apz_test_utils.js"]
+
+["test_paragraph_selection_with_alt_arrow_on_mac.html"]
+run-if = [
+  "os == 'mac'",
+]
 
 ["test_picker_no_crash.html"]
 skip-if = [

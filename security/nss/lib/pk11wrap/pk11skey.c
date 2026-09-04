@@ -11,7 +11,6 @@
 
 #include "seccomon.h"
 #include "secmod.h"
-#include "nssilock.h"
 #include "secmodi.h"
 #include "secmodti.h"
 #include "pkcs11.h"
@@ -47,7 +46,7 @@ pk11_getKeyFromList(PK11SlotInfo *slot, PRBool needSession)
 {
     PK11SymKey *symKey = NULL;
 
-    PZ_Lock(slot->freeListLock);
+    PR_Lock(slot->freeListLock);
     /* own session list are symkeys with sessions that the symkey owns.
      * 'most' symkeys will own their own session. */
     if (needSession) {
@@ -66,7 +65,7 @@ pk11_getKeyFromList(PK11SlotInfo *slot, PRBool needSession)
             slot->keyCount--;
         }
     }
-    PZ_Unlock(slot->freeListLock);
+    PR_Unlock(slot->freeListLock);
     if (symKey) {
         symKey->next = NULL;
         if (!needSession) {
@@ -207,7 +206,7 @@ PK11_FreeSymKey(PK11SymKey *symKey)
             (*symKey->freeFunc)(symKey->userData);
         }
         slot = symKey->slot;
-        PZ_Lock(slot->freeListLock);
+        PR_Lock(slot->freeListLock);
         if (slot->keyCount < slot->maxKeyCount) {
             /*
              * freeSymkeysWithSessionHead contain a list of reusable
@@ -233,7 +232,7 @@ PK11_FreeSymKey(PK11SymKey *symKey)
             symKey->slot = NULL;
             freeit = PR_FALSE;
         }
-        PZ_Unlock(slot->freeListLock);
+        PR_Unlock(slot->freeListLock);
         if (freeit) {
             pk11_CloseSession(symKey->slot, symKey->session,
                               symKey->sessionOwner);
@@ -372,7 +371,10 @@ PK11_GetWrapKey(PK11SlotInfo *slot, int wrap, CK_MECHANISM_TYPE type,
     CK_OBJECT_HANDLE keyHandle;
 
     PK11_EnterSlotMonitor(slot);
-    if (slot->series != series ||
+    /* refKeys is a fixed-size array; bounds-check wrap to match
+     * PK11_SetWrapKey. */
+    if (wrap < 0 || (size_t)wrap >= PR_ARRAY_SIZE(slot->refKeys) ||
+        slot->series != series ||
         slot->refKeys[wrap] == CK_INVALID_HANDLE) {
         PK11_ExitSlotMonitor(slot);
         return NULL;
@@ -1678,7 +1680,9 @@ PK11_DeriveWithTemplate(PK11SymKey *baseKey, CK_MECHANISM_TYPE derive,
     PK11SymKey *symKey;
     PK11SymKey *newBaseKey = NULL;
     CK_BBOOL cktrue = CK_TRUE;
-    CK_OBJECT_CLASS keyClass = CKO_SECRET_KEY;
+    /* PKCS #11 Mechanisms v3.0 Sec 2.62.4: CKM_HKDF_DATA output is a CKO_DATA object */
+    PRBool cko_data = (derive == CKM_HKDF_DATA);
+    CK_OBJECT_CLASS keyClass = cko_data ? CKO_DATA : CKO_SECRET_KEY;
     CK_KEY_TYPE keyType = CKK_GENERIC_SECRET;
     CK_ULONG valueLen = 0;
     CK_MECHANISM mechanism;
@@ -1715,7 +1719,8 @@ PK11_DeriveWithTemplate(PK11SymKey *baseKey, CK_MECHANISM_TYPE derive,
         PK11_SETATTRS(attrs, CKA_CLASS, &keyClass, sizeof keyClass);
         attrs++;
     }
-    if (!pk11_FindAttrInTemplate(keyTemplate, numAttrs, CKA_KEY_TYPE)) {
+    /* PKCS #11 v3.0 Sec 4.5.2: Adding CKA_KEY_TYPE to CKO_DATA is invalid */
+    if (!pk11_FindAttrInTemplate(keyTemplate, numAttrs, CKA_KEY_TYPE) && !cko_data) {
         keyType = PK11_GetKeyType(target, keySize);
         PK11_SETATTRS(attrs, CKA_KEY_TYPE, &keyType, sizeof keyType);
         attrs++;
@@ -1726,7 +1731,9 @@ PK11_DeriveWithTemplate(PK11SymKey *baseKey, CK_MECHANISM_TYPE derive,
         PK11_SETATTRS(attrs, CKA_VALUE_LEN, &valueLen, sizeof valueLen);
         attrs++;
     }
-    if ((operation != CKA_FLAGS_ONLY) &&
+    /* PKCS #11 v3.0 Sec 4.5.2: CKO_DATA objects do not support
+     * cryptographic operation flags */
+    if ((operation != CKA_FLAGS_ONLY) && !cko_data &&
         !pk11_FindAttrInTemplate(keyTemplate, numAttrs, operation)) {
         PK11_SETATTRS(attrs, operation, &cktrue, sizeof cktrue);
         attrs++;
@@ -1954,6 +1961,11 @@ pk11_ANSIX963Derive(PK11SymKey *sharedSecret,
         SharedInfoLen = 0;
     else
         SharedInfoLen = sharedData->len;
+
+    if (SharedInfoLen > PR_UINT32_MAX - 4) {
+        PORT_SetError(SEC_ERROR_INVALID_ARGS);
+        return NULL;
+    }
 
     bufferLen = SharedInfoLen + 4;
 
@@ -2624,9 +2636,16 @@ pk11_HandUnwrap(PK11SlotInfo *slot, CK_OBJECT_HANDLE wrappingKey,
         templateCount--;
     }
 
+    if (key_size != 0 && (CK_ULONG)key_size > inKey->len) {
+        PORT_SetError(PK11_MapError(CKR_UNWRAPPING_KEY_SIZE_RANGE));
+        if (crvp)
+            *crvp = CKR_UNWRAPPING_KEY_SIZE_RANGE;
+        return NULL;
+    }
+
     /* keys are almost always aligned, but if we get this far,
      * we've gone above and beyond anyway... */
-    outKey.data = (unsigned char *)PORT_Alloc(inKey->len);
+    outKey.data = (unsigned char *)PORT_ZAlloc(inKey->len);
     if (outKey.data == NULL) {
         PORT_SetError(SEC_ERROR_NO_MEMORY);
         if (crvp)

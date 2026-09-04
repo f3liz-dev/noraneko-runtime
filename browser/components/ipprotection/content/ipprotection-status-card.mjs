@@ -4,11 +4,19 @@
 
 import { MozLitElement } from "chrome://global/content/lit-utils.mjs";
 import { html } from "chrome://global/content/vendor/lit.all.mjs";
+import { countryName } from "chrome://browser/content/ipprotection/ipprotection-utils.mjs";
 
 // eslint-disable-next-line import/no-unassigned-import
 import "chrome://global/content/elements/moz-toggle.mjs";
 // eslint-disable-next-line import/no-unassigned-import
 import "chrome://browser/content/ipprotection/bandwidth-usage.mjs";
+
+const lazy = {};
+
+ChromeUtils.defineESModuleGetters(lazy, {
+  IPProtectionServerlist:
+    "moz-src:///toolkit/components/ipprotection/IPProtectionServerlist.sys.mjs",
+});
 
 /**
  * Custom element that implements a status card for IP protection.
@@ -20,6 +28,7 @@ export default class IPProtectionStatusCard extends MozLitElement {
   static queries = {
     statusBoxEl: "ipprotection-status-box",
     actionButtonEl: 'moz-button[slot="action"]',
+    locationButtonEl: 'moz-button[slot="location-action"]',
   };
 
   static shadowRootOptions = {
@@ -34,29 +43,16 @@ export default class IPProtectionStatusCard extends MozLitElement {
     bandwidthUsage: { type: Object },
     hasExclusion: { type: Boolean },
     isActivating: { type: Boolean },
+    showLocationButtonBadge: { type: Boolean },
   };
 
-  constructor() {
-    super();
-
-    this.keyListener = this.#keyListener.bind(this);
-  }
-
-  connectedCallback() {
-    super.connectedCallback();
-    this.addEventListener("keydown", this.keyListener, { capture: true });
-  }
-
-  disconnectedCallback() {
-    super.disconnectedCallback();
-    this.removeEventListener("keydown", this.keyListener, { capture: true });
-  }
+  #actionButtonFocused = false;
 
   handleButtonClick() {
-    const type =
-      this.isActivating || this.protectionEnabled
-        ? this.TOGGLE_OFF_EVENT
-        : this.TOGGLE_ON_EVENT;
+    this.#actionButtonFocused = true;
+    const type = this.protectionEnabled
+      ? this.TOGGLE_OFF_EVENT
+      : this.TOGGLE_ON_EVENT;
     this.dispatchEvent(
       new CustomEvent(type, {
         bubbles: true,
@@ -65,32 +61,41 @@ export default class IPProtectionStatusCard extends MozLitElement {
     );
   }
 
-  focus() {
-    const button = this.shadowRoot.querySelector(`moz-button[slot="action"]`);
-    button?.focus();
+  handleLocationButtonClick(e) {
+    this.dispatchEvent(
+      new CustomEvent("IPProtection:UserShowLocations", {
+        bubbles: true,
+        composed: true,
+        detail: {
+          keyboardActivated: e.detail === 0,
+          locationButton: this.locationButtonEl,
+        },
+      })
+    );
   }
 
-  #keyListener(event) {
-    let keyCode = event.code;
-    switch (keyCode) {
-      case "ArrowUp":
-      // Intentional fall-through
-      case "ArrowDown": {
-        event.stopPropagation();
-        event.preventDefault();
+  updated(changedProperties) {
+    super.updated(changedProperties);
 
-        let direction =
-          keyCode == "ArrowDown"
-            ? Services.focus.MOVEFOCUS_FORWARD
-            : Services.focus.MOVEFOCUS_BACKWARD;
-        Services.focus.moveFocus(
-          window,
-          null,
-          direction,
-          Services.focus.FLAG_BYKEY
-        );
-        break;
-      }
+    let stateChanged =
+      changedProperties.has("protectionEnabled") ||
+      changedProperties.has("isActivating") ||
+      changedProperties.has("hasExclusion");
+    if (!this.#actionButtonFocused || !stateChanged || this.isActivating) {
+      return;
+    }
+
+    this.#actionButtonFocused = false;
+
+    this.actionButtonEl.updateComplete.then(() => {
+      this.focus();
+    });
+  }
+
+  focus() {
+    const button = this.shadowRoot.querySelector(`moz-button[slot="action"]`);
+    if (!button?.disabled) {
+      button?.focus();
     }
   }
 
@@ -105,15 +110,49 @@ export default class IPProtectionStatusCard extends MozLitElement {
       : null;
   }
 
-  locationTemplate() {
-    return this.location
-      ? html` <img
-            slot="location-icon"
+  locationSelectionButtonTemplate() {
+    let countryObject;
+    if (this.location) {
+      countryObject = lazy.IPProtectionServerlist.getLocation(this.location);
+    }
+
+    if (!this.isPremium && countryObject?.country.locked) {
+      this.location = "REC";
+    }
+
+    const country =
+      this.location && this.location !== "REC"
+        ? countryName(this.location)
+        : null;
+
+    return html`
+      <moz-button
+        class="toolbarbutton"
+        slot="location-action"
+        ?disabled=${this.isActivating}
+        closemenu="none"
+        @click=${this.handleLocationButtonClick}
+      >
+        <span class="location-btn-content">
+          ${this.showLocationButtonBadge
+            ? html`<moz-badge type="new"></moz-badge>`
+            : null}
+          ${country
+            ? html`<span
+                data-l10n-id="ipprotection-location-country-button"
+                data-l10n-args=${JSON.stringify({ country })}
+              ></span>`
+            : html`<span
+                data-l10n-id="ipprotection-recommended-location-button"
+              ></span>`}
+          <img
+            class="arrow-icon"
+            src="chrome://global/skin/icons/arrow-right.svg"
             role="presentation"
-            src="chrome://browser/skin/notification-icons/geo.svg"
           />
-          <span slot="location">${this.location.name}</span>`
-      : null;
+        </span>
+      </moz-button>
+    `;
   }
 
   statusTemplate({
@@ -125,73 +164,77 @@ export default class IPProtectionStatusCard extends MozLitElement {
     iconSrc = null,
   }) {
     return html`
+      <link
+        rel="stylesheet"
+        href="chrome://browser/content/ipprotection/ipprotection-status-card.css"
+      />
       <ipprotection-status-box .headerL10nId=${headerL10nId} .type=${type}>
         ${iconSrc
           ? html`<img
-              slot="icon"
+              slot="image"
               role="presentation"
               class="icon"
               src=${iconSrc}
             />`
           : null}
-        ${this.bandwidthUsageTemplate()} ${this.locationTemplate()}
+        ${this.bandwidthUsageTemplate()}
         <moz-button
           slot="action"
           type=${buttonType}
           data-l10n-id=${buttonL10nId}
           @click=${this.handleButtonClick}
           ?disabled=${buttonDisabled}
+          closemenu="none"
         ></moz-button>
+
+        ${this.locationSelectionButtonTemplate()}
+        ${!this.location || this.location === "REC"
+          ? html`<div
+              slot="content"
+              class="location-message"
+              data-l10n-id="ipprotection-recommended-location-description"
+            ></div>`
+          : null}
       </ipprotection-status-box>
     `;
   }
 
   render() {
+    let type = "disconnected";
+    let headerL10nId = "ipprotection-connection-status-disconnected-1";
+    let buttonL10nId = "ipprotection-button-turn-vpn-on";
+    let buttonDisabled = false;
+    let iconSrc = null;
+
     if (this.isActivating) {
-      return html`
-        ${this.statusTemplate({
-          type: "connecting",
-          headerL10nId: "ipprotection-connection-status-connecting",
-          buttonL10nId: "ipprotection-button-connecting",
-          iconSrc: "chrome://global/skin/icons/loading.svg",
-          buttonType: "primary",
-          buttonDisabled: false,
-        })}
-      `;
+      type = "connecting";
+      headerL10nId = "ipprotection-connection-status-connecting-1";
+      buttonL10nId = "ipprotection-button-connecting";
+      iconSrc =
+        "chrome://browser/content/ipprotection/assets/states/ipprotection-loading.svg";
+      buttonDisabled = true;
+    } else if (this.hasExclusion && this.protectionEnabled) {
+      type = "excluded";
+      headerL10nId = "ipprotection-connection-status-excluded-1";
+      buttonL10nId = "ipprotection-button-turn-vpn-off-excluded-site";
+      iconSrc =
+        "chrome://browser/content/ipprotection/assets/states/ipprotection-excluded.svg";
+    } else if (this.protectionEnabled) {
+      type = "connected";
+      headerL10nId = "ipprotection-connection-status-connected-1";
+      buttonL10nId = "ipprotection-button-turn-vpn-off";
+      iconSrc =
+        "chrome://browser/content/ipprotection/assets/states/ipprotection-on.svg";
     }
 
-    if (this.hasExclusion && this.protectionEnabled) {
-      return html`
-        ${this.statusTemplate({
-          type: "excluded",
-          headerL10nId: "ipprotection-connection-status-excluded",
-          buttonL10nId: "ipprotection-button-turn-vpn-off-excluded-site",
-          iconSrc:
-            "chrome://browser/content/ipprotection/assets/states/ipprotection-excluded.svg",
-        })}
-      `;
-    }
-
-    if (this.protectionEnabled) {
-      return html`
-        ${this.statusTemplate({
-          type: "connected",
-          headerL10nId: "ipprotection-connection-status-connected",
-          buttonL10nId: "ipprotection-button-turn-vpn-off",
-          iconSrc:
-            "chrome://browser/content/ipprotection/assets/states/ipprotection-on.svg",
-        })}
-      `;
-    }
-
-    return html`
-      ${this.statusTemplate({
-        type: "disconnected",
-        headerL10nId: "ipprotection-connection-status-disconnected",
-        buttonL10nId: "ipprotection-button-turn-vpn-on",
-        buttonType: "primary",
-      })}
-    `;
+    return this.statusTemplate({
+      type,
+      headerL10nId,
+      buttonL10nId,
+      buttonType: "primary",
+      buttonDisabled,
+      iconSrc,
+    });
   }
 }
 

@@ -947,10 +947,135 @@ export let ProfileDataUpgrader = {
       }
     }
 
-    // Updating from 161 to 165 to trigger re-migrations of the Rusts store.
-    if (existingDataVersion < 165) {
+    if (existingDataVersion < 166) {
+      // Bug 1978550: Migrate Local Network Access permissions from old
+      // "localhost" type to new "loopback-network" type.
+      try {
+        Services.perms.getAllByTypes(["localhost"]).forEach(permission => {
+          Services.perms.removePermission(permission);
+          Services.perms.addFromPrincipal(
+            permission.principal,
+            "loopback-network",
+            permission.capability,
+            permission.expireType,
+            permission.expireTime
+          );
+        });
+      } catch (e) {
+        console.error("Error migrating localhost permission", e);
+      }
+
+      // Migrate permissions.default.localhost preference to
+      // permissions.default.loopback-network
+      try {
+        const oldValue = Services.prefs.getIntPref(
+          "permissions.default.localhost"
+        );
+        Services.prefs.setIntPref(
+          "permissions.default.loopback-network",
+          oldValue
+        );
+        Services.prefs.clearUserPref("permissions.default.localhost");
+      } catch (e) {}
+    }
+
+    if (existingDataVersion < 169) {
+      // Clear prefs removed by bug 2018089 and bug 2018516.
+      Services.prefs.clearUserPref("widget.macos.native-anchored-menulists");
+      Services.prefs.clearUserPref("widget.macos.native-anchored-select");
+    }
+
+    if (existingDataVersion < 172) {
+      if (Services.prefs.getBoolPref("browser.smartwindow.enabled", false)) {
+        Services.prefs.setBoolPref(
+          "places.semanticHistory.smartwindow.featureGate",
+          true
+        );
+      }
+    }
+
+    // The migration for 173 was applied in Nightly but was removed
+    // for causing failures Bug 2043185
+
+    if (existingDataVersion < 174) {
+      // Remove same-site (ABA) 3rdPartyFrameStorage permissions that were
+      // unnecessarily saved when a same-site-to-top iframe called
+      // requestStorageAccess().
+      for (let perm of Services.perms.getAllWithTypePrefix(
+        "3rdPartyFrameStorage^"
+      )) {
+        let typeSite = perm.type.substring("3rdPartyFrameStorage^".length);
+        try {
+          let originSite = Services.eTLD.getSite(perm.principal.URI);
+          if (typeSite === originSite) {
+            Services.perms.removePermission(perm);
+          }
+        } catch (e) {
+          continue;
+        }
+      }
+    }
+
+    // 170 and 171 were updated to 175 to retrigger the migrations of the Rusts store.
+    if (existingDataVersion < 175) {
       // Force all logins to be re-migrated to the rust store.
       Services.prefs.setBoolPref("signon.rustMirror.migrationNeeded", true);
+    }
+
+    if (existingDataVersion < 176) {
+      // Bug 1767271: cookie ALLOW permissions used to exempt sites from
+      // clear-on-shutdown. That exception is now its own permission type,
+      // persist-data-on-shutdown. Duplicate existing ALLOW exceptions over
+      // so users keep their shutdown protection after the split.
+      // Only migrate durable, user-set permissions. Anything that expires
+      // (session/time) or is re-applied from an enterprise policy on every
+      // startup (EXPIRE_POLICY) must not be persisted as a regular permission.
+      Services.perms.getAllByTypes(["cookie"]).forEach(p => {
+        if (p.expireType != Services.perms.EXPIRE_NEVER) {
+          return;
+        }
+        if (p.capability == Ci.nsICookiePermission.ACCESS_ALLOW) {
+          Services.perms.addFromPrincipal(
+            p.principal,
+            "persist-data-on-shutdown",
+            Ci.nsICookiePermission.ACCESS_ALLOW
+          );
+        }
+      });
+    }
+
+    if (
+      existingDataVersion < 177 &&
+      !Services.prefs.getBoolPref("sidebar.verticalTabs", false) &&
+      Services.prefs.getStringPref("sidebar.visibility", "") === "hide-sidebar"
+    ) {
+      // Bug 2047653: the legacy horizontal-tabs default was stored as
+      // "hide-sidebar", a value now reserved for vertical tabs. Horizontal tabs
+      // now have their own default value, "hide-on-close".
+      Services.prefs.setStringPref("sidebar.visibility", "hide-on-close");
+    }
+
+    if (existingDataVersion < 178) {
+      // The settings redesign promo has been removed.
+      Services.prefs.clearUserPref("browser.settings-redesign.promo.dismissed");
+    }
+
+    if (existingDataVersion < 179) {
+      // Bug 2058143: cookie banner handling has been removed. Drop the per-site
+      // exceptions it stored in content prefs. A null nsILoadContext clears
+      // both normal and private browsing data.
+      try {
+        let contentPrefs = Cc["@mozilla.org/content-pref/service;1"].getService(
+          Ci.nsIContentPrefService2
+        );
+        contentPrefs.removeByName("cookiebanner", null, null);
+        contentPrefs.removeByName("cookiebannerprivate", null, null);
+      } catch (e) {
+        console.error("Error removing cookie banner content prefs", e);
+      }
+
+      Services.prefs.clearUserBranch("cookiebanners.");
+      Services.prefs.clearUserBranch("browser.promo.cookiebanners.");
     }
 
     // Update the migration version.

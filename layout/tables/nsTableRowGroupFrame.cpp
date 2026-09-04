@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,13 +7,13 @@
 
 #include "mozilla/ComputedStyle.h"
 #include "mozilla/PresShell.h"
+#include "mozilla/ReflowInput.h"
 #include "mozilla/StaticPrefs_layout.h"
 #include "nsCOMPtr.h"
 #include "nsCSSFrameConstructor.h"
 #include "nsCSSRendering.h"
 #include "nsCellMap.h"  //table cell navigation
 #include "nsDisplayList.h"
-#include "nsGkAtoms.h"
 #include "nsHTMLParts.h"
 #include "nsIContent.h"
 #include "nsIFrame.h"
@@ -1513,8 +1512,7 @@ void nsTableRowGroupFrame::RemoveFrame(DestroyContext& aContext,
   ClearRowCursor();
 
   // XXX why are we doing the QI stuff?  There shouldn't be any non-rows here.
-  nsTableRowFrame* rowFrame = do_QueryFrame(aOldFrame);
-  if (rowFrame) {
+  if (nsTableRowFrame* rowFrame = do_QueryFrame(aOldFrame)) {
     nsTableFrame* tableFrame = GetTableFrame();
     // remove the rows from the table (and flag a rebalance)
     tableFrame->RemoveRows(*rowFrame, 1, true);
@@ -1523,7 +1521,7 @@ void nsTableRowGroupFrame::RemoveFrame(DestroyContext& aContext,
                                   NS_FRAME_HAS_DIRTY_CHILDREN);
     tableFrame->SetGeometryDirty();
   }
-  mFrames.DestroyFrame(aContext, aOldFrame);
+  nsContainerFrame::RemoveFrame(aContext, aListID, aOldFrame);
 }
 
 /* virtual */

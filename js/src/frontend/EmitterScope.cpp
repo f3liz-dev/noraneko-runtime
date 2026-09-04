@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -278,10 +276,10 @@ void EmitterScope::dump(BytecodeEmitter* bce) {
   fprintf(stdout, "EmitterScope [%s] %p\n", ScopeKindString(scope(bce).kind()),
           this);
 
-  for (NameLocationMap::Range r = nameCache_->all(); !r.empty(); r.popFront()) {
-    const NameLocation& l = r.front().value();
+  for (auto iter = nameCache_->iter(); !iter.done(); iter.next()) {
+    const NameLocation& l = iter.get().value();
 
-    auto atom = r.front().key();
+    auto atom = iter.get().key();
     UniqueChars bytes = bce->parserAtoms().toPrintableString(atom);
     if (!bytes) {
       ReportOutOfMemory(bce->fc);
@@ -335,7 +333,6 @@ void EmitterScope::dump(BytecodeEmitter* bce) {
   fprintf(stdout, "\n");
 }
 
-#ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
 bool EmitterScope::prepareForDisposableScopeBody(BytecodeEmitter* bce) {
   if (hasDisposables()) {
     if (!usingEmitter_->prepareForDisposableScopeBody(blockKind_)) {
@@ -370,15 +367,10 @@ bool EmitterScope::emitDisposableScopeBodyEnd(BytecodeEmitter* bce) {
 bool EmitterScope::emitModuleDisposableScopeBodyEnd(BytecodeEmitter* bce) {
   return emitDisposableScopeBodyEnd(bce);
 }
-#endif
 
 bool EmitterScope::enterLexical(BytecodeEmitter* bce, ScopeKind kind,
-                                LexicalScope::ParserData* bindings
-#ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
-                                ,
-                                BlockKind blockKind
-#endif
-) {
+                                LexicalScope::ParserData* bindings,
+                                BlockKind blockKind) {
   MOZ_ASSERT(kind != ScopeKind::NamedLambda &&
              kind != ScopeKind::StrictNamedLambda);
   MOZ_ASSERT(this == bce->innermostEmitterScopeNoCheck());
@@ -404,11 +396,9 @@ bool EmitterScope::enterLexical(BytecodeEmitter* bce, ScopeKind kind,
     if (!tdzCache->noteTDZCheck(bce, bi.name(), CheckTDZ)) {
       return false;
     }
-#ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
     if (bi.kind() == BindingKind::Using) {
       setHasDisposables(bce);
     }
-#endif
   }
 
   updateFrameFixedSlots(bce, bi);
@@ -444,7 +434,6 @@ bool EmitterScope::enterLexical(BytecodeEmitter* bce, ScopeKind kind,
     return false;
   }
 
-#ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
   MOZ_ASSERT_IF(blockKind_ != BlockKind::Other, kind == ScopeKind::Lexical);
   MOZ_ASSERT_IF(kind != ScopeKind::Lexical, blockKind_ == BlockKind::Other);
 
@@ -453,7 +442,6 @@ bool EmitterScope::enterLexical(BytecodeEmitter* bce, ScopeKind kind,
   if (!prepareForDisposableScopeBody(bce)) {
     return false;
   }
-#endif
 
   return checkEnvironmentChainLength(bce);
 }
@@ -907,11 +895,9 @@ bool EmitterScope::enterModule(BytecodeEmitter* bce,
         }
       }
 
-#ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
       if (bi.kind() == BindingKind::Using) {
         setHasDisposables(bce);
       }
-#endif
     }
 
     updateFrameFixedSlots(bce, bi);
@@ -993,13 +979,11 @@ bool EmitterScope::leave(BytecodeEmitter* bce, bool nonLocal) {
     case ScopeKind::FunctionLexical:
     case ScopeKind::ClassBody:
 
-#ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
       if (!nonLocal) {
         if (!emitDisposableScopeBodyEnd(bce)) {
           return false;
         }
       }
-#endif
 
       if (bce->sc->isFunctionBox() &&
           bce->sc->asFunctionBox()->needsClearSlotsOnExit()) {

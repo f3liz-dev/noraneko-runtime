@@ -1,7 +1,21 @@
 [DEFAULT]
+subsuite = "integration"
+tags = "os_integration"
 
 # Test for sendBeacon during pagehide on browser shutdown (bug 1931956)
 
 ["test_beacon_on_pagehide_shutdown.py"]
 
+["test_cache_encryption_flip_purge.py"]
+
 ["test_purge_http_cache_at_shutdown.py"]
+
+["test_ssl_token_cache_clearing_bugs.py"]
+
+["test_tls_token_resumption_after_restart.py"]
+support-files = [
+  "test-ca.pem",
+  "default-ee.pem",
+  "default-ee.key",
+  "test-int.pem",
+]

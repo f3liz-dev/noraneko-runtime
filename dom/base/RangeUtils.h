@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -99,7 +97,7 @@ class RangeUtils final {
    */
   template <TreeKind aKind = TreeKind::ShadowIncludingDOM,
             typename = std::enable_if_t<aKind == TreeKind::ShadowIncludingDOM ||
-                                        aKind == TreeKind::Flat>>
+                                        aKind == TreeKind::FlatForSelection>>
   static Maybe<bool> IsNodeContainedInRange(
       const nsINode& aNode, const AbstractRange* aAbstractRange);
 
@@ -110,7 +108,7 @@ class RangeUtils final {
    */
   template <TreeKind aKind = TreeKind::ShadowIncludingDOM,
             typename = std::enable_if_t<aKind == TreeKind::ShadowIncludingDOM ||
-                                        aKind == TreeKind::Flat>>
+                                        aKind == TreeKind::FlatForSelection>>
   static nsresult CompareNodeToRange(const nsINode* aNode,
                                      const AbstractRange* aAbstractRange,
                                      bool* aNodeIsBeforeRange,
@@ -119,7 +117,7 @@ class RangeUtils final {
   template <TreeKind aKind, typename SPT, typename SRT, typename EPT,
             typename ERT,
             typename = std::enable_if_t<aKind == TreeKind::ShadowIncludingDOM ||
-                                        aKind == TreeKind::Flat>>
+                                        aKind == TreeKind::FlatForSelection>>
   static nsresult CompareNodeToRangeBoundaries(
       const nsINode* aNode, const RangeBoundaryBase<SPT, SRT>& aStartBoundary,
       const RangeBoundaryBase<EPT, ERT>& aEndBoundary, bool* aNodeIsBeforeRange,

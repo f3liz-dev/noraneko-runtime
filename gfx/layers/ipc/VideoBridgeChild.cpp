@@ -1,17 +1,16 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "VideoBridgeChild.h"
-#include "VideoBridgeParent.h"
+
 #include "CompositorThread.h"
+#include "SynchronousTask.h"
+#include "VideoBridgeParent.h"
+#include "mozilla/StaticMutex.h"
 #include "mozilla/dom/ContentChild.h"
 #include "mozilla/ipc/Endpoint.h"
-#include "mozilla/StaticMutex.h"
 #include "transport/runnable_utils.h"
-#include "SynchronousTask.h"
 
 namespace mozilla {
 namespace layers {
@@ -59,7 +58,7 @@ VideoBridgeChild::VideoBridgeChild()
 
 VideoBridgeChild::~VideoBridgeChild() = default;
 
-VideoBridgeChild* VideoBridgeChild::GetSingleton() {
+RefPtr<VideoBridgeChild> VideoBridgeChild::GetSingleton() {
   StaticMutexAutoLock lock(sVideoBridgeLock);
   return sVideoBridge;
 }
@@ -145,30 +144,22 @@ bool VideoBridgeChild::DeallocShmem(ipc::Shmem& aShmem) {
   return result;
 }
 
-PTextureChild* VideoBridgeChild::AllocPTextureChild(
-    const SurfaceDescriptor&, ReadLockDescriptor&, const LayersBackend&,
-    const TextureFlags&, const dom::ContentParentId& aContentId,
-    const uint64_t& aSerial) {
-  MOZ_ASSERT(CanSend());
-  return TextureClient::CreateIPDLActor();
-}
-
-bool VideoBridgeChild::DeallocPTextureChild(PTextureChild* actor) {
-  return TextureClient::DestroyIPDLActor(actor);
-}
-
 void VideoBridgeChild::ActorDestroy(ActorDestroyReason aWhy) {
   mCanSend = false;
 }
 
-PTextureChild* VideoBridgeChild::CreateTexture(
+already_AddRefed<PTextureChild> VideoBridgeChild::CreateTexture(
     const SurfaceDescriptor& aSharedData, ReadLockDescriptor&& aReadLock,
     LayersBackend aLayersBackend, TextureFlags aFlags,
     const dom::ContentParentId& aContentId, uint64_t aSerial,
     wr::MaybeExternalImageId& aExternalImageId) {
   MOZ_ASSERT(CanSend());
-  return SendPTextureConstructor(aSharedData, std::move(aReadLock),
-                                 aLayersBackend, aFlags, aContentId, aSerial);
+  RefPtr actor = TextureClient::CreateIPDLActor();
+  if (!SendPTextureConstructor(actor, aSharedData, std::move(aReadLock),
+                               aLayersBackend, aFlags, aContentId, aSerial)) {
+    return nullptr;
+  }
+  return actor.forget();
 }
 
 bool VideoBridgeChild::IsSameProcess() const {

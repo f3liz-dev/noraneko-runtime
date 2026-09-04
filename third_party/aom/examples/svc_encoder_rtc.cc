@@ -13,13 +13,13 @@
 //  encoding scheme for RTC video applications.
 
 #include <assert.h>
-#include <inttypes.h>
 #include <limits.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
+#include <cinttypes>
 #include <memory>
 
 #include "config/aom_config.h"
@@ -2069,7 +2069,7 @@ int main(int argc, const char **argv) {
   aom_codec_control(&codec, AV1E_SET_TUNE_CONTENT, app_input.tune_content);
   if (app_input.tune_content == AOM_CONTENT_SCREEN) {
     aom_codec_control(&codec, AV1E_SET_ENABLE_PALETTE, 1);
-    // INTRABC is currently disabled for rt mode, as it's too slow.
+    // As default set intrabc to off.
     aom_codec_control(&codec, AV1E_SET_ENABLE_INTRABC, 0);
   }
 

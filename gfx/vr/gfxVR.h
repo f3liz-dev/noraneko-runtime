@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,14 +5,15 @@
 #ifndef GFX_VR_H
 #define GFX_VR_H
 
+#include <type_traits>
+
 #include "moz_external_vr.h"
-#include "nsTArray.h"
-#include "nsString.h"
-#include "nsCOMPtr.h"
-#include "mozilla/gfx/2D.h"
 #include "mozilla/TiedFields.h"
 #include "mozilla/TimeStamp.h"
-#include <type_traits>
+#include "mozilla/gfx/2D.h"
+#include "nsCOMPtr.h"
+#include "nsString.h"
+#include "nsTArray.h"
 
 namespace mozilla {
 namespace layers {

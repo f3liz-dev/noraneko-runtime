@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -12,10 +10,12 @@
 #include "mozilla/dom/WorkerPrivate.h"
 #include "mozilla/net/Cookie.h"
 #include "mozilla/net/CookieCommons.h"
+#include "nsContentUtils.h"
 #include "nsGlobalWindowInner.h"
 #include "nsICookie.h"
 #include "nsICookieNotification.h"
 #include "nsISerialEventTarget.h"
+#include "nsPIDOMWindowInlines.h"
 
 namespace mozilla::dom {
 
@@ -49,13 +49,20 @@ already_AddRefed<CookieStoreNotifier> CookieStoreNotifier::Create(
     return nullptr;
   }
 
+  nsCString host;
+  if (NS_WARN_IF(NS_FAILED(
+          nsContentUtils::GetHostOrIPv6WithBrackets(principal, host))) ||
+      host.IsEmpty()) {
+    return nullptr;
+  }
+
   nsCOMPtr<nsIObserverService> os = mozilla::services::GetObserverService();
   if (NS_WARN_IF(!os)) {
     return nullptr;
   }
 
   RefPtr<CookieStoreNotifier> notifier = new CookieStoreNotifier(
-      aCookieStore, baseDomain, principal->OriginAttributesRef());
+      aCookieStore, baseDomain, host, principal->OriginAttributesRef());
 
   nsresult rv =
       os->AddObserver(notifier,
@@ -70,9 +77,10 @@ already_AddRefed<CookieStoreNotifier> CookieStoreNotifier::Create(
 
 CookieStoreNotifier::CookieStoreNotifier(
     CookieStore* aCookieStore, const nsACString& aBaseDomain,
-    const OriginAttributes& aOriginAttributes)
+    const nsACString& aHost, const OriginAttributes& aOriginAttributes)
     : mCookieStore(aCookieStore),
       mBaseDomain(aBaseDomain),
+      mHost(aHost),
       mOriginAttributes(aOriginAttributes) {
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(aCookieStore);
@@ -131,6 +139,10 @@ CookieStoreNotifier::Observe(nsISupports* aSubject, const char* aTopic,
     return NS_OK;
   }
 
+  if (!net::CookieCommons::DomainMatches(net::Cookie::Cast(cookie), mHost)) {
+    return NS_OK;
+  }
+
   bool isHttpOnly;
   rv = cookie->GetIsHttpOnly(&isHttpOnly);
   if (NS_WARN_IF(NS_FAILED(rv))) {
@@ -151,7 +163,7 @@ CookieStoreNotifier::Observe(nsISupports* aSubject, const char* aTopic,
   bool deletedEvent = action == nsICookieNotification::COOKIE_DELETED;
 
   GetCurrentSerialEventTarget()->Dispatch(NS_NewRunnableFunction(
-      __func__, [self = RefPtr(this), item, deletedEvent] {
+      __func__, [self = RefPtr(this), item = std::move(item), deletedEvent] {
         self->DispatchEvent(item, deletedEvent);
       }));
 
@@ -197,10 +209,17 @@ void CookieStoreNotifier::DispatchEvent(const CookieListItem& aItem,
 void CookieStoreNotifier::FireDelayedDOMEvents() {
   MOZ_ASSERT(NS_IsMainThread());
 
+  RefPtr<CookieStoreNotifier> kungFuDeathGrip(this);
+
   nsTArray<RefPtr<Event>> delayedDOMEvents;
   delayedDOMEvents.SwapElements(mDelayedDOMEvents);
 
   for (Event* event : delayedDOMEvents) {
+    // mCookieStore is a raw pointer cleared by Disentangle().
+    if (!mCookieStore) {
+      break;
+    }
+
     mCookieStore->DispatchEvent(*event);
   }
 }

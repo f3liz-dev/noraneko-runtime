@@ -13,6 +13,8 @@ ChromeUtils.defineESModuleGetters(lazy, {
     "resource://gre/modules/components-utils/ClientEnvironment.sys.mjs",
   ClientID: "resource://gre/modules/ClientID.sys.mjs",
   TelemetrySession: "resource://gre/modules/TelemetrySession.sys.mjs",
+  normalizeChatLog:
+    "moz-src:///browser/components/aiwindow/ui/modules/ChatUtils.sys.mjs",
 });
 
 ChromeUtils.defineLazyGetter(lazy, "telemetryClientId", () =>
@@ -135,10 +137,12 @@ export class AboutWelcomeTelemetry {
         }
       }
       if (typeof ping.event_context === "object") {
-        pingKey = "microsurvey";
         ping.write_in_microsurvey =
-          ping.event_context.writeInMicrosurvey ?? false;
-        delete ping.event_context.writeInMicrosurvey;
+          ping.event_context.write_in_microsurvey ?? false;
+        if (ping.write_in_microsurvey) {
+          pingKey = "microsurvey";
+        }
+        delete ping.event_context.write_in_microsurvey;
       }
     }
     if (ping.write_in_microsurvey) {
@@ -209,13 +213,23 @@ export class AboutWelcomeTelemetry {
     if (event_context?.screen_family) {
       Glean[pingKey].eventScreenFamily.set(event_context.screen_family);
     }
-    // Do not record this metric in messagingSystem, only microsurvey
+    // Do not record these metrics in messagingSystem, only microsurvey
     if (event_context?.value && writeInMicrosurvey) {
       Glean.microsurvey.eventInputValue.set(event_context.value);
     }
     // Delete the value in event_context, because it should only be recorded in
     // the dedicated metric above, in the microsurvey ping.
     delete event_context?.value;
+    if (event_context?.smart_window_user_feedback_data && writeInMicrosurvey) {
+      const { chat, ...userFeedbackData } =
+        event_context.smart_window_user_feedback_data;
+      Glean.microsurveySmartWindow.userFeedbackData.set(userFeedbackData);
+      const normalizedChat = lazy.normalizeChatLog(chat);
+      if (normalizedChat) {
+        Glean.microsurveySmartWindow.chat.set(normalizedChat);
+      }
+    }
+    delete event_context?.smart_window_user_feedback_data;
     // Screen_index was being coerced into a boolean value
     // which resulted in 0 (first screen index) being ignored.
     if (Number.isInteger(event_context?.screen_index)) {
@@ -294,6 +308,7 @@ export class AboutWelcomeTelemetry {
       }
       Glean.microsurvey.appDisplayVersion.set(version);
       Glean.microsurvey.appChannel.set(channel);
+      Glean.microsurvey.appBuildId.set(Services.appinfo.appBuildID);
     }
 
     // With all the metrics set, now it's time to submit this ping.

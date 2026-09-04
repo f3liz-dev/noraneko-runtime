@@ -12,10 +12,9 @@
 
 #include <string>
 
+#include "absl/strings/str_cat.h"
 #include "api/rtc_error.h"
 #include "test/gtest.h"
-
-using webrtc::RTCErrorType;
 
 namespace webrtc {
 
@@ -57,6 +56,12 @@ TEST(IceParameters, FailedParseBadUfragChar) {
 TEST(IceParameters, FailedParseBadPwdChar) {
   auto result = IceParameters::Parse("ufrag", "22+characters+long+pwd\r\n");
   EXPECT_EQ(RTCErrorType::SYNTAX_ERROR, result.error().type());
+}
+
+TEST(IceRole, Stringify) {
+  EXPECT_EQ(absl::StrCat(ICEROLE_CONTROLLING), "ICEROLE_CONTROLLING");
+  EXPECT_EQ(absl::StrCat(ICEROLE_CONTROLLED), "ICEROLE_CONTROLLED");
+  EXPECT_EQ(absl::StrCat(ICEROLE_UNKNOWN), "ICEROLE_UNKNOWN");
 }
 
 }  // namespace webrtc

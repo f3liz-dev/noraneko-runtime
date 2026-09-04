@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -23,6 +21,7 @@
 #include "jsapi.h"
 #include "jstypes.h"
 
+#include "builtin/ModuleObject.h"
 #include "gc/PublicIterators.h"
 #include "jit/IonScript.h"  // IonBlockCounts
 #include "js/CharacterEncoding.h"
@@ -31,6 +30,7 @@
 #include "js/experimental/PCCountProfiling.h"  // JS::{Start,Stop}PCCountProfiling, JS::PurgePCCounts, JS::GetPCCountScript{Count,Summary,Contents}
 #include "js/friend/DumpFunctions.h"           // js::DumpPC, js::DumpScript
 #include "js/friend/ErrorMessages.h"           // js::GetErrorMessage, JSMSG_*
+#include "js/friend/StackLimits.h"             // js::AutoCheckRecursionLimit
 #include "js/Printer.h"
 #include "js/Printf.h"
 #include "js/Symbol.h"
@@ -1664,6 +1664,13 @@ bool ExpressionDecompiler::decompilePCForStackOperand(jsbytecode* pc, int i) {
 bool ExpressionDecompiler::decompilePC(jsbytecode* pc, uint8_t defIndex) {
   MOZ_ASSERT(script->containsPC(pc));
 
+  // The decompiler is invoked from error-reporting code. To avoid reporting a
+  // nested over-recursion error we fall back to the generic placeholder.
+  AutoCheckRecursionLimit recursion(cx);
+  if (!recursion.checkDontReport(cx)) {
+    return write("(intermediate value)");
+  }
+
   JSOp op = (JSOp)*pc;
 
   if (const char* token = CodeToken[uint8_t(op)]) {
@@ -1886,12 +1893,9 @@ bool ExpressionDecompiler::decompilePC(jsbytecode* pc, uint8_t defIndex) {
              write("(...))");
 
     case JSOp::DynamicImport:
-      return write("import(...)");
-
-#ifdef ENABLE_SOURCE_PHASE_IMPORTS
-    case JSOp::DynamicImportSource:
-      return write("import.source(...)");
-#endif
+      return write(GET_UINT8(pc) == uint8_t(ImportPhase::Source)
+                       ? "import.source(...)"
+                       : "import(...)");
 
     case JSOp::Typeof:
     case JSOp::TypeofExpr:
@@ -2145,7 +2149,6 @@ bool ExpressionDecompiler::decompilePC(jsbytecode* pc, uint8_t defIndex) {
         return write("HasOwn(") && decompilePCForStackOperand(pc, -2) &&
                write(", ") && decompilePCForStackOperand(pc, -1) && write(")");
 
-#  ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
       case JSOp::AddDisposable:
         return decompilePCForStackOperand(pc, -1);
 
@@ -2155,7 +2158,6 @@ bool ExpressionDecompiler::decompilePC(jsbytecode* pc, uint8_t defIndex) {
         }
         MOZ_ASSERT(defIndex == 1);
         return write("COUNT");
-#  endif
 
       default:
         break;
@@ -2971,7 +2973,7 @@ static bool GenerateLcovInfo(JSContext* cx, JS::Realm* realm,
       continue;
     }
 
-    if (!coverage::CollectScriptCoverage(script, false)) {
+    if (!coverage::CollectScriptCoverage(script)) {
       ReportOutOfMemory(cx);
       return false;
     }
@@ -3002,7 +3004,8 @@ static bool GenerateLcovInfo(JSContext* cx, JS::Realm* realm,
       }
       fun = &obj->as<JSFunction>();
 
-      // Ignore asm.js functions
+      // getOrCreateScript requires an interpreted function. Skip native or
+      // partially-initialized functions seen while walking gcthings directly.
       if (!fun->isInterpreted()) {
         continue;
       }

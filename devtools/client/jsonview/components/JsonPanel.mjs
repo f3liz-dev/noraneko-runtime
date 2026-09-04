@@ -13,15 +13,18 @@ import { createFactories } from "resource://devtools/client/shared/react-utils.m
 import TreeViewClass from "resource://devtools/client/shared/components/tree/TreeView.mjs";
 import { BucketProperty } from "resource://devtools/client/shared/components/tree/ObjectProvider.mjs";
 import JsonToolbarClass from "resource://devtools/client/jsonview/components/JsonToolbar.mjs";
+import JsonBreadcrumbClass from "resource://devtools/client/jsonview/components/JsonBreadcrumb.mjs";
 
 import {
   JSON_NUMBER,
   MODE,
 } from "resource://devtools/client/shared/components/reps/reps/constants.mjs";
 import { Rep } from "resource://devtools/client/shared/components/reps/reps/rep.mjs";
+import { JsonlLineError } from "resource://devtools/client/jsonview/jsonl-utils.mjs";
 
 const TreeView = createFactory(TreeViewClass);
 const { JsonToolbar } = createFactories(JsonToolbarClass);
+const { JsonBreadcrumb } = createFactories(JsonBreadcrumbClass);
 const { div } = dom;
 
 const MAX_STRING_LENGTH = 250;
@@ -52,6 +55,30 @@ class JsonPanel extends Component {
     };
   }
 
+  /**
+   * Splits a path string by unescaped forward slashes (`/`).
+   *
+   * Escaped slashes (`\/`) are preserved as literal `/` characters
+   * in the resulting segments. Escape characters (`\`) are removed.
+   *
+   * Examples:
+   *   splitPath("a/b/c")        → ["a", "b", "c"]
+   *   splitPath("a\\/b/c")      → ["a/b", "c"]
+   *   splitPath("/a/b/")        → ["a", "b"]
+   *
+   * @param {string} path
+   *   The input path string. Forward slashes can be escaped using `\`.
+   *
+   * @returns {string[]}
+   *   An array of non-empty path segments with escape characters removed.
+   */
+  static splitPath(path) {
+    return path
+      .split(/(?<!\\)\//)
+      .map(segment => segment.replace(/\\(.)/g, "$1"))
+      .filter(_s => _s.length);
+  }
+
   constructor(props) {
     super(props);
     this.state = {};
@@ -59,6 +86,8 @@ class JsonPanel extends Component {
     this.onFilter = this.onFilter.bind(this);
     this.renderValue = this.renderValue.bind(this);
     this.renderTree = this.renderTree.bind(this);
+    this.onRowSelected = this.onRowSelected.bind(this);
+    this.updateBreadcrumbs = this.updateBreadcrumbs.bind(this);
   }
 
   componentDidMount() {
@@ -72,6 +101,39 @@ class JsonPanel extends Component {
 
   onKeyPress() {
     // XXX shortcut for focusing the Filter field (see Bug 1178771).
+  }
+
+  onRowSelected(selectedRowPath) {
+    if (!selectedRowPath || typeof selectedRowPath !== "string") {
+      return;
+    }
+    const rowPathParts = JsonPanel.splitPath(selectedRowPath);
+    this.updateBreadcrumbs(rowPathParts);
+  }
+
+  /**
+   * @param {string[]} rowPathParts
+   */
+  updateBreadcrumbs(rowPathParts) {
+    let jsonData = this.props.data;
+    const breadcrumbs = [];
+
+    for (let i = 0; i < rowPathParts.length; i++) {
+      if (typeof jsonData !== "object") {
+        break;
+      }
+      const key = rowPathParts[i];
+      // Skip bucket range segments like "[0…99]"
+      if (jsonData[key] === undefined && Array.isArray(jsonData)) {
+        continue;
+      }
+      jsonData = jsonData[key];
+      breadcrumbs.push({ type: getJsonValueType(jsonData), text: key });
+    }
+
+    if (breadcrumbs.length) {
+      this.setState({ breadcrumbs });
+    }
   }
 
   onFilter(object) {
@@ -103,6 +165,13 @@ class JsonPanel extends Component {
     // Hide value for bucket nodes (they show ranges like [0…99])
     if (member.type === "bucket") {
       return null;
+    }
+
+    if (member.value instanceof JsonlLineError) {
+      return div(
+        { className: "jsonlLineError" },
+        `${member.value.message}: ${member.value.raw}`
+      );
     }
 
     // Hide object summary when non-empty object is expanded (bug 1244912).
@@ -140,6 +209,7 @@ class JsonPanel extends Component {
       renderValue: this.renderValue,
       expandedNodes: this.props.expandedNodes,
       maxStringLength: MAX_STRING_LENGTH,
+      onRowSelected: this.onRowSelected,
     });
   }
 
@@ -181,9 +251,34 @@ class JsonPanel extends Component {
           tabIndex: 0,
         },
         content
-      )
+      ),
+      JsonBreadcrumb({
+        items: this.state.breadcrumbs,
+      })
     );
   }
+}
+
+// Helpers
+
+/**
+ * Determines the type of a given value.
+ * Returns a string representing the type of the input value.
+ *
+ * @param {*} value - The value whose type is to be determined.
+ * @returns {string} The type of the input value as a string.
+ * `array`, `null`, `object`, `number`, `boolean`, `string`
+ */
+function getJsonValueType(value) {
+  if (value?.type === JSON_NUMBER) {
+    return "number";
+  }
+  if (Array.isArray(value)) {
+    return "array";
+  } else if (value === null) {
+    return "null";
+  }
+  return typeof value;
 }
 
 export default { JsonPanel };

@@ -3,11 +3,9 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 plugins {
+    id 'com.android.library'
     alias(libs.plugins.dependency.analysis)
 }
-
-apply plugin: 'com.android.library'
-apply plugin: 'kotlin-android'
 
 android {
     namespace = 'mozilla.components.feature.intent'
@@ -27,6 +25,7 @@ dependencies {
 
     testImplementation libs.androidx.browser
     testImplementation libs.androidx.test.junit
+    testImplementation libs.kotlin.test
     testImplementation libs.kotlinx.coroutines
     testImplementation libs.kotlinx.coroutines.test
     testImplementation libs.robolectric

@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -107,12 +105,12 @@ static PlainYearMonthObject* CreateTemporalYearMonth(
 
   // Step 4.
   auto packedDate = PackedDate::pack(isoDate);
-  object->initFixedSlot(PlainYearMonthObject::PACKED_DATE_SLOT,
-                        PrivateUint32Value(packedDate.value));
+  object->initFixedSlotTyped(PlainYearMonthObject::PACKED_DATE_SLOT,
+                             PrivateUint32Value(packedDate.value));
 
   // Step 5.
-  object->initFixedSlot(PlainYearMonthObject::CALENDAR_SLOT,
-                        calendar.toSlotValue());
+  object->initFixedSlotTyped(PlainYearMonthObject::CALENDAR_SLOT,
+                             calendar.toSlotValue());
 
   // Step 6.
   return object;
@@ -136,12 +134,12 @@ PlainYearMonthObject* js::temporal::CreateTemporalYearMonth(
 
   // Step 4.
   auto packedDate = PackedDate::pack(yearMonth);
-  object->initFixedSlot(PlainYearMonthObject::PACKED_DATE_SLOT,
-                        PrivateUint32Value(packedDate.value));
+  object->initFixedSlotTyped(PlainYearMonthObject::PACKED_DATE_SLOT,
+                             PrivateUint32Value(packedDate.value));
 
   // Step 5.
-  object->initFixedSlot(PlainYearMonthObject::CALENDAR_SLOT,
-                        yearMonth.calendar().toSlotValue());
+  object->initFixedSlotTyped(PlainYearMonthObject::CALENDAR_SLOT,
+                             yearMonth.calendar().toSlotValue());
 
   // Step 6.
   return object;

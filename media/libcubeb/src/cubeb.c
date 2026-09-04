@@ -7,6 +7,7 @@
 #undef NDEBUG
 #include "cubeb/cubeb.h"
 #include "cubeb-internal.h"
+#include "cubeb_mixer.h"
 #include <assert.h>
 #include <stddef.h>
 #include <stdlib.h>
@@ -97,7 +98,10 @@ validate_stream_params(cubeb_stream_params * input_stream_params,
     if (output_stream_params->rate < 1000 ||
         output_stream_params->rate > 768000 ||
         output_stream_params->channels < 1 ||
-        output_stream_params->channels > UINT8_MAX) {
+        output_stream_params->channels > UINT8_MAX ||
+        (output_stream_params->layout != CUBEB_LAYOUT_UNDEFINED &&
+         cubeb_channel_layout_nb_channels(output_stream_params->layout) !=
+             output_stream_params->channels)) {
       return CUBEB_ERROR_INVALID_FORMAT;
     }
   }
@@ -105,7 +109,10 @@ validate_stream_params(cubeb_stream_params * input_stream_params,
     if (input_stream_params->rate < 1000 ||
         input_stream_params->rate > 768000 ||
         input_stream_params->channels < 1 ||
-        input_stream_params->channels > UINT8_MAX) {
+        input_stream_params->channels > UINT8_MAX ||
+        (input_stream_params->layout != CUBEB_LAYOUT_UNDEFINED &&
+         cubeb_channel_layout_nb_channels(input_stream_params->layout) !=
+             input_stream_params->channels)) {
       return CUBEB_ERROR_INVALID_FORMAT;
     }
   }
@@ -214,55 +221,55 @@ cubeb_init(cubeb ** context, char const * context_name,
   }
 
   int (*default_init[])(cubeb **, char const *) = {
-    /*
-     * init_oneshot must be at the top to allow user
-     * to override all other choices
-     */
-    init_oneshot,
+      /*
+       * init_oneshot must be at the top to allow user
+       * to override all other choices
+       */
+      init_oneshot,
 #if defined(USE_PULSE_RUST)
-    pulse_rust_init,
+      pulse_rust_init,
 #endif
 #if defined(USE_PULSE)
-    pulse_init,
+      pulse_init,
 #endif
 #if defined(USE_JACK)
-    jack_init,
+      jack_init,
 #endif
 #if defined(USE_SNDIO)
-    sndio_init,
+      sndio_init,
 #endif
 #if defined(USE_ALSA)
-    alsa_init,
+      alsa_init,
 #endif
 #if defined(USE_OSS)
-    oss_init,
+      oss_init,
 #endif
 #if defined(USE_AUDIOUNIT_RUST)
-    audiounit_rust_init,
+      audiounit_rust_init,
 #endif
 #if defined(USE_AUDIOUNIT)
-    audiounit_init,
+      audiounit_init,
 #endif
 #if defined(USE_WASAPI)
-    wasapi_init,
+      wasapi_init,
 #endif
 #if defined(USE_WINMM)
-    winmm_init,
+      winmm_init,
 #endif
 #if defined(USE_SUN)
-    sun_init,
+      sun_init,
 #endif
 #if defined(USE_AAUDIO)
-    aaudio_init,
+      aaudio_init,
 #endif
 #if defined(USE_OPENSL)
-    opensl_init,
+      opensl_init,
 #endif
 #if defined(USE_AUDIOTRACK)
-    audiotrack_init,
+      audiotrack_init,
 #endif
 #if defined(USE_KAI)
-    kai_init,
+      kai_init,
 #endif
   };
   int i;
@@ -303,49 +310,49 @@ cubeb_get_backend_names()
 {
   static const char * const backend_names[] = {
 #if defined(USE_PULSE)
-    "pulse",
+      "pulse",
 #endif
 #if defined(USE_PULSE_RUST)
-    "pulse-rust",
+      "pulse-rust",
 #endif
 #if defined(USE_JACK)
-    "jack",
+      "jack",
 #endif
 #if defined(USE_ALSA)
-    "alsa",
+      "alsa",
 #endif
 #if defined(USE_AUDIOUNIT)
-    "audiounit",
+      "audiounit",
 #endif
 #if defined(USE_AUDIOUNIT_RUST)
-    "audiounit-rust",
+      "audiounit-rust",
 #endif
 #if defined(USE_WASAPI)
-    "wasapi",
+      "wasapi",
 #endif
 #if defined(USE_WINMM)
-    "winmm",
+      "winmm",
 #endif
 #if defined(USE_SNDIO)
-    "sndio",
+      "sndio",
 #endif
 #if defined(USE_SUN)
-    "sun",
+      "sun",
 #endif
 #if defined(USE_OPENSL)
-    "opensl",
+      "opensl",
 #endif
 #if defined(USE_OSS)
-    "oss",
+      "oss",
 #endif
 #if defined(USE_AAUDIO)
-    "aaudio",
+      "aaudio",
 #endif
 #if defined(USE_AUDIOTRACK)
-    "audiotrack",
+      "audiotrack",
 #endif
 #if defined(USE_KAI)
-    "kai",
+      "kai",
 #endif
   };
 

@@ -36,6 +36,18 @@ loader.lazyRequireGetter(
   true
 );
 
+const lazy = {};
+ChromeUtils.defineESModuleGetters(lazy, {
+  getAutocompleteDataForColorFunction:
+    "resource://devtools/client/shared/inplace-editor-utils/autocomplete-color-function.mjs",
+  getAutocompleteDataForAnchorFunction:
+    "resource://devtools/client/shared/inplace-editor-utils/autocomplete-anchor-function.mjs",
+  getAutocompleteDataForAnchorSizeFunction:
+    "resource://devtools/client/shared/inplace-editor-utils/autocomplete-anchor-size-function.mjs",
+  getAutocompleteDataForLinearGradientFunction:
+    "resource://devtools/client/shared/inplace-editor-utils/autocomplete-linear-gradient-function.mjs",
+});
+
 const HTML_NS = "http://www.w3.org/1999/xhtml";
 const CONTENT_TYPES = {
   PLAIN_TEXT: 0,
@@ -77,6 +89,47 @@ const GRID_COL_PROPERTY_NAMES = [
   "grid-column-start",
   "grid-column-end",
 ];
+const ACCEPT_ANCHOR_PROPERTY_NAMES = new Set([
+  // position-anchor directly accepts anchor names
+  "position-anchor",
+  // inset properties that accept an anchor()/anchor-size() function as a value
+  "top",
+  "left",
+  "bottom",
+  "right",
+  "inset",
+  "inset-block-start",
+  "inset-block-end",
+  "inset-block",
+  "inset-inline-start",
+  "inset-inline-end",
+  "inset-inline",
+  // sizing properties that accept the use of anchor-size()
+  "width",
+  "height",
+  "min-width",
+  "min-height",
+  "max-width",
+  "max-height",
+  "block-size",
+  "inline-size",
+  "min-block-size",
+  "min-inline-size",
+  "max-block-size",
+  "max-inline-size",
+  // margin properties that accept the use of anchor-size()
+  "margin",
+  "margin-bottom",
+  "margin-left",
+  "margin-right",
+  "margin-top",
+  "margin-block",
+  "margin-block-end",
+  "margin-block-start",
+  "margin-inline",
+  "margin-inline-end",
+  "margin-inline-start",
+]);
 
 /**
  * Helper to check if the provided key matches one of the expected keys.
@@ -342,9 +395,6 @@ class InplaceEditor extends EventEmitter {
     this.elt.style.display = "none";
     this.elt.parentNode.insertBefore(this.input, this.elt);
 
-    // After inserting the input to have all CSS styles applied, start autosizing.
-    this.#autosize();
-
     this.inputCharDimensions = this.#getInputCharDimensions();
     // Pull out character codes for advanceChars, listing the
     // characters that should trigger a blur.
@@ -405,20 +455,17 @@ class InplaceEditor extends EventEmitter {
       this.input.addEventListener("keyup", this.#onKeyup, eventListenerConfig);
     }
 
-    this.#updateSize();
-
     if (options.start) {
       options.start(this, event);
     }
 
-    this.#getGridNamesBeforeCompletion(options.getGridLineNames);
+    this.#populatePropertySpecificDataBeforeCompletion(options);
   }
   static CONTENT_TYPES = CONTENT_TYPES;
 
   #abortController;
   #advanceChars;
   #applied;
-  #measurement;
   #openPopupTimeout;
   #pressedKey;
   #preventSuggestions;
@@ -457,6 +504,11 @@ class InplaceEditor extends EventEmitter {
       this.input.style.padding = "0";
     }
 
+    this.input.style.setProperty("field-sizing", "content");
+    if (this.maxWidth) {
+      this.input.style.setProperty("max-width", `${this.maxWidth}px`);
+    }
+
     this.input.classList.add("styleinspector-propertyeditor");
     if (options.inputClass) {
       this.input.classList.add(options.inputClass);
@@ -487,7 +539,6 @@ class InplaceEditor extends EventEmitter {
     }
 
     this.#abortController.abort();
-    this.#stopAutosize();
 
     this.elt.style.display = this.originalDisplay;
 
@@ -507,105 +558,33 @@ class InplaceEditor extends EventEmitter {
   }
 
   /**
-   * Keeps the editor close to the size of its input string.  This is pretty
-   * crappy, suggestions for improvement welcome.
-   */
-  #autosize() {
-    // Create a hidden, absolutely-positioned span to measure the text
-    // in the input.  Boo.
-
-    // We can't just measure the original element because a) we don't
-    // change the underlying element's text ourselves (we leave that
-    // up to the client), and b) without tweaking the style of the
-    // original element, it might wrap differently or something.
-    this.#measurement = this.doc.createElementNS(
-      HTML_NS,
-      this.multiline ? "pre" : "span"
-    );
-    this.#measurement.className = "autosizer";
-    this.elt.parentNode.appendChild(this.#measurement);
-    const style = this.#measurement.style;
-    style.visibility = "hidden";
-    style.position = "absolute";
-    style.top = "0";
-    style.left = "0";
-
-    if (this.multiline) {
-      style.whiteSpace = "pre-wrap";
-      style.wordWrap = "break-word";
-      if (this.maxWidth) {
-        style.maxWidth = this.maxWidth + "px";
-        // Use position fixed to measure dimensions without any influence from
-        // the container of the editor.
-        style.position = "fixed";
-      }
-    }
-
-    copyAllStyles(this.input, this.#measurement);
-    this.#updateSize();
-  }
-
-  /**
-   * Clean up the mess created by _autosize().
-   */
-  #stopAutosize() {
-    if (!this.#measurement) {
-      return;
-    }
-    this.#measurement.remove();
-    this.#measurement = null;
-  }
-
-  /**
-   * Size the editor to fit its current contents.
-   */
-  #updateSize() {
-    // Replace spaces with non-breaking spaces.  Otherwise setting
-    // the span's textContent will collapse spaces and the measurement
-    // will be wrong.
-    let content = this.input.value;
-    const unbreakableSpace = "\u00a0";
-
-    // Make sure the content is not empty.
-    if (content === "") {
-      content = unbreakableSpace;
-    }
-
-    // If content ends with a new line, add a blank space to force the autosize
-    // element to adapt its height.
-    if (content.lastIndexOf("\n") === content.length - 1) {
-      content = content + unbreakableSpace;
-    }
-
-    if (!this.multiline) {
-      content = content.replace(/ /g, unbreakableSpace);
-    }
-
-    this.#measurement.textContent = content;
-
-    // Do not use offsetWidth: it will round floating width values.
-    let width = this.#measurement.getBoundingClientRect().width;
-    if (this.multiline) {
-      if (this.maxWidth) {
-        width = Math.min(this.maxWidth, width);
-      }
-      const height = this.#measurement.getBoundingClientRect().height;
-      this.input.style.height = height + "px";
-    }
-    this.input.style.width = width + "px";
-  }
-
-  /**
    * Get the width and height of a single character in the input to properly
    * position the autocompletion popup.
    */
   #getInputCharDimensions() {
-    // Just make the text content to be 'x' to get the width and height of any
-    // character in a monospace font.
-    this.#measurement.textContent = "x";
-    const width = this.#measurement.clientWidth;
-    const height = this.#measurement.clientHeight;
-    return { width, height };
+    // Set the value for the custom registered properties so we can get their value
+    // in px. We can use 1ch to get the width of a character, and 1lh to get the line
+    // height, which approximates to the character height.
+    this.input.style.setProperty("--inplace-editor-char-width", "1ch");
+    this.input.style.setProperty("--inplace-editor-char-height", "1lh");
+
+    const inputComputedStyle = this.doc.defaultView.getComputedStyle(
+      this.input
+    );
+    const inplaceEditorCharWidthVariableValue =
+      inputComputedStyle.getPropertyValue("--inplace-editor-char-width");
+    const inplaceEditorCharHeightVariableValue =
+      inputComputedStyle.getPropertyValue("--inplace-editor-char-height");
+
+    const cssLengthStringToNumber = cssStr => {
+      const num = Number(cssStr.replace("px", ""));
+      return Number.isNaN(num) ? 0 : num;
+    };
+
+    return {
+      width: cssLengthStringToNumber(inplaceEditorCharWidthVariableValue),
+      height: cssLengthStringToNumber(inplaceEditorCharHeightVariableValue),
+    };
   }
 
   /**
@@ -1112,7 +1091,6 @@ class InplaceEditor extends EventEmitter {
       );
     }
 
-    this.#updateSize();
     // This emit is mainly for the purpose of making the test flow simpler.
     this.emit("after-suggest");
   }
@@ -1166,19 +1144,31 @@ class InplaceEditor extends EventEmitter {
   };
 
   /**
-   * Before offering autocomplete, set this.gridLineNames as the line names
-   * of the current grid, if they exist.
+   * Before offering autocomplete, set properties that require asynchronous calls.
    *
-   * @param {Function} getGridLineNames
+   * @param {object} options
+   * @param {Function} options.getGridLineNames
    *        A function which gets the line names of the current grid.
+   * @param {Function} options.getCssAnchors
+   *        A function which gets the possible anchors for the selected element.
    */
-  async #getGridNamesBeforeCompletion(getGridLineNames) {
+  async #populatePropertySpecificDataBeforeCompletion({
+    getGridLineNames,
+    getCssAnchors,
+  }) {
     if (
       getGridLineNames &&
       this.property &&
       GRID_PROPERTY_NAMES.includes(this.property.name)
     ) {
       this.gridLineNames = await getGridLineNames();
+    }
+
+    if (
+      getCssAnchors &&
+      ACCEPT_ANCHOR_PROPERTY_NAMES.has(this.property?.name)
+    ) {
+      this.anchorNames = await getCssAnchors();
     }
 
     if (
@@ -1238,7 +1228,7 @@ class InplaceEditor extends EventEmitter {
       pre.length + toComplete.length,
       pre.length + toComplete.length
     );
-    this.#updateSize();
+
     // Wait for the popup to hide and then focus input async otherwise it does
     // not work.
     const onPopupHidden = () => {
@@ -1282,7 +1272,6 @@ class InplaceEditor extends EventEmitter {
 
     let cycling = false;
     if (increment && this.#incrementValue(increment)) {
-      this.#updateSize();
       prevent = true;
       cycling = true;
     }
@@ -1521,11 +1510,6 @@ class InplaceEditor extends EventEmitter {
     // Validate the entered value.
     this.#doValidation();
 
-    // Update size if we're autosizing.
-    if (this.#measurement) {
-      this.#updateSize();
-    }
-
     // Call the user's change handler if available.
     if (this.change) {
       this.change(this.currentInputValue);
@@ -1550,7 +1534,6 @@ class InplaceEditor extends EventEmitter {
     }
 
     if (increment && this.#incrementValue(increment)) {
-      this.#updateSize();
       event.preventDefault();
     }
   };
@@ -1657,6 +1640,21 @@ class InplaceEditor extends EventEmitter {
             }
           }
           if (
+            currentFunction &&
+            currentFunction.tokens.length &&
+            // If we have a whitespace or a comment, we don't want to put them in the
+            // list of tokens, but we can mark the last token as "complete".
+            // This way we can differentiate between an incomplete item that we should
+            // autocomplete (e.g. `color(f`)), and one for which we shouldn't (e.g. `color(from `))
+            (token.tokenType === "WhiteSpace" ||
+              token.tokenType === "Comment" ||
+              // We also want to have comma or delimiter marked as complete
+              token.tokenType === "Comma" ||
+              token.tokenType === "Delim")
+          ) {
+            currentFunction.tokens.at(-1).complete = true;
+          }
+          if (
             token.tokenType === "Function" ||
             token.tokenType === "ParenthesisBlock"
           ) {
@@ -1711,7 +1709,7 @@ class InplaceEditor extends EventEmitter {
           postLabelValues = [];
         } else if (functionValues) {
           list = functionValues.list;
-          postLabelValues = functionValues.postLabelValues;
+          postLabelValues = functionValues.postLabelValues || [];
         } else {
           list = this.#getCSSValuesForPropertyName(this.property.name);
           // Only show !important if:
@@ -1809,13 +1807,17 @@ class InplaceEditor extends EventEmitter {
         }
       }
 
-      // Sort items starting with [a-z0-9] first, to make sure vendor-prefixed
+      // Sort items starting with [a-z0-9] or -- first, to make sure vendor-prefixed
       // values and "!important" are suggested only after standard values.
+      const alphaNumOrDashedRegExp = /^(\w|--)/;
       finalList.sort((item1, item2) => {
         // Get the expected alphabetical comparison between the items.
         let comparison = item1.label.localeCompare(item2.label);
-        if (/^\w/.test(item1.label) != /^\w/.test(item2.label)) {
-          // One starts with [a-z0-9], one does not: flip the comparison.
+        if (
+          alphaNumOrDashedRegExp.test(item1.label) !=
+          alphaNumOrDashedRegExp.test(item2.label)
+        ) {
+          // One starts with [a-z0-9--], one does not: flip the comparison.
           comparison = -1 * comparison;
         }
         return comparison;
@@ -1839,7 +1841,6 @@ class InplaceEditor extends EventEmitter {
           query.length,
           query.length + item.length - startCheckQuery.length
         );
-        this.#updateSize();
       }
 
       // Display the list of suggestions if there are more than one.
@@ -1873,11 +1874,13 @@ class InplaceEditor extends EventEmitter {
    * @param {object} functionStackEntry
    * @param {InspectorCSSToken} functionStackEntry.fnToken: The token for the
    *        function call
+   * @param {Array<InspectorCSSToken>} functionStackEntry.tokens: The tokens representing the
+   *        function parameters (i.e. what's inside the parenthesis)
    * @returns {object | null} Return null if there's nothing specific to display for the function.
    *          Otherwise, return an object of the following shape:
-   *            - {Array<String>} list: The list of autocomplete items
-   *            - {Array<String>} postLabelValue: The list of autocomplete items
-   *              post labels (e.g. for variable names, their values).
+   *            - {Array<string>} list: The list of autocomplete items
+   *            - {Array<string>|undefined} postLabelValue: The list of autocomplete items
+   *              post labels (e.g. for variables, their values).
    */
   #getAutocompleteDataForFunction(functionStackEntry) {
     const functionName = functionStackEntry?.fnToken?.value;
@@ -1885,30 +1888,96 @@ class InplaceEditor extends EventEmitter {
       return null;
     }
 
-    let list = [];
-    let postLabelValues = [];
-
-    if (functionName === "var") {
-      // We only want to return variables for the first parameters of var(), not for its
-      // fallback. If we get more than one tokens, and given we don't get comments or
-      // whitespace, this means we're in the fallback value already.
-      if (functionStackEntry.tokens.length > 1) {
-        // In such case we'll use the default behavior
-        return null;
-      }
-      list = this.#getCSSVariableNames();
-      postLabelValues = list.map(varName => this.#getCSSVariableValue(varName));
-    } else if (functionName.includes("gradient")) {
-      // For gradient functions we want to display named colors and color functions,
-      // but only if the user didn't already entered a color token after the last comma.
-      list = this.#getCSSValuesForPropertyName("color");
+    if (functionName === "anchor") {
+      return lazy.getAutocompleteDataForAnchorFunction({
+        functionTokens: functionStackEntry.tokens,
+        anchorNames: this.anchorNames,
+      });
     }
 
-    // TODO: Handle other functions, e.g. color functions to autocomplete on relative
-    // color format (Bug 1898273), `color()` to suggest color space (Bug 1898277),
-    // `anchor()` to display existing anchor names (Bug 1903278)
+    if (functionName === "anchor-size") {
+      return lazy.getAutocompleteDataForAnchorSizeFunction({
+        functionTokens: functionStackEntry.tokens,
+        anchorNames: this.anchorNames,
+      });
+    }
 
+    if (functionName === "var") {
+      return this.#getAutocompleteDataForVarFunction(functionStackEntry);
+    }
+
+    if (functionName.includes("gradient")) {
+      return this.#getAutocompleteDataForGradientFunction(
+        functionName,
+        functionStackEntry
+      );
+    }
+
+    if (functionName === "color") {
+      return lazy.getAutocompleteDataForColorFunction({
+        functionTokens: functionStackEntry.tokens,
+        getCSSValuesForPropertyName:
+          this.#getCSSValuesForPropertyName.bind(this),
+      });
+    }
+
+    // For unhandled functions, return an empty list
+    return { list: [] };
+  }
+
+  /**
+   * Compute the autocomplete data for the passed var() function.
+   *
+   * @param {object} functionStackEntry
+   * @param {InspectorCSSToken} functionStackEntry.fnToken: The token for the
+   *        function call
+   * @returns {object} Returns an object of the following shape:
+   *            - {Array<string>} list: The list of autocomplete items
+   *            - {Array<string>} postLabelValue: The values of the variables
+   */
+  #getAutocompleteDataForVarFunction(functionStackEntry) {
+    // We only want to return variables for the first parameters of var(), not for its
+    // fallback. If we get more than one tokens, and given we don't get comments or
+    // whitespace, this means we're in the fallback value already.
+    if (functionStackEntry.tokens.length > 1) {
+      // In such case we'll use the default behavior
+      return null;
+    }
+    const list = this.#getCSSVariableNames();
+    const postLabelValues = list.map(varName =>
+      this.#getCSSVariableValue(varName)
+    );
     return { list, postLabelValues };
+  }
+
+  /**
+   * Compute the autocomplete data for the passed gradient function.
+   *
+   * @param {string} functionName: The gradient function we want the autocomplete items for
+   * @param {object} functionStackEntry
+   * @param {InspectorCSSToken} functionStackEntry.fnToken: The token for the function call
+   * @param {Array<InspectorCSSToken>} functionStackEntry.tokens: The tokens representing the
+   *        function parameters (i.e. what's inside the parenthesis)
+   * @returns {object} Returns an object of the following shape:
+   *            - {Array<string>} list: The list of autocomplete items
+   */
+  #getAutocompleteDataForGradientFunction(functionName, functionStackEntry) {
+    const { tokens } = functionStackEntry;
+    if (
+      functionName === "linear-gradient" ||
+      // repeating-linear-gradient() takes the same values as linear-gradient
+      functionName === "repeating-linear-gradient"
+    ) {
+      return lazy.getAutocompleteDataForLinearGradientFunction({
+        functionTokens: tokens,
+        getCSSValuesForPropertyName:
+          this.#getCSSValuesForPropertyName.bind(this),
+      });
+    }
+
+    // For the other gradient function, provide the list of colors
+    // Eventually we should also properly autocomplete them
+    return { list: this.#getCSSValuesForPropertyName("color") };
   }
 
   /**
@@ -1953,7 +2022,6 @@ class InplaceEditor extends EventEmitter {
     const start = this.input.selectionStart;
     this.input.value = str;
     this.input.setSelectionRange(start, start);
-    this.#updateSize();
   }
 
   /**
@@ -2000,18 +2068,22 @@ class InplaceEditor extends EventEmitter {
    * @return {Array} array of CSS property values (Strings)
    */
   #getCSSValuesForPropertyName(propertyName) {
-    const gridLineList = [];
+    const additionalItems = [];
     if (this.gridLineNames) {
       if (GRID_ROW_PROPERTY_NAMES.includes(this.property.name)) {
-        gridLineList.push(...this.gridLineNames.rows);
+        additionalItems.push(...this.gridLineNames.rows);
       }
       if (GRID_COL_PROPERTY_NAMES.includes(this.property.name)) {
-        gridLineList.push(...this.gridLineNames.cols);
+        additionalItems.push(...this.gridLineNames.cols);
       }
     }
+    if (this.property?.name === "position-anchor" && this.anchorNames) {
+      additionalItems.push(...this.anchorNames);
+    }
+
     // Must be alphabetically sorted before comparing the results with
     // the user input, otherwise we will lose some results.
-    return gridLineList
+    return additionalItems
       .concat(this.cssProperties.getValues(propertyName))
       .sort();
   }
@@ -2068,60 +2140,6 @@ function copyTextStyles(from, to) {
   to.style.fontSize = style.fontSize;
   to.style.fontWeight = style.fontWeight;
   to.style.fontStyle = style.fontStyle;
-}
-
-/**
- * Copy all styles which could have an impact on the element size.
- */
-function copyAllStyles(from, to) {
-  const win = from.ownerDocument.defaultView;
-  const style = win.getComputedStyle(from);
-
-  copyTextStyles(from, to);
-  to.style.lineHeight = style.lineHeight;
-
-  // If box-sizing is set to border-box, box model styles also need to be
-  // copied.
-  const boxSizing = style.boxSizing;
-  if (boxSizing === "border-box") {
-    to.style.boxSizing = boxSizing;
-    copyBoxModelStyles(from, to);
-  }
-}
-
-/**
- * Copy box model styles that can impact width and height measurements when box-
- * sizing is set to "border-box" instead of "content-box".
- *
- * @param {DOMNode} from
- *        the element from which styles are copied
- * @param {DOMNode} to
- *        the element on which copied styles are applied
- */
-function copyBoxModelStyles(from, to) {
-  const properties = [
-    // Copy all paddings.
-    "paddingTop",
-    "paddingRight",
-    "paddingBottom",
-    "paddingLeft",
-    // Copy border styles.
-    "borderTopStyle",
-    "borderRightStyle",
-    "borderBottomStyle",
-    "borderLeftStyle",
-    // Copy border widths.
-    "borderTopWidth",
-    "borderRightWidth",
-    "borderBottomWidth",
-    "borderLeftWidth",
-  ];
-
-  const win = from.ownerDocument.defaultView;
-  const style = win.getComputedStyle(from);
-  for (const property of properties) {
-    to.style[property] = style[property];
-  }
 }
 
 /**

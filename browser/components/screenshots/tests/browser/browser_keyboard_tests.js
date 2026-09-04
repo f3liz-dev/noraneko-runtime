@@ -215,7 +215,7 @@ add_task(async function test_elementSelectedOnEnter() {
       let visibleButton = await helper.getPanelButton("#visible-page");
       visibleButton.focus();
 
-      await BrowserTestUtils.waitForCondition(() => {
+      await TestUtils.waitForCondition(() => {
         return visibleButton.getRootNode().activeElement === visibleButton;
       }, "The visible button in the panel should have focus");
       info(
@@ -231,7 +231,7 @@ add_task(async function test_elementSelectedOnEnter() {
 
       // Focus should move to the browser
       let fullpageButton = await helper.getPanelButton("#full-page");
-      await BrowserTestUtils.waitForCondition(() => {
+      await TestUtils.waitForCondition(() => {
         return (
           fullpageButton.getRootNode().activeElement !== fullpageButton &&
           visibleButton.getRootNode().activeElement !== visibleButton
@@ -266,7 +266,7 @@ add_task(async function test_elementSelectedOnEnter() {
       const windowMiddleY =
         (browser.clientHeight / 2) * window.devicePixelRatio;
       const contentTop =
-        (window.mozInnerScreenY + (window.innerHeight - browser.clientHeight)) *
+        (window.mozInnerScreenY + browser.getBoundingClientRect().top) *
         window.devicePixelRatio;
 
       window.windowUtils.sendNativeMouseEvent(
@@ -292,28 +292,33 @@ add_task(async function test_elementSelectedOnEnter() {
 
       let rect = await helper.getTestPageElementRect();
 
+      // The arrow key handler moves the native cursor using coordinates
+      // relative to the chrome window, so convert the content relative element
+      // rect into the same coord space. Aim for the center of the element so the
+      // result doesn't depend on the exact chrome geometry.
+      const browserRect = browser.getBoundingClientRect();
+      const targetX = Math.round(browserRect.left + rect.left + rect.width / 2);
+      const targetY = Math.round(browserRect.top + rect.top + rect.height / 2);
+
       info(JSON.stringify({ currentCursorX, currentCursorY }));
       info(JSON.stringify(rect));
+      info(JSON.stringify({ targetX, targetY }));
 
-      let repeatShiftLeft = Math.round((currentCursorX - rect.right) / 10);
+      let deltaX = Math.round(currentCursorX) - targetX;
       await doKeyPress(
         "ArrowLeft",
-        { shiftKey: true, repeat: repeatShiftLeft },
+        { shiftKey: true, repeat: Math.floor(deltaX / 10) },
         window
       );
+      await doKeyPress("ArrowLeft", { repeat: deltaX % 10 }, window);
 
-      let repeatLeft = (currentCursorX - rect.right) % 10;
-      await doKeyPress("ArrowLeft", { repeat: repeatLeft }, window);
-
-      let repeatShiftRight = Math.round((currentCursorY - rect.bottom) / 10);
+      let deltaY = Math.round(currentCursorY) - targetY;
       await doKeyPress(
         "ArrowUp",
-        { shiftKey: true, repeat: repeatShiftRight },
+        { shiftKey: true, repeat: Math.floor(deltaY / 10) },
         window
       );
-
-      let repeatRight = (currentCursorY - rect.bottom) % 10;
-      await doKeyPress("ArrowUp", { repeat: repeatRight }, window);
+      await doKeyPress("ArrowUp", { repeat: deltaY % 10 }, window);
 
       await helper.waitForHoverElementRect(rect.width, rect.height);
 
@@ -361,19 +366,12 @@ add_task(async function test_createRegionWithKeyboard() {
       await doKeyPress("ArrowRight", {}, window);
 
       let mouseEvent = BrowserTestUtils.waitForEvent(window, "mousemove");
-      let window100X;
-      if (!Services.prefs.getBoolPref("sidebar.revamp", false)) {
-        window100X = (100 + window.mozInnerScreenX) * window.devicePixelRatio;
-      } else {
-        const sidebar = document.querySelector("sidebar-main");
-        const sidebarWidth = sidebar.offsetWidth;
-        window100X =
-          (100 + window.mozInnerScreenX + sidebarWidth) *
-          window.devicePixelRatio;
-      }
+      const browserRect = browser.getBoundingClientRect();
+      const contentLeft =
+        (window.mozInnerScreenX + browserRect.left) * window.devicePixelRatio;
       const contentTop =
-        (window.mozInnerScreenY + (window.innerHeight - browser.clientHeight)) *
-        window.devicePixelRatio;
+        (window.mozInnerScreenY + browserRect.top) * window.devicePixelRatio;
+      const window100X = 100 * window.devicePixelRatio + contentLeft;
       const window100Y = 100 * window.devicePixelRatio + contentTop;
 
       info(JSON.stringify({ window100X, window100Y }));
@@ -452,19 +450,12 @@ add_task(async function test_createRegionWithKeyboardWithShift() {
       await doKeyPress("ArrowRight", {}, window);
 
       let mouseEvent = BrowserTestUtils.waitForEvent(window, "mousemove");
-      let window100X;
-      if (!Services.prefs.getBoolPref("sidebar.revamp", false)) {
-        window100X = (100 + window.mozInnerScreenX) * window.devicePixelRatio;
-      } else {
-        const sidebar = document.querySelector("sidebar-main");
-        const sidebarWidth = sidebar.offsetWidth;
-        window100X =
-          (100 + window.mozInnerScreenX + sidebarWidth) *
-          window.devicePixelRatio;
-      }
+      const browserRect = browser.getBoundingClientRect();
+      const contentLeft =
+        (window.mozInnerScreenX + browserRect.left) * window.devicePixelRatio;
       const contentTop =
-        (window.mozInnerScreenY + (window.innerHeight - browser.clientHeight)) *
-        window.devicePixelRatio;
+        (window.mozInnerScreenY + browserRect.top) * window.devicePixelRatio;
+      const window100X = 100 * window.devicePixelRatio + contentLeft;
       const window100Y = 100 * window.devicePixelRatio + contentTop;
 
       info(JSON.stringify({ window100X, window100Y }));

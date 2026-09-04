@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -74,6 +72,7 @@
 #include "mozilla/dom/DocGroup.h"
 #include "mozilla/dom/WindowGlobalChild.h"
 #include "mozilla/dom/SessionStorageManager.h"
+#include "mozilla/widget/ScreenManager.h"
 #include "nsIAppWindow.h"
 #include "nsIXULBrowserWindow.h"
 #include "ReferrerInfo.h"
@@ -449,37 +448,13 @@ nsresult nsWindowWatcher::CreateChromeWindow(nsIWebBrowserChrome* aParentChrome,
   return NS_OK;
 }
 
-/**
- * Disable persistence of size/position in popups (determined by
- * determining whether the features parameter specifies width or height
- * in any way). We consider any overriding of the window's size or position
- * in the open call as disabling persistence of those attributes.
- * Popup windows (which should not persist size or position) generally set
- * the size.
- *
- * @param aFeatures
- *        The features that was used to open the window.
- * @param aTreeOwner
- *        The nsIDocShellTreeOwner of the newly opened window. If null,
- *        this function is a no-op.
- */
-static void MaybeDisablePersistence(const SizeSpec& aSizeSpec,
-                                    nsIDocShellTreeOwner* aTreeOwner) {
-  if (!aTreeOwner) {
-    return;
-  }
-
-  if (aSizeSpec.SizeSpecified()) {
-    aTreeOwner->SetPersistence(false, false, false);
-  }
-}
-
 NS_IMETHODIMP
-nsWindowWatcher::OpenWindowWithRemoteTab(
-    nsIRemoteTab* aRemoteTab, const WindowFeatures& aFeatures,
-    const UserActivation::Modifiers& aModifiers, bool aCalledFromJS,
-    float aOpenerFullZoom, nsIOpenWindowInfo* aOpenWindowInfo,
-    nsIRemoteTab** aResult) {
+nsWindowWatcher::OpenWindowWithRemoteTab(nsIRemoteTab* aRemoteTab,
+                                         const WindowFeatures& aFeatures,
+                                         bool aCalledFromJS,
+                                         float aOpenerFullZoom,
+                                         nsIOpenWindowInfo* aOpenWindowInfo,
+                                         nsIRemoteTab** aResult) {
 #ifdef MOZ_GECKOVIEW
   MOZ_ASSERT(false, "GeckoView should use nsIBrowserDOMWindow instead");
   return NS_ERROR_NOT_IMPLEMENTED;
@@ -504,9 +479,9 @@ nsWindowWatcher::OpenWindowWithRemoteTab(
   RefPtr<BrowsingContext> parentBC = aOpenWindowInfo->GetParent();
   if (parentBC) {
     RefPtr<Element> browserElement = parentBC->Top()->GetEmbedderElement();
-    if (browserElement && browserElement->GetOwnerGlobal() &&
-        browserElement->GetOwnerGlobal()->GetAsInnerWindow()) {
-      parentWindowOuter = browserElement->GetOwnerGlobal()
+    if (browserElement && browserElement->GetRelevantGlobal() &&
+        browserElement->GetRelevantGlobal()->GetAsInnerWindow()) {
+      parentWindowOuter = browserElement->GetRelevantGlobal()
                               ->GetAsInnerWindow()
                               ->GetOuterWindow();
     }
@@ -538,7 +513,10 @@ nsWindowWatcher::OpenWindowWithRemoteTab(
     return NS_ERROR_UNEXPECTED;
   }
 
-  // get various interfaces for aDocShellItem, used throughout this method
+  // We fall back to calculating in desktop pixels instead of CSS pixels
+  // if we can somehow not query a nsIBaseWindow. That does not happen in
+  // practice because parentTreeOwner is a nsIDocShellTreeOwner, and every
+  // implementation of nsIDocShellTreeOwner also implements nsIBaseWindow.
   CSSToDesktopScale cssToDesktopScale(1.0f);
   if (nsCOMPtr<nsIBaseWindow> win = do_QueryInterface(parentTreeOwner)) {
     cssToDesktopScale = win->GetUnscaledCSSToDesktopScale();
@@ -550,8 +528,8 @@ nsWindowWatcher::OpenWindowWithRemoteTab(
   // don't need to propagate isPopupRequested out-parameter to the resulting
   // browsing context.
   bool unused = false;
-  uint32_t chromeFlags = CalculateChromeFlagsForContent(aFeatures, aModifiers,
-                                                        aCalledFromJS, &unused);
+  uint32_t chromeFlags =
+      CalculateChromeFlagsForContent(aFeatures, aCalledFromJS, &unused);
 
   if (isPrivateBrowsingWindow) {
     chromeFlags |= nsIWebBrowserChrome::CHROME_PRIVATE_WINDOW;
@@ -599,7 +577,6 @@ nsWindowWatcher::OpenWindowWithRemoteTab(
   // that will also run with out-of-process tabs.
   MOZ_ASSERT(chromeContext->UseRemoteTabs());
 
-  MaybeDisablePersistence(sizeSpec, chromeTreeOwner);
   SizeOpenedWindow(chromeTreeOwner, parentWindowOuter, false, sizeSpec);
 
   nsCOMPtr<nsIRemoteTab> newBrowserParent;
@@ -794,6 +771,10 @@ nsresult nsWindowWatcher::OpenWindowInternal(
   CSSToDesktopScale cssToDesktopScale(1.0);
   if (nsCOMPtr<nsIBaseWindow> win = do_QueryInterface(parentDocShell)) {
     cssToDesktopScale = win->GetUnscaledCSSToDesktopScale();
+  } else {
+    RefPtr<widget::Screen> screen =
+        widget::ScreenManager::GetSingleton().GetPrimaryScreen();
+    cssToDesktopScale = screen->GetCSSToDesktopScale();
   }
   SizeSpec sizeSpec =
       CalcSizeSpec(features, hasChromeParent, cssToDesktopScale);
@@ -811,8 +792,8 @@ nsresult nsWindowWatcher::OpenWindowInternal(
   } else {
     MOZ_DIAGNOSTIC_ASSERT(parentBC && parentBC->IsContent(),
                           "content caller must provide content parent");
-    chromeFlags = CalculateChromeFlagsForContent(
-        features, aModifiers, aCalledFromJS, &isPopupRequested);
+    chromeFlags = CalculateChromeFlagsForContent(features, aCalledFromJS,
+                                                 &isPopupRequested);
 
     if (aDialog) {
       MOZ_ASSERT(XRE_IsParentProcess());
@@ -906,10 +887,23 @@ nsresult nsWindowWatcher::OpenWindowInternal(
       openWindowInfo->mPrincipalToInheritForAboutBlank = subjectPrincipal;
     } else if (nsContentUtils::IsSystemOrExpandedPrincipal(subjectPrincipal)) {
       // Don't allow initial about:blank documents to inherit a system or
-      // expanded principal, instead replace it with a null principal. We can't
-      // inherit origin attributes from the system principal, so use the parent
-      // BC if it's available.
-      if (parentBC) {
+      // expanded principal. We can't inherit origin attributes from the
+      // system principal, so use the parent BC if it's available.
+      // XXX This is wrong for popups from extensions, see bug 2053365.
+
+      const bool isDocumentPiP =
+          (chromeFlags & nsIWebBrowserChrome::CHROME_DOCUMENT_PIP);
+      MOZ_ASSERT_IF(
+          isDocumentPiP,
+          parentDoc && parentDoc->NodePrincipal()->GetIsContentPrincipal());
+
+      if (isDocumentPiP &&
+          parentDoc->NodePrincipal()->GetIsContentPrincipal()) {
+        // Document PiP should use this's relevant global object, which isn't
+        // the same as subject principal if the request comes from an extension.
+        openWindowInfo->mPrincipalToInheritForAboutBlank =
+            parentDoc->NodePrincipal();
+      } else if (parentBC) {
         openWindowInfo->mPrincipalToInheritForAboutBlank =
             NullPrincipal::Create(parentBC->OriginAttributesRef());
       } else {
@@ -1215,7 +1209,6 @@ nsresult nsWindowWatcher::OpenWindowInternal(
   if (isNewToplevelWindow) {
     nsCOMPtr<nsIDocShellTreeOwner> newTreeOwner;
     targetDocShell->GetTreeOwner(getter_AddRefs(newTreeOwner));
-    MaybeDisablePersistence(sizeSpec, newTreeOwner);
     SizeOpenedWindow(newTreeOwner, aParent, isCallerChrome, sizeSpec);
   }
 
@@ -1320,9 +1313,15 @@ nsresult nsWindowWatcher::OpenWindowInternal(
           targetDocShell->GetBrowsingContext()->GetSessionStorageManager();
 
       if (parentStorageManager && newStorageManager) {
+        nsCOMPtr<nsIPrincipal> storagePrincipal;
+        if (parentDoc) {
+          storagePrincipal = parentDoc->EffectiveStoragePrincipal();
+        } else {
+          storagePrincipal = subjectPrincipal;
+        }
         RefPtr<Storage> storage;
         parentStorageManager->GetStorage(
-            parentInnerWin, subjectPrincipal, subjectPrincipal,
+            parentInnerWin, subjectPrincipal, storagePrincipal,
             targetBC->UsePrivateBrowsing(), getter_AddRefs(storage));
         if (storage) {
           newStorageManager->CloneStorage(storage);
@@ -1505,7 +1504,9 @@ nsresult nsWindowWatcher::OpenWindowInternal(
     }
   }
   // If a website opens a popup exit DOM fullscreen
-  if (StaticPrefs::full_screen_api_exit_on_windowOpen() && aCalledFromJS &&
+  if (StaticPrefs::full_screen_api_exit_on_windowOpen() &&
+      (aCalledFromJS ||
+       chromeFlags & nsIWebBrowserChrome::CHROME_DOCUMENT_PIP) &&
       !hasChromeParent && !isCallerChrome && parentOuterWin) {
     Document::AsyncExitFullscreen(parentOuterWin->GetDoc());
   }
@@ -1844,7 +1845,7 @@ nsresult nsWindowWatcher::URIfromURL(const nsACString& aURL,
   return NS_NewURI(aURI, aURL, nullptr, baseURI);
 }
 
-// static
+// https://html.spec.whatwg.org/#popup-window-is-requested
 bool nsWindowWatcher::ShouldOpenPopup(const WindowFeatures& aFeatures) {
   if (aFeatures.IsEmpty()) {
     return false;
@@ -1894,31 +1895,15 @@ bool nsWindowWatcher::ShouldOpenPopup(const WindowFeatures& aFeatures) {
  */
 // static
 uint32_t nsWindowWatcher::CalculateChromeFlagsForContent(
-    const WindowFeatures& aFeatures,
-    const mozilla::dom::UserActivation::Modifiers& aModifiers,
-    bool aCalledFromJS, bool* aIsPopupRequested) {
+    const WindowFeatures& aFeatures, bool aCalledFromJS,
+    bool* aIsPopupRequested) {
   if (!aCalledFromJS &&
       aFeatures.GetBoolWithDefault("pictureinpicture", false)) {
     return nsIWebBrowserChrome::CHROME_DOCUMENT_PICTURE_IN_PICTURE_FLAGS;
   }
-
-  if (aFeatures.IsEmpty() || !ShouldOpenPopup(aFeatures)) {
-    // Open the current/new tab in the current/new window
-    // (depends on browser.link.open_newwindow).
-    return nsIWebBrowserChrome::CHROME_ALL;
-  }
-
-  int32_t unused;
-  if (IsWindowOpenLocationModified(aModifiers, &unused)) {
-    // If modifier keys are held when `window.open` is called, open a new
-    // foreground/background tab in the current window, or open a new tab in a
-    // new window, depending on the modifiers combination.
-    return nsIWebBrowserChrome::CHROME_ALL;
-  }
-
-  // Open a minimal popup.
-  *aIsPopupRequested = true;
-  return nsIWebBrowserChrome::CHROME_MINIMAL_POPUP;
+  *aIsPopupRequested = ShouldOpenPopup(aFeatures);
+  return *aIsPopupRequested ? nsIWebBrowserChrome::CHROME_MINIMAL_POPUP
+                            : nsIWebBrowserChrome::CHROME_ALL;
 }
 
 /**
@@ -1945,8 +1930,6 @@ uint32_t nsWindowWatcher::CalculateChromeFlagsForSystem(
       chromeFlags |= nsIWebBrowserChrome::CHROME_OPENAS_DIALOG |
                      nsIWebBrowserChrome::CHROME_OPENAS_CHROME;
     }
-  } else {
-    chromeFlags = nsIWebBrowserChrome::CHROME_WINDOW_BORDERS;
   }
 
   /* This function has become complicated since browser windows and
@@ -1977,9 +1960,6 @@ uint32_t nsWindowWatcher::CalculateChromeFlagsForSystem(
   }
   if (aFeatures.GetBoolWithDefault("personalbar", false, &presenceFlag)) {
     chromeFlags |= nsIWebBrowserChrome::CHROME_PERSONAL_TOOLBAR;
-  }
-  if (aFeatures.GetBoolWithDefault("status", false, &presenceFlag)) {
-    chromeFlags |= nsIWebBrowserChrome::CHROME_STATUSBAR;
   }
   if (aFeatures.GetBoolWithDefault("menubar", false, &presenceFlag)) {
     chromeFlags |= nsIWebBrowserChrome::CHROME_MENUBAR;
@@ -2053,6 +2033,9 @@ uint32_t nsWindowWatcher::CalculateChromeFlagsForSystem(
      instructions. (Note modality implies dependence.) */
   if (aFeatures.GetBoolWithDefault("suppressanimation", false)) {
     chromeFlags |= nsIWebBrowserChrome::CHROME_SUPPRESS_ANIMATION;
+  }
+  if (aFeatures.GetBoolWithDefault("suppressinitialfullscreen", false)) {
+    chromeFlags |= nsIWebBrowserChrome::CHROME_SUPPRESS_INITIAL_FULLSCREEN;
   }
   if (aFeatures.GetBoolWithDefault("alwaysontop", false)) {
     chromeFlags |= nsIWebBrowserChrome::CHROME_ALWAYS_ON_TOP;
@@ -2133,7 +2116,7 @@ already_AddRefed<nsDocShellLoadState> nsWindowWatcher::CreateLoadState(
 
   // If we're called from JS, i.e window.open, we need to set history handling
   // behavior here to be able to do push to replace conversion if needed.
-  if (aIsWindowOpen && mozilla::SessionHistoryInParent()) {
+  if (aIsWindowOpen) {
     loadState->SetHistoryBehavior(NavigationHistoryBehavior::Auto);
   }
 
@@ -2663,8 +2646,7 @@ int32_t nsWindowWatcher::GetWindowOpenLocation(
       uiChromeFlags &= ~(nsIWebBrowserChrome::CHROME_REMOTE_WINDOW |
                          nsIWebBrowserChrome::CHROME_FISSION_WINDOW |
                          nsIWebBrowserChrome::CHROME_PRIVATE_WINDOW |
-                         nsIWebBrowserChrome::CHROME_NON_PRIVATE_WINDOW |
-                         nsIWebBrowserChrome::CHROME_PRIVATE_LIFETIME);
+                         nsIWebBrowserChrome::CHROME_NON_PRIVATE_WINDOW);
       if (uiChromeFlags != nsIWebBrowserChrome::CHROME_ALL) {
         return nsIBrowserDOMWindow::OPEN_NEWWINDOW;
       }

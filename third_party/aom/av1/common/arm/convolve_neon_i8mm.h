@@ -23,18 +23,9 @@
 #include "aom_dsp/arm/mem_neon.h"
 #include "aom_ports/mem.h"
 
-DECLARE_ALIGNED(16, static const uint8_t, kDotProdPermuteTbl[48]) = {
-  0, 1, 2,  3,  1, 2,  3,  4,  2,  3,  4,  5,  3,  4,  5,  6,
-  4, 5, 6,  7,  5, 6,  7,  8,  6,  7,  8,  9,  7,  8,  9,  10,
-  8, 9, 10, 11, 9, 10, 11, 12, 10, 11, 12, 13, 11, 12, 13, 14
-};
-
-DECLARE_ALIGNED(16, static const uint8_t, kMatMulPermuteTbl[32]) = {
-  // clang-format off
-  0,  1,  2,  3,  4,  5,  6,  7,  2,  3,  4,  5,  6,  7,  8,  9,
-  4,  5,  6,  7,  8,  9, 10, 11,  6,  7,  8,  9, 10, 11, 12, 13
-  // clang-format on
-};
+DECLARE_ALIGNED(16, extern const uint8_t, kMatMul6PermuteTbl[32]);
+DECLARE_ALIGNED(16, extern const uint8_t, kMatMul8PermuteTbl[32]);
+DECLARE_ALIGNED(16, extern const uint8_t, kFilterPermuteTbl[16]);
 
 static inline int16x4_t convolve12_4_2d_h(uint8x16_t samples[2],
                                           const int8x16_t filter[2],
@@ -87,8 +78,6 @@ static inline void convolve_2d_sr_horiz_12tap_neon_i8mm(
   // The no-op filter should never be used here.
   assert(x_filter_ptr[5] != 128);
 
-  const int bd = 8;
-
   // Split 12-tap filter into two 6-tap filters, masking the top two elements.
   // { 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0, 0 }
   const int8x8_t mask = vcreate_s8(0x0000ffffffffffff);
@@ -106,11 +95,10 @@ static inline void convolve_2d_sr_horiz_12tap_neon_i8mm(
   // This shim of 1 << (ROUND0_BITS - 1) enables us to use non-rounding shifts
   // in convolution kernels - which are generally faster than rounding shifts on
   // modern CPUs.
-  const int32x4_t horiz_const =
-      vdupq_n_s32((1 << (bd + FILTER_BITS - 1)) + (1 << (ROUND0_BITS - 1)));
+  const int32x4_t horiz_const = vdupq_n_s32(1 << (ROUND0_BITS - 1));
 
   if (w <= 4) {
-    const uint8x16_t permute_tbl = vld1q_u8(kMatMulPermuteTbl);
+    const uint8x16_t permute_tbl = vld1q_u8(kMatMul6PermuteTbl);
 
     do {
       uint8x16_t s0[2], s1[2], s2[2], s3[2];
@@ -141,7 +129,7 @@ static inline void convolve_2d_sr_horiz_12tap_neon_i8mm(
     } while (--h != 0);
 
   } else {
-    const uint8x16x2_t permute_tbl = vld1q_u8_x2(kMatMulPermuteTbl);
+    const uint8x16x2_t permute_tbl = vld1q_u8_x2(kMatMul6PermuteTbl);
 
     do {
       const uint8_t *s = src_ptr;

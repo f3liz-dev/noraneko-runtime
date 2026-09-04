@@ -4,7 +4,7 @@
 "use strict";
 
 const TEST_URL =
-  // eslint-disable-next-line @microsoft/sdl/no-insecure-url
+  // eslint-disable-next-line sdl/no-insecure-url
   "http://example.com/browser/browser/base/content/test/tabcrashed/file_contains_emptyiframe.html";
 const DOMAIN = "example.com";
 
@@ -32,7 +32,7 @@ add_task(async function test() {
       );
     });
     iframe.src =
-      // eslint-disable-next-line @microsoft/sdl/no-insecure-url
+      // eslint-disable-next-line sdl/no-insecure-url
       "http://test1.example.com/browser/browser/base/content/test/tabcrashed/file_iframe.html";
     await loaded;
   });
@@ -59,7 +59,7 @@ add_task(async function test() {
 
   // Enter print preview
   document.getElementById("cmd_print").doCommand();
-  await BrowserTestUtils.waitForCondition(() => {
+  await TestUtils.waitForCondition(() => {
     let preview = document.querySelector(".printPreviewBrowser");
     return preview && BrowserTestUtils.isVisible(preview);
   });
@@ -73,7 +73,7 @@ add_task(async function test() {
 
   // We haven't crashed! Exit the print preview.
   gBrowser.getTabDialogBox(gBrowser.selectedBrowser).abortAllDialogs();
-  await BrowserTestUtils.waitForCondition(
+  await TestUtils.waitForCondition(
     () => !document.querySelector(".printPreviewBrowser")
   );
 

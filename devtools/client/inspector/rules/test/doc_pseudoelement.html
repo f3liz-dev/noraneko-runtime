@@ -196,6 +196,26 @@ anotherunknown {
     content: "unmatched pseudo";
 }
 
+#customizable-select {
+    appearance: base-select;
+}
+
+/* stylelint-disable-next-line selector-pseudo-element-no-unknown */
+#customizable-select::picker-icon {
+    color: purple;
+}
+
+/* stylelint-disable-next-line selector-pseudo-element-no-unknown */
+#customizable-select::picker(select) {
+    border: 1px solid purple;
+}
+
+/* stylelint-disable-next-line selector-pseudo-element-no-unknown */
+#customizable-select option::checkmark {
+    color: tomato;
+    content: "-";
+}
+
     </style>
   </head>
   <body>
@@ -246,13 +266,14 @@ anotherunknown {
         <p>In details</p>
     </details>
 
+    <select id="customizable-select">
+        <option id="customizable-select-option">Option</option>
+    </select>
+
     <aside class="transition">Transition</section>
 
     <script>
         "use strict";
-        // This is the only way to have the ::backdrop style to be applied
-        document.querySelector("dialog").showModal()
-        document.querySelector("#in-dialog").showPopover()
 
         // Register highlights for ::highlight pseudo elements
         const highlightsContainer = document.querySelector(".highlights-container");

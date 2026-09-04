@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -6,21 +5,22 @@
 #ifndef InputData_h_
 #define InputData_h_
 
-#include "nsDebug.h"
-#include "nsPoint.h"
-#include "nsTArray.h"
 #include "Units.h"
-#include "mozilla/ScrollTypes.h"
 #include "mozilla/DefineEnum.h"
 #include "mozilla/EventForwards.h"
 #include "mozilla/Maybe.h"
+#include "mozilla/MouseEvents.h"  // for WidgetPointerHelper::Angle
+#include "mozilla/ScrollTypes.h"
+#include "mozilla/TextEvents.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/WheelHandlingHelper.h"  // for WheelDeltaAdjustmentStrategy
 #include "mozilla/gfx/MatrixFwd.h"
+#include "mozilla/ipc/IPCForwards.h"
 #include "mozilla/layers/APZPublicUtils.h"
 #include "mozilla/layers/KeyboardScrollAction.h"
-#include "mozilla/TextEvents.h"
-#include "mozilla/ipc/IPCForwards.h"
+#include "nsDebug.h"
+#include "nsPoint.h"
+#include "nsTArray.h"
 
 template <class E>
 struct already_AddRefed;
@@ -205,6 +205,11 @@ class SingleTouchData {
   int32_t mTiltX = 0;
   int32_t mTiltY = 0;
   int32_t mTwist = 0;
+
+  // Altitude and azimuth angles of the touch, mirroring dom::Touch's mAngle. A
+  // touch carries either these angles or mTiltX/mTiltY, not both; when set they
+  // take precedence over the tilt values.
+  Maybe<WidgetPointerHelper::Angle> mAngle;
 };
 
 /**
@@ -318,6 +323,7 @@ class MouseInput : public InputData {
   // fields must be reflected in its ParamTraits<>, in nsGUIEventIPC.h
   MouseType mType;
   ButtonType mButtonType;
+  uint32_t mClickCount = 0;
   uint16_t mInputSource;
   int16_t mButtons;
   ScreenPoint mOrigin;
@@ -619,9 +625,9 @@ class PinchGestureInput : public InputData {
   // don't need a mLineOrPageDeltaX. This field is used to dispatch legacy mouse
   // events which are only dispatched when the corresponding field on
   // WidgetWheelEvent is non-zero.
-  int32_t mLineOrPageDeltaY;
+  int32_t mLineOrPageDeltaY = 0;
 
-  bool mHandledByAPZ;
+  bool mHandledByAPZ = false;
 };
 
 /**
@@ -797,11 +803,12 @@ class ScrollWheelInput : public InputData {
 
   bool mMayHaveMomentum;
   bool mIsMomentum;
-  bool mAllowToOverrideSystemScrollSpeed;
+  bool mAllowToOverrideSystemScrollSpeed = false;
 
   // Sometimes a wheel event input's wheel delta should be adjusted. This member
   // specifies how to adjust the wheel delta.
-  WheelDeltaAdjustmentStrategy mWheelDeltaAdjustmentStrategy;
+  WheelDeltaAdjustmentStrategy mWheelDeltaAdjustmentStrategy =
+      WheelDeltaAdjustmentStrategy::eNone;
 
   APZWheelAction mAPZAction;
 };

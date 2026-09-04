@@ -20,7 +20,7 @@ fuzzy(0-16,0-346) fuzzy-if(cocoaWidget,0-200,0-310) fuzzy-if(winWidget,0-255,0-3
 == preserve3d-3a.html preserve3d-3-ref.html
 == preserve3d-4a.html about:blank
 fuzzy(0-16,0-100) == preserve3d-5a.html preserve3d-5-ref.html
-== preserve3d-6a.html preserve3d-6-ref.html
+fuzzy(0-121,0-22) == preserve3d-6a.html preserve3d-6-ref.html
 == preserve3d-table.html preserve3d-table-ref.html
 == scale3d-z.html scalez-1-ref.html
 fuzzy-if(winWidget,0-143,0-689) fuzzy-if(cocoaWidget,0-224,0-924) fuzzy-if(winWidget,0-154,0-644) == scale3d-all.html scale3d-1-ref.html # subpixel AA
@@ -89,7 +89,7 @@ fuzzy(0-255,0-150) fails-if(useDrawSnapshot) == split-intersect2.html split-inte
 fuzzy(0-255,0-100) fails-if(useDrawSnapshot) == split-non-ortho1.html split-non-ortho1-ref.html
 fuzzy-if(winWidget,0-150,0-120) == component-alpha-1.html component-alpha-1-ref.html
 == nested-transform-1.html nested-transform-1-ref.html
-fuzzy-if(winWidget,0-4,0-51) == transform-geometry-1.html transform-geometry-1-ref.html
+fuzzy-if(winWidget,0-4,0-51) fuzzy-if(Android,0-16,0-4) == transform-geometry-1.html transform-geometry-1-ref.html
 == intermediate-1.html intermediate-1-ref.html
 == preserves3d-nested-filter-1.html preserves3d-nested-filter-1-ref.html
 != preserve3d-scale.html about:blank

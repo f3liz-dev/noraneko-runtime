@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -11,6 +9,7 @@
 #include "TCPSocketParent.h"
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/ErrorResult.h"
+#include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/SyncRunnable.h"
 #include "mozilla/dom/RootedDictionary.h"
 #include "mozilla/dom/ScriptSettings.h"
@@ -141,13 +140,15 @@ NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(TCPSocket)
 NS_INTERFACE_MAP_END_INHERITING(DOMEventTargetHelper)
 
 TCPSocket::TCPSocket(nsIGlobalObject* aGlobal, const nsAString& aHost,
-                     uint16_t aPort, bool aSsl, bool aUseArrayBuffers)
+                     uint16_t aPort, bool aSsl, bool aUseArrayBuffers,
+                     uint32_t aConnectionFlags)
     : DOMEventTargetHelper(aGlobal),
       mReadyState(TCPReadyState::Closed),
       mUseArrayBuffers(aUseArrayBuffers),
       mHost(aHost),
       mPort(aPort),
       mSsl(aSsl),
+      mConnectionFlags(aConnectionFlags),
       mAsyncCopierActive(false),
       mWaitingForDrain(false),
       mInnerWindowID(0),
@@ -241,7 +242,7 @@ nsresult TCPSocket::Init(nsIProxyInfo* aProxyInfo) {
     mReadyState = TCPReadyState::Connecting;
 
     nsCOMPtr<nsISerialEventTarget> target;
-    if (nsCOMPtr<nsIGlobalObject> global = GetOwnerGlobal()) {
+    if (nsCOMPtr<nsIGlobalObject> global = GetRelevantGlobal()) {
       target = global->SerialEventTarget();
     }
     mSocketBridgeChild = new TCPSocketChild(mHost, mPort, target);
@@ -263,6 +264,13 @@ nsresult TCPSocket::Init(nsIProxyInfo* aProxyInfo) {
       sts->CreateTransport(socketTypes, NS_ConvertUTF16toUTF8(mHost), mPort,
                            aProxyInfo, nullptr, getter_AddRefs(transport));
   NS_ENSURE_SUCCESS(rv, rv);
+
+  // Must happen before InitWithUnconnectedTransport, which opens the streams
+  // and thereby dispatches the connect to the socket thread.
+  if (mConnectionFlags) {
+    rv = transport->SetConnectionFlags(mConnectionFlags);
+    NS_ENSURE_SUCCESS(rv, rv);
+  }
 
   return InitWithUnconnectedTransport(transport);
 }
@@ -522,7 +530,7 @@ TCPSocket::FireEvent(const nsAString& aType) {
   }
 
   AutoJSAPI api;
-  if (NS_WARN_IF(!api.Init(GetOwnerGlobal()))) {
+  if (NS_WARN_IF(!api.Init(GetRelevantGlobal()))) {
     return NS_ERROR_FAILURE;
   }
   JS::Rooted<JS::Value> val(api.cx());
@@ -533,7 +541,7 @@ NS_IMETHODIMP
 TCPSocket::FireDataArrayEvent(const nsAString& aType,
                               const nsTArray<uint8_t>& buffer) {
   AutoJSAPI api;
-  if (NS_WARN_IF(!api.Init(GetOwnerGlobal()))) {
+  if (NS_WARN_IF(!api.Init(GetRelevantGlobal()))) {
     return NS_ERROR_FAILURE;
   }
   JSContext* cx = api.cx();
@@ -550,7 +558,7 @@ NS_IMETHODIMP
 TCPSocket::FireDataStringEvent(const nsAString& aType,
                                const nsACString& aString) {
   AutoJSAPI api;
-  if (NS_WARN_IF(!api.Init(GetOwnerGlobal()))) {
+  if (NS_WARN_IF(!api.Init(GetRelevantGlobal()))) {
     return NS_ERROR_FAILURE;
   }
   JSContext* cx = api.cx();
@@ -916,7 +924,8 @@ already_AddRefed<TCPSocket> TCPSocket::Constructor(
   nsCOMPtr<nsIGlobalObject> global = do_QueryInterface(aGlobal.GetAsSupports());
   RefPtr<TCPSocket> socket =
       new TCPSocket(global, aHost, aPort, aOptions.mUseSecureTransport,
-                    aOptions.mBinaryType == TCPSocketBinaryType::Arraybuffer);
+                    aOptions.mBinaryType == TCPSocketBinaryType::Arraybuffer,
+                    aOptions.mConnectionFlags);
   socket->ResolveProxy();
 
   return socket.forget();
@@ -1056,7 +1065,7 @@ TCPSocket::OnDataAvailable(nsIRequest* aRequest, nsIInputStream* aStream,
     }
 
     AutoJSAPI api;
-    if (!api.Init(GetOwnerGlobal())) {
+    if (!api.Init(GetRelevantGlobal())) {
       return NS_ERROR_FAILURE;
     }
     JSContext* cx = api.cx();
@@ -1079,7 +1088,7 @@ TCPSocket::OnDataAvailable(nsIRequest* aRequest, nsIInputStream* aStream,
   }
 
   AutoJSAPI api;
-  if (!api.Init(GetOwnerGlobal())) {
+  if (!api.Init(GetRelevantGlobal())) {
     return NS_ERROR_FAILURE;
   }
   JSContext* cx = api.cx();
@@ -1164,6 +1173,10 @@ TCPSocket::Observe(nsISupports* aSubject, const char* aTopic,
 
 /* static */
 bool TCPSocket::ShouldTCPSocketExist(JSContext* aCx, JSObject* aGlobal) {
+  if (XRE_IsContentProcess() &&
+      !StaticPrefs::dom_tcpsocket_in_child_enabled()) {
+    return false;
+  }
   JS::Rooted<JSObject*> global(aCx, aGlobal);
   return nsContentUtils::ObjectPrincipal(global)->IsSystemPrincipal();
 }

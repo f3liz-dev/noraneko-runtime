@@ -2,14 +2,15 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "nsCRT.h"
+#include "nsICOEncoder.h"
+
+#include "BMPHeaders.h"
 #include "mozilla/EndianUtils.h"
 #include "nsBMPEncoder.h"
-#include "BMPHeaders.h"
+#include "nsCRT.h"
 #include "nsPNGEncoder.h"
-#include "nsICOEncoder.h"
-#include "nsString.h"
 #include "nsStreamUtils.h"
+#include "nsString.h"
 #include "nsTArray.h"
 
 using namespace mozilla;
@@ -35,6 +36,13 @@ nsICOEncoder::~nsICOEncoder() {
     mImageBufferStart = nullptr;
     mImageBufferCurr = nullptr;
   }
+}
+
+NS_IMETHODIMP
+nsICOEncoder::SetColorSpaceInfo(imgIEncoder::CICPColourPrimaries,
+                                imgIEncoder::CICPTransferCharacteristics,
+                                imgIEncoder::CICPMatrixCoefficients, bool) {
+  return NS_OK;
 }
 
 // nsICOEncoder::InitFromData

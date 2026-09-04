@@ -1,9 +1,12 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "TSFEmptyTextStore.h"
+
+#include <comutil.h>  // for _bstr_t
+#include <oleauto.h>  // for SysAllocString
+#include <olectl.h>
 
 #include "IMMHandler.h"
 #include "KeyboardLayout.h"
@@ -17,15 +20,11 @@
 #include "mozilla/AutoRestore.h"
 #include "mozilla/Logging.h"
 #include "mozilla/StaticPrefs_intl.h"
-#include "mozilla/glean/WidgetWindowsMetrics.h"
 #include "mozilla/TextEventDispatcher.h"
 #include "mozilla/TextEvents.h"
 #include "mozilla/ToString.h"
+#include "mozilla/glean/WidgetWindowsMetrics.h"
 #include "nsWindow.h"
-
-#include <comutil.h>  // for _bstr_t
-#include <oleauto.h>  // for SysAllocString
-#include <olectl.h>
 
 // For collecting other people's log, tell `MOZ_LOG=IMEHandler:4,sync`
 // rather than `MOZ_LOG=IMEHandler:5,sync` since using `5` may create too
@@ -255,6 +254,16 @@ STDMETHODIMP TSFEmptyTextStore::GetSelection(ULONG ulIndex, ULONG ulCount,
   }
 
   // XXX Should we treat selection as collapsed at the start?
+
+  // Returning TS_E_NOSELECTION causes Sogou IME crashes at least version 16.4.
+  // Thus, we return dummy selection collapsed at start in the empty text for
+  // Sogou.
+  if (TSFStaticSink::IsSogouActive()) {
+    *pSelection = TSFUtils::SelectionACPCollapsedAtStart();
+    *pcFetched = 1;
+    return S_OK;
+  }
+
   *pSelection = TSFUtils::EmptySelectionACP();
   *pcFetched = 0;
   return TS_E_NOSELECTION;
@@ -329,9 +338,7 @@ STDMETHODIMP TSFEmptyTextStore::RequestSupportedAttrs(
            "cFilterAttrs=%lu)",
            this, AutoFindFlagsCString(dwFlags).get(), cFilterAttrs));
 
-  return HandleRequestAttrs(
-      dwFlags, cFilterAttrs, paFilterAttrs,
-      TSFUtils::NUM_OF_SUPPORTED_ATTRS_IN_EMPTY_TEXT_STORE);
+  return HandleRequestAttrs(dwFlags, cFilterAttrs, paFilterAttrs);
 }
 
 STDMETHODIMP TSFEmptyTextStore::RequestAttrsAtPosition(
@@ -342,17 +349,14 @@ STDMETHODIMP TSFEmptyTextStore::RequestAttrsAtPosition(
            "cFilterAttrs=%lu, dwFlags=%s)",
            this, acpPos, cFilterAttrs, AutoFindFlagsCString(dwFlags).get()));
 
-  return HandleRequestAttrs(
-      dwFlags | TS_ATTR_FIND_WANT_VALUE, cFilterAttrs, paFilterAttrs,
-      TSFUtils::NUM_OF_SUPPORTED_ATTRS_IN_EMPTY_TEXT_STORE);
+  return HandleRequestAttrs(dwFlags | TS_ATTR_FIND_WANT_VALUE, cFilterAttrs,
+                            paFilterAttrs);
 }
 
 STDMETHODIMP TSFEmptyTextStore::RetrieveRequestedAttrs(ULONG ulCount,
                                                        TS_ATTRVAL* paAttrVals,
                                                        ULONG* pcFetched) {
-  HRESULT hr = RetrieveRequestedAttrsInternal(
-      ulCount, paAttrVals, pcFetched,
-      TSFUtils::NUM_OF_SUPPORTED_ATTRS_IN_EMPTY_TEXT_STORE);
+  HRESULT hr = RetrieveRequestedAttrsInternal(ulCount, paAttrVals, pcFetched);
   if (FAILED(hr)) {
     return hr;
   }
@@ -495,7 +499,7 @@ nsresult TSFEmptyTextStore::SetFocusAndUpdateDocumentURLAndBrowsingMode(
 }
 
 IMENotificationRequests TSFEmptyTextStore::GetIMENotificationRequests() const {
-  return IMENotificationRequests();
+  return {};
 }
 
 }  // namespace mozilla::widget

@@ -7,6 +7,7 @@ ChromeUtils.defineESModuleGetters(this, {
   GroupsPanel: "moz-src:///browser/components/tabbrowser/GroupsList.sys.mjs",
   NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
   TabsPanel: "moz-src:///browser/components/tabbrowser/TabsList.sys.mjs",
+  UrlbarShared: "chrome://browser/content/urlbar/UrlbarShared.mjs",
 });
 
 var gTabsPanel = {
@@ -21,7 +22,9 @@ var gTabsPanel = {
     hiddenTabsViewTabs: "allTabsMenu-hiddenTabsView-tabs",
     hiddenAudioTabs: "allTabsMenu-allTabsView-hiddenAudio-tabs",
     groupsView: "allTabsMenu-groupsView",
+    groupsSeparator: "allTabsMenu-groupsSeparator",
     groupsSubView: "allTabsMenu-groupsSubView",
+    currentWindowHeader: "allTabsMenu-currentWindowHeader",
   },
   _initialized: false,
   _initializedElements: false,
@@ -56,7 +59,7 @@ var gTabsPanel = {
     this.hiddenAudioTabsPopup = new TabsPanel({
       view: this.allTabsView,
       containerNode: this.hiddenAudioTabs,
-      filterFn: tab => tab.soundPlaying,
+      filterFn: tab => tab.soundPlaying || tab.muted,
       onlyHiddenTabs: true,
     });
     this.allTabsPanel = new TabsPanel({
@@ -79,6 +82,17 @@ var gTabsPanel = {
     this.allTabsView.addEventListener("ViewShowing", () => {
       PanelUI._ensureShortcutsShown(this.allTabsView);
 
+      // The tab groups list will disappear from the TOM once the alternate UX surfaces
+      // (toolbar and app menu) are released. These are currently gated behind the
+      // `alternateMenu` flag.
+      // See bug2021095
+      let tabGroupsAlternateMenu = Services.prefs.getBoolPref(
+        "browser.tabs.groups.alternateMenu",
+        false
+      );
+      this.groupsSeparator.hidden = tabGroupsAlternateMenu;
+      this.currentWindowHeader.hidden = tabGroupsAlternateMenu;
+
       let containersEnabled =
         Services.prefs.getBoolPref("privacy.userContext.enabled") &&
         !PrivateBrowsingUtils.isWindowPrivate(window);
@@ -86,20 +100,38 @@ var gTabsPanel = {
         !containersEnabled;
 
       const hasHiddenTabs = this.hasHiddenTabsExcludingFxView();
-      document.getElementById("allTabsMenu-hiddenTabsButton").hidden =
-        !hasHiddenTabs;
-      document.getElementById("allTabsMenu-hiddenTabsSeparator").hidden =
-        !hasHiddenTabs;
+      const hiddenTabsButton = document.getElementById(
+        "allTabsMenu-hiddenTabsButton"
+      );
+      const hiddenTabsSeparator = document.getElementById(
+        "allTabsMenu-hiddenTabsSeparator"
+      );
+      hiddenTabsButton.hidden = !hasHiddenTabs;
+
+      // Hidden tabs normally sit at the bottom of the list, but are bumped to
+      // the top if any of them are playing audio.
+      const hasHiddenAudioTabs = this.hiddenAudioTabs.hasChildNodes();
+      this.hiddenAudioTabs.hidden = !hasHiddenAudioTabs;
+      hiddenTabsSeparator.hidden = !hasHiddenAudioTabs;
+      if (hasHiddenAudioTabs) {
+        this.allTabsViewTabs.prepend(
+          hiddenTabsButton,
+          this.hiddenAudioTabs,
+          hiddenTabsSeparator
+        );
+      } else {
+        this.allTabsViewTabs.append(
+          hiddenTabsButton,
+          this.hiddenAudioTabs,
+          hiddenTabsSeparator
+        );
+      }
 
       let closeDuplicateTabsItem = document.getElementById(
         "allTabsMenu-closeDuplicateTabs"
       );
-      closeDuplicateTabsItem.disabled =
+      closeDuplicateTabsItem.hidden =
         !gBrowser.getAllDuplicateTabsToClose().length;
-
-      let syncedTabs = document.getElementById("allTabsMenu-syncedTabs");
-      syncedTabs.hidden =
-        !PlacesUIUtils.shouldShowTabsFromOtherComputersMenuitem();
     });
 
     this.allTabsView.addEventListener("ViewShown", () =>
@@ -110,7 +142,7 @@ var gTabsPanel = {
 
     this.allTabsView.addEventListener("command", event => {
       let { target } = event;
-      let { PanelUI } = target.ownerGlobal;
+      let { PanelUI } = target.documentGlobal;
       switch (target.id) {
         case "allTabsMenu-searchTabs":
           Glean.browserUiInteraction.listAllTabsAction.search_tabs.add(1);
@@ -128,9 +160,8 @@ var gTabsPanel = {
         case "allTabsMenu-hiddenTabsButton":
           PanelUI.showSubView(this.kElements.hiddenTabsView, target);
           break;
-        case "allTabsMenu-syncedTabs":
-          Glean.browserUiInteraction.listAllTabsAction.tabs_from_devices.add(1);
-          SidebarController.show("viewTabsSidebar");
+        case "allTabsMenu-viewAllTabs":
+          FirefoxViewHandler.openTab("opentabs");
           break;
         case "allTabsMenu-groupsViewShowMore":
           PanelUI.showSubView(this.kElements.groupsSubView, target);
@@ -243,7 +274,7 @@ var gTabsPanel = {
   },
 
   searchTabs() {
-    gURLBar.search(UrlbarTokenizer.RESTRICT.OPENPAGE, {
+    gURLBar.search(UrlbarShared.RESTRICT_TOKENS.OPENPAGE, {
       searchModeEntry: "tabmenu",
     });
   },

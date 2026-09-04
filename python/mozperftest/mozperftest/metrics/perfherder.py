@@ -12,7 +12,11 @@ import time
 import jsonschema
 
 from mozperftest.layers import Layer
-from mozperftest.metrics.common import COMMON_ARGS, filtered_metrics
+from mozperftest.metrics.common import (
+    COMMON_ARGS,
+    filtered_metrics,
+    get_available_metrics,
+)
 from mozperftest.metrics.exceptions import PerfherderValidDataError
 from mozperftest.metrics.notebook.constant import Constant
 from mozperftest.metrics.notebook.transformer import get_transformer
@@ -72,13 +76,21 @@ class Perfherder(Layer):
             exclusions = ["statistics."]
 
         # Get filtered metrics
+        transformer = self.get_arg("transformer")
         metrics = self.get_arg("metrics")
+        if not metrics:
+            metrics = [
+                {"name": name}
+                for name in get_available_metrics(
+                    metadata, output, prefix, transformer=transformer
+                )
+            ]
         results, fullsettings = filtered_metrics(
             metadata,
             output,
             prefix,
             metrics=metrics,
-            transformer=self.get_arg("transformer"),
+            transformer=transformer,
             settings=True,
             exclude=exclusions,
             split_by=self.get_arg("split-by"),
@@ -158,10 +170,12 @@ class Perfherder(Layer):
         sequence = int(time.monotonic() * 1000)
         payload = json.dumps(all_perfherder_data, sort_keys=True).encode("utf-8")
         digest = hashlib.sha1(payload).hexdigest()[:8]
-        file = f"perfherder-data-{sequence}-{digest}.json"
+        perfherder_file = f"perfherder-data-{sequence}-{digest}.json"
         if prefix:
-            file = f"{prefix}-{file}"
-        self.info(f"Writing perfherder results to {os.path.join(output, file)}")
+            perfherder_file = f"{prefix}-{perfherder_file}"
+        self.info(
+            f"Writing perfherder results to {os.path.join(output, perfherder_file)}"
+        )
 
         # XXX "suites" key error occurs when using self.info so a print
         # is being done for now.
@@ -173,7 +187,7 @@ class Perfherder(Layer):
         sys.stdout.write("\n")
         sys.stdout.flush()
 
-        metadata.set_output(write_json(all_perfherder_data, output, file))
+        metadata.set_output(write_json(all_perfherder_data, output, perfherder_file))
         return metadata
 
     def _build_blob(

@@ -1,13 +1,9 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #ifndef vm_Shape_h
 #define vm_Shape_h
-
-#include "js/shadow/Shape.h"  // JS::shadow::Shape, JS::shadow::BaseShape
 
 #include "mozilla/Attributes.h"
 #include "mozilla/MemoryReporting.h"
@@ -22,6 +18,7 @@
 #include "js/MemoryMetrics.h"
 #include "js/Printer.h"  // js::GenericPrinter
 #include "js/RootingAPI.h"
+#include "js/shadow/Shape.h"  // JS::shadow::Shape, JS::shadow::BaseShape
 #include "js/UbiNode.h"
 #include "util/EnumFlags.h"
 #include "vm/ObjectFlags.h"
@@ -132,6 +129,8 @@ class PropertyIteratorObject;
 
 namespace gc {
 class TenuringTracer;
+template <uint32_t opts>
+class MarkingTracerT;
 }  // namespace gc
 
 namespace wasm {
@@ -204,6 +203,7 @@ class ShapeCachePtr {
   void setShapeSetForAdd(ShapeSetForAdd* hash) {
     MOZ_ASSERT(hash);
     MOZ_ASSERT((uintptr_t(hash) & MASK) == 0);
+    MOZ_ASSERT(!isShapeSetForAdd());  // Don't leak the ShapeSet.
     bits = uintptr_t(hash) | SHAPE_SET_FOR_ADD;
   }
 
@@ -243,11 +243,10 @@ class BaseShape : public gc::TenuredCellWithNonGCPointer<const JSClass> {
   const JSClass* clasp() const { return headerPtr(); }
 
  private:
-  JS::Realm* realm_;
-  GCPtr<TaggedProto> proto_;
-
-  BaseShape(const BaseShape& base) = delete;
-  BaseShape& operator=(const BaseShape& other) = delete;
+  JS::Realm* const realm_;
+  const GCPtr<TaggedProto> proto_;
+  template <uint32_t opts>
+  friend class gc::MarkingTracerT;
 
  public:
   BaseShape(JSContext* cx, const JSClass* clasp, JS::Realm* realm,
@@ -255,6 +254,9 @@ class BaseShape : public gc::TenuredCellWithNonGCPointer<const JSClass> {
 
   /* Not defined: BaseShapes must not be stack allocated. */
   ~BaseShape() = delete;
+
+  BaseShape(const BaseShape& base) = delete;
+  BaseShape& operator=(const BaseShape& other) = delete;
 
   JS::Realm* realm() const { return realm_; }
   JS::Compartment* compartment() const {
@@ -313,7 +315,6 @@ class BaseShape : public gc::TenuredCellWithNonGCPointer<const JSClass> {
 class Shape : public gc::CellWithTenuredGCPointer<gc::TenuredCell, BaseShape> {
   friend class ::JSObject;
   friend class ::JSFunction;
-  friend class GCMarker;
   friend class NativeObject;
   friend class SharedShape;
   friend class PropertyTree;
@@ -322,12 +323,13 @@ class Shape : public gc::CellWithTenuredGCPointer<gc::TenuredCell, BaseShape> {
   friend class gc::RelocationOverlay;
 
  public:
+  Shape(const Shape& other) = delete;
+
   // Base shape, stored in the cell header.
   BaseShape* base() const { return headerPtr(); }
 
   using Kind = JS::shadow::Shape::Kind;
 
- protected:
   // Flags that are not modified after the Shape is created. Off-thread Ion
   // compilation can access the immutableFlags word, so we don't want any
   // mutable state here to avoid (TSan) races.
@@ -360,8 +362,9 @@ class Shape : public gc::CellWithTenuredGCPointer<gc::TenuredCell, BaseShape> {
     SMALL_SLOTSPAN_MASK = uint32_t(SMALL_SLOTSPAN_MAX << SMALL_SLOTSPAN_SHIFT),
   };
 
-  uint32_t immutableFlags;   // Immutable flags, see above.
-  ObjectFlags objectFlags_;  // Immutable object flags, see ObjectFlags.
+ protected:
+  GCData<uint32_t> immutableFlags;  // Immutable flags, see above.
+  ObjectFlags objectFlags_;         // Immutable object flags, see ObjectFlags.
 
   // Cache used to speed up common operations on shapes.
   ShapeCachePtr cache_;
@@ -411,10 +414,11 @@ class Shape : public gc::CellWithTenuredGCPointer<gc::TenuredCell, BaseShape> {
     MOZ_ASSERT(isNative() == base->clasp()->isNativeObject());
   }
 
-  Shape(const Shape& other) = delete;
-
  public:
-  Kind kind() const { return Kind((immutableFlags >> KIND_SHIFT) & KIND_MASK); }
+  Kind kind() const { return kindFromImmutableFlags(immutableFlags); }
+  static Kind kindFromImmutableFlags(uint32_t immutableFlags) {
+    return Kind((immutableFlags >> KIND_SHIFT) & KIND_MASK);
+  }
 
   bool isNative() const {
     // Note: this is equivalent to `isShared() || isDictionary()`.
@@ -452,6 +456,10 @@ class Shape : public gc::CellWithTenuredGCPointer<gc::TenuredCell, BaseShape> {
 
   void traceChildren(JSTracer* trc);
 
+  ImmutableFlags immutableFlagsForTracing() const {
+    return ImmutableFlags(immutableFlags.getForTracing());
+  }
+
   // For JIT usage.
   static constexpr size_t offsetOfBaseShape() { return offsetOfHeaderPtr(); }
 
@@ -488,6 +496,8 @@ class NativeShape : public Shape {
   // initial SharedShape with no properties), a SharedPropMap (for
   // SharedShape) or a DictionaryPropMap (for DictionaryShape).
   GCPtr<PropMap*> propMap_;
+  template <uint32_t opts>
+  friend class gc::MarkingTracerT;
 
   NativeShape(Kind kind, BaseShape* base, ObjectFlags objectFlags,
               uint32_t nfixed, PropMap* map, uint32_t mapLength)
@@ -514,6 +524,9 @@ class NativeShape : public Shape {
   MOZ_ALWAYS_INLINE PropMap* lookupPure(PropertyKey key, uint32_t* index);
 
   uint32_t numFixedSlots() const {
+    return numFixedSlotsFromImmutableFlags(immutableFlags);
+  }
+  static uint32_t numFixedSlotsFromImmutableFlags(uint32_t immutableFlags) {
     return (immutableFlags & FIXED_SLOTS_MASK) >> FIXED_SLOTS_SHIFT;
   }
 
@@ -576,13 +589,15 @@ class SharedShape : public NativeShape {
   }
   uint32_t slotSpan() const {
     MOZ_ASSERT(isShared());
-    uint32_t span =
-        (immutableFlags & SMALL_SLOTSPAN_MASK) >> SMALL_SLOTSPAN_SHIFT;
+    uint32_t span = smallSlotSpanFromImmutableFlags(immutableFlags);
     if (MOZ_LIKELY(span < SMALL_SLOTSPAN_MAX)) {
       MOZ_ASSERT(slotSpanSlow() == span);
       return span;
     }
     return slotSpanSlow();
+  }
+  static uint32_t smallSlotSpanFromImmutableFlags(uint32_t immutableFlags) {
+    return (immutableFlags & SMALL_SLOTSPAN_MASK) >> SMALL_SLOTSPAN_SHIFT;
   }
 
   /*
@@ -676,7 +691,7 @@ class DictionaryShape : public NativeShape {
 // Shape used for a ProxyObject.
 class ProxyShape : public Shape {
   // Needed to maintain the same size as other shapes.
-  uintptr_t padding_;
+  uintptr_t padding_ = 0;
 
   friend class js::gc::CellAllocator;
   ProxyShape(BaseShape* base, ObjectFlags objectFlags)

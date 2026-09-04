@@ -1,0 +1,268 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+:host {
+  display: block;
+  --ai-action-connector-background-color: color-mix(in srgb, var(--color-violet-20) 50%, transparent);
+  --ai-action-connector-width: var(--dimension-2);
+  --ai-action-icon-fill-color: var(--color-violet-20);
+  --ai-action-text-color: var(--color-violet-desaturated-50);
+  --ai-action-loading-gradient-start: var(--color-violet-50);
+  --ai-action-loading-gradient-mid: var(--color-violet-40);
+  --ai-action-loading-gradient-accent: var(--color-pink-40);
+  --ai-action-loading-gradient-highlight: var(--color-pink-30);
+}
+
+.action-result-wrapper {
+  color: var(--text-color);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-small);
+  /* 4px top padding per design (24px margin above the card + 4px = 28px to the
+     label); see the margin rules in ai-chat-content.css. */
+  padding-block: var(--space-xsmall);
+  /* Ease the card in as it appears, softening the spinner -> shimmer handoff. */
+  animation: actionResultFadeIn 200ms ease-out;
+}
+
+@keyframes actionResultFadeIn {
+  from {
+    opacity: 0;
+  }
+}
+
+.action-result-header {
+  align-items: center;
+  align-self: flex-start;
+  background: transparent;
+  border: none;
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  color: var(--ai-action-text-color);
+  cursor: pointer;
+  display: flex;
+  font: inherit;
+  gap: var(--space-small);
+  padding-block: var(--space-medium);
+  /* Zero the UA <button> inline padding so the label aligns to the edge. */
+  padding-inline: 0;
+  text-align: start;
+}
+
+.action-result-header::after {
+  background-image: url("chrome://global/skin/icons/arrow-right-12.svg");
+  background-size: var(--icon-size);
+  background-repeat: no-repeat;
+  background-position: center;
+  content: "";
+  display: block;
+  fill: currentColor;
+  flex-shrink: 0;
+  height: var(--icon-size);
+  width: var(--icon-size);
+  -moz-context-properties: fill;
+  transition: transform 150ms ease;
+}
+
+:host([is-expanded]) .action-result-header::after {
+  transform: rotate(90deg);
+}
+
+:host(:dir(rtl)) .action-result-header::after {
+  background-image: url("chrome://global/skin/icons/arrow-left-12.svg");
+}
+
+:host(:dir(rtl)[is-expanded]) .action-result-header::after {
+  transform: rotate(-90deg);
+}
+
+.action-result-dot {
+  /* 16px slot with the 8px glyph left-aligned so it lines up with the
+     connector (which is centered on the left of the slot). */
+  background-position: left center;
+  background-repeat: no-repeat;
+  flex-shrink: 0;
+  height: var(--icon-size);
+  width: var(--icon-size);
+  margin-inline-start: 1px;
+  background-image: url("chrome://browser/skin/smart-window-dot.svg");
+  background-size: var(--space-small) var(--space-small);
+  fill: var(--ai-action-icon-fill-color);
+  -moz-context-properties: fill;
+}
+
+.action-result-label,
+.action-result-expanded-row-label {
+  font-weight: var(--font-weight-bold);
+  font-size: var(--font-size-small);
+}
+
+/* Embedded link: inherits the label color, underlined. */
+.action-result-label-link {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--ai-action-text-color);
+
+  &:focus-visible {
+    outline: var(--focus-outline);
+    outline-offset: var(--focus-outline-offset);
+  }
+}
+
+/* While an action is in progress (or finishing its last sweep), paint the
+   gradient on the text (no spinner is shown here). */
+:host([shimmering]) .action-result-label,
+:host([settling]) .action-result-label {
+  background-image: linear-gradient(
+    90deg,
+    var(--ai-action-loading-gradient-start) 0%,
+    var(--ai-action-loading-gradient-mid) 22%,
+    var(--ai-action-loading-gradient-accent) 42%,
+    var(--ai-action-loading-gradient-highlight) 52%,
+    var(--ai-action-loading-gradient-mid) 72%,
+    var(--ai-action-loading-gradient-start) 100%
+  );
+  background-size: 200% auto;
+  background-clip: text;
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  color: transparent;
+}
+
+/* Sweep the gradient while actively loading. Once the action finishes, the
+   [settling] state stops this loop and a scripted one-shot animation drives the
+   final sweep to the end (see #finishCurrentSweep). */
+:host([shimmering]:not([settling])) .action-result-label {
+  animation: actionLogShimmer 2s ease-in-out infinite;
+}
+
+/* Once the sweep ends, ease the completed label in. */
+:host(:not([shimmering])) .action-result-label {
+  animation: actionResultFadeIn 150ms ease-out;
+}
+
+/* Travel exactly one background tile (200%) so the loop is seamless — a larger
+   sweep (e.g. -100% to 200%) lands mid-tile and snaps back on repeat. */
+@keyframes actionLogShimmer {
+  from {
+    background-position: 100% center;
+  }
+
+  to {
+    background-position: -100% center;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .action-result-wrapper,
+  :host([shimmering]) .action-result-label,
+  :host(:not([shimmering])) .action-result-label {
+    animation: none;
+  }
+}
+
+@media (forced-colors: active) {
+  :host([shimmering]) .action-result-label {
+    background-image: none;
+    background-clip: unset;
+    color: var(--text-color);
+    animation: none;
+  }
+}
+
+.action-result-expanded {
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  color: var(--ai-action-text-color);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-small);
+}
+
+.action-result-expanded-row {
+  position: relative;
+
+  /* Connector line from each dot down through the chips and across the gap to
+     the next dot. Starts at the first dot (no line up to the removed icon). */
+  &:not(:last-child)::after {
+    background: var(--ai-action-connector-background-color);
+    bottom: calc(-1 * var(--space-small));
+    content: "";
+    /* Center on the dot: 1px margin + half the 8px dot width. */
+    inset-inline-start: calc(1px + var(--space-small) / 2 - var(--ai-action-connector-width) / 2);
+    position: absolute;
+    top: calc(var(--icon-size) + var(--space-xxsmall));
+    width: var(--ai-action-connector-width);
+  }
+}
+
+.action-result-expanded-row-header {
+  align-items: center;
+  display: flex;
+  gap: var(--space-small);
+}
+
+.action-result-chips {
+  padding-block: var(--space-small);
+  /* Align with the row label: 1px dot margin + 16px dot slot + 8px header gap. */
+  padding-inline-start: calc(1px + var(--icon-size) + var(--space-small));
+}
+
+.action-result-summary {
+  margin: 0;
+}
+
+/* TODO: Extract shared button into its own component */
+.action-result-undo {
+  align-self: flex-start;
+  --button-border-radius: var(--border-radius-circle);
+  --button-font-weight: var(--font-weight);
+  --button-background-color: light-dark(var(--color-violet-0), var(--color-gray-80));
+  --button-background-color-active: light-dark(color-mix(in srgb, var(--color-violet-50) 25%, transparent), color-mix(in srgb, white 15%, transparent));
+  --button-background-color-disabled: var(--color-gray-20);
+  --button-background-color-hover: light-dark(color-mix(in srgb, var(--color-violet-50) 15%, transparent), color-mix(in srgb, white 10%, transparent));
+  --button-background-color-selected: light-dark(color-mix(in srgb, var(--color-violet-50) 25%, transparent), color-mix(in srgb, white 15%, transparent));
+  --button-font-size: var(--font-size-small);
+  --button-padding: var(--space-small);
+  --button-text-color: var(--smartwindow-brand-accent);
+  --button-text-color-hover: var(--smartwindow-brand-accent);
+  --button-text-color-active: var(--smartwindow-brand-accent);
+
+  @media not (forced-colors) {
+    --button-background-color-ghost: var(--smartwindow-prompt-button-background-color);
+    --button-text-color-ghost: var(--smartwindow-text-color-accent-deemphasized);
+  }
+}
+
+.action-result-undo::part(button) {
+  position: relative;
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/use-design-tokens */
+  box-shadow: var(--smartwindow-shadow, var(--box-shadow-level-2));
+}
+
+/* stylelint-disable stylelint-plugin-mozilla/use-design-tokens, stylelint-plugin-mozilla/no-base-design-tokens */
+.action-result-undo::part(button)::before {
+  content: "";
+  position: absolute;
+  inset: calc(-1 * var(--border-width));
+  border-radius: inherit;
+  padding: var(--border-width);
+  background: light-dark(
+    linear-gradient(
+      180deg,
+      var(--color-white-alpha-20) 0%,
+      color-mix(in srgb, var(--color-violet-110) 5%, transparent) 31.73%,
+      color-mix(in srgb, var(--color-violet-110) 15%, transparent) 100%
+    ),
+    linear-gradient(180deg, var(--color-black-alpha-30) 0%, var(--color-violet-50) 100%)
+  );
+  mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
+}
+
+@media (forced-colors: active) {
+  :host {
+    --ai-action-connector-background-color: CanvasText;
+  }
+}

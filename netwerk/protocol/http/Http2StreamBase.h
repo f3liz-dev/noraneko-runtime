@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,12 +8,12 @@
 // HTTP/2 - RFC7540
 // https://www.rfc-editor.org/rfc/rfc7540.txt
 
+#include "SimpleBuffer.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/WeakPtr.h"
 #include "nsAHttpTransaction.h"
-#include "nsISupportsPriority.h"
-#include "SimpleBuffer.h"
 #include "nsISupportsImpl.h"
+#include "nsISupportsPriority.h"
 #include "nsIURI.h"
 
 class nsISocketTransport;

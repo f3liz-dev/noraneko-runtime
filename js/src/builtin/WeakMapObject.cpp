@@ -1,10 +1,8 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "builtin/WeakMapObject-inl.h"
+#include "js/WeakMap.h"
 
 #include "builtin/WeakSetObject.h"
 #include "gc/GC.h"
@@ -12,12 +10,12 @@
 #include "jit/InlinableNatives.h"
 #include "js/friend/ErrorMessages.h"  // JSMSG_*
 #include "js/PropertySpec.h"
-#include "js/WeakMap.h"
 #include "vm/Compartment.h"
 #include "vm/JSContext.h"
 #include "vm/SelfHosting.h"
 
 #include "builtin/MapObject-inl.h"
+#include "builtin/WeakMapObject-inl.h"
 #include "gc/GCContext-inl.h"
 #include "gc/WeakMap-inl.h"
 #include "vm/NativeObject-inl.h"
@@ -187,9 +185,7 @@ static bool GetOrAddWeakMapEntry(JSContext* cx, Handle<WeakMapObject*> mapObj,
   WeakCollectionObject::Map* map = mapObj->getMap();
   auto addPtr = map->lookupForAdd(key);
   if (!addPtr) {
-    if (!PreserveReflectorAndAssertValidEntry(cx, mapObj, key, value)) {
-      return false;
-    }
+    PreserveReflectorAndAssertValidEntry(cx, mapObj, key, value);
     if (!map->add(addPtr, key, value)) {
       JS_ReportOutOfMemory(cx);
       return false;
@@ -243,8 +239,8 @@ bool WeakCollectionObject::nondeterministicGetKeys(
   if (Map* map = obj->getMap()) {
     // Prevent GC from mutating the weakmap while iterating.
     gc::AutoSuppressGC suppress(cx);
-    for (Map::Range r = map->all(); !r.empty(); r.popFront()) {
-      const auto& key = r.front().key();
+    for (auto iter = map->iter(); !iter.done(); iter.next()) {
+      const auto& key = iter.get().key();
       MOZ_ASSERT(key.isObject() || key.isSymbol());
       JS::ExposeValueToActiveJS(key);
       RootedValue keyVal(cx, key);
@@ -283,7 +279,8 @@ void WeakCollectionObject::trace(JSTracer* trc, JSObject* obj) {
 }
 
 JS_PUBLIC_API JSObject* JS::NewWeakMapObject(JSContext* cx) {
-  JSObject* obj = NewTenuredBuiltinClassInstance<WeakMapObject>(cx);
+  JSObject* obj =
+      NewBuiltinClassInstance<WeakMapObject>(cx, {.newKind = TenuredObject});
   MOZ_ASSERT_IF(obj, obj->isTenured());
   return obj;
 }
@@ -382,8 +379,8 @@ bool WeakMapObject::construct(JSContext* cx, unsigned argc, Value* vp) {
     return false;
   }
 
-  Rooted<WeakMapObject*> obj(cx, NewObjectWithClassProtoAndKind<WeakMapObject>(
-                                     cx, proto, TenuredObject));
+  Rooted<WeakMapObject*> obj(cx, NewObjectWithClassProto<WeakMapObject>(
+                                     cx, proto, {.newKind = TenuredObject}));
   if (!obj) {
     return false;
   }
@@ -414,16 +411,7 @@ bool WeakMapObject::construct(JSContext* cx, unsigned argc, Value* vp) {
 }
 
 const JSClassOps WeakCollectionObject::classOps_ = {
-    nullptr,  // addProperty
-    nullptr,  // delProperty
-    nullptr,  // enumerate
-    nullptr,  // newEnumerate
-    nullptr,  // resolve
-    nullptr,  // mayResolve
-    nullptr,  // finalize
-    nullptr,  // call
-    nullptr,  // construct
-    &trace,   // trace
+    .trace = &trace,
 };
 
 const ClassSpec WeakMapObject::classSpec_ = {

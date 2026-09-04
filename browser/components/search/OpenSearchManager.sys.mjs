@@ -3,7 +3,8 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 /**
- *  @import { SearchEngine } from "moz-src:///toolkit/components/search/SearchEngine.sys.mjs";
+ * @import { SearchEngine } from "moz-src:///toolkit/components/search/SearchEngine.sys.mjs";
+ * @import { UrlbarInput } from "moz-src:///browser/components/urlbar/content/UrlbarInput.mjs";
  */
 
 const lazy = {};
@@ -14,19 +15,19 @@ ChromeUtils.defineESModuleGetters(lazy, {
 });
 
 /**
+ * @typedef {object} OpenSearchData
+ * @property {string} uri
+ *   The uri of the opensearch XML.
+ * @property {string} title
+ *   The name of the engine.
+ * @property {string} icon
+ *   Data URI containing the engine's icon.
+ */
+
+/**
  * Manages the set of available opensearch engines per browser.
  */
 class _OpenSearchManager {
-  /**
-   * @typedef {object} OpenSearchData
-   * @property {string} uri
-   *   The uri of the opensearch XML.
-   * @property {string} title
-   *   The name of the engine.
-   * @property {string} icon
-   *   Data URI containing the engine's icon.
-   */
-
   /**
    * @type {WeakMap<MozBrowser, OpenSearchData[]>}
    */
@@ -116,7 +117,7 @@ class _OpenSearchManager {
     if (shouldBeHidden) {
       this.#hiddenEngines.set(browser, engines);
     } else {
-      let win = browser.ownerGlobal;
+      let win = browser.documentGlobal;
       this.#offeredEngines.set(browser, engines);
       if (browser == win.gBrowser.selectedBrowser) {
         this.updateOpenSearchBadge(win);
@@ -133,8 +134,10 @@ class _OpenSearchManager {
    *   The window whose UI should be updated.
    */
   updateOpenSearchBadge(win) {
-    let engines = this.#offeredEngines.get(win.gBrowser.selectedBrowser);
-    for (let urlbar of win.document.querySelectorAll("moz-urlbar")) {
+    let engines = this.getInstallableEngines(win.gBrowser.selectedBrowser);
+    for (let urlbar of /** @type {NodeListOf<UrlbarInput>} */ (
+      win.document.querySelectorAll("moz-urlbar")
+    )) {
       if (!urlbar.controller) {
         // This means it is not initialized and happens
         // if the new searchbar is disabled.
@@ -144,6 +147,9 @@ class _OpenSearchManager {
         win.gBrowser.selectedBrowser,
         engines || []
       );
+      if (urlbar.sapName == "searchbar") {
+        urlbar.searchModeSwitcher.toggleAddEnginesBadge(!!engines?.length);
+      }
     }
 
     let searchBar = win.document.getElementById("searchbar");
@@ -216,6 +222,24 @@ class _OpenSearchManager {
    */
   getEngines(browser) {
     return this.#offeredEngines.get(browser) || [];
+  }
+
+  /**
+   * Get the open search engines offered by a browser that the user is allowed
+   * to install. Returns an empty list when the installSearchEngine policy
+   * disallows installing engines, even though the engines remain available for
+   * one-off searches (e.g. contextual search).
+   *
+   * @param {MozBrowser} browser
+   *   The browser for which to get the engines.
+   * @returns {OpenSearchData[]}
+   *   The installable open search engines.
+   */
+  getInstallableEngines(browser) {
+    if (!Services.policies.isAllowed("installSearchEngine")) {
+      return [];
+    }
+    return this.getEngines(browser);
   }
 
   clearEngines(browser) {

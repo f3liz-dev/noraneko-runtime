@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -19,27 +17,25 @@ struct Address;
 class MacroAssembler;
 
 class MoveEmitterARM {
-  uint32_t inCycle_;
+  uint32_t inCycle_ = 0;
   MacroAssembler& masm;
 
   // Original stack push value.
   uint32_t pushedAtStart_;
 
   // These store stack offsets to spill locations, snapshotting
-  // codegen->framePushed_ at the time they were allocated. They are -1 if no
+  // `masm.framePushed()` at the time they were allocated. They are -1 if no
   // stack space has been allocated for that particular spill.
-  int32_t pushedAtCycle_;
-  int32_t pushedAtSpill_;
+  int32_t pushedAtCycle_ = -1;
+  int32_t pushedAtSpill_ = -1;
 
-  // These are registers that are available for temporary use. They may be
-  // assigned InvalidReg. If no corresponding spill space has been assigned,
-  // then these registers do not need to be spilled.
-  Register spilledReg_;
-  FloatRegister spilledFloatReg_;
+  // Scratch register available for temporary use. It may be assigned
+  // InvalidReg. If no corresponding spill space has been assigned, then it
+  // doesn't need to be spilled.
+  Register spilledReg_ = InvalidReg;
 
-  void assertDone();
+  void assertDone() { MOZ_ASSERT(inCycle_ == 0); }
   Register tempReg();
-  FloatRegister tempFloatReg();
   Address cycleSlot(uint32_t slot, uint32_t subslot) const;
   Address spillSlot() const;
   Address toAddress(const MoveOperand& operand) const;
@@ -47,19 +43,16 @@ class MoveEmitterARM {
   void emitMove(const MoveOperand& from, const MoveOperand& to);
   void emitFloat32Move(const MoveOperand& from, const MoveOperand& to);
   void emitDoubleMove(const MoveOperand& from, const MoveOperand& to);
-  void breakCycle(const MoveOperand& from, const MoveOperand& to,
-                  MoveOp::Type type, uint32_t slot);
+  void breakCycle(const MoveOperand& to, MoveOp::Type type, uint32_t slot);
   void completeCycle(const MoveOperand& from, const MoveOperand& to,
                      MoveOp::Type type, uint32_t slot);
   void emit(const MoveOp& move);
 
  public:
   explicit MoveEmitterARM(MacroAssembler& masm);
-  ~MoveEmitterARM();
+  ~MoveEmitterARM() { assertDone(); }
   void emit(const MoveResolver& moves);
   void finish();
-
-  void setScratchRegister(Register reg) {}
 };
 
 using MoveEmitter = MoveEmitterARM;

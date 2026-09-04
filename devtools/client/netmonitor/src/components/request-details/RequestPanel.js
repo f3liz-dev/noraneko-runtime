@@ -222,9 +222,7 @@ class RequestPanel extends Component {
     }
 
     // Request payload section
-    const limit = Services.prefs.getIntPref(
-      "devtools.netmonitor.requestBodyLimit"
-    );
+    const limit = Services.prefs.getIntPref("devtools.netmonitor.bodyLimit");
 
     // Check if the request post data has been truncated from the backend,
     // in which case no parse should be attempted.
@@ -261,7 +259,7 @@ class RequestPanel extends Component {
       component = SourcePreview;
       componentProps = {
         text: postData,
-        mimeType: mimeType?.replace(/;.+/, ""),
+        mimeType: mimeType ? mimeType.replace(/;.+/, "") : "text/plain",
         targetSearchResult,
         url,
       };

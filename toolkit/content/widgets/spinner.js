@@ -18,7 +18,8 @@ function Spinner(props, context) {
 }
 
 {
-  const ITEM_HEIGHT = 2.5,
+  const ITEM_HEIGHT = 2.4,
+    ITEM_MARGIN = 0.1,
     VIEWPORT_SIZE = 7,
     VIEWPORT_COUNT = 5;
 
@@ -58,7 +59,6 @@ function Spinner(props, context) {
 
       this.state = {
         items: [],
-        isScrolling: false,
       };
       this.props = {
         setValue,
@@ -78,7 +78,8 @@ function Spinner(props, context) {
         itemsViewElements: [],
       };
 
-      this.elements.spinner.style.height = ITEM_HEIGHT * viewportSize + "rem";
+      this.elements.spinner.style.height =
+        (ITEM_HEIGHT + ITEM_MARGIN) * viewportSize + "rem";
 
       // Prepares the spinner container to function as a spinbutton and expose
       // its properties to assistive technology
@@ -151,7 +152,7 @@ function Spinner(props, context) {
       }
 
       // Show selection even if it's passed down from the parent
-      if ((isValueSet && !isInvalid) || this.state.index) {
+      if ((isValueSet && !isInvalid) || this.state.index !== undefined) {
         this._updateSelection();
       } else {
         this._removeSelection();
@@ -189,10 +190,17 @@ function Spinner(props, context) {
           this.state.index > itemsView.length - viewportSize
         ) {
           this._scrollTo(this.state.value, true);
+          // We have the correct value in state, but the selected element is
+          // still the one from before the scroll jump.
+          this._updateSelection();
         }
       }
-
-      this.elements.spinner.classList.add("scrolling");
+      if (this.elements.spinner.scrollTop != this.state.lastScrollTop) {
+        // If scrolling did not actually happen, don't add the scrolling class
+        // because we can't count on receiving a corresponding scrollend event.
+        this.state.lastScrollTop = this.elements.spinner.scrollTop;
+        this.elements.spinner.classList.add("scrolling");
+      }
     },
 
     /**
@@ -214,7 +222,9 @@ function Spinner(props, context) {
       const { items, isInfiniteScroll } = this.state;
 
       // Prepends null elements so the selected value is centered in spinner
-      let itemsView = new Array(viewportTopOffset).fill({}).concat(items);
+      let itemsView = new Array(viewportTopOffset)
+        .fill({ hidden: true })
+        .concat(items);
 
       if (items.length >= viewportSize && isInfiniteScroll) {
         // To achieve infinite scroll, we move the scroll position back to the
@@ -282,7 +292,9 @@ function Spinner(props, context) {
       }
 
       parent.lastChild.style.marginBottom =
-        ITEM_HEIGHT * this.props.viewportTopOffset + "rem";
+        (ITEM_HEIGHT + ITEM_MARGIN) * this.props.viewportTopOffset +
+        ITEM_MARGIN +
+        "rem";
     },
 
     /**
@@ -301,7 +313,14 @@ function Spinner(props, context) {
       items.forEach((item, index) => {
         elements[index].textContent =
           item.value != undefined ? getDisplayString(item.value) : "";
-        elements[index].className = item.enabled ? "" : "disabled";
+        const classList = [];
+        if (!item.enabled) {
+          classList.push("disabled");
+        }
+        if (item.hidden) {
+          classList.push("hidden");
+        }
+        elements[index].className = classList.join(" ");
       });
     },
 
@@ -477,7 +496,9 @@ function Spinner(props, context) {
      * @return {number}  Index number
      */
     _getIndexByOffset(offset) {
-      return Math.round(offset / (ITEM_HEIGHT * this.props.rootFontSize));
+      return Math.round(
+        offset / ((ITEM_HEIGHT + ITEM_MARGIN) * this.props.rootFontSize)
+      );
     },
 
     /**
@@ -578,7 +599,7 @@ function Spinner(props, context) {
       }
 
       this.elements.selected = itemsViewElements[currentItemIndex];
-      if (itemsView[currentItemIndex] && itemsView[currentItemIndex].enabled) {
+      if (itemsView[currentItemIndex]) {
         this.elements.selected.classList.add("selection");
       }
     },

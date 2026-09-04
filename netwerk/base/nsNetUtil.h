@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=4 sw=2 sts=2 et cin: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,28 +6,29 @@
 #define nsNetUtil_h_
 
 #include <functional>
+
 #include "mozilla/Maybe.h"
+#include "mozilla/NotNull.h"
 #include "mozilla/ResultExtensions.h"
+#include "mozilla/Services.h"
+#include "mozilla/net/MozURL_ffi.h"
+#include "mozilla/net/idna_glue.h"
 #include "nsAttrValue.h"
 #include "nsCOMPtr.h"
+#include "nsIIOService.h"
 #include "nsIInterfaceRequestor.h"
 #include "nsIInterfaceRequestorUtils.h"
 #include "nsILoadGroup.h"
+#include "nsILoadInfo.h"
 #include "nsINestedURI.h"
 #include "nsINetUtil.h"
 #include "nsIRequest.h"
-#include "nsILoadInfo.h"
-#include "nsIIOService.h"
 #include "nsIURI.h"
-#include "mozilla/NotNull.h"
-#include "mozilla/Services.h"
 #include "nsNetCID.h"
 #include "nsReadableUtils.h"
 #include "nsServiceManagerUtils.h"
 #include "nsString.h"
 #include "nsTArray.h"
-#include "mozilla/net/idna_glue.h"
-#include "mozilla/net/MozURL_ffi.h"
 
 class nsIPrincipal;
 class nsIAsyncStreamCopier;
@@ -191,7 +190,8 @@ nsresult NS_NewChannelInternal(
     nsILoadGroup* aLoadGroup = nullptr,
     nsIInterfaceRequestor* aCallbacks = nullptr,
     nsLoadFlags aLoadFlags = nsIRequest::LOAD_NORMAL,
-    nsIIOService* aIoService = nullptr, uint32_t aSandboxFlags = 0);
+    nsIIOService* aIoService = nullptr, uint32_t aSandboxFlags = 0,
+    uint64_t aAssociatedBrowsingContextID = 0);
 
 // See NS_NewChannelInternal for usage and argument description
 nsresult NS_NewChannelInternal(
@@ -272,7 +272,8 @@ nsresult NS_NewChannel(
     nsILoadGroup* aLoadGroup = nullptr,
     nsIInterfaceRequestor* aCallbacks = nullptr,
     nsLoadFlags aLoadFlags = nsIRequest::LOAD_NORMAL,
-    nsIIOService* aIoService = nullptr, uint32_t aSandboxFlags = 0);
+    nsIIOService* aIoService = nullptr, uint32_t aSandboxFlags = 0,
+    uint64_t aAssociatedBrowsingContextID = 0);
 
 nsresult NS_GetIsDocumentChannel(nsIChannel* aChannel, bool* aIsDocument);
 
@@ -858,12 +859,6 @@ inline nsresult NS_GetInnermostURIHost(nsIURI* aURI, nsACString& aHost) {
  */
 nsresult NS_GetFinalChannelURI(nsIChannel* channel, nsIURI** uri);
 
-// NS_SecurityHashURI must return the same hash value for any two URIs that
-// compare equal according to NS_SecurityCompareURIs.  Unfortunately, in the
-// case of files, it's not clear we can do anything better than returning
-// the schemeHash, so hashing files degenerates to storing them in a list.
-uint32_t NS_SecurityHashURI(nsIURI* aURI);
-
 bool NS_SecurityCompareURIs(nsIURI* aSourceURI, nsIURI* aTargetURI,
                             bool aStrictFileOriginPolicy);
 
@@ -879,7 +874,10 @@ bool NS_ShouldRemoveAuthHeaderOnRedirect(nsIChannel* aOldChannel,
                                          nsIChannel* aNewChannel,
                                          uint32_t aFlags);
 
-nsresult NS_LinkRedirectChannels(uint64_t channelId,
+// aContentParentId identifies the process requesting the link (0 for the
+// parent process). The link only succeeds if the channel was registered for
+// that same process.
+nsresult NS_LinkRedirectChannels(uint64_t channelId, uint64_t aContentParentId,
                                  nsIParentChannel* parentChannel,
                                  nsIChannel** _result);
 
@@ -1127,6 +1125,12 @@ struct LinkHeader {
 
   void MaybeUpdateAttribute(const nsAString& aAttribute,
                             const char16_t* aValue);
+
+  auto MutTiedFields() {
+    return std::tie(mHref, mRel, mTitle, mNonce, mIntegrity, mSrcset, mSizes,
+                    mType, mMedia, mAnchor, mCrossOrigin, mReferrerPolicy, mAs,
+                    mFetchPriority);
+  }
 };
 
 // Implements roughly step 2 to 4 of
@@ -1152,7 +1156,8 @@ enum ASDestination : uint8_t {
   DESTINATION_WORKER,
   DESTINATION_XSLT,
   DESTINATION_FETCH,
-  DESTINATION_JSON
+  DESTINATION_JSON,
+  DESTINATION_TEXT
 };
 
 void ParseAsValue(const nsAString& aValue, nsAttrValue& aResult);
@@ -1162,7 +1167,8 @@ bool IsScriptLikeOrInvalid(const nsAString& aAs);
 bool CheckPreloadAttrs(const nsAttrValue& aAs, const nsAString& aType,
                        const nsAString& aMedia,
                        mozilla::dom::Document* aDocument);
-void WarnIgnoredPreload(const mozilla::dom::Document&, nsIURI&);
+void WarnIgnoredPreload(const mozilla::dom::Document& aDoc, nsIURI* aURI,
+                        const nsAString& aSrcset = nsString());
 
 // Implements parsing of Use-As-Dictionary headers for Compression Dictionary
 // support.

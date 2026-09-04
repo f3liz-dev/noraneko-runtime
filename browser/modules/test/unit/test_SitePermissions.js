@@ -11,6 +11,7 @@ const RESIST_FINGERPRINTING_ENABLED = Services.prefs.getBoolPref(
   "privacy.resistFingerprinting"
 );
 const MIDI_ENABLED = Services.prefs.getBoolPref("dom.webmidi.enabled");
+const WEBSERIAL_ENABLED = Services.prefs.getBoolPref("dom.webserial.enabled");
 
 const SPEAKER_SELECTION_ENABLED = Services.prefs.getBoolPref(
   "media.setsinkid.enabled"
@@ -18,6 +19,10 @@ const SPEAKER_SELECTION_ENABLED = Services.prefs.getBoolPref(
 
 const LOCAL_NETWORK_ACCESS_ENABLED = Services.prefs.getBoolPref(
   "network.lna.blocking"
+);
+
+const SANITIZE_ON_SHUTDOWN_ENABLED = Services.prefs.getBoolPref(
+  "privacy.sanitize.sanitizeOnShutdown"
 );
 
 add_task(async function testPermissionsListing() {
@@ -50,12 +55,20 @@ add_task(async function testPermissionsListing() {
     expectedPermissions.push("midi");
     expectedPermissions.push("midi-sysex");
   }
+  if (WEBSERIAL_ENABLED) {
+    expectedPermissions.push("serial");
+  }
   if (SPEAKER_SELECTION_ENABLED) {
     expectedPermissions.push("speaker");
   }
   if (LOCAL_NETWORK_ACCESS_ENABLED) {
-    expectedPermissions.push("localhost");
+    expectedPermissions.push("loopback-network");
     expectedPermissions.push("local-network");
+  }
+  if (SANITIZE_ON_SHUTDOWN_ENABLED) {
+    // The clear-on-shutdown exception is hidden unless data is cleared on
+    // shutdown.
+    expectedPermissions.push("persist-data-on-shutdown");
   }
   Assert.deepEqual(
     SitePermissions.listPermissions().sort(),
@@ -99,7 +112,7 @@ add_task(async function testGetAllByPrincipal() {
 
   SitePermissions.setForPrincipal(
     principal,
-    "localhost",
+    "loopback-network",
     SitePermissions.ALLOW,
     SitePermissions.SCOPE_SESSION
   );
@@ -129,7 +142,7 @@ add_task(async function testGetAllByPrincipal() {
       scope: SitePermissions.SCOPE_SESSION,
     },
     {
-      id: "localhost",
+      id: "loopback-network",
       state: SitePermissions.ALLOW,
       scope: SitePermissions.SCOPE_SESSION,
     },
@@ -153,7 +166,7 @@ add_task(async function testGetAllByPrincipal() {
       scope: SitePermissions.SCOPE_PERSISTENT,
     },
     {
-      id: "localhost",
+      id: "loopback-network",
       state: SitePermissions.ALLOW,
       scope: SitePermissions.SCOPE_SESSION,
     },
@@ -171,7 +184,7 @@ add_task(async function testGetAllByPrincipal() {
 
   SitePermissions.removeFromPrincipal(principal, "camera");
   SitePermissions.removeFromPrincipal(principal, "desktop-notification");
-  SitePermissions.removeFromPrincipal(principal, "localhost");
+  SitePermissions.removeFromPrincipal(principal, "loopback-network");
   SitePermissions.removeFromPrincipal(principal, "local-network");
 
   Assert.deepEqual(SitePermissions.getAllByPrincipal(principal), []);
@@ -229,6 +242,94 @@ add_task(async function testGetAvailableStates() {
   ]);
 });
 
+add_task(async function testPersistDataOnShutdownPermission() {
+  let principal =
+    Services.scriptSecurityManager.createContentPrincipalFromOrigin(
+      "https://example.com"
+    );
+
+  // The permission is hidden from the listing while clear-on-shutdown is off.
+  Services.prefs.setBoolPref("privacy.sanitize.sanitizeOnShutdown", false);
+  Assert.ok(
+    !SitePermissions.listPermissions().includes("persist-data-on-shutdown"),
+    "Hidden when data is not cleared on shutdown"
+  );
+
+  // Turning clear-on-shutdown on surfaces it.
+  Services.prefs.setBoolPref("privacy.sanitize.sanitizeOnShutdown", true);
+  registerCleanupFunction(() =>
+    Services.prefs.clearUserPref("privacy.sanitize.sanitizeOnShutdown")
+  );
+  Assert.ok(
+    SitePermissions.listPermissions().includes("persist-data-on-shutdown"),
+    "Shown when data is cleared on shutdown"
+  );
+
+  Assert.equal(
+    SitePermissions.getDefault("persist-data-on-shutdown"),
+    SitePermissions.UNKNOWN,
+    "Defaults to no exception (cleared on shutdown)"
+  );
+
+  Assert.deepEqual(
+    SitePermissions.getAvailableStates("persist-data-on-shutdown"),
+    [SitePermissions.UNKNOWN, SitePermissions.ALLOW],
+    "Exposes the default and keep states"
+  );
+
+  Assert.equal(
+    SitePermissions.getPermissionLabel("persist-data-on-shutdown"),
+    "Keep site data when closing"
+  );
+  Assert.equal(
+    SitePermissions.getMultichoiceStateLabel(
+      "persist-data-on-shutdown",
+      SitePermissions.UNKNOWN
+    ),
+    "Clear when closing"
+  );
+  Assert.equal(
+    SitePermissions.getMultichoiceStateLabel(
+      "persist-data-on-shutdown",
+      SitePermissions.ALLOW
+    ),
+    "Always keep site data"
+  );
+
+  // Setting ALLOW persists the exception.
+  SitePermissions.setForPrincipal(
+    principal,
+    "persist-data-on-shutdown",
+    SitePermissions.ALLOW
+  );
+  Assert.equal(
+    SitePermissions.getForPrincipal(principal, "persist-data-on-shutdown")
+      .state,
+    SitePermissions.ALLOW
+  );
+
+  // Setting back to the default removes the exception.
+  SitePermissions.setForPrincipal(
+    principal,
+    "persist-data-on-shutdown",
+    SitePermissions.UNKNOWN
+  );
+  Assert.equal(
+    SitePermissions.getForPrincipal(principal, "persist-data-on-shutdown")
+      .state,
+    SitePermissions.UNKNOWN
+  );
+  Assert.equal(
+    Services.perms.getPermissionObject(
+      principal,
+      "persist-data-on-shutdown",
+      false
+    ),
+    null,
+    "Permission is fully removed, not stored"
+  );
+});
+
 add_task(async function testExactHostMatch() {
   let principal =
     Services.scriptSecurityManager.createContentPrincipalFromOrigin(
@@ -244,7 +345,7 @@ add_task(async function testExactHostMatch() {
     "desktop-notification",
     "focus-tab-by-prompt",
     "camera",
-    "localhost",
+    "loopback-network",
     "local-network",
     "microphone",
     "screen",
@@ -264,6 +365,9 @@ add_task(async function testExactHostMatch() {
     exactHostMatched.push("midi");
     exactHostMatched.push("midi-sysex");
   }
+  if (WEBSERIAL_ENABLED) {
+    exactHostMatched.push("serial");
+  }
   if (SPEAKER_SELECTION_ENABLED) {
     exactHostMatched.push("speaker");
   }
@@ -272,6 +376,7 @@ add_task(async function testExactHostMatch() {
     "popup",
     "install",
     "shortcuts",
+    "persist-data-on-shutdown",
     "storage-access",
     "3rdPartyStorage",
     "3rdPartyFrameStorage",
@@ -355,10 +460,13 @@ add_task(async function testDefaultPrefs() {
     scope: SitePermissions.SCOPE_PERSISTENT,
   });
 
-  Assert.deepEqual(SitePermissions.getForPrincipal(principal, "localhost"), {
-    state: SitePermissions.UNKNOWN,
-    scope: SitePermissions.SCOPE_PERSISTENT,
-  });
+  Assert.deepEqual(
+    SitePermissions.getForPrincipal(principal, "loopback-network"),
+    {
+      state: SitePermissions.UNKNOWN,
+      scope: SitePermissions.SCOPE_PERSISTENT,
+    }
+  );
 
   Assert.deepEqual(
     SitePermissions.getForPrincipal(principal, "local-network"),
@@ -448,35 +556,35 @@ add_task(async function testLocalHostPermission() {
 
   SitePermissions.setForPrincipal(
     principal,
-    "localhost",
+    "loopback-network",
     SitePermissions.ALLOW
   );
 
   Services.prefs.setBoolPref("network.lna.blocking", false);
   Assert.ok(
-    !SitePermissions.listPermissions().includes("localhost"),
-    "No 'localhost' permission should be present"
+    !SitePermissions.listPermissions().includes("loopback-network"),
+    "No 'loopback-network' permission should be present"
   );
   Assert.ok(
     !SitePermissions.getAllByPrincipal(principal).some(
-      permission => permission.id === "localhost"
+      permission => permission.id === "loopback-network"
     ),
-    "No 'localhost' permission should be present"
+    "No 'loopback-network' permission should be present"
   );
 
   Services.prefs.setBoolPref("network.lna.blocking", true);
   Assert.ok(
-    SitePermissions.listPermissions().includes("localhost"),
-    "'localhost' should be in listPermissions when blocking is enabled"
+    SitePermissions.listPermissions().includes("loopback-network"),
+    "'loopback-network' should be in listPermissions when blocking is enabled"
   );
   Assert.ok(
     SitePermissions.getAllByPrincipal(principal).some(
-      permission => permission.id === "localhost"
+      permission => permission.id === "loopback-network"
     ),
-    "'localhost' permission should be present for principal when blocking is enabled"
+    "'loopback-network' permission should be present for principal when blocking is enabled"
   );
 
-  SitePermissions.removeFromPrincipal(principal, "localhost");
+  SitePermissions.removeFromPrincipal(principal, "loopback-network");
   Services.prefs.setBoolPref("network.lna.blocking", lnaEnabled);
 });
 

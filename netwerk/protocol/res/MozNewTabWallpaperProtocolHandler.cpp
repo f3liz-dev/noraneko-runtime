@@ -1,24 +1,22 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "MozNewTabWallpaperProtocolHandler.h"
 
+#include "SimpleChannel.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/net/NeckoParent.h"
+#include "nsAppDirectoryServiceDefs.h"
 #include "nsContentUtils.h"
+#include "nsDirectoryServiceUtils.h"
 #include "nsIFile.h"
 #include "nsIFileChannel.h"
 #include "nsIFileURL.h"
 #include "nsIMIMEService.h"
-#include "nsDirectoryServiceUtils.h"
-#include "nsAppDirectoryServiceDefs.h"
 #include "nsNetUtil.h"
 #include "nsURLHelper.h"
 #include "prio.h"
-#include "SimpleChannel.h"
 
 #define NEWTAB_WALLPAPER_SCHEME "moz-newtab-wallpaper"
 
@@ -53,7 +51,7 @@ MozNewTabWallpaperProtocolHandler::MozNewTabWallpaperProtocolHandler()
     : SubstitutingProtocolHandler(NEWTAB_WALLPAPER_SCHEME) {}
 
 RefPtr<RemoteStreamPromise> MozNewTabWallpaperProtocolHandler::NewStream(
-    nsIURI* aChildURI, bool* aTerminateSender) {
+    nsIURI* aChildURI, nsILoadInfo* aLoadInfo, bool* aTerminateSender) {
   MOZ_ASSERT(!IsNeckoChild());
   MOZ_ASSERT(NS_IsMainThread());
 
@@ -75,6 +73,11 @@ RefPtr<RemoteStreamPromise> MozNewTabWallpaperProtocolHandler::NewStream(
   nsAutoCString host;
   if (NS_FAILED(aChildURI->GetAsciiHost(host)) || host.IsEmpty()) {
     return RemoteStreamPromise::CreateAndReject(NS_ERROR_UNEXPECTED, __func__);
+  }
+
+  if (!nsContentUtils::IsImageType(aLoadInfo->GetExternalContentPolicyType())) {
+    return RemoteStreamPromise::CreateAndReject(NS_ERROR_CONTENT_BLOCKED,
+                                                __func__);
   }
 
   *aTerminateSender = false;
@@ -134,6 +137,10 @@ bool MozNewTabWallpaperProtocolHandler::ResolveSpecialCases(
 
 nsresult MozNewTabWallpaperProtocolHandler::SubstituteChannel(
     nsIURI* aURI, nsILoadInfo* aLoadInfo, nsIChannel** aRetVal) {
+  if (!nsContentUtils::IsImageType(aLoadInfo->GetExternalContentPolicyType())) {
+    return NS_ERROR_CONTENT_BLOCKED;
+  }
+
   // Check if URI resolves to a file URI.
   nsAutoCString resolvedSpec;
   MOZ_TRY(ResolveURI(aURI, resolvedSpec));

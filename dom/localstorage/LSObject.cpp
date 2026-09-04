@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -321,8 +319,8 @@ nsresult LSObject::CreateForWindow(nsPIDOMWindowInner* aWindow,
   object->mPrincipalInfo = std::move(principalInfo);
   object->mStoragePrincipalInfo = std::move(storagePrincipalInfo);
   object->mPrivateBrowsingId = privateBrowsingId;
-  object->mClientId = clientId;
-  object->mClientPrincipalInfo = clientPrincipalInfo;
+  object->mClientId = std::move(clientId);
+  object->mClientPrincipalInfo = std::move(clientPrincipalInfo);
   object->mOrigin = origin;
   object->mOriginKey = originKey;
   object->mDocumentURI = documentURI;
@@ -419,7 +417,7 @@ nsresult LSObject::CreateForPrincipal(nsPIDOMWindowInner* aWindow,
   object->mPrincipalInfo = std::move(principalInfo);
   object->mStoragePrincipalInfo = std::move(storagePrincipalInfo);
   object->mPrivateBrowsingId = aPrivate ? 1 : 0;
-  object->mClientId = clientId;
+  object->mClientId = std::move(clientId);
   object->mOrigin = origin;
   object->mOriginKey = originKey;
   object->mDocumentURI = aDocumentURI;
@@ -544,7 +542,7 @@ void LSObject::Key(uint32_t aIndex, nsAString& aResult,
     return;
   }
 
-  aResult = result;
+  aResult = std::move(result);
 }
 
 void LSObject::GetItem(const nsAString& aKey, nsAString& aResult,
@@ -569,7 +567,7 @@ void LSObject::GetItem(const nsAString& aKey, nsAString& aResult,
     return;
   }
 
-  aResult = result;
+  aResult = std::move(result);
 }
 
 void LSObject::GetSupportedNames(nsTArray<nsString>& aNames) {

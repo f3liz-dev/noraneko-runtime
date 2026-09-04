@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,6 +6,7 @@
 #define mozilla_EventListenerManager_h_
 
 #include "mozilla/BasicEvents.h"
+#include "mozilla/DoublyLinkedList.h"
 #include "mozilla/JSEventHandler.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/dom/AbortFollower.h"
@@ -173,7 +172,11 @@ class EventListenerManagerBase {
  * Event listener manager
  */
 
-class EventListenerManager final : public EventListenerManagerBase {
+class EventListenerManager final
+    : public EventListenerManagerBase,
+      // The managers owned by nodes are kept in a list, see
+      // nsContentUtils::AddNodeListenerManager.
+      public DoublyLinkedListElement<EventListenerManager> {
   ~EventListenerManager();
 
  public:
@@ -628,7 +631,7 @@ class EventListenerManager final : public EventListenerManagerBase {
   EventMessage GetEventMessageAndAtomForListener(const nsAString& aType,
                                                  nsAtom** aAtom);
 
-  void ProcessApzAwareEventListenerAdd();
+  void ProcessApzAwareEventListenerAdd(nsAtom* aEvent);
 
   /**
    * Compile the "inline" event listener for aListener.  The

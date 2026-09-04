@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,14 +7,14 @@
 
 #include "GLConsts.h"
 #include "GLTypes.h"
-#include "nsISupportsImpl.h"
 #include "mozilla/Atomics.h"
+#include "mozilla/RefPtr.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/layers/LayersSurfaces.h"
 #include "mozilla/layers/OverlayInfo.h"
-#include "mozilla/RefPtr.h"
-#include "mozilla/webrender/webrender_ffi.h"
 #include "mozilla/webrender/WebRenderTypes.h"
+#include "mozilla/webrender/webrender_ffi.h"
+#include "nsISupportsImpl.h"
 
 namespace mozilla {
 
@@ -32,6 +30,7 @@ namespace wr {
 
 class RenderEGLImageTextureHost;
 class RenderAndroidHardwareBufferTextureHost;
+class RenderAndroidImageReaderImageTextureHost;
 class RenderAndroidSurfaceTextureHost;
 class RenderCompositor;
 class RenderDXGITextureHost;
@@ -97,6 +96,13 @@ class RenderTextureHost {
 
   virtual void UnlockSWGL() {}
 
+  virtual bool LockSWGLCompositeSurface(void* aContext,
+                                        wr::SWGLCompositeSurfaceInfo* aInfo) {
+    return false;
+  }
+
+  virtual void UnlockSWGLCompositeSurface() {}
+
   virtual RefPtr<layers::TextureSource> CreateTextureSource(
       layers::TextureSourceProvider* aProvider);
 
@@ -143,6 +149,11 @@ class RenderTextureHost {
     return nullptr;
   }
 
+  virtual RenderAndroidImageReaderImageTextureHost*
+  AsRenderAndroidImageReaderImageTextureHost() {
+    return nullptr;
+  }
+
   virtual RenderAndroidSurfaceTextureHost* AsRenderAndroidSurfaceTextureHost() {
     return nullptr;
   }
@@ -177,6 +188,11 @@ class RenderTextureHost {
   virtual RefPtr<RenderTextureHostUsageInfo> GetTextureHostUsageInfo(
       const MutexAutoLock& aProofOfMapLock);
 
+  void SetDestroyedCallback(std::function<void()>&& aDestroyedCallback) {
+    MOZ_ASSERT(!mDestroyedCallback);
+    mDestroyedCallback = std::move(aDestroyedCallback);
+  }
+
  protected:
   virtual ~RenderTextureHost();
 
@@ -184,6 +200,7 @@ class RenderTextureHost {
 
   // protected by RenderThread::mRenderTextureMapLock
   RefPtr<RenderTextureHostUsageInfo> mRenderTextureHostUsageInfo;
+  std::function<void()> mDestroyedCallback;
 
   friend class RenderTextureHostWrapper;
 };

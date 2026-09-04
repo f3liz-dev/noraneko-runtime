@@ -186,6 +186,10 @@ class RTCRtpTransceiver : public nsISupports, public nsWrapperCache {
       const JsepVideoCodecDescription& aCodec,
       RTCRtpCodecParameters* aDomCodecParameters);
 
+  static void ToDomHeaderExtensions(
+      const JsepTrackNegotiatedDetails& aDetails,
+      Sequence<RTCRtpHeaderExtensionParameters>& aExtensions);
+
   /* Returns a promise that will contain the stats in aStats, along with the
    * codec stats (which is a PC-wide thing) */
   void ChainToDomPromiseWithCodecStats(nsTArray<RefPtr<RTCStatsPromise>> aStats,
@@ -276,7 +280,7 @@ class RTCRtpTransceiver : public nsISupports, public nsWrapperCache {
   // setCodecPreferences.
   std::vector<UniquePtr<JsepCodecDescription>> mPreferredCodecs;
   // Identifies if a preferred list and order of codecs is to be used.
-  // This is true if setCodecPreferences was called succesfully and passed
+  // This is true if setCodecPreferences was called successfully and passed
   // codecs (not empty).
   bool mPreferredCodecsInUse = false;
 };

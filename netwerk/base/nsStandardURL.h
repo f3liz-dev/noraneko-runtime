@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,17 +7,20 @@
 
 #include <bitset>
 
-#include "nsString.h"
-#include "nsISerializable.h"
-#include "nsIFileURL.h"
-#include "nsIStandardURL.h"
-#include "mozilla/Encoding.h"
-#include "nsCOMPtr.h"
-#include "nsURLHelper.h"
+#include "URIHasher.h"
 #include "mozilla/Atomics.h"
+#include "mozilla/Encoding.h"
 #include "mozilla/LinkedList.h"
+#include "nsCOMPtr.h"
+#include "nsIFileURL.h"
+#include "nsIIPCSerializableURI.h"
 #include "nsISensitiveInfoHiddenURI.h"
+#include "nsISerializable.h"
+#include "nsIStandardURL.h"
 #include "nsIURIMutator.h"
+#include "nsIURIWithSizeOf.h"
+#include "nsString.h"
+#include "nsURLHelper.h"
 
 #ifdef NS_BUILD_REFCNT_LOGGING
 #  define DEBUG_DUMP_URLS_AT_SHUTDOWN
@@ -110,7 +112,10 @@ class URLSegmentNumber {
 class nsStandardURL : public nsIFileURL,
                       public nsIStandardURL,
                       public nsISerializable,
-                      public nsISensitiveInfoHiddenURI
+                      public nsISensitiveInfoHiddenURI,
+                      public nsIIPCSerializableURI,
+                      public nsIURIWithSizeOf,
+                      public URIHasher
 #ifdef DEBUG_DUMP_URLS_AT_SHUTDOWN
     ,
                       public LinkedListElement<nsStandardURL>
@@ -128,6 +133,8 @@ class nsStandardURL : public nsIFileURL,
   NS_DECL_NSISTANDARDURL
   NS_DECL_NSISERIALIZABLE
   NS_DECL_NSISENSITIVEINFOHIDDENURI
+  NS_DECL_NSIIPCSERIALIZABLEURI
+  NS_DECL_NSIURIWITHSIZEOF
 
   static void InitGlobalObjects();
   static void ShutdownGlobalObjects();
@@ -234,6 +241,8 @@ class nsStandardURL : public nsIFileURL,
   bool Deserialize(const mozilla::ipc::URIParams&);
   nsresult ReadPrivate(nsIObjectInputStream* stream);
 
+  bool CheckSegmentInvariants() const;
+
  private:
   nsresult Init(uint32_t urlType, int32_t defaultPort, const nsACString& spec,
                 const char* charset, nsIURI* baseURI);
@@ -327,8 +336,10 @@ class nsStandardURL : public nsIFileURL,
   // Asserts that the URL has sane values
   void SanityCheck();
 
-  // Checks if the URL has a valid representation.
-  bool IsValid();
+  // Checks if the URL has a valid representation. On failure, if
+  // aFailReason is non-null, it receives a code identifying the first check
+  // that failed (see the InvalidURLReason values in nsStandardURL.cpp).
+  bool IsValid(uint32_t* aFailReason = nullptr);
 
   // This value will only be updated on the main thread once.
   static Atomic<bool, Relaxed> gInitialized;
@@ -407,6 +418,9 @@ class nsStandardURL : public nsIFileURL,
     }
 
     [[nodiscard]] NS_IMETHOD Finalize(nsIURI** aURI) override {
+      if (!BaseURIMutator<T>::mURI) {
+        return NS_ERROR_NULL_POINTER;
+      }
       BaseURIMutator<T>::mURI.forget(aURI);
       return NS_OK;
     }

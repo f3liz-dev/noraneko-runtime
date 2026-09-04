@@ -64,8 +64,6 @@ const intermittently_loaded_scripts = {
   modules: new Set([
     "resource://gre/modules/nsAsyncShutdown.sys.mjs",
 
-    // Cookie banner handling.
-    "resource://gre/actors/CookieBannerChild.sys.mjs",
     "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
 
     // Test related
@@ -115,6 +113,7 @@ add_task(async function () {
     },
     matches: [subframeURI],
     allFrames: true,
+    safeForUntrustedWebProcess: true,
   });
 
   // Create a tab, and load a remote subframe with the specific URI in it.

@@ -42,7 +42,7 @@ MOZ_RUNINIT const TimeDuration kMaxCCLockedoutTime =
  * ==========================
  *
  * See also GC Scheduling from SpiderMonkey's perspective here:
- * https://searchfox.org/mozilla-central/source/js/src/gc/Scheduling.h
+ * https://searchfox.org/firefox-main/source/js/src/gc/Scheduling.h
  *
  * From Firefox's perspective GCs can start in 5 different ways:
  *
@@ -219,12 +219,12 @@ void CCGCScheduler::NoteGCSliceEnd(TimeStamp aStart, TimeStamp aEnd) {
   PerfStats::RecordMeasurement(PerfStats::Metric::NonIdleMajorGC,
                                nonIdleDuration);
 
-  // Note the GC_SLICE_DURING_IDLE previously had a different definition: it was
-  // a histogram of percentages of externally-triggered slices. It is now a
-  // histogram of percentages of all slices. That means that now you might have
-  // a 4ms internal slice (0% during idle) followed by a 16ms external slice
-  // (15ms during idle), whereas before this would show up as a single record of
-  // a single slice with 75% of its time during idle (15 of 20ms).
+  // Note the dom.gc_slice_during_idle previously had a different definition:
+  // it was a histogram of percentages of externally-triggered slices. It is now
+  // a histogram of percentages of all slices. That means that now you might
+  // have a 4ms internal slice (0% during idle) followed by a 16ms external
+  // slice (15ms during idle), whereas before this would show up as a single
+  // record of a single slice with 75% of its time during idle (15 of 20ms).
   TimeDuration idleDuration = sliceDuration - nonIdleDuration;
   uint32_t percent =
       uint32_t(idleDuration.ToSeconds() / sliceDuration.ToSeconds() * 100);
@@ -303,7 +303,7 @@ bool CCGCScheduler::GCRunnerFired(TimeStamp aDeadline) {
               // Recreate the GC runner with a 0 delay.  The new runner will
               // continue in idle time.
               KillGCRunner();
-              EnsureGCRunner(0);
+              EnsureGCRunner();
             } else if (!InIncrementalGC()) {
               // We should kill the GC runner since we're done with it, but
               // only if there's no incremental GC.
@@ -452,7 +452,7 @@ void CCGCScheduler::PokeShrinkingGC() {
           if (!nsRefreshDriver::IsRegularRateTimerTicking()) {
             s->SetWantMajorGC(JS::GCReason::USER_INACTIVE);
             if (!s->mHaveAskedParent) {
-              s->EnsureGCRunner(0);
+              s->EnsureGCRunner();
             }
           } else {
             s->PokeShrinkingGC();
@@ -478,7 +478,7 @@ void CCGCScheduler::PokeFullGC() {
           if (s->mCCRunner) {
             s->EnsureCCThenGC(CCReason::GC_WAITING);
           } else if (!s->mHaveAskedParent) {
-            s->EnsureGCRunner(0);
+            s->EnsureGCRunner();
           }
         },
         this, StaticPrefs::javascript_options_gc_delay_full(),
@@ -546,12 +546,12 @@ void CCGCScheduler::PokeMinorGC(JS::GCReason aReason) {
   }
 
   // Immediately start looking for idle time to run the minor GC.
-  EnsureGCRunner(0);
+  EnsureGCRunner();
 }
 
 void CCGCScheduler::EnsureOrResetGCRunner() {
   if (!mGCRunner) {
-    EnsureGCRunner(0);
+    EnsureGCRunner();
     return;
   }
 
@@ -644,8 +644,8 @@ void CCGCScheduler::EnsureCCRunner(TimeDuration aDelay, TimeDuration aBudget) {
   if (!mCCRunner) {
     mCCRunner = IdleTaskRunner::Create(
         [this](TimeStamp aDeadline) { return CCRunnerFired(aDeadline); },
-        "EnsureCCRunner::CCRunnerFired"_ns, 0, aDelay, minimumBudget, true,
-        [this] { return mDidShutdown; });
+        "EnsureCCRunner::CCRunnerFired"_ns, TimeDuration(), aDelay,
+        minimumBudget, true, [this] { return mDidShutdown; });
   } else {
     mCCRunner->SetMinimumUsefulBudget(minimumBudget.ToMilliseconds());
     nsIEventTarget* target = mozilla::GetCurrentSerialEventTarget();
@@ -699,7 +699,7 @@ JS::SliceBudget CCGCScheduler::ComputeCCSliceBudget(
 
   if (aPrevSliceEndTime.IsNull()) {
     // The first slice gets the standard slice time.
-    return JS::SliceBudget(JS::TimeBudget(baseBudget));
+    return JS::SliceBudget(baseBudget);
   }
 
   // Only run a limited slice if we're within the max running time.
@@ -728,8 +728,8 @@ JS::SliceBudget CCGCScheduler::ComputeCCSliceBudget(
   // Note: We may have already overshot the deadline, in which case
   // baseBudget will be negative and we will end up returning
   // laterSliceBudget.
-  return JS::SliceBudget(JS::TimeBudget(
-      std::max({delaySliceBudget, laterSliceBudget, baseBudget})));
+  return JS::SliceBudget(
+      std::max({delaySliceBudget, laterSliceBudget, baseBudget}));
 }
 
 JS::SliceBudget CCGCScheduler::ComputeInterSliceGCBudget(TimeStamp aDeadline,
@@ -755,7 +755,7 @@ JS::SliceBudget CCGCScheduler::ComputeInterSliceGCBudget(TimeStamp aDeadline,
   }
 
   // If the budget is being extended, do not allow it to be interrupted.
-  auto result = JS::SliceBudget(JS::TimeBudget(extendedBudget), nullptr);
+  auto result = JS::SliceBudget(extendedBudget, nullptr);
   result.idle = !aDeadline.IsNull();
   result.extended = true;
   return result;

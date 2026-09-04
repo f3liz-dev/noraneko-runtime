@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -132,6 +130,10 @@ class PerformanceResourceTiming : public PerformanceEntry {
 
   IMPL_RESOURCE_TIMING_TAO_PROTECTED_TIMING_PROP(ResponseStart)
 
+  IMPL_RESOURCE_TIMING_TAO_PROTECTED_TIMING_PROP(FirstInterimResponseStart)
+
+  IMPL_RESOURCE_TIMING_TAO_PROTECTED_TIMING_PROP(FinalResponseHeadersStart)
+
   DOMHighResTimeStamp ResponseEnd() const {
     return mTimingData->ResponseEndHighRes(mPerformance);
   }
@@ -172,6 +174,13 @@ class PerformanceResourceTiming : public PerformanceEntry {
     return 0;
   }
 
+  void GetDeliveryType(nsAString& aDeliveryType) const {
+    aDeliveryType = mDeliveryType;
+  }
+  void SetDeliveryType(const nsAString& aDeliveryType) {
+    mDeliveryType = aDeliveryType;
+  }
+
   void GetContentType(nsAString& aContentType,
                       nsIPrincipal& aSubjectPrincipal) const {
     if (BodyInfoAccessAllowedForCaller(aSubjectPrincipal) ==
@@ -205,6 +214,7 @@ class PerformanceResourceTiming : public PerformanceEntry {
                                bool aEnsureSameOriginAndIgnoreTAO) const;
 
   nsString mInitiatorType;
+  nsString mDeliveryType;
   const UniquePtr<PerformanceTimingData> mTimingData;  // always non-null
   RefPtr<Performance> mPerformance;
 

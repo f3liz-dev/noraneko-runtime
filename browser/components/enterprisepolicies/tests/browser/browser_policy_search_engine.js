@@ -5,14 +5,15 @@
 ChromeUtils.defineESModuleGetters(this, {
   CustomizableUITestUtils:
     "resource://testing-common/CustomizableUITestUtils.sys.mjs",
+  OpenSearchManager:
+    "moz-src:///browser/components/search/OpenSearchManager.sys.mjs",
+  SearchbarTestUtils: "resource://testing-common/UrlbarTestUtils.sys.mjs",
 });
 
 let gCUITestUtils = new CustomizableUITestUtils(window);
+SearchbarTestUtils.init(this);
 
 add_task(async function test_setup() {
-  await SpecialPowers.pushPrefEnv({
-    set: [["browser.search.widget.new", false]],
-  });
   await gCUITestUtils.addSearchBar();
   registerCleanupFunction(() => {
     gCUITestUtils.removeSearchBar();
@@ -22,51 +23,35 @@ add_task(async function test_setup() {
 // |shouldWork| should be true if opensearch is expected to work and false if
 // it is not.
 async function test_opensearch(shouldWork) {
-  let searchBar = document.getElementById("searchbar");
-
   let rootDir = getRootDirectory(gTestPath);
   let tab = await BrowserTestUtils.openNewForegroundTab(
     gBrowser,
     rootDir + "opensearch.html"
   );
-  let searchPopup = document.getElementById("PopupSearchAutoComplete");
-  let promiseSearchPopupShown = BrowserTestUtils.waitForEvent(
-    searchPopup,
-    "popupshown"
-  );
-  // Wait for the one-off buttons to rebuild. The opensearch engines are
-  // discovered asynchronously when the page loads, and the one-off buttons
-  // are populated after that. The "popupshown" event fires before the
-  // buttons are ready, so we must also wait for "rebuild".
-  let promiseSearchPopupBuilt = BrowserTestUtils.waitForEvent(
-    searchPopup.oneOffButtons,
-    "rebuild"
-  );
-  let searchBarButton = searchBar.querySelector(".searchbar-search-button");
 
-  searchBarButton.click();
-  await Promise.all([promiseSearchPopupShown, promiseSearchPopupBuilt]);
-  let oneOffsContainer = searchPopup.searchOneOffsContainer;
-  let engineElement = oneOffsContainer.querySelector(
-    ".searchbar-engine-one-off-add-engine"
+  let popup = await SearchbarTestUtils.openSearchModeSwitcher(window);
+  let engineElement = popup.querySelector(
+    "panel-item[data-engine-name=newEngine]"
   );
+
   if (shouldWork) {
     ok(engineElement, "There should be search engines available to add");
-    ok(
-      searchBar.getAttribute("addengines"),
-      "Search bar should have addengines attribute"
-    );
   } else {
     is(
       engineElement,
       null,
       "There should be no search engines available to add"
     );
+    // The engine is still discovered so it remains usable for a one-off
+    // contextual search; only installing it is prevented.
     ok(
-      !searchBar.getAttribute("addengines"),
-      "Search bar should not have addengines attribute"
+      OpenSearchManager.getEngines(tab.linkedBrowser).some(
+        e => e.title == "newEngine"
+      ),
+      "The engine is still discovered for contextual search"
     );
   }
+  popup.hide();
   await BrowserTestUtils.removeTab(tab);
 }
 
@@ -98,6 +83,20 @@ add_task(async function test_prevent_install_ui() {
     "about:preferences#search"
   );
   await SpecialPowers.spawn(tab.linkedBrowser, [], async function () {
+    if (
+      Services.prefs.getBoolPref("browser.settings-redesign.enabled", false)
+    ) {
+      let isAddEngineHidden = () =>
+        content.document.getElementById("setting-control-addEngineButton")
+          ?.hidden;
+      await ContentTaskUtils.waitForMutationCondition(
+        content.document.documentElement,
+        { subtree: true, childList: true, attributeFilter: ["hidden"] },
+        isAddEngineHidden
+      );
+      ok(isAddEngineHidden(), '"Add search engine" button should be hidden');
+      return;
+    }
     let linkContainer = content.document.getElementById("addEnginesBox");
     if (!linkContainer.hidden) {
       await ContentTaskUtils.waitForMutationCondition(
@@ -111,6 +110,34 @@ add_task(async function test_prevent_install_ui() {
       '"Find more search engines" link should be hidden'
     );
   });
+  await BrowserTestUtils.removeTab(tab);
+});
+
+add_task(async function test_prevent_install_context_menu() {
+  // Check that the "Add a Keyword for this Search" context menu item is not
+  // offered when installing search engines is disabled.
+  let tab = await BrowserTestUtils.openNewForegroundTab(
+    gBrowser,
+    "https://example.com/browser/browser/base/content/test/contextMenu/subtst_contextmenu_add_search_engine.html"
+  );
+
+  let contextMenu = document.getElementById("contentAreaContextMenu");
+  let popupShown = BrowserTestUtils.waitForEvent(contextMenu, "popupshown");
+  await BrowserTestUtils.synthesizeMouseAtCenter(
+    "#search_text",
+    { type: "contextmenu", button: 2 },
+    tab.linkedBrowser
+  );
+  await popupShown;
+
+  ok(
+    document.getElementById("context-add-engine").hidden,
+    "context-add-engine should be hidden when installs are prevented"
+  );
+
+  let popupHidden = BrowserTestUtils.waitForEvent(contextMenu, "popuphidden");
+  contextMenu.hidePopup();
+  await popupHidden;
   await BrowserTestUtils.removeTab(tab);
 });
 

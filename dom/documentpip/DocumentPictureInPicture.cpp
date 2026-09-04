@@ -11,10 +11,14 @@
 #include "mozilla/dom/DocumentPictureInPictureEvent.h"
 #include "mozilla/dom/WindowContext.h"
 #include "mozilla/widget/Screen.h"
+#include "nsCRT.h"
+#include "nsContentUtils.h"
 #include "nsDocShell.h"
 #include "nsDocShellLoadState.h"
+#include "nsGlobalWindowOuter.h"
 #include "nsIWindowWatcher.h"
 #include "nsNetUtil.h"
+#include "nsPIDOMWindowInlines.h"
 #include "nsPIWindowWatcher.h"
 #include "nsServiceManagerUtils.h"
 #include "nsWindowWatcher.h"
@@ -92,9 +96,17 @@ void DocumentPictureInPicture::OnPiPClosed() {
   MOZ_LOG(gDPIPLog, LogLevel::Debug, ("PiP was closed"));
 
   mLastOpenedWindow = nullptr;
+
+  if (RefPtr<nsPIDOMWindowInner> ownerWin = GetOwnerWindow()) {
+    if (BrowsingContext* bc = ownerWin->GetBrowsingContext()) {
+      MOZ_ASSERT(bc->GetControlsDocumentPiP());
+      DebugOnly<nsresult> rv = bc->SetControlsDocumentPiP(false);
+      MOZ_ASSERT(NS_SUCCEEDED(rv));
+    }
+  }
 }
 
-nsGlobalWindowInner* DocumentPictureInPicture::GetWindow() {
+nsGlobalWindowInner* DocumentPictureInPicture::GetWindow() const {
   if (mLastOpenedWindow && mLastOpenedWindow->GetOuterWindow() &&
       !mLastOpenedWindow->GetOuterWindow()->Closed()) {
     return nsGlobalWindowInner::Cast(mLastOpenedWindow);
@@ -126,6 +138,9 @@ static nsresult OpenPiPWindowUtility(nsPIDOMWindowOuter* aParent,
 
   RefPtr<nsDocShellLoadState> loadState =
       nsWindowWatcher::CreateLoadState(uri, aParent);
+
+  // Ensure we load with this's relevant global object's principal
+  loadState->SetTriggeringPrincipal(aParent->GetExtantDoc()->NodePrincipal());
 
   // pictureinpicture, disallow_return_to_oopener are non-standard window
   // features not available from JS
@@ -259,6 +274,7 @@ already_AddRefed<Promise> DocumentPictureInPicture::RequestWindow(
   }
 
   // 4, 7. Require transient activation
+  // XXX maybe exempt extensions, see bug 2047870.
   WindowContext* wc = ownerWin->GetWindowContext();
   if (!wc || !wc->ConsumeTransientUserGestureActivation()) {
     aRv.ThrowNotAllowedError(
@@ -275,6 +291,8 @@ already_AddRefed<Promise> DocumentPictureInPicture::RequestWindow(
 
   // 8. Possibly close last opened window
   if (RefPtr<nsPIDOMWindowInner> lastOpenedWindow = mLastOpenedWindow) {
+    // Hack: Clean up synchronously before we open the next window
+    OnPiPClosed();
     lastOpenedWindow->Close();
   }
 
@@ -299,14 +317,22 @@ already_AddRefed<Promise> DocumentPictureInPicture::RequestWindow(
   // 9. Optionally, close any existing PIP windows
   // I think it's useful to have multiple PiP windows from different top pages.
 
+  // Mark opener as controlling PiP before opening, since window creation
+  // can change activeness and the opener must be active when setting the flag.
+  MOZ_ASSERT(!bc->GetControlsDocumentPiP());
+  nsresult rv = bc->SetControlsDocumentPiP(true);
+  MOZ_ASSERT(NS_SUCCEEDED(rv));
+
   // 10. Create a new top-level traversable for target _blank
   // 15. aOptions.mDisallowReturnToOpener
   // 16. Configure PIP to float on top via window features
   RefPtr<BrowsingContext> pipTraversable;
-  nsresult rv = OpenPiPWindowUtility(
+  rv = OpenPiPWindowUtility(
       ownerWin->GetOuterWindow(), extent, bc->UsePrivateBrowsing(),
       aOptions.mDisallowReturnToOpener, getter_AddRefs(pipTraversable));
   if (NS_FAILED(rv)) {
+    rv = bc->SetControlsDocumentPiP(false);
+    MOZ_ASSERT(NS_SUCCEEDED(rv));
     aRv.ThrowUnknownError("Failed to create PIP window");
     return nullptr;
   }
@@ -334,7 +360,7 @@ already_AddRefed<Promise> DocumentPictureInPicture::RequestWindow(
   asyncDispatcher->PostDOMEvent();
 
   // 18. Return pipTraversable
-  RefPtr<Promise> promise = Promise::CreateInfallible(GetOwnerGlobal());
+  RefPtr<Promise> promise = Promise::CreateInfallible(GetRelevantGlobal());
   promise->MaybeResolve(nsGlobalWindowInner::Cast(mLastOpenedWindow));
   return promise.forget();
 }

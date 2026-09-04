@@ -1,5 +1,4 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -64,7 +63,6 @@ void WebBrowserPersistDocumentChild::Start(
   ENSURE(aDocument->GetPersistFlags(&(attrs.persistFlags())));
 
   ENSURE(aDocument->GetPrincipal(getter_AddRefs(principal)));
-  ENSURE(ipc::PrincipalToPrincipalInfo(principal, &(attrs.principal())));
 
   ENSURE(aDocument->GetReferrerInfo(getter_AddRefs(referrerInfo)));
   attrs.referrerInfo() = referrerInfo;
@@ -76,12 +74,13 @@ void WebBrowserPersistDocumentChild::Start(
   ENSURE(aDocument->GetPostData(getter_AddRefs(postDataStream)));
 #undef ENSURE
 
-  Maybe<mozilla::ipc::IPCStream> stream;
-  mozilla::ipc::SerializeIPCStream(postDataStream.forget(), stream,
-                                   /* aAllowLazy */ false);
+  if (!principal) {
+    SendInitFailure(NS_ERROR_NULL_POINTER);
+    return;
+  }
 
   mDocument = aDocument;
-  SendAttributes(attrs, stream);
+  SendAttributes(attrs, WrapNotNull(principal), postDataStream);
 }
 
 mozilla::ipc::IPCResult WebBrowserPersistDocumentChild::RecvSetPersistFlags(

@@ -9,6 +9,18 @@
 <resources>
   <!-- The button that appears at the bottom of an error page. -->
   <string name="mozac_browser_errorpages_page_refresh">Tentar novamente</string>
+  <!-- The button on an error page that checks whether an archived copy of the unreachable page exists. -->
+  <string name="mozac_browser_errorpages_archive_check_button">Verificar versão arquivada</string>
+  <!-- The label shown on the archive button while the archived copy is being looked up. -->
+  <string name="mozac_browser_errorpages_archive_checking">A verificar o arquivo</string>
+  <!-- The message shown when no archived copy of the unreachable page could be found. -->
+  <string name="mozac_browser_errorpages_archive_not_found">Não foi encontrada nenhuma versão arquivada.</string>
+  <!-- A link, shown after no archived copy was found, that searches the web for the page instead. -->
+  <string name="mozac_browser_errorpages_archive_search_web">Pesquisar na Internet.</string>
+  <!-- The message shown when the archive service could not be reached to look up an archived copy. -->
+  <string name="mozac_browser_errorpages_archive_unreachable">Não foi possível estabelecer ligação ao serviço de arquivo.</string>
+  <!-- A link, shown after the archive service could not be reached, that retries the lookup. -->
+  <string name="mozac_browser_errorpages_archive_retry">Voltar a tentar.</string>
   <!-- The document title and heading of an error page shown when a website cannot be loaded for an unknown reason. -->
   <string name="mozac_browser_errorpages_generic_title">Não é possível concluir o pedido</string>
   <!-- The error message shown when a website cannot be loaded for an unknown reason. -->
@@ -138,7 +150,7 @@
   <!-- The document title and heading of an error page. -->
   <string name="mozac_browser_errorpages_harmful_addon_uri_title">Site bloqueado para sua segurança</string>
   <!-- The %1$s will be replaced by the malicious website URL -->
-  <string name="mozac_browser_errorpages_harmful_addon_uri_message"><![CDATA[<p>Esta página web em %1$s foi bloqueada porque um dos seus extras tentou abri-la. Este site pode ser utilizado para roubar a sua informação — tais como palavras-passe ou números de cartão de crédito.</p>]]></string>
+  <string name="mozac_browser_errorpages_harmful_addon_uri_message"><![CDATA[<p>Esta página web em %1$s foi bloqueada porque um dos seus complementos tentou abri-la. Este site pode ser utilizado para roubar a sua informação — tais como palavras-passe ou números de cartão de crédito.</p>]]></string>
   <!-- The title of the error page for websites that do not support HTTPS when HTTPS-Only is turned on -->
   <string name="mozac_browser_errorpages_httpsonly_title">Site seguro não disponível</string>
   <!-- The text of the error page for websites that do not support HTTPS when HTTPS-Only is turned on. %1$s will be replaced with the URL of the website. -->

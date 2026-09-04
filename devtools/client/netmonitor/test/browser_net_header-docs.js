@@ -24,10 +24,9 @@ add_task(async function testHeadersLearnMoreLink() {
     document.querySelectorAll(".request-list-item")[1]
   );
 
-  await waitForDOMIfNeeded(document, "#responseHeaders, #requestHeaders", 2);
+  await waitForDOM(document, "#responseHeaders, #requestHeaders", 2);
 
   testShowLearnMore(document);
-
   await teardown(monitor);
 });
 

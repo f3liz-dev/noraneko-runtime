@@ -1,5 +1,3 @@
-/* -*- Mode: indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set sts=2 sw=2 et tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -711,6 +709,14 @@ export class ProxyAPIImplementation extends SchemaAPIInterface {
     map.listeners.delete(listener);
     map.ids.delete(id);
     map.removedIds.add(id);
+
+    // While the context is unloading, its conduit is closed and the parent
+    // tears down all of this context's listeners on its own, so sending a
+    // RemoveListener message would be redundant (and racy: the conduit may
+    // already be closed). Skip it to avoid spurious "closed conduit" errors.
+    if (this.childApiManager.context.unloaded) {
+      return;
+    }
 
     this.childApiManager.conduit.sendRemoveListener({
       childId: this.childApiManager.id,

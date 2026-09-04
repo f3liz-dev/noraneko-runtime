@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,18 +6,19 @@
 #define GFX_WEBRENDERUSERDATA_H
 
 #include <vector>
+
+#include "DisplayItemClip.h"
+#include "ImageTypes.h"
+#include "ImgDrawResult.h"
+#include "mozilla/UniquePtr.h"
 #include "mozilla/gfx/DrawEventRecorderTypes.h"
-#include "mozilla/webrender/WebRenderAPI.h"
 #include "mozilla/image/WebRenderImageProvider.h"
 #include "mozilla/layers/AnimationInfo.h"
 #include "mozilla/layers/LayersTypes.h"
-#include "mozilla/UniquePtr.h"
+#include "mozilla/webrender/WebRenderAPI.h"
 #include "nsIFrame.h"
 #include "nsRefPtrHashtable.h"
 #include "nsTHashSet.h"
-#include "ImageTypes.h"
-#include "ImgDrawResult.h"
-#include "DisplayItemClip.h"
 
 namespace mozilla {
 
@@ -130,8 +129,7 @@ struct WebRenderUserDataKey {
   }
   PLDHashNumber Hash() const {
     return HashGeneric(
-        mFrameKey,
-        static_cast<std::underlying_type<decltype(mType)>::type>(mType));
+        mFrameKey, static_cast<std::underlying_type_t<decltype(mType)>>(mType));
   }
 
   uint32_t mFrameKey;
@@ -335,6 +333,9 @@ class WebRenderMaskData : public WebRenderUserData {
   std::vector<RefPtr<gfx::ScaledFont>> mFonts;
   gfx::DrawEventRecorderPrivate_ExternalSurfacesHolder mExternalSurfaces;
   LayerIntRect mItemRect;
+  // Sub-pixel offset of the item's bounds from mItemRect, which the recorded
+  // alpha is rasterized against.
+  gfx::Point mResidual;
   nsPoint mMaskOffset;
   nsStyleImageLayers mMaskStyle;
   gfx::MatrixScales mScale;

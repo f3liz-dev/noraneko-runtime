@@ -1,15 +1,14 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include <algorithm>
-#include "gtest/gtest.h"
+
 #include "Helpers.h"
-#include "mozilla/gtest/MozAssertions.h"
-#include "mozilla/ReentrantMonitor.h"
+#include "gtest/gtest.h"
 #include "mozilla/Printf.h"
+#include "mozilla/ReentrantMonitor.h"
+#include "mozilla/gtest/MozAssertions.h"
 #include "nsCOMPtr.h"
 #include "nsCRT.h"
 #include "nsIAsyncInputStream.h"
@@ -20,9 +19,9 @@
 #include "nsIInputStream.h"
 #include "nsIOutputStream.h"
 #include "nsIPipe.h"
+#include "nsIRunnable.h"
 #include "nsITellableStream.h"
 #include "nsIThread.h"
-#include "nsIRunnable.h"
 #include "nsStreamUtils.h"
 #include "nsString.h"
 #include "nsThreadUtils.h"
@@ -94,7 +93,7 @@ class nsReceiver final : public Runnable {
 };
 
 static nsresult TestPipe(nsIInputStream* in, nsIOutputStream* out) {
-  RefPtr<nsReceiver> receiver = new nsReceiver(in);
+  RefPtr receiver = MakeRefPtr<nsReceiver>(in);
   nsresult rv;
 
   nsCOMPtr<nsIThread> thread;
@@ -203,7 +202,7 @@ class nsShortReader final : public Runnable {
 };
 
 static nsresult TestShortWrites(nsIInputStream* in, nsIOutputStream* out) {
-  RefPtr<nsShortReader> receiver = new nsShortReader(in);
+  RefPtr receiver = MakeRefPtr<nsShortReader>(in);
   nsresult rv;
 
   nsCOMPtr<nsIThread> thread;
@@ -296,14 +295,14 @@ TEST(Pipes, ChainedPipes)
   nsCOMPtr<nsIOutputStream> out2;
   NS_NewPipe(getter_AddRefs(in2), getter_AddRefs(out2), 200, 401);
 
-  RefPtr<nsPump> pump = new nsPump(in1, out2);
+  RefPtr pump = MakeRefPtr<nsPump>(in1, out2);
   if (pump == nullptr) return;
 
   nsCOMPtr<nsIThread> thread;
   rv = NS_NewNamedThread("ChainedPipePump", getter_AddRefs(thread), pump);
   if (NS_FAILED(rv)) return;
 
-  RefPtr<nsReceiver> receiver = new nsReceiver(in2);
+  RefPtr receiver = MakeRefPtr<nsReceiver>(in2);
   if (receiver == nullptr) return;
 
   nsCOMPtr<nsIThread> receiverThread;
@@ -647,8 +646,7 @@ TEST(Pipes, Write_AsyncWait)
   rv = writer->Write(inputData.Elements(), inputData.Length(), &numWritten);
   ASSERT_EQ(NS_BASE_STREAM_WOULD_BLOCK, rv);
 
-  RefPtr<testing::OutputStreamCallback> cb =
-      new testing::OutputStreamCallback();
+  RefPtr cb = MakeRefPtr<testing::OutputStreamCallback>();
 
   rv = writer->AsyncWait(cb, 0, 0, nullptr);
   ASSERT_NS_SUCCEEDED(rv);
@@ -688,8 +686,7 @@ TEST(Pipes, Write_AsyncWait_Clone)
   rv = writer->Write(inputData.Elements(), inputData.Length(), &numWritten);
   ASSERT_EQ(NS_BASE_STREAM_WOULD_BLOCK, rv);
 
-  RefPtr<testing::OutputStreamCallback> cb =
-      new testing::OutputStreamCallback();
+  RefPtr cb = MakeRefPtr<testing::OutputStreamCallback>();
 
   rv = writer->AsyncWait(cb, 0, 0, nullptr);
   ASSERT_NS_SUCCEEDED(rv);
@@ -717,7 +714,7 @@ TEST(Pipes, Write_AsyncWait_Clone)
   rv = writer->Write(inputData.Elements(), inputData.Length(), &numWritten);
   ASSERT_NS_FAILED(rv);
 
-  cb = new testing::OutputStreamCallback();
+  cb = MakeRefPtr<testing::OutputStreamCallback>();
   rv = writer->AsyncWait(cb, 0, 0, nullptr);
   ASSERT_NS_SUCCEEDED(rv);
 
@@ -770,8 +767,7 @@ TEST(Pipes, Write_AsyncWait_Clone_CloseOriginal)
   rv = writer->Write(inputData.Elements(), inputData.Length(), &numWritten);
   ASSERT_EQ(NS_BASE_STREAM_WOULD_BLOCK, rv);
 
-  RefPtr<testing::OutputStreamCallback> cb =
-      new testing::OutputStreamCallback();
+  RefPtr cb = MakeRefPtr<testing::OutputStreamCallback>();
 
   rv = writer->AsyncWait(cb, 0, 0, nullptr);
   ASSERT_NS_SUCCEEDED(rv);
@@ -799,7 +795,7 @@ TEST(Pipes, Write_AsyncWait_Clone_CloseOriginal)
   rv = writer->Write(inputData.Elements(), inputData.Length(), &numWritten);
   ASSERT_NS_FAILED(rv);
 
-  cb = new testing::OutputStreamCallback();
+  cb = MakeRefPtr<testing::OutputStreamCallback>();
   rv = writer->AsyncWait(cb, 0, 0, nullptr);
   ASSERT_NS_SUCCEEDED(rv);
 
@@ -843,7 +839,7 @@ TEST(Pipes, Write_AsyncWait_Clone_CloseOriginal)
   ASSERT_NS_SUCCEEDED(rv);
 
   // The stream is again non-writeable.
-  cb = new testing::OutputStreamCallback();
+  cb = MakeRefPtr<testing::OutputStreamCallback>();
   rv = writer->AsyncWait(cb, 0, 0, nullptr);
   ASSERT_NS_SUCCEEDED(rv);
   ASSERT_FALSE(cb->Called());
@@ -881,7 +877,7 @@ TEST(Pipes, Read_AsyncWait)
   nsTArray<char> inputData;
   testing::CreateData(segmentSize, inputData);
 
-  RefPtr<testing::InputStreamCallback> cb = new testing::InputStreamCallback();
+  RefPtr cb = MakeRefPtr<testing::InputStreamCallback>();
 
   nsresult rv = reader->AsyncWait(cb, 0, 0, nullptr);
   ASSERT_NS_SUCCEEDED(rv);
@@ -919,9 +915,9 @@ TEST(Pipes, Read_AsyncWait_Clone)
   nsTArray<char> inputData;
   testing::CreateData(segmentSize, inputData);
 
-  RefPtr<testing::InputStreamCallback> cb = new testing::InputStreamCallback();
+  RefPtr cb = MakeRefPtr<testing::InputStreamCallback>();
 
-  RefPtr<testing::InputStreamCallback> cb2 = new testing::InputStreamCallback();
+  RefPtr cb2 = MakeRefPtr<testing::InputStreamCallback>();
 
   rv = reader->AsyncWait(cb, 0, 0, nullptr);
   ASSERT_NS_SUCCEEDED(rv);

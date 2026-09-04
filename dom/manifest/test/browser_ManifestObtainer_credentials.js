@@ -3,7 +3,7 @@
 Services.prefs.setBoolPref("dom.manifest.enabled", true);
 
 const { ManifestObtainer } = ChromeUtils.importESModule(
-  "resource://gre/modules/ManifestObtainer.sys.mjs"
+  "moz-src:///dom/manifest/ManifestObtainer.sys.mjs"
 );
 
 // Don't send cookies
@@ -26,7 +26,7 @@ add_task(async function () {
   const browser = BrowserTestUtils.addTab(gBrowser, tabURL).linkedBrowser;
   await BrowserTestUtils.browserLoaded(browser);
   const { short_name } = await ManifestObtainer.browserObtainManifest(browser);
-  is(short_name, "🍪");
+  is(short_name, "cookie=🍪");
   const tab = gBrowser.getTabForBrowser(browser);
   gBrowser.removeTab(tab);
 });

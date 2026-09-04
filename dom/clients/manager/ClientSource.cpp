@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -18,6 +16,7 @@
 #include "mozilla/Try.h"
 #include "mozilla/dom/BlobURLProtocolHandler.h"
 #include "mozilla/dom/ClientIPCTypes.h"
+#include "mozilla/dom/ContentChild.h"
 #include "mozilla/dom/DOMMozPromiseRequestHolder.h"
 #include "mozilla/dom/JSExecutionManager.h"
 #include "mozilla/dom/MessageEvent.h"
@@ -183,7 +182,9 @@ void ClientSource::Activate(PClientManagerChild* aActor) {
   // This can happen since we use MozURL for validation which does not handle
   // some of the more obscure internal principal/url combinations.  Normal
   // content pages will pass this check.
-  if (NS_WARN_IF(!ClientIsValidPrincipalInfo(mClientInfo.PrincipalInfo()))) {
+  RefPtr<LoadedOriginSet> loadedOrigins = CurrentLoadedOriginSet();
+  if (NS_WARN_IF(!ClientIsValidPrincipalInfo(mClientInfo.PrincipalInfo(),
+                                             loadedOrigins))) {
     Shutdown();
     return;
   }

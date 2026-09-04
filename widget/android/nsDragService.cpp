@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,10 +6,10 @@
 
 #include "AndroidGraphics.h"
 #include "AndroidWidgetUtils.h"
-#include "mozilla/dom/Document.h"
-#include "mozilla/java/GeckoDragAndDropWrappers.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/ScopeExit.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/java/GeckoDragAndDropWrappers.h"
 #include "nsArrayUtils.h"
 #include "nsClipboard.h"
 #include "nsComponentManagerUtils.h"
@@ -37,7 +36,7 @@ already_AddRefed<nsDragService> nsDragService::GetInstance() {
 }
 
 already_AddRefed<nsIDragSession> nsDragService::CreateDragSession() {
-  RefPtr<nsDragSession> session = new nsDragSession();
+  auto session = MakeRefPtr<nsDragSession>();
   return session.forget();
 }
 

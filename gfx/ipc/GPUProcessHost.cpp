@@ -1,25 +1,27 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "GPUProcessHost.h"
+
+#include "VRGPUChild.h"
 #include "chrome/common/process_watcher.h"
 #include "gfxPlatform.h"
+#include "mozilla/Preferences.h"
+#include "mozilla/StaticPrefs_layers.h"
 #include "mozilla/dom/ContentParent.h"
 #include "mozilla/gfx/GPUChild.h"
 #include "mozilla/gfx/Logging.h"
-#include "mozilla/layers/SynchronousTask.h"
-#include "mozilla/Preferences.h"
-#include "mozilla/StaticPrefs_layers.h"
-#include "VRGPUChild.h"
 #include "mozilla/ipc/ProcessUtils.h"
+#include "mozilla/layers/SynchronousTask.h"
 #ifdef MOZ_WIDGET_ANDROID
 #  include "mozilla/java/GeckoProcessManagerWrappers.h"
 #endif
 #if defined(XP_MACOSX) && defined(MOZ_SANDBOX)
 #  include "mozilla/SandboxSettings.h"
+#endif
+#ifdef XP_WIN
+#  include <windows.h>
 #endif
 
 namespace mozilla {
@@ -75,6 +77,7 @@ bool GPUProcessHost::Launch(geckoargs::ChildProcessArgs aExtraOpts) {
     mPrefSerializer = nullptr;
     return false;
   }
+
   return true;
 }
 
@@ -111,6 +114,39 @@ bool GPUProcessHost::WaitForLaunch() {
   // the GPUChild is initialized, to be finished by the time we return, so
   // finish these tasks synchronously now.
   return CompleteInitSynchronously();
+}
+
+void GPUProcessHost::OnProcessLaunchError(const base::LaunchError aError) {
+  bool oom = false;
+#ifdef XP_WIN
+  static const size_t kLowMemoryThreshold = 1024 * 1024 * 1024;
+
+  MEMORYSTATUSEX stat;
+  switch (aError.ErrorCode()) {
+    case ERROR_NOT_ENOUGH_MEMORY:
+    case ERROR_OUTOFMEMORY:
+    case ERROR_DEVICE_NO_RESOURCES:
+    case ERROR_COMMITMENT_LIMIT:
+      oom = true;
+      break;
+    default:
+      // It could fail for many reasons but if it isn't an explicit memory
+      // failure, but we are low on memory, it is probably due to OOM.
+      stat.dwLength = sizeof(stat);
+      oom = GlobalMemoryStatusEx(&stat) &&
+            (stat.ullAvailVirtual < kLowMemoryThreshold ||
+             stat.ullAvailPhys < kLowMemoryThreshold);
+      break;
+  }
+#endif
+
+  gfxCriticalNote << "GPU proc launch error " << aError.FunctionName().get()
+                  << (oom ? " OOM " : " ") << gfx::hexa(aError.ErrorCode());
+
+  MonitorAutoLock lock(mMonitor);
+  mProcessState = PROCESS_ERROR;
+  mLaunchOomError = oom;
+  lock.Notify();
 }
 
 void GPUProcessHost::OnChannelConnected(base::ProcessId peer_pid) {

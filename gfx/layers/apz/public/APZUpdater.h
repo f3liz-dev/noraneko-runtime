@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,14 +8,14 @@
 #include <deque>
 #include <unordered_map>
 
-#include "base/platform_thread.h"  // for PlatformThreadId
 #include "LayersTypes.h"
-#include "mozilla/layers/WebRenderScrollData.h"
+#include "Units.h"
+#include "base/platform_thread.h"  // for PlatformThreadId
 #include "mozilla/StaticMutex.h"
 #include "mozilla/StaticPtr.h"
+#include "mozilla/layers/WebRenderScrollData.h"
 #include "mozilla/webrender/WebRenderTypes.h"
 #include "nsThreadUtils.h"
-#include "Units.h"
 
 namespace mozilla {
 
@@ -106,6 +104,14 @@ class APZUpdater {
    */
   void AssertOnUpdaterThread() const;
 
+  /**
+   * Like AssertOnUpdaterThread, but also accepts being called when the updater
+   * (scene builder) thread never came up. In that case updater-thread work is
+   * run directly on the compositor thread (see APZUpdater::ClearTree).
+   * This does nothing if thread assertions are disabled.
+   */
+  void AssertOnUpdaterThreadOrNotInitialized() const;
+
   enum class DuringShutdown {
     No,
     Yes,
@@ -161,6 +167,11 @@ class APZUpdater {
   void ProcessQueue();
 
  private:
+  // Returns true if the updater (scene builder) thread has come up, i.e. its
+  // thread id has been recorded. When this is false, updater-thread work is
+  // run directly on the compositor thread (see APZUpdater::ClearTree).
+  bool HasUpdaterThread() const;
+
   RefPtr<APZCTreeManager> mApz;
   bool mDestroyed;
   bool mConnectedToWebRender;

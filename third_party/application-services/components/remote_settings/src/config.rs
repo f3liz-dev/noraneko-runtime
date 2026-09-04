@@ -14,12 +14,8 @@ use crate::error::warn;
 use crate::{ApiResult, Error, RemoteSettingsContext, Result};
 
 /// Remote settings configuration
-///
-/// This is the version used in the new API, hence the `2` at the end.  The plan is to move
-/// consumers to the new API, remove the RemoteSettingsConfig struct, then remove the `2` from this
-/// name.
 #[derive(Debug, Default, Clone, uniffi::Record)]
-pub struct RemoteSettingsConfig2 {
+pub struct RemoteSettingsConfig {
     /// The Remote Settings server to use. Defaults to [RemoteSettingsServer::Prod],
     #[uniffi(default = None)]
     pub server: Option<RemoteSettingsServer>,
@@ -29,23 +25,6 @@ pub struct RemoteSettingsConfig2 {
     /// App context to use for JEXL filtering (when the `jexl` feature is present).
     #[uniffi(default = None)]
     pub app_context: Option<RemoteSettingsContext>,
-}
-
-/// Custom configuration for the client.
-/// Currently includes the following:
-/// - `server`: The Remote Settings server to use. If not specified, defaults to the production server (`RemoteSettingsServer::Prod`).
-/// - `server_url`: An optional custom Remote Settings server URL. Deprecated; please use `server` instead.
-/// - `bucket_name`: The optional name of the bucket containing the collection on the server. If not specified, the standard bucket will be used.
-/// - `collection_name`: The name of the collection for the settings server.
-#[derive(Debug, Clone, uniffi::Record)]
-pub struct RemoteSettingsConfig {
-    pub collection_name: String,
-    #[uniffi(default = None)]
-    pub bucket_name: Option<String>,
-    #[uniffi(default = None)]
-    pub server_url: Option<String>,
-    #[uniffi(default = None)]
-    pub server: Option<RemoteSettingsServer>,
 }
 
 /// The Remote Settings server that the client should use.
@@ -68,12 +47,12 @@ impl RemoteSettingsServer {
     pub fn get_base_url(&self) -> Result<BaseUrl> {
         let base_url = BaseUrl::parse(self.raw_url())?;
         // Custom URLs are weird and require a couple tricks for backwards compatibility.
-        // Normally we append `v1/` to match how this has historically worked.  However,
+        // Normally we append `v2/` to match how this has historically worked.  However,
         // don't do this for file:// schemes which normally don't make any sense, but it's
         // what Nimbus uses to indicate they want to use the file-based client, rather than
         // a remote-settings based one.
         if base_url.url().scheme() != "file" {
-            Ok(base_url.join("v1"))
+            Ok(base_url.join("v2"))
         } else {
             Ok(base_url)
         }
@@ -95,9 +74,12 @@ impl RemoteSettingsServer {
 
     fn raw_url(&self) -> &str {
         match self {
-            Self::Prod => "https://firefox.settings.services.mozilla.com/v1",
-            Self::Stage => "https://firefox.settings.services.allizom.org/v1",
-            Self::Dev => "https://remote-settings-dev.allizom.org/v1",
+            // v2 routes, current default
+            Self::Prod => "https://firefox.settings.services.mozilla.com/v2",
+            Self::Stage => "https://firefox.settings.services.allizom.org/v2",
+            Self::Dev => "https://remote-settings-dev.allizom.org/v2",
+
+            // custom, not currently implemented in android or iOS
             Self::Custom { url } => url,
         }
     }
@@ -108,18 +90,18 @@ impl RemoteSettingsServer {
     /// inside the crate.
     pub fn get_url(&self) -> Result<Url> {
         Ok(match self {
-            Self::Prod => Url::parse("https://firefox.settings.services.mozilla.com/v1")?,
-            Self::Stage => Url::parse("https://firefox.settings.services.allizom.org/v1")?,
-            Self::Dev => Url::parse("https://remote-settings-dev.allizom.org/v1")?,
+            Self::Prod => Url::parse("https://firefox.settings.services.mozilla.com/v2")?,
+            Self::Stage => Url::parse("https://firefox.settings.services.allizom.org/v2")?,
+            Self::Dev => Url::parse("https://remote-settings-dev.allizom.org/v2")?,
             Self::Custom { url } => {
                 let mut url = Url::parse(url)?;
                 // Custom URLs are weird and require a couple tricks for backwards compatibility.
-                // Normally we append `v1/` to match how this has historically worked.  However,
+                // Normally we append `v2/` to match how this has historically worked.  However,
                 // don't do this for file:// schemes which normally don't make any sense, but it's
                 // what Nimbus uses to indicate they want to use the file-based client, rather than
                 // a remote-settings based one.
                 if url.scheme() != "file" {
-                    url = url.join("v1")?
+                    url = url.join("v2")?
                 }
                 url
             }

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,8 +5,9 @@
 #ifndef mozilla_OriginAttributes_h
 #define mozilla_OriginAttributes_h
 
-#include "mozilla/dom/OriginAttributesBinding.h"
+#include "mozilla/HashFunctions.h"
 #include "mozilla/StaticPrefs_privacy.h"
+#include "mozilla/dom/OriginAttributesBinding.h"
 #include "nsIScriptSecurityManager.h"
 
 namespace mozilla {
@@ -35,7 +34,11 @@ class OriginAttributes : public dom::OriginAttributesDictionary {
     STRIP_FIRST_PARTY_DOMAIN = 0x01,
     STRIP_USER_CONTEXT_ID = 0x02,
     STRIP_PRIVATE_BROWSING_ID = 0x04,
-    STRIP_PARITION_KEY = 0x08,
+    STRIP_PARTITION_KEY = 0x08,
+    STRIP_GECKOVIEW_SESSION_CONTEXT_ID = 0x10,
+
+    STRIP_NONE = 0,
+    STRIP_ALL = UINT32_MAX,
   };
 
   inline void StripAttributes(uint32_t aFlags) {
@@ -47,22 +50,47 @@ class OriginAttributes : public dom::OriginAttributesDictionary {
       mUserContextId = nsIScriptSecurityManager::DEFAULT_USER_CONTEXT_ID;
     }
 
+    if (aFlags & STRIP_GECKOVIEW_SESSION_CONTEXT_ID) {
+      mGeckoViewSessionContextId.Truncate();
+    }
+
     if (aFlags & STRIP_PRIVATE_BROWSING_ID) {
       mPrivateBrowsingId =
           nsIScriptSecurityManager::DEFAULT_PRIVATE_BROWSING_ID;
     }
 
-    if (aFlags & STRIP_PARITION_KEY) {
+    if (aFlags & STRIP_PARTITION_KEY) {
       mPartitionKey.Truncate();
     }
   }
 
+  [[nodiscard]] bool EqualsIgnoring(const OriginAttributes& aOther,
+                                    uint32_t aFlags) const {
+    if (!(aFlags & STRIP_FIRST_PARTY_DOMAIN) &&
+        mFirstPartyDomain != aOther.mFirstPartyDomain) {
+      return false;
+    }
+    if (!(aFlags & STRIP_USER_CONTEXT_ID) &&
+        mUserContextId != aOther.mUserContextId) {
+      return false;
+    }
+    if (!(aFlags & STRIP_GECKOVIEW_SESSION_CONTEXT_ID) &&
+        mGeckoViewSessionContextId != aOther.mGeckoViewSessionContextId) {
+      return false;
+    }
+    if (!(aFlags & STRIP_PRIVATE_BROWSING_ID) &&
+        mPrivateBrowsingId != aOther.mPrivateBrowsingId) {
+      return false;
+    }
+    if (!(aFlags & STRIP_PARTITION_KEY) &&
+        mPartitionKey != aOther.mPartitionKey) {
+      return false;
+    }
+    return true;
+  }
+
   bool operator==(const OriginAttributes& aOther) const {
-    return EqualsIgnoringFPD(aOther) &&
-           mFirstPartyDomain == aOther.mFirstPartyDomain &&
-           // FIXME(emilio, bug 1667440): Should this be part of
-           // EqualsIgnoringFPD instead?
-           mPartitionKey == aOther.mPartitionKey;
+    return EqualsIgnoring(aOther, STRIP_NONE);
   }
 
   bool operator!=(const OriginAttributes& aOther) const {
@@ -70,20 +98,30 @@ class OriginAttributes : public dom::OriginAttributesDictionary {
   }
 
   [[nodiscard]] bool EqualsIgnoringFPD(const OriginAttributes& aOther) const {
-    return mUserContextId == aOther.mUserContextId &&
-           mPrivateBrowsingId == aOther.mPrivateBrowsingId &&
-           mGeckoViewSessionContextId == aOther.mGeckoViewSessionContextId;
+    // FIXME(bug 1667440): Should this be stripping the partition key?
+    return EqualsIgnoring(aOther,
+                          STRIP_FIRST_PARTY_DOMAIN | STRIP_PARTITION_KEY);
   }
 
   [[nodiscard]] bool EqualsIgnoringPartitionKey(
       const OriginAttributes& aOther) const {
-    return EqualsIgnoringFPD(aOther) &&
-           mFirstPartyDomain == aOther.mFirstPartyDomain;
+    return EqualsIgnoring(aOther, STRIP_PARTITION_KEY);
   }
 
   [[nodiscard]] inline bool IsPrivateBrowsing() const {
     return mPrivateBrowsingId !=
            nsIScriptSecurityManager::DEFAULT_PRIVATE_BROWSING_ID;
+  }
+
+  // Keep field order in sync with CreateSuffix.
+  [[nodiscard]] HashNumber Hash() const {
+    return AddToHash(
+        mUserContextId, mPrivateBrowsingId,
+        HashString(mFirstPartyDomain.BeginReading(),
+                   mFirstPartyDomain.Length()),
+        HashString(mGeckoViewSessionContextId.BeginReading(),
+                   mGeckoViewSessionContextId.Length()),
+        HashString(mPartitionKey.BeginReading(), mPartitionKey.Length()));
   }
 
   // Serializes/Deserializes non-default values into the suffix format, i.e.

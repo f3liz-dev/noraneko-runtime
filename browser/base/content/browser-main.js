@@ -1,5 +1,4 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -23,6 +22,7 @@
   Services.scriptloader.loadSubScript("chrome://browser/content/tabbrowser/split-view-footer.js", this);
   Services.scriptloader.loadSubScript("chrome://browser/content/tabbrowser/tab.js", this);
   Services.scriptloader.loadSubScript("chrome://browser/content/tabbrowser/tabbrowser.js", this);
+  Services.scriptloader.loadSubScript("chrome://browser/content/tabbrowser/tab-context-menu.js", this);
   Services.scriptloader.loadSubScript("chrome://browser/content/tabbrowser/tabgroup.js", this);
   Services.scriptloader.loadSubScript("chrome://browser/content/tabbrowser/tabgroup-menu.js", this);
   Services.scriptloader.loadSubScript("chrome://browser/content/tabbrowser/tabnote-menu.js", this);

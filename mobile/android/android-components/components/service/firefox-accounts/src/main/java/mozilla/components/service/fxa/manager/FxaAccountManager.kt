@@ -17,6 +17,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import mozilla.appservices.fxaclient.FxaEvent
 import mozilla.appservices.fxaclient.FxaException
+import mozilla.appservices.fxaclient.FxaRustAuthState
 import mozilla.appservices.fxaclient.FxaState
 import mozilla.appservices.syncmanager.DeviceSettings
 import mozilla.components.concept.base.crash.Breadcrumb
@@ -30,21 +31,16 @@ import mozilla.components.concept.sync.DeviceConfig
 import mozilla.components.concept.sync.FxAEntryPoint
 import mozilla.components.concept.sync.OAuthAccount
 import mozilla.components.concept.sync.Profile
-import mozilla.components.concept.sync.UserData
-import mozilla.components.service.fxa.AccessTokenUnexpectedlyWithoutKey
+import mozilla.components.concept.sync.SyncConfig
+import mozilla.components.concept.sync.SyncEngine
 import mozilla.components.service.fxa.AccountManagerException
 import mozilla.components.service.fxa.AccountStorage
 import mozilla.components.service.fxa.FxaAuthData
 import mozilla.components.service.fxa.FxaDeviceSettingsCache
-import mozilla.components.service.fxa.FxaSyncScopedKeyMissingException
 import mozilla.components.service.fxa.SecureAbove22AccountStorage
 import mozilla.components.service.fxa.ServerConfig
 import mozilla.components.service.fxa.SharedPrefAccountStorage
 import mozilla.components.service.fxa.StorageWrapper
-import mozilla.components.service.fxa.SyncAuthInfoCache
-import mozilla.components.service.fxa.SyncConfig
-import mozilla.components.service.fxa.SyncEngine
-import mozilla.components.service.fxa.asSyncAuthInfo
 import mozilla.components.service.fxa.emitSyncFailedFact
 import mozilla.components.service.fxa.into
 import mozilla.components.service.fxa.sync.SyncManager
@@ -118,6 +114,7 @@ open class FxaAccountManager(
     private val accountOnDisk by lazy { getStorageWrapper().account() }
     private val account by lazy { accountOnDisk.account() }
     private val accountStateEventsObserver = AccountStateEventsObserver(this::queueEvent)
+    private val accountScopeAccessor by lazy { AccountScopeAccessor(getAccountStorage()) }
 
     // Note on threading: we use a single-threaded executor, so there's no concurrent access possible.
     // However, that executor doesn't guarantee that it'll always use the same thread, and so vars
@@ -138,6 +135,8 @@ open class FxaAccountManager(
     // We always obtain a "profile" scope, as that's assumed to be needed for any application integration.
     // We obtain a sync scope only if this was requested by the application via SyncConfig.
     // Additionally, we obtain any scopes that the application requested explicitly.
+    // XXX - We need to rethink this - with "sync decoupling" and VPN etc, there aren't really any "default scopes",
+    // other than maybe "profile".
     private val scopes: Set<String>
         get() = if (syncConfig != null) {
             setOf(SCOPE_PROFILE, SCOPE_SYNC)
@@ -218,18 +217,6 @@ open class FxaAccountManager(
         when (val s = state) {
             // All good, request a sync.
             FxaState.Connected -> {
-                // Make sure auth cache is populated before we try to sync.
-                try {
-                    maybeUpdateSyncAuthInfoCache()
-                } catch (e: AccessTokenUnexpectedlyWithoutKey) {
-                    crashReporter?.submitCaughtException(
-                        AccountManagerException.MissingKeyFromSyncScopedAccessToken("syncNow"),
-                    )
-                    processQueue(Event.Account.AccessTokenKeyError)
-                    // No point in trying to sync now.
-                    return@withContext
-                }
-
                 // Access to syncManager is guarded by `this`.
                 synchronized(this@FxaAccountManager) {
                     checkNotNull(syncManager == null) {
@@ -248,6 +235,38 @@ open class FxaAccountManager(
     fun isSyncActive() = syncManager?.isSyncActive() ?: false
 
     /**
+     * Sets the enabled state of a sync engine and triggers a sync with [SyncReason.EngineChange].
+     *
+     * @param engine The [SyncEngine] to enable or disable.
+     * @param enabled Whether the engine should be enabled or disabled.
+     */
+    suspend fun setEngineEnabled(engine: SyncEngine, enabled: Boolean) = withContext(coroutineContext) {
+        syncManager?.setEngineEnabled(engine, enabled)
+    }
+
+    /**
+     * Checks whether the given OAuth [scope] is granted to the persisted account. Only consults the
+     * stored account when it is in an accessible state; otherwise `false` is returned.
+     *
+     * @param scope The OAuth scope to look for.
+     * @return `true` if the scope is granted, `false` otherwise.
+     */
+    suspend fun containsScope(scope: String): Boolean {
+        if (authenticatedAccount() == null) {
+            return false
+        }
+        return when (val status = accountScopeAccessor.containsScope(scope)) {
+            ScopeStatus.Granted -> true
+            ScopeStatus.NotGranted -> false
+            is ScopeStatus.Unavailable -> {
+                logger.warn("Unable to determine scope status for account.", status.cause)
+                crashReporter?.submitCaughtException(status.cause ?: ScopeUnavailableException(status.reason))
+                false
+            }
+        }
+    }
+
+    /**
      * Call this after registering your observers, and before interacting with this class.
      */
     suspend fun start() = withContext(coroutineContext) {
@@ -260,13 +279,28 @@ open class FxaAccountManager(
     }
 
     /**
-     * Main point for interaction with an [OAuthAccount] instance.
-     * @return [OAuthAccount] if we're in an authenticated state, null otherwise. Returned [OAuthAccount]
-     * may need to be re-authenticated; consumers are expected to check [accountNeedsReauth].
+     * Get the [OAuthAccount] instance if it's not disconnected.
+     * Returned [OAuthAccount] may need to be re-authenticated; consumers are expected to check [accountNeedsReauth].
      */
-    fun authenticatedAccount(): OAuthAccount? = when (state) {
-        FxaState.Connected, FxaState.AuthIssues -> account
-        else -> null
+    fun authenticatedAccount(): OAuthAccount? = state.let {
+        when (it) {
+            FxaState.Connected, FxaState.AuthIssues -> account
+            // Bug 2030890 - we may not leave the `FxaState.Authenticating` state.
+            is FxaState.Authenticating if it.initialState == FxaRustAuthState.CONNECTED -> account
+            else -> null
+        }
+    }
+
+    /**
+     * Get the [OAuthAccount] instance if it's connected.
+     */
+    fun connectedAccount(): OAuthAccount? = state.let {
+        when (it) {
+            FxaState.Connected -> account
+            // While authenticating from a connected state we should return the account.
+            is FxaState.Authenticating if it.initialState == FxaRustAuthState.CONNECTED -> account
+            else -> null
+        }
     }
 
     /**
@@ -285,7 +319,7 @@ open class FxaAccountManager(
      * @return [Profile] if one is available and account is an authenticated state.
      */
     fun accountProfile(): Profile? = when (state) {
-        FxaState.Connected, FxaState.AuthIssues -> profile
+        is FxaState.Connected, is FxaState.Authenticating, is FxaState.AuthIssues -> profile
         else -> null
     }
 
@@ -308,17 +342,20 @@ open class FxaAccountManager(
      * the entrypoint is used in telemetry.
      * @param authScopes The oAuth scopes being requested, if none are provided
      * we default to the scopes provided when constructing [FxaAccountManager]
+     * @param service The name fo the service being enabled. This may change the UX
+     * shown by the FxA content servers.
      * @return An authentication url which is to be presented to the user.
      */
     suspend fun beginAuthentication(
         pairingUrl: String? = null,
         entrypoint: FxAEntryPoint,
         authScopes: Set<String> = scopes,
+        service: String = "",
     ): String? = withContext(coroutineContext) {
         val event = if (pairingUrl != null) {
-            Event.Account.BeginPairingFlow(pairingUrl, entrypoint, authScopes)
+            Event.Account.BeginPairingFlow(pairingUrl, service, entrypoint, authScopes)
         } else {
-            Event.Account.BeginEmailFlow(entrypoint, authScopes)
+            Event.Account.BeginEmailFlow(service, entrypoint, authScopes)
         }
 
         // Process the event, then use the new state to check the result of the operation
@@ -334,13 +371,27 @@ open class FxaAccountManager(
     }
 
     /**
-     * Sets the user's data received from the web content.
-     * **NOTE**: This is only useful for applications that are user agents, that
-     *           require the user's session token, and thus isn't a part of the state machine
-     * @param userData: The user's data as given by the web channel, including the session token
+     * Stores the session token from a WebChannel login JSON payload without exposing it to the
+     * browser layer.
      */
-    suspend fun setUserData(userData: UserData) = withContext(coroutineContext) {
-        account.setUserData(userData)
+    suspend fun handleWebChannelLogin(jsonPayload: String) = withContext(coroutineContext) {
+        account.handleWebChannelLogin(jsonPayload)
+    }
+
+    /**
+     * Handles the `fxaccounts:change_password` WebChannel payload after the user
+     * changes their password from the manage-account flow.
+     */
+    suspend fun handleWebChannelPasswordChange(jsonPayload: String) = withContext(coroutineContext) {
+        val wasInAuthIssues = state == FxaState.AuthIssues
+        processQueue(Event.Account.WebChannelPasswordChange(jsonPayload))
+        if (state == FxaState.Connected) {
+            authenticationSideEffects()
+            if (wasInAuthIssues) {
+                notifyObservers { onAuthenticated(account, AuthType.Recovered) }
+            }
+            refreshProfile(ignoreCache = true)
+        }
     }
 
     /**
@@ -446,10 +497,19 @@ open class FxaAccountManager(
                 capabilities = ArrayList(deviceConfig.capabilities.map { it.into() }),
             ),
         )
-        is Event.Account.BeginEmailFlow -> FxaEvent.BeginOAuthFlow(ArrayList(scopes), event.entrypoint.entryName)
+        is Event.Account.BeginEmailFlow -> FxaEvent.BeginOAuthFlow(
+            service = event.service,
+            scopes = ArrayList(event.scopes),
+            entrypoint = event.entrypoint.entryName,
+        )
         is Event.Account.BeginPairingFlow -> {
             if (event.pairingUrl != null) {
-                FxaEvent.BeginPairingFlow(event.pairingUrl, ArrayList(scopes), event.entrypoint.entryName)
+                FxaEvent.BeginPairingFlow(
+                    pairingUrl = event.pairingUrl,
+                    service = event.service,
+                    scopes = ArrayList(event.scopes),
+                    entrypoint = event.entrypoint.entryName,
+                )
             } else {
                 crashReporter?.recordCrashBreadcrumb(Breadcrumb("event.pairingUrl is null"))
                 null
@@ -458,6 +518,8 @@ open class FxaAccountManager(
         is Event.Account.AuthenticationError -> FxaEvent.CheckAuthorizationStatus
         Event.Account.AccessTokenKeyError -> FxaEvent.CheckAuthorizationStatus
         Event.Account.Logout -> FxaEvent.Disconnect
+        is Event.Account.WebChannelPasswordChange ->
+            FxaEvent.WebChannelPasswordChange(jsonPayload = event.jsonPayload)
         // This is the one ProgressEvent that's considered a "public event" in app-services
         is Event.Progress.AuthData -> FxaEvent.CompleteOAuthFlow(event.authData.code, event.authData.state)
         else -> null
@@ -495,7 +557,7 @@ open class FxaAccountManager(
             }
             FxaState.Connected -> when (via) {
                 is Event.Account.Start -> {
-                    if (authenticationSideEffects("CompletingAuthentication:accountRestored")) {
+                    if (authenticationSideEffects()) {
                         notifyObservers { onAuthenticated(account, AuthType.Existing) }
                         refreshProfile(ignoreCache = false)
                     } else {
@@ -503,7 +565,7 @@ open class FxaAccountManager(
                     }
                 }
                 is Event.Progress.AuthData -> {
-                    if (authenticationSideEffects("CompletingAuthentication:AuthData")) {
+                    if (authenticationSideEffects()) {
                         notifyObservers { onAuthenticated(account, via.authData.authType) }
                         refreshProfile(ignoreCache = false)
                     } else {
@@ -511,9 +573,6 @@ open class FxaAccountManager(
                     }
                 }
                 is Event.Account.AuthenticationError, Event.Account.AccessTokenKeyError -> {
-                    // Clear our access token cache; it'll be re-populated as part of the
-                    // regular state machine flow.
-                    SyncAuthInfoCache(context).clear()
                     // Should we also call authenticationSideEffects here?
                     // (https://bugzilla.mozilla.org/show_bug.cgi?id=1865086)
                     notifyObservers { onAuthenticated(account, AuthType.Recovered) }
@@ -522,7 +581,6 @@ open class FxaAccountManager(
                 else -> Unit
             }
             FxaState.AuthIssues -> {
-                SyncAuthInfoCache(context).clear()
                 notifyObservers { onAuthenticationProblems() }
             }
             else -> Unit
@@ -537,56 +595,8 @@ open class FxaAccountManager(
         // Even though we might not have Sync enabled, clear out sync-related storage
         // layers as well; if they're already empty (unused), nothing bad will happen
         // and extra overhead is quite small.
-        SyncAuthInfoCache(context).clear()
         SyncEnginesStorage(context).clear()
         clearSyncState(context)
-    }
-
-    private suspend fun maybeUpdateSyncAuthInfoCache() {
-        // Update cached sync auth info only if we have a syncConfig (e.g. sync is enabled)...
-        if (syncConfig == null) {
-            return
-        }
-
-        // .. and our cache is stale.
-        val cache = SyncAuthInfoCache(context)
-        if (!cache.expired()) {
-            return
-        }
-
-        val accessToken = try {
-            account.getAccessToken(SCOPE_SYNC)
-        } catch (e: FxaSyncScopedKeyMissingException) {
-            // We received an access token, but no sync key which means we can't really use the
-            // connected FxA account.  Throw an exception so that the account transitions to the
-            // `AuthenticationProblem` state.  Things should be fixed when the user re-logs in.
-            //
-            // This used to be thrown when the android-components code noticed the issue in
-            // `asSyncAuthInfo()`.  However, the application-services code now also checks for this
-            // and throws its own error.  To keep the flow above this the same, we catch the
-            // app-services exception and throw the android-components one.
-            //
-            // Eventually, we should remove AccessTokenUnexpectedlyWithoutKey and have the higher
-            // functions catch `FxaSyncScopedKeyMissingException` directly
-            // (https://bugzilla.mozilla.org/show_bug.cgi?id=1869862)
-            throw AccessTokenUnexpectedlyWithoutKey()
-        }
-        val tokenServerUrl = if (accessToken != null) {
-            // Only try to get the endpoint if we have an access token.
-            account.getTokenServerEndpointURL()
-        } else {
-            null
-        }
-
-        if (accessToken != null && tokenServerUrl != null) {
-            SyncAuthInfoCache(context).setToCache(accessToken.asSyncAuthInfo(tokenServerUrl))
-        } else {
-            // At this point, SyncAuthInfoCache may be entirely empty. In this case, we won't be
-            // able to sync via the background worker. We will attempt to populate SyncAuthInfoCache
-            // again in `syncNow` (in response to a direct user action) and after application restarts.
-            logger.warn("Couldn't populate SyncAuthInfoCache. Sync may not work.")
-            logger.warn("Is null? - accessToken: ${accessToken == null}, tokenServerUrl: ${tokenServerUrl == null}")
-        }
     }
 
     private fun persistDeclinedEngines(declinedEngines: Set<SyncEngine>) {
@@ -620,22 +630,7 @@ open class FxaAccountManager(
      * Populates caches necessary for the sync worker (sync auth info and FxA device).
      * @return 'true' on success, 'false' on failure, indicating that sync won't work.
      */
-    private suspend fun authenticationSideEffects(operation: String): Boolean {
-        // Make sure our SyncAuthInfo cache is hot, background sync worker needs it to function.
-        try {
-            maybeUpdateSyncAuthInfoCache()
-        } catch (e: AccessTokenUnexpectedlyWithoutKey) {
-            crashReporter?.submitCaughtException(
-                AccountManagerException.MissingKeyFromSyncScopedAccessToken(operation),
-            )
-            // Since we don't know what's causing a missing key for the SCOPE_SYNC access tokens, we
-            // do not attempt to recover here. If this is a persistent state for an account, a recovery
-            // will just enter into a loop that our circuit breaker logic is unlikely to catch, due
-            // to recovery attempts likely being made on startup.
-            // See https://github.com/mozilla-mobile/android-components/issues/8527
-            return false
-        }
-
+    private suspend fun authenticationSideEffects(): Boolean {
         // Sync workers also need to know about the current FxA device.
         FxaDeviceSettingsCache(context).setToCache(
             DeviceSettings(
@@ -751,7 +746,6 @@ open class FxaAccountManager(
      */
     public fun simulateTemporaryAuthTokenIssue() {
         account.simulateTemporaryAuthTokenIssue()
-        SyncAuthInfoCache(context).clear()
         CoroutineScope(coroutineContext).launch {
             refreshProfile(true)
         }
@@ -770,7 +764,6 @@ open class FxaAccountManager(
      */
     public fun simulatePermanentAuthTokenIssue() {
         account.simulatePermanentAuthTokenIssue()
-        SyncAuthInfoCache(context).clear()
         CoroutineScope(coroutineContext).launch {
             refreshProfile(true)
         }

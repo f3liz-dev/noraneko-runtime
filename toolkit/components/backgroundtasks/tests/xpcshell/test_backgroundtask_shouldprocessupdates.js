@@ -1,6 +1,4 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*-
- * vim: sw=4 ts=4 sts=4 et
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -37,6 +35,18 @@ add_task(async function test_backgroundtask_shouldprocessupdates() {
     extraArgs: ["--test-should-not-process-updates"],
   });
   Assert.equal(81, exitCode);
+
+  // Same setup as above (no other instance detected), but with
+  // MOZ_DISABLE_UPDATE_PROCESSING set in the environment, which automation
+  // drivers use to prevent a launched instance from finalizing an update
+  // that is pending/staged for the shared installation.  This should be
+  // the deciding factor, taking priority over there being no other reason
+  // to skip processing updates.
+  exitCode = await do_backgroundtask("shouldprocessupdates", {
+    extraArgs: ["--test-should-not-process-updates"],
+    extraEnv: { MOZ_DISABLE_UPDATE_PROCESSING: "1" },
+  });
+  Assert.equal(77, exitCode);
 
   // `shouldnotprocessupdates` is not a recognized updating task, so we should
   // not process updates.

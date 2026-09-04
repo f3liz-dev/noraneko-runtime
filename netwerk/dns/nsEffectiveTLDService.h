@@ -1,4 +1,3 @@
-//* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -6,16 +5,14 @@
 #ifndef EffectiveTLDService_h
 #define EffectiveTLDService_h
 
-#include "nsIEffectiveTLDService.h"
-
 #include "mozilla/AutoMemMap.h"
 #include "mozilla/Dafsa.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/MruCache.h"
 #include "mozilla/RWLock.h"
-
 #include "nsCOMPtr.h"
 #include "nsHashKeys.h"
+#include "nsIEffectiveTLDService.h"
 #include "nsIMemoryReporter.h"
 #include "nsString.h"
 

@@ -1,5 +1,3 @@
-# -*- makefile -*-
-# vim:set ts=8 sw=8 sts=8 noet:
 #
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this file,
@@ -79,18 +77,6 @@ endif # ENABLE_TESTS
 #
 # Library rules
 #
-# If FORCE_STATIC_LIB is set, build a static library.
-# Otherwise, build a shared library.
-#
-
-ifndef LIBRARY
-ifdef REAL_LIBRARY
-ifdef NO_EXPAND_LIBS
-# Only build actual library if it is requested.
-LIBRARY			:= $(REAL_LIBRARY)
-endif
-endif
-endif
 
 ifdef FORCE_SHARED_LIB
 ifdef MKSHLIB
@@ -1065,7 +1051,7 @@ $(foreach category,$(PP_TARGETS), \
   ) \
   $(foreach file,$($(category)), \
     $(eval $(call create_dependency,$(call pp_target_result,$(category),$(file)), \
-                                    $(file) $(GLOBAL_DEPS))) \
+                                    $(file) $(GLOBAL_DEPS) $($(category)_EXTRA_DEPS))) \
   ) \
   $(eval $(call pp_target_results,$(category)): PP_TARGET_FLAGS=$($(category)_FLAGS)) \
 )

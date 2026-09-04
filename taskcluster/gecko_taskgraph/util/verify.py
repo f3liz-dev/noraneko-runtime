@@ -75,13 +75,13 @@ def verify_docs(filename, identifiers, appearing_as):
 
     if appearing_as == "inline-literal":
         expression_list = [
-            "``" + identifier + "``"
+            "`" + identifier + "`"
             for identifier in identifiers
             if not identifier.startswith("_")
         ]
     elif appearing_as == "heading":
         expression_list = [
-            "\n" + identifier + "\n(?:(?:(?:-+\n)+)|(?:(?:.+\n)+))"
+            "\n#+ " + identifier + "\n"
             for identifier in identifiers
             if not identifier.startswith("_")
         ]
@@ -101,7 +101,7 @@ def verify_run_using():
     from gecko_taskgraph.transforms.job import registry
 
     verify_docs(
-        filename="transforms/job.rst",
+        filename="transforms/job.md",
         identifiers=registry.keys(),
         appearing_as="inline-literal",
     )
@@ -114,7 +114,7 @@ def verify_parameters_docs(parameters):
 
     parameters_dict = dict(**parameters)
     verify_docs(
-        filename="parameters.rst",
+        filename="parameters.md",
         identifiers=list(parameters_dict),
         appearing_as="inline-literal",
     )
@@ -122,14 +122,14 @@ def verify_parameters_docs(parameters):
 
 @verifications.add("kinds")
 def verify_kinds_docs(kinds):
-    verify_docs(filename="kinds.rst", identifiers=kinds.keys(), appearing_as="heading")
+    verify_docs(filename="kinds.md", identifiers=kinds.keys(), appearing_as="heading")
 
 
 @verifications.add("full_task_set")
 def verify_attributes(task, taskgraph, scratch_pad, graph_config, parameters):
     if task is None:
         verify_docs(
-            filename="attributes.rst",
+            filename="attributes.md",
             identifiers=list(scratch_pad["attribute_set"]),
             appearing_as="heading",
         )
@@ -268,35 +268,6 @@ def verify_dependency_tiers(task, taskgraph, scratch_pad, graph_config, paramete
                 if tier < tiers[d]:
                     raise Exception(
                         f"{current_task.label} (tier {printable_tier(tier)}) cannot depend on {d} (tier {printable_tier(tiers[d])})"
-                    )
-
-
-@verifications.add("full_task_graph")
-def verify_required_signoffs(task, taskgraph, scratch_pad, graph_config, parameters):
-    """
-    Task with required signoffs can't be dependencies of tasks with less
-    required signoffs.
-    """
-    all_required_signoffs = scratch_pad
-    if task is not None:
-        all_required_signoffs[task.label] = set(
-            task.attributes.get("required_signoffs", [])
-        )
-    else:
-
-        def printable_signoff(signoffs):
-            if len(signoffs) == 1:
-                return "required signoff {}".format(*signoffs)
-            if signoffs:
-                return "required signoffs {}".format(", ".join(signoffs))
-            return "no required signoffs"
-
-        for current_task in taskgraph.tasks.values():
-            required_signoffs = all_required_signoffs[current_task.label]
-            for d in current_task.dependencies.values():
-                if required_signoffs < all_required_signoffs[d]:
-                    raise Exception(
-                        f"{current_task.label} ({printable_signoff(required_signoffs)}) cannot depend on {d} ({printable_signoff(all_required_signoffs[d])})"
                     )
 
 

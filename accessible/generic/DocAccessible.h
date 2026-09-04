@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -6,15 +5,14 @@
 #ifndef mozilla_a11y_DocAccessible_h_
 #define mozilla_a11y_DocAccessible_h_
 
-#include "HyperTextAccessible.h"
 #include "AccEvent.h"
-#include "nsAccessibilityService.h"
-
-#include "nsClassHashtable.h"
-#include "nsTHashMap.h"
+#include "HyperTextAccessible.h"
 #include "mozilla/UniquePtr.h"
+#include "nsAccessibilityService.h"
+#include "nsClassHashtable.h"
 #include "nsIDocumentObserver.h"
 #include "nsITimer.h"
+#include "nsTHashMap.h"
 #include "nsTHashSet.h"
 #include "nsWeakReference.h"
 
@@ -44,7 +42,6 @@ class TNotification;
  * all use this class to represent the doc they contain.
  */
 class DocAccessible : public HyperTextAccessible,
-                      public nsIDocumentObserver,
                       public nsSupportsWeakReference {
   NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(DocAccessible, LocalAccessible)
@@ -55,14 +52,11 @@ class DocAccessible : public HyperTextAccessible,
  public:
   DocAccessible(Document* aDocument, PresShell* aPresShell);
 
-  // nsIDocumentObserver
-  NS_DECL_NSIDOCUMENTOBSERVER
-
   // LocalAccessible
   virtual void Init();
-  virtual void Shutdown() override;
-  virtual nsIFrame* GetFrame() const override;
-  virtual nsINode* GetNode() const override;
+  void Shutdown() override;
+  nsIFrame* GetFrame() const override;
+  nsINode* GetNode() const override;
   Document* DocumentNode() const { return mDocumentNode; }
 
   virtual mozilla::a11y::ENameValueFlag DirectName(
@@ -158,7 +152,9 @@ class DocAccessible : public HyperTextAccessible,
 
   bool IsHidden() const;
 
-  void SetViewportCacheDirty(bool aDirty) { mViewportCacheDirty = aDirty; }
+  void SetViewportCacheDirty(bool aDirty) {
+    mViewportCacheDirty = aDirty && IPCDoc();
+  }
 
   /**
    * Document load states.
@@ -431,6 +427,49 @@ class DocAccessible : public HyperTextAccessible,
    */
   void QueueCacheUpdateForPopoverInvokers(dom::Element* aPopoverEl);
 
+  /**
+   * Returns true if this document is a print document, which is a static clone
+   * of the original document.
+   */
+  bool IsPrintDoc() const;
+
+  /**
+   * Return the cache domain set that should be used for accessibles in this
+   * document.
+   */
+  uint64_t EffectiveCacheDomains() const;
+
+  /**
+   * For hidden subtrees, fire a name/description change event if the subtree
+   * is a target of aria-labelledby/describedby.
+   * This does nothing if it is called on a node which is not part of a hidden
+   * aria-labelledby/describedby target.
+   */
+  void MaybeHandleChangeToHiddenNameOrDescription(nsIContent* aChild);
+  void AttributeWillChange(dom::Element* aElement, int32_t aNameSpaceID,
+                           nsAtom* aAttribute, AttrModType aModType);
+  virtual void AttributeChanged(dom::Element* aElement, int32_t aNameSpaceID,
+                                nsAtom* aAttribute, AttrModType aModType,
+                                const nsAttrValue* aOldValue);
+  void ElementStateChanged(dom::Document* aDocument, dom::Element* aElement,
+                           dom::ElementState aStateMask);
+  void ARIAAttributeDefaultWillChange(dom::Element* aElement,
+                                      nsAtom* aAttribute, AttrModType aModType);
+
+  void ARIAAttributeDefaultChanged(dom::Element* aElement, nsAtom* aAttribute,
+                                   AttrModType aModType);
+
+  bool ShouldSendToParentProcess() const {
+    // For most documents, we should only send accessibility info to the parent
+    // process if the accessibility service is running there. It might not be
+    // running there if accessibility was started only in a content process,
+    // which happens in automation scenarios such as WebDriver. However, for
+    // print documents, we must send the tree regardless in order to generate a
+    // tagged PDF.
+    return IPCAccessibilityActive() &&
+           (nsAccessibilityService::IsRunningInParentProcess() || IsPrintDoc());
+  }
+
  protected:
   virtual ~DocAccessible();
 
@@ -683,8 +722,11 @@ class DocAccessible : public HyperTextAccessible,
    *    insertion.
    *
    * Returns true if the root node should be reinserted.
+   *
+   * aIsInsertRoot is true when aRoot was reported as inserted, and false when
+   * we reached it by descending into an insert root's subtree.
    */
-  bool PruneOrInsertSubtree(nsIContent* aRoot);
+  bool PruneOrInsertSubtree(nsIContent* aRoot, bool aIsInsertRoot = true);
 
  protected:
   /**
@@ -752,13 +794,12 @@ class DocAccessible : public HyperTextAccessible,
     AttrRelProvider(nsAtom* aRelAttr, nsIContent* aContent)
         : mRelAttr(aRelAttr), mContent(aContent) {}
 
+    AttrRelProvider() = delete;
+    AttrRelProvider(const AttrRelProvider&) = delete;
+    AttrRelProvider& operator=(const AttrRelProvider&) = delete;
+
     nsAtom* mRelAttr;
     nsCOMPtr<nsIContent> mContent;
-
-   private:
-    AttrRelProvider();
-    AttrRelProvider(const AttrRelProvider&);
-    AttrRelProvider& operator=(const AttrRelProvider&);
   };
 
   typedef nsTArray<mozilla::UniquePtr<AttrRelProvider>> AttrRelProviders;
@@ -849,14 +890,6 @@ class DocAccessible : public HyperTextAccessible,
    * It keeps track of Accessibles moved during this tick.
    */
   void TrackMovedAccessible(LocalAccessible* aAcc);
-
-  /**
-   * For hidden subtrees, fire a name/description change event if the subtree
-   * is a target of aria-labelledby/describedby.
-   * This does nothing if it is called on a node which is not part of a hidden
-   * aria-labelledby/describedby target.
-   */
-  void MaybeHandleChangeToHiddenNameOrDescription(nsIContent* aChild);
 
   void MaybeHandleChangeToAriaActions(LocalAccessible* aAcc,
                                       const nsAtom* aAttribute);

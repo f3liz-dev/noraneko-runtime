@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,13 +5,13 @@
 #ifndef mozilla_widget_ScrollbarDrawing_h
 #define mozilla_widget_ScrollbarDrawing_h
 
+#include "ThemeColors.h"
+#include "ThemeDrawing.h"
+#include "Units.h"
 #include "mozilla/dom/RustTypes.h"
 #include "mozilla/gfx/2D.h"
 #include "nsColor.h"
 #include "nsITheme.h"
-#include "ThemeColors.h"
-#include "ThemeDrawing.h"
-#include "Units.h"
 
 class nsScrollbarFrame;
 
@@ -54,7 +52,7 @@ class ScrollbarDrawing {
   static bool IsParentScrollbarRolledOver(nsIFrame* aFrame);
   static bool IsParentScrollbarHoveredOrActive(nsIFrame* aFrame);
 
-  static bool IsScrollbarWidthThin(const ComputedStyle& aStyle);
+  static bool IsScrollbarWidthThin(const nsIFrame* aFrame);
 
   CSSIntCoord GetCSSScrollbarSize(StyleScrollbarWidth, Overlay) const;
   LayoutDeviceIntCoord GetScrollbarSize(const nsPresContext*,

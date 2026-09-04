@@ -1,10 +1,9 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "WindowsTestDebug.h"
+
 #include "nsCOMPtr.h"
 #include "nsIFile.h"
 #include "nsTArray.h"
@@ -55,10 +54,6 @@ class WindowsDebugProcessData : public nsIWindowsDebugProcessData {
 NS_IMPL_ISUPPORTS(WindowsDebugProcessData, nsIWindowsDebugProcessData)
 NS_IMPL_ISUPPORTS(WindowsTestDebug, nsIWindowsTestDebug)
 
-WindowsTestDebug::WindowsTestDebug() {}
-
-WindowsTestDebug::~WindowsTestDebug() {}
-
 static nsReturnRef<HMODULE> MakeRestartManager() {
   nsModuleHandle module(::LoadLibraryW(L"Rstrtmgr.dll"));
   (void)NS_WARN_IF(!module);
@@ -103,7 +98,8 @@ WindowsTestDebug::ProcessesThatOpenedFile(
   auto endSession = MakeScopeExit(
       [&, handle]() { (void)NS_WARN_IF(FAILED(RmEndSession(handle))); });
 
-  LPCWSTR resources[] = {PromiseFlatString(aFilename).get()};
+  nsPromiseFlatString flatFilename(aFilename);
+  LPCWSTR resources[] = {flatFilename.getW()};
   if (NS_WARN_IF(FAILED(
           RmRegisterResources(handle, 1, resources, 0, nullptr, 0, nullptr)))) {
     return NS_ERROR_FAILURE;

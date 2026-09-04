@@ -4,11 +4,12 @@
 
 const lazy = {};
 
-import { UrlbarUtils } from "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs";
-
 ChromeUtils.defineESModuleGetters(lazy, {
+  ConfigSearchEngine:
+    "moz-src:///toolkit/components/search/ConfigSearchEngine.sys.mjs",
   RemoteSettings: "resource://services-settings/remote-settings.sys.mjs",
   SearchService: "moz-src:///toolkit/components/search/SearchService.sys.mjs",
+  UrlbarShared: "chrome://browser/content/urlbar/UrlbarShared.mjs",
 });
 
 /**
@@ -28,7 +29,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
  */
 
 ChromeUtils.defineLazyGetter(lazy, "logger", () =>
-  UrlbarUtils.getLogger({ prefix: "UrlbarSearchTermsPersistence" })
+  lazy.UrlbarShared.getLogger({ prefix: "UrlbarSearchTermsPersistence" })
 );
 
 const URLBAR_PERSISTENCE_SETTINGS_KEY = "urlbar-persisted-search-terms";
@@ -159,7 +160,7 @@ class _UrlbarSearchTermsPersistence {
     if (provider) {
       let result = lazy.SearchService.parseSubmissionURL(uri.spec);
       if (
-        !result.engine?.isConfigEngine ||
+        !(result.engine instanceof lazy.ConfigSearchEngine) ||
         !this.isDefaultPage(uri, provider)
       ) {
         return "";
@@ -167,13 +168,13 @@ class _UrlbarSearchTermsPersistence {
       searchTerm = result.terms;
     } else {
       let result = lazy.SearchService.parseSubmissionURL(uri.spec);
-      if (!result.engine?.isConfigEngine) {
+      if (!(result.engine instanceof lazy.ConfigSearchEngine)) {
         return "";
       }
       searchTerm = result.engine.searchTermFromResult(uri);
     }
 
-    if (!searchTerm || searchTerm.length > UrlbarUtils.MAX_TEXT_LENGTH) {
+    if (!searchTerm || searchTerm.length > lazy.UrlbarShared.MAX_TEXT_LENGTH) {
       return "";
     }
 
@@ -358,11 +359,7 @@ class _UrlbarSearchTermsPersistence {
   }
 
   onSearchModeChanged(window) {
-    let urlbar = window.gURLBar;
-    if (!urlbar) {
-      return;
-    }
-    let state = urlbar.getBrowserState(window.gBrowser.selectedBrowser);
+    let state = window.gURLBar.getBrowserState(window.gBrowser.selectedBrowser);
     if (!state?.persist) {
       return;
     }
@@ -374,7 +371,7 @@ class _UrlbarSearchTermsPersistence {
       !this.searchModeMatchesState(state.searchModes?.confirmed, state)
     ) {
       state.persist.shouldPersist = false;
-      urlbar.removeAttribute("persistsearchterms");
+      window.gURLBar.removeAttribute("persistsearchterms");
     }
   }
 
@@ -403,7 +400,7 @@ class _UrlbarSearchTermsPersistence {
       return null;
     }
     let result = lazy.SearchService.parseSubmissionURL(url);
-    if (!result.engine?.isConfigEngine) {
+    if (!(result.engine instanceof lazy.ConfigSearchEngine)) {
       return null;
     }
     return {

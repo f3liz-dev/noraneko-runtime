@@ -5,12 +5,10 @@
 package mozilla.components.browser.state.engine
 
 import android.content.Intent
-import android.os.Environment
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import mozilla.components.browser.state.action.BrowserAction
 import mozilla.components.browser.state.action.ContentAction
-import mozilla.components.browser.state.action.CookieBannerAction
 import mozilla.components.browser.state.action.CrashAction
 import mozilla.components.browser.state.action.EngineAction
 import mozilla.components.browser.state.action.MediaSessionAction
@@ -187,10 +185,6 @@ internal class EngineObserver(
         dispatchAsync(TrackingProtectionAction.ToggleAction(tabId, enabled))
     }
 
-    override fun onCookieBannerChange(status: EngineSession.CookieBannerHandlingStatus) {
-        dispatchAsync(CookieBannerAction.UpdateStatusAction(tabId, status))
-    }
-
     override fun onTranslatePageChange() {
         dispatchAsync(TranslationsAction.SetTranslateProcessingAction(tabId, isProcessing = false))
     }
@@ -241,7 +235,6 @@ internal class EngineObserver(
             0,
             INITIATED,
             userAgent,
-            Environment.DIRECTORY_DOWNLOADS,
             private = isPrivate,
             skipConfirmation = skipConfirmation,
             openInApp = openInApp,
@@ -370,6 +363,10 @@ internal class EngineObserver(
 
     override fun onMediaMetadataChanged(metadata: MediaSession.Metadata) {
         dispatchAsync(MediaSessionAction.UpdateMediaMetadataAction(tabId, metadata))
+    }
+
+    override fun onMediaAudioSessionTypeChanged(type: MediaSession.AudioSessionType) {
+        dispatchAsync(MediaSessionAction.UpdateMediaAudioSessionTypeAction(tabId, type))
     }
 
     override fun onMediaPlaybackStateChanged(playbackState: MediaSession.PlaybackState) {

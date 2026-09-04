@@ -1,43 +1,42 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:expandtab:shiftwidth=4:tabstop=4:
- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/Logging.h"
-
 #include "nsGtkKeyUtils.h"
 
-#include <gdk/gdkkeysyms.h>
-#include <algorithm>
-#include <gdk/gdk.h>
 #include <dlfcn.h>
+#include <gdk/gdk.h>
 #include <gdk/gdkkeysyms-compat.h>
+#include <gdk/gdkkeysyms.h>
+
+#include <algorithm>
+
+#include "mozilla/Logging.h"
 #ifdef MOZ_X11
-#  include <gdk/gdkx.h>
 #  include <X11/XKBlib.h>
+#  include <gdk/gdkx.h>
+
 #  include "X11UndefineNone.h"
 #endif
 #include "IMContextWrapper.h"
 #include "WidgetUtils.h"
 #include "WidgetUtilsGtk.h"
-#include "x11/keysym2ucs.h"
+#include "mozilla/MouseEvents.h"
+#include "mozilla/TextEventDispatcher.h"
+#include "mozilla/TextEvents.h"
+#include "mozilla/Utf16.h"
+#include "mozilla/intl/Segmenter.h"
+#include "nsCRT.h"
 #include "nsContentUtils.h"
-#include "nsGtkUtils.h"
 #include "nsIBidiKeyboard.h"
 #include "nsPrintfCString.h"
 #include "nsReadableUtils.h"
-#include "nsServiceManagerUtils.h"
 #include "nsWindow.h"
-
-#include "mozilla/MouseEvents.h"
-#include "mozilla/StaticPrefs_dom.h"
-#include "mozilla/TextEventDispatcher.h"
-#include "mozilla/TextEvents.h"
+#include "x11/keysym2ucs.h"
 
 #ifdef MOZ_WAYLAND
 #  include <sys/mman.h>
+
 #  include "nsWaylandDisplay.h"
 #endif
 
@@ -47,8 +46,7 @@
 // Therefore you shouldn't use `LogLevel::Verbose` for logging usual behavior.
 mozilla::LazyLogModule gKeyLog("KeyboardHandler");
 
-namespace mozilla {
-namespace widget {
+namespace mozilla::widget {
 
 #define IS_ASCII_ALPHABETICAL(key) \
   ((('a' <= key) && (key <= 'z')) || (('A' <= key) && (key <= 'Z')))
@@ -185,10 +183,10 @@ static const nsCString GetCharacterCodeName(char16_t aChar) {
       if (aChar < ' ' || (aChar >= 0x80 && aChar < 0xA0)) {
         return nsPrintfCString("control (0x%04X)", aChar);
       }
-      if (NS_IS_HIGH_SURROGATE(aChar)) {
+      if (IsHighSurrogate(aChar)) {
         return nsPrintfCString("high surrogate (0x%04X)", aChar);
       }
-      if (NS_IS_LOW_SURROGATE(aChar)) {
+      if (IsLowSurrogate(aChar)) {
         return nsPrintfCString("low surrogate (0x%04X)", aChar);
       }
       return nsPrintfCString("'%s' (0x%04X)",
@@ -326,6 +324,18 @@ KeymapWrapper::ModifierKey* KeymapWrapper::GetModifierKey(
     }
   }
   return nullptr;
+}
+
+/* static */
+bool KeymapWrapper::StringHasOnlyOneGraphemeCluster(const nsAString& aString) {
+  if (aString.IsEmpty()) {
+    return false;
+  }
+  if (aString.Length() == 1u) {
+    return true;
+  }
+  // Return true if there is no another grapheme cluster after the first one.
+  return intl::GraphemeClusterBreakIteratorUtf16(aString).Next().isNothing();
 }
 
 /* static */
@@ -723,7 +733,7 @@ void KeymapWrapper::HandleKeymap(uint32_t format, int fd, uint32_t size) {
     return;
   }
 
-  char* mapString = (char*)mmap(NULL, size, PROT_READ, MAP_PRIVATE, fd, 0);
+  char* mapString = (char*)mmap(nullptr, size, PROT_READ, MAP_PRIVATE, fd, 0);
   if (mapString == MAP_FAILED) {
     MOZ_LOG(gKeyLog, LogLevel::Info,
             ("KeymapWrapper::HandleKeymap(): failed to allocate shm!"));
@@ -1110,34 +1120,42 @@ uint32_t KeymapWrapper::ComputeKeyModifiers(guint aGdkModifierState) {
 }
 
 /* static */
+bool KeymapWrapper::EditorMayHandleKeyPressEventAsTextInput(
+    guint aGdkModifierState) {
+  const Modifiers modifiers = ComputeKeyModifiers(aGdkModifierState);
+  return !(modifiers & (MODIFIER_CONTROL | MODIFIER_ALT | MODIFIER_META));
+}
+
+/* static */
 guint KeymapWrapper::ConvertWidgetModifierToGdkState(
-    nsIWidget::Modifiers aNativeModifiers) {
-  if (!aNativeModifiers) {
+    nsIWidget::NativeModifiers aNativeModifiers) {
+  if (aNativeModifiers == nsIWidget::NativeModifiers::NO_MODIFIERS) {
     return 0;
   }
   struct ModifierMapEntry {
-    nsIWidget::Modifiers mWidgetModifier;
+    nsIWidget::NativeModifiers mWidgetModifier;
     MappedModifier mModifier;
   };
   // TODO: Currently, we don't treat L/R of each modifier on Linux.
   // TODO: No proper native modifier for Level5.
   static constexpr ModifierMapEntry sModifierMap[] = {
-      {nsIWidget::CAPS_LOCK, MappedModifier::CAPS_LOCK},
-      {nsIWidget::NUM_LOCK, MappedModifier::NUM_LOCK},
-      {nsIWidget::SHIFT_L, MappedModifier::SHIFT},
-      {nsIWidget::SHIFT_R, MappedModifier::SHIFT},
-      {nsIWidget::CTRL_L, MappedModifier::CTRL},
-      {nsIWidget::CTRL_R, MappedModifier::CTRL},
-      {nsIWidget::ALT_L, MappedModifier::ALT},
-      {nsIWidget::ALT_R, MappedModifier::ALT},
-      {nsIWidget::ALTGRAPH, MappedModifier::LEVEL3},
-      {nsIWidget::COMMAND_L, MappedModifier::SUPER},
-      {nsIWidget::COMMAND_R, MappedModifier::SUPER}};
+      {nsIWidget::NativeModifiers::CAPS_LOCK, MappedModifier::CAPS_LOCK},
+      {nsIWidget::NativeModifiers::NUM_LOCK, MappedModifier::NUM_LOCK},
+      {nsIWidget::NativeModifiers::SHIFT_L, MappedModifier::SHIFT},
+      {nsIWidget::NativeModifiers::SHIFT_R, MappedModifier::SHIFT},
+      {nsIWidget::NativeModifiers::CTRL_L, MappedModifier::CTRL},
+      {nsIWidget::NativeModifiers::CTRL_R, MappedModifier::CTRL},
+      {nsIWidget::NativeModifiers::ALT_L, MappedModifier::ALT},
+      {nsIWidget::NativeModifiers::ALT_R, MappedModifier::ALT},
+      {nsIWidget::NativeModifiers::ALTGRAPH, MappedModifier::LEVEL3},
+      {nsIWidget::NativeModifiers::COMMAND_L, MappedModifier::SUPER},
+      {nsIWidget::NativeModifiers::COMMAND_R, MappedModifier::SUPER}};
 
   guint state = 0;
   KeymapWrapper* instance = GetInstance();
   for (const ModifierMapEntry& entry : sModifierMap) {
-    if (aNativeModifiers & entry.mWidgetModifier) {
+    if ((aNativeModifiers & entry.mWidgetModifier) !=
+        nsIWidget::NativeModifiers::NO_MODIFIERS) {
       state |= instance->GetGdkModifierMask(entry.mModifier);
     }
   }
@@ -1443,7 +1461,13 @@ KeyNameIndex KeymapWrapper::ComputeDOMKeyNameIndex(
       break;
   }
 
-  return KEY_NAME_INDEX_Unidentified;
+  // We don't map each GDK keyval to KEY_NAME_INDEX_USE_STRING because they
+  // define keyval for each character in the world. Therefore, compute the char
+  // code and it's non-zero, the keyval should be mapped to
+  // KEY_NAME_INDEX_USE_STRING.
+  return GetCharCodeOrUnmodifiedCharCodeFor(aGdkKeyEvent)
+             ? KEY_NAME_INDEX_USE_STRING
+             : KEY_NAME_INDEX_Unidentified;
 }
 
 /* static */
@@ -1466,10 +1490,10 @@ CodeNameIndex KeymapWrapper::ComputeDOMCodeNameIndex(
 }
 
 /* static */
-bool KeymapWrapper::DispatchKeyDownOrKeyUpEvent(nsWindow* aWindow,
-                                                GdkEventKey* aGdkKeyEvent,
-                                                bool aIsProcessedByIME,
-                                                bool* aIsCancelled) {
+bool KeymapWrapper::DispatchKeyDownOrKeyUpEvent(
+    nsWindow* aWindow, GdkEventKey* aGdkKeyEvent,
+    const nsAString& aStringReceivedByIMContext, bool aIsProcessedByIME,
+    bool* aIsCancelled) {
   MOZ_ASSERT(aIsCancelled, "aIsCancelled must not be nullptr");
 
   *aIsCancelled = false;
@@ -1485,7 +1509,8 @@ bool KeymapWrapper::DispatchKeyDownOrKeyUpEvent(nsWindow* aWindow,
   EventMessage message =
       aGdkKeyEvent->type == GDK_KEY_PRESS ? eKeyDown : eKeyUp;
   WidgetKeyboardEvent keyEvent(true, message, aWindow);
-  KeymapWrapper::InitKeyEvent(keyEvent, aGdkKeyEvent, aIsProcessedByIME);
+  KeymapWrapper::InitKeyEvent(keyEvent, aGdkKeyEvent,
+                              aStringReceivedByIMContext, aIsProcessedByIME);
   return DispatchKeyDownOrKeyUpEvent(aWindow, keyEvent, aIsCancelled);
 }
 
@@ -1585,6 +1610,7 @@ void KeymapWrapper::HandleKeyPressEvent(nsWindow* aWindow,
   KeyHandlingState handlingState = KeyHandlingState::eNotHandled;
   RefPtr<IMContextWrapper> imContext = aWindow->GetIMContext();
   if (imContext) {
+    DebugOnly<bool> isEditable = imContext->IsEditable();
     IMEWasEnabled = imContext->IsEnabled();
     handlingState = imContext->OnKeyEvent(aWindow, aGdkKeyEvent);
     if (handlingState == KeyHandlingState::eHandled) {
@@ -1593,6 +1619,11 @@ void KeymapWrapper::HandleKeyPressEvent(nsWindow* aWindow,
                "IMContextWrapper"));
       return;
     }
+    // If a non-editable node has focus, we need to compute the typed character
+    // only from aGdkKeyEvent. Therefore, IMContextWrapper shouldn't have
+    // committed grapheme cluster.
+    MOZ_ASSERT_IF(!isEditable,
+                  imContext->GetCommittedGraphemeCluster().IsVoid());
   }
 
   // work around for annoying things.
@@ -1612,8 +1643,10 @@ void KeymapWrapper::HandleKeyPressEvent(nsWindow* aWindow,
 
   bool isKeyDownCancelled = false;
   if (handlingState == KeyHandlingState::eNotHandled) {
-    if (DispatchKeyDownOrKeyUpEvent(aWindow, aGdkKeyEvent, false,
-                                    &isKeyDownCancelled) &&
+    if (DispatchKeyDownOrKeyUpEvent(
+            aWindow, aGdkKeyEvent,
+            imContext ? imContext->GetCommittedGraphemeCluster() : VoidString(),
+            false, &isKeyDownCancelled) &&
         (MOZ_UNLIKELY(aWindow->IsDestroyed()) || isKeyDownCancelled)) {
       MOZ_LOG(gKeyLog, LogLevel::Info,
               ("  HandleKeyPressEvent(), dispatched eKeyDown event and "
@@ -1735,16 +1768,20 @@ void KeymapWrapper::HandleKeyPressEvent(nsWindow* aWindow,
     return;
   }
 
-  // If the character code is in the BMP, send the key press event.
-  // Otherwise, send a compositionchange event with the equivalent UTF-16
-  // string.
-  // TODO: Investigate other browser's behavior in this case because
-  //       this hack is odd for UI Events.
+  // If the user typing a grapheme character including combined emoji, etc, we
+  // should dispatch eKeyPress events for avoiding web compat issues caused by
+  // dispatching only content insert text command event.
+  // Otherwise, send a set of composition events to emulate it's typed as an IME
+  // composition because a key press shouldn't cause typing multiple characters
+  // in theory. So, the behavior could be unexpected by web apps.
   WidgetKeyboardEvent keypressEvent(true, eKeyPress, aWindow);
-  KeymapWrapper::InitKeyEvent(keypressEvent, aGdkKeyEvent, false);
+  KeymapWrapper::InitKeyEvent(
+      keypressEvent, aGdkKeyEvent,
+      imContext ? imContext->GetCommittedGraphemeCluster() : VoidString(),
+      false);
   nsEventStatus status = nsEventStatus_eIgnore;
   if (keypressEvent.mKeyNameIndex != KEY_NAME_INDEX_USE_STRING ||
-      keypressEvent.mKeyValue.Length() == 1) {
+      KeymapWrapper::StringHasOnlyOneGraphemeCluster(keypressEvent.mKeyValue)) {
     if (textEventDispatcher->MaybeDispatchKeypressEvents(keypressEvent, status,
                                                          aGdkKeyEvent)) {
       MOZ_LOG(gKeyLog, LogLevel::Info,
@@ -1794,8 +1831,14 @@ bool KeymapWrapper::HandleKeyReleaseEvent(nsWindow* aWindow,
   }
 
   bool isCancelled = false;
-  if (NS_WARN_IF(!DispatchKeyDownOrKeyUpEvent(aWindow, aGdkKeyEvent, false,
-                                              &isCancelled))) {
+  if (NS_WARN_IF(!DispatchKeyDownOrKeyUpEvent(
+          aWindow, aGdkKeyEvent,
+          // FIXME: If the preceding eKeyDown commits a grapheme cluster
+          // different from the char introduced without the IM, we dispatch the
+          // eKeyUp with the different .key value. We probably need to store the
+          // last commit string in IMContextWrapper.
+          imContext ? imContext->GetCommittedGraphemeCluster() : VoidString(),
+          false, &isCancelled))) {
     MOZ_LOG(gKeyLog, LogLevel::Error,
             ("  HandleKeyReleaseEvent(), didn't dispatch eKeyUp event"));
     return false;
@@ -1889,9 +1932,9 @@ guint KeymapWrapper::GetModifierState(GdkEventKey* aGdkKeyEvent,
 }
 
 /* static */
-void KeymapWrapper::InitKeyEvent(WidgetKeyboardEvent& aKeyEvent,
-                                 GdkEventKey* aGdkKeyEvent,
-                                 bool aIsProcessedByIME) {
+void KeymapWrapper::InitKeyEvent(
+    WidgetKeyboardEvent& aKeyEvent, GdkEventKey* aGdkKeyEvent,
+    const nsAString& aCommitCharReceivedByIMContext, bool aIsProcessedByIME) {
   MOZ_ASSERT(
       !aIsProcessedByIME || aKeyEvent.mMessage != eKeyPress,
       "If the key event is handled by IME, keypress event shouldn't be fired");
@@ -1903,16 +1946,15 @@ void KeymapWrapper::InitKeyEvent(WidgetKeyboardEvent& aKeyEvent,
   aKeyEvent.mKeyNameIndex =
       aIsProcessedByIME ? KEY_NAME_INDEX_Process
                         : keymapWrapper->ComputeDOMKeyNameIndex(aGdkKeyEvent);
-  if (aKeyEvent.mKeyNameIndex == KEY_NAME_INDEX_Unidentified) {
-    uint32_t charCode = GetCharCodeFor(aGdkKeyEvent);
-    if (!charCode) {
-      charCode = keymapWrapper->GetUnmodifiedCharCodeFor(aGdkKeyEvent);
-    }
-    if (charCode) {
-      aKeyEvent.mKeyNameIndex = KEY_NAME_INDEX_USE_STRING;
+  if (aKeyEvent.mKeyNameIndex == KEY_NAME_INDEX_USE_STRING) {
+    if (aCommitCharReceivedByIMContext.IsVoid()) {
+      uint32_t charCode = GetCharCodeOrUnmodifiedCharCodeFor(aGdkKeyEvent);
+      MOZ_ASSERT(charCode);
       MOZ_ASSERT(aKeyEvent.mKeyValue.IsEmpty(),
                  "Uninitialized mKeyValue must be empty");
       AppendUCS4ToUTF16(charCode, aKeyEvent.mKeyValue);
+    } else {
+      aKeyEvent.mKeyValue = aCommitCharReceivedByIMContext;
     }
   }
 
@@ -1999,24 +2041,25 @@ void KeymapWrapper::InitKeyEvent(WidgetKeyboardEvent& aKeyEvent,
       sRepeatState == REPEATING &&
       aGdkKeyEvent->hardware_keycode == sLastRepeatableHardwareKeyCode;
 
-  MOZ_LOG(
+  MOZ_LOG_FMT(
       gKeyLog, LogLevel::Info,
-      ("%p InitKeyEvent, modifierState=0x%08X "
-       "aKeyEvent={ mMessage=%s, isShift=%s, isControl=%s, "
-       "isAlt=%s, isMeta=%s, isAltGraph=%s mKeyCode=0x%02X, mCharCode=%s, "
-       "mKeyNameIndex=%s, mKeyValue=%s, mCodeNameIndex=%s, mCodeValue=%s, "
-       "mLocation=%s, mIsRepeat=%s }",
-       keymapWrapper, modifierState, ToChar(aKeyEvent.mMessage),
-       TrueOrFalse(aKeyEvent.IsShift()), TrueOrFalse(aKeyEvent.IsControl()),
-       TrueOrFalse(aKeyEvent.IsAlt()), TrueOrFalse(aKeyEvent.IsMeta()),
-       TrueOrFalse(aKeyEvent.IsAltGraph()), aKeyEvent.mKeyCode,
-       GetCharacterCodeName(static_cast<char16_t>(aKeyEvent.mCharCode)).get(),
-       ToString(aKeyEvent.mKeyNameIndex).get(),
-       GetCharacterCodeNames(aKeyEvent.mKeyValue).get(),
-       ToString(aKeyEvent.mCodeNameIndex).get(),
-       GetCharacterCodeNames(aKeyEvent.mCodeValue).get(),
-       GetKeyLocationName(aKeyEvent.mLocation).get(),
-       TrueOrFalse(aKeyEvent.mIsRepeat)));
+      "{} InitKeyEvent, modifierState={:#08X} "
+      "aKeyEvent={{ mMessage={}, isShift={}, isControl={}, "
+      "isAlt={}, isMeta={}, isAltGraph={} mKeyCode={:#02X}, mCharCode={}, "
+      "mKeyNameIndex={}, mKeyValue={}, mCodeNameIndex={}, mCodeValue={}, "
+      "mLocation={}, mIsRepeat={} }}",
+      static_cast<void*>(GetInstance()), modifierState,
+      ToChar(aKeyEvent.mMessage), TrueOrFalse(aKeyEvent.IsShift()),
+      TrueOrFalse(aKeyEvent.IsControl()), TrueOrFalse(aKeyEvent.IsAlt()),
+      TrueOrFalse(aKeyEvent.IsMeta()), TrueOrFalse(aKeyEvent.IsAltGraph()),
+      aKeyEvent.mKeyCode,
+      GetCharacterCodeName(static_cast<char16_t>(aKeyEvent.mCharCode)),
+      ToString(aKeyEvent.mKeyNameIndex),
+      GetCharacterCodeNames(aKeyEvent.mKeyValue),
+      ToString(aKeyEvent.mCodeNameIndex),
+      GetCharacterCodeNames(aKeyEvent.mCodeValue),
+      GetKeyLocationName(aKeyEvent.mLocation),
+      TrueOrFalse(aKeyEvent.mIsRepeat));
 }
 
 /* static */
@@ -2145,6 +2188,14 @@ uint32_t KeymapWrapper::GetUnmodifiedCharCodeFor(
                         aGdkKeyEvent->group);
 }
 
+/* static */
+uint32_t KeymapWrapper::GetCharCodeOrUnmodifiedCharCodeFor(
+    const GdkEventKey* aGdkKeyEvent) {
+  uint32_t charCode = GetCharCodeFor(aGdkKeyEvent);
+  return charCode ? charCode
+                  : GetInstance()->GetUnmodifiedCharCodeFor(aGdkKeyEvent);
+}
+
 gint KeymapWrapper::GetKeyLevel(GdkEventKey* aGdkKeyEvent) {
   gint level;
   if (!gdk_keymap_translate_keyboard_state(
@@ -2254,6 +2305,7 @@ struct KeyCodeData {
 static struct KeyCodeData gKeyCodes[] = {
 #define NS_DEFINE_VK(aDOMKeyName, aDOMKeyCode) \
   {#aDOMKeyName, sizeof(#aDOMKeyName) - 1, aDOMKeyCode},
+#include "mozilla/Utf16.h"
 #include "mozilla/VirtualKeyCodeList.inc"
 #undef NS_DEFINE_VK
     {nullptr, 0, 0}};
@@ -2817,5 +2869,4 @@ void KeymapWrapper::ClearKeymap() {
 }
 #endif
 
-}  // namespace widget
-}  // namespace mozilla
+}  // namespace mozilla::widget

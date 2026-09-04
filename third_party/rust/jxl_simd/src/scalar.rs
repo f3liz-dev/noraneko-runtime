@@ -3,12 +3,11 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-use std::mem::MaybeUninit;
 use std::num::Wrapping;
 
 use crate::{U32SimdVec, f16, impl_f32_array_interface};
 
-use super::{F32SimdVec, I32SimdVec, SimdDescriptor, SimdMask};
+use super::{F32SimdVec, I32SimdVec, SimdDescriptor, SimdMask, U8SimdVec, U16SimdVec};
 
 #[derive(Clone, Copy, Debug)]
 pub struct ScalarDescriptor;
@@ -17,6 +16,8 @@ impl SimdDescriptor for ScalarDescriptor {
     type F32Vec = f32;
     type I32Vec = Wrapping<i32>;
     type U32Vec = Wrapping<u32>;
+    type U8Vec = u8;
+    type U16Vec = u16;
     type Mask = bool;
     type Bf16Table8 = [f32; 8];
 
@@ -41,9 +42,7 @@ impl SimdDescriptor for ScalarDescriptor {
     }
 }
 
-// SAFETY: This implementation only write initialized data in the
-// `&mut [MaybeUninit<f32>]` arguments to *_uninit methods.
-unsafe impl F32SimdVec for f32 {
+impl F32SimdVec for f32 {
     type Descriptor = ScalarDescriptor;
 
     const LEN: usize = 1;
@@ -59,30 +58,24 @@ unsafe impl F32SimdVec for f32 {
     }
 
     #[inline(always)]
-    fn store_interleaved_2_uninit(a: Self, b: Self, dest: &mut [MaybeUninit<f32>]) {
-        dest[0].write(a);
-        dest[1].write(b);
+    fn store_interleaved_2(a: Self, b: Self, dest: &mut [f32]) {
+        dest[0] = a;
+        dest[1] = b;
     }
 
     #[inline(always)]
-    fn store_interleaved_3_uninit(a: Self, b: Self, c: Self, dest: &mut [MaybeUninit<f32>]) {
-        dest[0].write(a);
-        dest[1].write(b);
-        dest[2].write(c);
+    fn store_interleaved_3(a: Self, b: Self, c: Self, dest: &mut [f32]) {
+        dest[0] = a;
+        dest[1] = b;
+        dest[2] = c;
     }
 
     #[inline(always)]
-    fn store_interleaved_4_uninit(
-        a: Self,
-        b: Self,
-        c: Self,
-        d: Self,
-        dest: &mut [MaybeUninit<f32>],
-    ) {
-        dest[0].write(a);
-        dest[1].write(b);
-        dest[2].write(c);
-        dest[3].write(d);
+    fn store_interleaved_4(a: Self, b: Self, c: Self, d: Self, dest: &mut [f32]) {
+        dest[0] = a;
+        dest[1] = b;
+        dest[2] = c;
+        dest[3] = d;
     }
 
     #[inline(always)]
@@ -310,6 +303,11 @@ impl I32SimdVec for Wrapping<i32> {
     fn store_u16(self, dest: &mut [u16]) {
         dest[0] = self.0 as u16;
     }
+
+    #[inline(always)]
+    fn store_u8(self, dest: &mut [u8]) {
+        dest[0] = self.0 as u8;
+    }
 }
 
 impl U32SimdVec for Wrapping<u32> {
@@ -325,6 +323,88 @@ impl U32SimdVec for Wrapping<u32> {
     #[inline(always)]
     fn shr<const AMOUNT_U: u32, const AMOUNT_I: i32>(self) -> Self {
         Wrapping(self.0 >> AMOUNT_U)
+    }
+}
+
+impl U8SimdVec for u8 {
+    type Descriptor = ScalarDescriptor;
+    const LEN: usize = 1;
+
+    #[inline(always)]
+    fn load(_d: Self::Descriptor, mem: &[u8]) -> Self {
+        mem[0]
+    }
+
+    #[inline(always)]
+    fn splat(_d: Self::Descriptor, v: u8) -> Self {
+        v
+    }
+
+    #[inline(always)]
+    fn store(&self, mem: &mut [u8]) {
+        mem[0] = *self;
+    }
+
+    #[inline(always)]
+    fn store_interleaved_2(a: Self, b: Self, dest: &mut [u8]) {
+        dest[0] = a;
+        dest[1] = b;
+    }
+
+    #[inline(always)]
+    fn store_interleaved_3(a: Self, b: Self, c: Self, dest: &mut [u8]) {
+        dest[0] = a;
+        dest[1] = b;
+        dest[2] = c;
+    }
+
+    #[inline(always)]
+    fn store_interleaved_4(a: Self, b: Self, c: Self, d: Self, dest: &mut [u8]) {
+        dest[0] = a;
+        dest[1] = b;
+        dest[2] = c;
+        dest[3] = d;
+    }
+}
+
+impl U16SimdVec for u16 {
+    type Descriptor = ScalarDescriptor;
+    const LEN: usize = 1;
+
+    #[inline(always)]
+    fn load(_d: Self::Descriptor, mem: &[u16]) -> Self {
+        mem[0]
+    }
+
+    #[inline(always)]
+    fn splat(_d: Self::Descriptor, v: u16) -> Self {
+        v
+    }
+
+    #[inline(always)]
+    fn store(&self, mem: &mut [u16]) {
+        mem[0] = *self;
+    }
+
+    #[inline(always)]
+    fn store_interleaved_2(a: Self, b: Self, dest: &mut [u16]) {
+        dest[0] = a;
+        dest[1] = b;
+    }
+
+    #[inline(always)]
+    fn store_interleaved_3(a: Self, b: Self, c: Self, dest: &mut [u16]) {
+        dest[0] = a;
+        dest[1] = b;
+        dest[2] = c;
+    }
+
+    #[inline(always)]
+    fn store_interleaved_4(a: Self, b: Self, c: Self, d: Self, dest: &mut [u16]) {
+        dest[0] = a;
+        dest[1] = b;
+        dest[2] = c;
+        dest[3] = d;
     }
 }
 
@@ -357,7 +437,11 @@ impl SimdMask for bool {
     }
 }
 
-#[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+#[cfg(not(any(
+    target_arch = "x86_64",
+    target_arch = "aarch64",
+    target_arch = "wasm32"
+)))]
 #[macro_export]
 macro_rules! simd_function {
     (
@@ -376,7 +460,11 @@ macro_rules! simd_function {
     };
 }
 
-#[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+#[cfg(not(any(
+    target_arch = "x86_64",
+    target_arch = "aarch64",
+    target_arch = "wasm32"
+)))]
 #[macro_export]
 macro_rules! test_all_instruction_sets {
     (
@@ -392,7 +480,11 @@ macro_rules! test_all_instruction_sets {
     };
 }
 
-#[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+#[cfg(not(any(
+    target_arch = "x86_64",
+    target_arch = "aarch64",
+    target_arch = "wasm32"
+)))]
 #[macro_export]
 macro_rules! bench_all_instruction_sets {
     (

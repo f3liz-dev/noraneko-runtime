@@ -7,16 +7,16 @@
 use std::{cell::RefCell, rc::Rc, time::Duration};
 
 use neqo_common::{event::Provider as _, qdebug};
-use neqo_crypto::{AllowZeroRtt, AntiReplay};
+use nss::{AllowZeroRtt, AntiReplay};
 use test_fixture::{assertions, now};
 
 use super::{
-    super::Connection, connect, default_client, default_server, exchange_ticket, new_server,
-    resumed_server, CountingConnectionIdGenerator, Output,
+    super::Connection, CountingConnectionIdGenerator, Output, connect, default_client,
+    default_server, exchange_ticket, new_server, resumed_server,
 };
 use crate::{
-    events::ConnectionEvent, ConnectionParameters, Error, StreamType, Version,
-    MIN_INITIAL_PACKET_SIZE,
+    ConnectionParameters, Error, MIN_INITIAL_PACKET_SIZE, StreamType, Version,
+    events::ConnectionEvent,
 };
 
 #[test]
@@ -215,7 +215,7 @@ fn zero_rtt_send_reject() {
 fn zero_rtt_update_flow_control() {
     const LOW: u64 = 3;
     const HIGH: u64 = 10;
-    #[expect(clippy::cast_possible_truncation, reason = "OK in a test.")]
+    #[expect(clippy::cast_possible_truncation, reason = "small value will fit")]
     const MESSAGE: &[u8] = &[0; HIGH as usize];
 
     let mut client = default_client();

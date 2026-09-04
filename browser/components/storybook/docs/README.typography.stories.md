@@ -191,13 +191,24 @@ Type setting relies on design tokens for font size and font weight.
   <tbody>
     <tr>
       <th>
+        <code>--font-size-xxxlarge</code>
+      </th>
+      <td>
+        <code>2.2rem</code>
+      </td>
+      <td>
+        <code>2.2rem</code>
+      </td>
+    </tr>
+    <tr>
+      <th>
         <code>--font-size-xxlarge</code>
       </th>
       <td>
         <code>1.6rem</code>
       </td>
       <td>
-        <code>unset</code>
+        <code>1.6rem</code>
       </td>
     </tr>
     <tr>
@@ -208,7 +219,7 @@ Type setting relies on design tokens for font size and font weight.
         <code>1.467rem</code>
       </td>
       <td>
-        <code>unset</code>
+        <code>1.467rem</code>
       </td>
     </tr>
     <tr>
@@ -219,7 +230,7 @@ Type setting relies on design tokens for font size and font weight.
         <code>1.133rem</code>
       </td>
       <td>
-        <code>unset</code>
+        <code>1.133rem</code>
       </td>
     </tr>
     <tr>
@@ -239,17 +250,6 @@ Type setting relies on design tokens for font size and font weight.
       </th>
       <td>
         <code>0.867rem</code>
-      </td>
-      <td>
-        <code>unset</code>
-      </td>
-    </tr>
-    <tr>
-      <th>
-        <code>--font-size-xsmall</code>
-      </th>
-      <td>
-        <code>0.733rem</code>
       </td>
       <td>
         <code>unset</code>
@@ -337,8 +337,8 @@ This file is imported into `common-shared.css` and `global-shared.css` so that b
 ```css story
 h1,
 .heading-xlarge {
-  font-weight: var(--heading-font-weight);
-  font-size: var(--heading-font-size-xlarge);
+  font-weight: var(--font-weight-heading);
+  font-size: var(--font-size-heading-xlarge);
 }
 ```
 
@@ -352,8 +352,8 @@ h1,
 ```css story
 h2,
 .heading-large {
-  font-weight: var(--heading-font-weight);
-  font-size: var(--heading-font-size-large);
+  font-weight: var(--font-weight-heading);
+  font-size: var(--font-size-heading-large);
 }
 ```
 
@@ -365,8 +365,8 @@ h2,
 ```css story
 h3,
 .heading-medium {
-  font-weight: var(--heading-font-weight);
-  font-size: var(--heading-font-size-medium);
+  font-weight: var(--font-weight-heading);
+  font-size: var(--font-size-heading-medium);
 }
 ```
 

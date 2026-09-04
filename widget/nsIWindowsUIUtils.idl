@@ -1,5 +1,4 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -40,6 +39,21 @@ interface nsIWindowsUIUtils : nsISupports
    * mode".)
    */
   readonly attribute boolean inWin11TabletMode;
+
+  /**
+   * Whether this device is believed to be capable of entering tablet mode at
+   * all, regardless of whether it happens to be in tablet mode right now.
+   *
+   * Always true on Win10, where tablet mode is a user-toggleable setting on
+   * every device; determined heuristically on Win11 and later, where there is
+   * no documented way to ask.
+   *
+   * Prefer this over the inWin*TabletMode getters when deciding whether to
+   * offer tablet-mode-related UI: those report momentary state, so they are
+   * false on a convertible that merely isn't folded at the moment, and they can
+   * change while that UI is open.
+   */
+  readonly attribute boolean isTabletCapable;
 
   /**
    * Share URL

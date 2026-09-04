@@ -128,6 +128,22 @@ async function addTestTab(
 }
 
 /**
+ * Bug 2031760: Temporary helper to check if the tests are running in Linux opt.
+ */
+function isLinuxOpt() {
+  const { AppConstants } = ChromeUtils.importESModule(
+    "resource://gre/modules/AppConstants.sys.mjs"
+  );
+  return (
+    Services.appinfo.OS === "Linux" &&
+    !AppConstants.DEBUG &&
+    !AppConstants.ASAN &&
+    !AppConstants.CCOV &&
+    !AppConstants.TSAN
+  );
+}
+
+/**
  * Open the Accessibility panel for the given tab.
  *
  * @param {Element} tab
@@ -136,6 +152,13 @@ async function addTestTab(
  * @return a promise that is resolved once the panel is open.
  */
 async function initAccessibilityPanel(tab = gBrowser.selectedTab) {
+  // Bug 2031760: We currently have a very frequent race condition which makes
+  // the panel fail to open ~50% of the time on this platform. Delaying the
+  // toolbox open seems to fix the issue.
+  if (isLinuxOpt()) {
+    await wait(1000);
+  }
+
   const toolbox = await gDevTools.showToolboxForTab(tab, {
     toolId: "accessibility",
   });
@@ -250,7 +273,7 @@ function checkLevel(row, expected) {
  */
 async function checkTreeState(doc, expected) {
   info("Checking tree state.");
-  const hasExpectedStructure = await BrowserTestUtils.waitForCondition(() => {
+  const hasExpectedStructure = await TestUtils.waitForCondition(() => {
     const rows = [...doc.querySelectorAll(".treeRow")];
     if (rows.length !== expected.length) {
       return false;
@@ -406,7 +429,7 @@ async function checkToolbarPrefsState(doc, toolbarPrefValues, store) {
   info("Checking toolbar prefs state.");
   const [hasExpectedStructure] = await Promise.all([
     // Check that appropriate preferences are set as expected.
-    BrowserTestUtils.waitForCondition(() => {
+    TestUtils.waitForCondition(() => {
       return Object.keys(toolbarPrefValues).every(
         name =>
           Services.prefs.getBoolPref(PREF_KEYS[name], false) ===
@@ -438,7 +461,7 @@ async function checkToolbarPrefsState(doc, toolbarPrefValues, store) {
  */
 async function checkToolbarState(doc, activeToolbarFilters) {
   info("Checking toolbar state.");
-  const hasExpectedStructure = await BrowserTestUtils.waitForCondition(
+  const hasExpectedStructure = await TestUtils.waitForCondition(
     () =>
       [
         ...doc.querySelectorAll("#accessibility-tree-filters-menu .command"),
@@ -521,7 +544,7 @@ async function focusAccessibleProperties(doc) {
   const tree = doc.querySelector(".tree");
   if (doc.activeElement !== tree) {
     tree.focus();
-    await BrowserTestUtils.waitForCondition(
+    await TestUtils.waitForCondition(
       () => tree.querySelector(".node.focused"),
       "Tree selected."
     );
@@ -541,7 +564,7 @@ async function selectProperty(doc, id) {
   let node;
 
   await focusAccessibleProperties(doc);
-  await BrowserTestUtils.waitForCondition(() => {
+  await TestUtils.waitForCondition(() => {
     node = doc.getElementById(`${id}`);
     if (node) {
       if (selected) {
@@ -608,7 +631,7 @@ async function toggleRow(doc, rowNumber) {
   });
   EventUtils.sendMouseEvent({ type: "click" }, twisty, win);
   AccessibilityUtils.resetEnv();
-  await BrowserTestUtils.waitForCondition(
+  await TestUtils.waitForCondition(
     () =>
       !twisty.classList.contains("devtools-throbber") &&
       expected === twisty.classList.contains("open"),
@@ -657,7 +680,7 @@ async function toggleMenuItem(doc, toolboxDoc, menuId, menuItemIndex) {
   );
 
   EventUtils.synthesizeMouseAtCenter(menuItem, {}, toolboxWin);
-  await BrowserTestUtils.waitForCondition(
+  await TestUtils.waitForCondition(
     () => expected === menuItem.getAttribute("aria-checked"),
     "Menu item updated."
   );
@@ -674,7 +697,7 @@ async function toggleMenuItem(doc, toolboxDoc, menuId, menuItemIndex) {
 async function openSimulationMenu(doc, toolboxDoc) {
   doc.getElementById(SIMULATION_MENU_BUTTON_ID).click();
 
-  await BrowserTestUtils.waitForCondition(() =>
+  await TestUtils.waitForCondition(() =>
     toolboxDoc
       .getElementById(SIMULATION_MENU_ID)
       .classList.contains("tooltip-visible")
@@ -703,7 +726,7 @@ async function toggleSimulationOption(toolboxDoc, optionIndex) {
   );
 
   // wait for the menu to be hidden
-  await BrowserTestUtils.waitForCondition(
+  await TestUtils.waitForCondition(
     () => !simulationMenu.classList.contains("tooltip-visible")
   );
 }

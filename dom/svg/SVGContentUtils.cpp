@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,6 +5,8 @@
 // Main header first:
 // This is also necessary to ensure our definition of M_SQRT1_2 is picked up
 #include "SVGContentUtils.h"
+
+#include <numbers>
 
 // Keep others in (case-insensitive) order:
 #include "SVGAnimatedPreserveAspectRatio.h"
@@ -20,6 +20,7 @@
 #include "mozilla/ComputedStyle.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/RefPtr.h"
+#include "mozilla/ReflowInput.h"
 #include "mozilla/SVGContextPaint.h"
 #include "mozilla/SVGUtils.h"
 #include "mozilla/TextUtils.h"
@@ -373,8 +374,8 @@ float SVGContentUtils::GetLineHeight(const Element* aElement) {
         if (!context) {
           return;
         }
-        const auto lineHeightAu = ReflowInput::CalcLineHeight(
-            *style, context, aElement, NS_UNCONSTRAINEDSIZE, 1.0f);
+        const auto lineHeightAu =
+            ReflowInput::CalcLineHeight(*style, context, aElement, 1.0f);
         result = CSSPixel::FromAppUnits(lineHeightAu);
       });
 
@@ -385,7 +386,7 @@ nsresult SVGContentUtils::ReportToConsole(const Document* doc,
                                           const char* aWarning,
                                           const nsTArray<nsString>& aParams) {
   return nsContentUtils::ReportToConsole(nsIScriptError::warningFlag, "SVG"_ns,
-                                         doc, nsContentUtils::eSVG_PROPERTIES,
+                                         doc, PropertiesFile::SVG_PROPERTIES,
                                          aWarning, aParams);
 }
 
@@ -652,7 +653,7 @@ float SVGContentUtils::AngleBisect(float a1, float a2) {
   float r = a1 + delta / 2;
   if (delta >= M_PI) {
     /* the arc from a2 to a1 is smaller, so use the ray on that side */
-    r += static_cast<float>(M_PI);
+    r += std::numbers::pi_v<float>;
   }
   return r;
 }

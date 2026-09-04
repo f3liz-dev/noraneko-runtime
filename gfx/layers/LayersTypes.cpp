@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,8 +5,9 @@
 #include "LayersTypes.h"
 
 #include <cinttypes>
-#include "nsPrintfCString.h"
+
 #include "mozilla/gfx/gfxVars.h"
+#include "nsPrintfCString.h"
 
 #ifdef XP_WIN
 #  include "gfxConfig.h"
@@ -95,6 +94,23 @@ CompositeProcessFencesHolderId CompositeProcessFencesHolderId::GetNext() {
 
   static std::atomic<uint64_t> sCounter = 0;
   return CompositeProcessFencesHolderId{++sCounter};
+}
+
+/* static */
+GpuProcessAndroidImageReaderId GpuProcessAndroidImageReaderId::GetNext() {
+  if (!XRE_IsGPUProcess()) {
+    MOZ_ASSERT_UNREACHABLE("unexpected to be called");
+    return GpuProcessAndroidImageReaderId{};
+  }
+
+  static std::atomic<uint64_t> sCounter = 0;
+  return GpuProcessAndroidImageReaderId{++sCounter};
+}
+
+/* static */
+AndroidMediaCodecFrameId AndroidMediaCodecFrameId::GetNext() {
+  static std::atomic<uint64_t> sCounter = 0;
+  return AndroidMediaCodecFrameId{++sCounter};
 }
 
 std::ostream& operator<<(std::ostream& os, ScrollDirection aDirection) {

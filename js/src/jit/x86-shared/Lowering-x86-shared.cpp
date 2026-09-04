@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -279,92 +277,6 @@ void LIRGeneratorX86Shared::lowerWasmSelectI64(MWasmSelect* select) {
       useInt64RegisterAtStart(select->trueExpr()),
       useInt64(select->falseExpr()), useRegister(select->condExpr()));
   defineInt64ReuseInput(lir, select, LWasmSelectI64::TrueExprIndex);
-}
-
-void LIRGenerator::visitAsmJSLoadHeap(MAsmJSLoadHeap* ins) {
-  MDefinition* base = ins->base();
-  MOZ_ASSERT(base->type() == MIRType::Int32);
-
-  MDefinition* boundsCheckLimit = ins->boundsCheckLimit();
-  MOZ_ASSERT_IF(ins->needsBoundsCheck(),
-                boundsCheckLimit->type() == MIRType::Int32);
-
-  // For simplicity, require a register if we're going to emit a bounds-check
-  // branch, so that we don't have special cases for constants. This should
-  // only happen in rare constant-folding cases since asm.js sets the minimum
-  // heap size based when accessed via constant.
-  LAllocation baseAlloc = ins->needsBoundsCheck()
-                              ? useRegisterAtStart(base)
-                              : useRegisterOrZeroAtStart(base);
-
-  LAllocation limitAlloc = ins->needsBoundsCheck()
-                               ? useRegisterAtStart(boundsCheckLimit)
-                               : LAllocation();
-  LAllocation memoryBaseAlloc = ins->hasMemoryBase()
-                                    ? useRegisterAtStart(ins->memoryBase())
-                                    : LAllocation();
-
-  auto* lir =
-      new (alloc()) LAsmJSLoadHeap(baseAlloc, limitAlloc, memoryBaseAlloc);
-  define(lir, ins);
-}
-
-void LIRGenerator::visitAsmJSStoreHeap(MAsmJSStoreHeap* ins) {
-  MDefinition* base = ins->base();
-  MOZ_ASSERT(base->type() == MIRType::Int32);
-
-  MDefinition* boundsCheckLimit = ins->boundsCheckLimit();
-  MOZ_ASSERT_IF(ins->needsBoundsCheck(),
-                boundsCheckLimit->type() == MIRType::Int32);
-
-  // For simplicity, require a register if we're going to emit a bounds-check
-  // branch, so that we don't have special cases for constants. This should
-  // only happen in rare constant-folding cases since asm.js sets the minimum
-  // heap size based when accessed via constant.
-  LAllocation baseAlloc = ins->needsBoundsCheck()
-                              ? useRegisterAtStart(base)
-                              : useRegisterOrZeroAtStart(base);
-
-  LAllocation limitAlloc = ins->needsBoundsCheck()
-                               ? useRegisterAtStart(boundsCheckLimit)
-                               : LAllocation();
-  LAllocation memoryBaseAlloc = ins->hasMemoryBase()
-                                    ? useRegisterAtStart(ins->memoryBase())
-                                    : LAllocation();
-
-  LAsmJSStoreHeap* lir = nullptr;
-  switch (ins->access().type()) {
-    case Scalar::Int8:
-    case Scalar::Uint8:
-#ifdef JS_CODEGEN_X86
-      // See comment for LIRGeneratorX86::useByteOpRegister.
-      lir = new (alloc()) LAsmJSStoreHeap(
-          baseAlloc, useFixed(ins->value(), eax), limitAlloc, memoryBaseAlloc);
-      break;
-#endif
-    case Scalar::Int16:
-    case Scalar::Uint16:
-    case Scalar::Int32:
-    case Scalar::Uint32:
-    case Scalar::Float32:
-    case Scalar::Float64:
-      // For now, don't allow constant values. The immediate operand affects
-      // instruction layout which affects patching.
-      lir = new (alloc())
-          LAsmJSStoreHeap(baseAlloc, useRegisterAtStart(ins->value()),
-                          limitAlloc, memoryBaseAlloc);
-      break;
-    case Scalar::Int64:
-    case Scalar::Simd128:
-      MOZ_CRASH("NYI");
-    case Scalar::Uint8Clamped:
-    case Scalar::BigInt64:
-    case Scalar::BigUint64:
-    case Scalar::Float16:
-    case Scalar::MaxTypedArrayViewType:
-      MOZ_CRASH("unexpected array type");
-  }
-  add(lir, ins);
 }
 
 void LIRGeneratorX86Shared::lowerUDiv(MDiv* div) {

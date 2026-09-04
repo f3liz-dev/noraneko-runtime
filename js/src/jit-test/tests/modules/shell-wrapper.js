@@ -25,7 +25,7 @@ export const v = 10;
 const b = registerModule('b', parseModule(`
 import * as ns from 'a'
 `));
-moduleLink(b);
+moduleLoadAndLink(b);
 moduleEvaluate(b);
 assertEq(a.namespace.v, 10);
 testGetter(a, "namespace");
@@ -34,7 +34,7 @@ testGetter(a, "namespace");
 const c = registerModule('c', parseModule(`
 `));
 assertEq(c.status, "New");
-moduleLink(c);
+moduleLoadAndLink(c);
 assertEq(c.status, "Linked");
 moduleEvaluate(c);
 assertEq(c.status, "Evaluated");
@@ -44,7 +44,7 @@ testGetter(c, "status");
 const d = registerModule('d', parseModule(`
 f();
 `));
-moduleLink(d);
+moduleLoadAndLink(d);
 moduleEvaluate(d).catch(e => undefined);
 drainJobQueue();
 assertEq(d.evaluationError instanceof ReferenceError, true);
@@ -102,6 +102,7 @@ import {a as A} from 'b';
 assertEq(f.importEntries.length, 1);
 assertEq(f.importEntries[0].moduleRequest.specifier, 'b');
 assertEq(f.importEntries[0].importName, 'a');
+assertEq(f.importEntries[0].importNameValueType, 'string');
 assertEq(f.importEntries[0].localName, 'A');
 assertEq(f.importEntries[0].lineNumber, 2);
 assertEq(f.importEntries[0].columnNumber, 9);
@@ -109,9 +110,25 @@ testGetter(f, "importEntries");
 testGetter(f.importEntries[0], "moduleRequest");
 testGetter(f.importEntries[0].moduleRequest, "specifier");
 testGetter(f.importEntries[0], "importName");
+testGetter(f.importEntries[0], "importNameValueType");
 testGetter(f.importEntries[0], "localName");
 testGetter(f.importEntries[0], "lineNumber");
 testGetter(f.importEntries[0], "columnNumber");
+
+const f2 = parseModule(`
+import source ns from 'b';
+`);
+assertEq(f2.importEntries.length, 1);
+assertEq(f2.importEntries[0].moduleRequest.specifier, 'b');
+assertEq(f2.importEntries[0].importName, null);
+assertEq(f2.importEntries[0].importNameValueType, 'source');
+assertEq(f2.importEntries[0].localName, 'ns');
+assertEq(f2.importEntries[0].lineNumber, 2);
+assertEq(f2.importEntries[0].columnNumber, 15);
+testGetter(f2, "importEntries");
+testGetter(f2.importEntries[0], "importName");
+testGetter(f2.importEntries[0], "importNameValueType");
+testGetter(f2.importEntries[0], "localName");
 
 // ==== localExportEntries getter ====
 const g = parseModule(`
@@ -121,6 +138,7 @@ assertEq(g.localExportEntries.length, 1);
 assertEq(g.localExportEntries[0].exportName, 'v');
 assertEq(g.localExportEntries[0].moduleRequest, null);
 assertEq(g.localExportEntries[0].importName, null);
+assertEq(g.localExportEntries[0].importNameValueType, 'string');
 assertEq(g.localExportEntries[0].localName, 'v');
 assertEq(g.localExportEntries[0].lineNumber, 0);
 assertEq(g.localExportEntries[0].columnNumber, 1);
@@ -128,6 +146,7 @@ testGetter(g, "localExportEntries");
 testGetter(g.localExportEntries[0], "exportName");
 testGetter(g.localExportEntries[0], "moduleRequest");
 testGetter(g.localExportEntries[0], "importName");
+testGetter(g.localExportEntries[0], "importNameValueType");
 testGetter(g.localExportEntries[0], "localName");
 testGetter(g.localExportEntries[0], "lineNumber");
 testGetter(g.localExportEntries[0], "columnNumber");
@@ -140,6 +159,7 @@ assertEq(h.indirectExportEntries.length, 1);
 assertEq(h.indirectExportEntries[0].exportName, 'v');
 assertEq(h.indirectExportEntries[0].moduleRequest.specifier, "b");
 assertEq(h.indirectExportEntries[0].importName, "v");
+assertEq(h.indirectExportEntries[0].importNameValueType, 'string');
 assertEq(h.indirectExportEntries[0].localName, null);
 assertEq(h.indirectExportEntries[0].lineNumber, 2);
 assertEq(h.indirectExportEntries[0].columnNumber, 9);
@@ -152,6 +172,7 @@ assertEq(i.starExportEntries.length, 1);
 assertEq(i.starExportEntries[0].exportName, null);
 assertEq(i.starExportEntries[0].moduleRequest.specifier, "b");
 assertEq(i.starExportEntries[0].importName, null);
+assertEq(i.starExportEntries[0].importNameValueType, 'all-but-default');
 assertEq(i.starExportEntries[0].localName, null);
 assertEq(i.starExportEntries[0].lineNumber, 2);
 assertEq(i.starExportEntries[0].columnNumber, 8);
@@ -173,7 +194,7 @@ import {v1} from 'j'
 assertEq(j.dfsAncestorIndex, undefined);
 assertEq(k.dfsAncestorIndex, undefined);
 assertEq(l.dfsAncestorIndex, undefined);
-moduleLink(l);
+moduleLoadAndLink(l);
 assertEq(j.dfsAncestorIndex, 1);
 assertEq(k.dfsAncestorIndex, 1);
 assertEq(l.dfsAncestorIndex, 0);

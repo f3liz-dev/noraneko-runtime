@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -80,7 +78,6 @@ nrappkit copyright:
 
 // Original author: bcampen@mozilla.com [:bwc]
 
-extern "C" {
 // clang-format off
 #include "stun_msg.h"  // for NR_STUN_MAX_MESSAGE_SIZE
 #include "async_wait.h"
@@ -89,9 +86,10 @@ extern "C" {
 #include "stun.h"
 #include "transport_addr.h"
 // clang-format on
-}
 
 #include "test_nr_socket.h"
+
+#include <cstdint>
 
 #include "mozilla/RefPtr.h"
 
@@ -99,7 +97,7 @@ namespace mozilla {
 
 static int test_nat_socket_create(void* obj, nr_transport_addr* addr,
                                   nr_socket** sockp) {
-  RefPtr<NrSocketBase> sock = new TestNrSocket(static_cast<TestNat*>(obj));
+  RefPtr sock = MakeRefPtr<TestNrSocket>(static_cast<TestNat*>(obj));
 
   int r, _status;
 
@@ -1069,17 +1067,23 @@ bool TestNrSocket::maybe_send_fake_response(const void* msg, size_t len,
   nr_stun_form_error_response(request.get(), response.get(), 300,
                               (char*)"Try alternate");
 
-  int port = 0;
+  uint16_t port = 0;
   if (nr_transport_addr_get_port(to, &port)) {
     MOZ_CRASH();
   }
 
   for (const nsCString& address : *redirect_targets) {
     r_log(LOG_GENERIC, LOG_DEBUG,
-          "TestNrSocket attempting to add alternate server %s", address.Data());
+          "TestNrSocket attempting to add alternate server %s", address.get());
     nr_transport_addr addr;
     if (NS_WARN_IF(nr_str_port_to_transport_addr(address.Data(), port,
                                                  IPPROTO_UDP, &addr))) {
+      continue;
+    }
+    // TODO: ALTERNATE-SERVER is defined as an IP address only; FQDNs would
+    // need ALTERNATE-DOMAIN (RFC 5389).
+    // See https://bugzilla.mozilla.org/show_bug.cgi?id=1710634
+    if (addr.fqdn[0] != '\0') {
       continue;
     }
     if (nr_stun_message_add_alternate_server_attribute(response.get(), &addr)) {
@@ -1097,7 +1101,7 @@ bool TestNrSocket::maybe_send_fake_response(const void* msg, size_t len,
     // aren't _actually_ going to do that though, so we select a bogus address
     // for the response to come from. TEST-NET is a fairly reasonable thing to
     // use for this.
-    int port = 0;
+    uint16_t port = 0;
     if (nr_transport_addr_get_port(to, &port)) {
       MOZ_CRASH();
     }

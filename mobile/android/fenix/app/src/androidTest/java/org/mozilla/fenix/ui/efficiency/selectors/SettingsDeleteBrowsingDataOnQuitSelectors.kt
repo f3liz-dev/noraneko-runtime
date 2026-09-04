@@ -16,7 +16,15 @@ object SettingsDeleteBrowsingDataOnQuitSelectors {
         groups = listOf("requiredForPage"),
     )
 
+    val DELETE_BROWSING_DATA_ON_QUIT_TOGGLE = Selector(
+        strategy = SelectorStrategy.ESPRESSO_BY_RES_NAME,
+        value = "switchWidget",
+        description = "Delete browsing data on quit toggle",
+        groups = listOf(),
+    )
+
     val all = listOf(
         DELETE_BROWSING_DATA_ON_QUIT_OPTION_SUMMARY,
+        DELETE_BROWSING_DATA_ON_QUIT_TOGGLE,
     )
 }

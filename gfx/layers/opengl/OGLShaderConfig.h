@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,17 +5,17 @@
 #ifndef GFX_OGLSHADERCONFIG_H
 #define GFX_OGLSHADERCONFIG_H
 
-#include "gfxTypes.h"
 #include "ImageTypes.h"
+#include "gfxTypes.h"
 #include "mozilla/Assertions.h"  // for MOZ_ASSERT, etc
 #include "mozilla/RefPtr.h"      // for RefPtr
 #include "mozilla/gfx/Matrix.h"  // for Matrix4x4
 #include "mozilla/gfx/Rect.h"    // for Rect
 #include "mozilla/gfx/Types.h"
+#include "mozilla/layers/CompositorTypes.h"
 #include "nsDebug.h"   // for NS_ASSERTION
 #include "nsPoint.h"   // for nsIntPoint
 #include "nsTArray.h"  // for nsTArray
-#include "mozilla/layers/CompositorTypes.h"
 
 namespace mozilla {
 namespace layers {

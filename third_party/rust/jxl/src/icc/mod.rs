@@ -20,7 +20,8 @@ mod stream;
 mod tag;
 
 use header::read_header;
-use stream::{IccStream, read_varint_from_reader};
+use stream::IccStream;
+pub(crate) use stream::read_varint_from_reader;
 use tag::{read_single_command, read_tag_list};
 
 const ICC_CONTEXTS: usize = 41;
@@ -117,7 +118,7 @@ pub struct IncrementalIccReader {
 impl IncrementalIccReader {
     pub fn new(br: &mut BitReader) -> Result<Self> {
         let len = u64::read_unconditional(&(), br, &Empty {})?;
-        if len > 1u64 << 20 {
+        if len > 1u64 << 24 {
             return Err(Error::IccTooLarge);
         }
 

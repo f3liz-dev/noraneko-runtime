@@ -1,6 +1,4 @@
-/* vim: se cin sw=2 ts=2 et : */
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -14,8 +12,8 @@
  * http://msdn.microsoft.com/en-us/library/bb773210(VS.85).aspx
  */
 
-#include <vssym32.h>
 #include <vsstyle.h>
+#include <vssym32.h>
 
 #define THEME_COLOR 204
 #define THEME_FONT 210

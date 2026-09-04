@@ -1,5 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*-*/
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -67,7 +65,7 @@ const TASKS = [
   "depth-estimation",
   "feature-extraction",
   "image-feature-extraction",
-  "wllama-text-generation",
+  "llama-text-generation",
   "moz-text-to-goal",
 ];
 
@@ -370,7 +368,7 @@ const INFERENCE_PAD_PRESETS = {
     runOptions: {
       nPredict: 100,
     },
-    task: "wllama-text-generation",
+    task: "llama-text-generation",
     modelId:
       "HuggingFaceTB/SmolLM2-360M-Instruct-GGUF/smollm2-360m-instruct-q8_0.gguf",
     modelRevision: "main",
@@ -838,9 +836,9 @@ async function runInference() {
     return;
   }
 
-  const isWllama = taskName.includes("wllama");
+  const isLlama = taskName == "llama-text-generation";
 
-  if (isWllama) {
+  if (isLlama) {
     const lastSlashIndex = modelId.lastIndexOf("/");
 
     const modelFile = modelId.substring(lastSlashIndex + 1);
@@ -851,7 +849,7 @@ async function runInference() {
     additionalEngineOptions = {
       modelFile,
       modelId,
-      backend: "wllama",
+      backend: "llama.cpp",
       numContext,
       numBatch,
       numUbatch: numBatch,
@@ -915,7 +913,7 @@ async function runInference() {
 
   let request = { args: inputData.inputArgs, options: inputData.runOptions };
 
-  if (isWllama) {
+  if (isLlama) {
     request = { prompt: inputData.inputArgs, ...inputData.runOptions };
   }
 
@@ -1231,13 +1229,13 @@ async function runBenchmark() {
     },
     {
       name: "link-preview",
-      compatibleBackends: [lazy.BACKENDS.wllama],
+      compatibleBackends: [lazy.BACKENDS.llamaCpp],
       inputArgs: `Summarize this: ${TINY_ARTICLE}`,
       runOptions: {
         nPredict: 100,
       },
       pipelineOptions: {
-        taskName: "wllama-text-generation",
+        taskName: "llama-text-generation",
         modelId: "HuggingFaceTB/SmolLM2-360M-Instruct-GGUF",
         modelFile: "smollm2-360m-instruct-q8_0.gguf",
         modelRevision: "main",
@@ -1297,7 +1295,7 @@ async function runBenchmark() {
           options: workload.runOptions,
         };
 
-        if (currentBackend == "wllama") {
+        if (currentBackend == "llama.cpp") {
           request = { prompt: workload.inputArgs, ...workload.runOptions };
         }
 

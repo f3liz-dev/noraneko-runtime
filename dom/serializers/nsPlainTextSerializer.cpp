@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -17,6 +15,7 @@
 #include "mozilla/Span.h"
 #include "mozilla/StaticPrefs_converter.h"
 #include "mozilla/TextEditor.h"
+#include "mozilla/Utf16.h"
 #include "mozilla/dom/AbstractRange.h"
 #include "mozilla/dom/CharacterData.h"
 #include "mozilla/dom/CharacterDataBuffer.h"
@@ -31,7 +30,6 @@
 #include "nsDebug.h"
 #include "nsGkAtoms.h"
 #include "nsIDocumentEncoder.h"
-#include "nsNameSpaceManager.h"
 #include "nsPrintfCString.h"
 #include "nsReadableUtils.h"
 #include "nsUnicharUtils.h"
@@ -1479,7 +1477,7 @@ void nsPlainTextSerializer::CurrentLine::CreateQuotesAndIndent(
          with the following one, so the empty line may be lost completely.) */
       quotes.Append(char16_t(' '));
     }
-    aResult = quotes;
+    aResult = std::move(quotes);
   }
 
   // Indent if necessary
@@ -1912,9 +1910,9 @@ int32_t GetUnicharStringWidth(Span<const char16_t> aString) {
   int32_t width = 0;
   for (auto iter = aString.begin(); iter != aString.end(); ++iter) {
     char32_t c = *iter;
-    if (NS_IS_HIGH_SURROGATE(c) && (iter + 1) != aString.end() &&
-        NS_IS_LOW_SURROGATE(*(iter + 1))) {
-      c = SURROGATE_TO_UCS4(c, *++iter);
+    if (IsHighSurrogate(c) && (iter + 1) != aString.end() &&
+        IsLowSurrogate(*(iter + 1))) {
+      c = mozilla::SurrogateToUCS4(c, *++iter);
     }
     const int32_t w = GetUnicharWidth(c);
     // Taking 1 as the width of non-printable character, for bug 94475.

@@ -1,6 +1,4 @@
-/* -*- Mode: Java; c-basic-offset: 4; tab-width: 20; indent-tabs-mode: nil; -*-
- * vim: ts=4 sw=4 expandtab:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -344,8 +342,7 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
     }
 
     /**
-     * Set whether Fission should be enabled or not. This must be set before startup. Note: Session
-     * History in Parent (SHIP) will be enabled as well if Fission is enabled.
+     * Set whether Fission should be enabled or not. This must be set before startup.
      *
      * @param enabled A flag determining whether fission should be enabled.
      * @return The builder instance.
@@ -375,17 +372,6 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
      */
     public @NonNull Builder crashPullNeverShowAgain(final boolean enabled) {
       getSettings().mRemoteSettingCrashPullNeverShowAgain.set(enabled);
-      return this;
-    }
-
-    /**
-     * Sets whether Session History in Parent (SHIP) should be disabled or not.
-     *
-     * @param value A flag determining whether SHIP should be disabled or not.
-     * @return The builder instance.
-     */
-    public @NonNull Builder disableShip(final boolean value) {
-      getSettings().mDisableShip.set(value);
       return this;
     }
 
@@ -778,6 +764,8 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
       new Pref<Boolean>("signon.autofillForms", true);
   /* package */ final PrefWithoutDefault<String> mFirefoxRelay =
       new PrefWithoutDefault<>("signon.firefoxRelay.feature");
+  /* package */ final PrefWithoutDefault<String> mIpProtectionAuthProvider =
+      new PrefWithoutDefault<>("toolkit.ipProtection.android.authProvider");
   /* package */ final Pref<Boolean> mAutomaticallyOfferPopup =
       new Pref<Boolean>("browser.translations.automaticallyPopup", true);
   /* package */ final Pref<Boolean> mHttpsOnly =
@@ -830,8 +818,6 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
       new PrefWithoutDefault<>("privacy.baselineFingerprintingProtection");
   /* package */ final PrefWithoutDefault<String> mBaselineFingerprintingProtectionOverrides =
       new PrefWithoutDefault<>("privacy.baselineFingerprintingProtection.overrides");
-  /* package */ PrefWithoutDefault<Boolean> mDisableShip =
-      new PrefWithoutDefault<Boolean>("fission.disableSessionHistoryInParent");
   /* package */ final Pref<Boolean> mFetchPriorityEnabled =
       new Pref<Boolean>("network.fetchpriority.enabled", false);
   /* package */ final Pref<Boolean> mParallelMarkingEnabled =
@@ -2084,6 +2070,46 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
     return this;
   }
 
+  /** IP Protection auth provider definitions. */
+  @Retention(RetentionPolicy.SOURCE)
+  @StringDef(value = {IP_PROTECTION_AUTH_PROVIDER_FXA, IP_PROTECTION_AUTH_PROVIDER_GPI})
+  public @interface IpProtectionAuthProvider {}
+
+  /** IP Protection authenticates via a Mozilla account (Firefox Accounts). */
+  public static final String IP_PROTECTION_AUTH_PROVIDER_FXA = "fxa";
+
+  /** IP Protection authenticates via Google Play Integrity (GPI). */
+  public static final String IP_PROTECTION_AUTH_PROVIDER_GPI = "gpi";
+
+  /**
+   * Get the IP Protection auth provider.
+   *
+   * <p>This API is experimental because it relies on an exposed pref and will be removed once IP
+   * Protection auth selection no longer depends on it.
+   *
+   * @return The IP Protection auth provider, or null if undefined.
+   */
+  @ExperimentalGeckoViewApi
+  public @Nullable @IpProtectionAuthProvider String getIpProtectionAuthProvider() {
+    return mIpProtectionAuthProvider.get();
+  }
+
+  /**
+   * Set the IP Protection auth provider.
+   *
+   * <p>This API is experimental because it relies on an exposed pref and will be removed once IP
+   * Protection auth selection no longer depends on it.
+   *
+   * @param provider The IP Protection auth provider.
+   * @return This GeckoRuntimeSettings instance.
+   */
+  @ExperimentalGeckoViewApi
+  public @NonNull GeckoRuntimeSettings setIpProtectionAuthProvider(
+      @NonNull final @IpProtectionAuthProvider String provider) {
+    mIpProtectionAuthProvider.commit(provider);
+    return this;
+  }
+
   /**
    * Sets whether or not the request blocking feature of Local Network / Device Access is enabled
    *
@@ -2393,21 +2419,6 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
   public @NonNull GeckoRuntimeSettings setUserCharacteristicPingCurrentVersion(final int version) {
     mUserCharacteristicPingCurrentVersion.commit(version);
     return this;
-  }
-
-  /**
-   * Retrieve the status of the disable session history in parent (SHIP) preference. May be null if
-   * the value hasn't been specifically initialized.
-   *
-   * <p>Note, there is no conventional setter because this may only be set before Gecko is
-   * initialized.
-   *
-   * <p>Set before initialization using {@link Builder#disableShip(boolean)}.
-   *
-   * @return True if SHIP is disabled, false if SHIP is enabled.
-   */
-  public @Nullable Boolean getDisableShip() {
-    return mDisableShip.get();
   }
 
   /**

@@ -1,30 +1,31 @@
-/* -*- Mode: c++; tab-width: 2; indent-tabs-mode: nil; -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "NativeMenuGtk.h"
-#include "AsyncDBus.h"
-#include "gdk/gdkkeysyms-compat.h"
-#include "mozilla/BasicEvents.h"
-#include "mozilla/dom/Document.h"
-#include "mozilla/dom/DocumentInlines.h"
-#include "mozilla/dom/XULCommandEvent.h"
-#include "mozilla/WidgetUtilsGtk.h"
-#include "mozilla/EventDispatcher.h"
-#include "nsPresContext.h"
-#include "nsIWidget.h"
-#include "nsWindow.h"
-#include "nsStubMutationObserver.h"
-#include "mozilla/dom/Element.h"
-#include "mozilla/StaticPrefs_widget.h"
-#include "DBusMenu.h"
-#include "nsLayoutUtils.h"
-#include "nsGtkUtils.h"
-#include "nsGtkKeyUtils.h"
 
 #include <dlfcn.h>
 #include <gtk/gtk.h>
+
+#include "AsyncDBus.h"
+#include "DBusMenu.h"
+#include "gdk/gdkkeysyms-compat.h"
+#include "mozilla/BasicEvents.h"
+#include "mozilla/EventDispatcher.h"
+#include "mozilla/StaticPrefs_widget.h"
+#include "mozilla/WidgetUtilsGtk.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/dom/DocumentInlines.h"
+#include "mozilla/dom/Element.h"
+#include "mozilla/dom/XULCommandEvent.h"
+#include "nsCRT.h"
+#include "nsGtkKeyUtils.h"
+#include "nsGtkUtils.h"
+#include "nsIWidget.h"
+#include "nsLayoutUtils.h"
+#include "nsPresContext.h"
+#include "nsStubMutationObserver.h"
+#include "nsWindow.h"
 
 #ifdef MOZ_WAYLAND
 #  include "nsWaylandDisplay.h"
@@ -383,8 +384,7 @@ NativeMenuGtk::~NativeMenuGtk() {
 RefPtr<dom::Element> NativeMenuGtk::Element() { return mMenuModel->Element(); }
 
 void NativeMenuGtk::ShowMenuAnchored(nsIFrame* aClickedFrame,
-                                     const CSSIntRect& aRect,
-                                     const nsAString& aPosition) {
+                                     const nsMenuPopupFrame* aPopupFrame) {
   MOZ_ASSERT_UNREACHABLE("GTK native anchored menus are not implemented");
 }
 
@@ -436,10 +436,7 @@ void NativeMenuGtk::OnUnmap() {
   mMenuModel->DidHide();
 
   FireEvent(eXULPopupHidden);
-
-  for (NativeMenu::Observer* observer : mObservers.Clone()) {
-    observer->OnNativeMenuClosed();
-  }
+  OnClosed();
 }
 
 void NativeMenuGtk::ActivateItem(dom::Element* aItemElement, Modifiers,

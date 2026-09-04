@@ -3,8 +3,9 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 import { actionCreators as ac, actionTypes as at } from "common/Actions.mjs";
+import { WIDGET_REGISTRY } from "common/WidgetsRegistry.mjs";
 import { connect } from "react-redux";
-import React, { useEffect } from "react";
+import React from "react";
 
 // Pref Constants
 const PREF_AD_SIZE_MEDIUM_RECTANGLE = "newtabAdSize.mediumRectangle";
@@ -24,6 +25,35 @@ const PREF_UNIFIED_ADS_ENDPOINT = "unifiedAds.endpoint";
 const PREF_ALLOWED_ENDPOINTS = "discoverystream.endpoints";
 const PREF_OHTTP_CONFIG = "discoverystream.ohttp.configURL";
 const PREF_OHTTP_RELAY = "discoverystream.ohttp.relayURL";
+const PREF_WIDGETS_SYSTEM_ENABLED = "widgets.system.enabled";
+
+// Turn a camelCase widget id into a human-readable label, e.g.
+// "pictureOfTheDay" -> "Picture Of The Day".
+function widgetLabel(id) {
+  const spaced = id.replace(/([A-Z])/g, " $1");
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1);
+}
+
+// Internal, pref-gated widget features that default off but we want to test in
+// devtools. Hand-maintained (outside the automatic registry-driven toggles).
+// Each `pref` is the full activity-stream-relative pref; toggles reuse
+// handleWidgetToggle, which sets the pref named by the toggle's id.
+const WIDGET_EXTRA_FEATURES = {
+  pictureOfTheDay: [
+    {
+      pref: "widgets.pictureOfTheDay.setAsWallpaper.enabled",
+      label: "Set as wallpaper",
+    },
+  ],
+  privacy: [{ pref: "widgets.privacy.showVpnMessages", label: "VPN messages" }],
+  sportsWidget: [
+    { pref: "widgets.sportsWidget.live.enabled", label: "Live scores" },
+    {
+      pref: "widgets.sportsWidget.celebrations.enabled",
+      label: "Celebrations",
+    },
+  ],
+};
 
 const Row = props => (
   <tr className="message-item" {...props}>
@@ -60,7 +90,7 @@ export class ToggleStoryButton extends React.PureComponent {
   }
 
   render() {
-    return <button onClick={this.handleClick}>collapse/open</button>;
+    return <moz-button onClick={this.handleClick}>collapse/open</moz-button>;
   }
 }
 
@@ -92,8 +122,6 @@ export class TogglePrefCheckbox extends React.PureComponent {
 export class DiscoveryStreamAdminUI extends React.PureComponent {
   constructor(props) {
     super(props);
-    this.restorePrefDefaults = this.restorePrefDefaults.bind(this);
-    this.setConfigValue = this.setConfigValue.bind(this);
     this.expireCache = this.expireCache.bind(this);
     this.refreshCache = this.refreshCache.bind(this);
     this.showPlaceholder = this.showPlaceholder.bind(this);
@@ -106,41 +134,43 @@ export class DiscoveryStreamAdminUI extends React.PureComponent {
     this.resetBlocks = this.resetBlocks.bind(this);
     this.refreshInferredPersonalization =
       this.refreshInferredPersonalization.bind(this);
+    this.refreshInferredPersonalizationAndDebug =
+      this.refreshInferredPersonalizationAndDebug.bind(this);
     this.refreshTopicSelectionCache =
       this.refreshTopicSelectionCache.bind(this);
+    this.requestDebugFeatures = this.requestDebugFeatures.bind(this);
+    this.setDebugOverrides = this.setDebugOverrides.bind(this);
+    this.handleDebugOverridesToggle =
+      this.handleDebugOverridesToggle.bind(this);
+    this.handleDebugOverrideChange = this.handleDebugOverrideChange.bind(this);
+    this.handleResetAllOverrides = this.handleResetAllOverrides.bind(this);
     this.handleSectionsToggle = this.handleSectionsToggle.bind(this);
+    this.handleWidgetsSystemToggle = this.handleWidgetsSystemToggle.bind(this);
+    this.handleWidgetToggle = this.handleWidgetToggle.bind(this);
+    this.handleWidgetsToggleAll = this.handleWidgetsToggleAll.bind(this);
+    this.handleResetWidgetInteractions =
+      this.handleResetWidgetInteractions.bind(this);
+    this.handleResetWidgetsToDefaults =
+      this.handleResetWidgetsToDefaults.bind(this);
     this.toggleIABBanners = this.toggleIABBanners.bind(this);
     this.handleAllizomToggle = this.handleAllizomToggle.bind(this);
     this.sendConversionEvent = this.sendConversionEvent.bind(this);
     this.state = {
       toggledStories: {},
       weatherQuery: "",
+      pendingOverrides: {},
+      overridesTogglePressed: null,
     };
   }
 
-  setConfigValue(configName, configValue) {
-    this.props.dispatch(
-      ac.OnlyToMain({
-        type: at.DISCOVERY_STREAM_CONFIG_SET_VALUE,
-        data: { name: configName, value: configValue },
-      })
-    );
-  }
-
-  restorePrefDefaults() {
-    this.props.dispatch(
-      ac.OnlyToMain({
-        type: at.DISCOVERY_STREAM_CONFIG_RESET_DEFAULTS,
-      })
-    );
+  componentDidMount() {
+    this.requestDebugFeatures();
   }
 
   refreshCache() {
-    const { config } = this.props.state.DiscoveryStream;
     this.props.dispatch(
       ac.OnlyToMain({
-        type: at.DISCOVERY_STREAM_CONFIG_CHANGE,
-        data: config,
+        type: at.DISCOVERY_STREAM_DEV_REFRESH_CACHE,
       })
     );
   }
@@ -151,6 +181,99 @@ export class DiscoveryStreamAdminUI extends React.PureComponent {
         type: at.INFERRED_PERSONALIZATION_REFRESH,
       })
     );
+  }
+
+  refreshInferredPersonalizationAndDebug() {
+    this.refreshInferredPersonalization();
+  }
+
+  requestDebugFeatures() {
+    this.props.dispatch(
+      ac.OnlyToMain({
+        type: at.INFERRED_PERSONALIZATION_DEBUG_FEATURES_REQUEST,
+      })
+    );
+  }
+
+  setDebugOverrides(overrides) {
+    this.props.dispatch(
+      ac.OnlyToMain({
+        type: at.INFERRED_PERSONALIZATION_DEBUG_OVERRIDES_SET,
+        data: overrides,
+      })
+    );
+  }
+
+  getDebugFeaturesList() {
+    const { debugFeatures } = this.props.state.InferredPersonalization;
+    if (!debugFeatures) {
+      return [];
+    }
+    return Object.keys(debugFeatures)
+      .sort()
+      .filter(featureName => featureName !== "clicks")
+      .map(featureName => ({
+        name: featureName,
+        ...debugFeatures[featureName],
+      }));
+  }
+
+  getOverrideValues(features, fallbackToCurrent = false) {
+    const overrides = {};
+    for (const feature of features) {
+      let value = feature.overrideValue;
+      if (!Number.isFinite(value) && fallbackToCurrent) {
+        value = Number.isFinite(feature.currentValue)
+          ? feature.currentValue
+          : 0;
+      }
+      if (Number.isFinite(value)) {
+        overrides[feature.name] = value;
+      }
+    }
+    return overrides;
+  }
+
+  handleDebugOverridesToggle(e) {
+    const { pressed } = e.target;
+    const features = this.getDebugFeaturesList();
+    const currentOverrides = this.getOverrideValues(features, true);
+    if (!pressed) {
+      this.setState({
+        pendingOverrides: { ...currentOverrides },
+        overridesTogglePressed: false,
+      });
+      this.setDebugOverrides(null);
+      return;
+    }
+    const overrides = Object.keys(this.state.pendingOverrides).length
+      ? { ...this.state.pendingOverrides }
+      : currentOverrides;
+    this.setState({ overridesTogglePressed: true });
+    this.setDebugOverrides(overrides);
+  }
+
+  handleDebugOverrideChange(featureName, value) {
+    const features = this.getDebugFeaturesList();
+    const overrides = Object.keys(this.state.pendingOverrides).length
+      ? { ...this.state.pendingOverrides }
+      : this.getOverrideValues(features, true);
+    overrides[featureName] = value;
+    this.setState({ pendingOverrides: { ...overrides } });
+    if (Object.keys(this.getOverrideValues(features)).length) {
+      this.setDebugOverrides(overrides);
+    }
+  }
+
+  handleResetAllOverrides() {
+    const features = this.getDebugFeaturesList();
+    const overrides = Object.fromEntries(
+      features.map(({ name: featureName }) => [featureName, 0])
+    );
+    this.setState({ pendingOverrides: { ...overrides } });
+    if (Object.keys(this.getOverrideValues(features)).length) {
+      this.setDebugOverrides(overrides);
+    }
   }
 
   refreshTopicSelectionCache() {
@@ -317,6 +440,58 @@ export class DiscoveryStreamAdminUI extends React.PureComponent {
     );
   }
 
+  handleWidgetsSystemToggle(e) {
+    this.props.dispatch(
+      ac.SetPref(PREF_WIDGETS_SYSTEM_ENABLED, e.target.pressed)
+    );
+  }
+
+  handleWidgetToggle(e) {
+    // e.target.id is the widget's systemEnabledPref (widgets.system.<name>.enabled)
+    this.props.dispatch(ac.SetPref(e.target.id, e.target.pressed));
+  }
+
+  handleWidgetsToggleAll() {
+    const value = !this.areAllWidgetsEnabled();
+    const values = { [PREF_WIDGETS_SYSTEM_ENABLED]: value };
+    for (const widget of WIDGET_REGISTRY) {
+      values[widget.systemEnabledPref] = value;
+    }
+    this.props.dispatch(ac.SetMultiplePrefs(values));
+  }
+
+  areAllWidgetsEnabled() {
+    const { otherPrefs } = this.props;
+    return Boolean(
+      otherPrefs[PREF_WIDGETS_SYSTEM_ENABLED] &&
+      WIDGET_REGISTRY.every(widget => otherPrefs[widget.systemEnabledPref])
+    );
+  }
+
+  clearPrefs(prefNames) {
+    for (const prefName of prefNames) {
+      this.props.dispatch(
+        ac.OnlyToMain({ type: at.CLEAR_PREF, data: { name: prefName } })
+      );
+    }
+  }
+
+  handleResetWidgetInteractions() {
+    this.clearPrefs(
+      Object.keys(this.props.otherPrefs).filter(prefName =>
+        /^widgets\..+\.interaction$/.test(prefName)
+      )
+    );
+  }
+
+  handleResetWidgetsToDefaults() {
+    this.clearPrefs(
+      Object.keys(this.props.otherPrefs).filter(prefName =>
+        prefName.startsWith("widgets.")
+      )
+    );
+  }
+
   sendConversionEvent() {
     const detail = {
       partnerId: "295BEEF7-1E3B-4128-B8F8-858E12AA660B",
@@ -365,7 +540,7 @@ export class DiscoveryStreamAdminUI extends React.PureComponent {
               onChange={this.handleWeatherUpdate}
               value={this.weatherQuery}
             />
-            <button type="submit">Submit</button>
+            <moz-button onClick={this.handleWeatherSubmit}>Submit</moz-button>
           </form>
           <table>
             <tbody>
@@ -395,16 +570,159 @@ export class DiscoveryStreamAdminUI extends React.PureComponent {
       coarseInferredInterests,
       coarsePrivateInferredInterests,
     } = this.props.state.InferredPersonalization;
+    const inferredPersonalizationEnabled = Boolean(
+      this.props.otherPrefs?.[
+        "discoverystream.sections.personalization.inferred.enabled"
+      ]
+    );
+    const hasModelData =
+      inferredInterests !== undefined ||
+      coarseInferredInterests !== undefined ||
+      coarsePrivateInferredInterests !== undefined;
+    if (!inferredPersonalizationEnabled || !hasModelData) {
+      return null;
+    }
     return (
-      <div>
-        {" "}
-        Inferred Interests:
-        <pre>{JSON.stringify(inferredInterests, null, 2)}</pre> Coarse Inferred
-        Interests:
-        <pre>{JSON.stringify(coarseInferredInterests, null, 2)}</pre> Coarse
-        Inferred Interests With Differential Privacy:
-        <pre>{JSON.stringify(coarsePrivateInferredInterests, null, 2)}</pre>
+      <div className="personalization-data">
+        {this.renderInferredPersonalizationOverrides()}
+        <div className="inferred-vectors-row">
+          <div className="inferred-vector-column">
+            <div className="inferred-vector-title">Raw Interest Values</div>
+            <div className="inferred-vector-panel">
+              <pre>{JSON.stringify(inferredInterests, null, 2)}</pre>
+            </div>
+          </div>
+          <div className="inferred-vector-column">
+            <div className="inferred-vector-title">
+              Differentially Private Interest Vector{" "}
+            </div>
+            <div className="inferred-vector-panel">
+              <pre>
+                {JSON.stringify(coarsePrivateInferredInterests, null, 2)}
+              </pre>
+            </div>
+          </div>
+        </div>
       </div>
+    );
+  }
+
+  renderInferredPersonalizationOverrides() {
+    const { lastUpdated } = this.props.state.InferredPersonalization;
+    const features = this.getDebugFeaturesList();
+    if (!features.length) {
+      return null;
+    }
+    const overrides = this.getOverrideValues(features);
+    const storeOverridesEnabled = !!Object.keys(overrides).length;
+    const overridesEnabled =
+      this.state.overridesTogglePressed !== null
+        ? this.state.overridesTogglePressed
+        : storeOverridesEnabled;
+    const hasAnyNonZeroOverride = Object.values(overrides).some(
+      value => Number.isFinite(value) && value > 0
+    );
+    return (
+      <>
+        <div className="inferred-overrides-header">
+          <h3 className="inferred-overrides-title">Inferred Personalization</h3>
+          <div className="inferred-overrides-actions">
+            <moz-button onClick={this.refreshInferredPersonalizationAndDebug}>
+              Recompute Interest Vector
+            </moz-button>
+            <moz-button onClick={this.refreshCache}>
+              Refresh Story Cache
+            </moz-button>
+          </div>
+        </div>
+        <div className="inferred-overrides-last-refreshed">
+          <span className="inferred-overrides-last-refreshed-label">
+            Last refreshed
+          </span>
+          <span>{relativeTime(lastUpdated) || "(no data)"}</span>
+        </div>
+        <table className="minimal-table inferred-personalization-overrides">
+          <tbody>
+            <Row className="inferred-overrides-toggle-row">
+              <td className="min">Overrides</td>
+              <td className="min inferred-score-col" />
+              <td>
+                <div className="toggle-wrapper">
+                  <moz-toggle
+                    id="inferred-personalization-overrides"
+                    pressed={overridesEnabled || null}
+                    ontoggle={this.handleDebugOverridesToggle}
+                    label="Enable overrides"
+                  />
+                </div>
+              </td>
+            </Row>
+            <Row className="inferred-overrides-refresh-row">
+              <td colSpan="3">
+                <moz-button
+                  disabled={hasAnyNonZeroOverride ? null : true}
+                  onClick={this.handleResetAllOverrides}
+                >
+                  Reset overrides
+                </moz-button>
+              </td>
+            </Row>
+            <Row className="inferred-overrides-table-header">
+              <td />
+              <td className="min inferred-score-col">Score</td>
+              <td />
+            </Row>
+            {features.map(feature => {
+              const maxValue = Math.max(0, (feature.numValues || 1) - 1);
+              const currentCoarseValue = feature.currentValue;
+              const pendingValue = this.state.pendingOverrides[feature.name];
+              let displayValue = 0;
+
+              if (Number.isFinite(pendingValue)) {
+                displayValue = pendingValue;
+              } else if (Number.isFinite(feature.overrideValue)) {
+                displayValue = feature.overrideValue;
+              } else if (Number.isFinite(feature.currentValue)) {
+                displayValue = feature.currentValue;
+              }
+
+              return (
+                <Row key={feature.name} className="inferred-override-row">
+                  <td className="min">{feature.name}</td>
+                  <td className="min inferred-score-col">
+                    {Number.isFinite(currentCoarseValue)
+                      ? currentCoarseValue
+                      : "-"}
+                  </td>
+                  <td>
+                    <div className="inferred-override-controls">
+                      <input
+                        className="inferred-override-slider"
+                        type="range"
+                        min="0"
+                        max={String(maxValue)}
+                        step="1"
+                        value={String(displayValue)}
+                        disabled={!overridesEnabled}
+                        aria-label={`${feature.name} override`}
+                        onChange={e =>
+                          this.handleDebugOverrideChange(
+                            feature.name,
+                            Number(e.target.value)
+                          )
+                        }
+                      />
+                      <span className="inferred-override-value">
+                        {displayValue}
+                      </span>
+                    </div>
+                  </td>
+                </Row>
+              );
+            })}
+          </tbody>
+        </table>
+      </>
     );
   }
 
@@ -420,6 +738,55 @@ export class DiscoveryStreamAdminUI extends React.PureComponent {
           </tbody>
         </table>
       </React.Fragment>
+    );
+  }
+
+  renderTrainhop() {
+    const {
+      trainhopConfig = {},
+      trainhopVersion,
+      nimbusDebug,
+    } = this.props.otherPrefs;
+    return (
+      <>
+        <table className="minimal-table trainhop-info">
+          <tbody>
+            <Row>
+              <td className="min">Installed version</td>
+              <td>{trainhopVersion ?? "unknown"}</td>
+            </Row>
+            <Row>
+              <td className="min">nimbus.debug</td>
+              <td>{nimbusDebug ? "true" : "false"}</td>
+            </Row>
+          </tbody>
+        </table>
+        <p>
+          Manage the experiments and rollouts that populate this config in{" "}
+          <a target="_blank" rel="noopener noreferrer" href="about:studies">
+            about:studies
+          </a>
+          , or install the{" "}
+          <a
+            target="_blank"
+            rel="noopener noreferrer"
+            href="https://github.com/mozilla-extensions/nimbus-devtools/releases"
+          >
+            Nimbus devtools extension
+          </a>
+          .
+        </p>
+        {Object.keys(trainhopConfig || {}).length ? (
+          <pre className="trainhop-config">
+            {JSON.stringify(trainhopConfig, null, 2)}
+          </pre>
+        ) : (
+          <p className="trainhop-empty">
+            No train-hop config. This build isn&apos;t enrolled in any
+            newtabTrainhop experiment or rollout.
+          </p>
+        )}
+      </>
     );
   }
 
@@ -458,9 +825,7 @@ export class DiscoveryStreamAdminUI extends React.PureComponent {
     return (
       <>
         <h4>Blocks</h4>
-        <button className="button" onClick={this.resetBlocks}>
-          Reset Blocks
-        </button>{" "}
+        <moz-button onClick={this.resetBlocks}>Reset Blocks</moz-button>{" "}
         <table>
           <tbody>
             {Object.keys(blocks).map(key => {
@@ -557,7 +922,7 @@ export class DiscoveryStreamAdminUI extends React.PureComponent {
                   id="sections-toggle"
                   disabled={!unifiedAdsSpocsEnabled || null}
                   pressed={allizomEnabled || null}
-                  onToggle={this.handleAllizomToggle}
+                  ontoggle={this.handleAllizomToggle}
                   label="Toggle allizom"
                 />
               </td>
@@ -576,6 +941,12 @@ export class DiscoveryStreamAdminUI extends React.PureComponent {
             </Row>
           </tbody>
         </table>
+        <moz-button
+          style={{ marginBlockStart: "var(--space-large)" }}
+          onClick={this.sendConversionEvent}
+        >
+          Send conversion event
+        </moz-button>
         <h4>Spoc data</h4>
         <table>
           <tbody>{spocsData.map(spoc => this.renderStoryData(spoc))}</tbody>
@@ -644,8 +1015,7 @@ export class DiscoveryStreamAdminUI extends React.PureComponent {
   }
 
   render() {
-    const prefToggles = "enabled collapsible".split(" ");
-    const { config, layout } = this.props.state.DiscoveryStream;
+    const { layout } = this.props.state.DiscoveryStream;
     const sectionsEnabled = this.props.otherPrefs[PREF_SECTIONS_ENABLED];
 
     // Prefs for IAB Banners
@@ -661,58 +1031,46 @@ export class DiscoveryStreamAdminUI extends React.PureComponent {
     const leaderboardPressed =
       leaderboardEnabled && spocPlacements.includes("newtab_leaderboard");
 
+    const widgetsSystemEnabled =
+      this.props.otherPrefs[PREF_WIDGETS_SYSTEM_ENABLED];
+
     return (
       <div>
-        <button className="button" onClick={this.restorePrefDefaults}>
-          Restore Pref Defaults
-        </button>{" "}
-        <button className="button" onClick={this.refreshCache}>
-          Refresh Cache
-        </button>
-        <br />
-        <button className="button" onClick={this.expireCache}>
-          Expire Cache
-        </button>{" "}
-        <button className="button" onClick={this.systemTick}>
-          Trigger System Tick
-        </button>{" "}
-        <button className="button" onClick={this.idleDaily}>
-          Trigger Idle Daily
-        </button>
-        <br />
-        <button
-          className="button"
-          onClick={this.refreshInferredPersonalization}
-        >
-          Refresh Inferred Personalization
-        </button>
-        <br />
-        <button className="button" onClick={this.syncRemoteSettings}>
-          Sync Remote Settings
-        </button>{" "}
-        <button className="button" onClick={this.refreshTopicSelectionCache}>
-          Refresh Topic selection count
-        </button>
-        <br />
-        <button className="button" onClick={this.showPlaceholder}>
-          Show Placeholder Cards
-        </button>{" "}
+        <div className="admin-button-row">
+          <moz-button onClick={this.refreshCache}>Refresh Cache</moz-button>
+          <moz-button onClick={this.expireCache}>Expire Cache</moz-button>
+          <moz-button onClick={this.systemTick}>Trigger System Tick</moz-button>
+          <moz-button onClick={this.idleDaily}>Trigger Idle Daily</moz-button>
+          <moz-button onClick={this.syncRemoteSettings}>
+            Sync Remote Settings
+          </moz-button>
+          <moz-button onClick={this.refreshTopicSelectionCache}>
+            Refresh Topic selection count
+          </moz-button>
+          <moz-button onClick={this.showPlaceholder}>
+            Show Placeholder Cards
+          </moz-button>
+        </div>
         <div className="toggle-wrapper">
           <moz-toggle
             id="sections-toggle"
             pressed={sectionsEnabled || null}
-            onToggle={this.handleSectionsToggle}
+            ontoggle={this.handleSectionsToggle}
             label="Toggle DS Sections"
           />
         </div>
         {/* Collapsible Sections for experiments for easy on/off */}
+        <details className="details-section">
+          <summary>Train Hop</summary>
+          {this.renderTrainhop()}
+        </details>
         <details className="details-section">
           <summary>IAB Banner Ad Sizes</summary>
           <div className="toggle-wrapper">
             <moz-toggle
               id="newtab_leaderboard"
               pressed={leaderboardPressed || null}
-              onToggle={this.toggleIABBanners}
+              ontoggle={this.toggleIABBanners}
               label="Enable IAB Leaderboard"
             />
           </div>
@@ -720,7 +1078,7 @@ export class DiscoveryStreamAdminUI extends React.PureComponent {
             <moz-toggle
               id="newtab_billboard"
               pressed={billboardPressed || null}
-              onToggle={this.toggleIABBanners}
+              ontoggle={this.toggleIABBanners}
               label="Enable IAB Billboard"
             />
           </div>
@@ -728,29 +1086,67 @@ export class DiscoveryStreamAdminUI extends React.PureComponent {
             <moz-toggle
               id="newtab_rectangle"
               pressed={mediumRectangleEnabledPressed || null}
-              onToggle={this.toggleIABBanners}
+              ontoggle={this.toggleIABBanners}
               label="Enable IAB Medium Rectangle (MREC)"
             />
           </div>
         </details>
-        <button className="button" onClick={this.sendConversionEvent}>
-          Send conversion event
-        </button>
-        <table>
-          <tbody>
-            {prefToggles.map(pref => (
-              <Row key={pref}>
-                <td>
-                  <TogglePrefCheckbox
-                    checked={config[pref]}
-                    pref={pref}
-                    onChange={this.setConfigValue}
+        <details className="details-section">
+          <summary>Widgets</summary>
+          <div className="toggle-wrapper">
+            <moz-toggle
+              id="widgets-system-enabled"
+              pressed={widgetsSystemEnabled || null}
+              ontoggle={this.handleWidgetsSystemToggle}
+              label="Enable widget system"
+            />
+          </div>
+          <div className="admin-button-row">
+            <moz-button onClick={this.handleWidgetsToggleAll}>
+              {this.areAllWidgetsEnabled() ? "Disable all" : "Enable all"}
+            </moz-button>
+            <moz-button onClick={this.handleResetWidgetInteractions}>
+              Reset interaction
+            </moz-button>
+            <moz-button
+              type="destructive"
+              onClick={this.handleResetWidgetsToDefaults}
+            >
+              Reset to defaults
+            </moz-button>
+          </div>
+          <hr />
+          {WIDGET_REGISTRY.map(widget => (
+            <React.Fragment key={widget.id}>
+              <div className="toggle-wrapper">
+                <moz-toggle
+                  id={widget.systemEnabledPref}
+                  pressed={
+                    this.props.otherPrefs[widget.systemEnabledPref] || null
+                  }
+                  disabled={!widgetsSystemEnabled || null}
+                  ontoggle={this.handleWidgetToggle}
+                  label={widgetLabel(widget.id)}
+                />
+              </div>
+              {(WIDGET_EXTRA_FEATURES[widget.id] || []).map(feature => (
+                <div
+                  className="toggle-wrapper"
+                  key={feature.pref}
+                  style={{ marginInlineStart: "var(--space-large)" }}
+                >
+                  <moz-toggle
+                    id={feature.pref}
+                    pressed={this.props.otherPrefs[feature.pref] || null}
+                    disabled={!widgetsSystemEnabled || null}
+                    ontoggle={this.handleWidgetToggle}
+                    label={feature.label}
                   />
-                </td>
-              </Row>
-            ))}
-          </tbody>
-        </table>
+                </div>
+              ))}
+            </React.Fragment>
+          ))}
+        </details>
         <h3>Layout</h3>
         {layout.map((row, rowIndex) => (
           <div key={`row-${rowIndex}`}>
@@ -773,7 +1169,6 @@ export class DiscoveryStreamAdminUI extends React.PureComponent {
         <div className="large-data-container">{this.renderBlocksData()}</div>
         <h3>Weather Data</h3>
         {this.renderWeatherData()}
-        <h3>Personalization Data</h3>
         {this.renderPersonalizationData()}
       </div>
     );
@@ -784,6 +1179,32 @@ export class DiscoveryStreamAdminInner extends React.PureComponent {
   constructor(props) {
     super(props);
     this.setState = this.setState.bind(this);
+    this.dismiss = this.dismiss.bind(this);
+    this.handleKeyDown = this.handleKeyDown.bind(this);
+  }
+
+  componentDidMount() {
+    globalThis.addEventListener("keydown", this.handleKeyDown);
+  }
+
+  componentWillUnmount() {
+    globalThis.removeEventListener("keydown", this.handleKeyDown);
+  }
+
+  dismiss() {
+    globalThis.location.hash = "";
+  }
+
+  handleKeyDown(e) {
+    if (e.key !== "Escape" || e.defaultPrevented) {
+      return;
+    }
+    // Don't hijack Escape while the user is typing in a field.
+    const tag = e.target?.tagName;
+    if (tag === "INPUT" || tag === "TEXTAREA") {
+      return;
+    }
+    this.dismiss();
   }
 
   render() {
@@ -793,6 +1214,14 @@ export class DiscoveryStreamAdminInner extends React.PureComponent {
           this.props.collapsed ? "collapsed" : "expanded"
         }`}
       >
+        <moz-button
+          className="discoverystream-admin-close"
+          type="icon ghost"
+          title="Close devtools"
+          aria-label="Close devtools"
+          iconsrc="chrome://global/skin/icons/close.svg"
+          onClick={this.dismiss}
+        />
         <main className="main-panel">
           <h1>Discovery Stream Admin</h1>
 
@@ -826,33 +1255,43 @@ export class DiscoveryStreamAdminInner extends React.PureComponent {
 export function CollapseToggle(props) {
   const { devtoolsCollapsed } = props;
   const label = `${devtoolsCollapsed ? "Expand" : "Collapse"} devtools`;
-
-  useEffect(() => {
-    // Set or remove body class depending on devtoolsCollapsed state
-    if (devtoolsCollapsed) {
-      globalThis.document.body.classList.remove("no-scroll");
-    } else {
-      globalThis.document.body.classList.add("no-scroll");
-    }
-
-    // Cleanup on unmount
-    return () => {
-      globalThis.document.body.classList.remove("no-scroll");
-    };
-  }, [devtoolsCollapsed]);
+  // @nova-cleanup(remove-conditional): Remove this novaEnabled read and the
+  // ternary below in the returned JSX; always render the moz-button icon button
+  // and delete the legacy classic-enabled <button> branch.
+  const novaEnabled = props.Prefs?.values?.["nova.enabled"];
+  const className = `discoverystream-admin-toggle ${
+    devtoolsCollapsed ? "expanded" : "collapsed"
+  }`;
+  const onToggleClick = () => {
+    globalThis.location.hash = devtoolsCollapsed ? "#devtools" : "";
+  };
 
   return (
     <>
-      <a
-        href={devtoolsCollapsed ? "#devtools" : "#"}
-        title={label}
-        aria-label={label}
-        className={`discoverystream-admin-toggle ${
-          devtoolsCollapsed ? "expanded" : "collapsed"
-        }`}
-      >
-        <span className="icon icon-devtools" />
-      </a>
+      {novaEnabled ? (
+        <moz-button
+          type="primary"
+          className={className}
+          title={label}
+          aria-label={label}
+          iconsrc="chrome://global/skin/icons/developer.svg"
+          onClick={onToggleClick}
+        />
+      ) : (
+        <button
+          title={label}
+          aria-label={label}
+          className={`${className} classic-enabled`}
+          onClick={onToggleClick}
+        >
+          <div>
+            <img
+              role="presentation"
+              src="chrome://global/skin/icons/developer.svg"
+            />
+          </div>
+        </button>
+      )}
       {!devtoolsCollapsed ? (
         <DiscoveryStreamAdminInner {...props} collapsed={devtoolsCollapsed} />
       ) : null}

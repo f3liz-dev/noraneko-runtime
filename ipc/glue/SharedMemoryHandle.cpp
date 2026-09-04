@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -48,7 +46,7 @@ NS_IMPL_ISUPPORTS(AllocationReporter, nsIMemoryReporter)
 static void RegisterAllocationMemoryReporter() {
   static Atomic<bool> registered;
   if (registered.compareExchange(false, true)) {
-    RegisterStrongMemoryReporter(new AllocationReporter());
+    RegisterStrongMemoryReporter(MakeAndAddRef<AllocationReporter>());
   }
 }
 
@@ -92,10 +90,6 @@ bool HandleBase::FromMessageReader(IPC::MessageReader* aReader) {
     aReader->FatalError("Failed to read shared memory PlatformHandle");
     return false;
   }
-  if (handle && !Platform::IsSafeToMap(handle)) {
-    aReader->FatalError("Shared memory PlatformHandle is not safe to map");
-    return false;
-  }
   uint64_t size = 0;
   if (!ReadParam(aReader, &size)) {
     aReader->FatalError("Failed to read shared memory handle size");
@@ -104,6 +98,10 @@ bool HandleBase::FromMessageReader(IPC::MessageReader* aReader) {
   if (handle && !size) {
     aReader->FatalError(
         "Unexpected PlatformHandle for zero-sized shared memory handle");
+    return false;
+  }
+  if (handle && !Platform::IsSafeToMap(handle, size)) {
+    aReader->FatalError("Shared memory PlatformHandle is not safe to map");
     return false;
   }
   mHandle = std::move(handle);

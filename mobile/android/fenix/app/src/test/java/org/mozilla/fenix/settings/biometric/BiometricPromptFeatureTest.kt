@@ -19,15 +19,15 @@ import mozilla.components.support.test.robolectric.createAddedTestFragment
 import mozilla.components.support.test.robolectric.testContext
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.mozilla.fenix.settings.biometric.ext.isBiometricHardwareAvailable
 import org.mozilla.fenix.settings.biometric.ext.isEnrolled
-import org.mozilla.fenix.settings.biometric.ext.isHardwareAvailable
 import org.robolectric.RobolectricTestRunner
+import kotlin.test.assertNotNull
 
 @RunWith(RobolectricTestRunner::class)
 class BiometricPromptFeatureTest {
@@ -52,7 +52,7 @@ class BiometricPromptFeatureTest {
         assertFalse(BiometricPromptFeature.canUseFeature(manager))
 
         verify { manager.isEnrolled() }
-        verify { manager.isHardwareAvailable() }
+        verify { manager.isBiometricHardwareAvailable() }
     }
 
     @Test
@@ -97,8 +97,10 @@ class BiometricPromptFeatureTest {
 
     @Test
     fun `promptCallback fires feature callbacks`() {
-        val authSuccess: () -> Unit = mockk(relaxed = true)
-        val authFailure: () -> Unit = mockk(relaxed = true)
+        var authSuccessCount = 0
+        var authFailureCount = 0
+        val authSuccess: () -> Unit = { authSuccessCount++ }
+        val authFailure: () -> Unit = { authFailureCount++ }
         val feature = BiometricPromptFeature(testContext, fragment, authFailure, authSuccess)
         val callback = feature.PromptCallback()
         val prompt = BiometricPrompt(fragment, callback)
@@ -107,14 +109,14 @@ class BiometricPromptFeatureTest {
 
         callback.onAuthenticationError(0, "")
 
-        verify { authFailure.invoke() }
+        assertEquals(1, authFailureCount)
 
         callback.onAuthenticationFailed()
 
-        verify { authFailure.invoke() }
+        assertEquals(2, authFailureCount)
 
         callback.onAuthenticationSucceeded(mockk())
 
-        verify { authSuccess.invoke() }
+        assertEquals(1, authSuccessCount)
     }
 }

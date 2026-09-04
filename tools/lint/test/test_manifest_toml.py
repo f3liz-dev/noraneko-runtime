@@ -6,6 +6,7 @@ from pathlib import Path
 
 import mozunit
 import pytest
+from mozinfo.platforminfo import android_os_to_api_map
 
 LINTER = "test-manifest-toml"
 fixed = 0
@@ -89,24 +90,18 @@ def test_unsorted_fix(lint, paths, create_temp_file):
     expected = Path(fix).read_text()
     path = create_temp_file(original, f"{basename}.toml")
     results = lint([path], fix=True)
-    assert len(results) == 5
+    assert len(results) == 3
     i: int = 0
-    assert results[i].message == "The manifest sections are not in alphabetical order."
-    assert results[i].level == WARNING
-    i += 1
-    assert (
-        results[i].message == "linux condition requires display == 'x11' or 'wayland'"
+    assert results[i].message == (
+        "The manifest sections are not in alphabetical order; "
+        "[aaa.js] should come before [browser_test_resolution.js]."
     )
     assert results[i].level == WARNING
+    assert results[i].lineno == 14
     i += 1
     assert (
         results[i].message
         == 'instead of "!debug" use three conditions: "asan", "opt", "tsan"'
-    )
-    assert results[i].level == WARNING
-    i += 1
-    assert (
-        results[i].message == "linux condition requires display == 'x11' or 'wayland'"
     )
     assert results[i].level == WARNING
     i += 1
@@ -152,6 +147,18 @@ def test_skip_if_explicit_or(lint, paths):
     assert results[0].lineno == 4
 
 
+def test_per_test_prefs(lint, paths):
+    """Test that prefs in individual test sections are rejected for non-xpcshell manifests."""
+
+    results = lint(paths("per-test-prefs.toml"))
+    assert len(results) == 1
+    assert (
+        results[0].message
+        == "'prefs' is only supported in the [DEFAULT] section for non-xpcshell manifests"
+    )
+    assert results[0].level == ERROR
+
+
 def test_missing_include(lint, paths):
     """Test for missing include"""
 
@@ -170,7 +177,7 @@ def test_non_idiomatic_fix(lint, paths, create_temp_file):
     expected = Path(fix).read_text()
     path = create_temp_file(original, f"{basename}.toml")
     results = lint([path], fix=True)
-    assert len(results) == 15
+    assert len(results) == 13
     i: int = 0
     assert (
         results[i].message
@@ -225,18 +232,8 @@ def test_non_idiomatic_fix(lint, paths, create_temp_file):
     assert results[i].level == WARNING
     i += 1
     assert (
-        results[i].message == "linux condition requires display == 'x11' or 'wayland'"
-    )
-    assert results[i].level == WARNING
-    i += 1
-    assert (
         results[i].message
         == 'instead of "!debug" use three conditions: "asan", "opt", "tsan"'
-    )
-    assert results[i].level == WARNING
-    i += 1
-    assert (
-        results[i].message == "linux condition requires display == 'x11' or 'wayland'"
     )
     assert results[i].level == WARNING
     i += 1
@@ -274,13 +271,13 @@ def test_android_os_mismatch(lint, paths, create_temp_file):
 def test_unknown_android_version(lint, paths, create_temp_file):
     """Test unknown android_version"""
 
-    contents = "[DEFAULT]\nskip-if = [\"android_version == '37'\"]"
+    contents = "[DEFAULT]\nskip-if = [\"android_version == '999'\"]"
     path = create_temp_file(contents, "unknown_android.toml")
     with pytest.raises(Exception) as e:
-        _results = lint([path], fix=True)
-    assert (
-        str(e.value)
-        == "Unknown Android API version '37'. Supported versions are dict_values(['24', '25', '26', '27', '28', '29', '30', '31', '32', '33', '34', '35', '36'])."
+        lint([path], fix=True)
+    assert str(e.value) == (
+        f"Unknown Android API version '999'. "
+        f"Supported versions are {android_os_to_api_map.values()}."
     )
 
 

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -19,13 +17,13 @@
 #include "mozilla/gfx/DeviceManagerDx.h"
 #include "mozilla/gfx/FileHandleWrapper.h"
 #include "mozilla/gfx/Logging.h"
-#include "mozilla/gfx/gfxVars.h"
 #include "mozilla/gfx/SourceSurfaceD3D11.h"
+#include "mozilla/gfx/gfxVars.h"
 #include "mozilla/ipc/FileDescriptor.h"
+#include "mozilla/layers/CompositeProcessD3D11FencesHolderMap.h"
 #include "mozilla/layers/CompositorBridgeChild.h"
 #include "mozilla/layers/D3D11ZeroCopyTextureImage.h"
 #include "mozilla/layers/FenceD3D11.h"
-#include "mozilla/layers/CompositeProcessD3D11FencesHolderMap.h"
 #include "mozilla/layers/GpuProcessD3D11TextureMap.h"
 #include "mozilla/layers/HelpersD3D11.h"
 #include "mozilla/webrender/RenderD3D11TextureHost.h"
@@ -241,8 +239,6 @@ DataTextureSourceD3D11::DataTextureSourceD3D11(gfx::SurfaceFormat aFormat,
                                                TextureFlags aFlags)
     : DataTextureSourceD3D11(aProvider->GetD3D11Device(), aFormat, aFlags) {}
 
-DataTextureSourceD3D11::~DataTextureSourceD3D11() {}
-
 enum class SerializeWithMoz2D : bool { No, Yes };
 
 template <typename T>  // ID3D10Texture2D or ID3D11Texture2D
@@ -387,7 +383,8 @@ bool D3D11TextureData::SerializeSpecific(
     SurfaceDescriptorD3D10* const aOutDesc) {
   *aOutDesc = SurfaceDescriptorD3D10(
       mSharedHandle, mGpuProcessTextureId, mArrayIndex, mFormat, mSize,
-      mColorSpace, mColorRange, mHasKeyedMutex, mFencesHolderId);
+      mColorSpace, mColorRange, mTransferFunction, mHDRMetadata, mHasKeyedMutex,
+      mFencesHolderId);
   return true;
 }
 
@@ -411,8 +408,10 @@ void D3D11TextureData::GetSubDescriptor(
 already_AddRefed<TextureClient> D3D11TextureData::CreateTextureClient(
     ID3D11Texture2D* aTexture, uint32_t aIndex, gfx::IntSize aSize,
     gfx::SurfaceFormat aFormat, gfx::ColorSpace2 aColorSpace,
-    gfx::ColorRange aColorRange, KnowsCompositor* aKnowsCompositor,
-    ZeroCopyUsageInfo* aUsageInfo, const RefPtr<FenceD3D11> aWriteFence) {
+    gfx::ColorRange aColorRange, gfx::TransferFunction aTransferFunction,
+    const Maybe<gfx::HDRMetadata>& aHDRMetadata,
+    KnowsCompositor* aKnowsCompositor, ZeroCopyUsageInfo* aUsageInfo,
+    const RefPtr<FenceD3D11> aWriteFence) {
   MOZ_ASSERT(aTexture);
 
   RefPtr<ID3D11Device> device;
@@ -430,9 +429,12 @@ already_AddRefed<TextureClient> D3D11TextureData::CreateTextureClient(
       aWriteFence, TextureAllocationFlags::ALLOC_MANUAL_SYNCHRONIZATION);
   data->mColorSpace = aColorSpace;
   data->SetColorRange(aColorRange);
+  data->SetTransferFunction(aTransferFunction);
+  data->SetHDRMetadata(aHDRMetadata);
 
   RefPtr<TextureClient> textureClient = MakeAndAddRef<TextureClient>(
-      data, TextureFlags::NO_FLAGS, aKnowsCompositor->GetTextureForwarder());
+      data, TextureFlags::NO_FLAGS,
+      aKnowsCompositor->GetTextureForwarder().get());
   const auto textureId = GpuProcessD3D11TextureMap::GetNextTextureId();
   data->SetGpuProcessTextureId(textureId);
 
@@ -515,10 +517,13 @@ D3D11TextureData* D3D11TextureData::Create(IntSize aSize, SurfaceFormat aFormat,
     case gfx::SurfaceFormat::YUV420P10:
     case gfx::SurfaceFormat::YUV422P10:
     case gfx::SurfaceFormat::NV16:
+    case gfx::SurfaceFormat::P210:
     case gfx::SurfaceFormat::YUY2:
     case gfx::SurfaceFormat::HSV:
     case gfx::SurfaceFormat::Lab:
     case gfx::SurfaceFormat::Depth:
+    case gfx::SurfaceFormat::CMYK:
+    case gfx::SurfaceFormat::InvertedCMYK:
     case gfx::SurfaceFormat::UNKNOWN:
       // Per advice from Sotaro, these formats are not supported for video.
       gfxCriticalNoteOnce
@@ -644,8 +649,8 @@ D3D11TextureData* D3D11TextureData::Create(IntSize aSize, SurfaceFormat aFormat,
       sD3D11TextureUsage,
       new TextureMemoryMeasurer(newDesc.Width * newDesc.Height * 4));
 
-  RefPtr<gfx::FileHandleWrapper> handle =
-      new gfx::FileHandleWrapper(UniqueFileHandle(sharedHandle));
+  RefPtr handle =
+      MakeRefPtr<gfx::FileHandleWrapper>(UniqueFileHandle(sharedHandle));
 
   if (useFence) {
     auto* fencesHolderMap = CompositeProcessD3D11FencesHolderMap::Get();
@@ -712,7 +717,8 @@ DXGIYCbCrTextureData* DXGIYCbCrTextureData::Create(
     ID3D11Texture2D* aTextureCr, const gfx::IntSize& aSize,
     const gfx::IntSize& aSizeY, const gfx::IntSize& aSizeCbCr,
     const gfx::ColorDepth aColorDepth, const YUVColorSpace aYUVColorSpace,
-    const gfx::ColorRange aColorRange) {
+    const gfx::ColorRange aColorRange,
+    const gfx::TransferFunction aTransferFunction) {
   if (!aTextureY || !aTextureCb || !aTextureCr) {
     return nullptr;
   }
@@ -738,8 +744,8 @@ DXGIYCbCrTextureData* DXGIYCbCrTextureData::Create(
   if (FAILED(hr)) {
     return nullptr;
   }
-  const RefPtr<gfx::FileHandleWrapper> sharedHandleY =
-      new gfx::FileHandleWrapper(UniqueFileHandle(handleY));
+  const RefPtr sharedHandleY =
+      MakeRefPtr<gfx::FileHandleWrapper>(UniqueFileHandle(handleY));
 
   aTextureCb->QueryInterface((IDXGIResource1**)getter_AddRefs(resource));
 
@@ -750,8 +756,8 @@ DXGIYCbCrTextureData* DXGIYCbCrTextureData::Create(
   if (FAILED(hr)) {
     return nullptr;
   }
-  const RefPtr<gfx::FileHandleWrapper> sharedHandleCb =
-      new gfx::FileHandleWrapper(UniqueFileHandle(handleCb));
+  const RefPtr sharedHandleCb =
+      MakeRefPtr<gfx::FileHandleWrapper>(UniqueFileHandle(handleCb));
 
   aTextureCr->QueryInterface((IDXGIResource1**)getter_AddRefs(resource));
   HANDLE handleCr;
@@ -761,8 +767,8 @@ DXGIYCbCrTextureData* DXGIYCbCrTextureData::Create(
   if (FAILED(hr)) {
     return nullptr;
   }
-  const RefPtr<gfx::FileHandleWrapper> sharedHandleCr =
-      new gfx::FileHandleWrapper(UniqueFileHandle(handleCr));
+  const RefPtr sharedHandleCr =
+      MakeRefPtr<gfx::FileHandleWrapper>(UniqueFileHandle(handleCr));
 
   auto* fenceHolderMap = CompositeProcessD3D11FencesHolderMap::Get();
   if (!fenceHolderMap) {
@@ -790,7 +796,7 @@ DXGIYCbCrTextureData* DXGIYCbCrTextureData::Create(
 
   DXGIYCbCrTextureData* texture = new DXGIYCbCrTextureData(
       textures, handles, aSize, aSizeY, aSizeCbCr, aColorDepth, aYUVColorSpace,
-      aColorRange, fencesHolderId, fence);
+      aColorRange, aTransferFunction, fencesHolderId, fence);
   return texture;
 }
 
@@ -800,6 +806,7 @@ DXGIYCbCrTextureData::DXGIYCbCrTextureData(
     const gfx::IntSize& aSizeY, const gfx::IntSize& aSizeCbCr,
     const gfx::ColorDepth aColorDepth, const gfx::YUVColorSpace aYUVColorSpace,
     const gfx::ColorRange aColorRange,
+    const gfx::TransferFunction aTransferFunction,
     const CompositeProcessFencesHolderId aFencesHolderId,
     const RefPtr<FenceD3D11> aWriteFence)
     : mSize(aSize),
@@ -808,6 +815,7 @@ DXGIYCbCrTextureData::DXGIYCbCrTextureData(
       mColorDepth(aColorDepth),
       mYUVColorSpace(aYUVColorSpace),
       mColorRange(aColorRange),
+      mTransferFunction(aTransferFunction),
       mFencesHolderId(aFencesHolderId),
       mWriteFence(aWriteFence),
       mD3D11Textures{aD3D11Textures[0], aD3D11Textures[1], aD3D11Textures[2]},
@@ -831,9 +839,10 @@ void DXGIYCbCrTextureData::FillInfo(TextureData::Info& aInfo) const {
 
 void DXGIYCbCrTextureData::SerializeSpecific(
     SurfaceDescriptorDXGIYCbCr* const aOutDesc) {
-  *aOutDesc = SurfaceDescriptorDXGIYCbCr(
-      mHandles[0], mHandles[1], mHandles[2], mSize, mSizeY, mSizeCbCr,
-      mColorDepth, mYUVColorSpace, mColorRange, mFencesHolderId);
+  *aOutDesc = SurfaceDescriptorDXGIYCbCr(mHandles[0], mHandles[1], mHandles[2],
+                                         mSize, mSizeY, mSizeCbCr, mColorDepth,
+                                         mYUVColorSpace, mColorRange,
+                                         mTransferFunction, mFencesHolderId);
 }
 
 bool DXGIYCbCrTextureData::Serialize(SurfaceDescriptor& aOutDescriptor) {
@@ -962,7 +971,9 @@ DXGITextureHostD3D11::DXGITextureHostD3D11(
       mHasKeyedMutex(aDescriptor.hasKeyedMutex()),
       mFencesHolderId(aDescriptor.fencesHolderId()),
       mColorSpace(aDescriptor.colorSpace()),
-      mColorRange(aDescriptor.colorRange()) {
+      mColorRange(aDescriptor.colorRange()),
+      mTransferFunction(aDescriptor.transferFunction()),
+      mHDRMetadata(aDescriptor.hdrMetadata()) {
   if (!mFencesHolderId) {
     return;
   }
@@ -1027,6 +1038,13 @@ already_AddRefed<gfx::DataSourceSurface> DXGITextureHostD3D11::GetAsSurface(
   D3D11_TEXTURE2D_DESC textureDesc = {0};
   d3dTexture->GetDesc(&textureDesc);
 
+  if (textureDesc.Format != SurfaceFormatToDXGIFormat(mFormat)) {
+    gfxCriticalNoteOnce << "Declared format does not match texture format: "
+                        << static_cast<int>(mFormat) << " "
+                        << static_cast<int>(textureDesc.Format);
+    return nullptr;
+  }
+
   RefPtr<ID3D11DeviceContext> context;
   d3d11Device->GetImmediateContext(getter_AddRefs(context));
 
@@ -1076,7 +1094,8 @@ DXGITextureHostD3D11::GetAsSurfaceWithDevice(ID3D11Device* const aDevice) {
   }
 
   RefPtr<gfx::SourceSurface> sourceSurface = gfx::SourceSurfaceD3D11::Create(
-      d3dTexture, mArrayIndex, mColorSpace, mColorRange, mFencesHolderId);
+      d3dTexture, mArrayIndex, mColorSpace, mColorRange, mTransferFunction,
+      mFencesHolderId);
   if (!sourceSurface) {
     return nullptr;
   }
@@ -1093,9 +1112,10 @@ void DXGITextureHostD3D11::CreateRenderTexture(
     const wr::ExternalImageId& aExternalImageId) {
   MOZ_ASSERT(mExternalImageId.isSome());
 
-  RefPtr<wr::RenderDXGITextureHost> texture = new wr::RenderDXGITextureHost(
+  RefPtr texture = MakeRefPtr<wr::RenderDXGITextureHost>(
       mHandle, mGpuProcessTextureId, mArrayIndex, mFormat, mColorSpace,
-      mColorRange, mSize, mHasKeyedMutex, mFencesHolderId);
+      mColorRange, mTransferFunction, mHDRMetadata, mSize, mHasKeyedMutex,
+      mFencesHolderId);
   if (mFlags & TextureFlags::SOFTWARE_DECODED_VIDEO) {
     texture->SetIsSoftwareDecodedVideo();
   }
@@ -1149,13 +1169,21 @@ void DXGITextureHostD3D11::PushResourceUpdates(
     case gfx::SurfaceFormat::R10G10B10A2_UINT32:
     case gfx::SurfaceFormat::R10G10B10X2_UINT32:
     case gfx::SurfaceFormat::R16G16B16A16F: {
-      MOZ_ASSERT(aImageKeys.length() == 1);
+      if (aImageKeys.length() != 1) {
+        MOZ_ASSERT_UNREACHABLE("unexpected key length");
+        return;
+      }
 
-      wr::ImageDescriptor descriptor(mSize, GetFormat());
+      auto format = wr::SurfaceFormatToImageFormat(GetFormat());
+      if (NS_WARN_IF(!format)) {
+        return;
+      }
+      wr::ImageDescriptor descriptor(mSize, *format,
+                                     wr::ToOpacityType(GetFormat()));
       // Prefer TextureExternal unless the backend requires TextureRect.
       TextureHost::NativeTexturePolicy policy =
-          TextureHost::BackendNativeTexturePolicy(aResources.GetBackendType(),
-                                                  mSize);
+          TextureHost::BackendNativeTexturePolicy(
+              aResources.GetCapabilities().mBackendType, mSize);
       auto imageType = policy == TextureHost::NativeTexturePolicy::REQUIRE
                            ? wr::ExternalImageType::TextureHandle(
                                  wr::ImageBufferKind::TextureRect)
@@ -1168,21 +1196,25 @@ void DXGITextureHostD3D11::PushResourceUpdates(
     case gfx::SurfaceFormat::P010:
     case gfx::SurfaceFormat::P016:
     case gfx::SurfaceFormat::NV12: {
-      MOZ_ASSERT(aImageKeys.length() == 2);
+      if (aImageKeys.length() != 2) {
+        MOZ_ASSERT_UNREACHABLE("unexpected key length");
+        return;
+      }
+
       MOZ_ASSERT(mSize.width % 2 == 0);
       MOZ_ASSERT(mSize.height % 2 == 0);
 
-      wr::ImageDescriptor descriptor0(mSize, mFormat == gfx::SurfaceFormat::NV12
-                                                 ? gfx::SurfaceFormat::A8
-                                                 : gfx::SurfaceFormat::A16);
-      wr::ImageDescriptor descriptor1(mSize / 2,
-                                      mFormat == gfx::SurfaceFormat::NV12
-                                          ? gfx::SurfaceFormat::R8G8
-                                          : gfx::SurfaceFormat::R16G16);
+      const bool isNV12 = mFormat == gfx::SurfaceFormat::NV12;
+      wr::ImageDescriptor descriptor0(
+          mSize, isNV12 ? wr::ImageFormat::R8 : wr::ImageFormat::R16,
+          wr::OpacityType::HasAlphaChannel);
+      wr::ImageDescriptor descriptor1(
+          mSize / 2, isNV12 ? wr::ImageFormat::RG8 : wr::ImageFormat::RG16,
+          isNV12 ? wr::OpacityType::Opaque : wr::OpacityType::HasAlphaChannel);
       // Prefer TextureExternal unless the backend requires TextureRect.
       TextureHost::NativeTexturePolicy policy =
-          TextureHost::BackendNativeTexturePolicy(aResources.GetBackendType(),
-                                                  mSize);
+          TextureHost::BackendNativeTexturePolicy(
+              aResources.GetCapabilities().mBackendType, mSize);
       auto imageType = policy == TextureHost::NativeTexturePolicy::REQUIRE
                            ? wr::ExternalImageType::TextureHandle(
                                  wr::ImageBufferKind::TextureRect)
@@ -1225,7 +1257,10 @@ void DXGITextureHostD3D11::PushDisplayItems(
     case gfx::SurfaceFormat::R16G16B16A16F: {
       // WebRender isn't HDR ready so we have to push to the compositor.
       preferCompositorSurface = preferExternalCompositing = true;
-      MOZ_ASSERT(aImageKeys.length() == 1);
+      if (aImageKeys.length() != 1) {
+        MOZ_ASSERT_UNREACHABLE("unexpected key length");
+        return;
+      }
       aBuilder.PushImage(aBounds, aClip, true, false, aFilter, aImageKeys[0],
                          !(mFlags & TextureFlags::NON_PREMULTIPLIED),
                          wr::ColorF{1.0f, 1.0f, 1.0f, 1.0f},
@@ -1236,7 +1271,10 @@ void DXGITextureHostD3D11::PushDisplayItems(
     case gfx::SurfaceFormat::R8G8B8A8:
     case gfx::SurfaceFormat::B8G8R8A8:
     case gfx::SurfaceFormat::B8G8R8X8: {
-      MOZ_ASSERT(aImageKeys.length() == 1);
+      if (aImageKeys.length() != 1) {
+        MOZ_ASSERT_UNREACHABLE("unexpected key length");
+        return;
+      }
       aBuilder.PushImage(aBounds, aClip, true, false, aFilter, aImageKeys[0],
                          !(mFlags & TextureFlags::NON_PREMULTIPLIED),
                          wr::ColorF{1.0f, 1.0f, 1.0f, 1.0f},
@@ -1250,7 +1288,10 @@ void DXGITextureHostD3D11::PushDisplayItems(
       // it may be handled as if it was DXGI_FORMAT_P016. This is approximately
       // perceptually correct. However, due to rounding error, the precise
       // quantized value after sampling may be off by 1.
-      MOZ_ASSERT(aImageKeys.length() == 2);
+      if (aImageKeys.length() != 2) {
+        MOZ_ASSERT_UNREACHABLE("unexpected key length");
+        return;
+      }
       aBuilder.PushP010Image(
           aBounds, aClip, true, aImageKeys[0], aImageKeys[1],
           wr::ColorDepth::Color16,
@@ -1260,7 +1301,10 @@ void DXGITextureHostD3D11::PushDisplayItems(
       break;
     }
     case gfx::SurfaceFormat::NV12: {
-      MOZ_ASSERT(aImageKeys.length() == 2);
+      if (aImageKeys.length() != 2) {
+        MOZ_ASSERT_UNREACHABLE("unexpected key length");
+        return;
+      }
       aBuilder.PushNV12Image(
           aBounds, aClip, true, aImageKeys[0], aImageKeys[1],
           GetFormat() == gfx::SurfaceFormat::NV12 ? wr::ColorDepth::Color8
@@ -1283,10 +1327,13 @@ void DXGITextureHostD3D11::PushDisplayItems(
     case gfx::SurfaceFormat::YUV420P10:
     case gfx::SurfaceFormat::YUV422P10:
     case gfx::SurfaceFormat::NV16:
+    case gfx::SurfaceFormat::P210:
     case gfx::SurfaceFormat::YUY2:
     case gfx::SurfaceFormat::HSV:
     case gfx::SurfaceFormat::Lab:
     case gfx::SurfaceFormat::Depth:
+    case gfx::SurfaceFormat::CMYK:
+    case gfx::SurfaceFormat::InvertedCMYK:
     case gfx::SurfaceFormat::UNKNOWN: {
       // Per advice from Sotaro, these formats are not supported for video.
       MOZ_ASSERT_UNREACHABLE("unexpected to be called");
@@ -1360,6 +1407,7 @@ DXGIYCbCrTextureHostD3D11::DXGIYCbCrTextureHostD3D11(
       mColorDepth(aDescriptor.colorDepth()),
       mYUVColorSpace(aDescriptor.yUVColorSpace()),
       mColorRange(aDescriptor.colorRange()),
+      mTransferFunction(aDescriptor.transferFunction()),
       mFencesHolderId(aDescriptor.fencesHolderId()) {
   if (auto* fenceHolderMap = CompositeProcessD3D11FencesHolderMap::Get()) {
     fenceHolderMap->RegisterReference(mFencesHolderId);
@@ -1380,9 +1428,9 @@ void DXGIYCbCrTextureHostD3D11::CreateRenderTexture(
     const wr::ExternalImageId& aExternalImageId) {
   MOZ_ASSERT(mExternalImageId.isSome());
 
-  RefPtr<wr::RenderTextureHost> texture = new wr::RenderDXGIYCbCrTextureHost(
-      mHandles, mYUVColorSpace, mColorDepth, mColorRange, mSizeY, mSizeCbCr,
-      mFencesHolderId);
+  RefPtr texture = MakeRefPtr<wr::RenderDXGIYCbCrTextureHost>(
+      mHandles, mYUVColorSpace, mColorDepth, mColorRange, mTransferFunction,
+      mSizeY, mSizeCbCr, mFencesHolderId);
 
   wr::RenderThread::Get()->RegisterExternalImage(aExternalImageId,
                                                  texture.forget());
@@ -1401,8 +1449,13 @@ void DXGIYCbCrTextureHostD3D11::PushResourceUpdates(
     return;
   }
 
+  if (aImageKeys.length() != 3) {
+    MOZ_ASSERT_UNREACHABLE("unexpected key length");
+    return;
+  }
+
   MOZ_ASSERT(mHandles[0] && mHandles[1] && mHandles[2]);
-  MOZ_ASSERT(aImageKeys.length() == 3);
+
   // Assume the chroma planes are rounded up if the luma plane is odd sized.
   MOZ_ASSERT((mSizeCbCr.width == mSizeY.width ||
               mSizeCbCr.width == (mSizeY.width + 1) >> 1) &&
@@ -1417,8 +1470,8 @@ void DXGIYCbCrTextureHostD3D11::PushResourceUpdates(
   // Use a size that is the maximum of the Y and CbCr sizes.
   IntSize textureSize = std::max(mSizeY, mSizeCbCr);
   TextureHost::NativeTexturePolicy policy =
-      TextureHost::BackendNativeTexturePolicy(aResources.GetBackendType(),
-                                              textureSize);
+      TextureHost::BackendNativeTexturePolicy(
+          aResources.GetCapabilities().mBackendType, textureSize);
   auto imageType = policy == TextureHost::NativeTexturePolicy::REQUIRE
                        ? wr::ExternalImageType::TextureHandle(
                              wr::ImageBufferKind::TextureRect)
@@ -1426,9 +1479,11 @@ void DXGIYCbCrTextureHostD3D11::PushResourceUpdates(
                              wr::ImageBufferKind::TextureExternal);
 
   // y
-  wr::ImageDescriptor descriptor0(mSizeY, gfx::SurfaceFormat::A8);
+  wr::ImageDescriptor descriptor0(mSizeY, wr::ImageFormat::R8,
+                                  wr::OpacityType::HasAlphaChannel);
   // cb and cr
-  wr::ImageDescriptor descriptor1(mSizeCbCr, gfx::SurfaceFormat::A8);
+  wr::ImageDescriptor descriptor1(mSizeCbCr, wr::ImageFormat::R8,
+                                  wr::OpacityType::HasAlphaChannel);
   (aResources.*method)(aImageKeys[0], descriptor0, aExtID, imageType, 0,
                        /* aNormalizedUvs */ false);
   (aResources.*method)(aImageKeys[1], descriptor1, aExtID, imageType, 1,
@@ -1446,7 +1501,10 @@ void DXGIYCbCrTextureHostD3D11::PushDisplayItems(
     return;
   }
 
-  MOZ_ASSERT(aImageKeys.length() == 3);
+  if (aImageKeys.length() != 3) {
+    MOZ_ASSERT_UNREACHABLE("unexpected key length");
+    return;
+  }
 
   aBuilder.PushYCbCrPlanarImage(
       aBounds, aClip, true, aImageKeys[0], aImageKeys[1], aImageKeys[2],
@@ -1827,7 +1885,7 @@ bool SyncObjectD3D11Client::Init(ID3D11Device* aDevice, bool aFallible) {
   aDevice->QueryInterface((ID3D11Device1**)getter_AddRefs(device1));
   if (!device1) {
     gfxCriticalNoteOnce << "Failed to get ID3D11Device1";
-    return 0;
+    return false;
   }
 
   HRESULT hr = device1->OpenSharedResource1(

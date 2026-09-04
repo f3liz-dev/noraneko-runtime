@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -248,7 +246,11 @@ size_t Platform::AllocationGranularity() {
   return si.dwAllocationGranularity;
 }
 
-bool Platform::IsSafeToMap(const PlatformHandle& aHandle) {
+bool Platform::IsSafeToMap(const PlatformHandle& aHandle, uint64_t) {
+  // On Windows the kernel enforces that a mapping (a.k.a. view) cannot exceed
+  // the size of the file mapping object (a.k.a. section object), which in turn
+  // cannot exceed the size of the underlying file if any.  Thus, we don't need
+  // to check the provided size here, because it will be checked by the OS.
   return IsSectionSafeToMap(aHandle.get());
 }
 

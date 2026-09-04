@@ -1,13 +1,10 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*-
- * vim: sw=2 ts=2 sts=2 expandtab
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 /* eslint complexity: ["error", 53] */
 
 /**
  * @import {OpenedConnection} from "resource://gre/modules/Sqlite.sys.mjs"
- * @import {UrlbarSearchStringTokenData} from "UrlbarTokenizer.sys.mjs"
  */
 
 /**
@@ -22,12 +19,13 @@ const FRECENCY_DEFAULT = 1000;
 // The result is notified on a delay, to avoid rebuilding the panel at every match.
 const NOTIFYRESULT_DELAY_MS = 16;
 
-// This SQL query fragment provides the following:
-//   - whether the entry is bookmarked (QUERYINDEX_BOOKMARKED)
-//   - the bookmark title, if it is a bookmark (QUERYINDEX_BOOKMARKTITLE)
-//   - the tags associated with a bookmarked entry (QUERYINDEX_TAGS)
+// This SQL query fragment provides the following if a row is bookmarked:
+//   - bookmarkDate: The date the bookmark was added. A `PRTime`, microseconds
+//     since epoch. Zero if not bookmarked.
+//   - btitle: The bookmark title
+//   - tags: The bookmark tags
 const SQL_BOOKMARK_TAGS_FRAGMENT = `
-   EXISTS(SELECT 1 FROM moz_bookmarks WHERE fk = h.id) AS bookmarked,
+   ( SELECT dateAdded FROM moz_bookmarks WHERE fk = h.id ) AS bookmarkDate,
    ( SELECT title FROM moz_bookmarks WHERE fk = h.id AND title NOTNULL
      ORDER BY lastModified DESC LIMIT 1
    ) AS btitle,
@@ -54,7 +52,7 @@ function defaultQuery(conditions = "") {
         (:switchTabsEnabled AND t.open_count > 0) OR
         ${lazy.PAGES_FRECENCY_FIELD} <> 0
        )
-       AND CASE WHEN bookmarked
+       AND CASE WHEN bookmarkDate
          THEN
            AUTOCOMPLETE_MATCH(:searchString, h.url,
                               IFNULL(btitle, h.title), tags,
@@ -75,7 +73,7 @@ function defaultQuery(conditions = "") {
 }
 
 const SQL_SWITCHTAB_QUERY = `
-    SELECT t.url, t.url AS title, 0 AS bookmarked, NULL AS btitle,
+   SELECT t.url, t.url AS title, 0 AS bookmarkDate, NULL AS btitle,
            NULL AS tags, NULL AS id, t.open_count, NULL AS frecency,
            t.userContextId, NULL AS last_visit_date, NULLIF(t.groupId, '') groupId
    FROM moz_openpages_temp t
@@ -102,12 +100,13 @@ const lazy = XPCOMUtils.declareLazy({
   PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
   Sqlite: "resource://gre/modules/Sqlite.sys.mjs",
   UrlbarPrefs: "moz-src:///browser/components/urlbar/UrlbarPrefs.sys.mjs",
+  UrlbarShared: "chrome://browser/content/urlbar/UrlbarShared.mjs",
   UrlbarProviderOpenTabs:
     "moz-src:///browser/components/urlbar/UrlbarProviderOpenTabs.sys.mjs",
   ProvidersManager:
     "moz-src:///browser/components/urlbar/UrlbarProvidersManager.sys.mjs",
   SearchService: "moz-src:///toolkit/components/search/SearchService.sys.mjs",
-  UrlbarResult: "moz-src:///browser/components/urlbar/UrlbarResult.sys.mjs",
+  UrlbarResult: "chrome://browser/content/urlbar/UrlbarResult.mjs",
   UrlbarSearchUtils:
     "moz-src:///browser/components/urlbar/UrlbarSearchUtils.sys.mjs",
   UrlbarTokenizer:
@@ -119,25 +118,25 @@ const lazy = XPCOMUtils.declareLazy({
   },
   // Maps restriction character types to textual behaviors.
   typeToBehaviorMap: () => {
-    return /** @type {Map<Values<typeof lazy.UrlbarTokenizer.TYPE>, string>} */ (
+    return /** @type {Map<Values<typeof lazy.UrlbarShared.TOKEN_TYPE>, string>} */ (
       new Map([
-        [lazy.UrlbarTokenizer.TYPE.RESTRICT_HISTORY, "history"],
-        [lazy.UrlbarTokenizer.TYPE.RESTRICT_BOOKMARK, "bookmark"],
-        [lazy.UrlbarTokenizer.TYPE.RESTRICT_TAG, "tag"],
-        [lazy.UrlbarTokenizer.TYPE.RESTRICT_OPENPAGE, "openpage"],
-        [lazy.UrlbarTokenizer.TYPE.RESTRICT_SEARCH, "search"],
-        [lazy.UrlbarTokenizer.TYPE.RESTRICT_TITLE, "title"],
-        [lazy.UrlbarTokenizer.TYPE.RESTRICT_URL, "url"],
+        [lazy.UrlbarShared.TOKEN_TYPE.RESTRICT_HISTORY, "history"],
+        [lazy.UrlbarShared.TOKEN_TYPE.RESTRICT_BOOKMARK, "bookmark"],
+        [lazy.UrlbarShared.TOKEN_TYPE.RESTRICT_TAG, "tag"],
+        [lazy.UrlbarShared.TOKEN_TYPE.RESTRICT_OPENPAGE, "openpage"],
+        [lazy.UrlbarShared.TOKEN_TYPE.RESTRICT_SEARCH, "search"],
+        [lazy.UrlbarShared.TOKEN_TYPE.RESTRICT_TITLE, "title"],
+        [lazy.UrlbarShared.TOKEN_TYPE.RESTRICT_URL, "url"],
       ])
     );
   },
   sourceToBehaviorMap: () => {
-    return /** @type {Map<Values<typeof UrlbarUtils.RESULT_SOURCE>, string>} */ (
+    return /** @type {Map<Values<typeof lazy.UrlbarShared.RESULT_SOURCE>, string>} */ (
       new Map([
-        [UrlbarUtils.RESULT_SOURCE.HISTORY, "history"],
-        [UrlbarUtils.RESULT_SOURCE.BOOKMARKS, "bookmark"],
-        [UrlbarUtils.RESULT_SOURCE.TABS, "openpage"],
-        [UrlbarUtils.RESULT_SOURCE.SEARCH, "search"],
+        [lazy.UrlbarShared.RESULT_SOURCE.HISTORY, "history"],
+        [lazy.UrlbarShared.RESULT_SOURCE.BOOKMARKS, "bookmark"],
+        [lazy.UrlbarShared.RESULT_SOURCE.TABS, "openpage"],
+        [lazy.UrlbarShared.RESULT_SOURCE.SEARCH, "search"],
       ])
     );
   },
@@ -166,7 +165,7 @@ function makeMapKeyForResult(url, match) {
   return UrlbarUtils.tupleString(
     url,
     action?.type == "switchtab" &&
-      lazy.UrlbarProviderOpenTabs.isNonPrivateUserContextId(match.userContextId)
+      lazy.UrlbarShared.isNonPrivateUserContextId(match.userContextId)
       ? match.userContextId
       : undefined
   );
@@ -187,7 +186,7 @@ function makeKeyForMatch(match) {
   let key, prefix;
   let action = lazy.PlacesUtils.parseActionUrl(match.value);
   if (!action) {
-    [key, prefix] = UrlbarUtils.stripPrefixAndTrim(match.value, {
+    [key, prefix] = lazy.UrlbarShared.stripPrefixAndTrim(match.value, {
       stripHttp: true,
       stripHttps: true,
       stripWww: true,
@@ -212,7 +211,7 @@ function makeKeyForMatch(match) {
       ].join(",");
       break;
     default:
-      [key, prefix] = UrlbarUtils.stripPrefixAndTrim(
+      [key, prefix] = lazy.UrlbarShared.stripPrefixAndTrim(
         action.params.url || match.value,
         {
           stripHttp: true,
@@ -284,6 +283,7 @@ function convertLegacyMatches(context, matches, urls) {
       title: match.comment,
       userContextId: match.userContextId,
       lastVisit: match.lastVisit,
+      bookmarkDateMs: match.bookmarkDateMs,
       tabGroup: match.tabGroup,
       frecency: match.frecency,
     });
@@ -307,6 +307,7 @@ function convertLegacyMatches(context, matches, urls) {
  * @param {string} info.icon
  * @param {number} info.userContextId
  * @param {number} info.lastVisit
+ * @param {number} info.bookmarkDateMs
  * @param {number} info.tabGroup
  * @param {number} info.frecency
  * @param {string} info.style
@@ -318,12 +319,12 @@ function makeUrlbarResult(queryContext, info) {
       case "searchengine":
         // Return a form history result.
         return new lazy.UrlbarResult({
-          type: UrlbarUtils.RESULT_TYPE.SEARCH,
-          source: UrlbarUtils.RESULT_SOURCE.HISTORY,
+          type: lazy.UrlbarShared.RESULT_TYPE.SEARCH,
+          source: lazy.UrlbarShared.RESULT_SOURCE.HISTORY,
           payload: {
             engine: action.params.engineName,
             isBlockable: true,
-            blockL10n: { id: "urlbar-result-menu-remove-from-history" },
+            blockL10n: { id: "urlbar-result-menu-remove-from-history2" },
             helpUrl:
               Services.urlFormatter.formatURLPref("app.support.baseURL") +
               "awesome-bar-result-menu",
@@ -333,19 +334,20 @@ function makeUrlbarResult(queryContext, info) {
               action.params.searchSuggestion.toLocaleLowerCase(),
           },
           highlights: {
-            suggestion: UrlbarUtils.HIGHLIGHT.SUGGESTED,
+            suggestion: lazy.UrlbarShared.HIGHLIGHT.SUGGESTED,
           },
         });
       case "switchtab": {
         return new lazy.UrlbarResult({
-          type: UrlbarUtils.RESULT_TYPE.TAB_SWITCH,
-          source: UrlbarUtils.RESULT_SOURCE.TABS,
+          type: lazy.UrlbarShared.RESULT_TYPE.TAB_SWITCH,
+          source: lazy.UrlbarShared.RESULT_SOURCE.TABS,
           payload: {
             url: action.params.url,
             title: info.title,
             icon: info.icon,
             userContextId: info.userContextId,
             lastVisit: info.lastVisit,
+            bookmarkDateMs: info.bookmarkDateMs,
             tabGroup: info.tabGroup,
             frecency: info.frecency,
             action: lazy.UrlbarPrefs.get("secondaryActions.switchToTab")
@@ -353,8 +355,8 @@ function makeUrlbarResult(queryContext, info) {
               : undefined,
           },
           highlights: {
-            url: UrlbarUtils.HIGHLIGHT.TYPED,
-            title: UrlbarUtils.HIGHLIGHT.TYPED,
+            url: lazy.UrlbarShared.HIGHLIGHT.TYPED,
+            title: lazy.UrlbarShared.HIGHLIGHT.TYPED,
           },
         });
       }
@@ -376,11 +378,11 @@ function makeUrlbarResult(queryContext, info) {
   // "tag". In the last case it should not be considered a bookmark, but an
   // history item with tags. We don't show tags for non bookmarked items though.
   if (info.style.includes("bookmark")) {
-    source = UrlbarUtils.RESULT_SOURCE.BOOKMARKS;
+    source = lazy.UrlbarShared.RESULT_SOURCE.BOOKMARKS;
   } else {
-    source = UrlbarUtils.RESULT_SOURCE.HISTORY;
+    source = lazy.UrlbarShared.RESULT_SOURCE.HISTORY;
     isBlockable = true;
-    blockL10n = { id: "urlbar-result-menu-remove-from-history" };
+    blockL10n = { id: "urlbar-result-menu-remove-from-history2" };
     helpUrl =
       Services.urlFormatter.formatURLPref("app.support.baseURL") +
       "awesome-bar-result-menu";
@@ -390,12 +392,14 @@ function makeUrlbarResult(queryContext, info) {
   // included in the title, and we must extract them.
   if (info.style.includes("tag")) {
     let titleTags;
-    [title, titleTags] = info.title.split(UrlbarUtils.TITLE_TAGS_SEPARATOR);
+    [title, titleTags] = info.title.split(
+      lazy.UrlbarShared.TITLE_TAGS_SEPARATOR
+    );
 
     // However, as mentioned above, we don't want to show tags for non-
     // bookmarked items, so we include tags in the final result only if it's
     // bookmarked, and we drop the tags otherwise.
-    if (source != UrlbarUtils.RESULT_SOURCE.BOOKMARKS) {
+    if (source != lazy.UrlbarShared.RESULT_SOURCE.BOOKMARKS) {
       titleTags = "";
     }
 
@@ -410,7 +414,7 @@ function makeUrlbarResult(queryContext, info) {
   }
 
   return new lazy.UrlbarResult({
-    type: UrlbarUtils.RESULT_TYPE.URL,
+    type: lazy.UrlbarShared.RESULT_TYPE.URL,
     source,
     payload: {
       url: info.url,
@@ -421,12 +425,13 @@ function makeUrlbarResult(queryContext, info) {
       blockL10n,
       helpUrl,
       lastVisit: info.lastVisit,
+      bookmarkDateMs: info.bookmarkDateMs,
       frecency: info.frecency,
     },
     highlights: {
-      url: UrlbarUtils.HIGHLIGHT.TYPED,
-      title: UrlbarUtils.HIGHLIGHT.TYPED,
-      tags: UrlbarUtils.HIGHLIGHT.TYPED,
+      url: lazy.UrlbarShared.HIGHLIGHT.TYPED,
+      title: lazy.UrlbarShared.HIGHLIGHT.TYPED,
+      tags: lazy.UrlbarShared.HIGHLIGHT.TYPED,
     },
   });
 }
@@ -455,7 +460,7 @@ class Search {
     // We want to store the original string for case sensitive searches.
     this.#originalSearchString = queryContext.searchString;
     this.#trimmedOriginalSearchString = queryContext.trimmedSearchString;
-    let unescapedSearchString = UrlbarUtils.unEscapeURIForUI(
+    let unescapedSearchString = lazy.UrlbarShared.unEscapeURIForUI(
       this.#trimmedOriginalSearchString
     );
     // We want to make sure "about:" is not stripped as a prefix so that the
@@ -482,7 +487,7 @@ class Search {
     this.#userContextId = queryContext.userContextId;
     this.#currentPage = queryContext.currentPage;
     this.#searchModeEngine = queryContext.searchMode?.engineName;
-    if (this.#searchModeEngine) {
+    if (this.#searchModeEngine && queryContext.restrictInSearchMode()) {
       // Filter Places results on host.
       let engine = lazy.SearchService.getEngineByName(this.#searchModeEngine);
       this.#filterOnHost = engine.searchUrlDomain;
@@ -501,7 +506,7 @@ class Search {
       if (
         lazy.UrlbarTokenizer.isRestrictionToken(tokens[0]) &&
         (tokens.length > 1 ||
-          tokens[0].type == lazy.UrlbarTokenizer.TYPE.RESTRICT_SEARCH)
+          tokens[0].type == lazy.UrlbarShared.TOKEN_TYPE.RESTRICT_SEARCH)
       ) {
         this.#leadingRestrictionToken = tokens[0].value;
       }
@@ -701,7 +706,8 @@ class Search {
       // UrlbarProviderSearchSuggestions will handle suggestions, if any.
       let emptySearchRestriction =
         this.#trimmedOriginalSearchString.length <= 3 &&
-        this.#leadingRestrictionToken == lazy.UrlbarTokenizer.RESTRICT.SEARCH &&
+        this.#leadingRestrictionToken ==
+          lazy.UrlbarShared.RESTRICT_TOKENS.SEARCH &&
         /\s*\S?$/.test(this.#trimmedOriginalSearchString);
       if (
         emptySearchRestriction ||
@@ -1124,21 +1130,21 @@ class Search {
     if (!resultGroup.children) {
       let type;
       switch (resultGroup.group) {
-        case UrlbarUtils.RESULT_GROUP.FORM_HISTORY:
-        case UrlbarUtils.RESULT_GROUP.REMOTE_SUGGESTION:
-        case UrlbarUtils.RESULT_GROUP.TAIL_SUGGESTION:
+        case lazy.UrlbarShared.RESULT_GROUP.FORM_HISTORY:
+        case lazy.UrlbarShared.RESULT_GROUP.REMOTE_SUGGESTION:
+        case lazy.UrlbarShared.RESULT_GROUP.TAIL_SUGGESTION:
           type = MATCH_TYPE.SUGGESTION;
           break;
-        case UrlbarUtils.RESULT_GROUP.HEURISTIC_AUTOFILL:
-        case UrlbarUtils.RESULT_GROUP.HEURISTIC_EXTENSION:
-        case UrlbarUtils.RESULT_GROUP.HEURISTIC_FALLBACK:
-        case UrlbarUtils.RESULT_GROUP.HEURISTIC_OMNIBOX:
-        case UrlbarUtils.RESULT_GROUP.HEURISTIC_SEARCH_TIP:
-        case UrlbarUtils.RESULT_GROUP.HEURISTIC_TEST:
-        case UrlbarUtils.RESULT_GROUP.HEURISTIC_TOKEN_ALIAS_ENGINE:
+        case lazy.UrlbarShared.RESULT_GROUP.HEURISTIC_AUTOFILL:
+        case lazy.UrlbarShared.RESULT_GROUP.HEURISTIC_EXTENSION:
+        case lazy.UrlbarShared.RESULT_GROUP.HEURISTIC_FALLBACK:
+        case lazy.UrlbarShared.RESULT_GROUP.HEURISTIC_OMNIBOX:
+        case lazy.UrlbarShared.RESULT_GROUP.HEURISTIC_SEARCH_TIP:
+        case lazy.UrlbarShared.RESULT_GROUP.HEURISTIC_TEST:
+        case lazy.UrlbarShared.RESULT_GROUP.HEURISTIC_TOKEN_ALIAS_ENGINE:
           type = MATCH_TYPE.HEURISTIC;
           break;
-        case UrlbarUtils.RESULT_GROUP.OMNIBOX:
+        case lazy.UrlbarShared.RESULT_GROUP.OMNIBOX:
           type = MATCH_TYPE.EXTENSION;
           break;
         default:
@@ -1184,8 +1190,14 @@ class Search {
     let url = row.getResultByName("url");
     let openPageCount = row.getResultByName("open_count") || 0;
     let historyTitle = row.getResultByName("title") || "";
-    let bookmarked = row.getResultByName("bookmarked");
-    let bookmarkTitle = bookmarked ? row.getResultByName("btitle") : null;
+
+    let bookmarkDatePRTime = row.getResultByName("bookmarkDate");
+    let bookmarkTitle = bookmarkDatePRTime
+      ? row.getResultByName("btitle")
+      : null;
+    let bookmarkDateMs = bookmarkDatePRTime
+      ? lazy.PlacesUtils.toDate(bookmarkDatePRTime).getTime()
+      : undefined;
     let tags = row.getResultByName("tags") || "";
     let frecency = row.getResultByName("frecency");
     let userContextId = row.getResultByName("userContextId");
@@ -1199,11 +1211,12 @@ class Search {
       placeId,
       value: url,
       comment: bookmarkTitle || historyTitle,
-      icon: UrlbarUtils.getIconForUrl(url),
+      icon: lazy.UrlbarShared.getIconForUrl(url),
       frecency: frecency || FRECENCY_DEFAULT,
       userContextId,
       lastVisit,
       tabGroup,
+      bookmarkDateMs,
     };
     if (openPageCount > 0 && this.hasBehavior("openpage")) {
       if (
@@ -1226,10 +1239,10 @@ class Search {
       match.style = "favicon";
     } else if (tags) {
       // Store the tags in the title.  It's up to the consumer to extract them.
-      match.comment += UrlbarUtils.TITLE_TAGS_SEPARATOR + tags;
+      match.comment += lazy.UrlbarShared.TITLE_TAGS_SEPARATOR + tags;
       // If we're not suggesting bookmarks, then this shouldn't display as one.
       match.style = this.hasBehavior("bookmark") ? "bookmark-tag" : "tag";
-    } else if (bookmarked) {
+    } else if (bookmarkDateMs) {
       match.style = "bookmark";
     }
 
@@ -1303,7 +1316,7 @@ class Search {
         conditions.push("+h.visit_count > 0");
       }
       if (this.hasBehavior("bookmark")) {
-        conditions.push("bookmarked");
+        conditions.push("bookmarkDate");
       }
       if (this.hasBehavior("tag")) {
         conditions.push("tags NOTNULL");
@@ -1364,11 +1377,10 @@ class Search {
       maxResults: this.#maxResults,
       switchTabsEnabled: this.hasBehavior("openpage"),
     };
-    params.userContextId =
-      lazy.UrlbarProviderOpenTabs.getUserContextIdForOpenPagesTable(
-        null,
-        this.#inPrivateWindow
-      );
+    params.userContextId = lazy.UrlbarShared.getUserContextIdForOpenPagesTable(
+      null,
+      this.#inPrivateWindow
+    );
 
     if (this.#filterOnHost) {
       params.host = this.#filterOnHost;
@@ -1392,11 +1404,10 @@ class Search {
         // We only want to search the tokens that we are left with - not the
         // original search string.
         searchString: this.#keywordFilteredSearchString,
-        userContextId:
-          lazy.UrlbarProviderOpenTabs.getUserContextIdForOpenPagesTable(
-            null,
-            this.#inPrivateWindow
-          ),
+        userContextId: lazy.UrlbarShared.getUserContextIdForOpenPagesTable(
+          null,
+          this.#inPrivateWindow
+        ),
         maxResults: this.#maxResults,
       },
     ];
@@ -1465,10 +1476,10 @@ export class UrlbarProviderPlaces extends UrlbarProvider {
   #currentSearch = null;
 
   /**
-   * @returns {Values<typeof UrlbarUtils.PROVIDER_TYPE>}
+   * @returns {Values<typeof lazy.UrlbarShared.PROVIDER_TYPE>}
    */
   get type() {
-    return UrlbarUtils.PROVIDER_TYPE.PROFILE;
+    return lazy.UrlbarShared.PROVIDER_TYPE.PROFILE;
   }
 
   /**
@@ -1588,7 +1599,7 @@ export class UrlbarProviderPlaces extends UrlbarProvider {
     let { result } = details;
     if (details.selType == "dismiss") {
       switch (result.type) {
-        case UrlbarUtils.RESULT_TYPE.SEARCH: {
+        case lazy.UrlbarShared.RESULT_TYPE.SEARCH: {
           // URL restyled as a search suggestion. Generate the URL and remove it
           // from browsing history.
           let { url } = UrlbarUtils.getUrlFromResult(result);
@@ -1596,7 +1607,7 @@ export class UrlbarProviderPlaces extends UrlbarProvider {
           controller.removeResult(result);
           break;
         }
-        case UrlbarUtils.RESULT_TYPE.URL:
+        case lazy.UrlbarShared.RESULT_TYPE.URL:
           // Remove browsing history entries from Places.
           lazy.PlacesUtils.history
             .remove(result.payload.url)

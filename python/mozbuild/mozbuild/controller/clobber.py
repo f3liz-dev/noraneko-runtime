@@ -13,6 +13,8 @@ from textwrap import TextWrapper
 from mozfile.mozfile import remove as mozfileremove
 from mozpack import path as mozpath
 
+from mozbuild.util import get_rust_build_kind
+
 CLOBBER_MESSAGE = "".join([
     TextWrapper().fill(line) + "\n"
     for line in """
@@ -85,7 +87,7 @@ class Clobberer:
         This returns a list of lines describing why the clobber was required.
         Each line is stripped of leading and trailing whitespace.
         """
-        with open(self.src_clobber) as fh:
+        with open(self.src_clobber, encoding="utf-8") as fh:
             lines = [l.strip() for l in fh.readlines()]
             return [l for l in lines if l and not l.startswith("#")]
 
@@ -142,12 +144,10 @@ class Clobberer:
         rust_targets = set([
             self.substs[x] for x in RUST_TARGET_VARS if x in self.substs
         ])
-        rust_build_kind = "release"
-        if self.substs.get("MOZ_DEBUG_RUST"):
-            rust_build_kind = "debug"
+        rust_build_kind = get_rust_build_kind(self.substs)
 
         # Top-level files and directories to not clobber by default.
-        no_clobber = {".mozbuild", "msvc", "_virtualenvs"}
+        no_clobber = {".clangd", ".mozbuild", "clangd", "msvc", "_virtualenvs"}
 
         # Hold off on clobbering cargo build artifacts
         no_clobber |= rust_targets

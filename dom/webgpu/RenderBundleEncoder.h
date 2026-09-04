@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -20,17 +19,9 @@ namespace mozilla::webgpu {
 class BindGroup;
 class Buffer;
 class RenderPipeline;
-
-namespace ffi {
-struct WGPURenderBundleEncoder;
-}  // namespace ffi
-
 class Device;
 class RenderBundle;
-
-struct ffiWGPURenderBundleEncoderDeleter {
-  void operator()(ffi::WGPURenderBundleEncoder*);
-};
+class ExternalTexture;
 
 class RenderBundleEncoder final : public nsWrapperCache,
                                   public ObjectBase,
@@ -39,28 +30,17 @@ class RenderBundleEncoder final : public nsWrapperCache,
   GPU_DECL_CYCLE_COLLECTION(RenderBundleEncoder)
   GPU_DECL_JS_WRAP(RenderBundleEncoder)
 
-  RenderBundleEncoder(Device* const aParent, RawId aId,
-                      const dom::GPURenderBundleEncoderDescriptor& aDesc);
+  RenderBundleEncoder(Device* const aParent, RawId aId);
 
  private:
   virtual ~RenderBundleEncoder();
 
-  std::unique_ptr<ffi::WGPURenderBundleEncoder,
-                  ffiWGPURenderBundleEncoderDeleter>
-      mEncoder;
-  // keep all the used objects alive while the encoder is finished
-  nsTArray<RefPtr<const BindGroup>> mUsedBindGroups;
-  nsTArray<RefPtr<const Buffer>> mUsedBuffers;
-  nsTArray<RefPtr<const RenderPipeline>> mUsedPipelines;
-
   // The canvas contexts of any canvas textures used in bind groups of this
   // render bundle.
   CanvasContextArray mUsedCanvasContexts;
+  nsTArray<RefPtr<ExternalTexture>> mExternalTextures;
 
-  // programmable pass encoder
  private:
-  bool mValid = true;
-
   void SetBindGroup(uint32_t aSlot, BindGroup* const aBindGroup,
                     const uint32_t* aDynamicOffsets,
                     size_t aDynamicOffsetsLength);
@@ -78,8 +58,8 @@ class RenderBundleEncoder final : public nsWrapperCache,
   void SetIndexBuffer(const Buffer& aBuffer,
                       const dom::GPUIndexFormat& aIndexFormat, uint64_t aOffset,
                       const dom::Optional<uint64_t>& aSize);
-  void SetVertexBuffer(uint32_t aSlot, const Buffer& aBuffer, uint64_t aOffset,
-                       const dom::Optional<uint64_t>& aSize);
+  void SetVertexBuffer(uint32_t aSlot, const Buffer* const aBuffer,
+                       uint64_t aOffset, const dom::Optional<uint64_t>& aSize);
   void Draw(uint32_t aVertexCount, uint32_t aInstanceCount,
             uint32_t aFirstVertex, uint32_t aFirstInstance);
   void DrawIndexed(uint32_t aIndexCount, uint32_t aInstanceCount,
@@ -100,6 +80,10 @@ class RenderBundleEncoder final : public nsWrapperCache,
   // helpers not defined by WebGPU
   mozilla::Span<const WeakPtr<CanvasContext>> GetCanvasContexts() const {
     return mUsedCanvasContexts;
+  }
+
+  mozilla::Span<const RefPtr<ExternalTexture>> GetExternalTextures() const {
+    return mExternalTextures;
   }
 };
 

@@ -1,6 +1,3 @@
-/* -*- Mode: indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set sts=2 sw=2 et tw=80: */
-
 "use strict";
 
 add_task(async () => {
@@ -15,11 +12,6 @@ add_task(async () => {
   );
 
   await SpecialPowers.spawn(tab.linkedBrowser, [], () => {
-    ChromeUtils.defineESModuleGetters(this, {
-      WindowsVersionInfo:
-        "resource://gre/modules/components-utils/WindowsVersionInfo.sys.mjs",
-    });
-
     Services.scriptloader.loadSubScript(
       "chrome://mochikit/content/tests/SimpleTest/WindowSnapshot.js",
       this
@@ -97,7 +89,7 @@ add_task(async () => {
     let stats = countPixels(canvas);
     let references;
     if (content.navigator.platform.startsWith("Win")) {
-      if (WindowsVersionInfo.get().buildNumber >= 22000) {
+      if (Services.sysinfo.isWindows10BuildOrLater(22000)) {
         // Windows 11
         references = WIN11_REFERENCES;
       } else {

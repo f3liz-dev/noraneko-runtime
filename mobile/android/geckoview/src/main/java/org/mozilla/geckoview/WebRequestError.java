@@ -1,6 +1,4 @@
-/* -*- Mode: Java; c-basic-offset: 4; tab-width: 20; indent-tabs-mode: nil; -*-
- * vim: ts=4 sw=4 expandtab:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -72,7 +70,8 @@ public class WebRequestError extends Exception {
     ERROR_CORRUPTED_CONTENT,
     ERROR_DATA_URI_TOO_LONG,
     ERROR_HTTPS_ONLY,
-    ERROR_BAD_HSTS_CERT
+    ERROR_BAD_HSTS_CERT,
+    ERROR_LOCAL_NETWORK_ACCESS_DENIED
   })
   public @interface Error {}
 
@@ -134,6 +133,9 @@ public class WebRequestError extends Exception {
 
   /** The connection was reset. */
   public static final int ERROR_NET_RESET = 0x93;
+
+  /** The network request was blocked by Android Local Network Protection. */
+  public static final int ERROR_LOCAL_NETWORK_ACCESS_DENIED = 0xC3;
 
   /**
    * GeckoView could not connect to this website in HTTPS-only mode. Call
@@ -350,6 +352,9 @@ public class WebRequestError extends Exception {
     }
     if (geckoError == XPCOMError.NS_ERROR_BAD_HSTS_CERT) {
       return ERROR_BAD_HSTS_CERT;
+    }
+    if (geckoError == XPCOMError.NS_ERROR_OS_LOCAL_NETWORK_ACCESS_DENIED) {
+      return ERROR_LOCAL_NETWORK_ACCESS_DENIED;
     }
     if (geckoError == XPCOMError.NS_ERROR_OFFLINE) {
       return ERROR_OFFLINE;

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -409,7 +407,7 @@ bool ScrollAnchorContainer::DisablingHeuristic::AdjustmentMade(
 
   nsContentUtils::ReportToConsole(nsIScriptError::warningFlag, "Layout"_ns,
                                   aAnchor.Frame()->PresContext()->Document(),
-                                  nsContentUtils::eLAYOUT_PROPERTIES,
+                                  PropertiesFile::LAYOUT_PROPERTIES,
                                   "ScrollAnchoringDisabledInContainer",
                                   arguments);
   return true;
@@ -717,11 +715,10 @@ nsIFrame* ScrollAnchorContainer::FindAnchorIn(nsIFrame* aFrame) const {
     // Skip child lists that contain out-of-flow frames, we'll visit them by
     // following placeholders in the in-flow lists so that we visit these
     // frames in DOM order.
-    // XXX do we actually need to exclude FrameChildListID::OverflowOutOfFlow
-    // too?
+    // XXX do we actually need to exclude FrameChildListID::OverflowFloats too?
     if (listID == FrameChildListID::Absolute ||
         listID == FrameChildListID::Float ||
-        listID == FrameChildListID::OverflowOutOfFlow) {
+        listID == FrameChildListID::OverflowFloats) {
       continue;
     }
 

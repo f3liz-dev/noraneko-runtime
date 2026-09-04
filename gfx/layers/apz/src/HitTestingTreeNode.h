@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,14 +5,14 @@
 #ifndef mozilla_layers_HitTestingTreeNode_h
 #define mozilla_layers_HitTestingTreeNode_h
 
+#include "mozilla/Maybe.h"           // for Maybe
+#include "mozilla/RecursiveMutex.h"  // for RecursiveMutexAutoLock
+#include "mozilla/RefPtr.h"          // for nsRefPtr
 #include "mozilla/gfx/CompositorHitTestInfo.h"
 #include "mozilla/gfx/Matrix.h"                  // for Matrix4x4
 #include "mozilla/layers/LayersTypes.h"          // for EventRegions
 #include "mozilla/layers/ScrollableLayerGuid.h"  // for ScrollableLayerGuid
 #include "mozilla/layers/ScrollbarData.h"        // for ScrollbarData
-#include "mozilla/Maybe.h"                       // for Maybe
-#include "mozilla/RecursiveMutex.h"              // for RecursiveMutexAutoLock
-#include "mozilla/RefPtr.h"                      // for nsRefPtr
 namespace mozilla {
 namespace layers {
 
@@ -195,7 +193,7 @@ class HitTestingTreeNode {
   Maybe<uint64_t> mFixedPositionAnimationId;
 
   ScrollableLayerGuid::ViewID mFixedPosTarget;
-  SideBits mFixedPosSides;
+  SideBits mFixedPosSides = SideBits::eNone;
 
   ScrollableLayerGuid::ViewID mStickyPosTarget;
   LayerRectAbsolute mStickyScrollRangeOuter;

@@ -6,22 +6,18 @@
 
 // Test that the HostOnly values displayed in the table are correct.
 
-SpecialPowers.pushPrefEnv({
-  set: [["security.allow_eval_with_system_principal", true]],
-});
-
 add_task(async function () {
-  await openTabAndSetupStorage(MAIN_DOMAIN + "storage-complex-values.html");
+  await openTabAndSetupStorage(MAIN_URL + "storage-complex-values.html");
 
   gUI.tree.expandAll();
 
   showColumn("hostOnly", true);
 
-  const c1id = getCookieId("c1", "test1.example.org", "/browser");
+  const c1id = getCookieId("c1", MAIN_HOST, "/browser");
   await selectTableItem(c1id);
   checkCell(c1id, "hostOnly", "true");
 
-  const c2id = getCookieId("cs2", ".example.org", "/");
+  const c2id = getCookieId("cs2", "." + MAIN_DOMAIN, "/");
   await selectTableItem(c2id);
   checkCell(c2id, "hostOnly", "false");
 });

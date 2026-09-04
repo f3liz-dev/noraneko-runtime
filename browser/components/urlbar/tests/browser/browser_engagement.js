@@ -33,7 +33,9 @@ add_task(async function engagement() {
         selType: "history",
         provider: "",
         searchSource: "urlbar",
+        windowMode: "classic",
         isSessionOngoing: false,
+        pickedActionKey: null,
       },
     });
   });
@@ -73,7 +75,9 @@ add_task(async function privateWindow_engagement() {
       selType: "history",
       provider: "",
       searchSource: "urlbar",
+      windowMode: "private",
       isSessionOngoing: false,
+      pickedActionKey: null,
     },
   });
   await BrowserTestUtils.closeWindow(win);
@@ -126,7 +130,7 @@ async function doTest({
     ["engagement", "abandonment"].includes(state),
     "State should be either 'engagement' or 'abandonment'"
   );
-  Assert.equal(controller.input.isPrivate, expectedIsPrivate, "End isPrivate");
+  Assert.equal(controller.isPrivate, expectedIsPrivate, "End isPrivate");
   Assert.equal(state, expectedEndState, "End state");
   Assert.ok(queryContext, "End queryContext");
   Assert.equal(
@@ -155,9 +159,19 @@ async function doTest({
       element,
       "endEngagement() should have returned the expected engaged element"
     );
-    expectedEndDetails.result = result;
-    expectedEndDetails.element = element;
+    UrlbarTestUtils.assertPickedResult(
+      details.result,
+      details.element,
+      result,
+      element
+    );
 
+    // The event object that is passed to providers varies between calls.
+    // `result` and `element` are asserted above since they don't survive the
+    // wire as the same objects.
+    delete details.event;
+    delete details.result;
+    delete details.element;
     Assert.deepEqual(
       details,
       Object.assign(detailsDefaults, expectedEndDetails),
@@ -179,8 +193,8 @@ class TestProvider extends UrlbarTestUtils.TestProvider {
       priority: Infinity,
       results: [
         new UrlbarResult({
-          type: UrlbarUtils.RESULT_TYPE.URL,
-          source: UrlbarUtils.RESULT_SOURCE.HISTORY,
+          type: UrlbarShared.RESULT_TYPE.URL,
+          source: UrlbarShared.RESULT_SOURCE.HISTORY,
           payload: { url: "http://example.com/" },
         }),
       ],

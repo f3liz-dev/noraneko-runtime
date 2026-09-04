@@ -1,5 +1,4 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -19,12 +18,13 @@
 
 #ifdef XP_MACOSX
 #  include <Security/Security.h>
+
 #  include "KeychainSecret.h"
 #endif
 
 #ifdef XP_WIN
-#  include <windows.h>
 #  include <wincrypt.h>
+#  include <windows.h>
 #endif  // XP_WIN
 
 extern mozilla::LazyLogModule gPIPNSSLog;

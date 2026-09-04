@@ -26,12 +26,11 @@ task-defaults:
 
 tasks:
     focus-debug:
-        attributes:
-            shipping-product: focus
         dependencies:
             build-fat-aar: build-fat-aar-android-geckoview-fat-aar/opt
         description: 'Focus debug build from source code'
         run:
+            clone-with: hg
             gradle-build-type: debug
             gradle-build-name: focusDebug
             gradle-build: focus
@@ -41,12 +40,11 @@ tasks:
             platform: focus-android-all/opt
 
     klar-debug:
-        attributes:
-            shipping-product: focus
         dependencies:
             build-fat-aar: build-fat-aar-android-geckoview-fat-aar/opt
         description: 'Klar debug build from source code'
         run:
+            clone-with: hg
             gradle-build-type: debug
             gradle-build-name: klarDebug
             gradle-build: klar
@@ -56,12 +54,11 @@ tasks:
             platform: focus-android-all/opt
 
     fenix-debug:
-        attributes:
-            shipping-product: fenix
         dependencies:
             build-fat-aar: build-fat-aar-android-geckoview-fat-aar/opt
         description: 'Fenix debug build from source code'
         run:
+            clone-with: hg
             gradle-build-type: debug
             gradle-build-name: debug
             gradle-build: fenix
@@ -84,13 +81,13 @@ tasks:
         description: 'Release Focus build'
         attributes:
             release-type: release
-            shipping-product: focus
         shipping-product: firefox-android
         dependencies:
             build-fat-aar: build-fat-aar-android-geckoview-fat-aar-shippable/opt
         include-shippable-secrets: true
         include-release-version: true
         run:
+            clone-with: hg
             gradle-build-type: release
             gradle-build-name: focusRelease
             gradle-build: focus
@@ -105,13 +102,13 @@ tasks:
         description: 'Release Klar build'
         attributes:
             release-type: release
-            shipping-product: focus
         shipping-product: firefox-android
         dependencies:
             build-fat-aar: build-fat-aar-android-geckoview-fat-aar-shippable/opt
         include-shippable-secrets: true
         include-release-version: true
         run:
+            clone-with: hg
             gradle-build-type: release
             gradle-build-name: klarRelease
             gradle-build: klar
@@ -126,7 +123,6 @@ tasks:
         description: 'Release Fenix build'
         attributes:
             release-type: release
-            shipping-product: fenix
         shipping-product: firefox-android
         dependencies:
             build-fat-aar: build-fat-aar-android-geckoview-fat-aar-shippable/opt
@@ -138,6 +134,7 @@ tasks:
         include-shippable-secrets: true
         include-release-version: true
         run:
+            clone-with: hg
             gradle-build-type: release
             gradle-build-name: release
             gradle-build: fenix
@@ -159,15 +156,12 @@ tasks:
 
     focus-nightly:
         description: 'Nightly focus build'
-        attributes:
-            # any tasks that have this as a primary dependency will
-            # inherit this attribute via the multi_dep loader
-            shipping-product: focus
         dependencies:
             build-fat-aar: build-fat-aar-android-geckoview-fat-aar-shippable/opt
         include-shippable-secrets: true
         include-nightly-version: true
         run:
+            clone-with: hg
             gradle-build-type: nightly
             gradle-build-name: focusNightly
             gradle-build: focus
@@ -179,10 +173,6 @@ tasks:
 
     fenix-nightly:
         description: 'Nightly fenix build'
-        attributes:
-            # any tasks that have this as a primary dependency will
-            # inherit this attribute via the multi_dep loader
-            shipping-product: fenix
         dependencies:
             build-fat-aar: build-fat-aar-android-geckoview-fat-aar-shippable/opt
             baseline-profile: generate-baseline-profile-firebase-fenix
@@ -194,6 +184,7 @@ tasks:
         include-nightly-version: true
         source-project-name: "fenix"
         run:
+            clone-with: hg
             gradle-build-type: nightly
             gradle-build-name: nightly
             gradle-build: fenix
@@ -215,13 +206,13 @@ tasks:
         description: 'Beta focus build'
         attributes:
             release-type: beta
-            shipping-product: focus
         shipping-product: firefox-android
         dependencies:
             build-fat-aar: build-fat-aar-android-geckoview-fat-aar-shippable/opt
         include-shippable-secrets: true
         include-release-version: true
         run:
+            clone-with: hg
             gradle-build-type: beta
             gradle-build-name: focusBeta
             gradle-build: focus
@@ -236,7 +227,6 @@ tasks:
         description: 'Beta fenix build'
         attributes:
             release-type: beta
-            shipping-product: fenix
         shipping-product: firefox-android
         dependencies:
             build-fat-aar: build-fat-aar-android-geckoview-fat-aar-shippable/opt
@@ -248,6 +238,7 @@ tasks:
         include-shippable-secrets: true
         include-release-version: true
         run:
+            clone-with: hg
             gradle-build-type: beta
             gradle-build-name: beta
             gradle-build: fenix
@@ -268,13 +259,12 @@ tasks:
                 MOZ_PERFHERDER_UPLOAD: /builds/worker/perfherder-data-apk-size.json
 
     focus-nightly-firebase:
-        attributes:
-            shipping-product: focus
         description: 'Focus Nightly build for UI tests'
         dependencies:
             build-fat-aar: build-fat-aar-android-geckoview-fat-aar/opt
         disable-optimization: true
         run:
+            clone-with: hg
             gradle-build-type: nightly
             gradle-build-name: focusNightly
             gradle-build: focus
@@ -286,13 +276,12 @@ tasks:
             platform: focus-android-all/opt
 
     fenix-nightly-firebase:
-        attributes:
-            shipping-product: fenix
         description: 'Fenix Nightly build for UI tests'
         dependencies:
             build-fat-aar: build-fat-aar-android-geckoview-fat-aar/opt
         disable-optimization: true
         run:
+            clone-with: hg
             gradle-build-type: nightly
             gradle-build-name: nightly
             gradle-build: fenix
@@ -304,13 +293,12 @@ tasks:
             platform: fenix-android-all/opt
 
     focus-beta-firebase:
-        attributes:
-            shipping-product: focus
         description: 'Focus Beta build for UI tests'
         dependencies:
             build-fat-aar: build-fat-aar-android-geckoview-fat-aar-shippable/opt
         disable-optimization: true
         run:
+            clone-with: hg
             gradle-build-type: beta
             gradle-build-name: focusBeta
             gradle-build: focus
@@ -322,13 +310,12 @@ tasks:
             platform: focus-android-all/opt
 
     fenix-beta-firebase:
-        attributes:
-            shipping-product: fenix
         description: 'Fenix Beta build for UI tests'
         dependencies:
             build-fat-aar: build-fat-aar-android-geckoview-fat-aar-shippable/opt
         disable-optimization: true
         run:
+            clone-with: hg
             gradle-build-type: beta
             gradle-build-name: beta
             gradle-build: fenix
@@ -340,12 +327,11 @@ tasks:
             platform: fenix-android-all/opt
 
     focus-android-test-debug:
-        attributes:
-            shipping-product: focus
         description: 'Focus Android Test for debugging'
         dependencies:
             build-fat-aar: build-fat-aar-android-geckoview-fat-aar/opt
         run:
+            clone-with: hg
             gradle-build-type: androidTest
             gradle-build-name: androidTest
             gradle-build: focus
@@ -358,12 +344,11 @@ tasks:
             platform: focus-android-all/opt
 
     fenix-android-test-debug:
-        attributes:
-            shipping-product: fenix
         description: 'Fenix Debug Android Test for debugging'
         dependencies:
             build-fat-aar: build-fat-aar-android-geckoview-fat-aar/opt
         run:
+            clone-with: hg
             gradle-build-type: androidTest
             gradle-build-name: androidTest
             gradle-build: fenix
@@ -384,12 +369,12 @@ tasks:
     # nightly means we need an androidTest APK with the same signature.
 
     focus-android-test-nightly:
-        attributes:
-            shipping-product: focus
         description: 'Focus Nightly Android Test for debugging'
         dependencies:
             build-fat-aar: build-fat-aar-android-geckoview-fat-aar/opt
+        disable-optimization: true
         run:
+            clone-with: hg
             gradle-build-type: androidTest
             gradle-build-name: androidTest
             gradle-build: focus
@@ -412,7 +397,6 @@ tasks:
     fenix-android-test-nightly:
         attributes:
             nightly: true
-            shipping-product: fenix
         description: 'Fenix Nightly Android Test for debugging'
         dependencies:
             build-fat-aar: build-fat-aar-android-geckoview-fat-aar/opt
@@ -424,6 +408,7 @@ tasks:
             path: '/builds/worker/workspace/obj-build/gradle/build/mobile/android/fenix/app/outputs/apk/androidTest/nightly/app-nightly-androidTest.apk'
         disable-optimization: true
         run:
+            clone-with: hg
             gradle-build-type: androidTest
             gradle-build-name: androidTest
             gradle-build: fenix
@@ -435,12 +420,12 @@ tasks:
             platform: fenix-android-all/opt
 
     focus-android-test-beta:
-        attributes:
-            shipping-product: focus
         description: 'Focus Beta Android Test for debugging'
         dependencies:
             build-fat-aar: build-fat-aar-android-geckoview-fat-aar-shippable/opt
+        disable-optimization: true
         run:
+            clone-with: hg
             gradle-build-type: androidTest
             gradle-build-name: androidTest
             gradle-build: focus
@@ -454,8 +439,6 @@ tasks:
             platform: focus-android-all/opt
 
     fenix-android-test-beta:
-        attributes:
-            shipping-product: fenix
         description: 'Fenix Beta Android Test for debugging'
         dependencies:
             build-fat-aar: build-fat-aar-android-geckoview-fat-aar-shippable/opt
@@ -467,6 +450,7 @@ tasks:
             path: '/builds/worker/workspace/obj-build/gradle/build/mobile/android/fenix/app/outputs/apk/androidTest/beta/app-beta-androidTest.apk'
         disable-optimization: true
         run:
+            clone-with: hg
             gradle-build-type: androidTest
             gradle-build-name: androidTest
             gradle-build: fenix
@@ -478,8 +462,6 @@ tasks:
             platform: fenix-android-all/opt
 
     fenix-android-test-mozillaonline:
-        attributes:
-            shipping-product: fenix
         description: 'Fenix Android Test mozillaonline'
         dependencies:
             build-fat-aar: build-fat-aar-android-geckoview-fat-aar-shippable/opt
@@ -492,6 +474,7 @@ tasks:
         run-on-projects: []
         disable-optimization: true
         run:
+            clone-with: hg
             gradle-build-type: androidTest
             gradle-build-name: androidTest
             gradle-build: fenix
@@ -514,11 +497,11 @@ tasks:
                   dest: baselineProfiles
         attributes:
             nightly: false
-            shipping-product: fenix
         include-nightly-version: true
         include-shippable-secrets: true
         run-on-projects: []
         run:
+            clone-with: hg
             gradle-build-type: nightly
             gradle-build-name: nightly
             gradle-build: fenix
@@ -535,10 +518,10 @@ tasks:
         attributes:
             release-type: beta
             shipping_phase: promote
-            shipping-product: fenix
         include-release-version: true
         include-shippable-secrets: true
         run:
+            clone-with: hg
             gradle-build-type: beta
             gradle-build-name: beta
             gradle-build: fenix
@@ -562,10 +545,10 @@ tasks:
         attributes:
             release-type: release
             shipping_phase: promote
-            shipping-product: fenix
         include-release-version: true
         include-shippable-secrets: true
         run:
+            clone-with: hg
             gradle-build-type: release
             gradle-build-name: release
             gradle-build: fenix

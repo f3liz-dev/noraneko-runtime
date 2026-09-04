@@ -1,6 +1,7 @@
 use super::*;
 
 /// Writer responsible for all code generation.
+#[expect(missing_debug_implementations, reason = "would be way too verbose?")]
 pub struct Writer<'a, W> {
     // Inputs
     /// The module being written.
@@ -699,6 +700,18 @@ impl<'a, W: Write> Writer<'a, W> {
 
         if let crate::AddressSpace::Storage { access } = global.space {
             self.write_storage_access(access)?;
+            if global
+                .memory_decorations
+                .contains(crate::MemoryDecorations::COHERENT)
+            {
+                write!(self.out, "coherent ")?;
+            }
+            if global
+                .memory_decorations
+                .contains(crate::MemoryDecorations::VOLATILE)
+            {
+                write!(self.out, "volatile ")?;
+            }
         }
 
         if let Some(storage_qualifier) = glsl_storage_qualifier(global.space) {
@@ -729,6 +742,10 @@ impl<'a, W: Write> Writer<'a, W> {
             crate::AddressSpace::Function => unreachable!(),
             // Textures and samplers are handled directly in `Writer::write`.
             crate::AddressSpace::Handle => unreachable!(),
+            // ray tracing pipelines unsupported
+            crate::AddressSpace::RayPayload | crate::AddressSpace::IncomingRayPayload => {
+                unreachable!()
+            }
         }
 
         Ok(())
@@ -913,6 +930,22 @@ impl<'a, W: Write> Writer<'a, W> {
                     _ => {}
                 }
             }
+
+            if let Expression::Binary {
+                op: crate::BinaryOperator::Modulo,
+                left,
+                right,
+            } = *expr
+            {
+                // Integer `%` is lowered to `left - right * (left / right)` in
+                // write_expr (`BinaryOperation::ModuloInt`), which references each
+                // operand twice, so bake both to avoid re-evaluating them.
+                if let Some(crate::ScalarKind::Sint | crate::ScalarKind::Uint) = inner.scalar_kind()
+                {
+                    self.need_bake_expressions.insert(left);
+                    self.need_bake_expressions.insert(right);
+                }
+            }
         }
 
         for statement in func.body.iter() {
@@ -945,11 +978,14 @@ impl<'a, W: Write> Writer<'a, W> {
                     "_group_{}_binding_{}_{}",
                     br.group,
                     br.binding,
-                    self.entry_point.stage.to_str()
+                    shader_stage_to_str(self.entry_point.stage)
                 )
             }
             (&None, crate::AddressSpace::Immediate) => {
-                format!("_immediates_binding_{}", self.entry_point.stage.to_str())
+                format!(
+                    "_immediates_binding_{}",
+                    shader_stage_to_str(self.entry_point.stage)
+                )
             }
             (&None, _) => self.names[&NameKey::GlobalVariable(handle)].clone(),
         }
@@ -967,12 +1003,12 @@ impl<'a, W: Write> Writer<'a, W> {
                 "_group_{}_binding_{}_{}",
                 br.group,
                 br.binding,
-                self.entry_point.stage.to_str()
+                shader_stage_to_str(self.entry_point.stage)
             )?,
             (&None, crate::AddressSpace::Immediate) => write!(
                 self.out,
                 "_immediates_binding_{}",
-                self.entry_point.stage.to_str()
+                shader_stage_to_str(self.entry_point.stage)
             )?,
             (&None, _) => write!(
                 self.out,
@@ -1068,7 +1104,7 @@ impl<'a, W: Write> Writer<'a, W> {
                             }
                         }
                     }
-                    crate::BuiltIn::ClipDistance => {
+                    crate::BuiltIn::ClipDistances => {
                         // Re-declare `gl_ClipDistance` with number of clip planes.
                         let TypeInner::Array { size, .. } = self.module.types[ty].inner else {
                             unreachable!();
@@ -1095,7 +1131,12 @@ impl<'a, W: Write> Writer<'a, W> {
             ShaderStage::Vertex => output,
             ShaderStage::Fragment => !output,
             ShaderStage::Compute => false,
-            ShaderStage::Task | ShaderStage::Mesh => unreachable!(),
+            ShaderStage::Task
+            | ShaderStage::Mesh
+            | ShaderStage::RayGeneration
+            | ShaderStage::AnyHit
+            | ShaderStage::ClosestHit
+            | ShaderStage::Miss => unreachable!(),
         };
 
         // Write the I/O locations, if allowed
@@ -1969,10 +2010,21 @@ impl<'a, W: Write> Writer<'a, W> {
             // Stores in glsl are just variable assignments written as `pointer = value;`
             Statement::Store { pointer, value } => {
                 write!(self.out, "{level}")?;
-                self.write_expr(pointer, ctx)?;
-                write!(self.out, " = ")?;
-                self.write_expr(value, ctx)?;
-                writeln!(self.out, ";")?
+                let is_atomic_pointer = ctx
+                    .resolve_type(pointer, &self.module.types)
+                    .is_atomic_pointer(&self.module.types);
+                if is_atomic_pointer {
+                    write!(self.out, "atomicExchange(")?;
+                    self.write_expr(pointer, ctx)?;
+                    write!(self.out, ", ")?;
+                    self.write_expr(value, ctx)?;
+                    writeln!(self.out, ");")?
+                } else {
+                    self.write_expr(pointer, ctx)?;
+                    write!(self.out, " = ")?;
+                    self.write_expr(value, ctx)?;
+                    writeln!(self.out, ";")?
+                }
             }
             Statement::WorkGroupUniformLoad { pointer, result } => {
                 // GLSL doesn't have pointers, which means that this backend needs to ensure that
@@ -2076,7 +2128,10 @@ impl<'a, W: Write> Writer<'a, W> {
                         write!(self.out, ", ")?;
                         if let crate::AtomicFunction::Subtract = *fun {
                             // Emulate `atomicSub` with `atomicAdd` by negating the value.
-                            write!(self.out, "-")?;
+                            //
+                            // Use a space to avoid accidentally producing a prefix increment
+                            // (`--`).
+                            write!(self.out, "- ")?;
                         }
                         self.write_expr(value, ctx)?;
                         writeln!(self.out, ");")?;
@@ -2231,6 +2286,7 @@ impl<'a, W: Write> Writer<'a, W> {
                 writeln!(self.out, ");")?;
             }
             Statement::CooperativeStore { .. } => unimplemented!(),
+            Statement::RayPipelineFunction(_) => unimplemented!(),
         }
 
         Ok(())
@@ -2304,6 +2360,8 @@ impl<'a, W: Write> Writer<'a, W> {
                     //
                     // While `core` doesn't necessarily need it, it's allowed and since `es` needs it we
                     // always write it as the extra branch wouldn't have any benefit in readability
+                    crate::Literal::U16(value) => write!(self.out, "uint16_t({value})")?,
+                    crate::Literal::I16(value) => write!(self.out, "int16_t({value})")?,
                     crate::Literal::U32(value) => write!(self.out, "{value}u")?,
                     crate::Literal::I32(value) => write!(self.out, "{value}")?,
                     crate::Literal::Bool(value) => write!(self.out, "{value}")?,
@@ -2367,6 +2425,7 @@ impl<'a, W: Write> Writer<'a, W> {
     ///
     /// # Notes
     /// Doesn't add any newlines or leading/trailing spaces
+    #[allow(clippy::large_stack_frames)] // TODO(https://github.com/gfx-rs/wgpu/issues/9456)
     fn write_expr(
         &mut self,
         expr: Handle<crate::Expression>,
@@ -2465,7 +2524,27 @@ impl<'a, W: Write> Writer<'a, W> {
                 write!(self.out, "{}", self.names[&ctx.name_key(handle)])?
             }
             // glsl has no pointers so there's no load operation, just write the pointer expression
-            Expression::Load { pointer } => self.write_expr(pointer, ctx)?,
+            Expression::Load { pointer } => {
+                let ty_inner = ctx.resolve_type(pointer, &self.module.types);
+                if ty_inner.is_atomic_pointer(&self.module.types) {
+                    let mut suffix = "";
+                    if let TypeInner::Pointer { base, .. } = *ty_inner {
+                        if let TypeInner::Atomic(scalar) = self.module.types[base].inner {
+                            suffix = match (scalar.kind, scalar.width) {
+                                (crate::ScalarKind::Uint, 8) => "ul",
+                                (crate::ScalarKind::Sint, 8) => "l",
+                                (crate::ScalarKind::Uint, _) => "u",
+                                _ => "",
+                            };
+                        }
+                    }
+                    write!(self.out, "atomicOr(")?;
+                    self.write_expr(pointer, ctx)?;
+                    write!(self.out, ", 0{})", suffix)?
+                } else {
+                    self.write_expr(pointer, ctx)?
+                }
+            }
             // `ImageSample` is a bit complicated compared to the rest of the IR.
             //
             // First there are three variations depending whether the sample level is explicitly set,
@@ -2818,6 +2897,9 @@ impl<'a, W: Write> Writer<'a, W> {
                         | Bo::Equal
                         | Bo::NotEqual => BinaryOperation::VectorCompare,
                         Bo::Modulo if scalar.kind == Sk::Float => BinaryOperation::Modulo,
+                        Bo::Modulo if scalar.kind == Sk::Sint || scalar.kind == Sk::Uint => {
+                            BinaryOperation::ModuloInt
+                        }
                         Bo::And if scalar.kind == Sk::Bool => {
                             op = crate::BinaryOperator::LogicalAnd;
                             BinaryOperation::VectorComponentWise
@@ -2833,6 +2915,11 @@ impl<'a, W: Write> Writer<'a, W> {
                             Bo::Modulo => BinaryOperation::Modulo,
                             _ => BinaryOperation::Other,
                         },
+                        (Some(Sk::Sint | Sk::Uint), _) | (_, Some(Sk::Sint | Sk::Uint))
+                            if op == Bo::Modulo =>
+                        {
+                            BinaryOperation::ModuloInt
+                        }
                         (Some(Sk::Bool), Some(Sk::Bool)) => match op {
                             Bo::InclusiveOr => {
                                 op = crate::BinaryOperator::LogicalOr;
@@ -2890,18 +2977,11 @@ impl<'a, W: Write> Writer<'a, W> {
 
                         write!(self.out, ")")?;
                     }
-                    // TODO: handle undefined behavior of BinaryOperator::Modulo
-                    //
-                    // sint:
-                    // if right == 0 return 0
-                    // if left == min(type_of(left)) && right == -1 return 0
-                    // if sign(left) == -1 || sign(right) == -1 return result as defined by WGSL
-                    //
-                    // uint:
-                    // if right == 0 return 0
-                    //
-                    // float:
-                    // if right == 0 return ? see https://github.com/gpuweb/gpuweb/issues/2798
+                    // Signed/unsigned integer `%` with a negative operand is handled by
+                    // `BinaryOperation::ModuloInt` below. Remaining TODO: the degenerate
+                    // div-by-zero / `INT_MIN % -1` cases (this backend also leaves integer
+                    // `/` unguarded), and float `% 0` (see
+                    // https://github.com/gpuweb/gpuweb/issues/2798).
                     BinaryOperation::Modulo => {
                         write!(self.out, "(")?;
 
@@ -2917,6 +2997,23 @@ impl<'a, W: Write> Writer<'a, W> {
                         write!(self.out, ")")?;
 
                         write!(self.out, ")")?;
+                    }
+                    BinaryOperation::ModuloInt => {
+                        // GLSL's `%` is undefined when either operand is negative.
+                        // Integer division truncates toward zero (which is well
+                        // defined), so reconstruct the remainder as `e1 - e2 * (e1 / e2)`.
+                        // This matches WGSL's truncated `%` for all operands; the
+                        // degenerate `x % 0` / `INT_MIN % -1` cases stay consistent
+                        // with this backend's unguarded integer `/`.
+                        write!(self.out, "(")?;
+                        self.write_expr(left, ctx)?;
+                        write!(self.out, " - ")?;
+                        self.write_expr(right, ctx)?;
+                        write!(self.out, " * (")?;
+                        self.write_expr(left, ctx)?;
+                        write!(self.out, " / ")?;
+                        self.write_expr(right, ctx)?;
+                        write!(self.out, "))")?;
                     }
                     BinaryOperation::Other => {
                         write!(self.out, "(")?;
@@ -4533,7 +4630,8 @@ impl<'a, W: Write> Writer<'a, W> {
                 items.push(ImmediateItem {
                     access_path: name,
                     offset: *offset,
-                    ty,
+                    ty: (&self.module.types[ty].inner).try_into().unwrap(),
+                    size_bytes: layout.size,
                 });
                 *offset += layout.size;
             }

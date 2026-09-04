@@ -1,23 +1,27 @@
-From: Michael Froman <mfroman@mozilla.com>
-Date: Fri, 17 May 2024 22:30:00 -0500
-Subject: Bug 1897501 - (fix-09bb4f09e1) keep default python intepreter as
- python3
+From: Andreas Pehrson <apehrson@mozilla.com>
+Date: Thu, 29 Aug 2024 08:31:00 +0000
+Subject: Bug 1914837 - Always initialize DesktopCapturer::pid.
+ r=webrtc-reviewers,ng
 
-Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/b21ca84c8b2620a98515624de0e43a237698726c
+This member is patched on top of libwebrtc. New backends could be added from
+under us. It needs to be initialized.
+
+Differential Revision: https://phabricator.services.mozilla.com/D220265
+Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/fdf5b0a81b0c0e87d31c5963091681a0e5960678
 ---
- .gn | 2 +-
+ modules/desktop_capture/desktop_capturer.h | 2 +-
  1 file changed, 1 insertion(+), 1 deletion(-)
 
-diff --git a/.gn b/.gn
-index ffafaf0a4a..161ec4c54c 100644
---- a/.gn
-+++ b/.gn
-@@ -13,7 +13,7 @@ buildconfig = "//build/config/BUILDCONFIG.gn"
+diff --git a/modules/desktop_capture/desktop_capturer.h b/modules/desktop_capture/desktop_capturer.h
+index 0e32474543..c85d0eba7a 100644
+--- a/modules/desktop_capture/desktop_capturer.h
++++ b/modules/desktop_capture/desktop_capturer.h
+@@ -80,7 +80,7 @@ class RTC_EXPORT DesktopCapturer {
+   struct Source {
+     // The unique id to represent a Source of current DesktopCapturer.
+     SourceId id;
+-    pid_t pid;
++    pid_t pid = 0;
  
- # The python interpreter to use by default. On Windows, this will look
- # for vpython3.exe and vpython3.bat.
--script_executable = "vpython3"
-+script_executable = "python3"
- 
- # The secondary source root is a parallel directory tree where
- # GN build files are placed when they can not be placed directly
+     // Title of the window or screen in UTF-8 encoding, maybe empty. This field
+     // should not be used to identify a source.

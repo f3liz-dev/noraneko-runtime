@@ -1,27 +1,27 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "xpcprivate.h"
-#include "WrapperFactory.h"
-#include "AccessCheck.h"
-#include "jsfriendapi.h"
-#include "js/CallAndConstruct.h"  // JS::Call, JS::Construct, JS::IsCallable
-#include "js/Exception.h"
-#include "js/PropertyAndElement.h"  // JS_DefineProperty, JS_DefinePropertyById
-#include "js/Proxy.h"
-#include "js/Wrapper.h"
-#include "mozilla/ErrorResult.h"
 #include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/BlobBinding.h"
 #include "mozilla/dom/BlobImpl.h"
 #include "mozilla/dom/File.h"
 #include "mozilla/dom/StructuredCloneHolder.h"
+#include "mozilla/ErrorResult.h"
+
+#include "AccessCheck.h"
+#include "jsfriendapi.h"
 #include "nsContentUtils.h"
 #include "nsJSUtils.h"
-#include "js/Object.h"  // JS::GetCompartment
+#include "WrapperFactory.h"
+#include "xpcprivate.h"
+
+#include "js/CallAndConstruct.h"  // JS::IsConstructor, JS::Call, JS::Construct, JS::IsCallable
+#include "js/Exception.h"
+#include "js/Object.h"              // JS::GetCompartment
+#include "js/PropertyAndElement.h"  // JS_DefineProperty, JS_DefinePropertyById
+#include "js/Proxy.h"
+#include "js/Wrapper.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -404,7 +404,7 @@ bool NewFunctionForwarder(JSContext* cx, HandleId idArg, HandleObject callable,
                           FunctionForwarderOptions& options,
                           MutableHandleValue vp) {
   RootedId id(cx, idArg);
-  if (id.isVoid()) {
+  if (!id.isString()) {
     id = GetJSIDByIndex(cx, XPCJSContext::IDX_EMPTYSTRING);
   }
 
@@ -418,11 +418,9 @@ bool NewFunctionForwarder(JSContext* cx, HandleId idArg, HandleObject callable,
     }
   }
 
-  // We have no way of knowing whether the underlying function wants to be a
-  // constructor or not, so we just mark all forwarders as constructors, and
-  // let the underlying function throw for construct calls if it wants.
-  JSFunction* fun = js::NewFunctionByIdWithReserved(
-      cx, FunctionForwarder, nargs, JSFUN_CONSTRUCTOR, id);
+  unsigned flags = JS::IsConstructor(callable) ? JSFUN_CONSTRUCTOR : 0;
+  JSFunction* fun =
+      js::NewFunctionByIdWithReserved(cx, FunctionForwarder, nargs, flags, id);
   if (!fun) {
     return false;
   }
@@ -503,7 +501,7 @@ bool ExportFunction(JSContext* cx, HandleValue vfunction, HandleValue vscope,
         }
       }
       if (!funName) {
-        funName = JS_AtomizeAndPinString(cx, "");
+        funName = JS_GetEmptyString(cx);
       }
       JS_MarkCrossZoneIdValue(cx, StringValue(funName));
 
@@ -513,7 +511,11 @@ bool ExportFunction(JSContext* cx, HandleValue vfunction, HandleValue vscope,
     } else {
       JS_MarkCrossZoneId(cx, id);
     }
-    MOZ_ASSERT(id.isString());
+
+    if (!id.isString()) {
+      JS_ReportErrorASCII(cx, "defineAs must be a string");
+      return false;
+    }
 
     // The function forwarder will live in the target compartment. Since
     // this function will be referenced from its private slot, to avoid a

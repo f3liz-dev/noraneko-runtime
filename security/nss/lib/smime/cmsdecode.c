@@ -29,6 +29,7 @@ struct NSSCMSDecoderContextStr {
     PRBool first_decoded;
     PRBool need_indefinite_finish;
     unsigned int max_asn_len;
+    unsigned int depth; /* nesting depth of this decoder context */
 };
 
 struct NSSCMSDecoderDataStr {
@@ -52,6 +53,8 @@ static void nss_cms_decoder_work_data(NSSCMSDecoderContext *p7dcx,
 static NSSCMSDecoderData *nss_cms_create_decoder_data(PLArenaPool *poolp);
 
 extern const SEC_ASN1Template NSSCMSMessageTemplate[];
+
+#define NSS_CMS_MAX_NESTING_DEPTH 32
 
 void
 nss_cms_set_max_asn_length(NSSCMSDecoderContext *p7dcx, unsigned int max_asn_len)
@@ -162,6 +165,9 @@ nss_cms_decoder_notify(void *arg, PRBool before, void *dest, int depth)
                     case SEC_OID_PKCS7_ENVELOPED_DATA:
                         p7dcx->content.envelopedData->cmsg = p7dcx->cmsg;
                         break;
+                    case SEC_OID_CMS_AUTH_ENVELOPED_DATA:
+                        p7dcx->content.authEnvelopedData->cmsg = p7dcx->cmsg;
+                        break;
                     case SEC_OID_PKCS7_ENCRYPTED_DATA:
                         p7dcx->content.encryptedData->cmsg = p7dcx->cmsg;
                         break;
@@ -172,27 +178,36 @@ nss_cms_decoder_notify(void *arg, PRBool before, void *dest, int depth)
             }
 
             if (before && dest == &(cinfo->rawContent)) {
-                /* we want the ASN.1 decoder to deliver the decoded bytes to us
-                 ** from now on
-                 */
-                SEC_ASN1DecoderSetFilterProc(p7dcx->dcx,
-                                             nss_cms_decoder_update_filter,
-                                             p7dcx, (PRBool)(p7dcx->cb != NULL));
+                if (p7dcx->type == SEC_OID_CMS_AUTH_ENVELOPED_DATA) {
+                    if (NSS_CMSAuthEnvelopedData_Decode_BeforeData(
+                            p7dcx->content.authEnvelopedData) != SECSuccess) {
+                        p7dcx->error = PORT_GetError();
+                    }
+                } else {
+                    /* we want the ASN.1 decoder to deliver the decoded bytes
+                     ** to us from now on */
+                    SEC_ASN1DecoderSetFilterProc(
+                        p7dcx->dcx, nss_cms_decoder_update_filter, p7dcx,
+                        (PRBool)(p7dcx->cb != NULL));
 
-                /* we're right in front of the data */
-                if (nss_cms_before_data(p7dcx) != SECSuccess) {
-                    SEC_ASN1DecoderClearFilterProc(p7dcx->dcx);
-                    /* stop all processing */
-                    p7dcx->error = PORT_GetError();
+                    /* we're right in front of the data */
+                    if (nss_cms_before_data(p7dcx) != SECSuccess) {
+                        SEC_ASN1DecoderClearFilterProc(p7dcx->dcx);
+                        /* stop all processing */
+                        p7dcx->error = PORT_GetError();
+                    }
                 }
             }
             if (after && dest == &(cinfo->rawContent)) {
-                /* we're right after of the data */
-                if (nss_cms_after_data(p7dcx) != SECSuccess)
-                    p7dcx->error = PORT_GetError();
-
+                if (p7dcx->type != SEC_OID_CMS_AUTH_ENVELOPED_DATA) {
+                    /* we're right after of the data */
+                    if (nss_cms_after_data(p7dcx) != SECSuccess)
+                        p7dcx->error = PORT_GetError();
+                }
                 /* we don't need to see the contents anymore */
-                SEC_ASN1DecoderClearFilterProc(p7dcx->dcx);
+                if (p7dcx->type != SEC_OID_CMS_AUTH_ENVELOPED_DATA) {
+                    SEC_ASN1DecoderClearFilterProc(p7dcx->dcx);
+                }
             }
         }
     } else {
@@ -261,6 +276,11 @@ nss_cms_before_data(NSSCMSDecoderContext *p7dcx)
 
     /* set up inner decoder */
 
+    if (p7dcx->depth >= NSS_CMS_MAX_NESTING_DEPTH) {
+        PORT_SetError(SEC_ERROR_BAD_DATA);
+        return SECFailure;
+    }
+
     if ((template = NSS_CMSUtil_GetTemplateByTypeTag(childtype)) == NULL)
         return SECFailure;
 
@@ -297,6 +317,7 @@ nss_cms_before_data(NSSCMSDecoderContext *p7dcx)
     p7dcx->childp7dcx = childp7dcx;
 
     childp7dcx->type = childtype; /* our type */
+    childp7dcx->depth = p7dcx->depth + 1;
 
     childp7dcx->cmsg = p7dcx->cmsg; /* backpointer to root message */
 
@@ -322,7 +343,6 @@ nss_cms_before_data(NSSCMSDecoderContext *p7dcx)
 loser:
     if (mark)
         PORT_ArenaRelease(poolp, mark);
-    PORT_Free(childp7dcx);
     p7dcx->childp7dcx = NULL;
     return SECFailure;
 }
@@ -351,6 +371,13 @@ nss_cms_after_data(NSSCMSDecoderContext *p7dcx)
             rv = nss_cms_after_end(childp7dcx);
             if (rv != SECSuccess)
                 goto done;
+        } else if (childp7dcx->error) {
+            /* The child decoder already tore itself down via the
+             * NSS_CMSDecoder_Update() error path (dcx set to NULL) but
+             * recorded an error — propagate it rather than silently ignoring
+             * it and treating the parent content as successfully decoded. */
+            PORT_SetError(childp7dcx->error);
+            goto done;
         }
         p7dcx->childp7dcx = NULL;
     }
@@ -363,6 +390,10 @@ nss_cms_after_data(NSSCMSDecoderContext *p7dcx)
         case SEC_OID_PKCS7_ENVELOPED_DATA:
             rv = NSS_CMSEnvelopedData_Decode_AfterData(
                 p7dcx->content.envelopedData);
+            break;
+        case SEC_OID_CMS_AUTH_ENVELOPED_DATA:
+            /* AEAD needs mac, which isn't available yet */
+            rv = SECSuccess;
             break;
         case SEC_OID_PKCS7_DIGESTED_DATA:
             rv = NSS_CMSDigestedData_Decode_AfterData(
@@ -385,13 +416,18 @@ done:
 }
 
 static SECStatus
-nss_cms_after_end(NSSCMSDecoderContext *p7dcx)
+nss_cms_after_end_inner(NSSCMSDecoderContext *p7dcx, unsigned int depth)
 {
     SECStatus rv = SECSuccess, rv1 = SECSuccess, rv2 = SECSuccess;
 
+    if (depth > NSS_CMS_MAX_NESTING_DEPTH) {
+        PORT_SetError(SEC_ERROR_BAD_DATA);
+        return SECFailure;
+    }
+
     /* Finish any child decoders */
     if (p7dcx->childp7dcx) {
-        rv1 = nss_cms_after_end(p7dcx->childp7dcx) != SECSuccess;
+        rv1 = nss_cms_after_end_inner(p7dcx->childp7dcx, depth + 1) != SECSuccess;
         p7dcx->childp7dcx = NULL;
     }
     /* Finish our asn1 decoder */
@@ -413,6 +449,30 @@ nss_cms_after_end(NSSCMSDecoderContext *p7dcx)
                 rv = NSS_CMSEnvelopedData_Decode_AfterEnd(
                     p7dcx->content.envelopedData);
             break;
+        case SEC_OID_CMS_AUTH_ENVELOPED_DATA:
+            if (p7dcx->content.authEnvelopedData) {
+                SECStatus aerv = NSS_CMSAuthEnvelopedData_Decode_AfterEnd(
+                    p7dcx->content.authEnvelopedData);
+                if (aerv == SECSuccess) {
+                    NSSCMSContentInfo *acinfo =
+                        &(p7dcx->content.authEnvelopedData->contentInfo);
+                    if (acinfo->rawContent && acinfo->rawContent->len) {
+                        if (p7dcx->cb != NULL) {
+                            (*p7dcx->cb)(p7dcx->cb_arg,
+                                         (const char *)acinfo->rawContent->data,
+                                         acinfo->rawContent->len);
+                        }
+                        /* the recovered content must be treated as opaque data */
+                        aerv = NSS_CMSContentInfo_SetContent(
+                            p7dcx->cmsg, acinfo, SEC_OID_PKCS7_DATA,
+                            acinfo->rawContent);
+                    }
+                }
+                if (aerv != SECSuccess) {
+                    rv = aerv;
+                }
+            }
+            break;
         case SEC_OID_PKCS7_DIGESTED_DATA:
             if (p7dcx->content.digestedData)
                 rv = NSS_CMSDigestedData_Decode_AfterEnd(
@@ -431,6 +491,12 @@ nss_cms_after_end(NSSCMSDecoderContext *p7dcx)
             break;
     }
     return rv;
+}
+
+static SECStatus
+nss_cms_after_end(NSSCMSDecoderContext *p7dcx)
+{
+    return nss_cms_after_end_inner(p7dcx, 0);
 }
 
 /*
@@ -555,8 +621,19 @@ nss_cms_decoder_work_data(NSSCMSDecoderContext *p7dcx,
         SECItem *dataItem = &decoderData->data;
 
         offset = dataItem->len;
+        /* Reject if accumulated size would exceed unsigned int storage. */
+        if (len > (unsigned long)(PR_UINT32_MAX - dataItem->len)) {
+            p7dcx->error = SEC_ERROR_INPUT_LEN;
+            goto loser;
+        }
         if (dataItem->len + len > decoderData->totalBufferSize) {
-            int needLen = (dataItem->len + len) * 2;
+            /* Use size_t to avoid truncating the 64-bit sum to int.
+             * Double to amortize repeated reallocations across chunks. */
+            size_t needLen = (size_t)dataItem->len + len;
+            /* Only double if the result still fits in unsigned int. */
+            if (needLen <= PR_UINT32_MAX / 2) {
+                needLen *= 2;
+            }
             dest = (unsigned char *)
                 PORT_ArenaAlloc(p7dcx->cmsg->poolp, needLen);
             if (dest == NULL) {
@@ -567,7 +644,7 @@ nss_cms_decoder_work_data(NSSCMSDecoderContext *p7dcx,
             if (dataItem->len) {
                 PORT_Memcpy(dest, dataItem->data, dataItem->len);
             }
-            decoderData->totalBufferSize = needLen;
+            decoderData->totalBufferSize = (unsigned int)needLen;
             dataItem->data = dest;
         }
 
@@ -679,7 +756,9 @@ NSS_CMSDecoder_Update(NSSCMSDecoderContext *p7dcx, const char *buf,
     SECStatus rv = SECSuccess;
     if (p7dcx->dcx != NULL && p7dcx->error == 0) {
         /* if error is set already, don't bother */
-        if ((p7dcx->type == SEC_OID_PKCS7_SIGNED_DATA) && (p7dcx->first_decoded == PR_TRUE) && (buf[0] == SEC_ASN1_INTEGER)) {
+        if ((p7dcx->type == SEC_OID_PKCS7_SIGNED_DATA) &&
+            (p7dcx->first_decoded == PR_TRUE) &&
+            (len > 0 && buf[0] == SEC_ASN1_INTEGER)) {
             /* Microsoft Windows 2008 left out the Sequence wrapping in some
              * of their kerberos replies. If we are here, we most likely are
              * dealing with one of those replies. Supply the Sequence wrap

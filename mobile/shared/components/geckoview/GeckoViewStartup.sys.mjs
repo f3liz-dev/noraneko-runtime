@@ -12,6 +12,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
   DoHController: "moz-src:///toolkit/components/doh/DoHController.sys.mjs",
   EventDispatcher: "resource://gre/modules/Messaging.sys.mjs",
   PdfJs: "resource://pdf.js/PdfJs.sys.mjs",
+  GeckoViewPreferences: "resource://gre/modules/GeckoViewPreferences.sys.mjs",
 });
 
 const { debug, warn } = GeckoViewUtils.initLogging("Startup");
@@ -35,6 +36,14 @@ const JSPROCESSACTORS = {
         "PeerConnection:request",
       ],
     },
+    safeForUntrustedWebProcess: true,
+  },
+  GeckoViewPush: {
+    parent: {
+      esModuleURI: "resource:///actors/GeckoViewPushParent.sys.mjs",
+    },
+    includeParent: true,
+    safeForUntrustedWebProcess: true,
   },
 };
 
@@ -47,6 +56,7 @@ const JSWINDOWACTORS = {
       esModuleURI: "resource:///actors/LoadURIDelegateChild.sys.mjs",
     },
     messageManagerGroups: ["browsers"],
+    safeForUntrustedWebProcess: true,
   },
   GeckoViewPermission: {
     parent: {
@@ -57,13 +67,16 @@ const JSWINDOWACTORS = {
     },
     allFrames: true,
     includeChrome: true,
+    safeForUntrustedWebProcess: true,
   },
   GeckoViewPrompt: {
+    parent: {
+      esModuleURI: "resource:///actors/GeckoViewPromptParent.sys.mjs",
+    },
     child: {
       esModuleURI: "resource:///actors/GeckoViewPromptChild.sys.mjs",
       events: {
         click: { capture: false, mozSystemGroup: true },
-        contextmenu: { capture: false, mozSystemGroup: true },
         mozshowdropdown: {},
         "mozshowdropdown-sourcetouch": {},
         MozOpenDateTimePicker: {},
@@ -73,6 +86,7 @@ const JSWINDOWACTORS = {
     },
     allFrames: true,
     messageManagerGroups: ["browsers"],
+    safeForUntrustedWebProcess: true,
   },
   GeckoViewFormValidation: {
     child: {
@@ -83,6 +97,7 @@ const JSWINDOWACTORS = {
     },
     allFrames: true,
     messageManagerGroups: ["browsers"],
+    safeForUntrustedWebProcess: true,
   },
   GeckoViewPdfjs: {
     parent: {
@@ -92,10 +107,56 @@ const JSWINDOWACTORS = {
       esModuleURI: "resource://pdf.js/GeckoViewPdfjsChild.sys.mjs",
     },
     allFrames: true,
+    safeForUntrustedWebProcess: true,
   },
 };
 
 export class GeckoViewStartup {
+  // Set while an ACCESS_LOCAL_NETWORK request is in flight. necko already asks
+  // only once per foreground cycle, but the app being foregrounded resets that
+  // while a prompt may still be up, so this stops a second overlapping request:
+  // getAppPermissions() has no in-flight deduplication of its own.
+  #localNetworkPermissionPending = false;
+
+  /**
+   * Asks the app to request the OS ACCESS_LOCAL_NETWORK permission, in response
+   * to networking being about to connect to the local network. Fire and forget:
+   * the connection that triggered this is not waiting on the answer, it will
+   * fail if the permission is missing and the user can retry once granted.
+   *
+   * The answer is reported back to necko so it stops asking while the permission
+   * is held.
+   */
+  async #requestLocalNetworkPermission() {
+    // See: http://developer.android.com/reference/android/Manifest.permission.html
+    const PERM_ACCESS_LOCAL_NETWORK = "android.permission.ACCESS_LOCAL_NETWORK";
+
+    if (this.#localNetworkPermissionPending) {
+      return;
+    }
+    this.#localNetworkPermissionPending = true;
+
+    let granted = false;
+    try {
+      const window = Services.wm.getMostRecentWindow("navigator:geckoview");
+      const actor = window?.browsingContext?.currentWindowGlobal?.getActor(
+        "GeckoViewPermission"
+      );
+      // Already-granted permissions resolve without showing a prompt, so this
+      // doubles as the check that tells necko to stop asking.
+      granted = !!(await actor?.getAppPermissions([PERM_ACCESS_LOCAL_NETWORK]));
+    } catch (error) {
+      warn`Error requesting local network permission: ${error}`;
+    } finally {
+      this.#localNetworkPermissionPending = false;
+      Services.obs.notifyObservers(
+        null,
+        "network:local-network-permission-result",
+        granted ? "granted" : "denied"
+      );
+    }
+  }
+
   /* ----------  nsIObserver  ---------- */
   observe(aSubject, aTopic) {
     debug`observe: ${aTopic}`;
@@ -117,9 +178,16 @@ export class GeckoViewStartup {
             "GeckoView:GetPermissionsByURI",
             "GeckoView:SetPermission",
             "GeckoView:SetPermissionByURI",
-            "GeckoView:GetCookieBannerModeForDomain",
-            "GeckoView:SetCookieBannerModeForDomain",
-            "GeckoView:RemoveCookieBannerModeForDomain",
+          ],
+        });
+
+        GeckoViewUtils.addLazyGetter(this, "GeckoViewTrackingDB", {
+          module: "resource://gre/modules/GeckoViewTrackingDB.sys.mjs",
+          ged: [
+            "GeckoView:TrackingDB:GetEventsByDateRange",
+            "GeckoView:TrackingDB:SumAllEvents",
+            "GeckoView:TrackingDB:GetEarliestRecordedDate",
+            "GeckoView:TrackingDB:ClearAll",
           ],
         });
 
@@ -145,15 +213,13 @@ export class GeckoViewStartup {
           lazy.ActorManagerParent.addJSWindowActors(JSWINDOWACTORS);
           lazy.ActorManagerParent.addJSProcessActors(JSPROCESSACTORS);
 
-          if (Services.appinfo.sessionHistoryInParent) {
-            GeckoViewUtils.addLazyGetter(this, "GeckoViewSessionStore", {
-              module: "resource://gre/modules/GeckoViewSessionStore.sys.mjs",
-              observers: [
-                "browsing-context-did-set-embedder",
-                "browsing-context-discarded",
-              ],
-            });
-          }
+          GeckoViewUtils.addLazyGetter(this, "GeckoViewSessionStore", {
+            module: "resource://gre/modules/GeckoViewSessionStore.sys.mjs",
+            observers: [
+              "browsing-context-did-set-embedder",
+              "browsing-context-discarded",
+            ],
+          });
 
           GeckoViewUtils.addLazyGetter(this, "GeckoViewWebExtension", {
             module: "resource://gre/modules/GeckoViewWebExtension.sys.mjs",
@@ -188,6 +254,21 @@ export class GeckoViewStartup {
             ],
           });
 
+          GeckoViewUtils.addLazyGetter(this, "GeckoViewIPProtection", {
+            module: "resource://gre/modules/GeckoViewIPProtection.sys.mjs",
+            ged: [
+              "GeckoView:IPProtection:Init",
+              "GeckoView:IPProtection:Uninit",
+              "GeckoView:IPProtection:IPProtectionService:GetState",
+              "GeckoView:IPProtection:IPPProxyManager:GetState",
+              "GeckoView:IPProtection:Activate",
+              "GeckoView:IPProtection:Deactivate",
+              "GeckoView:IPProtection:Enroll",
+              "GeckoView:IPProtection:RefreshUsage",
+              "GeckoView:IPProtection:ServerList:GetCountryList",
+            ],
+          });
+
           GeckoViewUtils.addLazyGetter(this, "ChildCrashHandler", {
             module: "resource://gre/modules/ChildCrashHandler.sys.mjs",
             observers: [
@@ -202,7 +283,31 @@ export class GeckoViewStartup {
             "GeckoView:StorageDelegate:Attached",
             "GeckoView:CrashPullController.Delegate:Attached",
           ]);
+
+          // We don't register this using the LazyGetter because it needs to be
+          // ready before the first call to the listener is received. The global
+          // EventDispatcher instance is only available in the parent process, so
+          // this must stay within the parent-process guard.
+          lazy.EventDispatcher.instance.registerListener(
+            lazy.GeckoViewPreferences,
+            [
+              "GeckoView:Preferences:GetPref",
+              "GeckoView:Preferences:SetPref",
+              "GeckoView:Preferences:ClearPref",
+              "GeckoView:Preferences:RegisterObserver",
+              "GeckoView:Preferences:UnregisterObserver",
+            ]
+          );
         }
+
+        GeckoViewUtils.addLazyGetter(this, "GeckoViewAIFeatures", {
+          module: "resource://gre/modules/GeckoViewAIFeatures.sys.mjs",
+          ged: [
+            "GeckoView:AIFeature:ListFeatures",
+            "GeckoView:AIFeature:SetEnabled",
+            "GeckoView:AIFeature:MakeAvailable",
+          ],
+        });
 
         GeckoViewUtils.addLazyGetter(this, "GeckoViewTranslationsSettings", {
           module: "resource://gre/modules/GeckoViewTranslations.sys.mjs",
@@ -231,17 +336,6 @@ export class GeckoViewStartup {
           ged: ["GeckoView:Autofill:GetAddressStructure"],
         });
 
-        GeckoViewUtils.addLazyGetter(this, "GeckoViewPreferences", {
-          module: "resource://gre/modules/GeckoViewPreferences.sys.mjs",
-          ged: [
-            "GeckoView:Preferences:GetPref",
-            "GeckoView:Preferences:SetPref",
-            "GeckoView:Preferences:ClearPref",
-            "GeckoView:Preferences:RegisterObserver",
-            "GeckoView:Preferences:UnregisterObserver",
-          ],
-        });
-
         break;
       }
 
@@ -261,6 +355,14 @@ export class GeckoViewStartup {
           }
         );
 
+        // Initialize the cookie service early so the DB is loaded by
+        // the time we make the first HTTP request. Skip in xpcshell tests,
+        // which expect to control when (and against which DB file) the
+        // cookie service first opens the database.
+        if (!Services.env.exists("XPCSHELL_TEST_PROFILE_DIR")) {
+          Services.cookies;
+        }
+
         GeckoViewUtils.addLazyGetter(this, "DownloadTracker", {
           module: "resource://gre/modules/GeckoViewWebExtension.sys.mjs",
           ged: ["GeckoView:WebExtension:DownloadChanged"],
@@ -276,8 +378,16 @@ export class GeckoViewStartup {
 
         Services.obs.addObserver(this, "browser-idle-startup-tasks-finished");
         Services.obs.addObserver(this, "handlersvc-store-initialized");
+        Services.obs.addObserver(
+          this,
+          "network:request-local-network-permission"
+        );
 
         Services.obs.notifyObservers(null, "geckoview-startup-complete");
+        break;
+      }
+      case "network:request-local-network-permission": {
+        this.#requestLocalNetworkPermission();
         break;
       }
       case "browser-idle-startup-tasks-finished": {
@@ -389,7 +499,7 @@ export class GeckoViewStartup {
         InitLater(() => {
           const loginDetection = Cc[
             "@mozilla.org/login-detection-service;1"
-          ].createInstance(Ci.nsILoginDetectionService);
+          ].getService(Ci.nsILoginDetectionService);
           loginDetection.init();
         });
         break;

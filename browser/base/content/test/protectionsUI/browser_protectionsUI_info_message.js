@@ -7,7 +7,7 @@
 "use strict";
 
 const TRACKING_PAGE =
-  // eslint-disable-next-line @microsoft/sdl/no-insecure-url
+  // eslint-disable-next-line sdl/no-insecure-url
   "http://tracking.example.org/browser/browser/base/content/test/protectionsUI/trackingPage.html";
 
 add_setup(async function () {
@@ -19,7 +19,6 @@ add_setup(async function () {
       // when landing on the page.
       ["browser.contentblocking.report.monitor.enabled", false],
       ["browser.contentblocking.report.lockwise.enabled", false],
-      ["browser.contentblocking.report.proxy.enabled", false],
       ["privacy.trackingprotection.enabled", true],
       // Set the infomessage pref to ensure the message is displayed
       // every time

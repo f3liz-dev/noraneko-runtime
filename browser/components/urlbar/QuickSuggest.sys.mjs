@@ -2,8 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-import { AppConstants } from "resource://gre/modules/AppConstants.sys.mjs";
-
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
@@ -14,7 +12,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
   TelemetryReportingPolicy:
     "resource://gre/modules/TelemetryReportingPolicy.sys.mjs",
   UrlbarPrefs: "moz-src:///browser/components/urlbar/UrlbarPrefs.sys.mjs",
-  UrlbarUtils: "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs",
+  UrlbarShared: "chrome://browser/content/urlbar/UrlbarShared.mjs",
 });
 
 // See the `QuickSuggest.SETTINGS_UI` jsdoc below.
@@ -265,12 +263,11 @@ class _QuickSuggest {
   }
 
   /**
-   * @returns {object}
-   *   Possible values of the `quickSuggestSettingsUi` Nimbus variable and its
-   *   fallback pref `browser.urlbar.quicksuggest.settingsUi`. When Suggest is
-   *   enabled, these values determine the Suggest settings that will be visible
-   *   in `about:preferences`. When Suggest is disabled, the variable/pref are
-   *   ignored and Suggest settings are hidden.
+   * Possible values of the `quickSuggestSettingsUi` Nimbus variable and its
+   * fallback pref `browser.urlbar.quicksuggest.settingsUi`. When Suggest is
+   * enabled, these values determine the Suggest settings that will be visible
+   * in `about:preferences`. When Suggest is disabled, the variable/pref are
+   * ignored and Suggest settings are hidden.
    */
   get SETTINGS_UI() {
     return SETTINGS_UI;
@@ -356,7 +353,7 @@ class _QuickSuggest {
 
   get logger() {
     if (!this._logger) {
-      this._logger = lazy.UrlbarUtils.getLogger({ prefix: "QuickSuggest" });
+      this._logger = lazy.UrlbarShared.getLogger({ prefix: "QuickSuggest" });
     }
     return this._logger;
   }
@@ -774,14 +771,14 @@ class _QuickSuggest {
    * @param {object} options
    * @param {Array} options.tokens
    *   It is compatible to UrlbarQueryContext.tokens.
-   * @param {Values<typeof lazy.UrlbarUtils.HIGHLIGHT>} [options.highlightType]
+   * @param {Values<typeof lazy.lazy.UrlbarShared.HIGHLIGHT>} [options.highlightType]
    * @param {string} [options.fullKeyword]
    *   Full keyword if there is.
    * @param {string} options.title
    *   Suggestion title.
    * @returns {object} { value, highlights }
    *   The value will be used for title.
-   *   The highlights will be created by UrlbarUtils.getTokenMatches().
+   *   The highlights will be created by UrlbarShared.getTokenMatches().
    */
   getFullKeywordTitleAndHighlights({
     tokens,
@@ -792,7 +789,7 @@ class _QuickSuggest {
     return {
       value: fullKeyword ? `${fullKeyword} — ${title}` : title,
       highlights: fullKeyword
-        ? lazy.UrlbarUtils.getTokenMatches(tokens, fullKeyword, highlightType)
+        ? lazy.UrlbarShared.getTokenMatches(tokens, fullKeyword, highlightType)
         : [],
     };
   }
@@ -1179,11 +1176,6 @@ class _QuickSuggest {
     }
   }
 
-  // Lets tests easily mock whether the build is a Nightly build.
-  get _isNightlyBuild() {
-    return AppConstants.NIGHTLY_BUILD;
-  }
-
   async _test_reset(testOverrides = null) {
     if (this.#initStarted) {
       await this.initPromise;
@@ -1254,7 +1246,7 @@ function userAcceptedSuggestToU() {
  *   checks.
  */
 function shouldOnlineBeAvailable() {
-  return QuickSuggest._isNightlyBuild && userAcceptedSuggestToU();
+  return userAcceptedSuggestToU();
 }
 
 function getDismissalKey(result) {

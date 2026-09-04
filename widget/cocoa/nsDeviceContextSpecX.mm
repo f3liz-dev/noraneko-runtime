@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -6,29 +5,29 @@
 #include "nsDeviceContextSpecX.h"
 
 #import <Cocoa/Cocoa.h>
-#include "mozilla/gfx/PrintPromise.h"
 #include <CoreFoundation/CoreFoundation.h>
 #include <unistd.h>
+#include "mozilla/gfx/PrintPromise.h"
 
 #ifdef MOZ_ENABLE_SKIA_PDF
 #  include "mozilla/gfx/PrintTargetSkPDF.h"
 #endif
-#include "mozilla/gfx/PrintTargetCG.h"
 #include "mozilla/Logging.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/RefPtr.h"
+#include "mozilla/gfx/PrintTargetCG.h"
 #include "mozilla/glean/PrintingMetrics.h"
 
 #include "AppleUtils.h"
-#include "nsCocoaUtils.h"
 #include "nsCRT.h"
 #include "nsCUPSShim.h"
+#include "nsCocoaUtils.h"
 #include "nsDirectoryServiceDefs.h"
 #include "nsILocalFileMac.h"
 #include "nsIOutputStream.h"
 #include "nsPaper.h"
-#include "nsPrinterListCUPS.h"
 #include "nsPrintSettingsX.h"
+#include "nsPrinterListCUPS.h"
 #include "nsQueryObject.h"
 #include "prenv.h"
 
@@ -100,35 +99,39 @@ NS_IMETHODIMP nsDeviceContextSpecX::Init(nsIPrintSettings* aPS,
 
 #ifdef MOZ_ENABLE_SKIA_PDF
   if (StaticPrefs::print_experimental_skpdf()) {
-    // Annoyingly, PMPrinterPrintWithFile does not pay attention to the
-    // kPMDestination* value set in the PMPrintSession; it always sends the PDF
-    // to the specified printer.  This means that if we create the PDF using
-    // SkPDF then we need to manually handle user actions like "Open PDF in
-    // Preview" and "Save as PDF...".
-    // TODO: Currently we do not support using SkPDF for kPMDestinationFax or
-    // kPMDestinationProcessPDF ("Add PDF to iBooks, etc.), and we only support
-    // it for kPMDestinationFile if the destination file is a PDF.
-    // XXX Could PMWorkflowSubmitPDFWithSettings/PMPrinterPrintWithProvider
-    // help?
-    OSStatus status = noErr;
-    PMDestinationType destination;
-    status = ::PMSessionGetDestinationType(mPrintSession, mPMPrintSettings,
-                                           &destination);
-    if (status == noErr) {
-      if (destination == kPMDestinationPrinter ||
-          destination == kPMDestinationPreview) {
-        mPrintViaSkPDF = true;
-      } else if (destination == kPMDestinationFile) {
-        AutoCFTypeRef<CFURLRef> destURL(nullptr);
-        status = ::PMSessionCopyDestinationLocation(
-            mPrintSession, mPMPrintSettings, destURL.Receive());
-        if (status == noErr) {
-          AutoCFTypeRef<CFStringRef> destPathRef(
-              CFURLCopyFileSystemPath(destURL, kCFURLPOSIXPathStyle));
-          NSString* destPath = (NSString*)CFStringRef(destPathRef);
-          NSString* destPathExt = [destPath pathExtension];
-          if ([destPathExt isEqualToString:@"pdf"]) {
-            mPrintViaSkPDF = true;
+    if (mOutputStream) {
+      mPrintViaSkPDF = true;
+    } else {
+      // Annoyingly, PMPrinterPrintWithFile does not pay attention to the
+      // kPMDestination* value set in the PMPrintSession; it always sends the
+      // PDF to the specified printer.  This means that if we create the PDF
+      // using SkPDF then we need to manually handle user actions like "Open PDF
+      // in Preview" and "Save as PDF...".
+      // TODO: Currently we do not support using SkPDF for kPMDestinationFax or
+      // kPMDestinationProcessPDF ("Add PDF to iBooks, etc.), and we only
+      // support it for kPMDestinationFile if the destination file is a PDF.
+      // XXX Could PMWorkflowSubmitPDFWithSettings/PMPrinterPrintWithProvider
+      // help?
+      OSStatus status = noErr;
+      PMDestinationType destination;
+      status = ::PMSessionGetDestinationType(mPrintSession, mPMPrintSettings,
+                                             &destination);
+      if (status == noErr) {
+        if (destination == kPMDestinationPrinter ||
+            destination == kPMDestinationPreview) {
+          mPrintViaSkPDF = true;
+        } else if (destination == kPMDestinationFile) {
+          AutoCFTypeRef<CFURLRef> destURL(nullptr);
+          status = ::PMSessionCopyDestinationLocation(
+              mPrintSession, mPMPrintSettings, destURL.Receive());
+          if (status == noErr) {
+            AutoCFTypeRef<CFStringRef> destPathRef(
+                CFURLCopyFileSystemPath(destURL, kCFURLPOSIXPathStyle));
+            NSString* destPath = (NSString*)CFStringRef(destPathRef);
+            NSString* destPathExt = [destPath pathExtension];
+            if ([destPathExt isEqualToString:@"pdf"]) {
+              mPrintViaSkPDF = true;
+            }
           }
         }
       }
@@ -169,7 +172,7 @@ NS_IMETHODIMP nsDeviceContextSpecX::Init(nsIPrintSettings* aPS,
 
 NS_IMETHODIMP nsDeviceContextSpecX::BeginDocument(
     const nsAString& aTitle, const nsAString& aPrintToFileName,
-    int32_t aStartPage, int32_t aEndPage) {
+    mozilla::dom::WindowContext*, int32_t aStartPage, int32_t aEndPage) {
   NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
 
   return NS_OK;
@@ -186,7 +189,7 @@ nsresult nsDeviceContextSpecX::DoEndDocument() {
   NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
 
 #ifdef MOZ_ENABLE_SKIA_PDF
-  if (mPrintViaSkPDF) {
+  if (mPrintViaSkPDF && !mOutputStream) {
     OSStatus status = noErr;
 
     nsCOMPtr<nsILocalFileMac> tmpPDFFile = do_QueryInterface(mTempFile);
@@ -206,7 +209,7 @@ nsresult nsDeviceContextSpecX::DoEndDocument() {
 
     switch (destination) {
       case kPMDestinationPrinter: {
-        PMPrinter currentPrinter = NULL;
+        PMPrinter currentPrinter = nullptr;
         status = ::PMSessionGetCurrentPrinter(mPrintSession, &currentPrinter);
         if (status != noErr) {
           return NS_ERROR_FAILURE;
@@ -300,7 +303,9 @@ already_AddRefed<PrintTarget> nsDeviceContextSpecX::MakePrintTarget() {
 
 #ifdef MOZ_ENABLE_SKIA_PDF
   if (mPrintViaSkPDF) {
-    // TODO: Add support for stream printing via SkPDF if we enable that again.
+    if (mOutputStream) {
+      return PrintTargetSkPDF::CreateOrNull(mOutputStream, size);
+    }
     nsresult rv =
         NS_GetSpecialDirectory(NS_OS_TEMP_DIR, getter_AddRefs(mTempFile));
     NS_ENSURE_SUCCESS(rv, nullptr);

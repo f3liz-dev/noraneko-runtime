@@ -1,5 +1,3 @@
-/* -*- Mode: indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
 
 loadTestSubscript("head_devtools.js");
@@ -175,7 +173,7 @@ add_task(async function test_devtools_inspectedWindow_eval_bindings() {
   await extension.awaitMessage(`inspectedWindow-eval-result`);
   await debuggerPanelSelectedPromise;
 
-  await BrowserTestUtils.waitForCondition(
+  await TestUtils.waitForCondition(
     expectedSourceSelected("file_inspectedwindow_eval.html", 9),
     "Wait the expected function to be selected in the jsdebugger panel"
   );
@@ -188,7 +186,7 @@ add_task(async function test_devtools_inspectedWindow_eval_bindings() {
   );
   await extension.awaitMessage(`inspectedWindow-eval-result`);
 
-  await BrowserTestUtils.waitForCondition(
+  await TestUtils.waitForCondition(
     expectedSourceSelected("file_inspectedwindow_eval.html", 15),
     "Wait the expected function to be selected in the jsdebugger panel"
   );

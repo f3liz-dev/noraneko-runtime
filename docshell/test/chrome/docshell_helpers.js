@@ -236,6 +236,7 @@ function doPageNavigation(params) {
       // They require messages from "browsers", "test", and "" to pass.
       // See bug 1784831 and bug 1883434 for more context.
       messageManagerGroups: ["browsers", "test", ""],
+      safeForUntrustedWebProcess: true,
     });
     DocShellHelpersParent.eventsToListenFor = eventsToListenFor;
     DocShellHelpersParent.observers = observers;
@@ -572,17 +573,9 @@ DocShellHelpersParent.eventListener = pageEventListener;
 function finish() {
   // Work around bug 467960.
   let historyPurged;
-  if (SpecialPowers.Services.appinfo.sessionHistoryInParent) {
-    let history = TestWindow.getBrowser().browsingContext?.sessionHistory;
-    history.purgeHistory(history.count);
-    historyPurged = Promise.resolve();
-  } else {
-    historyPurged = SpecialPowers.spawn(TestWindow.getBrowser(), [], () => {
-      let history = docShell.QueryInterface(Ci.nsIWebNavigation).sessionHistory
-        .legacySHistory;
-      history.purgeHistory(history.count);
-    });
-  }
+  let history = TestWindow.getBrowser().browsingContext?.sessionHistory;
+  history.purgeHistory(history.count);
+  historyPurged = Promise.resolve();
 
   // If the test changed the value of max_total_viewers via a call to
   // enableBFCache(), then restore it now.

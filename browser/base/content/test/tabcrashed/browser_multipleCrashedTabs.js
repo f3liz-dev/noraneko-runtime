@@ -3,11 +3,11 @@
 
 "use strict";
 
-// eslint-disable-next-line @microsoft/sdl/no-insecure-url
+// eslint-disable-next-line sdl/no-insecure-url
 const PAGE_1 = "http://example.com";
-// eslint-disable-next-line @microsoft/sdl/no-insecure-url
+// eslint-disable-next-line sdl/no-insecure-url
 const PAGE_2 = "http://example.org";
-// eslint-disable-next-line @microsoft/sdl/no-insecure-url
+// eslint-disable-next-line sdl/no-insecure-url
 const PAGE_3 = "http://example.net";
 
 /**
@@ -126,7 +126,7 @@ add_task(async function test_multiple_tabcrashed_pages() {
   // was a single about:tabcrashed page at unload time, so we expect
   // only a single entry for the probe for when we removed the last
   // crashed tab.
-  await BrowserTestUtils.waitForCondition(() => {
+  await TestUtils.waitForCondition(() => {
     return snapshotCount(histogram.snapshot()) == 1;
   }, `Collected value should become 1.`);
 

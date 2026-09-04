@@ -263,7 +263,7 @@ class MainEventCollector {
       typeof node.nodeName !== "undefined" &&
       node.nodeName.toLowerCase() === "html"
     ) {
-      listenersTargets.push(node.ownerGlobal, node, node.parentNode);
+      listenersTargets.push(node.documentGlobal, node, node.parentNode);
     } else {
       listenersTargets.push(node);
     }
@@ -275,6 +275,11 @@ class MainEventCollector {
       }
       for (const listener of elListeners) {
         const obj = this.unwrap(listener.listenerObject);
+        if (obj && Cu.isDeadWrapper(obj)) {
+          // Bug 2042101: some listenerObjects can be dead objects.
+          continue;
+        }
+
         if (!obj || !obj[EXCLUDED_LISTENER]) {
           listeners.push(listener);
         }
@@ -289,16 +294,17 @@ class MainEventCollector {
       return null;
     }
 
-    const global = this.unwrap(node.ownerGlobal);
+    const global = this.unwrap(node.documentGlobal);
     if (!global) {
       return null;
     }
 
-    const hasJQuery = global.jQuery?.fn?.jquery;
-
-    if (hasJQuery) {
-      return global.jQuery;
-    }
+    try {
+      const hasJQuery = global.jQuery?.fn?.jquery;
+      if (hasJQuery) {
+        return global.jQuery;
+      }
+    } catch (e) {}
     return null;
   }
 
@@ -527,7 +533,7 @@ class JQueryLiveEventCollector extends MainEventCollector {
       // Live events are added to the document and bubble up to all elements.
       // Any element matching the specified selector will trigger the live
       // event.
-      const win = this.unwrap(node.ownerGlobal);
+      const win = this.unwrap(node.documentGlobal);
       let events = null;
 
       try {

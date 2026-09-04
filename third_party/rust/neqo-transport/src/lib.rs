@@ -7,7 +7,7 @@
 #![cfg_attr(coverage_nightly, feature(coverage_attribute))]
 
 use neqo_common::qwarn;
-use neqo_crypto::Error as CryptoError;
+use nss::Error as CryptoError;
 use thiserror::Error;
 
 mod ackrate;
@@ -22,9 +22,9 @@ mod crypto;
 pub mod ecn;
 mod events;
 mod fc;
-#[cfg(fuzzing)]
+#[cfg(any(fuzzing, feature = "bench"))]
 pub mod frame;
-#[cfg(not(fuzzing))]
+#[cfg(not(any(fuzzing, feature = "bench")))]
 mod frame;
 mod pace;
 #[cfg(any(fuzzing, feature = "bench"))]
@@ -42,6 +42,7 @@ mod recovery;
 pub mod recv_stream;
 mod rtt;
 mod saved;
+mod scone;
 pub mod send_stream;
 mod sender;
 pub mod server;
@@ -55,17 +56,17 @@ mod tracking;
 pub mod version;
 
 pub use self::{
-    cc::{CongestionControlAlgorithm, CongestionEvent},
+    cc::{CongestionControl, CongestionTrigger, HyStartCssBaseline, SlowStart},
     cid::{
         ConnectionId, ConnectionIdDecoder, ConnectionIdGenerator, ConnectionIdRef,
         EmptyConnectionIdGenerator, RandomConnectionIdGenerator,
     },
     connection::{
+        Connection, Output, OutputBatch, State, ZeroRttState,
         params::{
             ConnectionParameters, INITIAL_LOCAL_MAX_DATA, INITIAL_LOCAL_MAX_STREAM_DATA,
-            MAX_LOCAL_MAX_STREAM_DATA,
+            MAX_DATAGRAM_FRAME_SIZE, MAX_LOCAL_MAX_STREAM_DATA,
         },
-        Connection, Output, OutputBatch, State, ZeroRttState,
     },
     events::{ConnectionEvent, ConnectionEvents},
     frame::CloseError,
@@ -75,9 +76,16 @@ pub use self::{
     rtt::DEFAULT_INITIAL_RTT,
     sni::find_sni,
     stateless_reset::Token,
-    stats::Stats,
+    stats::{SlowStartExitReason, Stats},
     stream_id::{StreamId, StreamType},
     version::Version,
+};
+#[cfg(feature = "bench")]
+pub use self::{
+    crypto::{CryptoDxState, CryptoStates},
+    fc::SenderFlowControl,
+    pace::Pacer,
+    stats::FrameStats,
 };
 
 pub type TransportError = u64;
@@ -309,7 +317,7 @@ mod tests {
     #[test]
     fn error_from_impls() {
         assert_eq!(
-            Error::from(neqo_crypto::Error::EchRetry(vec![1, 2])),
+            Error::from(nss::Error::EchRetry(vec![1, 2])),
             Error::EchRetry(vec![1, 2])
         );
         assert!(matches!(

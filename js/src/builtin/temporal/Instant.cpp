@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -83,9 +81,10 @@ static bool AbsoluteValueIsLessOrEqual(const BigInt* bigInt) {
   }
 
   // Compare each digit when the input has the same number of digits.
+  auto bigIntDigits = bigInt->digits();
   size_t index = std::size(digits);
   for (auto digit : digits) {
-    auto d = bigInt->digit(--index);
+    auto d = bigIntDigits[--index];
     if (d < digit) {
       return true;
     }
@@ -233,10 +232,10 @@ static BigInt* CreateBigInt(JSContext* cx,
       return nullptr;
     }
     if (length > 1) {
-      result->setDigit(1, y);
+      result->setIndividualDigit(1, y);
     }
     if (length > 0) {
-      result->setDigit(0, x);
+      result->setIndividualDigit(0, x);
     }
     return result;
   } else {
@@ -245,8 +244,9 @@ static BigInt* CreateBigInt(JSContext* cx,
     if (!result) {
       return nullptr;
     }
+    auto resultDigits = result->digits();
     while (length--) {
-      result->setDigit(length, digits[length]);
+      resultDigits[length] = digits[length];
     }
     return result;
   }
@@ -315,7 +315,7 @@ BigInt* js::temporal::ToBigInt(JSContext* cx,
  */
 EpochNanoseconds js::temporal::GetUTCEpochNanoseconds(
     const ISODateTime& isoDateTime) {
-  MOZ_ASSERT(ISODateTimeWithinLimits(isoDateTime));
+  MOZ_ASSERT(IsValidISODateTime(isoDateTime));
 
   const auto& [date, time] = isoDateTime;
 
@@ -368,10 +368,10 @@ InstantObject* js::temporal::CreateTemporalInstant(
   }
 
   // Step 4.
-  object->initFixedSlot(InstantObject::SECONDS_SLOT,
-                        NumberValue(epochNanoseconds.seconds));
-  object->initFixedSlot(InstantObject::NANOSECONDS_SLOT,
-                        Int32Value(epochNanoseconds.nanoseconds));
+  object->initFixedSlotTyped(InstantObject::SECONDS_SLOT,
+                             NumberValue(epochNanoseconds.seconds));
+  object->initFixedSlotTyped(InstantObject::NANOSECONDS_SLOT,
+                             Int32Value(epochNanoseconds.nanoseconds));
 
   // Step 5.
   return object;
@@ -398,10 +398,10 @@ static InstantObject* CreateTemporalInstant(JSContext* cx, const CallArgs& args,
 
   // Step 4.
   auto epochNs = ToEpochNanoseconds(epochNanoseconds);
-  object->initFixedSlot(InstantObject::SECONDS_SLOT,
-                        NumberValue(epochNs.seconds));
-  object->initFixedSlot(InstantObject::NANOSECONDS_SLOT,
-                        Int32Value(epochNs.nanoseconds));
+  object->initFixedSlotTyped(InstantObject::SECONDS_SLOT,
+                             NumberValue(epochNs.seconds));
+  object->initFixedSlotTyped(InstantObject::NANOSECONDS_SLOT,
+                             Int32Value(epochNs.nanoseconds));
 
   // Step 5.
   return object;

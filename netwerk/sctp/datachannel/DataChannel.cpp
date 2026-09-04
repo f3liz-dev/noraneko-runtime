@@ -1,40 +1,39 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include <algorithm>
 #include <stdio.h>
+
+#include <algorithm>
 
 #ifdef XP_WIN
 #  include <winsock.h>  // for htonl, htons, ntohl, ntohs
 #endif
 
-#include "nsIInputStream.h"
-#include "nsIPrefBranch.h"
-#include "nsIPrefService.h"
-#include "mozilla/Sprintf.h"
-#include "nsProxyRelease.h"
-#include "nsThread.h"
-#include "nsThreadUtils.h"
-#include "nsNetUtil.h"
 #include "mozilla/Components.h"
+#include "mozilla/Sprintf.h"
 #include "mozilla/StaticMutex.h"
 #include "mozilla/UniquePtrExtensions.h"
 #include "mozilla/dom/RTCDataChannel.h"
 #include "mozilla/dom/RTCDataChannelBinding.h"
+#include "nsIInputStream.h"
+#include "nsIPrefBranch.h"
+#include "nsIPrefService.h"
+#include "nsNetUtil.h"
+#include "nsProxyRelease.h"
+#include "nsThread.h"
+#include "nsThreadUtils.h"
 #ifdef MOZ_PEERCONNECTION
-#  include "transport/runnable_utils.h"
 #  include "jsapi/MediaTransportHandler.h"
 #  include "mediapacket.h"
+#  include "transport/runnable_utils.h"
 #endif
 
 #include "DataChannel.h"
 #include "DataChannelDcSctp.h"
-#include "DataChannelUsrsctp.h"
 #include "DataChannelLog.h"
 #include "DataChannelProtocol.h"
+#include "DataChannelUsrsctp.h"
 
 namespace mozilla {
 
@@ -282,7 +281,7 @@ bool DataChannelConnection::ConnectToTransport(const std::string& aTransportId,
         // We don't support firing errors right now, and we probabaly want the
         // closed check anyway, and we don't really have something equivalent
         // to the [[DataChannels]] slot, so just use AnnounceClosed for now.
-        channel->AnnounceClosed();
+        channel->AnnounceClosed(Nothing());
       }
     }
 
@@ -335,7 +334,8 @@ void DataChannelConnection::SetSignals(const std::string& aTransportId) {
 }
 
 void DataChannelConnection::TransportStateChange(
-    const std::string& aTransportId, TransportLayer::State aState) {
+    const std::string& aTransportId, TransportLayer::State aState,
+    const nsTArray<nsTArray<uint8_t>>&, Maybe<dom::RTCErrorParams>) {
   MOZ_ASSERT(mSTS->IsOnCurrentThread());
   if (aTransportId == mTransportId) {
     if (aState == TransportLayer::TS_OPEN) {
@@ -357,7 +357,7 @@ void DataChannelConnection::ProcessQueuedOpens() {
   // Technically in an unspecified state, although no reasonable impl will leave
   // anything in here.
   mPending.clear();
-  for (auto channel : temp) {
+  for (const auto& channel : temp) {
     DC_DEBUG(("%p: Processing queued open for %p (%u)", this, channel.get(),
               channel->mStream));
     OpenFinish(channel);  // may end up back in mPending
@@ -404,7 +404,7 @@ uint16_t DataChannelConnection::FindFreeStream() const {
 
   // Find the lowest odd/even id that is not present in mStreamIds
   for (auto id : mStreamIds) {
-    if (i >= MAX_NUM_STREAMS) {
+    if (i >= GetStreamIdCeiling()) {
       return INVALID_STREAM;
     }
 
@@ -1023,9 +1023,10 @@ void DataChannelConnection::SetState(DataChannelConnectionState aState) {
   if (mState == DataChannelConnectionState::Open) {
     Dispatch(NS_NewCancelableRunnableFunction(
                  __func__,
-                 [this, self = RefPtr<DataChannelConnection>(this)]() {
+                 [this, self = RefPtr<DataChannelConnection>(this),
+                  maxChannels = Some(mNegotiatedIdLimit)]() {
                    if (mListener) {
-                     mListener->NotifySctpConnected();
+                     mListener->NotifySctpConnected(maxChannels);
                    }
                  }),
              NS_DISPATCH_FALLIBLE);
@@ -1145,7 +1146,16 @@ void DataChannel::EndOfStream() {
   }
 }
 
-void DataChannelConnection::FinishClose_s(const RefPtr<DataChannel>& aChannel) {
+RefPtr<dom::RTCDataChannel> DataChannel::GetDomDataChannel() const {
+  MOZ_ASSERT(mDomEventTarget->IsOnCurrentThread());
+  if (NS_IsMainThread()) {
+    return mMainthreadDomDataChannel;
+  }
+  return mWorkerDomDataChannel;
+}
+
+void DataChannelConnection::FinishClose_s(const RefPtr<DataChannel>& aChannel,
+                                          Maybe<dom::RTCErrorParams> aError) {
   MOZ_ASSERT(mSTS->IsOnCurrentThread());
 
   // We're removing this from all containers, make sure the passed pointer
@@ -1158,10 +1168,10 @@ void DataChannelConnection::FinishClose_s(const RefPtr<DataChannel>& aChannel) {
 
   // Close the channel's data transport by following the associated
   // procedure.
-  aChannel->AnnounceClosed();
+  aChannel->AnnounceClosed(std::move(aError));
 }
 
-void DataChannelConnection::CloseAll_s() {
+void DataChannelConnection::CloseAll_s(Maybe<dom::RTCErrorParams> aError) {
   // Make sure no more channels will be opened
   SetState(DataChannelConnectionState::Closed);
 
@@ -1179,7 +1189,7 @@ void DataChannelConnection::CloseAll_s() {
     }
     // We do not wait for the reset to finish in this case; we won't be around
     // to see the response.
-    FinishClose_s(channel);
+    FinishClose_s(channel, aError);
   }
 
   // Clean up any pending opens for channels
@@ -1444,7 +1454,7 @@ void DataChannel::AnnounceOpen() {
       NS_DISPATCH_FALLIBLE);
 }
 
-void DataChannel::AnnounceClosed() {
+void DataChannel::AnnounceClosed(Maybe<dom::RTCErrorParams> aError) {
   // When an RTCDataChannel object's underlying data transport has been closed,
   // the user agent MUST queue a task to run the following steps:
   DC_INFO(
@@ -1455,7 +1465,8 @@ void DataChannel::AnnounceClosed() {
   GetMainThreadSerialEventTarget()->Dispatch(
       NS_NewCancelableRunnableFunction(
           "DataChannel::AnnounceClosed",
-          [this, self = RefPtr<DataChannel>(this), connection = mConnection]() {
+          [this, self = RefPtr<DataChannel>(this), connection = mConnection,
+           aError = std::move(aError)]() mutable {
             if (mAnnouncedClosed) {
               return;
             }
@@ -1476,13 +1487,14 @@ void DataChannel::AnnounceClosed() {
             mDomEventTarget->Dispatch(
                 NS_NewCancelableRunnableFunction(
                     "DataChannel::AnnounceClosed",
-                    [this, self = RefPtr<DataChannel>(this)] {
+                    [this, self = RefPtr<DataChannel>(this),
+                     aError = std::move(aError)] {
                       DC_INFO(("%p: Attempting to call AnnounceClosed.", this));
                       if (GetDomDataChannel()) {
                         DC_INFO(
                             ("%p: Calling AnnounceClosed on RTCDataChannel.",
                              this));
-                        GetDomDataChannel()->AnnounceClosed();
+                        GetDomDataChannel()->AnnounceClosed(std::move(aError));
                       }
                     }),
                 NS_DISPATCH_FALLIBLE);

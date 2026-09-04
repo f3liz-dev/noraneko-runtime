@@ -1,19 +1,17 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "MsaaDocAccessible.h"
 
-#include "MsaaDocAccessible.h"
 #include "DocAccessibleChild.h"
-#include "mozilla/a11y/DocAccessibleParent.h"
-#include "nsAccessibilityService.h"
-#include "nsAccUtils.h"
-#include "nsWinUtils.h"
-#include "mozilla/a11y/Role.h"
 #include "ISimpleDOM.h"
+#include "MsaaDocAccessible.h"
+#include "mozilla/a11y/DocAccessibleParent.h"
+#include "mozilla/a11y/Role.h"
+#include "nsAccUtils.h"
+#include "nsAccessibilityService.h"
+#include "nsWinUtils.h"
 
 using namespace mozilla;
 using namespace mozilla::a11y;
@@ -55,7 +53,7 @@ IMPL_IUNKNOWN_QUERY_TAIL_INHERITED(ia2AccessibleHypertext)
 
 STDMETHODIMP
 MsaaDocAccessible::get_accParent(
-    /* [retval][out] */ IDispatch __RPC_FAR* __RPC_FAR* ppdispParent) {
+    /* [retval][out] */ IDispatch __RPC_FAR * __RPC_FAR * ppdispParent) {
   if (!mAcc) {
     return CO_E_OBJNOTCONNECTED;
   }

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -25,12 +23,14 @@ namespace mozilla {
 void DisplayItemClip::SetTo(const nsRect& aRect) { SetTo(aRect, nullptr); }
 
 void DisplayItemClip::SetTo(const nsRect& aRect,
-                            const nsRectCornerRadii* aRadii) {
+                            const nsRectCornerRadii* aRadii,
+                            const nsMargin* aInset) {
   mHaveClipRect = true;
   mClipRect = aRect;
   if (aRadii) {
     mRoundedClipRects.Clear();
-    mRoundedClipRects.AppendElement(RoundedRect{aRect, *aRadii});
+    mRoundedClipRects.AppendElement(
+        RoundedRect{aRect, *aRadii, aInset ? *aInset : nsMargin()});
   } else {
     mRoundedClipRects.Clear();
   }
@@ -482,8 +482,9 @@ void DisplayItemClip::ToComplexClipRegions(
     int32_t aAppUnitsPerDevPixel,
     nsTArray<wr::ComplexClipRegion>& aOutArray) const {
   for (const auto& clipRect : mRoundedClipRects) {
-    aOutArray.AppendElement(wr::ToComplexClipRegion(
-        clipRect.mRect, clipRect.mRadii, aAppUnitsPerDevPixel));
+    aOutArray.AppendElement(
+        wr::ToComplexClipRegion(clipRect.mRect, clipRect.mRadii,
+                                clipRect.mInset, aAppUnitsPerDevPixel));
   }
 }
 

@@ -2,11 +2,30 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
+
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   error: "chrome://remote/content/shared/webdriver/Errors.sys.mjs",
 });
+
+XPCOMUtils.defineLazyPreferenceGetter(
+  lazy,
+  "canvasMaxArea",
+  "gfx.canvas.max-area"
+);
+XPCOMUtils.defineLazyPreferenceGetter(
+  lazy,
+  "canvasMaxSize",
+  "gfx.canvas.max-size"
+);
+XPCOMUtils.defineLazyPreferenceGetter(
+  lazy,
+  "compositorReadback",
+  "remote.screenshot.use_readback",
+  false
+);
 
 const CONTEXT_2D = "2d";
 const BG_COLOUR = "rgb(255,255,255)";
@@ -52,7 +71,12 @@ capture.Format = {
  *     Vertical offset between the browser window and content area. Defaults to 0.
  * @param {boolean=} options.readback
  *     If true, read back a snapshot of the pixel data currently in the
- *     compositor/window. Defaults to false.
+ *     compositor/window. Defaults to false, unless the
+ *     `remote.screenshot.use_readback` preference is set.
+ * @param {boolean=} options.drawView
+ *     If true, the rectangle is relative to the visible viewport rather than to
+ *     the page, and view level rendering such as the root scrollbars is
+ *     included. Ignored when reading back. Defaults to false.
  *
  * @returns {HTMLCanvasElement}
  *     The canvas on which the selection from the window's framebuffer
@@ -65,14 +89,51 @@ capture.canvas = async function (
   top,
   width,
   height,
-  { canvas = null, flags = null, dX = 0, dY = 0, readback = false } = {}
+  {
+    canvas = null,
+    flags = null,
+    dX = 0,
+    dY = 0,
+    readback = false,
+    drawView = false,
+  } = {}
 ) {
+  if (lazy.compositorReadback && !readback) {
+    // Readback can only return the content area composited on screen, and its
+    // coordinates are relative to the chrome window rather than the document,
+    // so any requested region degrades to the whole content area.
+    const browser = browsingContext.top.embedderElement;
+    if (browser) {
+      readback = true;
+      ({ left, top, width, height } = browser.getBoundingClientRect());
+    }
+  }
+
   // FIXME(bug 1761032): This looks a bit sketchy, overrideDPPX doesn't
   // influence rendering...
   const scale = browsingContext.overrideDPPX || win.devicePixelRatio;
 
-  let canvasHeight = height * scale;
-  let canvasWidth = width * scale;
+  const canvasHeight = height * scale;
+  const canvasWidth = width * scale;
+  const canvasArea = canvasWidth * canvasHeight;
+
+  if (canvasWidth > lazy.canvasMaxSize) {
+    throw new lazy.error.UnsupportedOperationError(
+      `${canvasWidth} exceeds the maximum allowed screenshot width of ${lazy.canvasMaxSize} pixels`
+    );
+  }
+
+  if (canvasHeight > lazy.canvasMaxSize) {
+    throw new lazy.error.UnsupportedOperationError(
+      `${canvasHeight} exceeds the maximum allowed screenshot height of ${lazy.canvasMaxSize} pixels`
+    );
+  }
+
+  if (canvasArea > lazy.canvasMaxArea) {
+    throw new lazy.error.UnsupportedOperationError(
+      `${canvasArea} exceeds the maximum allowed screenshot area of ${lazy.canvasMaxArea} square pixels`
+    );
+  }
 
   try {
     if (canvas === null) {
@@ -99,7 +160,8 @@ capture.canvas = async function (
       let snapshot = await browsingContext.currentWindowGlobal.drawSnapshot(
         rect,
         scale,
-        BG_COLOUR
+        BG_COLOUR,
+        { drawView }
       );
 
       ctx.drawImage(snapshot, 0, 0);
@@ -109,14 +171,11 @@ capture.canvas = async function (
       // because it is no longer needed.
       snapshot.close();
     }
-  } catch (e) {
-    // If we failed to create the canvas or draw the snapshot (likely due to OOM
-    // or excessive dimensions), we treat this as an unsupported operation.
-    throw new lazy.error.UnsupportedOperationError(
-      `Unable to capture screenshot: ${e.message}`
+  } catch (error) {
+    throw new lazy.error.UnknownError(
+      `Unable to capture screenshot: ${error.message}`
     );
   }
-
   return canvas;
 };
 

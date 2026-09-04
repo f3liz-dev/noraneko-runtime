@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,28 +6,29 @@
 #import <UIKit/UIScreen.h>
 #import <UIKit/UIWindow.h>
 
-#include "mozilla/Components.h"
-#include "mozilla/dom/Document.h"
-#include "nsIObserverService.h"
+#include "HeadlessScreenHelper.h"
+#include "ScreenHelperUIKit.h"
 #include "gfxPlatform.h"
+#include "mozilla/Components.h"
+#include "mozilla/Hal.h"
+#include "mozilla/Services.h"
+#include "mozilla/dom/Document.h"
+#include "mozilla/widget/EventDispatcher.h"
+#include "mozilla/widget/ScreenManager.h"
 #include "nsAppRunner.h"
 #include "nsAppShell.h"
 #include "nsCOMPtr.h"
 #include "nsComponentManager.h"
 #include "nsDirectoryServiceDefs.h"
-#include "nsObjCExceptions.h"
-#include "nsString.h"
 #include "nsIAppStartup.h"
+#include "nsIObserverService.h"
 #include "nsIRollupListener.h"
 #include "nsIWidget.h"
-#include "nsThreadUtils.h"
 #include "nsMemoryPressure.h"
+#include "nsObjCExceptions.h"
 #include "nsServiceManagerUtils.h"
-#include "mozilla/widget/EventDispatcher.h"
-#include "mozilla/widget/ScreenManager.h"
-#include "ScreenHelperUIKit.h"
-#include "mozilla/Hal.h"
-#include "HeadlessScreenHelper.h"
+#include "nsString.h"
+#include "nsThreadUtils.h"
 #include "nsWindow.h"
 #include "nsXREDirProvider.h"
 

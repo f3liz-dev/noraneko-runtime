@@ -69,7 +69,7 @@ version of those metrics and pings that was current at the time the artifacts we
 This isn't a problem unless:
 * You are changing a metric or ping that is used in instrumentation in the compiled code, or
 * You are using `testSubmission` or
-  `testBeforeNextSubmit` in JavaScript for a ping submitted in the compiled code.
+  `testBeforeNextSubmit` in JavaScript for a ping submitted in the Rust code.
 
 When in doubt, simply test your new test in artifact mode
 (by e.g. passing `--enable-artifact-builds` to `mach try`)
@@ -239,7 +239,7 @@ so you may wish to prefer `browser-chrome`-flavoured mochitests instead.
 
 If you wish to continue with `plain`-flavoured mochitests,
 you will need to use
-[`GleanTest.js`](https://searchfox.org/mozilla-central/source/testing/mochitest/tests/SimpleTest/GleanTest.js)
+[`GleanTest.js`](https://searchfox.org/firefox-main/source/testing/mochitest/tests/SimpleTest/GleanTest.js)
 to gain access to testing APIs.
 It doesn't support all the features, only the `testResetFOG`,
 `testFlushAllChildren` (as `flush`), and `testGetValue` functions.

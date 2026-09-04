@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -90,6 +88,7 @@ nrappkit copyright:
 #include <string.h>
 #include <sys/types.h>
 
+#include "mozilla/IceServerParser.h"
 #include "mozilla/ProfilerBandwidthCounter.h"
 #include "mozilla/SyncRunnable.h"
 #include "mozilla/net/DNS.h"
@@ -149,17 +148,15 @@ nrappkit copyright:
 #  endif
 #endif
 
-extern "C" {
 #include "async_wait.h"
 #include "nr_api.h"
 #include "nr_socket.h"
 #include "nr_socket_local.h"
-#include "stun_hint.h"
-}
 #include "nr_socket_proxy_config.h"
 #include "nr_socket_prsock.h"
 #include "nr_socket_tcp.h"
 #include "simpletokenbucket.h"
+#include "stun_hint.h"
 #include "test_nr_socket.h"
 
 // Implement the nsISupports ref counting
@@ -247,7 +244,7 @@ static nsIThread* GetIOThreadAndAddUse_s() {
 #if defined(MOZILLA_INTERNAL_API)
   // We need to safely release this on shutdown to avoid leaks
   if (!sThread) {
-    sThread = new SingletonThreadHolder("mtransport"_ns);
+    sThread = MakeRefPtr<SingletonThreadHolder>("mtransport"_ns);
     NS_DispatchToMainThread(mozilla::WrapRunnableNM(&ClearSingletonOnShutdown));
   }
   // Mark that we're using the shared thread and need it to stick around
@@ -528,9 +525,10 @@ abort:
  * convert nr_transport_addr to IP address string and port number
  */
 int nr_transport_addr_get_addrstring_and_port(const nr_transport_addr* addr,
-                                              nsACString* host, int32_t* port) {
+                                              nsACString* host,
+                                              uint16_t* port) {
   int r, _status;
-  char addr_string[64];
+  char addr_string[256];
 
   // We cannot directly use |nr_transport_addr.as_string| because it contains
   // more than ip address, therefore, we need to explicity convert it
@@ -746,6 +744,17 @@ int NrSocket::sendto(const void* msg, size_t len, int flags,
     ABORT(R_WOULDBLOCK);
   }
 
+  // Block outgoing packets to ports that are not allowed for webrtc. This runs
+  // in whatever process opened the socket -- the socket process (socket-process
+  // mtransport) or the parent process -- never the content process, which uses
+  // NrUdpSocketIpc/NrTcpSocket (gated in NrUdpSocketIpc::sendto and enforced by
+  // STUNUDPSocketFilter in the parent process).
+  if (IsForbiddenAddress(to)) {
+    // Drop the packet, but report success so the caller does not retry.
+    _status = 0;
+    goto abort;
+  }
+
   // TODO: Convert flags?
   status = PR_SendTo(fd_, msg, len, flags, &naddr, PR_INTERVAL_NO_WAIT);
   if (status < 0 || (size_t)status != len) {
@@ -810,6 +819,12 @@ int NrSocket::connect(const nr_transport_addr* addr) {
   if ((r = nr_transport_addr_to_praddr(addr, &naddr))) ABORT(r);
 
   if (!fd_) ABORT(R_EOD);
+
+  // Block connections to ports that are not allowed for webrtc. See the note
+  // in NrSocket::sendto; this runs only in the socket/parent process.
+  if (IsForbiddenAddress(addr)) {
+    ABORT(R_WOULDBLOCK);
+  }
 
   // Note: this just means we tried to connect, not that we
   // are actually live.
@@ -1060,8 +1075,8 @@ NS_IMETHODIMP NrUdpSocketIpc::CallListenerError(const nsACString& message,
   ASSERT_ON_THREAD(io_thread_);
 
   r_log(LOG_GENERIC, LOG_ERR, "UDP socket error:%s at %s:%d this=%p",
-        message.BeginReading(), filename.BeginReading(), line_number,
-        (void*)this);
+        PromiseFlatCString(message).get(), PromiseFlatCString(filename).get(),
+        line_number, (void*)this);
 
   ReentrantMonitorAutoEnter mon(monitor_);
   err_ = true;
@@ -1081,7 +1096,8 @@ NS_IMETHODIMP NrUdpSocketIpc::CallListenerReceivedData(
   {
     ReentrantMonitorAutoEnter mon(monitor_);
 
-    if (PR_SUCCESS != PR_StringToNetAddr(host.BeginReading(), &addr)) {
+    if (PR_SUCCESS !=
+        PR_StringToNetAddr(PromiseFlatCString(host).get(), &addr)) {
       err_ = true;
       MOZ_ASSERT(false, "Failed to convert remote host to PRNetAddr");
       return NS_OK;
@@ -1098,7 +1114,7 @@ NS_IMETHODIMP NrUdpSocketIpc::CallListenerReceivedData(
 
   auto buf = MakeUnique<MediaPacket>();
   buf->Copy(data.Elements(), data.Length());
-  RefPtr<nr_udp_message> msg(new nr_udp_message(addr, std::move(buf)));
+  RefPtr msg = MakeRefPtr<nr_udp_message>(addr, std::move(buf));
 
   RUN_ON_THREAD(sts_thread_,
                 mozilla::WrapRunnable(RefPtr<NrUdpSocketIpc>(this),
@@ -1119,7 +1135,7 @@ nsresult NrUdpSocketIpc::SetAddress() {
     return NS_OK;
   }
 
-  if (PR_SUCCESS != PR_StringToNetAddr(address.BeginReading(), &praddr)) {
+  if (PR_SUCCESS != PR_StringToNetAddr(address.get(), &praddr)) {
     err_ = true;
     MOZ_ASSERT(false, "Failed to convert local host to PRNetAddr");
     return NS_OK;
@@ -1204,7 +1220,7 @@ int NrUdpSocketIpc::create(nr_transport_addr* addr) {
 
   int r, _status;
   nsresult rv;
-  int32_t port;
+  uint16_t port;
   nsCString host;
 
   ReentrantMonitorAutoEnter mon(monitor_);
@@ -1233,8 +1249,7 @@ int NrUdpSocketIpc::create(nr_transport_addr* addr) {
   MOZ_ASSERT(io_thread_);
   RUN_ON_THREAD(io_thread_,
                 mozilla::WrapRunnable(RefPtr<NrUdpSocketIpc>(this),
-                                      &NrUdpSocketIpc::create_i, host,
-                                      static_cast<uint16_t>(port)),
+                                      &NrUdpSocketIpc::create_i, host, port),
                 NS_DISPATCH_NORMAL);
 
   // Wait until socket creation complete.
@@ -1267,6 +1282,15 @@ int NrUdpSocketIpc::sendto(const void* msg, size_t len, int flags,
     return R_INTERNAL;
   }
 
+  // Block outgoing packets to ports that are not allowed for webrtc, the same
+  // way NrSocket::sendto does for sockets we own. This is the content process,
+  // so it is not a trust boundary; STUNUDPSocketFilter enforces the same
+  // restriction in the parent process. Drop the packet, but report success so
+  // the caller does not retry.
+  if (IsForbiddenAddress(to)) {
+    return 0;
+  }
+
   int r;
   net::NetAddr addr;
   if ((r = nr_transport_addr_to_netaddr(to, &addr))) {
@@ -1277,7 +1301,7 @@ int NrUdpSocketIpc::sendto(const void* msg, size_t len, int flags,
     return R_WOULDBLOCK;
   }
 
-  UniquePtr<MediaPacket> buf(new MediaPacket);
+  auto buf = MakeUnique<MediaPacket>();
   buf->Copy(static_cast<const uint8_t*>(msg), len);
 
   RUN_ON_THREAD(
@@ -1361,7 +1385,7 @@ int NrUdpSocketIpc::getaddr(nr_transport_addr* addrp) {
 
 int NrUdpSocketIpc::connect(const nr_transport_addr* addr) {
   int r, _status;
-  int32_t port;
+  uint16_t port;
   nsCString host;
 
   ReentrantMonitorAutoEnter mon(monitor_);
@@ -1374,8 +1398,7 @@ int NrUdpSocketIpc::connect(const nr_transport_addr* addr) {
 
   RUN_ON_THREAD(io_thread_,
                 mozilla::WrapRunnable(RefPtr<NrUdpSocketIpc>(this),
-                                      &NrUdpSocketIpc::connect_i, host,
-                                      static_cast<uint16_t>(port)),
+                                      &NrUdpSocketIpc::connect_i, host, port),
                 NS_DISPATCH_NORMAL);
 
   // Wait until connect() completes.
@@ -1419,10 +1442,7 @@ void NrUdpSocketIpc::create_i(const nsACString& host, const uint16_t port) {
   ASSERT_ON_THREAD(io_thread_);
 
   uint32_t minBuffSize = 0;
-  RefPtr<dom::UDPSocketChild> socketChild = new dom::UDPSocketChild();
-
-  // This can spin the event loop; don't do that with the monitor held
-  socketChild->SetBackgroundSpinsEvents();
+  RefPtr socketChild = MakeRefPtr<dom::UDPSocketChild>();
 
   ReentrantMonitorAutoEnter mon(monitor_);
   if (!socket_child_) {
@@ -1433,7 +1453,7 @@ void NrUdpSocketIpc::create_i(const nsACString& host, const uint16_t port) {
     socketChild = nullptr;
   }
 
-  RefPtr<NrUdpSocketIpcProxy> proxy(new NrUdpSocketIpcProxy);
+  RefPtr proxy = MakeRefPtr<NrUdpSocketIpcProxy>();
   nsresult rv = proxy->Init(this);
   if (NS_FAILED(rv)) {
     err_ = true;
@@ -1459,7 +1479,7 @@ void NrUdpSocketIpc::connect_i(const nsACString& host, const uint16_t port) {
   nsresult rv;
   ReentrantMonitorAutoEnter mon(monitor_);
 
-  RefPtr<NrUdpSocketIpcProxy> proxy(new NrUdpSocketIpcProxy);
+  RefPtr proxy = MakeRefPtr<NrUdpSocketIpcProxy>();
   rv = proxy->Init(this);
   if (NS_FAILED(rv)) {
     err_ = true;
@@ -1606,8 +1626,9 @@ abort:
 }
 
 // static
-bool NrSocketBase::IsForbiddenAddress(nr_transport_addr* addr) {
-  int r, port;
+bool NrSocketBase::IsForbiddenAddress(const nr_transport_addr* addr) {
+  uint16_t port;
+  int r;
 
   r = nr_transport_addr_get_port(addr, &port);
   if (r) {
@@ -1615,15 +1636,20 @@ bool NrSocketBase::IsForbiddenAddress(nr_transport_addr* addr) {
   }
 
   // allow auto assigned ports
-  if (port != 0) {
-    // Don't need to check an override scheme
-    nsresult rv = NS_CheckPortSafety(port, nullptr);
-    if (NS_FAILED(rv)) {
-      return true;
+  if (port == 0) {
+    return false;
+  }
+
+  // First check the known good ports for webrtc.
+  for (const auto good : IceServerParser::kGoodWebrtcPortList) {
+    if (port == good) {
+      return false;
     }
   }
 
-  return false;
+  // Otherwise fall back to Necko's generic outgoing port block list. Don't
+  // need to check an override scheme.
+  return NS_FAILED(NS_CheckPortSafety(port, nullptr));
 }
 
 static int nr_socket_local_destroy(void** objp) {

@@ -1,21 +1,21 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 // HttpLog.h should generally be included first
-#include "HttpLog.h"
 #include "Http3WebTransportSession.h"
-#include "Http3WebTransportStream.h"
+
 #include "Http3Session.h"
 #include "Http3Stream.h"
+#include "Http3WebTransportStream.h"
+#include "HttpLog.h"
+#include "nsHttpHandler.h"
 #include "nsHttpRequestHead.h"
 #include "nsHttpTransaction.h"
 #include "nsIClassOfService.h"
+#include "nsIOService.h"
 #include "nsISocketTransport.h"
 #include "nsSocketTransportService2.h"
-#include "nsIOService.h"
-#include "nsHttpHandler.h"
 
 namespace mozilla::net {
 
@@ -55,7 +55,7 @@ bool Http3TunnelStreamBase::ConsumeHeaders(const char* buf, uint32_t avail,
 
 nsresult Http3TunnelStreamBase::TryActivating() {
   LOG(("Http3TunnelStreamBase::TryActivating [this=%p]", this));
-  nsHttpRequestHead* head = mTransaction->RequestHead();
+  const nsHttpRequestHead* head = mTransaction->RequestHead();
 
   nsAutoCString host;
   nsresult rv = head->GetHeader(nsHttp::Host, host);
@@ -336,9 +336,8 @@ uint64_t Http3WebTransportSession::GetStreamId() const {
 
 void Http3WebTransportSession::Close(nsresult aResult) {
   LOG(("Http3WebTransportSession::Close %p", this));
-  if (mListener) {
-    mListener->OnSessionClosed(NS_SUCCEEDED(aResult), 0, ""_ns);
-    mListener = nullptr;
+  if (RefPtr<WebTransportSessionEventListener> listener = TakeListener()) {
+    listener->OnSessionClosed(NS_SUCCEEDED(aResult), 0, ""_ns);
   }
   if (mTransaction) {
     mTransaction->Close(aResult);
@@ -363,14 +362,21 @@ void Http3WebTransportSession::OnSessionClosed(bool aCleanly, uint32_t aStatus,
     mTransaction->Close(NS_BASE_STREAM_CLOSED);
     mTransaction = nullptr;
   }
-  if (mListener) {
-    mListener->OnSessionClosed(aCleanly, aStatus, aReason);
-    mListener = nullptr;
+  if (RefPtr<WebTransportSessionEventListener> listener = TakeListener()) {
+    listener->OnSessionClosed(aCleanly, aStatus, aReason);
   }
   mRecvState = RECV_DONE;
   mSendState = SEND_DONE;
 
   mSession->CloseWebTransportConn();
+}
+
+void Http3WebTransportSession::OnSessionDraining() {
+  LOG(("Http3WebTransportSession::OnSessionDraining [this=%p]", this));
+  RefPtr<WebTransportSessionEventListener> listener = GetListener();
+  if (listener) {
+    listener->OnDraining();
+  }
 }
 
 void Http3WebTransportSession::CloseSession(uint32_t aStatus,
@@ -382,7 +388,8 @@ void Http3WebTransportSession::CloseSession(uint32_t aStatus,
     mRecvState = CLOSE_PENDING;
     mSendState = SEND_DONE;
   }
-  mListener = nullptr;
+  RefPtr<WebTransportSessionEventListener> listener = TakeListener();
+  // let it drop
 }
 
 void Http3WebTransportSession::CreateOutgoingBidirectionalStream(
@@ -458,50 +465,97 @@ Http3WebTransportSession::OnIncomingWebTransportStream(
     }
   }
 
-  if (!mListener) {
+  RefPtr<WebTransportSessionEventListener> baseListener = GetListener();
+  if (!baseListener) {
     return nullptr;
   }
 
   if (nsCOMPtr<WebTransportSessionEventListenerInternal> listener =
-          do_QueryInterface(mListener)) {
+          do_QueryInterface(baseListener)) {
     listener->OnIncomingStreamAvailableInternal(stream);
   }
   return stream.forget();
 }
 
 void Http3WebTransportSession::SendDatagram(nsTArray<uint8_t>&& aData,
-                                            uint64_t aTrackingId) {
+                                            uint64_t aTrackingId,
+                                            uint64_t aSendGroupId,
+                                            int64_t aSendOrder) {
   MOZ_ASSERT(OnSocketThread(), "not on socket thread");
-  LOG(("Http3WebTransportSession::SendDatagram this=%p", this));
+  LOG(("Http3WebTransportSession::SendDatagram this=%p, sendGroup=%" PRIu64
+       ", sendOrder=%" PRId64,
+       this, aSendGroupId, aSendOrder));
   if (mSendState != PROCESSING_DATAGRAM) {
     return;
   }
 
-  mSession->SendDatagram(this, aData, aTrackingId);
+  // SendDatagram() enqueues the datagram into neqo's per-session queue but
+  // does not send it immediately. The datagram is moved to the QUIC send
+  // queue during process_output() (called from ProcessOutput() in
+  // Http3Session::SendData()).
+  //
+  // StreamHasDataToWrite() triggers the chain:
+  //   StreamReadyToWrite() -> ForceSend() -> HttpConnectionUDP::ForceSend()
+  //     -> MaybeForceSendIO() -> [async dispatch] -> SendData()
+  //     -> ProcessOutput() -> neqo process_output()
+  //
+  // This means the datagram is actually transmitted after one event loop
+  // cycle (the async dispatch in ForceSend/MaybeForceSendIO).
+  mSession->SendDatagram(this, aData, aTrackingId, aSendGroupId, aSendOrder);
   mSession->StreamHasDataToWrite(this);
 }
 
 void Http3WebTransportSession::OnDatagramReceived(nsTArray<uint8_t>&& aData) {
   MOZ_ASSERT(OnSocketThread(), "not on socket thread");
   LOG(("Http3WebTransportSession::OnDatagramReceived this=%p", this));
-  if (mRecvState != ACTIVE || !mListener) {
+  RefPtr<WebTransportSessionEventListener> baseListener2 = GetListener();
+  if (mRecvState != ACTIVE || !baseListener2) {
     return;
   }
 
   if (nsCOMPtr<WebTransportSessionEventListenerInternal> listener =
-          do_QueryInterface(mListener)) {
+          do_QueryInterface(baseListener2)) {
     listener->OnDatagramReceivedInternal(std::move(aData));
   }
 }
 
 void Http3WebTransportSession::GetMaxDatagramSize() {
   MOZ_ASSERT(OnSocketThread(), "not on socket thread");
-  if (mRecvState != ACTIVE || !mListener) {
+  RefPtr<WebTransportSessionEventListener> listener = GetListener();
+  if (mRecvState != ACTIVE || !listener) {
     return;
   }
 
   uint64_t size = mSession->MaxDatagramSize(mStreamId);
-  mListener->OnMaxDatagramSize(size);
+  listener->OnMaxDatagramSize(size);
+}
+
+nsresult Http3WebTransportSession::ExportKeyingMaterial(
+    const nsTArray<uint8_t>& aLabel, const nsTArray<uint8_t>& aContext,
+    nsTArray<uint8_t>& aKeyingMaterial) {
+  MOZ_ASSERT(OnSocketThread(), "not on socket thread");
+  if (mRecvState != ACTIVE) {
+    return NS_ERROR_NOT_CONNECTED;
+  }
+  return mSession->ExportWebTransportKeyingMaterial(mStreamId, aLabel, aContext,
+                                                    aKeyingMaterial);
+}
+
+void Http3WebTransportSession::GetNegotiatedProtocol(nsACString& aProtocol) {
+  MOZ_ASSERT(OnSocketThread(), "not on socket thread");
+  aProtocol.Truncate();
+  if (mRecvState != ACTIVE) {
+    return;
+  }
+  mSession->GetWebTransportSessionProtocol(mStreamId, aProtocol);
+}
+
+nsresult Http3WebTransportSession::RegisterSendGroup(uint64_t aGroupId) {
+  MOZ_ASSERT(OnSocketThread(), "not on socket thread");
+  if (mRecvState != ACTIVE) {
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+  return mSession->RegisterWebTransportSendGroup(mStreamId, aGroupId);
 }
 
 void Http3WebTransportSession::OnOutgoingDatagramOutCome(
@@ -510,30 +564,33 @@ void Http3WebTransportSession::OnOutgoingDatagramOutCome(
   LOG(("Http3WebTransportSession::OnOutgoingDatagramOutCome this=%p id=%" PRIx64
        ", outCome=%d mRecvState=%d",
        this, aId, static_cast<uint32_t>(aOutCome), mRecvState));
-  if (mRecvState != ACTIVE || !mListener || !aId) {
+  RefPtr<WebTransportSessionEventListener> listener = GetListener();
+  if (mRecvState != ACTIVE || !listener || !aId) {
     return;
   }
 
-  mListener->OnOutgoingDatagramOutCome(aId, aOutCome);
+  listener->OnOutgoingDatagramOutCome(aId, aOutCome);
 }
 
 void Http3WebTransportSession::OnStreamStopSending(uint64_t aId,
                                                    nsresult aError) {
   LOG(("OnStreamStopSending id:%" PRId64, aId));
-  if (!mListener) {
+  RefPtr<WebTransportSessionEventListener> listener = GetListener();
+  if (!listener) {
     return;
   }
 
-  mListener->OnStopSending(aId, aError);
+  listener->OnStopSending(aId, aError);
 }
 
 void Http3WebTransportSession::OnStreamReset(uint64_t aId, nsresult aError) {
   LOG(("OnStreamReset id:%" PRId64, aId));
-  if (!mListener) {
+  RefPtr<WebTransportSessionEventListener> listener = GetListener();
+  if (!listener) {
     return;
   }
 
-  mListener->OnResetReceived(aId, aError);
+  listener->OnResetReceived(aId, aError);
 }
 
 }  // namespace mozilla::net

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,15 +5,14 @@
 #ifndef StaticComponents_h
 #define StaticComponents_h
 
+#include "StaticComponentData.h"
 #include "mozilla/AlreadyAddRefed.h"
+#include "mozilla/Components.h"
 #include "mozilla/Module.h"
 #include "mozilla/Span.h"
 #include "nsID.h"
 #include "nsStringFwd.h"
 #include "nscore.h"
-
-#include "mozilla/Components.h"
-#include "StaticComponentData.h"
 
 class nsIFactory;
 class nsIUTF8StringEnumerator;
@@ -96,6 +93,9 @@ struct StaticModule {
   nsID mCID;
   StringOffset mContractID;
   Module::ProcessSelector mProcessSelector;
+
+  // Does the object returned by CreateInstance implement nsISerializable?
+  bool mIsSerializable;
 
   const nsID& CID() const { return mCID; }
 

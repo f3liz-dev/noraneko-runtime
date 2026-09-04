@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,7 +6,6 @@
 #define GLCONTEXTCGL_H_
 
 #include "GLContext.h"
-
 #include "OpenGL/OpenGL.h"
 
 #ifdef __OBJC__
@@ -44,7 +41,7 @@ class GLContextCGL : public GLContext {
   }
 
   static GLContextCGL* Cast(GLContext* gl) {
-    MOZ_ASSERT(gl->GetContextType() == GLContextType::CGL);
+    MOZ_RELEASE_ASSERT(gl->GetContextType() == GLContextType::CGL);
     return static_cast<GLContextCGL*>(gl);
   }
 
@@ -72,6 +69,10 @@ class GLContextCGL : public GLContext {
   virtual void GetWSIInfo(nsCString* const out) const override;
 
   Maybe<SymbolLoader> GetSymbolLoader() const override;
+
+  GLenum GetPreferredMacIOSurfaceTextureTarget() const override {
+    return LOCAL_GL_TEXTURE_RECTANGLE_ARB;
+  }
 };
 
 }  // namespace gl

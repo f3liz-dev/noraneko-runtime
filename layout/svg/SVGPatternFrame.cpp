@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -141,9 +139,9 @@ static float MaxExpansion(const Matrix& aMatrix) {
 static bool IncludeBBoxScale(const SVGAnimatedViewBox& aViewBox,
                              uint32_t aPatternContentUnits,
                              uint32_t aPatternUnits) {
-  return (!aViewBox.IsExplicitlySet() &&
+  return (!aViewBox.HasRect() &&
           aPatternContentUnits == SVG_UNIT_TYPE_OBJECTBOUNDINGBOX) ||
-         (aViewBox.IsExplicitlySet() &&
+         (aViewBox.HasRect() &&
           aPatternUnits == SVG_UNIT_TYPE_OBJECTBOUNDINGBOX);
 }
 
@@ -189,8 +187,8 @@ static nsresult GetTargetGeometry(gfxRect* aBBox,
   *aBBox =
       aOverrideBounds
           ? *aOverrideBounds
-          : SVGUtils::GetBBox(aTarget, SVGUtils::eUseFrameBoundsForOuterSVG |
-                                           SVGUtils::eBBoxIncludeFillGeometry);
+          : SVGUtils::GetBBox(aTarget, {SVGBBoxFlag::UseFrameBoundsForOuterSVG,
+                                        SVGBBoxFlag::IncludeFillGeometry});
 
   // Sanity check
   if (IncludeBBoxScale(aViewBox, aPatternContentUnits, aPatternUnits) &&
@@ -471,7 +469,7 @@ const SVGAnimatedViewBox& SVGPatternFrame::GetViewBox(nsIContent* aDefault) {
   const SVGAnimatedViewBox& thisViewBox =
       static_cast<SVGPatternElement*>(GetContent())->mViewBox;
 
-  if (thisViewBox.IsExplicitlySet()) {
+  if (thisViewBox.HasRect()) {
     return thisViewBox;
   }
 
@@ -625,15 +623,14 @@ gfxMatrix SVGPatternFrame::ConstructCTM(const SVGAnimatedViewBox& aViewBox,
     scaleX = scaleY = MaxExpansion(callerCTM);
   }
 
-  if (!aViewBox.IsExplicitlySet()) {
+  if (!aViewBox.HasRect()) {
     return gfxMatrix(scaleX, 0.0, 0.0, scaleY, 0.0, 0.0);
+  }
+  if (aViewBox.IsEmpty()) {
+    return gfxMatrix(0.0, 0.0, 0.0, 0.0, 0.0, 0.0);  // singular
   }
   const SVGViewBox& viewBox =
       aViewBox.GetAnimValue() * Style()->EffectiveZoom().ToFloat();
-
-  if (!viewBox.IsValid()) {
-    return gfxMatrix(0.0, 0.0, 0.0, 0.0, 0.0, 0.0);  // singular
-  }
 
   float viewportWidth, viewportHeight;
   if (targetContent->IsSVGElement()) {
@@ -671,7 +668,7 @@ already_AddRefed<gfxPattern> SVGPatternFrame::GetPaintServerPattern(
     float aGraphicOpacity, imgDrawingParams& aImgParams,
     const gfxRect* aOverrideBounds) {
   if (aGraphicOpacity == 0.0f) {
-    return do_AddRef(new gfxPattern(DeviceColor()));
+    return MakeAndAddRef<gfxPattern>(DeviceColor());
   }
 
   // Paint it!

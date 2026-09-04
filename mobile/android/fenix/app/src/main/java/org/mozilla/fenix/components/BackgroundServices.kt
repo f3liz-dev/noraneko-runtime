@@ -20,6 +20,9 @@ import mozilla.components.concept.sync.DeviceCommandQueue
 import mozilla.components.concept.sync.DeviceConfig
 import mozilla.components.concept.sync.DeviceType
 import mozilla.components.concept.sync.OAuthAccount
+import mozilla.components.concept.sync.PeriodicSyncConfig
+import mozilla.components.concept.sync.SyncConfig
+import mozilla.components.concept.sync.SyncEngine
 import mozilla.components.feature.accounts.push.CloseTabsCommandReceiver
 import mozilla.components.feature.accounts.push.CloseTabsFeature
 import mozilla.components.feature.accounts.push.FxaPushSupportFeature
@@ -31,12 +34,8 @@ import mozilla.components.feature.syncedtabs.storage.SyncedTabsStorage
 import mozilla.components.lib.crash.CrashReporter
 import mozilla.components.lib.state.Middleware
 import mozilla.components.lib.state.Store
-import mozilla.components.service.fxa.PeriodicSyncConfig
 import mozilla.components.service.fxa.ServerConfig
-import mozilla.components.service.fxa.SyncConfig
-import mozilla.components.service.fxa.SyncEngine
 import mozilla.components.service.fxa.manager.FxaAccountManager
-import mozilla.components.service.fxa.manager.SCOPE_SESSION
 import mozilla.components.service.fxa.manager.SCOPE_SYNC
 import mozilla.components.service.fxa.store.SyncAction
 import mozilla.components.service.fxa.store.SyncState
@@ -55,7 +54,6 @@ import org.mozilla.fenix.R
 import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.ext.maxActiveTime
 import org.mozilla.fenix.ext.recordEventInNimbus
-import org.mozilla.fenix.ext.settings
 import org.mozilla.fenix.perf.StrictModeManager
 import org.mozilla.fenix.perf.lazyMonitored
 import org.mozilla.fenix.sync.SyncedTabsIntegration
@@ -152,6 +150,7 @@ class BackgroundServices(
 
     private val telemetryAccountObserver = TelemetryAccountObserver(
         context,
+        settings,
     )
 
     val accountAbnormalities = AccountAbnormalities(context, crashReporter, strictMode)
@@ -180,7 +179,7 @@ class BackgroundServices(
     val syncedTabsCommandsFlushScheduler by lazyMonitored {
         SyncedTabsCommandsFlushScheduler(
             context = context,
-            flushDelay = context.getUndoDelay().milliseconds + DEFAULT_SYNCED_TABS_COMMANDS_EXTRA_FLUSH_DELAY,
+            flushDelay = settings.getUndoDelay().milliseconds + DEFAULT_SYNCED_TABS_COMMANDS_EXTRA_FLUSH_DELAY,
         )
     }
     val closeSyncedTabsCommandReceiver by lazyMonitored {
@@ -208,9 +207,6 @@ class BackgroundServices(
             // This is a good example of an information leak at the API level.
             // See https://github.com/mozilla-mobile/android-components/issues/3732
             SCOPE_SYNC,
-            // Necessary to enable "Manage Account" functionality and ability to generate OAuth
-            // codes for certain scopes.
-            SCOPE_SESSION,
         ),
         crashReporter,
     ).also { accountManager ->
@@ -281,9 +277,10 @@ internal class TelemetryMiddleware : Middleware<SyncState, SyncAction> {
 @VisibleForTesting(otherwise = PRIVATE)
 internal class TelemetryAccountObserver(
     private val context: Context,
+    private val settings: Settings,
 ) : AccountObserver {
     override fun onAuthenticated(account: OAuthAccount, authType: AuthType) {
-        context.settings().signedInFxaAccount = true
+        settings.signedInFxaAccount = true
         when (authType) {
             // User signed-in into an existing FxA account.
             AuthType.Signin -> {
@@ -318,7 +315,7 @@ internal class TelemetryAccountObserver(
 
     override fun onLoggedOut() {
         SyncAuth.signOut.record(NoExtras())
-        context.settings().signedInFxaAccount = false
+        settings.signedInFxaAccount = false
     }
 }
 

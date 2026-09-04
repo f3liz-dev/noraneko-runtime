@@ -2,11 +2,12 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#if !defined(LOCALGL_H_)
-#  define LOCALGL_H_
+#ifndef LOCALGL_H_
+#define LOCALGL_H_
 
-#  include "GLTypes.h"
-#  include "GLConsts.h"
+#include "GLConsts.h"
+#include "GLTypes.h"
+#include "mozilla/Assertions.h"
 
 namespace mozilla {
 namespace gl {
@@ -15,8 +16,8 @@ bool CheckContextLost(const GLContext* gl);
 }  // namespace gl
 }  // namespace mozilla
 
-#  define MOZ_GL_ASSERT(glContext, expr) \
-    MOZ_ASSERT((expr) || mozilla::gl::CheckContextLost(glContext))
+#define MOZ_GL_ASSERT(glContext, expr) \
+  MOZ_ASSERT((expr) || mozilla::gl::CheckContextLost(glContext))
 
 // -
 
@@ -68,6 +69,13 @@ bool CheckContextLost(const GLContext* gl);
 #define LOCAL_EGL_PLATFORM_ANGLE_DEVICE_TYPE_REFERENCE_ANGLE  0x320C
 #define LOCAL_EGL_PLATFORM_ANGLE_ENABLE_AUTOMATIC_TRIM_ANGLE  0x320F
 
+// EGL_ANGLE_platform_angle_metal
+#define LOCAL_EGL_PLATFORM_ANGLE_TYPE_METAL_ANGLE             0x3489
+
+// EGL_ANGLE_platform_angle_device_id
+#define LOCAL_EGL_PLATFORM_ANGLE_DEVICE_ID_HIGH_ANGLE         0x34D6
+#define LOCAL_EGL_PLATFORM_ANGLE_DEVICE_ID_LOW_ANGLE          0x34D7
+
 // EGL_ANGLE_d3d_texture_client_buffer
 #define LOCAL_EGL_D3D_TEXTURE_ANGLE                          0x33A3
 
@@ -104,6 +112,30 @@ bool CheckContextLost(const GLContext* gl);
 
 // EGL_ANGLE_image_d3d11_texture
 #define LOCAL_EGL_D3D11_TEXTURE_ANGLE                   0x3484
+
+// EGL_ANGLE_iosurface_client_buffer
+#define LOCAL_EGL_IOSURFACE_ANGLE                       0x3454
+#define LOCAL_EGL_IOSURFACE_PLANE_ANGLE                 0x345A
+#define LOCAL_EGL_TEXTURE_RECTANGLE_ANGLE               0x345B
+#define LOCAL_EGL_TEXTURE_TYPE_ANGLE                    0x345C
+#define LOCAL_EGL_TEXTURE_INTERNAL_FORMAT_ANGLE         0x345D
+#define LOCAL_EGL_IOSURFACE_USAGE_HINT_ANGLE            0x348A
+#define LOCAL_EGL_BIND_TO_TEXTURE_TARGET_ANGLE          0x348D
+
+// EGL_ANGLE_display_power_preference
+#define LOCAL_EGL_POWER_PREFERENCE_ANGLE                0x3482
+#define LOCAL_EGL_LOW_POWER_ANGLE                       0x0001
+#define LOCAL_EGL_HIGH_POWER_ANGLE                      0x0002
+
+// EGL_ANGLE_metal_commands_scheduled_sync
+#define LOCAL_EGL_SYNC_METAL_COMMANDS_SCHEDULED_ANGLE   0x34E0
+
+// EGL_ANGLE_metal_shared_event_sync
+#define LOCAL_EGL_SYNC_METAL_SHARED_EVENT_ANGLE                 0x34D8
+#define LOCAL_EGL_SYNC_METAL_SHARED_EVENT_OBJECT_ANGLE          0x34D9
+#define LOCAL_EGL_SYNC_METAL_SHARED_EVENT_SIGNAL_VALUE_LO_ANGLE 0x34DA
+#define LOCAL_EGL_SYNC_METAL_SHARED_EVENT_SIGNAL_VALUE_HI_ANGLE 0x34DB
+#define LOCAL_EGL_SYNC_METAL_SHARED_EVENT_SIGNALED_ANGLE        0x34DC
 
 // clang-format on
 

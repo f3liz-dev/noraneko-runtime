@@ -1,5 +1,3 @@
-/* -*- Mode: javascript; tab-width: 2; indent-tabs-mode: nil; js-indent-level: 2 -*- */
-
 requestLongerTimeout(2);
 
 const gHttpTestRoot = "https://example.com/browser/dom/base/test/";
@@ -9,6 +7,7 @@ add_setup(async function test_initialize() {
     set: [
       ["layout.css.use-counters.enabled", true],
       ["layout.css.use-counters-unimplemented.enabled", true],
+      ["dom.speculation_rules.enabled", true],
     ],
   });
 });
@@ -227,6 +226,51 @@ add_task(async function test_page_counters() {
       ],
     },
 
+    // Check that use counters are incremented for <script type="speculationrules">
+    // elements, and for the source and eagerness values they use.
+    {
+      type: "direct",
+      filename: "file_use_counter_speculationrules.html",
+      counters: [
+        {
+          name: "SpeculationRulesScriptTag",
+          glean: ["", "speculationRulesScriptTag"],
+        },
+        {
+          name: "SpeculationRulesPrefetch",
+          glean: ["", "speculationRulesPrefetch"],
+        },
+        {
+          name: "SpeculationRulesListSource",
+          glean: ["", "speculationRulesListSource"],
+        },
+        {
+          name: "SpeculationRulesDocumentSource",
+          glean: ["", "speculationRulesDocumentSource"],
+        },
+        {
+          name: "SpeculationRulesEagernessImmediate",
+          glean: ["", "speculationRulesEagernessImmediate"],
+        },
+        {
+          name: "SpeculationRulesEagernessEager",
+          glean: ["", "speculationRulesEagernessEager"],
+        },
+        {
+          name: "SpeculationRulesEagernessModerate",
+          glean: ["", "speculationRulesEagernessModerate"],
+        },
+        {
+          name: "SpeculationRulesEagernessConservative",
+          glean: ["", "speculationRulesEagernessConservative"],
+        },
+        {
+          name: "SpeculationRulesTag",
+          glean: ["", "speculationRulesTag"],
+        },
+      ],
+    },
+
     // // data: URLs don't correctly propagate to their referring document yet.
     // {
     //   type: "direct",
@@ -374,7 +418,7 @@ async function ensureData(prevSentinelValue = null) {
   // To wait for the use counters to be reported, we repeatedly flush IPC and
   // check for a change in the "sentinel" use counters
   // `use.counter.css.{page|doc}.css_marker_mid`.
-  return BrowserTestUtils.waitForCondition(
+  return TestUtils.waitForCondition(
     async () => {
       await Services.fog.testFlushAllChildren();
       return (

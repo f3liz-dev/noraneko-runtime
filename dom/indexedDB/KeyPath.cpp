@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -123,7 +121,7 @@ nsresult GetJSValFromKeyPathString(
             uint64_t size = blob->GetSize(rv);
             MOZ_ALWAYS_TRUE(!rv.Failed());
 
-            intermediate = JS_NumberValue(size);
+            intermediate = JS::NumberValue(size);
             hasProp = true;
           } else if (token.EqualsLiteral("type")) {
             nsString type;
@@ -151,7 +149,7 @@ nsresult GetJSValFromKeyPathString(
                 int64_t lastModifiedDate = file->GetLastModified(rv);
                 MOZ_ALWAYS_TRUE(!rv.Failed());
 
-                intermediate = JS_NumberValue(lastModifiedDate);
+                intermediate = JS::NumberValue(lastModifiedDate);
                 hasProp = true;
               }
               // The spec also lists "lastModifiedDate", but we deprecated and

@@ -1,5 +1,4 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -23,6 +22,7 @@
 #include "OrientedImage.h"
 #include "SourceBuffer.h"
 #include "SurfaceCache.h"
+#include "WindowRenderer.h"
 #include "gfx2DGlue.h"
 #include "gfxContext.h"
 #include "gfxPlatform.h"
@@ -30,10 +30,9 @@
 #include "mozilla/RefPtr.h"
 #include "mozilla/SizeOfState.h"
 #include "mozilla/StaticPrefs_image.h"
-#include "mozilla/glean/ImageDecodersMetrics.h"
 #include "mozilla/TimeStamp.h"
-
 #include "mozilla/gfx/2D.h"
+#include "mozilla/glean/ImageDecodersMetrics.h"
 #include "nsComponentManagerUtils.h"
 #include "nsError.h"
 #include "nsIConsoleService.h"
@@ -45,7 +44,6 @@
 #include "nsProperties.h"
 #include "prenv.h"
 #include "prsystem.h"
-#include "WindowRenderer.h"
 
 namespace mozilla {
 
@@ -266,7 +264,12 @@ AspectRatio RasterImage::GetIntrinsicRatio() {
   if (mError) {
     return {};
   }
-  return AspectRatio::FromSize(mSize.width, mSize.height);
+  OrientedIntSize size = mSize;
+  if (mResolution.mX != mResolution.mY) {
+    mResolution.ApplyXTo(size.width);
+    mResolution.ApplyYTo(size.height);
+  }
+  return AspectRatio::FromSize(size.width, size.height);
 }
 
 NS_IMETHODIMP_(Orientation)
@@ -482,14 +485,20 @@ void RasterImage::OnSurfaceDiscarded(const SurfaceKey& aSurfaceKey) {
   MOZ_ASSERT(mProgressTracker);
 
   bool animatedFramesDiscarded =
-      mAnimationState && aSurfaceKey.Playback() == PlaybackType::eAnimated;
+      aSurfaceKey.Playback() == PlaybackType::eAnimated;
 
   nsCOMPtr<nsIEventTarget> eventTarget = do_GetMainThread();
 
-  RefPtr<RasterImage> image = this;
-  nsCOMPtr<nsIRunnable> ev =
-      NS_NewRunnableFunction("RasterImage::OnSurfaceDiscarded", [=]() -> void {
-        image->OnSurfaceDiscardedInternal(animatedFramesDiscarded);
+  RefPtr<ProgressTracker> progressTracker = mProgressTracker;
+  nsCOMPtr<nsIRunnable> ev = NS_NewRunnableFunction(
+      "RasterImage::OnSurfaceDiscarded",
+      [progressTracker, animatedFramesDiscarded]() -> void {
+        RefPtr<Image> image = progressTracker->GetImage();
+        if (!image) {
+          return;
+        }
+        static_cast<RasterImage*>(image.get())
+            ->OnSurfaceDiscardedInternal(animatedFramesDiscarded);
       });
   eventTarget->Dispatch(ev.forget(), NS_DISPATCH_NORMAL);
 }
@@ -1671,10 +1680,12 @@ void RasterImage::NotifyDecodeComplete(
     }
 
     if (mAnimationState && LoadHasBeenDecoded()) {
-      // We've finished a full decode of all animation frames and our
-      // AnimationState has been notified about them all, so let it know not to
-      // expect anymore.
-      mAnimationState->NotifyDecodeComplete();
+      // If we've successfully finished a full decode of all animation frames
+      // then let our animation state know it is complete and to not expect
+      // anymore frames.
+      if (aStatus.mFinished && !aStatus.mHadError) {
+        mAnimationState->NotifyDecodeComplete();
+      }
 
       IntRect rect = mAnimationState->UpdateState(this, mSize.ToUnknownSize());
 

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,7 +6,10 @@
 
 #include <utility>
 
+#include "mozilla/ProfilerMarkers.h"
 #include "mozilla/ScopeExit.h"
+#include "mozilla/StaticPrefs_gfx.h"
+#include "mozilla/StaticPrefs_webgl.h"
 #include "mozilla/gfx/gfxVars.h"
 #include "mozilla/layers/AsyncImagePipelineManager.h"
 #include "mozilla/layers/CompositorThread.h"
@@ -18,9 +19,6 @@
 #include "mozilla/layers/RemoteTextureMap.h"
 #include "mozilla/layers/WebRenderBridgeParent.h"
 #include "mozilla/layers/WebRenderTextureHost.h"
-#include "mozilla/ProfilerMarkers.h"
-#include "mozilla/StaticPrefs_gfx.h"
-#include "mozilla/StaticPrefs_webgl.h"
 #include "nsAString.h"
 #include "nsDebug.h"          // for NS_WARNING, NS_ASSERTION
 #include "nsPrintfCString.h"  // for nsPrintfCString
@@ -157,7 +155,7 @@ void WebRenderImageHost::PushPendingRemoteTexture(
       CompositableTextureHostRef(texture.get()));
 }
 
-void WebRenderImageHost::UseRemoteTexture() {
+void WebRenderImageHost::UseRemoteTexture(bool aCalledInCallback) {
   if (mPendingRemoteTextureWrappers.empty()) {
     return;
   }
@@ -192,7 +190,7 @@ void WebRenderImageHost::UseRemoteTexture() {
             }
 
             self->mWaitingReadyCallback = false;
-            self->UseRemoteTexture();
+            self->UseRemoteTexture(/* aCalledInCallback */ true);
           });
 
       CompositorThread()->Dispatch(runnable.forget());
@@ -203,7 +201,10 @@ void WebRenderImageHost::UseRemoteTexture() {
       auto* wrapper =
           mPendingRemoteTextureWrappers.front()->AsRemoteTextureHostWrapper();
 
-      if (mWaitForRemoteTextureOwner) {
+      // When UseRemoteTexture() is called in callback, it does not need to wait
+      // RemoteTextureOwner. In this case, RemoteTextureOwner should be alive or
+      // obsoleted.
+      if (mWaitForRemoteTextureOwner && !aCalledInCallback) {
         // XXX remove sync wait
         RemoteTextureMap::Get()->WaitForRemoteTextureOwner(wrapper);
       }
@@ -338,13 +339,12 @@ TextureHost* WebRenderImageHost::GetAsTextureHostForComposite(
   RefPtr<TextureHost> texture = img->mTextureHost.get();
 #if XP_WIN
   // Convert YUV BufferTextureHost to TextureHostWrapperD3D11 if possible
-  if (texture->AsBufferTextureHost()) {
+  if (const auto* bufferHost = texture->AsBufferTextureHost()) {
     auto identifier = aAsyncImageManager->GetTextureFactoryIdentifier();
     const bool tryConvertToNV12 =
         StaticPrefs::gfx_video_convert_yuv_to_nv12_image_host_win() &&
         identifier.mSupportsD3D11NV12 &&
-        KnowsCompositor::SupportsD3D11(identifier) &&
-        texture->GetFormat() == gfx::SurfaceFormat::YUV420;
+        KnowsCompositor::SupportsD3D11(identifier) && (bufferHost->IsYCbCr());
     if (tryConvertToNV12) {
       PROFILER_MARKER_TEXT("WebRenderImageHost", GRAPHICS, {},
                            "Try ConvertToNV12"_ns);

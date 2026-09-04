@@ -8,11 +8,11 @@ const EventEmitter = require("resource://devtools/shared/event-emitter.js");
 const {
   gDevTools,
 } = require("resource://devtools/client/framework/devtools.js");
+const {
+  getFormattedSize,
+} = require("resource://devtools/client/netmonitor/src/utils/format-utils.js");
 
-const { LocalizationHelper } = require("resource://devtools/shared/l10n.js");
-const L10N = new LocalizationHelper(
-  "devtools/client/locales/toolbox.properties"
-);
+const l10n = new Localization(["devtools/client/toolbox-options.ftl"], true);
 
 loader.lazyRequireGetter(
   this,
@@ -20,6 +20,26 @@ loader.lazyRequireGetter(
   "resource://devtools/client/shared/link.js",
   true
 );
+loader.lazyRequireGetter(
+  this,
+  "findCssSelector",
+  "resource://devtools/shared/inspector/css-logic.js",
+  true
+);
+
+const lazy = {};
+
+ChromeUtils.defineLazyGetter(lazy, "LocalFile", () =>
+  Components.Constructor("@mozilla.org/file/local;1", "nsIFile", "initWithPath")
+);
+
+ChromeUtils.defineESModuleGetters(lazy, {
+  FileUtils: "resource://gre/modules/FileUtils.sys.mjs",
+  LocalModeMappings:
+    "resource://devtools/client/framework/LocalModeMappings.sys.mjs",
+});
+
+const NETMONITOR_BODY_LIMIT_PREF = "devtools.netmonitor.bodyLimit";
 
 function GetPref(name) {
   const type = Services.prefs.getPrefType(name);
@@ -90,20 +110,25 @@ class OptionsPanel extends EventEmitter {
     this.setupThemeList();
     this.setupAdditionalOptions();
     await this.populatePreferences();
+    this.#setupLocalMode();
+    this.setupNetworkBodySizeLimit();
+
     return this;
   }
 
+  #observedPreferences = [
+    "devtools.cache.disabled",
+    "devtools.theme",
+    "devtools.source-map.client-service.enabled",
+    "devtools.toolbox.splitconsole.enabled",
+    NETMONITOR_BODY_LIMIT_PREF,
+  ];
+
   #addListeners() {
-    Services.prefs.addObserver("devtools.cache.disabled", this.#prefChanged);
-    Services.prefs.addObserver("devtools.theme", this.#prefChanged);
-    Services.prefs.addObserver(
-      "devtools.source-map.client-service.enabled",
-      this.#prefChanged
-    );
-    Services.prefs.addObserver(
-      "devtools.toolbox.splitconsole.enabled",
-      this.#prefChanged
-    );
+    for (const prefName of this.#observedPreferences) {
+      Services.prefs.addObserver(prefName, this.#prefChanged);
+    }
+
     gDevTools.on("theme-registered", this.#themeRegistered);
     gDevTools.on("theme-unregistered", this.#themeUnregistered);
 
@@ -115,24 +140,19 @@ class OptionsPanel extends EventEmitter {
     // unregistered from the toolbox.
     this.toolbox.on("tool-unregistered", this.setupToolsList);
     this.toolbox.on("webextension-unregistered", this.setupToolsList);
+    lazy.LocalModeMappings.on("updated", this.#updateLocalModeMappings);
   }
 
   #removeListeners() {
-    Services.prefs.removeObserver("devtools.cache.disabled", this.#prefChanged);
-    Services.prefs.removeObserver("devtools.theme", this.#prefChanged);
-    Services.prefs.removeObserver(
-      "devtools.source-map.client-service.enabled",
-      this.#prefChanged
-    );
-    Services.prefs.removeObserver(
-      "devtools.toolbox.splitconsole.enabled",
-      this.#prefChanged
-    );
+    for (const prefName of this.#observedPreferences) {
+      Services.prefs.removeObserver(prefName, this.#prefChanged);
+    }
 
     this.toolbox.off("tool-registered", this.setupToolsList);
     this.toolbox.off("tool-unregistered", this.setupToolsList);
     this.toolbox.off("webextension-registered", this.setupToolsList);
     this.toolbox.off("webextension-unregistered", this.setupToolsList);
+    lazy.LocalModeMappings.off("updated", this.#updateLocalModeMappings);
 
     gDevTools.off("theme-registered", this.#themeRegistered);
     gDevTools.off("theme-unregistered", this.#themeUnregistered);
@@ -149,6 +169,8 @@ class OptionsPanel extends EventEmitter {
       this.updateSourceMapPref();
     } else if (prefName === "devtools.toolbox.splitconsole.enabled") {
       this.toolbox.updateIsSplitConsoleEnabled();
+    } else if (prefName === NETMONITOR_BODY_LIMIT_PREF) {
+      this.updateNetworkBodySizeLimit();
     }
   };
 
@@ -262,9 +284,9 @@ class OptionsPanel extends EventEmitter {
         checkboxSpanLabel.textContent = tool.label;
       } else {
         atleastOneToolNotSupported = true;
-        checkboxSpanLabel.textContent = L10N.getFormatStr(
-          "options.toolNotSupportedMarker",
-          tool.label
+        checkboxSpanLabel.textContent = l10n.formatValueSync(
+          "options-tool-not-supported-marker",
+          { toolLabel: tool.label }
         );
         checkboxInput.setAttribute("data-unsupported", "true");
         checkboxInput.setAttribute("disabled", "true");
@@ -289,7 +311,9 @@ class OptionsPanel extends EventEmitter {
       if (tool.deprecated) {
         const deprecationURL = this.panelDoc.createElement("a");
         deprecationURL.title = deprecationURL.href = tool.deprecationURL;
-        deprecationURL.textContent = L10N.getStr("options.deprecationNotice");
+        deprecationURL.textContent = l10n.formatValueSync(
+          "options-deprecation-notice"
+        );
         // Cannot use a real link when we are in the Browser Toolbox.
         deprecationURL.addEventListener("click", e => {
           e.preventDefault();
@@ -408,7 +432,7 @@ class OptionsPanel extends EventEmitter {
     themeBox.appendChild(
       createThemeOption({
         id: "auto",
-        label: L10N.getStr("options.autoTheme.label"),
+        label: l10n.formatValueSync("options-auto-theme-label"),
       })
     );
 
@@ -557,6 +581,137 @@ class OptionsPanel extends EventEmitter {
     }
   }
 
+  setupNetworkBodySizeLimit() {
+    const input = this.panelDoc.querySelector("#netmonitor-body-limit");
+
+    // Int preferences at capped at PR_INT32_MAX == ~2 GB
+    const maxValue = 2147483647;
+
+    const editElement = this.panelDoc.querySelector(
+      `.netmonitor-body-limit-button`
+    );
+    editElement.addEventListener("click", this.editNetworkBodySizeLimit);
+
+    const valueElement = this.panelDoc.querySelector(
+      `#netmonitor-body-limit-value`
+    );
+    const editSection = this.panelDoc.querySelector(
+      "#netmonitor-body-limit-edit"
+    );
+    input.addEventListener("keydown", function (event) {
+      if (event.key == "Escape") {
+        editSection.classList.remove("active");
+        // Prevents showing the split console
+        event.preventDefault();
+        event.stopPropagation();
+        valueElement.classList.remove("hidden");
+        editElement.classList.remove("hidden");
+        input.setCustomValidity("");
+        const hasCustomValue = Services.prefs.prefHasUserValue(
+          NETMONITOR_BODY_LIMIT_PREF
+        );
+        resetElement.classList.toggle("hidden", !hasCustomValue);
+      } else if (event.key == "Enter") {
+        setValue();
+        // Prevents submitting the form and navigating the options document
+        // to self-reload
+        event.preventDefault();
+      }
+    });
+    input.addEventListener("input", function () {
+      const limit = parseInt(input.value, 10);
+      if (limit < 0 || limit > maxValue) {
+        input.setCustomValidity("invalid");
+      } else {
+        input.setCustomValidity("");
+      }
+    });
+
+    function setValue() {
+      editSection.classList.remove("active");
+      valueElement.classList.remove("hidden");
+      editElement.classList.remove("hidden");
+      input.setCustomValidity("");
+      // Check <input pattern> mismatch as parseInt accepts strings like "1000xxx" and returns 1000
+      if (!input.validity.patternMismatch) {
+        // If this is a valid number, clamp to the closest valid number
+        const limit = Math.min(
+          Math.max(parseInt(input.value, 10), 0),
+          maxValue
+        );
+        SetPref(NETMONITOR_BODY_LIMIT_PREF, limit);
+      }
+      const hasCustomValue = Services.prefs.prefHasUserValue(
+        NETMONITOR_BODY_LIMIT_PREF
+      );
+      resetElement.classList.toggle("hidden", !hasCustomValue);
+    }
+    function reset() {
+      editSection.classList.remove("active");
+      valueElement.classList.remove("hidden");
+      editElement.classList.remove("hidden");
+      // Reset to the default value
+      Services.prefs.clearUserPref(NETMONITOR_BODY_LIMIT_PREF);
+      resetElement.classList.add("hidden");
+    }
+
+    const setElement = this.panelDoc.querySelector(
+      `.netmonitor-body-limit-set`
+    );
+    setElement.addEventListener("click", setValue);
+    const resetElement = this.panelDoc.querySelector(
+      `.netmonitor-body-limit-restore-default`
+    );
+    resetElement.addEventListener("click", reset);
+    const hasCustomValue = Services.prefs.prefHasUserValue(
+      NETMONITOR_BODY_LIMIT_PREF
+    );
+    resetElement.classList.toggle("hidden", !hasCustomValue);
+
+    this.updateNetworkBodySizeLimit();
+  }
+
+  updateNetworkBodySizeLimit() {
+    const valueElement = this.panelDoc.querySelector(
+      `#netmonitor-body-limit-value`
+    );
+    const value = GetPref(NETMONITOR_BODY_LIMIT_PREF);
+    valueElement.textContent =
+      value == 0
+        ? l10n.formatValueSync("options-netmonitor-body-limit-unlimited-label")
+        : getFormattedSize(value);
+  }
+
+  /**
+   * Show a form to edit the network maximum body size limit.
+   * Including an input and a save button which will replace the read-only display.
+   */
+  editNetworkBodySizeLimit = () => {
+    const valueElement = this.panelDoc.querySelector(
+      `#netmonitor-body-limit-value`
+    );
+    valueElement.classList.add("hidden");
+    const editElement = this.panelDoc.querySelector(
+      `.netmonitor-body-limit-button`
+    );
+    editElement.classList.add("hidden");
+
+    const editSection = this.panelDoc.querySelector(
+      "#netmonitor-body-limit-edit"
+    );
+    editSection.classList.add("active");
+
+    const resetElement = this.panelDoc.querySelector(
+      `.netmonitor-body-limit-restore-default`
+    );
+    resetElement.classList.add("hidden");
+
+    const input = this.panelDoc.querySelector("#netmonitor-body-limit");
+    input.value = GetPref(NETMONITOR_BODY_LIMIT_PREF);
+
+    input.focus();
+  };
+
   updateCurrentTheme() {
     const currentTheme = GetPref("devtools.theme");
     const themeBox = this.panelDoc.getElementById("devtools-theme-box");
@@ -569,6 +724,380 @@ class OptionsPanel extends EventEmitter {
       const autoThemeInputRadio = themeBox.querySelector("[value=auto]");
       autoThemeInputRadio.checked = true;
     }
+  }
+
+  #setupLocalMode() {
+    if (!this.commands.descriptorFront.isLocalTab) {
+      const notice = this.panelDoc.querySelector(
+        `.local-mode-only-work-locally`
+      );
+      notice.classList.remove("hidden");
+    }
+    const newButton = this.panelDoc.querySelector(`.local-mode-new-mapping`);
+    newButton.addEventListener("click", this.#newLocalModeMapping);
+    this.#updateLocalModeMappings();
+  }
+
+  #newLocalModeMapping = async event => {
+    event.preventDefault();
+    event.stopPropagation();
+
+    const origin = lazy.LocalModeMappings.getNextAvailableOrigin();
+
+    const path = await this.#chooseLocalModePath(origin);
+
+    this.#focusLocalModeLastMapping = true;
+    lazy.LocalModeMappings.createNewMapping(origin, path);
+
+    Glean.devtoolsLocalmodeMappings.addPermanentFromOptions.add(1);
+  };
+
+  /**
+   * Create all the DOM Elements to control one "Local Mode" mapping.
+   *
+   * @param {string} origin
+   *        Mapping's https origin. e.g. firefox.location
+   * @param {string} path
+   *        Absolute path from where the origin should be loaded locally
+   * @param {boolean} disabled
+   *        Is the mapping currently disabled.
+   * @param {string} prefPrefix
+   *        Preference prefix for this specific mapping
+   *        e.g. "devtools.local-mode.mappings.0."
+   * @param {Array} mappings
+   *        List of all the mappings.
+   *        See `LocalModeMappings.getAllMappings()`
+   * @return {DOMElement}
+   *        The <li> element rendering this mapping.
+   */
+  #createLocalModeMappingDOM(origin, path, disabled, prefPrefix, mappings) {
+    const el = this.panelDoc.createElement("li");
+    // Expose the prefix for the notification bar to easily spot the newly created mapping
+    el.setAttribute("data-pref-prefix", prefPrefix);
+    el.classList.toggle("disabled", disabled);
+
+    const originLine = this.panelDoc.createElement("div");
+    originLine.classList.add("local-mode-origin-line");
+
+    const inputId = "origin-" + prefPrefix.replace(/\./g, "-");
+    const originLabel = this.panelDoc.createElement("label");
+    originLabel.setAttribute("data-l10n-id", "options-local-mode-domain-label");
+    originLabel.setAttribute("for", inputId);
+
+    const originValueContainer = this.panelDoc.createElement("div");
+    const originPrefixLabel = this.panelDoc.createElement("span");
+    originPrefixLabel.textContent = "http(s)://";
+
+    const originElement = this.panelDoc.createElement("input");
+    originElement.id = inputId;
+    originElement.classList.add("local-mode-origin-input");
+    originElement.setAttribute(
+      "data-l10n-id",
+      "options-local-mode-origin-input"
+    );
+    originElement.setAttribute("type", "text");
+    originElement.setAttribute("value", origin);
+    originElement.toggleAttribute("disabled", disabled);
+
+    originElement.addEventListener("keypress", event => {
+      if (event.key == "Enter") {
+        // Cancel the enter keypress as it would something trigger a click
+        // on the first open element and always try to navigate to first mapping URL
+        event.preventDefault();
+        originElement.blur();
+      }
+    });
+    originElement.addEventListener("input", event => {
+      const newOrigin = event.target.value;
+      if (!newOrigin) {
+        originError.textContent = "";
+        originElement.setCustomValidity("");
+        return;
+      }
+
+      // Check if we may override another mapping
+      if (
+        newOrigin != origin &&
+        mappings.some(mapping => mapping.origin == newOrigin)
+      ) {
+        originElement.setCustomValidity("invalid");
+        originError.textContent = l10n.formatValueSync(
+          "options-local-mode-origin-conflict"
+        );
+      } else if (!URL.canParse(`https://${newOrigin}`)) {
+        originElement.setCustomValidity("invalid");
+        originError.textContent = l10n.formatValueSync(
+          "options-local-mode-origin-invalid"
+        );
+      } else {
+        originError.textContent = "";
+        originElement.setCustomValidity("");
+      }
+    });
+
+    originElement.addEventListener("blur", event => {
+      const newOrigin = event.target.value;
+
+      originError.textContent = "";
+      originElement.setCustomValidity("");
+
+      if (newOrigin == origin) {
+        return;
+      }
+
+      // In case of empty or invalid input, reverts back to initial value on blur
+      if (
+        !newOrigin ||
+        mappings.some(mapping => mapping.origin == newOrigin) ||
+        !URL.canParse(`https://${newOrigin}`)
+      ) {
+        // Reset back to previous value
+        event.target.value = origin;
+        return;
+      }
+
+      // Disable DOM updates on preferences changes as it would make us lose the focus
+      // and no update are needed as we can simply update the local `origin` variable
+      this.#ignoreLocalModeChanges = false;
+
+      // And create a new one with the new origin
+      Services.prefs.setStringPref(prefPrefix + "origin", newOrigin);
+      origin = newOrigin;
+
+      this.#ignoreLocalModeChanges = false;
+    });
+    const originError = this.panelDoc.createElement("span");
+    originError.classList.add("local-mode-origin-error");
+
+    const openButton = this.panelDoc.createElement("button");
+    openButton.id = "navigate-" + prefPrefix;
+    openButton.classList.add(
+      "devtools-button",
+      "local-mode-mapping-navigate-to"
+    );
+    openButton.setAttribute("data-l10n-id", "options-local-mode-navigate-to");
+    openButton.toggleAttribute("disabled", disabled);
+
+    openButton.addEventListener("click", event => {
+      event.preventDefault();
+      event.stopPropagation();
+
+      this.commands.targetCommand.navigateTo("https://" + origin);
+    });
+    originValueContainer.append(
+      originElement,
+      originPrefixLabel,
+      originElement,
+      openButton,
+      originError
+    );
+
+    originLine.append(originLabel, originValueContainer);
+
+    const folderLine = this.panelDoc.createElement("div");
+    folderLine.classList.add("local-mode-folder-line");
+    if (disabled) {
+      folderLine.classList.add("disabled");
+    }
+
+    const folderLabel = this.panelDoc.createElement("label");
+    folderLabel.setAttribute("data-l10n-id", "options-local-mode-folder-label");
+
+    const inputContainer2 = this.panelDoc.createElement("div");
+    const folderLinkElement = this.panelDoc.createElement("a");
+    folderLinkElement.id = "link-" + prefPrefix;
+    folderLinkElement.href = "file://" + path;
+    folderLinkElement.textContent = path;
+    folderLinkElement.addEventListener("click", function (event) {
+      // Request the OS to open the folder in the default file explorer app
+      new lazy.LocalFile(path).reveal();
+      // Prevent Cmd/Shift+click from opening the file:// URL in a tab
+      event.preventDefault();
+    });
+
+    // If the path is invalid, replace the link with a label + link
+    // to warn the user about that.
+    let pathExists = false;
+    try {
+      pathExists = new lazy.FileUtils.File(path).exists();
+    } catch (e) {}
+    let folderError = "";
+    if (!pathExists) {
+      folderError = this.panelDoc.createElement("span");
+      folderError.classList.add("local-mode-folder-error");
+      folderError.textContent = l10n.formatValueSync(
+        "options-local-mode-folder-invalid"
+      );
+    }
+
+    const folderChooserElement = this.panelDoc.createElement("button");
+    folderChooserElement.id = "choose-folder-" + prefPrefix;
+    folderChooserElement.classList.add(
+      "devtools-button",
+      "local-mode-mapping-choose-folder"
+    );
+    folderChooserElement.setAttribute(
+      "data-l10n-id",
+      "options-local-mode-choose-folder"
+    );
+    folderChooserElement.toggleAttribute("disabled", disabled);
+    folderChooserElement.addEventListener("click", async event => {
+      event.preventDefault();
+      event.stopPropagation();
+
+      const newPath = await this.#chooseLocalModePath(origin, path);
+
+      Services.prefs.setStringPref(prefPrefix + "path", newPath);
+    });
+    inputContainer2.append(folderLinkElement, folderChooserElement);
+
+    folderLine.append(folderLabel, inputContainer2);
+
+    if (folderError) {
+      folderLine.append(folderError);
+    }
+
+    const footerEl = this.panelDoc.createElement("footer");
+
+    const toggleButton = this.panelDoc.createElement("button");
+    toggleButton.id = "toggle-" + prefPrefix;
+    toggleButton.setAttribute("data-l10n-id", "options-local-mode-toggle");
+    toggleButton.classList.add("devtools-button", "local-mode-mapping-toggle");
+    toggleButton.textContent = l10n.formatValueSync(
+      disabled
+        ? "options-local-mode-toggle-enable"
+        : "options-local-mode-toggle-disable"
+    );
+
+    toggleButton.addEventListener("click", event => {
+      event.preventDefault();
+
+      Services.prefs.setBoolPref(prefPrefix + "disabled", !disabled);
+    });
+
+    const removeButton = this.panelDoc.createElement("button");
+    removeButton.classList.add("devtools-button", "local-mode-mapping-remove");
+    removeButton.append("Remove local mapping");
+    removeButton.addEventListener("click", event => {
+      event.preventDefault();
+
+      const message = l10n.formatValueSync(
+        "options-local-mode-confirm-deletion",
+        { mappingOrigin: origin }
+      );
+      if (!this.panelDoc.defaultView.confirm(message)) {
+        return;
+      }
+      Services.prefs.clearUserPref(prefPrefix + "origin");
+      Services.prefs.clearUserPref(prefPrefix + "path");
+      Services.prefs.clearUserPref(prefPrefix + "disabled");
+    });
+
+    footerEl.append(toggleButton, removeButton);
+
+    el.append(originLine, folderLine, footerEl);
+    return el;
+  }
+
+  // Internal flag to avoid updated Local Mode mappings when receiving
+  // a preferences update notification
+  #ignoreLocalModeChanges = false;
+
+  // Should we focus the last displayed mapping on next local mode mappings update
+  #focusLocalModeLastMapping = false;
+
+  /**
+   * Update the list of all local mode mappings on startup, or when preferences
+   * are updated.
+   */
+  #updateLocalModeMappings = async () => {
+    // When the UI updates the prefs, we may not want to update the DOM
+    if (this.#ignoreLocalModeChanges) {
+      return;
+    }
+
+    const mappingsElement = this.panelDoc.querySelector(`#local-mode-mappings`);
+
+    const elements = [];
+    const mappings = lazy.LocalModeMappings.getAllMappings();
+    for (const { origin, path, disabled, prefPrefix } of mappings) {
+      elements.push(
+        this.#createLocalModeMappingDOM(
+          origin,
+          path,
+          disabled,
+          prefPrefix,
+          mappings
+        )
+      );
+    }
+
+    // As we are about to wipe and recreate all the mappings,
+    // try to save and restore the currently focused element via their ID
+    let focusedId = "";
+    const { activeElement } = this.panelDoc;
+    if (activeElement?.id && mappingsElement.contains(activeElement)) {
+      focusedId = activeElement.id;
+    }
+
+    mappingsElement.replaceChildren(...elements);
+
+    if (this.#focusLocalModeLastMapping) {
+      const lastMappingOriginInput = mappingsElement.querySelector(
+        "li:last-of-type .local-mode-origin-input"
+      );
+      if (lastMappingOriginInput) {
+        lastMappingOriginInput.focus();
+        lastMappingOriginInput.select();
+      }
+      this.#focusLocalModeLastMapping = false;
+    } else if (focusedId) {
+      const elementToFocus = this.panelDoc.getElementById(focusedId);
+      if (elementToFocus) {
+        elementToFocus.focus();
+      }
+    }
+  };
+
+  /**
+   * Helper to choose a local folder path for a given local mode origin.
+   *
+   * @param {string} origin
+   * @param {string} existingPath
+   *        If picking a folder for an existing mapping, the absolute
+   *        path to the current folder associated with this mapping.
+   * @return {promise<string>}
+   *         Absolute path to the local folder
+   */
+  #chooseLocalModePath(origin, existingPath) {
+    const FilePicker = Cc["@mozilla.org/filepicker;1"].createInstance(
+      Ci.nsIFilePicker
+    );
+    FilePicker.init(
+      this.panelWin.browsingContext,
+      l10n.formatValueSync("options-local-mode-choose-folder-picker-title", {
+        url: "https://" + origin,
+      }),
+      FilePicker.modeGetFolder
+    );
+
+    // Try to display the existing path for this mapping, if valid and exists
+    try {
+      const file = new lazy.FileUtils.File(existingPath);
+      if (file.exists()) {
+        FilePicker.displayDirectory = file;
+      }
+    } catch (e) {}
+
+    return new Promise((resolve, reject) => {
+      FilePicker.open(rv => {
+        if (rv == FilePicker.returnOK) {
+          resolve(FilePicker.file.path);
+        } else {
+          reject();
+        }
+      });
+    });
   }
 
   updateSourceMapPref() {

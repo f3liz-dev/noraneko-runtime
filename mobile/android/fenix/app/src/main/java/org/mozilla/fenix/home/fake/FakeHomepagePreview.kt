@@ -31,11 +31,11 @@ import org.mozilla.fenix.components.appstate.setup.checklist.ChecklistItem
 import org.mozilla.fenix.compose.MessageCardState
 import org.mozilla.fenix.home.bookmarks.Bookmark
 import org.mozilla.fenix.home.bookmarks.interactor.BookmarksInteractor
-import org.mozilla.fenix.home.collections.CollectionColors
 import org.mozilla.fenix.home.collections.CollectionsState
 import org.mozilla.fenix.home.interactor.HomepageInteractor
 import org.mozilla.fenix.home.pocket.PocketRecommendedStoriesCategory
 import org.mozilla.fenix.home.pocket.PocketState
+import org.mozilla.fenix.home.pocket.controller.StoriesImpressionSource
 import org.mozilla.fenix.home.pocket.interactor.PocketStoriesInteractor
 import org.mozilla.fenix.home.privatebrowsing.interactor.PrivateBrowsingInteractor
 import org.mozilla.fenix.home.recentsyncedtabs.RecentSyncedTab
@@ -51,8 +51,9 @@ import org.mozilla.fenix.home.sessioncontrol.CollectionInteractor
 import org.mozilla.fenix.home.store.NimbusMessageState
 import org.mozilla.fenix.home.termsofuse.PrivacyNoticeBannerInteractor
 import org.mozilla.fenix.home.termsofuse.PrivacyNoticeBannerInteractorNoOp
+import org.mozilla.fenix.home.topsites.AddShortcutEntryPoint
+import org.mozilla.fenix.home.topsites.AddShortcutSource
 import org.mozilla.fenix.home.topsites.interactor.TopSiteInteractor
-import org.mozilla.fenix.search.toolbar.SearchSelectorMenu
 import org.mozilla.fenix.wallpapers.WallpaperState
 import java.io.File
 import java.util.UUID
@@ -80,17 +81,11 @@ internal object FakeHomepagePreview {
             PrivacyNoticeBannerInteractor by PrivacyNoticeBannerInteractorNoOp {
             override fun reportSessionMetrics(state: AppState) { /* no op */ }
 
-            override fun onPasteAndGo(clipboardText: String) { /* no op */ }
-
-            override fun onPaste(clipboardText: String) { /* no op */ }
-
             override fun onNavigateSearch() { /* no op */ }
 
             override fun onMessageClicked(message: Message) { /* no op */ }
 
             override fun onMessageClosedClicked(message: Message) { /* no op */ }
-
-            override fun onMenuItemTapped(item: SearchSelectorMenu.Item) { /* no op */ }
 
             override fun showWallpapersOnboardingDialog(state: WallpaperState): Boolean {
                 return false
@@ -99,6 +94,12 @@ internal object FakeHomepagePreview {
             override fun onChecklistItemClicked(item: ChecklistItem) { /* no op */ }
 
             override fun onRemoveChecklistButtonClicked() { /* no op */ }
+
+            override fun onPrivacyReportTapped() { /* no op */ }
+
+            override fun onLongfoxEntryPointClicked() { /* no op */ }
+
+            override fun onLongfoxEntryPointShown() { /* no op */ }
         }
 
     internal val storiesInteractor
@@ -108,13 +109,17 @@ internal object FakeHomepagePreview {
                 storyPosition: Triple<Int, Int, Int>,
             ) { /* no op */ }
 
-            override fun onStoriesShown(storiesShown: List<PocketStory>) { /* no op */ }
+            override fun onStoriesShown(
+                storiesShown: List<PocketStory>,
+                source: StoriesImpressionSource,
+            ) { /* no op */ }
 
             override fun onCategoryClicked(categoryClicked: PocketRecommendedStoriesCategory) { /* no op */ }
 
             override fun onStoryClicked(
                 storyClicked: PocketStory,
                 storyPosition: Triple<Int, Int, Int>,
+                source: StoriesImpressionSource,
             ) { /* no op */ }
 
             override fun onDiscoverMoreClicked() { /* no op */ }
@@ -151,6 +156,13 @@ internal object FakeHomepagePreview {
             override fun onShowAllTopSitesClicked() { /* no op */ }
 
             override fun onShortcutsLibraryViewed() { /* no op */ }
+
+            override fun onSaveShortcut(
+                title: String,
+                url: String,
+                source: AddShortcutSource,
+                entryPoint: AddShortcutEntryPoint,
+            ) { /* no op */ }
         }
 
     internal val recentTabInteractor
@@ -215,8 +227,6 @@ internal object FakeHomepagePreview {
             ) { /* no op */ }
 
             override fun onAddTabsToCollectionTapped() { /* no op */ }
-
-            override fun onRemoveCollectionsPlaceholder() { /* no op */ }
         }
 
     internal val homeSearchInteractor: HomeSearchInteractor
@@ -366,12 +376,6 @@ internal object FakeHomepagePreview {
         showSaveTabsToCollection = true,
     )
 
-    @Composable
-    internal fun collectionsPlaceholder() = CollectionsState.Placeholder(
-        showSaveTabsToCollection = true,
-        colors = CollectionColors.colors(),
-    )
-
     internal fun collection(tabs: List<Tab> = emptyList()): TabCollection {
         return object : TabCollection {
             override val id: Long = 1L
@@ -417,7 +421,6 @@ internal object FakeHomepagePreview {
         categoryColors = FilterChipDefaults.filterChipColors(),
         textColor = MaterialTheme.colorScheme.onSurface,
         linkTextColor = MaterialTheme.colorScheme.tertiary,
-        showDiscoverMoreButton = false,
     )
 
     internal fun contentRecommendation(index: Int = Random.nextInt(until = 5)): ContentRecommendation =

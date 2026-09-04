@@ -8,7 +8,7 @@ use crate::error::Error;
 
 use crate::util::CeilLog2;
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct HybridUint {
     split_token: u32,
     split_exponent: u32,
@@ -19,6 +19,10 @@ pub struct HybridUint {
 impl HybridUint {
     pub(super) fn is_split_exponent_zero(&self) -> bool {
         self.split_exponent == 0
+    }
+
+    pub fn split_token(&self) -> u32 {
+        self.split_token
     }
 
     pub fn decode(log_alpha_size: usize, br: &mut BitReader) -> Result<HybridUint, Error> {
@@ -53,7 +57,34 @@ impl HybridUint {
         })
     }
 
-    #[inline]
+    /// Returns true if this config matches the 420 pattern (common in e3 images):
+    /// split_exponent=4, msb_in_token=2, lsb_in_token=0
+    #[inline(always)]
+    pub fn is_config_420(&self) -> bool {
+        self.split_exponent == 4
+            && self.split_token == 16
+            && self.msb_in_token == 2
+            && self.lsb_in_token == 0
+    }
+
+    /// Specialized fast path for 420 config:
+    /// split_exponent=4, msb_in_token=2, lsb_in_token=0
+    #[inline(always)]
+    pub fn read_config_420(symbol: u32, br: &mut BitReader) -> u32 {
+        if symbol < 16 {
+            return symbol;
+        }
+
+        // Equivalent to: 2 + ((symbol - 16) >> 2)
+        let nbits = (symbol >> 2) - 2;
+        let nbits = nbits & 31;
+        let bits = br.read_optimistic(nbits as usize) as u32;
+        let hi = (symbol & 3) | 4;
+
+        (hi << nbits) | bits
+    }
+
+    #[inline(always)]
     pub fn read(&self, symbol: u32, br: &mut BitReader) -> u32 {
         if symbol < self.split_token {
             return symbol;

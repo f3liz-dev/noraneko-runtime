@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -70,7 +68,7 @@ class alignas(8) IonScript final : public TrailingArray<IonScript> {
   Offset allocBytes_ = 0;
 
   // Code pointer containing the actual method.
-  HeapPtr<JitCode*> method_ = nullptr;
+  GCPtr<JitCode*> method_{nullptr};
 
   // Entrypoint for OSR, or nullptr.
   jsbytecode* osrPc_ = nullptr;
@@ -136,6 +134,10 @@ class alignas(8) IonScript final : public TrailingArray<IonScript> {
   // A hash of the ICScripts used in this compilation.
   mozilla::HashNumber icHash_ = 0;
 #endif
+
+  // Lock used to synchronise IonIC stub chain mutation on the main thread with
+  // a concurrent marking thread tracing the ICs.
+  gc::MarkingLock markingLock_;
 
   // End of fields.
 
@@ -365,7 +367,7 @@ class alignas(8) IonScript final : public TrailingArray<IonScript> {
     return mallocSizeOf(this);
   }
   HeapPtr<Value>& getConstant(size_t index) {
-    MOZ_ASSERT(index < numConstants());
+    MOZ_RELEASE_ASSERT(index < numConstants());
     return constants()[index];
   }
   uint32_t localSlotsSize() const { return localSlotsSize_; }
@@ -373,7 +375,7 @@ class alignas(8) IonScript final : public TrailingArray<IonScript> {
   uint32_t frameSize() const { return frameSize_; }
   const SafepointIndex* getSafepointIndex(uint32_t disp) const;
   const SafepointIndex* getSafepointIndex(uint8_t* retAddr) const {
-    MOZ_ASSERT(containsCodeAddress(retAddr));
+    MOZ_RELEASE_ASSERT(containsCodeAddress(retAddr));
     return getSafepointIndex(retAddr - method()->raw());
   }
   const OsiIndex* getOsiIndex(uint32_t disp) const;
@@ -398,6 +400,8 @@ class alignas(8) IonScript final : public TrailingArray<IonScript> {
   void copyICEntries(const uint32_t* icEntries);
   void copySafepoints(const SafepointWriter* writer);
 
+  gc::MarkingLock& markingLock() { return markingLock_; }
+
   bool invalidated() const { return invalidationCount_ != 0; }
 
   // Invalidate the current compilation.
@@ -407,7 +411,7 @@ class alignas(8) IonScript final : public TrailingArray<IonScript> {
   size_t invalidationCount() const { return invalidationCount_; }
   void incrementInvalidationCount() { invalidationCount_++; }
   void decrementInvalidationCount(JS::GCContext* gcx) {
-    MOZ_ASSERT(invalidationCount_);
+    MOZ_RELEASE_ASSERT(invalidationCount_);
     invalidationCount_--;
     if (!invalidationCount_) {
       Destroy(gcx, this);
@@ -574,7 +578,7 @@ struct IonScriptCounts {
   size_t sizeOfOneIncludingThis(mozilla::MallocSizeOf mallocSizeOf) const {
     size_t size = mallocSizeOf(this) + mallocSizeOf(blocks_);
     for (size_t i = 0; i < numBlocks_; i++) {
-      blocks_[i].sizeOfExcludingThis(mallocSizeOf);
+      size += blocks_[i].sizeOfExcludingThis(mallocSizeOf);
     }
     return size;
   }

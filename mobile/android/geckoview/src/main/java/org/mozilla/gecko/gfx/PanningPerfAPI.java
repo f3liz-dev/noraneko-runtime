@@ -1,5 +1,4 @@
-/* -*- Mode: Java; c-basic-offset: 4; tab-width: 20; indent-tabs-mode: nil; -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -9,7 +8,6 @@ import android.os.SystemClock;
 import android.util.Log;
 import java.util.ArrayList;
 import java.util.List;
-import org.mozilla.gecko.annotation.RobocopTarget;
 
 public final class PanningPerfAPI {
   private static final String LOGTAG = "GeckoPanningPerfAPI";
@@ -31,7 +29,6 @@ public final class PanningPerfAPI {
     }
   }
 
-  @RobocopTarget
   public static void startFrameTimeRecording() {
     if (mRecordingFrames) {
       Log.e(LOGTAG, "Error: startFrameTimeRecording() called while already recording!");
@@ -42,7 +39,6 @@ public final class PanningPerfAPI {
     mFrameStartTime = SystemClock.uptimeMillis();
   }
 
-  @RobocopTarget
   public static List<Long> stopFrameTimeRecording() {
     if (!mRecordingFrames) {
       Log.e(LOGTAG, "Error: stopFrameTimeRecording() called when not recording!");
@@ -59,12 +55,10 @@ public final class PanningPerfAPI {
     }
   }
 
-  @RobocopTarget
   public static void startCheckerboardRecording() {
     throw new UnsupportedOperationException();
   }
 
-  @RobocopTarget
   public static List<Float> stopCheckerboardRecording() {
     throw new UnsupportedOperationException();
   }

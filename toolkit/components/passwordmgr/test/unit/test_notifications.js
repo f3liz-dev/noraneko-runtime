@@ -89,7 +89,7 @@ add_task(async function test_notifications() {
 
     expectedNotification = "addLogin";
     expectedData = testuser1;
-    await Services.logins.addLoginAsync(testuser1);
+    testuser1 = await Services.logins.addLoginAsync(testuser1);
     await LoginTestUtils.checkLogins([testuser1]);
     Assert.equal(expectedNotification, null); // check that observer got a notification
 
@@ -101,6 +101,7 @@ add_task(async function test_notifications() {
     expectedData = [testuser1, testuser2];
     await Services.logins.modifyLoginAsync(testuser1, testuser2);
     Assert.equal(expectedNotification, null);
+    testuser2 = (await Services.logins.getAllLogins())[0];
     await LoginTestUtils.checkLogins([testuser2]);
 
     /* ========== 4 ========== */
@@ -191,4 +192,57 @@ add_task(async function test_notifications() {
       "FAILED in test #" + testnum + " -- " + testdesc + ": " + e
     );
   }
+});
+
+add_task(async function test_notifications_gated_by_isActive() {
+  const { LoginManager } = ChromeUtils.importESModule(
+    "resource://gre/modules/LoginManager.sys.mjs"
+  );
+
+  // LoginManagerStorage is a static singleton — all LoginManager instances
+  // share the same storage. We use a fresh instance to access _storage without
+  // going through the XPCOM interface wrapper.
+  const lm = new LoginManager();
+  await lm.initializationPromise;
+  const storage = lm._storage;
+
+  const login1 = new LoginInfo(
+    "https://isactive-test.example.com",
+    "",
+    null,
+    "user1",
+    "pass1",
+    "",
+    ""
+  );
+  const login2 = new LoginInfo(
+    "https://isactive-test2.example.com",
+    "",
+    null,
+    "user2",
+    "pass2",
+    "",
+    ""
+  );
+
+  let addLoginEventCount = 0;
+  const observer = (subject, topic, data) => {
+    if (data == "addLogin") {
+      addLoginEventCount++;
+    }
+  };
+  Services.obs.addObserver(observer, "passwordmgr-storage-changed");
+
+  // Inactive backend must not fire events.
+  storage.isActive = false;
+  await Services.logins.addLoginAsync(login1);
+  Assert.equal(addLoginEventCount, 0, "No event when isActive=false");
+
+  // Active backend fires events normally.
+  storage.isActive = true;
+  await Services.logins.addLoginAsync(login2);
+  Assert.equal(addLoginEventCount, 1, "Event fires when isActive=true");
+
+  Services.obs.removeObserver(observer, "passwordmgr-storage-changed");
+  await Services.logins.removeAllUserFacingLoginsAsync();
 });

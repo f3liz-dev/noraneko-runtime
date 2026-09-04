@@ -67,7 +67,7 @@ secmod_NewModule(void)
     newMod->trustOrder = 0;
     newMod->cipherOrder = 0;
     newMod->evControlMask = 0;
-    newMod->refLock = PZ_NewLock(nssILockRefLock);
+    newMod->refLock = PR_NewLock();
     if (newMod->refLock == NULL) {
         PORT_FreeArena(arena, PR_FALSE);
         return NULL;
@@ -1984,8 +1984,8 @@ secmod_MkAppendTokensList(PLArenaPool *arena, char *oldParam, char *newToken,
         goto loser;
     }
 
-    PORT_Strcpy(newParam, oldParam);
-    tmpLen = strlen(oldParam);
+    PORT_Strcpy(newParam, rawParam);
+    tmpLen = strlen(rawParam);
     nextParam = newParam + tmpLen;
     length -= tmpLen;
     PORT_Memcpy(nextParam, TOKEN_STRING, sizeof(TOKEN_STRING) - 1);

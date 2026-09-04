@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -11,12 +10,14 @@
 #include "nsIChannel.h"
 #include "nsIURI.h"
 #include "nsIProtocolHandler.h"
+#include "nsPrintfCString.h"
 #include "nsServiceManagerUtils.h"
 #include "mozilla/Components.h"
 #include "mozilla/StaticPrefs_browser.h"
 #include "mozilla/dom/ContentChild.h"
 #include "mozilla/browser/NimbusFeatures.h"
 
+#define REFERRALS_ENABLED_PREF "browser.referrals.enabled"
 #define PROFILES_ENABLED_PREF "browser.profiles.enabled"
 #define ABOUT_WELCOME_CHROME_URL \
   "chrome://browser/content/aboutwelcome/aboutwelcome.html"
@@ -46,9 +47,10 @@ struct RedirEntry {
 */
 static const RedirEntry kRedirMap[] = {
     {"aichatcontent", "chrome://browser/content/aiwindow/aiChatContent.html",
-     nsIAboutModule::URI_MUST_LOAD_IN_CHILD |
-         nsIAboutModule::URI_SAFE_FOR_UNTRUSTED_CONTENT |
-         nsIAboutModule::ALLOW_SCRIPT | nsIAboutModule::HIDE_FROM_ABOUTABOUT},
+     nsIAboutModule::URI_SAFE_FOR_UNTRUSTED_CONTENT |
+         nsIAboutModule::URI_CAN_LOAD_IN_PRIVILEGEDABOUT_PROCESS |
+         nsIAboutModule::URI_MUST_LOAD_IN_CHILD | nsIAboutModule::ALLOW_SCRIPT |
+         nsIAboutModule::HIDE_FROM_ABOUTABOUT},
     {"asrouter", "chrome://browser/content/asrouter/asrouter-admin.html",
      nsIAboutModule::URI_SAFE_FOR_UNTRUSTED_CONTENT |
          nsIAboutModule::URI_CAN_LOAD_IN_PRIVILEGEDABOUT_PROCESS |
@@ -93,6 +95,9 @@ static const RedirEntry kRedirMap[] = {
     {"profiling",
      "chrome://devtools/content/performance-new/aboutprofiling/index.html",
      nsIAboutModule::ALLOW_SCRIPT | nsIAboutModule::IS_SECURE_CHROME_UI},
+    {"referrals", "https://www.firefox.com/invite/",
+     nsIAboutModule::URI_SAFE_FOR_UNTRUSTED_CONTENT |
+         nsIAboutModule::URI_MUST_LOAD_IN_CHILD},
     {"rights", "https://www.mozilla.org/about/legal/terms/firefox/",
      nsIAboutModule::URI_SAFE_FOR_UNTRUSTED_CONTENT |
          nsIAboutModule::URI_MUST_LOAD_IN_CHILD},
@@ -122,6 +127,11 @@ static const RedirEntry kRedirMap[] = {
     {"settings", "chrome://browser/content/preferences/preferences.xhtml",
      nsIAboutModule::ALLOW_SCRIPT | nsIAboutModule::IS_SECURE_CHROME_UI |
          nsIAboutModule::HIDE_FROM_ABOUTABOUT},
+    {"smartwindowtasks", "chrome://browser/content/aiwindow/tasks.html",
+     nsIAboutModule::URI_SAFE_FOR_UNTRUSTED_CONTENT |
+         nsIAboutModule::URI_CAN_LOAD_IN_PRIVILEGEDABOUT_PROCESS |
+         nsIAboutModule::URI_MUST_LOAD_IN_CHILD | nsIAboutModule::ALLOW_SCRIPT |
+         nsIAboutModule::HIDE_FROM_ABOUTABOUT},
     {"preferences", "chrome://browser/content/preferences/preferences.xhtml",
      nsIAboutModule::ALLOW_SCRIPT | nsIAboutModule::IS_SECURE_CHROME_UI},
     {"downloads",
@@ -138,6 +148,13 @@ static const RedirEntry kRedirMap[] = {
          nsIAboutModule::URI_MUST_LOAD_IN_CHILD | nsIAboutModule::ALLOW_SCRIPT |
          nsIAboutModule::URI_CAN_LOAD_IN_PRIVILEGEDABOUT_PROCESS |
          nsIAboutModule::IS_SECURE_CHROME_UI},
+#ifdef MOZ_NORMANDY
+    {"studies", "resource://normandy-content/about-studies/about-studies.html",
+     nsIAboutModule::ALLOW_SCRIPT | nsIAboutModule::IS_SECURE_CHROME_UI |
+         nsIAboutModule::URI_CAN_LOAD_IN_PRIVILEGEDABOUT_PROCESS |
+         nsIAboutModule::URI_MUST_LOAD_IN_CHILD |
+         nsIAboutModule::URI_SAFE_FOR_UNTRUSTED_CONTENT},
+#endif
 #ifdef MOZ_SELECTABLE_PROFILES
     {"profilemanager", "chrome://browser/content/profiles/profiles.html",
      nsIAboutModule::ALLOW_SCRIPT | nsIAboutModule::IS_SECURE_CHROME_UI |
@@ -192,6 +209,11 @@ AboutRedirector::NewChannel(nsIURI* aURI, nsILoadInfo* aLoadInfo,
 
   nsAutoCString path = GetAboutModuleName(aURI);
 
+  if (path.EqualsASCII("referrals") &&
+      !mozilla::Preferences::GetBool(REFERRALS_ENABLED_PREF, false)) {
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+
   if ((path.EqualsASCII("editprofile") || path.EqualsASCII("deleteprofile") ||
        path.EqualsASCII("newprofile")) &&
       !mozilla::Preferences::GetBool(PROFILES_ENABLED_PREF, false)) {
@@ -218,6 +240,15 @@ AboutRedirector::NewChannel(nsIURI* aURI, nsILoadInfo* aLoadInfo,
           url.AssignASCII(ABOUT_WELCOME_CHROME_URL);
         } else {
           url.AssignASCII(ABOUT_HOME_URL);
+        }
+      }
+
+      if (path.EqualsLiteral("referrals")) {
+        nsAutoCString query;
+        if (nsresult rv = aURI->GetQuery(query); NS_SUCCEEDED(rv)) {
+          url.AssignASCII(nsPrintfCString("%s?%s", redir.url, query.get()));
+        } else {
+          url.AssignASCII(redir.url);
         }
       }
 

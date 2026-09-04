@@ -121,7 +121,7 @@ class BenchmarkSupport(PageloadSupport):
             if self.subtest_alert_on is not None:
                 if name in self.subtest_alert_on:
                     LOG.info(
-                        "turning on subtest alerting for measurement type: %s" % name
+                        f"turning on subtest alerting for measurement type: {name}"
                     )
                     _subtests[name]["shouldAlert"] = True
 
@@ -129,8 +129,9 @@ class BenchmarkSupport(PageloadSupport):
             for _sub, _value in pagecycle[0].items():
                 if _value["decodedFrames"] == 0:
                     self.failed_tests.append(
-                        "%s test Failed. decodedFrames %s droppedFrames %s."
-                        % (_sub, _value["decodedFrames"], _value["droppedFrames"])
+                        f"{_sub} test Failed. "
+                        f"decodedFrames {_value['decodedFrames']} "
+                        f"droppedFrames {_value['droppedFrames']}."
                     )
 
                 try:
@@ -225,12 +226,8 @@ class BenchmarkSupport(PageloadSupport):
                         },
                     )["replicates"].append(subtest_result["value"])
 
-            for subtest_name in results[test_name]:
-                for subtest_name in result:
-                    subtest_result_name = f"{test_name} - {subtest_name}"
-                    _subtests[subtest_result_name]["value"] = filters.median(
-                        _subtests[subtest_result_name]["replicates"]
-                    )
+        for subtest in _subtests.values():
+            subtest["value"] = filters.median(subtest["replicates"])
 
         subtests = sorted(_subtests.values(), key=lambda x: x["name"], reverse=True)
         for subtest in subtests:
@@ -320,7 +317,7 @@ class BenchmarkSupport(PageloadSupport):
             # the 16 test values, not the sub test values.
             if len(results) != 160:
                 raise Exception(
-                    "Speedometer has 160 subtests, found: %s instead" % len(results)
+                    f"Speedometer has 160 subtests, found: {len(results)} instead"
                 )
 
             results = results[9::10]
@@ -432,7 +429,7 @@ class BenchmarkSupport(PageloadSupport):
         if "twitch-animation" in testname:
             return round(filters.geometric_mean(_filter(vals, "run")), 2)
 
-        if "ve" in testname:
+        if testname.startswith("ve-"):
             if "rt" in testname:
                 # We collect the mean and cv of frame-to-frame performance and the
                 # frame-dropping rate for both keyframe and non-keyframe. However,
@@ -449,7 +446,7 @@ class BenchmarkSupport(PageloadSupport):
                     return round(filters.mean(_filter(vals)), 2)
                 return -1
 
-            raise NotImplementedError("Summary for %s is not implemented" % testname)
+            raise NotImplementedError(f"Summary for {testname} is not implemented")
 
         if testname.startswith("supporting_data"):
             if not unit:
@@ -475,7 +472,7 @@ class BenchmarkSupport(PageloadSupport):
             if unit in ["KB", "mAh", "mWh"]:
                 return sum(_filter(vals))
 
-            raise NotImplementedError("Unit %s not suported" % unit)
+            raise NotImplementedError(f"Unit {unit} not suported")
 
         if len(vals) > 1:
             # pylint: disable=W1633
@@ -512,8 +509,8 @@ class BenchmarkSupport(PageloadSupport):
         if self.subtest_alert_on is not None:
             if measurement_name in self.subtest_alert_on:
                 LOG.info(
-                    "turning on subtest alerting for measurement type: %s"
-                    % measurement_name
+                    "turning on subtest alerting for measurement type: "
+                    f"{measurement_name}"
                 )
                 subtest["shouldAlert"] = True
                 if self.app in (
@@ -527,8 +524,8 @@ class BenchmarkSupport(PageloadSupport):
                 # Explicitly set `shouldAlert` to False so that the measurement
                 # is not alerted on. Otherwise Perfherder defaults to alerting.
                 LOG.info(
-                    "turning off subtest alerting for measurement type: %s"
-                    % measurement_name
+                    "turning off subtest alerting for measurement type: "
+                    f"{measurement_name}"
                 )
                 subtest["shouldAlert"] = False
 
@@ -542,7 +539,7 @@ class BenchmarkSupport(PageloadSupport):
         subtests = None
         if "youtube-playback" in test["name"]:
             subtests, vals = self.parseYoutubePlaybackPerformanceOutput(test)
-        elif "ve" in test["name"]:
+        elif test["name"].startswith("ve-"):
             subtests, vals = self.parseWebCodecsOutput(test)
         else:
             # Attempt to parse the unknown benchmark by flattening the
@@ -572,7 +569,7 @@ class BenchmarkSupport(PageloadSupport):
             LOG.warning("Some tests failed.")
             if self.youtube_playback_failure:
                 for test in self.failed_tests:
-                    LOG.warning("Youtube sub-test FAILED: %s" % test)
+                    LOG.warning(f"Youtube sub-test FAILED: {test}")
                 LOG.warning(
                     "Youtube playback sub-tests failed!!! "
                     "Not submitting results to perfherder!"

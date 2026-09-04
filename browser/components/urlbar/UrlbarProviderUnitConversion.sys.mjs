@@ -11,17 +11,14 @@ import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 import { UnitConverterSimple } from "moz-src:///browser/components/urlbar/unitconverters/UnitConverterSimple.sys.mjs";
 import { UnitConverterTemperature } from "moz-src:///browser/components/urlbar/unitconverters/UnitConverterTemperature.sys.mjs";
 import { UnitConverterTimezone } from "moz-src:///browser/components/urlbar/unitconverters/UnitConverterTimezone.sys.mjs";
-import {
-  UrlbarProvider,
-  UrlbarUtils,
-} from "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs";
+import { UrlbarProvider } from "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs";
 
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   UrlbarPrefs: "moz-src:///browser/components/urlbar/UrlbarPrefs.sys.mjs",
-  UrlbarResult: "moz-src:///browser/components/urlbar/UrlbarResult.sys.mjs",
-  UrlbarView: "moz-src:///browser/components/urlbar/UrlbarView.sys.mjs",
+  UrlbarResult: "chrome://browser/content/urlbar/UrlbarResult.mjs",
+  UrlbarShared: "chrome://browser/content/urlbar/UrlbarShared.mjs",
 });
 
 XPCOMUtils.defineLazyServiceGetter(
@@ -78,15 +75,13 @@ const VIEW_TEMPLATE = {
 export class UrlbarProviderUnitConversion extends UrlbarProvider {
   constructor() {
     super();
-    lazy.UrlbarResult.addDynamicResultType(DYNAMIC_RESULT_TYPE);
-    lazy.UrlbarView.addDynamicViewTemplate(DYNAMIC_RESULT_TYPE, VIEW_TEMPLATE);
   }
 
   /**
-   * @returns {Values<typeof UrlbarUtils.PROVIDER_TYPE>}
+   * @returns {Values<typeof lazy.UrlbarShared.PROVIDER_TYPE>}
    */
   get type() {
-    return UrlbarUtils.PROVIDER_TYPE.PROFILE;
+    return lazy.UrlbarShared.PROVIDER_TYPE.PROFILE;
   }
 
   /**
@@ -112,6 +107,10 @@ export class UrlbarProviderUnitConversion extends UrlbarProvider {
 
     this._activeResult = null;
     return false;
+  }
+
+  getViewTemplate(_result) {
+    return VIEW_TEMPLATE;
   }
 
   /**
@@ -142,8 +141,8 @@ export class UrlbarProviderUnitConversion extends UrlbarProvider {
    */
   startQuery(queryContext, addCallback) {
     const result = new lazy.UrlbarResult({
-      type: UrlbarUtils.RESULT_TYPE.DYNAMIC,
-      source: UrlbarUtils.RESULT_SOURCE.OTHER_LOCAL,
+      type: lazy.UrlbarShared.RESULT_TYPE.DYNAMIC,
+      source: lazy.UrlbarShared.RESULT_SOURCE.OTHER_LOCAL,
       suggestedIndex: lazy.UrlbarPrefs.get("unitConversion.suggestedIndex"),
       payload: {
         dynamicType: DYNAMIC_RESULT_TYPE,
@@ -155,10 +154,6 @@ export class UrlbarProviderUnitConversion extends UrlbarProvider {
   }
 
   onEngagement(queryContext, controller, details) {
-    let { element } = details;
-    const { textContent } = element.querySelector(
-      ".urlbarView-dynamic-unitConversion-output"
-    );
-    lazy.ClipboardHelper.copyString(textContent);
+    lazy.ClipboardHelper.copyString(details.result.payload.output);
   }
 }

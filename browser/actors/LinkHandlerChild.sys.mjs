@@ -82,7 +82,7 @@ export class LinkHandlerChild extends JSWindowActorChild {
   onLinkEvent(event) {
     let link = event.target;
     // Ignore sub-frames (bugs 305472, 479408).
-    if (link.ownerGlobal != this.contentWindow) {
+    if (link.documentGlobal != this.contentWindow) {
       return;
     }
 
@@ -129,13 +129,6 @@ export class LinkHandlerChild extends JSWindowActorChild {
           }
           break;
         case "search":
-          if (
-            Services.policies &&
-            !Services.policies.isAllowed("installSearchEngine")
-          ) {
-            break;
-          }
-
           if (!searchAdded && event.type == "DOMLinkAdded") {
             let type = link.type && link.type.toLowerCase();
             type = type.replace(/^\s+|\s*(?:;.*)?$/g, "");

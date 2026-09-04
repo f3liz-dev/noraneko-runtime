@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -35,6 +34,9 @@ DOM4_MSG_DEF(NotAllowedError, "The request is not allowed by the user agent or t
 
 /* StringEncoding API errors from http://wiki.whatwg.org/wiki/StringEncoding */
 DOM4_MSG_DEF(EncodingError, "The given encoding is not supported.", NS_ERROR_DOM_ENCODING_NOT_SUPPORTED_ERR)
+
+/* Web Serial API errors from https://wicg.github.io/serial/ */
+DOM4_MSG_DEF(ParityError, "A parity error occurred while reading from the serial port.", NS_ERROR_DOM_SERIAL_PARITY_ERROR)
 
 /* WebCrypto API errors from http://www.w3.org/TR/WebCryptoAPI/ */
 DOM4_MSG_DEF(UnknownError, "The operation failed for an unknown transient reason", NS_ERROR_DOM_UNKNOWN_ERR)

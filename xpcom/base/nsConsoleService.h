@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -13,20 +11,18 @@
 
 #include <cstdint>
 
+#include "MainThreadUtils.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/LinkedList.h"
 #include "mozilla/Mutex.h"
-
-#include "MainThreadUtils.h"
 #include "nsCOMPtr.h"
-#include "nsInterfaceHashtable.h"
 #include "nsHashKeys.h"
-
 #include "nsIConsoleListener.h"
 #include "nsIConsoleMessage.h"
 #include "nsIConsoleService.h"
 #include "nsIObserver.h"
 #include "nsISupports.h"
+#include "nsInterfaceHashtable.h"
 
 template <class T>
 class nsCOMArray;
@@ -72,13 +68,13 @@ class nsConsoleService final : public nsIConsoleService, public nsIObserver {
 
     ~MessageElement();
 
-   private:
-    nsCOMPtr<nsIConsoleMessage> mMessage;
-
     MessageElement(const MessageElement&) = delete;
     MessageElement& operator=(const MessageElement&) = delete;
     MessageElement(MessageElement&&) = delete;
     MessageElement& operator=(MessageElement&&) = delete;
+
+   private:
+    nsCOMPtr<nsIConsoleMessage> mMessage;
   };
 
   ~nsConsoleService();

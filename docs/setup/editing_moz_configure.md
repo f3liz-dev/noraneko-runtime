@@ -17,6 +17,7 @@ These files describe one of the first steps of the build. This step does not run
 Two important dictionaries declared in `moz.configure` are *configs* and *defines*. The former is used in `moz.build` files, the later is used to feed C and C++ compilers, as shown below.
 
 This is typically the right place to add logic for:
+
 - Declaring options for the mozconfig file.
 - Deciding whether to enable/disable some build-time features based on the build configuration and environment.
 - Generating some `#define` identifiers for the C++ code based on the build configuration or environment.
@@ -119,10 +120,7 @@ with only_when(compile_environment):
         if not basic_doodad:
             return Namespace(enabled=False)
         header_name = "doodad_" + target.cpu + ".h"
-        return Namespace(
-            enabled=True,
-            header_name=header_name
-        )
+        return Namespace(enabled=True, header_name=header_name)
 
     with only_when(advanced_doodad.enabled):
         set_config("DOODAD_ARCH_HEADER", advanced_doodad.header_name)

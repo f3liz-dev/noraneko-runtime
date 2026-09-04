@@ -7,8 +7,9 @@
 use std::{cmp::min, fmt::Debug, time::Instant};
 
 use neqo_common::{
-    hex_snip_middle, hex_with_len, qtrace, Decoder, IncrementalDecoderBuffer,
-    IncrementalDecoderIgnore, IncrementalDecoderUint,
+    Decoder, IncrementalDecoderBuffer, IncrementalDecoderIgnore, IncrementalDecoderUint,
+    hex::{HexSnipMiddle, HexWithLen},
+    qtrace,
 };
 use neqo_transport::{Connection, StreamId};
 
@@ -31,6 +32,9 @@ pub trait FrameDecoder<T> {
     fn frame_type_allowed(_frame_type: HFrameType) -> Res<()> {
         Ok(())
     }
+
+    /// Upper bound on a known frame's declared length that we'll buffer before decoding.
+    fn max_frame_data(frame_type: HFrameType) -> usize;
 
     /// # Errors
     ///
@@ -116,7 +120,7 @@ impl Debug for FrameReader {
         f.debug_struct("FrameReader")
             .field("state", &self.state)
             .field("frame_type", &self.frame_type)
-            .field("frame", &hex_snip_middle(&self.buffer[..frame_len]))
+            .field("frame", &HexSnipMiddle::new(&self.buffer[..frame_len]))
             .finish()
     }
 }
@@ -238,7 +242,7 @@ impl FrameReader {
                     qtrace!(
                         "received frame {:?}: {}",
                         self.frame_type,
-                        hex_with_len(&data[..])
+                        HexWithLen::new(&data[..])
                     );
                     return self.frame_data_decoded::<T>(&data);
                 }
@@ -262,33 +266,40 @@ impl FrameReader {
 
     fn frame_length_decoded<T: FrameDecoder<T>>(&mut self, len: u64) -> Res<Option<T>> {
         self.frame_len = len;
-        if let Some(f) = T::decode(
+        match T::decode(
             self.frame_type,
             self.frame_len,
             if len > 0 { None } else { Some(&[]) },
         )? {
-            #[cfg(feature = "build-fuzzing-corpus")]
-            if let Some(corpus) = T::FUZZING_CORPUS {
-                // Write zero-length frames to the fuzzing corpus to test parsing of frames with
-                // only type and length fields.
-                self.write_item_to_fuzzing_corpus(corpus, None);
+            Some(f) => {
+                #[cfg(feature = "build-fuzzing-corpus")]
+                if let Some(corpus) = T::FUZZING_CORPUS {
+                    // Write zero-length frames to the fuzzing corpus to test parsing of frames with
+                    // only type and length fields.
+                    self.write_item_to_fuzzing_corpus(corpus, None);
+                }
+                self.reset();
+                return Ok(Some(f));
             }
-            self.reset();
-            return Ok(Some(f));
-        } else if T::is_known_type(self.frame_type) {
-            self.state = FrameReaderState::GetData {
-                decoder: IncrementalDecoderBuffer::new(
-                    usize::try_from(len).or(Err(Error::HttpFrame))?,
-                ),
-            };
-        } else if self.frame_len == 0 {
-            self.reset();
-        } else {
-            self.state = FrameReaderState::UnknownFrameDischargeData {
-                decoder: IncrementalDecoderIgnore::new(
-                    usize::try_from(len).or(Err(Error::HttpFrame))?,
-                ),
-            };
+            None => {
+                if T::is_known_type(self.frame_type) {
+                    let len = usize::try_from(len).or(Err(Error::HttpFrame))?;
+                    if len > T::max_frame_data(self.frame_type) {
+                        return Err(Error::HttpExcessiveLoad);
+                    }
+                    self.state = FrameReaderState::GetData {
+                        decoder: IncrementalDecoderBuffer::new(len),
+                    };
+                } else if self.frame_len == 0 {
+                    self.reset();
+                } else {
+                    self.state = FrameReaderState::UnknownFrameDischargeData {
+                        decoder: IncrementalDecoderIgnore::new(
+                            usize::try_from(len).or(Err(Error::HttpFrame))?,
+                        ),
+                    };
+                }
+            }
         }
         Ok(None)
     }

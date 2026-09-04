@@ -70,7 +70,13 @@ Example:
 }
 ```
 
-Opens a given about page
+Opens a given about page.
+
+Only pages in the `ALLOWED_ABOUT_PAGES` allowlist are permitted; any other
+page throws an error. As of writing, the allowed pages are: `addons`,
+`profiles`, `translations`, `keyboard`, `logins`, `preferences`,
+`privatebrowsing`, `protections`, `referrals`, `settings`, `welcome`,
+`newtab`, `home`, and `robots`.
 
 Example:
 
@@ -84,12 +90,19 @@ Example:
 ### `OPEN_PREFERENCES_PAGE`
 
 * args:
-```
+```ts
 {
-  args?: string, // (a category accessible via a `#`)
-  entrypoint?: string // URL search param used to referrals
+  // Top-level category, optionally with a "-subcategory" (e.g.
+  // "general-cfrfeatures"). Passed as `category` (preferred) or `args`.
+  category?: string,
+  entrypoint?: string, // URL search param used for referrals
+}
+```
 
 Opens `about:preferences` with an optional category accessible via a `#` in the URL (e.g. `about:preferences#home`).
+
+Only real top-level categories and subcategories that map to a named pane will
+route; unknown values silently fall back to the default pane.
 
 Example:
 
@@ -241,13 +254,32 @@ Action for configuring the user homepage and restoring defaults.
 
 Action for pinning Firefox to the user's taskbar.
 
-* args: (none)
+- args:
+
+```ts
+{
+  privatePin?: boolean; // Pin private browsing mode
+  fireAndForget?: boolean; // Don't wait for user confirmation before resolving the action
+}
+```
 
 ### `PIN_FIREFOX_TO_START_MENU`
 
 Action for pinning Firefox to the user's Windows Start Menu in Windows MSIX builds only.
 
 - args: (none)
+
+### `PIN_AND_DEFAULT`
+Action for pinning Firefox to the user's taskbar and setting it as the default browser.
+
+- args:
+
+```ts
+{
+  privatePin?: boolean; // Pin private browsing mode
+  fireAndForget?: boolean; // Don't wait for user confirmation before resolving the action
+}
+```
 
 ### `SET_DEFAULT_BROWSER`
 
@@ -267,6 +299,10 @@ Windows only.
   // Only set Firefox as the default PDF handler if the current PDF handler is a
   // known browser.
   onlyIfKnownBrowser?: boolean;
+  // If the OS hands the stub PDF back to Firefox after the user picks Firefox
+  // in the open-with dialog, open a follow-up PDF in a new tab instead of
+  // suppressing the launch.
+  openInFirefox?: boolean;
 }
 ```
 
@@ -278,6 +314,26 @@ system. Prevents the user from being asked again about this.
 Windows only.
 
 - args: (none)
+
+### `SET_DEFAULT_PROTOCOL_HANDLER`
+
+Action for setting Firefox as the default handler for a protocol (scheme), such
+as `mailto`, on the user's system.
+
+Windows only.
+
+- args:
+```ts
+{
+  // The protocol to claim, e.g. "mailto".
+  protocol: string;
+  // URL passed to the OS default-app picker.
+  url?: string;
+  // If the OS hands the URL back to Firefox after the user picks Firefox in the
+  // open-with dialog, open the protocol's default URL in a new tab.
+  openInFirefox?: boolean;
+}
+```
 
 ### `SHOW_SPOTLIGHT`
 
@@ -310,6 +366,63 @@ with `messaging-system-action.`, it will be created and prepended with
     name: string;
     value: string | boolean | number;
   }
+}
+```
+
+#### Special `value` options
+
+**`{ timestamp: true }`** — Instead of setting a literal value, sets the pref to the current time as a Unix millisecond timestamp string (i.e. `Date.now().toString()`).
+
+Example:
+```json
+"action": {
+  "type": "SET_PREF",
+  "data": {
+    "pref": {
+      "name": "messaging-system-action.lastSeen",
+      "value": { "timestamp": true }
+    }
+  }
+}
+```
+
+**`{ copyFromPref: string }`** — Copies the value from another existing preference into the target pref. The source and target prefs must be of the same type, otherwise an error is thrown.
+
+Example:
+```json
+"action": {
+  "type": "SET_PREF",
+  "data": {
+    "pref": {
+      "name": "messaging-system-action.myCopiedPref",
+      "value": { "copyFromPref": "browser.startup.homepage" }
+    }
+  }
+}
+```
+
+**Omitted or `null` value** — Resets the pref to its default value by calling `clearUserPref`.
+
+Example:
+```json
+"action": {
+  "type": "SET_PREF",
+  "data": {
+    "pref": {
+      "name": "browser.startup.homepage"
+    }
+  }
+}
+```
+
+### `DESTROY_UIWIDGET`
+
+Destroys a customizable UI widget by ID. Only widgets in the allowlist are permitted.
+
+- args:
+```ts
+{
+  widget_id: string; // The id of the widget to destroy (e.g. "fxms-bmb-button")
 }
 ```
 
@@ -357,12 +470,6 @@ interface MultiAction {
   }
 }
 ```
-
-### `CLICK_ELEMENT`
-
-* args: `string` A CSS selector for the HTML element to be clicked
-
-Selects an element in the current Window's document and triggers a click action
 
 
 ### `RELOAD_BROWSER`
@@ -435,11 +542,11 @@ interface SearchMode {
   // The name of the search engine to restrict to. Can be left empty to use source
   // restriction instead.
   engineName?: string;
-  // A result source to restrict to. One of the values in UrlbarUtils.RESULT_SOURCE.
+  // A result source to restrict to. One of the values in UrlbarShared.RESULT_SOURCE.
   // Defaults to 3 (SEARCH).
   source?: number;
   // How search mode was entered. This is recorded in event telemetry. One of the
-  // values in UrlbarUtils.SEARCH_MODE_ENTRY. Defaults to "other".
+  // values in UrlbarShared.SEARCH_MODE_ENTRY. Defaults to "other".
   entry?: string;
   // If true, we will preview search mode. Search mode preview does not record
   // telemetry and has slighly different UI behavior. The preview is exited in
@@ -458,7 +565,7 @@ interface SearchMode {
   "data": {
     "engineName": "test_engine",
     "source": 3,
-    "entry": "other",
+    "entry": "messagingSystem",
     "isPreview": false,
   }
 }
@@ -469,6 +576,22 @@ interface SearchMode {
 Summarize current page content.
 
 * args: optional `string` entry value to identify initiator default "message"
+
+### `OPEN_ORGANIZE_TABS_PANEL`
+
+Opens the Smart Window "Organize Tabs" panel. Unlike `OPEN_PANEL`, the panel is
+built on demand rather than already present in the DOM.
+
+- args:
+```ts
+{
+  data?: {
+    // Identifies the surface that opened the panel, recorded as the `source`
+    // extra key on the panel's telemetry. Defaults to "message".
+    source?: string;
+  }
+}
+```
 
 ### `OPEN_PANEL`
 
@@ -487,9 +610,74 @@ Open a panel associated with a given widget.
 }
 ```
 
-
 ### `CREATE_TASKBAR_TAB`
 
 Creates a taskbar tab from the current URL and asks to pin it to the taskbar. Windows only.
 
 - args: (none)
+
+### `PIN_TASKBAR_TAB`
+
+Pins a specific web app to the taskbar.
+
+- args:
+```ts
+{
+  url: string;      // The HTTP/HTTPS URL of the web app to pin
+  name: string;     // Display name for the web app
+  iconUrl: string;  // URL of the icon to use (256x256 PNG recommended)
+}
+```
+
+### `RESTORE_SESSION`
+
+Restores the previous Firefox session if possible.
+
+- args: (none)
+
+### `RESTART_APP`
+
+Restart the application.
+
+- args: (none)
+
+### `CREATE_GROUP_FROM_CURRENT_TAB`
+
+Creates a new tab group at the position of the current tab containing only that tab.
+
+If the current tab is already in a tab group, this action creates a new tab and places that new tab into a new tab group after the current tab's tab group.
+
+- args: (none)
+
+### `IPPROTECTION_ENROLL`
+
+Enrolls the user in IP Protection. Initiates a Firefox Accounts sign-in flow if needed, then enrolls and entitles the user, and opens the IP Protection panel.
+
+- args: (none)
+
+### `CONFIRM_LAUNCH_ON_LOGIN`
+
+Configures Firefox to launch on Windows login.
+
+- args: (none)
+
+### `REMOVE_LAUNCH_ON_LOGIN`
+
+Removes Firefox from Windows login items.
+
+- args: (none)
+
+### `SET_BROWSER_ICON`
+
+Changes the browser icon to the one identified by `id` using `CustomIconManager`. Icon ids that are not present in the catalog are ignored. The `"default"` id reverts to the browser's own icon. Windows only, and not supported on MSIX (packaged) builds.
+
+- args:
+```ts
+{
+  id: string;  // The id of the icon to switch to, as listed in the CustomIconManager ICON_CATALOG
+}
+```
+
+### `GET_REFERRAL_CODE`
+
+Gets the user's referral code (or generates one if it doesn't exist), and opens about:referrals with the code as a param. Throws an error if referrals are not enabled.

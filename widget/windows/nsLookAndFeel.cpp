@@ -1,22 +1,23 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsLookAndFeel.h"
+
+#include <shellapi.h>
 #include <stdint.h>
 #include <windows.h>
-#include <shellapi.h>
-#include "nsStyleConsts.h"
-#include "nsUXThemeConstants.h"
-#include "nsWindowDefs.h"
-#include "nsWindowsHelpers.h"
+
 #include "WinUtils.h"
 #include "WindowsUIUtils.h"
 #include "mozilla/FontPropertyTypes.h"
 #include "mozilla/glean/WidgetWindowsMetrics.h"
 #include "mozilla/intl/LocaleService.h"
 #include "mozilla/widget/WinRegistry.h"
+#include "nsStyleConsts.h"
+#include "nsUXThemeConstants.h"
+#include "nsWindowDefs.h"
+#include "nsWindowsHelpers.h"
 
 #define AVG2(a, b) (((a) + (b) + 1) >> 1)
 
@@ -434,6 +435,7 @@ nsresult nsLookAndFeel::NativeGetColor(ColorID aID, ColorScheme aScheme,
       idx = COLOR_3DSHADOW;
       break;
     case ColorID::Window:
+    case ColorID::MozDialog:
       idx = COLOR_WINDOW;
       break;
     case ColorID::Windowframe:
@@ -460,7 +462,6 @@ nsresult nsLookAndFeel::NativeGetColor(ColorID aID, ColorScheme aScheme,
       break;
     case ColorID::MozHeaderbar:
     case ColorID::MozHeaderbarinactive:
-    case ColorID::MozDialog:
       idx = COLOR_3DFACE;
       break;
     case ColorID::Accentcolor:
@@ -545,8 +546,9 @@ nsresult nsLookAndFeel::NativeGetInt(IntID aID, int32_t& aResult) {
       aResult = GetSystemParam(SPI_GETMENUSHOWDELAY, 400);
       break;
     case IntID::MenusCanOverlapOSBar:
-      // we want XUL popups to be able to overlap the task bar.
-      aResult = 1;
+      // Context menus should not overlap the OS taskbar (default Windows
+      // behavior).
+      aResult = 0;
       break;
     case IntID::DragThresholdX:
       // The system metric is the number of pixels at which a drag should

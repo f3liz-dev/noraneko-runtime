@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -18,8 +16,6 @@
 #include "mozilla/UniquePtr.h"
 #include "mozilla/dom/TreeOrderedArray.h"
 #include "nsAtom.h"
-#include "nsCOMPtr.h"
-#include "nsContentList.h"
 #include "nsHashKeys.h"
 #include "nsTArray.h"
 #include "nsTHashtable.h"
@@ -31,6 +27,8 @@ namespace mozilla {
 namespace dom {
 class Document;
 class Element;
+class HTMLCollection;
+class IdentifierMapContentList;
 }  // namespace dom
 
 /**
@@ -73,31 +71,19 @@ class IdentifierMapEntry : public PLDHashEntryHdr {
   typedef const DependentAtomOrString* KeyTypePointer;
 
   explicit IdentifierMapEntry(const DependentAtomOrString* aKey);
-  IdentifierMapEntry(IdentifierMapEntry&& aOther) = default;
-  ~IdentifierMapEntry() = default;
+  IdentifierMapEntry(IdentifierMapEntry&& aOther);
+  ~IdentifierMapEntry();
 
-  nsString GetKeyAsString() const {
-    if (mKey.mAtom) {
-      return nsAtomString(mKey.mAtom);
-    }
-
-    return mKey.mString;
+  nsDependentAtomString GetKeyAsString() const {
+    return nsDependentAtomString(mKey);
   }
 
   bool KeyEquals(const KeyTypePointer aOtherKey) const {
-    if (mKey.mAtom) {
-      if (aOtherKey->mAtom) {
-        return mKey.mAtom == aOtherKey->mAtom;
-      }
-
-      return mKey.mAtom->Equals(*aOtherKey->mString);
-    }
-
     if (aOtherKey->mAtom) {
-      return aOtherKey->mAtom->Equals(mKey.mString);
+      return mKey == aOtherKey->mAtom;
     }
 
-    return mKey.mString.Equals(*aOtherKey->mString);
+    return mKey->Equals(*aOtherKey->mString);
   }
 
   static KeyTypePointer KeyToPointer(KeyType aKey) { return &aKey; }
@@ -110,32 +96,32 @@ class IdentifierMapEntry : public PLDHashEntryHdr {
 
   bool IsEmpty();
 
-  void AddNameElement(nsINode* aDocument, Element* aElement);
+  void AddNameElement(Element* aElement);
   void RemoveNameElement(Element* aElement);
-  nsBaseContentList* GetNameContentList() { return mNameContentList; }
-  bool HasNameElement() const;
+  Span<Element* const> GetNameElements() const { return mNameList.AsSpan(); }
 
-  void AddDocumentNameElement(Document* aDocument,
-                              nsGenericHTMLElement* aElement);
-  void RemoveDocumentNameElement(nsGenericHTMLElement* aElement);
+  void GetWindowNameElements(nsTArray<Element*>&) const;
+  dom::HTMLCollection* GetWindowNameContentList() const;
+  dom::HTMLCollection& CreateWindowNameContentList(
+      Document*, Span<Element*> aKnownElements);
+  void InvalidateWindowNameContentList();
+  bool HasWindowNameElement() const;
+
+  void GetDocumentNameElements(nsTArray<Element*>&) const;
+  dom::HTMLCollection* GetDocumentNameContentList() const;
+  dom::HTMLCollection& CreateDocumentNameContentList(
+      Document*, Span<Element*> aKnownElements);
+  void InvalidateDocumentNameContentList();
   bool HasDocumentNameElement() const;
-  nsBaseContentList* GetDocumentNameContentList() {
-    return mDocumentNameContentList;
-  }
 
-  /**
-   * Returns the element if we know the element associated with this
-   * id. Otherwise returns null.
-   */
+  // Returns the element associated with this id, or null.
   Element* GetIdElement() const {
-    auto span = mIdContentList.AsSpan();
+    auto span = mIdList.AsSpan();
     return span.IsEmpty() ? nullptr : span[0];
   }
 
-  /**
-   * Returns the list of all elements associated with this id.
-   */
-  Span<Element* const> GetIdElements() const { return mIdContentList.AsSpan(); }
+  // Returns the list of all elements associated with this id.
+  Span<Element* const> GetIdElements() const { return mIdList.AsSpan(); }
 
   /**
    * If this entry has a non-null image element set (using SetImageElement),
@@ -145,17 +131,13 @@ class IdentifierMapEntry : public PLDHashEntryHdr {
     return mImageElement ? mImageElement.get() : GetIdElement();
   }
 
-  /**
-   * This can fire ID change callbacks.
-   */
+  // This can fire ID change callbacks.
   void AddIdElement(Element* aElement);
-  /**
-   * This can fire ID change callbacks.
-   */
+  // This can fire ID change callbacks.
   void RemoveIdElement(Element* aElement);
   /**
    * Set the image element override for this ID. This will be returned by
-   * GetIdElement(true) if non-null.
+   * GetImageIdElement() if non-null.
    */
   void SetImageElement(Element* aElement);
   bool HasIdElementExposedAsHTMLDocumentProperty() const;
@@ -205,37 +187,19 @@ class IdentifierMapEntry : public PLDHashEntryHdr {
   size_t SizeOfExcludingThis(MallocSizeOf aMallocSizeOf) const;
 
  private:
-  // We use an OwningAtomOrString as our internal key storage.  It needs to own
-  // the key string, whether in atom or string form.
-  struct OwningAtomOrString final {
-    OwningAtomOrString(const OwningAtomOrString& aOther) = delete;
-    OwningAtomOrString(OwningAtomOrString&& aOther) = default;
-
-    explicit OwningAtomOrString(const DependentAtomOrString& aOther)
-        // aOther may have a null mString, so jump through a bit of a hoop in
-        // that case.  I wish there were a way to just default-initialize
-        // mString in that situation...  We could also make mString not const
-        // and only assign to it if aOther.mString is not null, but having it be
-        // const is nice.
-        : mAtom(aOther.mAtom),
-          mString(aOther.mString ? *aOther.mString : u""_ns) {}
-
-    RefPtr<nsAtom> mAtom;
-    nsString mString;
-  };
-
   IdentifierMapEntry(const IdentifierMapEntry& aOther) = delete;
   IdentifierMapEntry& operator=(const IdentifierMapEntry& aOther) = delete;
 
   void FireChangeCallbacks(Element* aOldElement, Element* aNewElement,
                            bool aImageOnly = false);
 
-  OwningAtomOrString mKey;
-  dom::TreeOrderedArray<Element*> mIdContentList;
-  RefPtr<nsBaseContentList> mNameContentList;
-  // The content list for the document named getter.
-  RefPtr<nsBaseContentList> mDocumentNameContentList;
-  UniquePtr<nsTHashtable<ChangeCallbackEntry> > mChangeCallbacks;
+  // We use a RefPtr<nsAtom> as our internal key storage.
+  RefPtr<nsAtom> mKey;
+  dom::TreeOrderedArray<Element*> mIdList;
+  dom::TreeOrderedArray<Element*> mNameList;
+  RefPtr<dom::IdentifierMapContentList> mWindowNameContentList;
+  RefPtr<dom::IdentifierMapContentList> mDocumentNameContentList;
+  UniquePtr<nsTHashtable<ChangeCallbackEntry>> mChangeCallbacks;
   RefPtr<Element> mImageElement;
 };
 

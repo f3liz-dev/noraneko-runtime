@@ -10,15 +10,6 @@ function ensureSchemaRegistered() {
   }
   gSchemaRegistered = true;
 
-  /**
-   * @backward-compat { version 149 }
-   *
-   * Bug 2011308: Remove the following typeof / early return check
-   */
-  if (!ChromeUtils.registerMarkerSchema) {
-    return;
-  }
-
   ChromeUtils.registerMarkerSchema({
     name: "TestStatus",
     tableLabel: "{marker.data.message}",
@@ -193,7 +184,8 @@ export class StructuredLogger {
     expected = "PASS",
     message = null,
     stack = null,
-    extra = null
+    extra = null,
+    time = null
   ) {
     var data = {
       test: this.#testId(test),
@@ -212,6 +204,9 @@ export class StructuredLogger {
     }
     if (extra !== null) {
       data.extra = extra;
+    }
+    if (time !== null) {
+      data.time = time;
     }
 
     this.logData("test_status", data);

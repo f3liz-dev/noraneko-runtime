@@ -1,80 +1,88 @@
-commit 419cd2c3213b594f8e2488bf48034fed20ace81d
+commit 9eadd12e33d65b8c9101ddef1d77d1c9a07e07bf
+Author: Jamie Nicol <jnicol@mozilla.com>
+Date:   Thu Apr 30 09:43:22 2026 +0100
+
+    Revert "Translator: Do not validate uniform packing"
+    
+    This reverts commit ad96e4bb5071aa32dc4b5782ae710b3989f04664.
+    
+    Co-authored-by: Erich Gubler <erichdongubler@gmail.com>
+
+commit bbac11c6c8fefa19cf51d92ac9a6303e8f707777
 Author: Shahbaz Youssefi <syoussefi@chromium.org>
-Date:   Mon Mar 27 13:05:36 2023 -0400
+Date:   Fri May 29 11:07:06 2026 -0400
 
-    Translator: Initialize out arguments too for WebGL
+    GL: Fix `invariant gl_FragColor;` + draw buffers
     
-    Local variables were initialized for WebGL, but not `out` arguments.
-    However, `out` arguments completely overwrite the passed-in variable at
-    call site, so they should also be zeroed out.
+    When GL_EXT_draw_buffers is enabled, gl_FragColor is replaced by
+    gl_FragData.  If it was globally qualified as `invariant`, the relevant
+    transformation did not handle it.
     
-    Bug: chromium:1425685
-    Change-Id: Ib2f61a962eea74c4933aafa4d5ad377189cec578
-    Reviewed-on: https://chromium-review.googlesource.com/c/angle/angle/+/4375137
+    Bug: chromium:517575864
+    Change-Id: I3ec2a6629940a69070e5327abd8ce37c55d0efcd
+    Reviewed-on: https://chromium-review.googlesource.com/c/angle/angle/+/7883926
     Reviewed-by: Geoff Lang <geofflang@chromium.org>
-    Reviewed-by: Kenneth Russell <kbr@chromium.org>
-    Commit-Queue: Shahbaz Youssefi <syoussefi@chromium.org>
+    Commit-Queue: Geoff Lang <geofflang@chromium.org>
 
-commit 7918168436578718b234bfd56da152e34a85af1d
+commit d7228e6ed21c3ea4d710f595fe7f65f7fc01d80c
+Author: teoxoy <28601907+teoxoy@users.noreply.github.com>
+Date:   Mon May 11 11:16:18 2026 +0200
+
+    eliminate `static_cast`
+
+commit 005a5e22a30bb5a7cb4b0e0032fd0873427e2b9a
+Author: teoxoy <28601907+teoxoy@users.noreply.github.com>
+Date:   Mon May 11 11:09:56 2026 +0200
+
+    use correct framebuffer var
+
+commit 77001e3c6a4c6f217afb5fc6c5485f26efa8c124
+Author: teoxoy <28601907+teoxoy@users.noreply.github.com>
+Date:   Mon May 11 10:45:36 2026 +0200
+
+    call `SafeDelete` only if `onDestroy` has not errored
+
+commit 6f109db56ea1bd5cf17f35f00cf2ba32e50b6262
+Author: Antonio Maiorano <amaiorano@google.com>
+Date:   Tue Apr 07 16:03:19 2026 -0400
+
+    D3D11: Fix potential OOB read in StoreStaticAttrib
+    
+    Bug: b/489369089
+    Change-Id: Ieda5e911ed0b122af49af15f52eb938787346143
+    Reviewed-on: https://chromium-review.googlesource.com/c/angle/angle/+/7736785
+    Reviewed-by: Geoff Lang <geofflang@chromium.org>
+    Commit-Queue: Antonio Maiorano <amaiorano@google.com>
+
+commit 31bb7089d275e226d0f3878470c9fe6acfaf1736
+Author: Geoff Lang <geofflang@chromium.org>
+Date:   Wed Apr 15 15:00:04 2026 -0400
+
+    D3D11: Avoid cache self-eviction for uniform buffers.
+    
+    D3D11 makes copies of buffers to handle different binding
+    offsets since they are not natively supported. It limits the cache to
+    the buffer's size * 2. glBindBufferRange allows giving sizes larger than
+    the buffer, this can cause the D3D11 buffer storage to trim even with
+    one element, evicting the newly allocated buffer.
+    
+    Avoid this by checking if the buffer to evict was the newly inserted
+    one. It would always be the last element in the cache because it has the
+    most recent LRU value.
+    
+    Fixed: chromium:498881735
+    Change-Id: Ie235f1c3efa6b3a2395bbfdf6b165c4c42d95fdc
+    Reviewed-on: https://chromium-review.googlesource.com/c/angle/angle/+/7765258
+    Reviewed-by: Shahbaz Youssefi <syoussefi@chromium.org>
+    Commit-Queue: Geoff Lang <geofflang@chromium.org>
+
+commit a5f0aab16397f6e46f4b5c50e35347ce678cfbb0
 Author: Kelsey Gilbert <kelsey.gilbert@mozilla.com>
-Date:   Tue Jun 4 15:37:29 2024 -0700
+Date:   Tue Jun 04 15:37:29 2024 -0700
 
     Add GLSL variable byte size limits to ShBuiltInResources.
 
-commit 31c0a5bff1330706aff3c4594c8166745814a45b
-Author: Shahbaz Youssefi <syoussefi@chromium.org>
-Date:   Wed May 3 13:41:36 2023 -0400
-
-    WebGL: Limit total size of private data
-    
-    ... not just individual arrays.
-    
-    Bug: chromium:1431761
-    Change-Id: I721e29aeceeaf12c3f6a67b668abffb8dfbc89b0
-    Reviewed-on: https://chromium-review.googlesource.com/c/angle/angle/+/4503753
-    Reviewed-by: Kenneth Russell <kbr@chromium.org>
-    Commit-Queue: Shahbaz Youssefi <syoussefi@chromium.org>
-
-commit ddaf44ac75d5d0390873c2af193e02159ecbe672
-Author: Geoff Lang <geofflang@chromium.org>
-Date:   Fri Dec 8 13:20:36 2023 -0500
-
-    Validate Uniform variable limits with each iteration
-    
-    VariablePacker would loop over all variables and sum up the total
-    row counts before validating. Each variable can take hundreds of rows
-    so it is possible to overflow the counters before validating them.
-    
-    Validate the limits with each iteration and early-out when the limits
-    are exceeded.
-    
-    https://bugzilla.mozilla.org/show_bug.cgi?id=1864587
-    
-    Bug: chromium:1864587
-    Change-Id: Ic235ada1516a0d5a9948d82b22f6316a037c09ca
-    Reviewed-on: https://chromium-review.googlesource.com/c/angle/angle/+/5106408
-    Reviewed-by: Shahbaz Youssefi <syoussefi@chromium.org>
-    Auto-Submit: Geoff Lang <geofflang@chromium.org>
-    Commit-Queue: Shahbaz Youssefi <syoussefi@chromium.org>
-
-commit 6784271c1c6273a1be0b6a2dad9ac7b921521ad8
-Author: Shahbaz Youssefi <syoussefi@chromium.org>
-Date:   Tue Mar 28 11:43:23 2023 -0400
-
-    Translator: Limit the size of private variables in WebGL shaders
-    
-    As a follow up to
-    https://chromium-review.googlesource.com/c/angle/angle/+/3023033, the
-    limit to shader-private variables (locals and globals) is further
-    reduced to 1MB.  A variable that large will not fit in GPU registers and
-    will spill to memory, killing performance.
-    
-    Bug: chromium:1427865
-    Change-Id: I77314d4b891c591cd9a83ad2aebb77d7256f3ada
-    Reviewed-on: https://chromium-review.googlesource.com/c/angle/angle/+/4377639
-    Reviewed-by: Kenneth Russell <kbr@chromium.org>
-
-commit 23347851217a581f3b9d877af203a0dcc4b7b6e9
+commit e43d053219a0e60fb0744a2df3ecef41d244e385
 Author: Kelsey Gilbert <kelsey.gilbert@mozilla.com>
 Date:   Wed Mar 29 16:13:39 2023 -0700
 
@@ -82,15 +90,15 @@ Date:   Wed Mar 29 16:13:39 2023 -0700
     
     Change-Id: I1d998867f3e829ed0dc8181fa76be5fe701dde70
 
-commit aa3a569c8ddc1122d55663749a6db63e48b3033c
+commit e8407590dcd8432d77dbe5a54dd3b0328484f7ea
 Author: Ashley Hale <ahale@mozilla.com>
-Date:   Wed Mar 1 18:03:04 2023 -0800
+Date:   Wed Mar 01 18:03:04 2023 -0800
 
     Disable ClearView with scissor on Skylake iGPU because of observed bugs with edge corruption. (#27)
 
-commit d93c05cd2d786f2c624fbf8f4465238b38a771a1
+commit c49b9f114ed50c2f069aa5f295d6a027e90d74c7
 Author: Kelsey Gilbert <jgilbert@mozilla.com>
-Date:   Thu Sep 8 17:10:21 2022 -0700
+Date:   Thu Sep 08 17:10:21 2022 -0700
 
     Import <cmath> in SymbolTable_ESSL_autogen.cpp.
     
@@ -100,7 +108,7 @@ Date:   Thu Sep 8 17:10:21 2022 -0700
     
     Co-authored-by: Erich Gubler <erichdongubler@gmail.com>
 
-commit 0bf5781fddeb50d02b703dd89cc77b2c5f07e334
+commit df25c5bcf1e91df209e03d08259e17ab3fb18e80
 Author: Erich Gubler <erichdongubler@gmail.com>
 Date:   Thu Jan 19 00:20:06 2023 -0500
 
@@ -110,19 +118,7 @@ Date:   Thu Jan 19 00:20:06 2023 -0500
     
     [failing-ci]: https://treeherder.mozilla.org/jobs?repo=autoland&author=egubler%40mozilla.com&selectedTaskRun=e6KdZgnNTCOE9weaOnTjVQ.0
 
-commit ea4d354f6cfc83c31446a855f3fd5603737eae76
-Author: Erich Gubler <erichdongubler@gmail.com>
-Date:   Wed Nov 16 20:54:23 2022 -0500
-
-    fix(windows,pre-c++20): use default ctors for `std::atomic<angle::Mutex*>`
-
-commit 9bcfaed62b60e210004217fd5e79c25f3e2b3760
-Author: Jeff Gilbert <jdashg@gmail.com>
-Date:   Thu Jul 15 15:56:45 2021 -0700
-
-    Add missing header to build config.
-
-commit 16baec7195df362b9d615ccb7e5d51673501e10e
+commit 620bd161dae49507402e0ce7e35b00800e6f0673
 Author: Jeff Gilbert <jdashg@gmail.com>
 Date:   Thu Feb 11 17:34:00 2021 -0800
 
@@ -133,9 +129,9 @@ Date:   Thu Feb 11 17:34:00 2021 -0800
     match enough to hit the CopySubResource path.
     Firefox bug: https://bugzilla.mozilla.org/show_bug.cgi?id=1692355
 
-commit 43e9d9a7c95b509869a774fab62bf42d6d15b745
+commit d9c5b07d9b3abde2c17f4085e18f951a50a97e0f
 Author: Jeff Muizelaar <jrmuizel@gmail.com>
-Date:   Wed May 6 14:04:42 2020 -0400
+Date:   Wed May 06 14:04:42 2020 -0400
 
     Don't use ClearView if we previously used dual source blending on Intel gen6. (#22)
     
@@ -147,15 +143,9 @@ Date:   Wed May 6 14:04:42 2020 -0400
     If we detect that this is going to happen we fall back to the manual
     draw call path. This lets us use ClearView most of the time still.
 
-commit b16ebaa05424354c06c2ccdccc36df2c7c1b191e
-Author: Erich Gubler <erichdongubler@gmail.com>
-Date:   Wed Nov 9 21:12:44 2022 -0500
-
-    Fix broken build from `-Wexit-time-destructors` on Windows x64
-
-commit 4c3a473aec4e09ffacd0466817cb851529087767
+commit 47cdac4b96daf88ca0e2aac1cc5476efc42db36c
 Author: Dzmitry Malyshau <dmalyshau@mozilla.com>
-Date:   Thu Dec 5 13:02:14 2019 -0500
+Date:   Thu Dec 05 13:02:14 2019 -0500
 
     Restrict the slow texture upload workaround to 128bit formats. (#21)
     
@@ -167,17 +157,20 @@ Date:   Thu Dec 5 13:02:14 2019 -0500
 
 Above: cherries picked
 ================================================================================
-Below: merge base from: origin/chromium/5359
+Below: merge base from: origin/chromium/7778
 
-commit ceec659ac60b0c8ee9d9c602ca1a878ec1d3a88f
+commit 9fa37b5e144119f3dd266e6e066a528a1bfac22c
 Author: Shahbaz Youssefi <syoussefi@chromium.org>
-Date:   Mon Oct 31 10:29:45 2022 -0400
+Date:   Fri May 29 10:05:29 2026 -0400
 
-    M108: Vulkan: Disable logicOp dynamic state on Intel/Mesa
+    M148: GL: Fix missing binding before texture recreation during mipgen
     
-    Hits a stack overflow inside the driver.
+    ... if the recreateMipmapLevelsBeforeGenerate workaround is enabled.
+    Fixes a regression introduced in [1].
     
-    Bug: chromium:1379201
-    Change-Id: I790d7ef0333ba17eedbe91e4fc9c3a2b94563bff
-    Reviewed-on: https://chromium-review.googlesource.com/c/angle/angle/+/4004440
-    Reviewed-by: Yuxin Hu <yuxinhu@google.com>
+    [1]:https://chromium-review.googlesource.com/c/angle/angle/+/7791058
+    
+    Bug: chromium:491732188
+    Change-Id: I98f386fec4c57c87c69b9e00dcd88b088ee370a3
+    Reviewed-on: https://chromium-review.googlesource.com/c/angle/angle/+/7886844
+    Reviewed-by: Geoff Lang <geofflang@chromium.org>

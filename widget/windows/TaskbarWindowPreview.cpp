@@ -1,18 +1,18 @@
-/* vim: se cin sw=2 ts=2 et : */
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include <nsITaskbarPreviewController.h>
 #include "TaskbarWindowPreview.h"
-#include "WindowHook.h"
+
+#include <nsITaskbarPreviewController.h>
+
 #include "TaskbarPreviewButton.h"
-#include "nsWindow.h"
-#include "nsWindowGfx.h"
+#include "WindowHook.h"
 #include "imgLoader.h"
 #include "nsISVGPaintContext.h"
+#include "nsWindow.h"
+#include "nsWindowGfx.h"
 
 namespace mozilla {
 namespace widget {

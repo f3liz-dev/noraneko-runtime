@@ -1,5 +1,4 @@
-/* -*- Mode: C++; tab-width: 3; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -93,11 +92,11 @@ nsresult nsMIMEInfoMac::LoadUriInternal(nsIURI* aURI) {
   nsAutoCString uri;
   aURI->GetSpec(uri);
   if (!uri.IsEmpty()) {
-    CFURLRef myURLRef =
-        ::CFURLCreateWithBytes(kCFAllocatorDefault, (const UInt8*)uri.get(),
-                               strlen(uri.get()), kCFStringEncodingUTF8, NULL);
+    CFURLRef myURLRef = ::CFURLCreateWithBytes(
+        kCFAllocatorDefault, (const UInt8*)uri.get(), strlen(uri.get()),
+        kCFStringEncodingUTF8, nullptr);
     if (myURLRef) {
-      OSStatus status = ::LSOpenCFURLRef(myURLRef, NULL);
+      OSStatus status = ::LSOpenCFURLRef(myURLRef, nullptr);
       if (status == noErr) rv = NS_OK;
       ::CFRelease(myURLRef);
     }

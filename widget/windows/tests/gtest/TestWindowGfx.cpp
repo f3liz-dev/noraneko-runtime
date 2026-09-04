@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,14 +6,17 @@
 
 #include "Image.h"
 #include "ImageFactory.h"
+#include "SystemPrincipal.h"
+#include "gtest/gtest.h"
 #include "imgITools.h"
 #include "mozilla/Base64.h"
 #include "mozilla/Encoding.h"
-#include "mozilla/gtest/MozAssertions.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/SpinEventLoopUntil.h"
 #include "mozilla/SystemPrincipal.h"
 #include "mozilla/UniquePtr.h"
+#include "mozilla/gtest/MozAssertions.h"
+#include "nsComponentManagerUtils.h"
 #include "nsIChannel.h"
 #include "nsIInputStream.h"
 #include "nsILoadInfo.h"
@@ -22,9 +24,6 @@
 #include "nsMimeTypes.h"
 #include "nsStreamUtils.h"
 #include "nsWindowGfx.h"
-#include "SystemPrincipal.h"
-
-#include "gtest/gtest.h"
 
 using namespace mozilla;
 using namespace mozilla::image;
@@ -135,8 +134,8 @@ void LoadImage(const char* aData, imgIContainer** aImage) {
                      nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_SEC_CONTEXT_IS_NULL,
                      nsContentPolicyType::TYPE_IMAGE);
 
-  RefPtr<ImageLoadListener> listener = new ImageLoadListener();
-  RefPtr<ProgressTracker> tracker = new ProgressTracker();
+  auto listener = MakeRefPtr<ImageLoadListener>();
+  auto tracker = MakeRefPtr<ProgressTracker>();
   tracker->AddObserver(listener);
   RefPtr<Image> image = ImageFactory::CreateImage(
       channel, tracker, nsCString(IMAGE_SVG_XML), uri, false, 0);

@@ -27,6 +27,7 @@
 #include "nsIRunnable.h"
 #include "nsIURI.h"
 #include "nsNetUtil.h"
+#include "nsPIDOMWindowInlines.h"
 #include "nsThreadUtils.h"
 
 namespace mozilla::dom {
@@ -184,8 +185,7 @@ mozilla::ipc::IPCResult FetchChild::RecvOnFlushConsoleReport(
     // extract doc object to flush the console report
     for (const auto& report : aReports) {
       mReporter->AddConsoleReport(
-          report.errorFlags(), report.category(),
-          static_cast<nsContentUtils::PropertiesFile>(report.propertiesFile()),
+          report.errorFlags(), report.category(), report.propertiesFile(),
           report.sourceFileURI(), report.lineNumber(), report.columnNumber(),
           report.messageName(), report.stringParams());
     }
@@ -216,9 +216,7 @@ mozilla::ipc::IPCResult FetchChild::RecvOnFlushConsoleReport(
                  workerRef = std::move(workerRef)]() mutable {
         for (const auto& report : reports) {
           reporter->AddConsoleReport(
-              report.errorFlags(), report.category(),
-              static_cast<nsContentUtils::PropertiesFile>(
-                  report.propertiesFile()),
+              report.errorFlags(), report.category(), report.propertiesFile(),
               report.sourceFileURI(), report.lineNumber(),
               report.columnNumber(), report.messageName(),
               report.stringParams());
@@ -281,35 +279,37 @@ RefPtr<FetchChild> FetchChild::CreateForMainThread(
 mozilla::ipc::IPCResult FetchChild::RecvOnCSPViolationEvent(
     const nsAString& aJSON, const nsAString& aReportGroupName) {
   FETCH_LOG(("FetchChild::RecvOnCSPViolationEvent [%p] aJSON: %s\n", this,
-             NS_ConvertUTF16toUTF8(aJSON).BeginReading()));
+             NS_ConvertUTF16toUTF8(aJSON).get()));
 
   nsString JSON(aJSON);
 
-  nsCOMPtr<nsIRunnable> r = NS_NewRunnableFunction(__func__, [JSON]() mutable {
-    SecurityPolicyViolationEventInit violationEventInit;
-    if (NS_WARN_IF(!violationEventInit.Init(JSON))) {
-      return;
-    }
+  nsCOMPtr<nsIRunnable> r =
+      NS_NewRunnableFunction(__func__, [JSON = std::move(JSON)]() mutable {
+        SecurityPolicyViolationEventInit violationEventInit;
+        if (NS_WARN_IF(!violationEventInit.Init(JSON))) {
+          return;
+        }
 
-    nsCOMPtr<nsIURI> uri;
-    nsresult rv =
-        NS_NewURI(getter_AddRefs(uri), violationEventInit.mBlockedURI);
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-      return;
-    }
+        nsCOMPtr<nsIURI> uri;
+        nsresult rv =
+            NS_NewURI(getter_AddRefs(uri), violationEventInit.mBlockedURI);
+        if (NS_WARN_IF(NS_FAILED(rv))) {
+          return;
+        }
 
-    nsCOMPtr<nsIObserverService> observerService =
-        mozilla::services::GetObserverService();
-    if (!observerService) {
-      return;
-    }
+        nsCOMPtr<nsIObserverService> observerService =
+            mozilla::services::GetObserverService();
+        if (!observerService) {
+          return;
+        }
 
-    rv = observerService->NotifyObservers(
-        uri, CSP_VIOLATION_TOPIC, violationEventInit.mViolatedDirective.get());
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-      return;
-    }
-  });
+        rv = observerService->NotifyObservers(
+            uri, CSP_VIOLATION_TOPIC,
+            violationEventInit.mViolatedDirective.get());
+        if (NS_WARN_IF(NS_FAILED(rv))) {
+          return;
+        }
+      });
   MOZ_ALWAYS_SUCCEEDS(SchedulerGroup::Dispatch(r.forget()));
 
   if (mCSPEventListener) {

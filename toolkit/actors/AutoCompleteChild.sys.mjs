@@ -1,4 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,7 +8,6 @@ const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   ContentDOMReference: "resource://gre/modules/ContentDOMReference.sys.mjs",
-  LayoutUtils: "resource://gre/modules/LayoutUtils.sys.mjs",
   LoginHelper: "resource://gre/modules/LoginHelper.sys.mjs",
 });
 
@@ -23,6 +21,17 @@ export class AutoCompleteChild extends JSWindowActorChild {
 
     this._input = null;
     this._popupOpen = false;
+    this._secondaryActionFocused = false;
+  }
+
+  handleEvent(event) {
+    // Only registered on GeckoView (see ActorManagerParent). The document is
+    // being hidden (navigation, including into bfcache); tell the parent so it
+    // can tear down any delegated selection prompt tied to this document
+    // before it outlives the page.
+    if (event.type == "pagehide" && event.target == this.document) {
+      this.sendAsyncMessage("AutoComplete:DocumentHidden", {});
+    }
   }
 
   receiveMessage(message) {
@@ -39,11 +48,13 @@ export class AutoCompleteChild extends JSWindowActorChild {
 
       case "AutoComplete:PopupClosed": {
         this._popupOpen = false;
+        this._secondaryActionFocused = false;
         break;
       }
 
       case "AutoComplete:PopupOpened": {
         this._popupOpen = true;
+        this._secondaryActionFocused = false;
         break;
       }
 
@@ -104,8 +115,8 @@ export class AutoCompleteChild extends JSWindowActorChild {
       return;
     }
 
-    let rect = lazy.LayoutUtils.getElementBoundingScreenRect(element);
-    let window = element.ownerGlobal;
+    let window = element.documentGlobal;
+    let rect = window.windowUtils.getElementBoundingScreenRect(element);
     let dir = window.getComputedStyle(element).direction;
     let results = this.getResultsFromController(input);
     let formOrigin = lazy.LoginHelper.getLoginOrigin(
@@ -145,6 +156,7 @@ export class AutoCompleteChild extends JSWindowActorChild {
   }
 
   selectBy(reverse, page) {
+    this._secondaryActionFocused = false;
     Services.cpmm.sendSyncMessage("AutoComplete:SelectBy", {
       browsingContext: this.browsingContext,
       reverse,
@@ -193,7 +205,7 @@ export class AutoCompleteChild extends JSWindowActorChild {
 
     if (input.hasBeenTypePassword) {
       providers.add(
-        input.ownerGlobal.windowGlobalChild.getActor("LoginManager")
+        input.documentGlobal.windowGlobalChild.getActor("LoginManager")
       );
     } else {
       // The current design is that FormHistory doesn't call `markAsAutoCompletable`
@@ -202,7 +214,7 @@ export class AutoCompleteChild extends JSWindowActorChild {
       // Because of the design, we need to ask FormHistory whether to search for autocomplete entries
       // for every startSearch call
       providers.add(
-        input.ownerGlobal.windowGlobalChild.getActor("FormHistory")
+        input.documentGlobal.windowGlobalChild.getActor("FormHistory")
       );
     }
     return providers;
@@ -327,6 +339,33 @@ export class AutoCompleteChild extends JSWindowActorChild {
     // we don't need to pass the selected index to the parent process because
     // the selected index is maintained in the parent.
     this.sendAsyncMessage("AutoComplete:SelectEntry");
+  }
+
+  navigateSecondaryAction(reverse) {
+    let result = Services.cpmm.sendSyncMessage(
+      "AutoComplete:NavigateSecondaryAction",
+      {
+        browsingContext: this.browsingContext,
+        reverse,
+      }
+    );
+    let consumed = result.length == 1 && result[0];
+    this._secondaryActionFocused = !reverse && consumed;
+    return consumed;
+  }
+
+  maybeActivateSecondaryAction() {
+    if (!this._secondaryActionFocused) {
+      return false;
+    }
+    let result = Services.cpmm.sendSyncMessage(
+      "AutoComplete:MaybeActivateSecondaryAction",
+      {
+        browsingContext: this.browsingContext,
+      }
+    );
+    this._secondaryActionFocused = false;
+    return result.length == 1 && result[0];
   }
 }
 

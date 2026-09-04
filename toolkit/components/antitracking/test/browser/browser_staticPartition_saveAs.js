@@ -16,7 +16,7 @@ const TEST_VIDEO_URL = TEST_DOMAIN + TEST_PATH + "file_saveAsVideo.sjs";
 const TEST_PAGEINFO_URL = TEST_DOMAIN + TEST_PATH + "file_saveAsPageInfo.html";
 
 let MockFilePicker = SpecialPowers.MockFilePicker;
-MockFilePicker.init(window.browsingContext);
+MockFilePicker.init();
 
 const tempDir = createTemporarySaveDirectory();
 MockFilePicker.displayDirectory = tempDir;
@@ -341,11 +341,7 @@ add_task(async function testSavePageInOfflineMode() {
 
     // Clean up the cache count on the server side.
     await fetch(`${TEST_IMAGE_URL}?result`);
-    await new Promise(resolve => {
-      Services.clearData.deleteData(Ci.nsIClearDataService.CLEAR_ALL, () =>
-        resolve()
-      );
-    });
+    await clearSiteTestData();
   }
 });
 

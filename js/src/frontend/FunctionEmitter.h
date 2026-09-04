@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -56,11 +54,6 @@ class FunctionBox;
 //                        FunctionEmitter::IsHoisted::Yes);
 //     fe.emitAgain();
 //
-//   `function f() { "use asm"; }`
-//     FunctionEmitter fe(this, funbox_for_f, FunctionSyntaxKind::Statement,
-//                        FunctionEmitter::IsHoisted::No);
-//     fe.emitAsmJSModule();
-//
 class MOZ_STACK_CLASS FunctionEmitter {
  public:
   enum class IsHoisted { No, Yes };
@@ -96,10 +89,6 @@ class MOZ_STACK_CLASS FunctionEmitter {
   //   |                                                  ^
   //   | [emitting hoisted function again]                |
   //   |   emitAgain                                      |
-  //   +------------------------------------------------->+
-  //   |                                                  ^
-  //   | [asm.js module]                                  |
-  //   |   emitAsmJSModule                                |
   //   +--------------------------------------------------+
   //
   enum class State {
@@ -109,7 +98,7 @@ class MOZ_STACK_CLASS FunctionEmitter {
     // After calling prepareForNonLazy.
     NonLazy,
 
-    // After calling emitNonLazyEnd, emitLazy, emitAgain, or emitAsmJSModule.
+    // After calling emitNonLazyEnd, emitLazy, or emitAgain.
     End
   };
   State state_ = State::Start;
@@ -125,8 +114,6 @@ class MOZ_STACK_CLASS FunctionEmitter {
   [[nodiscard]] bool emitLazy();
 
   [[nodiscard]] bool emitAgain();
-
-  [[nodiscard]] bool emitAsmJSModule();
 
  private:
   // Emit the function declaration, expression, method etc.

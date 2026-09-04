@@ -14,22 +14,27 @@
 #include <cstdint>
 #include <optional>
 
+#include "api/environment/environment.h"
+#include "api/rtc_error.h"
+#include "api/rtp_header_extension_id.h"
+#include "api/rtp_parameters.h"
 #include "api/test/rtc_error_matchers.h"
 #include "api/transport/ecn_marking.h"
 #include "api/units/time_delta.h"
 #include "call/rtp_demuxer.h"
+#include "modules/rtp_rtcp/source/rtp_header_extensions.h"
 #include "p2p/base/packet_transport_internal.h"
 #include "p2p/test/fake_packet_transport.h"
+#include "pc/session_description.h"
 #include "pc/test/rtp_transport_test_util.h"
 #include "rtc_base/async_packet_socket.h"
 #include "rtc_base/buffer.h"
 #include "rtc_base/containers/flat_set.h"
 #include "rtc_base/copy_on_write_buffer.h"
+#include "rtc_base/logging.h"
 #include "rtc_base/network/sent_packet.h"
 #include "rtc_base/network_route.h"
-#include "rtc_base/third_party/sigslot/sigslot.h"
-#include "rtc_base/thread.h"
-#include "test/create_test_field_trials.h"
+#include "test/create_test_environment.h"
 #include "test/gmock.h"
 #include "test/gtest.h"
 #include "test/run_loop.h"
@@ -41,6 +46,7 @@ namespace {
 
 using ::testing::Eq;
 using ::testing::Ge;
+using ::testing::HasSubstr;
 
 constexpr bool kMuxDisabled = false;
 constexpr bool kMuxEnabled = true;
@@ -49,7 +55,7 @@ constexpr uint16_t kRemoteNetId = 2;
 constexpr int kLastPacketId = 100;
 constexpr int kTransportOverheadPerPacket = 28;  // Ipv4(20) + UDP(8).
 
-class SignalObserver : public sigslot::has_slots<> {
+class SignalObserver {
  public:
   explicit SignalObserver(RtpTransport* transport) {
     transport_ = transport;
@@ -107,12 +113,13 @@ class SignalObserver : public sigslot::has_slots<> {
 };
 
 TEST(RtpTransportTest, SettingRtcpAndRtpSignalsReady) {
-  RtpTransport transport(kMuxDisabled, CreateTestFieldTrials());
+  const Environment env = CreateTestEnvironment();
+  RtpTransport transport(kMuxDisabled, env.field_trials());
 
   SignalObserver observer(&transport);
-  FakePacketTransport fake_rtcp("fake_rtcp");
+  FakePacketTransport fake_rtcp(env, "fake_rtcp");
   fake_rtcp.SetWritable(true);
-  FakePacketTransport fake_rtp("fake_rtp");
+  FakePacketTransport fake_rtp(env, "fake_rtp");
   fake_rtp.SetWritable(true);
 
   transport.SetRtcpPacketTransport(&fake_rtcp);  // rtcp ready
@@ -122,11 +129,12 @@ TEST(RtpTransportTest, SettingRtcpAndRtpSignalsReady) {
 }
 
 TEST(RtpTransportTest, SettingRtpAndRtcpSignalsReady) {
-  RtpTransport transport(kMuxDisabled, CreateTestFieldTrials());
+  const Environment env = CreateTestEnvironment();
+  RtpTransport transport(kMuxDisabled, env.field_trials());
   SignalObserver observer(&transport);
-  FakePacketTransport fake_rtcp("fake_rtcp");
+  FakePacketTransport fake_rtcp(env, "fake_rtcp");
   fake_rtcp.SetWritable(true);
-  FakePacketTransport fake_rtp("fake_rtp");
+  FakePacketTransport fake_rtp(env, "fake_rtp");
   fake_rtp.SetWritable(true);
 
   transport.SetRtpPacketTransport(&fake_rtp);  // rtp ready
@@ -136,9 +144,10 @@ TEST(RtpTransportTest, SettingRtpAndRtcpSignalsReady) {
 }
 
 TEST(RtpTransportTest, SettingRtpWithRtcpMuxEnabledSignalsReady) {
-  RtpTransport transport(kMuxEnabled, CreateTestFieldTrials());
+  const Environment env = CreateTestEnvironment();
+  RtpTransport transport(kMuxEnabled, env.field_trials());
   SignalObserver observer(&transport);
-  FakePacketTransport fake_rtp("fake_rtp");
+  FakePacketTransport fake_rtp(env, "fake_rtp");
   fake_rtp.SetWritable(true);
 
   transport.SetRtpPacketTransport(&fake_rtp);  // rtp ready
@@ -146,9 +155,10 @@ TEST(RtpTransportTest, SettingRtpWithRtcpMuxEnabledSignalsReady) {
 }
 
 TEST(RtpTransportTest, DisablingRtcpMuxSignalsNotReady) {
-  RtpTransport transport(kMuxEnabled, CreateTestFieldTrials());
+  const Environment env = CreateTestEnvironment();
+  RtpTransport transport(kMuxEnabled, env.field_trials());
   SignalObserver observer(&transport);
-  FakePacketTransport fake_rtp("fake_rtp");
+  FakePacketTransport fake_rtp(env, "fake_rtp");
   fake_rtp.SetWritable(true);
 
   transport.SetRtpPacketTransport(&fake_rtp);  // rtp ready
@@ -159,9 +169,10 @@ TEST(RtpTransportTest, DisablingRtcpMuxSignalsNotReady) {
 }
 
 TEST(RtpTransportTest, EnablingRtcpMuxSignalsReady) {
-  RtpTransport transport(kMuxDisabled, CreateTestFieldTrials());
+  const Environment env = CreateTestEnvironment();
+  RtpTransport transport(kMuxDisabled, env.field_trials());
   SignalObserver observer(&transport);
-  FakePacketTransport fake_rtp("fake_rtp");
+  FakePacketTransport fake_rtp(env, "fake_rtp");
   fake_rtp.SetWritable(true);
 
   transport.SetRtpPacketTransport(&fake_rtp);  // rtp ready
@@ -173,9 +184,10 @@ TEST(RtpTransportTest, EnablingRtcpMuxSignalsReady) {
 
 // Tests the SignalNetworkRoute is fired when setting a packet transport.
 TEST(RtpTransportTest, SetRtpTransportWithNetworkRouteChanged) {
-  RtpTransport transport(kMuxDisabled, CreateTestFieldTrials());
+  const Environment env = CreateTestEnvironment();
+  RtpTransport transport(kMuxDisabled, env.field_trials());
   SignalObserver observer(&transport);
-  FakePacketTransport fake_rtp("fake_rtp");
+  FakePacketTransport fake_rtp(env, "fake_rtp");
 
   EXPECT_FALSE(observer.network_route());
 
@@ -202,9 +214,10 @@ TEST(RtpTransportTest, SetRtpTransportWithNetworkRouteChanged) {
 }
 
 TEST(RtpTransportTest, SetRtcpTransportWithNetworkRouteChanged) {
-  RtpTransport transport(kMuxDisabled, CreateTestFieldTrials());
+  const Environment env = CreateTestEnvironment();
+  RtpTransport transport(kMuxDisabled, env.field_trials());
   SignalObserver observer(&transport);
-  FakePacketTransport fake_rtcp("fake_rtcp");
+  FakePacketTransport fake_rtcp(env, "fake_rtcp");
 
   EXPECT_FALSE(observer.network_route());
 
@@ -235,10 +248,11 @@ TEST(RtpTransportTest, SetRtcpTransportWithNetworkRouteChanged) {
 TEST(RtpTransportTest, RtcpPacketSentOverCorrectTransport) {
   // If the RTCP-mux is not enabled, RTCP packets are expected to be sent over
   // the RtcpPacketTransport.
-  AutoThread thread;
-  RtpTransport transport(kMuxDisabled, CreateTestFieldTrials());
-  FakePacketTransport fake_rtcp("fake_rtcp");
-  FakePacketTransport fake_rtp("fake_rtp");
+  test::RunLoop thread;
+  const Environment env = CreateTestEnvironment();
+  RtpTransport transport(kMuxDisabled, env.field_trials());
+  FakePacketTransport fake_rtcp(env, "fake_rtcp");
+  FakePacketTransport fake_rtp(env, "fake_rtp");
   transport.SetRtcpPacketTransport(&fake_rtcp);  // rtcp ready
   transport.SetRtpPacketTransport(&fake_rtp);    // rtp ready
   SignalObserver observer(&transport);
@@ -263,9 +277,10 @@ TEST(RtpTransportTest, RtcpPacketSentOverCorrectTransport) {
 }
 
 TEST(RtpTransportTest, ChangingReadyToSendStateOnlySignalsWhenChanged) {
-  RtpTransport transport(kMuxEnabled, CreateTestFieldTrials());
+  const Environment env = CreateTestEnvironment();
+  RtpTransport transport(kMuxEnabled, env.field_trials());
   TransportObserver observer(&transport);
-  FakePacketTransport fake_rtp("fake_rtp");
+  FakePacketTransport fake_rtp(env, "fake_rtp");
   fake_rtp.SetWritable(true);
 
   // State changes, so we should signal.
@@ -285,12 +300,142 @@ TEST(RtpTransportTest, ChangingReadyToSendStateOnlySignalsWhenChanged) {
   EXPECT_EQ(observer.ready_to_send_signal_count(), 2);
 }
 
+TEST(RtpTransportTest, RegisterAndUnregisterRtpHeaderExtensionMap) {
+  test::RunLoop thread;
+  const Environment env = CreateTestEnvironment();
+  RtpTransport transport(kMuxDisabled, env.field_trials());
+  RtpHeaderExtensions extensions1 = {RtpExtension(
+      "urn:ietf:params:rtp-hdrext:ssrc-audio-level", RtpHeaderExtensionId(1))};
+  RtpHeaderExtensions extensions2 = {
+      RtpExtension("urn:ietf:params:rtp-hdrext:ssrc-audio-level",
+                   RtpHeaderExtensionId(1)),
+      RtpExtension("http://www.webrtc.org/experiments/rtp-hdrext/abs-send-time",
+                   RtpHeaderExtensionId(2))};
+
+  // Register the first map.
+  transport.RegisterRtpHeaderExtensionMap("audio", extensions1);
+
+  // Parse a packet with an extension from the first map.
+  const unsigned char kRtpData1[] = {0x90, 0x11, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                                     0xBE, 0xDE, 0, 1,
+                                     // ID=1, len=0 (1 byte payload)
+                                     0x10, 0x00, 0x00, 0x00};
+  CopyOnWriteBuffer rtp_packet1(kRtpData1, sizeof(kRtpData1));
+  RtpPacketReceived parsed_packet1;
+  FakePacketTransport fake_rtp(env, "fake_rtp");
+  fake_rtp.SetDestination(&fake_rtp, true);
+  transport.SetRtpPacketTransport(&fake_rtp);
+  TransportObserver observer(&transport);
+
+  // Register sink so the packet can be "demuxed" and surfaced to the observer.
+  RtpDemuxerCriteria demuxer_criteria;
+  demuxer_criteria.payload_types().insert(0x11);
+  transport.RegisterRtpDemuxerSink(demuxer_criteria, &observer);
+
+  // Send the packet.
+  fake_rtp.SendPacket(rtp_packet1.data<char>(), rtp_packet1.size(),
+                      AsyncSocketPacketOptions(), 0);
+  EXPECT_THAT(WaitUntil([&] { return observer.rtp_count(); }, Eq(1)),
+              IsRtcOk());
+  RTC_LOG(LS_INFO) << "Packet 1 received: " << observer.rtp_count();
+  RTC_LOG(LS_INFO)
+      << "Packet 1 has AudioLevelExtension: "
+      << observer.last_recv_rtp_packet().HasExtension<AudioLevelExtension>();
+  EXPECT_TRUE(
+      observer.last_recv_rtp_packet().HasExtension<AudioLevelExtension>());
+
+  // Register the second map (simulating BUNDLE).
+  transport.RegisterRtpHeaderExtensionMap("video", extensions2);
+
+  // Parse a packet with an extension from the second map.
+  const unsigned char kRtpData2[] = {0x90, 0x11, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                                     0xBE, 0xDE, 0, 1,
+                                     // ID=2, len=2 (3 byte payload)
+                                     0x22, 0x01, 0x02, 0x03};
+  CopyOnWriteBuffer rtp_packet2(kRtpData2, sizeof(kRtpData2));
+
+  fake_rtp.SendPacket(rtp_packet2.data<char>(), rtp_packet2.size(),
+                      AsyncSocketPacketOptions(), 0);
+  EXPECT_THAT(WaitUntil([&] { return observer.rtp_count(); }, Eq(2)),
+              IsRtcOk());
+  RTC_LOG(LS_INFO) << "Packet 2 received: " << observer.rtp_count();
+  RTC_LOG(LS_INFO)
+      << "Packet 2 has AbsoluteSendTime: "
+      << observer.last_recv_rtp_packet().HasExtension<AbsoluteSendTime>();
+  EXPECT_TRUE(observer.last_recv_rtp_packet().HasExtension<AbsoluteSendTime>());
+
+  // Unregister the second map.
+  transport.UnregisterRtpHeaderExtensionMap("video");
+
+  // A packet with the second map's extension should no longer parse the
+  // extension.
+  fake_rtp.SendPacket(rtp_packet2.data<char>(), rtp_packet2.size(),
+                      AsyncSocketPacketOptions(), 0);
+  EXPECT_THAT(WaitUntil([&] { return observer.rtp_count(); }, Eq(3)),
+              IsRtcOk());
+  EXPECT_FALSE(
+      observer.last_recv_rtp_packet().HasExtension<AbsoluteSendTime>());
+
+  transport.UnregisterRtpDemuxerSink(&observer);
+}
+
+TEST(RtpTransportTest, VerifyRtpHeaderExtensionMapRejectsIdReassignment) {
+  test::RunLoop loop;
+  const Environment env = CreateTestEnvironment();
+  RtpTransport transport(kMuxDisabled, env.field_trials());
+  RtpHeaderExtensions extensions1 = {RtpExtension(
+      "urn:ietf:params:rtp-hdrext:ssrc-audio-level", RtpHeaderExtensionId(1))};
+  RtpHeaderExtensions extensions2 = {
+      RtpExtension("http://www.webrtc.org/experiments/rtp-hdrext/abs-send-time",
+                   RtpHeaderExtensionId(1))};
+
+  // Registering the first map should succeed.
+  EXPECT_TRUE(
+      transport.RegisterRtpHeaderExtensionMap("audio", extensions1).ok());
+
+  // Verifying a map that tries to reassign ID 1 to a different URI should fail.
+  RTCError error = transport.VerifyRtpHeaderExtensionMap(extensions2);
+  EXPECT_FALSE(error.ok());
+  EXPECT_EQ(error.type(), RTCErrorType::INVALID_PARAMETER);
+  EXPECT_THAT(error.message(), HasSubstr("RTP extension ID reassignment"));
+
+  // Registering the second map should also fail.
+  error = transport.RegisterRtpHeaderExtensionMap("video", extensions2);
+  EXPECT_FALSE(error.ok());
+  EXPECT_EQ(error.type(), RTCErrorType::INVALID_PARAMETER);
+}
+
+TEST(RtpTransportTest,
+     VerifyRtpHeaderExtensionMapAllowsIdReuseAfterUnregister) {
+  test::RunLoop loop;
+  const Environment env = CreateTestEnvironment();
+  RtpTransport transport(kMuxDisabled, env.field_trials());
+  RtpHeaderExtensions extensions1 = {RtpExtension(
+      "urn:ietf:params:rtp-hdrext:ssrc-audio-level", RtpHeaderExtensionId(1))};
+  RtpHeaderExtensions extensions2 = {
+      RtpExtension("http://www.webrtc.org/experiments/rtp-hdrext/abs-send-time",
+                   RtpHeaderExtensionId(1))};
+
+  // Registering the first map should succeed.
+  EXPECT_TRUE(
+      transport.RegisterRtpHeaderExtensionMap("audio", extensions1).ok());
+
+  // Unregister the first map.
+  transport.UnregisterRtpHeaderExtensionMap("audio");
+
+  // Registering the second map with same ID but different URI should now
+  // succeed!
+  EXPECT_TRUE(
+      transport.RegisterRtpHeaderExtensionMap("video", extensions2).ok());
+}
+
 // Test that SignalPacketReceived fires with rtcp=true when a RTCP packet is
 // received.
 TEST(RtpTransportTest, SignalDemuxedRtcp) {
-  AutoThread thread;
-  RtpTransport transport(kMuxDisabled, CreateTestFieldTrials());
-  FakePacketTransport fake_rtp("fake_rtp");
+  test::RunLoop thread;
+  const Environment env = CreateTestEnvironment();
+  RtpTransport transport(kMuxDisabled, env.field_trials());
+  FakePacketTransport fake_rtp(env, "fake_rtp");
   fake_rtp.SetDestination(&fake_rtp, true);
   transport.SetRtpPacketTransport(&fake_rtp);
   TransportObserver observer(&transport);
@@ -306,16 +451,16 @@ TEST(RtpTransportTest, SignalDemuxedRtcp) {
   EXPECT_EQ(0, observer.rtp_count());
 }
 
-static const unsigned char kRtpData[] = {0x80, 0x11, 0, 0, 0, 0,
-                                         0,    0,    0, 0, 0, 0};
-static const int kRtpLen = 12;
+const unsigned char kRtpData[] = {0x80, 0x11, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+const int kRtpLen = 12;
 
 // Test that SignalPacketReceived fires with rtcp=false when a RTP packet with a
 // handled payload type is received.
 TEST(RtpTransportTest, SignalHandledRtpPayloadType) {
-  AutoThread thread;
-  RtpTransport transport(kMuxDisabled, CreateTestFieldTrials());
-  FakePacketTransport fake_rtp("fake_rtp");
+  test::RunLoop thread;
+  const Environment env = CreateTestEnvironment();
+  RtpTransport transport(kMuxDisabled, env.field_trials());
+  FakePacketTransport fake_rtp(env, "fake_rtp");
   fake_rtp.SetDestination(&fake_rtp, true);
   transport.SetRtpPacketTransport(&fake_rtp);
   TransportObserver observer(&transport);
@@ -338,10 +483,11 @@ TEST(RtpTransportTest, SignalHandledRtpPayloadType) {
 }
 
 TEST(RtpTransportTest, ReceivedPacketEcnMarkingPropagatedToDemuxedPacket) {
-  AutoThread thread;
-  RtpTransport transport(kMuxDisabled, CreateTestFieldTrials());
+  test::RunLoop thread;
+  const Environment env = CreateTestEnvironment();
+  RtpTransport transport(kMuxDisabled, env.field_trials());
   // Setup FakePacketTransport to send packets to itself.
-  FakePacketTransport fake_rtp("fake_rtp");
+  FakePacketTransport fake_rtp(env, "fake_rtp");
   fake_rtp.SetDestination(&fake_rtp, true);
   transport.SetRtpPacketTransport(&fake_rtp);
   TransportObserver observer(&transport);
@@ -362,12 +508,48 @@ TEST(RtpTransportTest, ReceivedPacketEcnMarkingPropagatedToDemuxedPacket) {
   transport.UnregisterRtpDemuxerSink(&observer);
 }
 
+TEST(RtpTransportTest, RtcpSentAsEct1IfReceivedRtpPacketAsEct1) {
+  test::RunLoop thread;
+  const Environment env = CreateTestEnvironment();
+  RtpTransport transport(kMuxDisabled, env.field_trials());
+  // Setup FakePacketTransport to send packets to itself.
+  FakePacketTransport fake_rtp(env, "fake_rtp");
+  fake_rtp.SetDestination(&fake_rtp, true);
+  transport.SetRtpPacketTransport(&fake_rtp);
+  // Setup RTCP transport to send to another fake transport.
+  FakePacketTransport fake_rtcp_recipient(env, "rtcp_recipient");
+  FakePacketTransport fake_rtcp(env, "fake_rtcp");
+  fake_rtcp.SetDestination(&fake_rtcp_recipient, true);
+  transport.SetRtcpPacketTransport(&fake_rtcp);
+
+  AsyncSocketPacketOptions rtp_options;
+  rtp_options.ect_1 = true;
+  const int flags = 0;
+  Buffer rtp_data(kRtpData, kRtpLen);
+  // Receive RTP packet as ECT1 (since `fake_rtp` sends packets to `transport`).
+  fake_rtp.SendPacket(rtp_data.data<char>(), kRtpLen, rtp_options, flags);
+
+  CopyOnWriteBuffer rtcp_packet_payload;
+  rtcp_packet_payload.SetData("hello");
+  transport.SendRtcpPacket(&rtcp_packet_payload, AsyncSocketPacketOptions(),
+                           flags);
+  EXPECT_TRUE(fake_rtcp.last_sent_packet_options().ect_1);
+
+  // but if next RTP packet is received as not ect, RTCP is sent as not ECT.
+  rtp_options.ect_1 = false;
+  fake_rtp.SendPacket(rtp_data.data<char>(), kRtpLen, rtp_options, flags);
+  transport.SendRtcpPacket(&rtcp_packet_payload, AsyncSocketPacketOptions(),
+                           flags);
+  EXPECT_FALSE(fake_rtcp.last_sent_packet_options().ect_1);
+}
+
 // Test that SignalPacketReceived does not fire when a RTP packet with an
 // unhandled payload type is received.
 TEST(RtpTransportTest, DontSignalUnhandledRtpPayloadType) {
-  AutoThread thread;
-  RtpTransport transport(kMuxDisabled, CreateTestFieldTrials());
-  FakePacketTransport fake_rtp("fake_rtp");
+  test::RunLoop thread;
+  const Environment env = CreateTestEnvironment();
+  RtpTransport transport(kMuxDisabled, env.field_trials());
+  FakePacketTransport fake_rtp(env, "fake_rtp");
   fake_rtp.SetDestination(&fake_rtp, true);
   transport.SetRtpPacketTransport(&fake_rtp);
   TransportObserver observer(&transport);
@@ -391,11 +573,12 @@ TEST(RtpTransportTest, DontSignalUnhandledRtpPayloadType) {
 
 TEST(RtpTransportTest, DontChangeReadyToSendStateOnSendFailure) {
   // ReadyToSendState should only care about if transport is writable.
-  AutoThread thread;
-  RtpTransport transport(kMuxEnabled, CreateTestFieldTrials());
+  test::RunLoop thread;
+  const Environment env = CreateTestEnvironment();
+  RtpTransport transport(kMuxEnabled, env.field_trials());
   TransportObserver observer(&transport);
 
-  FakePacketTransport fake_rtp("fake_rtp");
+  FakePacketTransport fake_rtp(env, "fake_rtp");
   fake_rtp.SetDestination(&fake_rtp, true);
   transport.SetRtpPacketTransport(&fake_rtp);
   fake_rtp.SetWritable(true);
@@ -415,8 +598,9 @@ TEST(RtpTransportTest, DontChangeReadyToSendStateOnSendFailure) {
 TEST(RtpTransportTest, RecursiveOnSentPacketDoesNotCrash) {
   const int kShortTimeout = 100;
   test::RunLoop loop;
-  RtpTransport transport(kMuxDisabled, CreateTestFieldTrials());
-  FakePacketTransport fake_rtp("fake_rtp");
+  const Environment env = CreateTestEnvironment();
+  RtpTransport transport(kMuxDisabled, env.field_trials());
+  FakePacketTransport fake_rtp(env, "fake_rtp");
   transport.SetRtpPacketTransport(&fake_rtp);
   fake_rtp.SetDestination(&fake_rtp, true);
   TransportObserver observer(&transport);

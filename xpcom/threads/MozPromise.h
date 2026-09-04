@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -406,7 +404,7 @@ class MozPromise : public MozPromiseBase {
           CopyableTArray<ResolveValueType>(), __func__);
     }
 
-    RefPtr<AllPromiseHolder> holder = new AllPromiseHolder(aPromises.Length());
+    RefPtr holder = MakeRefPtr<AllPromiseHolder>(aPromises.Length());
     RefPtr<AllPromiseType> promise = holder->Promise();
     for (size_t i = 0; i < aPromises.Length(); ++i) {
       aPromises[i]->Then(
@@ -429,8 +427,7 @@ class MozPromise : public MozPromiseBase {
           CopyableTArray<ResolveOrRejectValue>(), __func__);
     }
 
-    RefPtr<AllSettledPromiseHolder> holder =
-        new AllSettledPromiseHolder(aPromises.Length());
+    RefPtr holder = MakeRefPtr<AllSettledPromiseHolder>(aPromises.Length());
     RefPtr<AllSettledPromiseType> promise = holder->Promise();
     for (size_t i = 0; i < aPromises.Length(); ++i) {
       aPromises[i]->Then(aProcessingTarget, __func__,
@@ -685,14 +682,19 @@ class MozPromise : public MozPromiseBase {
     }
   }
 
-  template <typename PromiseType>
+  template <bool SupportChaining, typename PromiseType>
   static void MaybeChain(PromiseType* aFrom,
                          RefPtr<typename PromiseType::Private>&& aTo) {
-    if (aTo) {
+    if constexpr (SupportChaining) {
+      if (aTo) {
+        MOZ_RELEASE_ASSERT(
+            aFrom,
+            "Can't do promise chaining for a non-promise-returning method.");
+        aFrom->ChainTo(aTo.forget(), "<chained completion promise>");
+      }
+    } else {
       MOZ_DIAGNOSTIC_ASSERT(
-          aFrom,
-          "Can't do promise chaining for a non-promise-returning method.");
-      aFrom->ChainTo(aTo.forget(), "<chained completion promise>");
+          !aTo, "A completion promise requires a promise-returning callback.");
     }
   }
 
@@ -757,7 +759,8 @@ class MozPromise : public MozPromiseBase {
       // which may or may not be ok.
       mThisVal = nullptr;
 
-      MaybeChain<PromiseType>(result, std::move(mCompletionPromise));
+      MaybeChain<SupportChaining, PromiseType>(result,
+                                               std::move(mCompletionPromise));
     }
 
    private:
@@ -813,7 +816,8 @@ class MozPromise : public MozPromiseBase {
       // which may or may not be ok.
       mThisVal = nullptr;
 
-      MaybeChain<PromiseType>(result, std::move(mCompletionPromise));
+      MaybeChain<SupportChaining, PromiseType>(result,
+                                               std::move(mCompletionPromise));
     }
 
    private:
@@ -885,7 +889,8 @@ class MozPromise : public MozPromiseBase {
       mResolveFunction.reset();
       mRejectFunction.reset();
 
-      MaybeChain<PromiseType>(result, std::move(mCompletionPromise));
+      MaybeChain<SupportChaining, PromiseType>(result,
+                                               std::move(mCompletionPromise));
     }
 
    private:
@@ -947,7 +952,8 @@ class MozPromise : public MozPromiseBase {
       // ThenValue, which may or may not be ok.
       mResolveRejectFunction.reset();
 
-      MaybeChain<PromiseType>(result, std::move(mCompletionPromise));
+      MaybeChain<SupportChaining, PromiseType>(result,
+                                               std::move(mCompletionPromise));
     }
 
    private:

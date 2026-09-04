@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,7 +8,6 @@
 #include "mozilla/dom/BodyConsumer.h"
 #include "nsCOMPtr.h"
 #include "nsCycleCollectionParticipant.h"
-#include "nsWeakReference.h"
 #include "nsWrapperCache.h"
 
 class nsIGlobalObject;
@@ -33,7 +30,7 @@ class ReadableStream;
 #define NS_DOM_BLOB_IID \
   {0x648c2a83, 0xbdb1, 0x4a7d, {0xb5, 0x0a, 0xca, 0xcd, 0x92, 0x87, 0x45, 0xc2}}
 
-class Blob : public nsSupportsWeakReference, public nsWrapperCache {
+class Blob : public nsISupports, public nsWrapperCache {
  public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS_FINAL
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(Blob)
@@ -42,7 +39,8 @@ class Blob : public nsSupportsWeakReference, public nsWrapperCache {
   using BlobPart = OwningArrayBufferViewOrArrayBufferOrBlobOrUTF8String;
 
   // This creates a Blob or a File based on the type of BlobImpl.
-  static Blob* Create(nsIGlobalObject* aGlobal, BlobImpl* aImpl);
+  static already_AddRefed<Blob> Create(nsIGlobalObject* aGlobal,
+                                       BlobImpl* aImpl);
 
   static already_AddRefed<Blob> CreateStringBlob(nsIGlobalObject* aGlobal,
                                                  const nsACString& aData,
@@ -55,6 +53,12 @@ class Blob : public nsSupportsWeakReference, public nsWrapperCache {
                                                  void* aMemoryBuffer,
                                                  uint64_t aLength,
                                                  const nsAString& aContentType);
+
+  // This clones the current Blob
+  already_AddRefed<Blob> Clone() const;
+
+  // Returns true if the blob's JS wrapper has user-added properties (expandos).
+  bool HasExpandos() const;
 
   BlobImpl* Impl() const { return mImpl; }
 
@@ -148,9 +152,5 @@ size_t BindingJSObjectMallocBytes(Blob* aBlob);
 
 }  // namespace dom
 }  // namespace mozilla
-
-inline nsISupports* ToSupports(mozilla::dom::Blob* aBlob) {
-  return static_cast<nsISupportsWeakReference*>(aBlob);
-}
 
 #endif  // mozilla_dom_Blob_h

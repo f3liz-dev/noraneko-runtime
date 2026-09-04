@@ -47,6 +47,7 @@
 
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_LOCAL_NETWORK" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
     <!-- Needed to post notifications on devices with Android 13 and later-->
@@ -69,6 +70,7 @@
         android:name=".FocusApplication"
         android:enableOnBackInvokedCallback="false"
         android:usesCleartextTraffic="true"
+        android:networkSecurityConfig="@xml/network_security_config"
         tools:ignore="UnusedAttribute">
 
         <activity

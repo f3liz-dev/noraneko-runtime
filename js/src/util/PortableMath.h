@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -37,6 +35,25 @@ inline double NumberMod(double a, double b) {
   if (b == 0) {
     return JS::GenericNaN();
   }
+
+  // Fast path: both operands are integer-valued and fit in Int64. The exact
+  // remainder of two integer-valued doubles is itself always representable as
+  // a double, so converting |m| back below never rounds.
+  int64_t ai, bi;
+  if (mozilla::NumberEqualsInt64(a, &ai) &&
+      mozilla::NumberEqualsInt64(b, &bi)) {
+    // N % -1 == 0. Special-casing this also avoids INT64_MIN % -1.
+    if (bi != -1) {
+      int64_t m = ai % bi;
+      if (m != 0) {
+        return double(m);
+      }
+    }
+
+    // Zero remainder takes the sign of a
+    return std::copysign(0.0, a);
+  }
+
   double r = fmod(a, b);
 #if defined(XP_WIN)
   // Some versions of Windows (Win 10 v1803, v1809) miscompute the sign of zero

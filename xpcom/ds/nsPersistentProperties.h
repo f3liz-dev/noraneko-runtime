@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,29 +5,28 @@
 #ifndef nsPersistentProperties_h_
 #define nsPersistentProperties_h_
 
-#include "nsIPersistentProperties2.h"
-#include "nsTHashMap.h"
-#include "nsString.h"
-#include "nsCOMPtr.h"
 #include "mozilla/ArenaAllocator.h"
-
-class nsIUnicharInputStream;
+#include "nsCOMPtr.h"
+#include "nsIPersistentProperties2.h"
+#include "nsIUnicharInputStream.h"
+#include "nsString.h"
+#include "nsTHashMap.h"
 
 class nsPersistentProperties final : public nsIPersistentProperties {
  public:
-  nsPersistentProperties();
+  nsPersistentProperties() = default;
 
   NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSIPROPERTIES
   NS_DECL_NSIPERSISTENTPROPERTIES
 
  private:
-  ~nsPersistentProperties();
+  ~nsPersistentProperties() = default;
 
  protected:
   nsCOMPtr<nsIUnicharInputStream> mIn;
 
-  nsTHashMap<nsDepCharHashKey, const char16_t*> mTable;
+  nsTHashMap<nsDepCharHashKey, const char16_t*> mTable{16};
   mozilla::ArenaAllocator<2048, 4> mArena;
 };
 

@@ -1,4 +1,3 @@
-// -*- indent-tabs-mode: nil; js-indent-level: 2 -*-
 // Any copyright is dedicated to the Public Domain.
 // http://creativecommons.org/publicdomain/zero/1.0/
 "use strict";
@@ -181,7 +180,7 @@ add_task(async function testRememberedDecisionsUI() {
     "rememberedList has expected number of labels"
   );
 
-  await BrowserTestUtils.waitForCondition(
+  await TestUtils.waitForCondition(
     () => !!labels[10].textContent.length,
     "Localized label is populated"
   );

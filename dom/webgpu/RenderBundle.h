@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -13,6 +12,7 @@
 namespace mozilla::webgpu {
 
 class Device;
+class ExternalTexture;
 
 class RenderBundle final : public nsWrapperCache,
                            public ObjectBase,
@@ -22,10 +22,15 @@ class RenderBundle final : public nsWrapperCache,
   GPU_DECL_JS_WRAP(RenderBundle)
 
   RenderBundle(Device* const aParent, RawId aId,
-               CanvasContextArray&& aCanvasContexts);
+               CanvasContextArray&& aCanvasContexts,
+               nsTArray<RefPtr<ExternalTexture>>&& aExternalTextures);
 
   mozilla::Span<const WeakPtr<CanvasContext>> GetCanvasContexts() const {
     return mUsedCanvasContexts;
+  }
+
+  mozilla::Span<const RefPtr<ExternalTexture>> GetExternalTextures() const {
+    return mExternalTextures;
   }
 
  private:
@@ -33,6 +38,7 @@ class RenderBundle final : public nsWrapperCache,
 
   // The canvas contexts of any canvas textures used in this render bundle.
   CanvasContextArray mUsedCanvasContexts;
+  nsTArray<RefPtr<ExternalTexture>> mExternalTextures;
 };
 
 }  // namespace mozilla::webgpu

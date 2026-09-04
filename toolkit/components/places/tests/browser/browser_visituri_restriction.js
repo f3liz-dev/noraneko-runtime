@@ -27,7 +27,7 @@ add_setup(async function () {
         4,
       ],
       // To enable UserActivation by EventUtils.synthesizeMouseAtCenter() in
-      // ContentTask.spawn() in synthesizeVisitByUser().
+      // SpecialPowers.spawn() in synthesizeVisitByUser().
       ["test.events.async.enabled", true],
     ],
   });
@@ -92,7 +92,7 @@ add_task(async function basic() {
       });
 
       info("Check other");
-      // eslint-disable-next-line @microsoft/sdl/no-insecure-url
+      // eslint-disable-next-line sdl/no-insecure-url
       await assertLinkVisitedStatus(browser, "http://example.com/", {
         visitCount: 0,
         isVisited: false,

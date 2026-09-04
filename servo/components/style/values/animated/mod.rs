@@ -25,6 +25,7 @@ mod font;
 mod grid;
 pub mod lists;
 mod svg;
+pub mod text;
 pub mod transform;
 
 /// The category a property falls into for ordering purposes.
@@ -423,6 +424,8 @@ trivial_to_animated_value!(ComputedUrl);
 trivial_to_animated_value!(bool);
 trivial_to_animated_value!(f32);
 trivial_to_animated_value!(i32);
+trivial_to_animated_value!(u8);
+trivial_to_animated_value!(u16);
 trivial_to_animated_value!(u32);
 trivial_to_animated_value!(usize);
 trivial_to_animated_value!(AbsoluteColor);

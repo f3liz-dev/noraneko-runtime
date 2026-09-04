@@ -28,6 +28,7 @@
 #define HB_OT_CFF1_TABLE_HH
 
 #include "hb-ot-cff-common.hh"
+#include "hb-depend-data.hh"
 #include "hb-subset-cff-common.hh"
 #include "hb-draw.hh"
 #include "hb-paint.hh"
@@ -234,16 +235,16 @@ struct Encoding
     return_trace (true);
   }
 
-  unsigned int get_size () const
+  size_t get_size () const
   {
-    unsigned int size = min_size;
+    size_t size = min_size;
     switch (table_format ())
     {
-    case 0: hb_barrier (); size += u.format0.get_size (); break;
-    case 1: hb_barrier (); size += u.format1.get_size (); break;
+    case 0: hb_barrier (); size = hb_unsigned_add_saturate (size, u.format0.get_size ()); break;
+    case 1: hb_barrier (); size = hb_unsigned_add_saturate (size, u.format1.get_size ()); break;
     }
     if (has_supplement ())
-      size += suppEncData ().get_size ();
+      size = hb_unsigned_add_saturate (size, suppEncData ().get_size ());
     return size;
   }
 
@@ -262,7 +263,7 @@ struct Encoding
 
   void get_supplement_codes (hb_codepoint_t sid, hb_vector_t<hb_codepoint_t> &codes) const
   {
-    codes.resize (0);
+    codes.clear ();
     if (has_supplement ())
       suppEncData().get_codes (sid, codes);
   }
@@ -344,7 +345,7 @@ struct Charset0
     return 0;
   }
 
-  static unsigned int get_size (unsigned int num_glyphs)
+  static size_t get_size (unsigned int num_glyphs)
   {
     assert (num_glyphs > 0);
     return UnsizedArrayOf<HBUINT16>::get_size (num_glyphs - 1);
@@ -459,7 +460,7 @@ struct Charset1_2 {
     return 0;
   }
 
-  unsigned int get_size (unsigned int num_glyphs) const
+  size_t get_size (unsigned int num_glyphs) const
   {
     int glyph = (int) num_glyphs;
     unsigned num_ranges = 0;
@@ -475,7 +476,7 @@ struct Charset1_2 {
     return get_size_for_ranges (num_ranges);
   }
 
-  static unsigned int get_size_for_ranges (unsigned int num_ranges)
+  static size_t get_size_for_ranges (unsigned int num_ranges)
   {
     return UnsizedArrayOf<Charset_Range<TYPE> >::get_size (num_ranges);
   }
@@ -563,13 +564,13 @@ struct Charset
     return_trace (true);
   }
 
-  unsigned int get_size (unsigned int num_glyphs) const
+  size_t get_size (unsigned int num_glyphs) const
   {
     switch (format)
     {
-    case 0: hb_barrier (); return min_size + u.format0.get_size (num_glyphs);
-    case 1: hb_barrier (); return min_size + u.format1.get_size (num_glyphs);
-    case 2: hb_barrier (); return min_size + u.format2.get_size (num_glyphs);
+    case 0: hb_barrier (); return hb_unsigned_add_saturate (min_size, u.format0.get_size (num_glyphs));
+    case 1: hb_barrier (); return hb_unsigned_add_saturate (min_size, u.format1.get_size (num_glyphs));
+    case 2: hb_barrier (); return hb_unsigned_add_saturate (min_size, u.format2.get_size (num_glyphs));
     default:return 0;
     }
   }
@@ -1533,6 +1534,20 @@ struct cff1_accelerator_t : cff1::accelerator_t {
 
 struct cff1_subset_accelerator_t : cff1::accelerator_subset_t {
   cff1_subset_accelerator_t (hb_face_t *face) : cff1::accelerator_subset_t (face) {}
+
+  void depend (hb_depend_data_builder_t *builder) const
+  {
+    if (!is_valid ()) return;
+    for (hb_codepoint_t gid = 0; gid < num_glyphs; gid++)
+    {
+      hb_codepoint_t base_gid, accent_gid;
+      if (get_seac_components (gid, &base_gid, &accent_gid))
+      {
+        builder->add_depend (gid, HB_TAG('C','F','F',' '), base_gid);
+        builder->add_depend (gid, HB_TAG('C','F','F',' '), accent_gid);
+      }
+    }
+  }
 };
 
 } /* namespace OT */

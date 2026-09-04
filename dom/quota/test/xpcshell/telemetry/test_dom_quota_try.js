@@ -82,16 +82,16 @@ const testcases = [
     },
     initFunction: initTemporaryStorage,
     getExpectedNumberOfEvents() {
-      if (AppConstants.EARLY_BETA_OR_EARLIER || AppConstants.DEBUG) {
-        if (AppConstants.NIGHTLY_BUILD) {
-          return {
-            initFailure: 10,
-            initSuccess: 0,
-          };
-        }
-
+      if (AppConstants.NIGHTLY_BUILD) {
         return {
-          initFailure: 15,
+          initFailure: 12,
+          initSuccess: 0,
+        };
+      }
+
+      if (AppConstants.DEBUG) {
+        return {
+          initFailure: 17,
           initSuccess: 0,
         };
       }

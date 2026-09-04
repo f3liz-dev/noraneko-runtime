@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,30 +5,30 @@
 #ifndef GFX_WEBRENDERLAYERMANAGER_H
 #define GFX_WEBRENDERLAYERMANAGER_H
 
-#include <cstddef>                    // for size_t
-#include <cstdint>                    // for uint32_t, int32_t, INT32_MAX
-#include <string>                     // for string
-#include "Units.h"                    // for LayoutDeviceIntSize
+#include <cstddef>  // for size_t
+#include <cstdint>  // for uint32_t, int32_t, INT32_MAX
+#include <string>   // for string
+
+#include "Units.h"  // for LayoutDeviceIntSize
+#include "WindowRenderer.h"
 #include "mozilla/AlreadyAddRefed.h"  // for already_AddRefed
 #include "mozilla/Assertions.h"  // for AssertionConditionType, MOZ_ASSERT, MOZ_ASSERT_HELPER2
-#include "mozilla/Attributes.h"               // for MOZ_NON_OWNING_REF
-#include "mozilla/RefPtr.h"                   // for RefPtr
-#include "mozilla/TimeStamp.h"                // for TimeStamp
-#include "mozilla/gfx/Point.h"                // for IntSize
-#include "mozilla/gfx/Types.h"                // for SurfaceFormat
-#include "mozilla/layers/CompositorTypes.h"   // for TextureFactoryIdentifier
-#include "mozilla/layers/DisplayItemCache.h"  // for DisplayItemCache
-#include "mozilla/layers/FocusTarget.h"       // for FocusTarget
+#include "mozilla/Attributes.h"              // for MOZ_NON_OWNING_REF
+#include "mozilla/RefPtr.h"                  // for RefPtr
+#include "mozilla/TimeStamp.h"               // for TimeStamp
+#include "mozilla/gfx/Point.h"               // for IntSize
+#include "mozilla/gfx/Types.h"               // for SurfaceFormat
+#include "mozilla/layers/CompositorTypes.h"  // for TextureFactoryIdentifier
+#include "mozilla/layers/FocusTarget.h"      // for FocusTarget
 #include "mozilla/layers/LayersTypes.h"  // for TransactionId, LayersBackend, CompositionPayload (ptr only), LayersBackend::...
 #include "mozilla/layers/RenderRootStateManager.h"  // for RenderRootStateManager
 #include "mozilla/layers/ScrollableLayerGuid.h"  // for ScrollableLayerGuid, ScrollableLayerGuid::ViewID
 #include "mozilla/layers/WebRenderCommandBuilder.h"  // for WebRenderCommandBuilder
 #include "mozilla/layers/WebRenderScrollData.h"      // for WebRenderScrollData
-#include "WindowRenderer.h"
-#include "nsHashKeys.h"   // for nsRefPtrHashKey
-#include "nsRegion.h"     // for nsIntRegion
-#include "nsStringFwd.h"  // for nsCString, nsAString
-#include "nsTArray.h"     // for nsTArray
+#include "nsHashKeys.h"                              // for nsRefPtrHashKey
+#include "nsRegion.h"                                // for nsIntRegion
+#include "nsStringFwd.h"                             // for nsCString, nsAString
+#include "nsTArray.h"                                // for nsTArray
 #include "nsTHashSet.h"
 
 class gfxContext;
@@ -60,9 +58,12 @@ class WebRenderLayerManager final : public WindowRenderer {
   NS_INLINE_DECL_REFCOUNTING(WebRenderLayerManager, final)
 
  public:
-  explicit WebRenderLayerManager(nsIWidget* aWidget);
-  bool Initialize(PCompositorBridgeChild* aCBChild, wr::PipelineId aLayersId,
-                  TextureFactoryIdentifier* aTextureFactoryIdentifier,
+  static RefPtr<WebRenderLayerManager> Create(nsIWidget* aWidget,
+                                              PCompositorBridgeChild* aCBChild,
+                                              wr::PipelineId aPipelineId,
+                                              nsCString& aError);
+
+  bool Initialize(TextureFactoryIdentifier* aTextureFactoryIdentifier,
                   nsCString& aError);
 
   void Destroy() override;
@@ -213,6 +214,9 @@ class WebRenderLayerManager final : public WindowRenderer {
 #endif
 
  private:
+  explicit WebRenderLayerManager(
+      nsIWidget* aWidget, already_AddRefed<WebRenderBridgeChild> aWrChild);
+
   /**
    * Take a snapshot of the parent context, and copy
    * it into mTarget.
@@ -267,12 +271,15 @@ class WebRenderLayerManager final : public WindowRenderer {
   WebRenderCommandBuilder mWebRenderCommandBuilder;
 
   RenderRootStateManager mStateManager;
-  DisplayItemCache mDisplayItemCache;
   UniquePtr<wr::DisplayListBuilder> mDLBuilder;
 
   ScrollUpdatesMap mPendingScrollUpdates;
 
   LayoutDeviceIntSize mFlushWidgetSize;
+
+  // When we fail to initialize WebRender, it is useful to know if it has ever
+  // succeeded, or if this is the first attempt.
+  static bool sHasInitialized;
 };
 
 }  // namespace layers

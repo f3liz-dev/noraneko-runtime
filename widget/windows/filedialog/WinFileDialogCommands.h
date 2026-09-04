@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -260,13 +258,18 @@ void LogProcessingError(LogModule* aModule, ipc::IProtocol* aCaller,
 }  // namespace detail
 
 // Show a file-picker on another thread in the current process.
+// aNeedsInputProtection enables ignoring confirmations that arrive too soon
+// after the dialog is shown; it is only set for content-initiated pickers.
 RefPtr<Promise<Maybe<Results>>> SpawnFilePicker(HWND parent,
                                                 FileDialogType type,
-                                                nsTArray<Command> commands);
+                                                nsTArray<Command> commands,
+                                                bool aNeedsInputProtection);
 
 // Show a folder-picker on another thread in the current process.
+// See SpawnFilePicker for aNeedsInputProtection.
 RefPtr<Promise<Maybe<nsString>>> SpawnFolderPicker(HWND parent,
-                                                   nsTArray<Command> commands);
+                                                   nsTArray<Command> commands,
+                                                   bool aNeedsInputProtection);
 
 }  // namespace mozilla::widget::filedialog
 

@@ -121,6 +121,15 @@ class Options:
                 "has implemented it)."
             ),
         },
+        "--install-extension": {
+            "action": "append",
+            "default": [],
+            "help": (
+                "Install a webextension into the test profile before running. "
+                "Accepts a .xpi URL or a local .xpi path. May be specified "
+                "multiple times."
+            ),
+        },
     }
 
     args = copy.deepcopy(general_args)
@@ -129,11 +138,11 @@ class Options:
 for layer in system_layers() + test_layers() + metrics_layers():
     if layer.activated:
         # add an option to deactivate it
-        option_name = "--no-%s" % layer.name
-        option_help = "Deactivates the %s layer" % layer.name
+        option_name = f"--no-{layer.name}"
+        option_help = f"Deactivates the {layer.name} layer"
     else:
-        option_name = "--%s" % layer.name
-        option_help = "Activates the %s layer" % layer.name
+        option_name = f"--{layer.name}"
+        option_help = f"Activates the {layer.name} layer"
 
     Options.args[option_name] = {
         "action": "store_true",
@@ -142,9 +151,9 @@ for layer in system_layers() + test_layers() + metrics_layers():
     }
 
     for option, value in layer.arguments.items():
-        parsed_option = "--%s-%s" % (layer.name, option.replace("_", "-"))
+        parsed_option = f"--{layer.name}-{option.replace('_', '-')}"
         if parsed_option in Options.args:
-            raise KeyError("%s option already defined!" % parsed_option)
+            raise KeyError(f"{parsed_option} option already defined!")
         Options.args[parsed_option] = value
 
 

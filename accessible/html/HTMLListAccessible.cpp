@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,10 +5,9 @@
 #include "HTMLListAccessible.h"
 
 #include "AccAttributes.h"
-#include "nsAccessibilityService.h"
-#include "mozilla/a11y/Role.h"
 #include "States.h"
-
+#include "mozilla/a11y/Role.h"
+#include "nsAccessibilityService.h"
 #include "nsLayoutUtils.h"
 
 using namespace mozilla;
@@ -99,7 +96,7 @@ uint64_t HTMLListBulletAccessible::NativeState() const {
 }
 
 already_AddRefed<AccAttributes> HTMLListBulletAccessible::NativeAttributes() {
-  RefPtr<AccAttributes> attributes = new AccAttributes();
+  auto attributes = MakeRefPtr<AccAttributes>();
   return attributes.forget();
 }
 

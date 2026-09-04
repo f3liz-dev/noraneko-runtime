@@ -1,5 +1,5 @@
 var MockFilePicker = SpecialPowers.MockFilePicker;
-MockFilePicker.init(window.browsingContext);
+MockFilePicker.init();
 
 function waitForNewWindow() {
   return new Promise(resolve => {
@@ -126,7 +126,7 @@ async function runTest(url) {
   await testLink("link9", "download_page_3.txt");
   await testLink("link10", "download_page_4.txt");
   await testLink("link11", "download_page_4.txt");
-  // eslint-disable-next-line @microsoft/sdl/no-insecure-url
+  // eslint-disable-next-line sdl/no-insecure-url
   await testLocation("link12", "http://example.com/");
 
   // Check that we enforce the correct extension if the website's

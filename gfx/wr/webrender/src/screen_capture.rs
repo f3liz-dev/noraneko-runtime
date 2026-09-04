@@ -33,7 +33,8 @@ struct AsyncScreenshot {
     screenshot_size: DeviceIntSize,
     /// The stride of the data in the PBO.
     buffer_stride: usize,
-    /// Thge image format of the screenshot.
+    /// Thge image format of the screenshot, i.e. the format the pixels were read
+    /// back in. This may differ from the format the caller ultimately wants.
     image_format: ImageFormat,
 }
 
@@ -267,7 +268,18 @@ impl AsyncScreenshotGrabber {
         }
         assert_eq!(self.scaling_textures[level].get_dimensions(), texture_size);
 
-        let (read_target, read_target_rect) = if read_target_rect.width() > 2 * dest_size.width {
+        // Stop recursing once the next level's scaling texture would exceed the
+        // device's texture size limit; the device would otherwise clamp it and
+        // fail the assertion above. This level then scales down by more than a
+        // factor of two in a single (lower-quality) blit.
+        let max_texture_size = device.max_texture_size();
+        let next_texture_size = dest_size * 2;
+        let next_level_fits = next_texture_size.width <= max_texture_size
+            && next_texture_size.height <= max_texture_size;
+
+        let (read_target, read_target_rect) = if read_target_rect.width() > 2 * dest_size.width
+            && next_level_fits
+        {
             self.scale_screenshot(
                 device,
                 read_target,
@@ -320,6 +332,7 @@ impl AsyncScreenshotGrabber {
         handle: AsyncScreenshotHandle,
         dst_buffer: &mut [u8],
         dst_stride: usize,
+        dest_format: Option<ImageFormat>,
     ) -> bool {
         let AsyncScreenshot {
             pbo,
@@ -330,6 +343,14 @@ impl AsyncScreenshotGrabber {
             Some(screenshot) => screenshot,
             None => return false,
         };
+
+        // Swap the red and blue channels while copying when the caller wants the
+        // opposite of the format we read back. RGBA8 <-> BGRA8 is the only
+        // conversion supported.
+        let swap_rb = dest_format.is_some_and(|dest| {
+            (image_format == ImageFormat::RGBA8 && dest == ImageFormat::BGRA8)
+                || (image_format == ImageFormat::BGRA8 && dest == ImageFormat::RGBA8)
+        });
 
         let gl_type = device.gl().get_type();
 
@@ -344,7 +365,19 @@ impl AsyncScreenshotGrabber {
                 .zip(dst_buffer.chunks_mut(dst_stride))
                 .take(screenshot_size.height as usize)
             {
-                dst_slice[.. src_width].copy_from_slice(&src_slice[.. src_width]);
+                if swap_rb {
+                    for (src_px, dst_px) in src_slice[.. src_width]
+                        .chunks_exact(4)
+                        .zip(dst_slice[.. src_width].chunks_exact_mut(4))
+                    {
+                        dst_px[0] = src_px[2];
+                        dst_px[1] = src_px[1];
+                        dst_px[2] = src_px[0];
+                        dst_px[3] = src_px[3];
+                    }
+                } else {
+                    dst_slice[.. src_width].copy_from_slice(&src_slice[.. src_width]);
+                }
             }
 
             true
@@ -425,6 +458,7 @@ impl Renderer {
                 AsyncScreenshotHandle(handle.0),
                 dst_buffer,
                 dst_stride,
+                None,
             )
         } else {
             false
@@ -446,6 +480,10 @@ impl Renderer {
     /// `map_and_recycle_screenshot`.
     ///
     /// The returned size is the size of the screenshot.
+    ///
+    /// Requesting `BGRA8` requires `supports_bgra_readback()`. When that is
+    /// false the caller must request `RGBA8` instead and have
+    /// `map_and_recycle_screenshot` swap the channels into the desired format.
     pub fn get_screenshot_async(
         &mut self,
         window_rect: DeviceIntRect,
@@ -471,6 +509,7 @@ impl Renderer {
         handle: AsyncScreenshotHandle,
         dst_buffer: &mut [u8],
         dst_stride: usize,
+        dest_format: ImageFormat,
     ) -> bool {
         if let Some(async_screenshots) = self.async_screenshots.as_mut() {
             async_screenshots.map_and_recycle_screenshot(
@@ -478,10 +517,18 @@ impl Renderer {
                 handle,
                 dst_buffer,
                 dst_stride,
+                Some(dest_format),
             )
         } else {
             false
         }
+    }
+
+    /// Whether functions that read back from the framebuffer (such as
+    /// `read_pixels_into` and `get_screenshot_async`) support BGRA. If false,
+    /// RGBA should be used instead and the caller must swap the channels itself.
+    pub fn supports_bgra_readback(&self) -> bool {
+        self.device.get_capabilities().supports_bgra_read
     }
 
     /// Release the screenshot grabbing structures that the profiler was using.

@@ -24,7 +24,7 @@ impl Default for CustomPropertiesMap {
 }
 
 /// We use None in the value to represent a removed entry.
-type OwnMap =
+pub type OwnMap =
     IndexMap<Name, Option<ComputedRegisteredValue>, BuildHasherDefault<PrecomputedHasher>>;
 
 static EMPTY: LazyLock<Arc<Inner>> = LazyLock::new(|| {

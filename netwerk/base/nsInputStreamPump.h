@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -6,12 +5,13 @@
 #ifndef nsInputStreamPump_h_
 #define nsInputStreamPump_h_
 
-#include "nsIInputStreamPump.h"
-#include "nsIAsyncInputStream.h"
-#include "nsIThreadRetargetableRequest.h"
-#include "nsCOMPtr.h"
+#include "mozilla/Atomics.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/RecursiveMutex.h"
+#include "nsCOMPtr.h"
+#include "nsIAsyncInputStream.h"
+#include "nsIInputStreamPump.h"
+#include "nsIThreadRetargetableRequest.h"
 
 #ifdef DEBUG
 #  include "MainThreadUtils.h"

@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -63,7 +62,9 @@ static bool ValidateBufferUsageEnum(WebGLContext* webgl, GLenum usage) {
     case LOCAL_GL_STATIC_READ:
     case LOCAL_GL_STREAM_COPY:
     case LOCAL_GL_STREAM_READ:
-      if (MOZ_LIKELY(webgl->IsWebGL2())) return true;
+      if (webgl->IsWebGL2()) [[likely]] {
+        return true;
+      }
       break;
 
     default:
@@ -77,22 +78,9 @@ static bool ValidateBufferUsageEnum(WebGLContext* webgl, GLenum usage) {
 void WebGLBuffer::BufferData(const GLenum target, const uint64_t size,
                              const void* const maybeData, const GLenum usage,
                              bool allowUninitialized) {
-  // The driver knows only GLsizeiptr, which is int32_t on 32bit!
-  bool sizeValid = CheckedInt<GLsizeiptr>(size).isValid();
-
-  if (mContext->gl->WorkAroundDriverBugs()) {
-    // Bug 790879
-#if defined(XP_MACOSX) || defined(MOZ_WIDGET_GTK)
-    sizeValid &= CheckedInt<int32_t>(size).isValid();
-#endif
-
-    // Bug 1610383
-    if (mContext->gl->IsANGLE()) {
-      // While ANGLE seems to support up to `unsigned int`, UINT32_MAX-4 causes
-      // GL_OUT_OF_MEMORY in glFlush??
-      sizeValid &= CheckedInt<int32_t>(size).isValid();
-    }
-  }
+  // Bug 790879
+  // Bug 1610383
+  bool sizeValid = CheckedInt<int32_t>(size).isValid();
 
   if (!sizeValid) {
     mContext->ErrorOutOfMemory("Size not valid for platform: %" PRIu64, size);
@@ -118,7 +106,7 @@ void WebGLBuffer::BufferData(const GLenum target, const uint64_t size,
   UniqueBuffer newIndexCache;
   const bool needsIndexCache = mContext->mNeedsIndexValidation ||
                                mContext->mMaybeNeedsLegacyVertexAttrib0Handling;
-  if (target == LOCAL_GL_ELEMENT_ARRAY_BUFFER && needsIndexCache) {
+  if (mContent == WebGLBuffer::Kind::ElementArray && needsIndexCache) {
     newIndexCache = UniqueBuffer::Take(malloc(AssertedCast<size_t>(size)));
     if (!newIndexCache) {
       mContext->ErrorOutOfMemory("Failed to alloc index cache.");
@@ -206,10 +194,10 @@ void WebGLBuffer::BufferSubData(GLenum target, uint64_t rawDstByteOffset,
   const ScopedLazyBind lazyBind(gl, target, this);
 
   void* mapping = nullptr;
-  // Repeated calls to glMapBufferRange is slow on ANGLE, so fall back to the
-  // glBufferSubData path. See bug 1827047.
+  // Repeated calls to glMapBufferRange is slow on D3D ANGLE, so fall back to
+  // the glBufferSubData path. See bug 1827047.
   if (unsynchronized && gl->IsSupported(gl::GLFeature::map_buffer_range) &&
-      !gl->IsANGLE()) {
+      !gl->IsD3DANGLE()) {
     GLbitfield access = LOCAL_GL_MAP_WRITE_BIT |
                         LOCAL_GL_MAP_UNSYNCHRONIZED_BIT |
                         LOCAL_GL_MAP_INVALIDATE_RANGE_BIT;
@@ -276,7 +264,7 @@ void WebGLBuffer::InvalidateCacheRange(uint64_t byteOffset,
   for (const auto& cur : mIndexRanges) {
     const auto& range = cur.first;
     const auto& indexByteSize = IndexByteSizeByType(range.type);
-    const auto rangeBegin = range.byteOffset * indexByteSize;
+    const auto rangeBegin = range.byteOffset;
     const auto rangeEnd =
         rangeBegin + uint64_t(range.indexCount) * indexByteSize;
     if (rangeBegin >= updateEnd || rangeEnd <= updateBegin) continue;

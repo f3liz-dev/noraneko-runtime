@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -21,6 +19,7 @@
 #  include <valgrind/valgrind.h>
 #endif
 
+#include "mozilla/DebugOnly.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/UniquePtrExtensions.h"
 #include "prenv.h"
@@ -127,6 +126,15 @@ size_t Platform::PageSize() { return sysconf(_SC_PAGESIZE); }
 
 size_t Platform::AllocationGranularity() { return PageSize(); }
 
-bool Platform::IsSafeToMap(const PlatformHandle&) { return true; }
+bool Platform::IsSafeToMap(const PlatformHandle& aHandle, uint64_t aSize) {
+  size_t memSize = ASharedMemory_getSize(aHandle.get());
+  // errors return 0, which will fail this check
+  if (memSize < aSize) {
+    MOZ_LOG_FMT(gSharedMemoryLog, LogLevel::Warning,
+                "shm is too short ({} < {})", memSize, aSize);
+    return false;
+  }
+  return true;
+}
 
 }  // namespace mozilla::ipc::shared_memory

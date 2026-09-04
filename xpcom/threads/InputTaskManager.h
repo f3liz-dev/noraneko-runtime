@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,11 +5,11 @@
 #ifndef mozilla_InputTaskManager_h
 #define mozilla_InputTaskManager_h
 
+#include "TaskController.h"
+#include "mozilla/StaticPrefs_dom.h"
+#include "mozilla/StaticPtr.h"
 #include "nsTArray.h"
 #include "nsXULAppAPI.h"
-#include "TaskController.h"
-#include "mozilla/StaticPtr.h"
-#include "mozilla/StaticPrefs_dom.h"
 
 namespace mozilla {
 
@@ -77,7 +75,7 @@ class InputTaskManager : public TaskManager {
   void NotifyVsync() { mInputPriorityController.WillRunVsync(); }
 
  private:
-  InputTaskManager() : mInputQueueState(STATE_DISABLED) {}
+  InputTaskManager() = default;
 
   class InputPriorityController {
    public:
@@ -126,7 +124,7 @@ class InputTaskManager : public TaskManager {
 
   int32_t GetPriorityModifierForEventLoopTurnForStrictVsyncAlignment();
 
-  Atomic<InputEventQueueState> mInputQueueState;
+  Atomic<InputEventQueueState> mInputQueueState{STATE_DISABLED};
 
   static StaticRefPtr<InputTaskManager> gInputTaskManager;
 

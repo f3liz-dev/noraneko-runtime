@@ -1,15 +1,13 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=4 sw=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 /* Unix-specific local file uri parsing */
-#include "nsURLHelper.h"
+#include "mozilla/Utf8.h"
 #include "nsEscape.h"
 #include "nsIFile.h"
 #include "nsNativeCharsetUtils.h"
-#include "mozilla/Utf8.h"
+#include "nsURLHelper.h"
 
 using mozilla::IsUtf8;
 
@@ -29,7 +27,7 @@ nsresult net_GetURLSpecFromActualFile(nsIFile* aFile, nsACString& result) {
   if (nativePath == ePath) {
     CopyUTF16toUTF8(path, ePath);
   } else {
-    ePath = nativePath;
+    ePath = std::move(nativePath);
   }
 
   nsAutoCString escPath;
@@ -46,7 +44,7 @@ nsresult net_GetURLSpecFromActualFile(nsIFile* aFile, nsACString& result) {
   // contains semicolons we need to manually escape them.
   // This replacement should be removed in bug #473280
   escPath.ReplaceSubstring(";", "%3b");
-  result = escPath;
+  result = std::move(escPath);
   return NS_OK;
 }
 

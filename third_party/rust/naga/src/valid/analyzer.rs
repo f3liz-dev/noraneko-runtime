@@ -269,7 +269,7 @@ pub struct FunctionInfo {
     /// `FunctionInfo` implements `core::ops::Index<Handle<GlobalVariable>>`,
     /// so you can simply index this struct with a global handle to retrieve
     /// its usage information.
-    global_uses: Box<[GlobalUse]>,
+    pub global_uses: Box<[GlobalUse]>,
 
     /// Information about each expression in this function's body.
     ///
@@ -493,7 +493,7 @@ impl FunctionInfo {
             }
         }
 
-        // Inherit global use from our callees.
+        // Inherit global use and immediate slot tracking from our callees.
         for (mine, other) in self.global_uses.iter_mut().zip(callee.global_uses.iter()) {
             *mine |= *other;
         }
@@ -653,7 +653,7 @@ impl FunctionInfo {
                 let var = &resolve_context.global_vars[gh];
                 let uniform = match var.space {
                     // local data is non-uniform
-                    As::Function | As::Private => false,
+                    As::Function | As::Private | As::RayPayload | As::IncomingRayPayload => false,
                     // workgroup memory is exclusively accessed by the group
                     // task payload memory is very similar to workgroup memory
                     As::WorkGroup | As::TaskPayload => true,
@@ -672,10 +672,13 @@ impl FunctionInfo {
                 non_uniform_result: Some(handle),
                 requirements: UniformityRequirements::empty(),
             },
-            E::Load { pointer } => Uniformity {
-                non_uniform_result: self.add_ref(pointer),
-                requirements: UniformityRequirements::empty(),
-            },
+            E::Load { pointer } => {
+                let non_uniform_result = self.add_ref(pointer);
+                Uniformity {
+                    non_uniform_result,
+                    requirements: UniformityRequirements::empty(),
+                }
+            }
             E::ImageSample {
                 image,
                 sampler,
@@ -1190,6 +1193,20 @@ impl FunctionInfo {
                     },
                     exit: ExitFlags::empty(),
                 },
+                S::RayPipelineFunction(ref fun) => {
+                    match *fun {
+                        crate::RayPipelineFunction::TraceRay {
+                            acceleration_structure,
+                            descriptor,
+                            payload,
+                        } => {
+                            let _ = self.add_ref(acceleration_structure);
+                            let _ = self.add_ref(descriptor);
+                            let _ = self.add_ref(payload);
+                        }
+                    }
+                    FunctionUniformity::new()
+                }
             };
 
             disruptor = disruptor.or(uniformity.exit_disruptor());
@@ -1309,6 +1326,7 @@ fn uniform_control_flow() {
             ty,
             space: crate::AddressSpace::Handle,
             binding: None,
+            memory_decorations: crate::MemoryDecorations::empty(),
         },
         Default::default(),
     );
@@ -1319,6 +1337,7 @@ fn uniform_control_flow() {
             ty,
             binding: None,
             space: crate::AddressSpace::Uniform,
+            memory_decorations: crate::MemoryDecorations::empty(),
         },
         Default::default(),
     );

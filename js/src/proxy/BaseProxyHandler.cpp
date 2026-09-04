@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -11,6 +9,7 @@
 #include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
 #include "js/Proxy.h"
 #include "proxy/DeadObjectProxy.h"
+#include "vm/Compartment.h"
 #include "vm/Interpreter.h"
 #include "vm/ProxyObject.h"
 #include "vm/WrapperObject.h"
@@ -254,6 +253,7 @@ bool BaseProxyHandler::getOwnEnumerablePropertyKeys(
 
   /* Select only the enumerable properties through in-place iteration. */
   RootedId id(cx);
+  Rooted<mozilla::Maybe<PropertyDescriptor>> desc(cx);
   size_t i = 0;
   for (size_t j = 0, len = props.length(); j < len; j++) {
     MOZ_ASSERT(i <= j);
@@ -263,8 +263,8 @@ bool BaseProxyHandler::getOwnEnumerablePropertyKeys(
     }
 
     AutoWaivePolicy policy(cx, proxy, id, BaseProxyHandler::GET);
-    Rooted<mozilla::Maybe<PropertyDescriptor>> desc(cx);
     if (!getOwnPropertyDescriptor(cx, proxy, id, &desc)) {
+      desc.reset();
       return false;
     }
     if (desc.isSome()) {
@@ -407,9 +407,13 @@ JS_PUBLIC_API void js::NukeNonCCWProxy(JSContext* cx, HandleObject proxy) {
   MOZ_ASSERT(IsDeadProxyObject(proxy));
 }
 
-JS_PUBLIC_API void js::NukeRemovedCrossCompartmentWrapper(JSContext* cx,
-                                                          JSObject* wrapper) {
+void js::NukeRemovedCrossCompartmentWrapper(JSContext* cx, JSObject* wrapper) {
+#ifdef DEBUG
   MOZ_ASSERT(wrapper->is<CrossCompartmentWrapperObject>());
+  JSObject* target = UncheckedUnwrapWithoutExpose(wrapper);
+  auto ptr = wrapper->compartment()->lookupWrapper(target);
+  MOZ_ASSERT_IF(ptr, ptr->value().unbarrieredGet() != wrapper);
+#endif
 
   NotifyGCNukeWrapper(cx, wrapper);
 

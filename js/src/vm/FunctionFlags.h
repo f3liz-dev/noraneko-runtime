@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -29,7 +27,7 @@ class FunctionFlags {
     //   * FunctionExpression
     //   * Function created from Function() call or its variants
     //
-    // Also all native functions excluding AsmJS and Wasm use this kind.
+    // Also all native functions excluding Wasm use this kind.
     NormalFunction = 0,
 
     // ES6 '(args) => body' syntax.
@@ -51,17 +49,6 @@ class FunctionFlags {
     // This kind is used both by scripted functions and native functions.
     Getter,
     Setter,
-
-    // An asm.js module or exported function.
-    //
-    // This kind is used only by scripted function, and used only when the
-    // asm.js module is created.
-    //
-    // "use asm" directive itself doesn't necessarily imply this kind.
-    // e.g. arrow function with "use asm" becomes Arrow kind,
-    //
-    // See EstablishPreconditions in js/src/wasm/AsmJS.cpp
-    AsmJS,
 
     // An exported WebAssembly function.
     Wasm,
@@ -113,7 +100,7 @@ class FunctionFlags {
     // Function comes from a FunctionExpression, ArrowFunction, or Function()
     // call (not a FunctionDeclaration).
     //
-    // This flag is used only by scripted functions and AsmJS.
+    // This flag is used only by scripted functions.
     LAMBDA = 1 << 9,
 
     // Function is either getter or setter, with "get " or "set " prefix,
@@ -155,7 +142,6 @@ class FunctionFlags {
 
     // Shifted form of FunctionKinds.
     NORMAL_KIND = NormalFunction << FUNCTION_KIND_SHIFT,
-    ASMJS_KIND = AsmJS << FUNCTION_KIND_SHIFT,
     WASM_KIND = Wasm << FUNCTION_KIND_SHIFT,
     ARROW_KIND = Arrow << FUNCTION_KIND_SHIFT,
     METHOD_KIND = Method << FUNCTION_KIND_SHIFT,
@@ -168,8 +154,6 @@ class FunctionFlags {
     NATIVE_CTOR = CONSTRUCTOR | NORMAL_KIND,
     NATIVE_GETTER_WITH_LAZY_NAME = LAZY_ACCESSOR_NAME | GETTER_KIND,
     NATIVE_SETTER_WITH_LAZY_NAME = LAZY_ACCESSOR_NAME | SETTER_KIND,
-    ASMJS_CTOR = CONSTRUCTOR | ASMJS_KIND,
-    ASMJS_LAMBDA_CTOR = CONSTRUCTOR | LAMBDA | ASMJS_KIND,
     WASM = WASM_KIND,
     INTERPRETED_NORMAL = BASESCRIPT | CONSTRUCTOR | NORMAL_KIND,
     INTERPRETED_CLASS_CTOR = BASESCRIPT | CONSTRUCTOR | CLASSCONSTRUCTOR_KIND,
@@ -274,12 +258,6 @@ class FunctionFlags {
         MOZ_ASSERT(!hasFlags(NATIVE_JIT_ENTRY));
         break;
 
-      case FunctionKind::AsmJS:
-        MOZ_ASSERT(!hasFlags(BASESCRIPT));
-        MOZ_ASSERT(!hasFlags(SELFHOSTLAZY));
-        MOZ_ASSERT(!hasFlags(LAZY_ACCESSOR_NAME));
-        MOZ_ASSERT(!hasFlags(NATIVE_JIT_ENTRY));
-        break;
       case FunctionKind::Wasm:
         MOZ_ASSERT(!hasFlags(BASESCRIPT));
         MOZ_ASSERT(!hasFlags(SELFHOSTLAZY));
@@ -309,10 +287,6 @@ class FunctionFlags {
   }
 
   /* Possible attributes of a native function: */
-  bool isAsmJSNative() const {
-    MOZ_ASSERT_IF(kind() == AsmJS, isNativeFun());
-    return kind() == AsmJS;
-  }
   bool isWasm() const {
     MOZ_ASSERT_IF(kind() == Wasm, isNativeFun());
     return kind() == Wasm;
@@ -321,14 +295,15 @@ class FunctionFlags {
     MOZ_ASSERT_IF(hasFlags(NATIVE_JIT_ENTRY), isNativeFun());
     return hasFlags(NATIVE_JIT_ENTRY);
   }
+  bool isTrampolineNative() const {
+    return !isWasm() && isNativeWithJitEntry();
+  }
   bool isWasmWithJitEntry() const { return isWasm() && isNativeWithJitEntry(); }
   bool isNativeWithoutJitEntry() const {
     MOZ_ASSERT_IF(!hasJitEntry(), isNativeFun());
     return !hasJitEntry();
   }
-  bool isBuiltinNative() const {
-    return isNativeFun() && !isAsmJSNative() && !isWasm();
-  }
+  bool isBuiltinNative() const { return isNativeFun() && !isWasm(); }
   bool hasJitEntry() const {
     return hasBaseScript() || hasSelfHostedLazyScript() ||
            isNativeWithJitEntry();

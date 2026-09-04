@@ -1,4 +1,3 @@
-/* -*- Mode: C++; c-basic-offset: 2; indent-tabs-mode: nil; tab-width: 2; -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -6,14 +5,13 @@
 #ifndef nsPrinterCUPS_h_
 #define nsPrinterCUPS_h_
 
-#include "nsPrinterBase.h"
-#include "nsPrintSettingsImpl.h"
-#include "nsCUPSShim.h"
-#include "nsString.h"
-
 #include "mozilla/DataMutex.h"
 #include "mozilla/FunctionRef.h"
 #include "mozilla/RecursiveMutex.h"
+#include "nsCUPSShim.h"
+#include "nsPrintSettingsImpl.h"
+#include "nsPrinterBase.h"
+#include "nsString.h"
 
 /**
  * @brief Interface to help implementing nsIPrinter using a CUPS printer.
@@ -38,8 +36,8 @@ class nsPrinterCUPS final : public nsPrinterBase {
 
   nsPrinterCUPS(const mozilla::CommonPaperInfoArray* aArray,
                 const nsCUPSShim& aShim, nsString aDisplayName,
-                cups_dest_t* aPrinter)
-      : nsPrinterBase(aArray),
+                cups_dest_t* aPrinter, bool aSortAfterLocal)
+      : nsPrinterBase(aArray, aSortAfterLocal),
         mShim(aShim),
         mDisplayName(std::move(aDisplayName)),
         mPrinterInfoMutex(CUPSPrinterInfo{aPrinter},

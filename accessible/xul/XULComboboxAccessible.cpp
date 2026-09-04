@@ -1,21 +1,18 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "XULComboboxAccessible.h"
 
-#include "LocalAccessible-inl.h"
-#include "nsAccessibilityService.h"
 #include "DocAccessible.h"
-#include "nsCoreUtils.h"
-#include "nsFocusManager.h"
-
+#include "LocalAccessible-inl.h"
+#include "States.h"
 #include "mozilla/a11y/DocAccessibleParent.h"
 #include "mozilla/a11y/Role.h"
-#include "States.h"
-
 #include "mozilla/dom/Element.h"
+#include "nsAccessibilityService.h"
+#include "nsCoreUtils.h"
+#include "nsFocusManager.h"
 #include "nsIDOMXULMenuListElement.h"
 
 using namespace mozilla::a11y;

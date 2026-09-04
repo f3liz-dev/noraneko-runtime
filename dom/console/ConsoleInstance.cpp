@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -121,7 +119,8 @@ ConsoleLogLevel PrefToValue(const nsACString& aPref,
     return aLevel;
   }
 
-  Maybe<ConsoleLogLevel> level = StringToEnum<ConsoleLogLevel>(value);
+  Maybe<ConsoleLogLevel> level =
+      CaseInsensitiveStringToEnum<ConsoleLogLevel>(value);
   if (NS_WARN_IF(level.isNothing())) {
     nsString message;
     message.AssignLiteral("Invalid Console.maxLogLevelPref value: ");
@@ -184,8 +183,8 @@ METHOD(GroupCollapsed, u"groupCollapsed")
 #undef METHOD
 
 void ConsoleInstance::GroupEnd(JSContext* aCx) {
-  const Sequence<JS::Value> data;
   RefPtr<Console> console(mConsole);
+  const Sequence<JS::Value> data;
   console->MethodInternal(aCx, Console::MethodGroupEnd, u"groupEnd"_ns, data);
 }
 
@@ -258,8 +257,8 @@ void ConsoleInstance::CountReset(JSContext* aCx, const nsAString& aLabel) {
 }
 
 void ConsoleInstance::Clear(JSContext* aCx) {
-  const Sequence<JS::Value> data;
   RefPtr<Console> console(mConsole);
+  const Sequence<JS::Value> data;
   console->MethodInternal(aCx, Console::MethodClear, u"clear"_ns, data);
 }
 

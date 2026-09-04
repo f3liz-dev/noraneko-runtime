@@ -5,6 +5,8 @@
 @import url("chrome://global/skin/design-system/text-and-typography.css");
 
 :host {
+  --fieldset-gap-row: var(--space-small);
+  --fieldset-gap-column: var(--space-medium);
   display: block;
 }
 
@@ -19,12 +21,15 @@ legend {
   gap: var(--space-small);
   align-items: baseline;
 
+  /* FIXME(bug 2061147): Remove this hack */
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/no-has-selector */
   &:has(+ a, + slot[name="support-link"]:has-slotted) {
     display: inline-flex;
   }
 
   /* Hack to handle vertical alignment in cases where we have an icon + heading
   followed by a support link */
+  /* stylelint-disable-next-line stylelint-plugin-mozilla/no-has-selector */
   &:has(.icon) + a[is="moz-support-link"],
   &:has(.icon) + ::slotted([slot="support-link"]) {
     vertical-align: baseline;
@@ -62,8 +67,8 @@ h6 {
   fieldset[aria-orientation="horizontal"] & {
     flex-direction: row;
     flex-wrap: wrap;
-    row-gap: var(--space-small);
-    column-gap: var(--space-medium);
+    row-gap: var(--fieldset-gap-row);
+    column-gap: var(--fieldset-gap-column);
   }
 
   :is(legend, .description) ~ & {

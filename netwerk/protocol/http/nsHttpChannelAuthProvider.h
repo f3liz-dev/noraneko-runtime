@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set et cin ts=4 sw=2 sts=2: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,14 +5,14 @@
 #ifndef nsHttpChannelAuthProvider_h_
 #define nsHttpChannelAuthProvider_h_
 
-#include "nsIHttpChannelAuthProvider.h"
-#include "nsIAuthPromptCallback.h"
-#include "nsIHttpAuthenticatorCallback.h"
-#include "nsString.h"
 #include "nsCOMPtr.h"
 #include "nsHttpAuthCache.h"
-#include "nsProxyInfo.h"
+#include "nsIAuthPromptCallback.h"
 #include "nsICancelable.h"
+#include "nsIHttpAuthenticatorCallback.h"
+#include "nsIHttpChannelAuthProvider.h"
+#include "nsProxyInfo.h"
+#include "nsString.h"
 
 class nsIHttpAuthenticableChannel;
 class nsIHttpAuthenticator;

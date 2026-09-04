@@ -1,5 +1,3 @@
-# -*- Mode: python; indent-tabs-mode: nil; tab-width: 40 -*-
-# vim: set filetype=python:
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
@@ -119,7 +117,6 @@ set_define("MOZ_STATIC_JS", static_js)
 # ===================================================
 option(
     "--enable-decorators",
-    default=False,
     help="Enable experimental JS Decorators support",
 )
 
@@ -133,50 +130,10 @@ def enable_decorators(value):
 set_config("ENABLE_DECORATORS", enable_decorators)
 set_define("ENABLE_DECORATORS", enable_decorators)
 
-# Enable explicit resource management
-# ===================================================
-option(
-    "--disable-explicit-resource-management",
-    default=True,
-    help="{Enable|Disable} explicit resource management",
-)
-
-
-@depends("--disable-explicit-resource-management")
-def enable_explicit_resource_management(value):
-    if value:
-        return True
-
-
-set_config("ENABLE_EXPLICIT_RESOURCE_MANAGEMENT", enable_explicit_resource_management)
-set_define("ENABLE_EXPLICIT_RESOURCE_MANAGEMENT", enable_explicit_resource_management)
-
-
-# Enable source phase imports
-# ===================================================
-option(
-    "--enable-source-phase-imports",
-    default=False,
-    help="Enable experimental source phase imports support",
-)
-
-
-@depends("--enable-source-phase-imports")
-def enable_source_phase_imports(value):
-    if value:
-        return True
-
-
-set_config("ENABLE_SOURCE_PHASE_IMPORTS", enable_source_phase_imports)
-set_define("ENABLE_SOURCE_PHASE_IMPORTS", enable_source_phase_imports)
-
-
-
 # Portable Baseline Intepreter
 # =======================================================
 option(
     "--enable-portable-baseline-interp",
-    default=False,
     help="{Enable|Disable} the portable baseline interpreter",
 )
 set_define(
@@ -191,7 +148,6 @@ set_config(
 # Option to always force PBL tier.
 option(
     "--enable-portable-baseline-interp-force",
-    default=False,
     help="{Enable|Disable} forcing use of the portable baseline interpreter",
 )
 
@@ -207,7 +163,6 @@ set_config(
 # Enable ahead-of-time-known preloaded IC bodies.
 option(
     "--enable-aot-ics",
-    default=False,
     help="{Enable|Disable} including ahead-of-time corpus of CacheIR IC bodies",
 )
 
@@ -223,7 +178,6 @@ set_config(
 # Force-on the option for AOT ICs.
 option(
     "--enable-aot-ics-force",
-    default=False,
     help="{Enable|Disable} forcing the AOT ICs option on without additional configuration",
 )
 
@@ -239,7 +193,6 @@ set_config(
 # Enforce AOT ICs (testing only): abort if a new IC (not in AOT corpus) is encountered.
 option(
     "--enable-aot-ics-enforce",
-    default=False,
     help="{Enable|Disable} enforcing that only AOT IC corpus is used, crashing otherwise (TEST ONLY)",
 )
 
@@ -586,6 +539,23 @@ set_define("JS_DISASM_RISCV64", jit_disasm_riscv)
 
 
 @depends("--enable-jit", "--enable-jitspew", simulator, target, moz_debug)
+def jit_disasm_loong64(jit_enabled, spew, simulator, target, debug):
+    if not jit_enabled:
+        return
+
+    if simulator and (debug or spew):
+        if getattr(simulator, "loong64", None):
+            return True
+
+    if target.cpu == "loongarch64" and (debug or spew):
+        return True
+
+
+set_config("JS_DISASM_LOONG64", jit_disasm_loong64)
+set_define("JS_DISASM_LOONG64", jit_disasm_loong64)
+
+
+@depends("--enable-jit", "--enable-jitspew", simulator, target, moz_debug)
 def jit_disasm_arm64(jit_enabled, spew, simulator, target, debug):
     if not jit_enabled:
         return
@@ -707,7 +677,6 @@ set_define(
 
 option(
     "--wasm-no-experimental",
-    default=False,
     help="Force disable all wasm experimental features for testing",
 )
 
@@ -1044,7 +1013,6 @@ set_define("ENABLE_WASM_MEMORY_CONTROL", wasm_memory_control)
 
 option(
     "--disable-wasm-branch-hinting",
-    default=True,
     help="{Enable|Disable} WebAssembly branch hinting",
 )
 
@@ -1108,7 +1076,6 @@ set_define("ENABLE_WASM_CUSTOM_PAGE_SIZES", wasm_custom_page_sizes)
 
 option(
     "--enable-gc-concurrent-marking",
-    default=False,
     help="{Enable|Disable} experimental support for GC concurrent marking",
 )
 
@@ -1132,29 +1099,48 @@ set_define("JS_GC_CONCURRENT_MARKING", gc_concurrent_marking)
 # ===========================
 
 
+option(
+    "--disable-wasm-compact-imports",
+    help="{Enable|Disable} WebAssembly compact import section support",
+)
+
+set_config(
+    "ENABLE_WASM_COMPACT_IMPORTS",
+    depends_if("--enable-wasm-compact-imports")(lambda x: True),
+)
+set_define(
+    "ENABLE_WASM_COMPACT_IMPORTS",
+    depends_if("--enable-wasm-compact-imports")(lambda x: True),
+)
+
+
+# Support for the WebAssembly component model.
+# ===========================
+
+
 @depends(milestone.is_nightly)
-def default_wasm_compact_imports(is_nightly):
+def default_wasm_components(is_nightly):
     if is_nightly:
         return True
 
 
 option(
-    "--enable-wasm-compact-imports",
-    default=default_wasm_compact_imports,
-    help="{Enable|Disable} WebAssembly compact import section support",
+    "--enable-wasm-components",
+    default=default_wasm_components,
+    help="{Enable|Disable} WebAssembly component model support",
 )
 
 
-@depends("--enable-wasm-compact-imports", "--wasm-no-experimental")
-def wasm_compact_imports(value, no_experimental):
+@depends("--enable-wasm-components", "--wasm-no-experimental")
+def wasm_components(value, no_experimental):
     if no_experimental or not value:
         return
 
     return True
 
 
-set_config("ENABLE_WASM_COMPACT_IMPORTS", wasm_compact_imports)
-set_define("ENABLE_WASM_COMPACT_IMPORTS", wasm_compact_imports)
+set_config("ENABLE_WASM_COMPONENTS", wasm_components)
+set_define("ENABLE_WASM_COMPONENTS", wasm_components)
 
 
 # Support for readline
@@ -1323,7 +1309,6 @@ set_define(
 
 option(
     "--disable-wasm-resizable-arraybuffer",
-    default=True,
     help="{Enable|Disable} resizable ArrayBuffer in WASM",
 )
 

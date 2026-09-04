@@ -12,7 +12,7 @@
 [package]
 edition = "2024"
 name = "jxl_simd"
-version = "0.3.0"
+version = "0.5.1"
 authors = ["Luca Versari <veluca93@gmail.com>"]
 build = false
 autolib = false
@@ -37,17 +37,20 @@ all-simd = [
     "avx",
     "avx512",
     "neon",
+    "simd128",
 ]
 avx = ["sse42"]
 avx512 = ["avx"]
 neon = []
+simd128 = []
 sse42 = []
 
 [lib]
 name = "jxl_simd"
 path = "src/lib.rs"
 
-[dependencies]
+[dependencies.rustversion]
+version = "1"
 
 [dev-dependencies.arbtest]
 version = "0.3.2"

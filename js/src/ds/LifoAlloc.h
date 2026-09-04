@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -13,6 +11,7 @@
 #include "mozilla/MemoryReporting.h"
 
 #include <algorithm>
+#include <bit>
 #include <new>
 #include <stddef.h>  // size_t
 #include <type_traits>
@@ -221,10 +220,10 @@ struct CanLifoAlloc<T*> : std::true_type {};
 //   template <> struct CanLifoAlloc<MyType> : std::true_type {};
 //
 template <typename T>
-using lifo_alloc_pointer = typename std::enable_if<
-    js::CanLifoAlloc<typename std::remove_pointer<T>::type>::value ||
-        std::is_trivially_destructible_v<typename std::remove_pointer<T>::type>,
-    T>::type;
+using lifo_alloc_pointer = std::enable_if_t<
+    js::CanLifoAlloc<std::remove_pointer_t<T>>::value ||
+        std::is_trivially_destructible_v<std::remove_pointer_t<T>>,
+    T>;
 
 namespace detail {
 
@@ -234,10 +233,10 @@ class SingleLinkedList;
 template <typename T, typename D = JS::DeletePolicy<T>>
 class SingleLinkedListElement {
   friend class SingleLinkedList<T, D>;
-  js::UniquePtr<T, D> next_;
+  js::UniquePtr<T, D> next_{nullptr};
 
  public:
-  SingleLinkedListElement() : next_(nullptr) {}
+  SingleLinkedListElement() = default;
   ~SingleLinkedListElement() { MOZ_ASSERT(!next_); }
 
   T* next() const { return next_.get(); }
@@ -397,7 +396,7 @@ static const size_t LIFO_ALLOC_ALIGN = 8;
 
 MOZ_ALWAYS_INLINE
 uint8_t* AlignPtr(uint8_t* orig) {
-  static_assert(mozilla::IsPowerOfTwo(LIFO_ALLOC_ALIGN),
+  static_assert(std::has_single_bit(LIFO_ALLOC_ALIGN),
                 "LIFO_ALLOC_ALIGN must be a power of two");
 
   uint8_t* result = (uint8_t*)AlignBytes(uintptr_t(orig), LIFO_ALLOC_ALIGN);
@@ -471,9 +470,6 @@ class BumpChunk : public SingleLinkedListElement<BumpChunk> {
     MOZ_ASSERT(end() <= capacity_);
   }
 
-  BumpChunk& operator=(const BumpChunk&) = delete;
-  BumpChunk(const BumpChunk&) = delete;
-
   explicit BumpChunk(uintptr_t capacity)
       : bump_(begin()),
         capacity_(base() + capacity)
@@ -527,6 +523,9 @@ class BumpChunk : public SingleLinkedListElement<BumpChunk> {
 
  public:
   ~BumpChunk() { release(); }
+
+  BumpChunk& operator=(const BumpChunk&) = delete;
+  BumpChunk(const BumpChunk&) = delete;
 
   // Returns true if this chunk contains no allocated content.
   bool empty() const { return end() == begin(); }
@@ -743,9 +742,6 @@ class LifoAlloc {
   bool fallibleScope_;
 #endif
 
-  void operator=(const LifoAlloc&) = delete;
-  LifoAlloc(const LifoAlloc&) = delete;
-
   // Return a BumpChunk that can perform an allocation of at least size |n|.
   UniqueBumpChunk newChunkWithCapacity(size_t n, bool oversize);
 
@@ -816,6 +812,9 @@ class LifoAlloc {
   {
     reset(defaultChunkSize);
   }
+
+  void operator=(const LifoAlloc&) = delete;
+  LifoAlloc(const LifoAlloc&) = delete;
 
   // Set the threshold to allocate data in its own chunk outside the space for
   // small allocations.
@@ -1232,6 +1231,10 @@ class LifoAllocPolicy : public AllocPolicyBase {
   void free_(T* p, size_t numElems) {}
   [[nodiscard]] bool checkSimulatedOOM() const {
     return fb == Infallible || !js::oom::ShouldFailWithOOM();
+  }
+
+  bool operator==(const LifoAllocPolicy<fb>& other) const {
+    return &alloc_ == &other.alloc_;
   }
 };
 

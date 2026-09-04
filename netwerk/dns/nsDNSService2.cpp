@@ -1,49 +1,46 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set sw=2 ts=8 et tw=80 : */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsDNSService2.h"
-#include "nsIDNSRecord.h"
-#include "nsIDNSListener.h"
-#include "nsIDNSByTypeRecord.h"
-#include "nsICancelable.h"
-#include "nsIPrefBranch.h"
-#include "nsIOService.h"
-#include "nsIXPConnect.h"
-#include "nsProxyRelease.h"
-#include "nsReadableUtils.h"
-#include "nsString.h"
-#include "nsCRT.h"
-#include "nsNetCID.h"
-#include "nsError.h"
-#include "nsDNSPrefetch.h"
-#include "nsThreadUtils.h"
-#include "nsIProtocolProxyService.h"
-#include "nsIObliviousHttp.h"
-#include "prsystem.h"
-#include "prnetdb.h"
-#include "prmon.h"
-#include "prio.h"
-#include "nsCharSeparatedTokenizer.h"
-#include "nsNetAddr.h"
-#include "nsNetUtil.h"
-#include "nsProxyRelease.h"
-#include "nsQueryObject.h"
-#include "nsIObserverService.h"
-#include "nsINetworkLinkService.h"
+
 #include "DNSAdditionalInfo.h"
 #include "TRRService.h"
-
 #include "mozilla/ClearOnShutdown.h"
-#include "mozilla/net/NeckoCommon.h"
-#include "mozilla/net/ChildDNSService.h"
-#include "mozilla/net/DNSListenerProxy.h"
 #include "mozilla/Services.h"
 #include "mozilla/StaticPrefs_network.h"
 #include "mozilla/StaticPtr.h"
 #include "mozilla/SyncRunnable.h"
+#include "mozilla/net/ChildDNSService.h"
+#include "mozilla/net/DNSListenerProxy.h"
+#include "mozilla/net/NeckoCommon.h"
+#include "nsCRT.h"
+#include "nsCharSeparatedTokenizer.h"
+#include "nsDNSPrefetch.h"
+#include "nsError.h"
+#include "nsICancelable.h"
+#include "nsIDNSByTypeRecord.h"
+#include "nsIDNSListener.h"
+#include "nsIDNSRecord.h"
+#include "nsINetworkLinkService.h"
+#include "nsIOService.h"
+#include "nsIObliviousHttp.h"
+#include "nsIObserverService.h"
+#include "nsIPrefBranch.h"
+#include "nsIProtocolProxyService.h"
+#include "nsIXPConnect.h"
+#include "nsNetAddr.h"
+#include "nsNetCID.h"
+#include "nsNetUtil.h"
+#include "nsProxyRelease.h"
+#include "nsQueryObject.h"
+#include "nsReadableUtils.h"
+#include "nsString.h"
+#include "nsThreadUtils.h"
+#include "prio.h"
+#include "prmon.h"
+#include "prnetdb.h"
+#include "prsystem.h"
 // Put DNSLogging.h at the end to avoid LOG being overwritten by other headers.
 #include "DNSLogging.h"
 
@@ -293,9 +290,7 @@ nsDNSRecord::GetNextAddrAsString(nsACString& result) {
     return rv;
   }
 
-  char buf[kIPv6CStrBufSize];
-  if (addr.ToStringBuffer(buf, sizeof(buf))) {
-    result.Assign(buf);
+  if (addr.ToString(result)) {
     return NS_OK;
   }
   NS_ERROR("NetAddrToString failed unexpectedly");
@@ -311,12 +306,14 @@ nsDNSRecord::HasMore(bool* result) {
 
   nsTArray<NetAddr>::const_iterator iterCopy = mIter;
   int iterGenCntCopy = mIterGenCnt;
+  RefPtr<AddrInfo> addrInfoCopy = mAddrInfo;
 
   NetAddr addr;
   *result = NS_SUCCEEDED(GetNextAddr(0, &addr));
 
   mIter = iterCopy;
   mIterGenCnt = iterGenCntCopy;
+  mAddrInfo = std::move(addrInfoCopy);
   mDone = false;
 
   return NS_OK;
@@ -851,7 +848,7 @@ void nsDNSService::ReadPrefs(const char* name) {
     } else {
       mHasMockHTTPSRRDomainSet = true;
       MutexAutoLock lock(mLock);
-      mMockHTTPSRRDomain = mockHTTPSRRDomain;
+      mMockHTTPSRRDomain = std::move(mockHTTPSRRDomain);
     }
   }
 }
@@ -883,6 +880,9 @@ nsDNSService::Init() {
   if (prefs) {
     // register as prefs observer
     prefs->AddObserver(kPrefDnsCacheEntries, this, false);
+    // [pref-trie-audit] "network.dnsCacheExpiration" is an ambiguous prefix of
+    // "network.dnsCacheExpirationGracePeriod"; triggers only for the exact pref
+    // (grace period has its own AddObserver on the next line).
     prefs->AddObserver(kPrefDnsCacheExpiration, this, false);
     prefs->AddObserver(kPrefDnsCacheGrace, this, false);
     prefs->AddObserver(kPrefIPv4OnlyDomains, this, false);
@@ -1696,6 +1696,7 @@ nsresult GetTRRSkipReasonName(TRRSkippedReason aReason, nsACString& aName) {
   static_assert(TRRSkippedReason::TRR_HEURISTIC_TRIPPED_NRPT == 47);
   static_assert(TRRSkippedReason::TRR_BAD_URL == 48);
   static_assert(TRRSkippedReason::TRR_SYSTEM_SLEEP_MODE == 49);
+  static_assert(TRRSkippedReason::TRR_HEURISTIC_TRIPPED_PRIVATE_DNS == 50);
 
   switch (aReason) {
     case TRRSkippedReason::TRR_UNSET:
@@ -1847,6 +1848,9 @@ nsresult GetTRRSkipReasonName(TRRSkippedReason aReason, nsACString& aName) {
       break;
     case TRRSkippedReason::TRR_SYSTEM_SLEEP_MODE:
       aName = "TRR_SYSTEM_SLEEP_MODE"_ns;
+      break;
+    case TRRSkippedReason::TRR_HEURISTIC_TRIPPED_PRIVATE_DNS:
+      aName = "TRR_HEURISTIC_TRIPPED_PRIVATE_DNS"_ns;
       break;
     default:
       MOZ_ASSERT(false, "Unknown value");

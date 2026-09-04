@@ -31,6 +31,8 @@ web-platform-tests:
     - web-platform-tests-canvas
     - web-platform-tests-webcodecs
     - web-platform-tests-eme
+    - web-platform-tests-aam
+    - web-platform-tests-webrtc
 
 web-platform-tests-2404-tsan:
     - web-platform-tests
@@ -41,6 +43,8 @@ web-platform-tests-2404-tsan:
     - web-platform-tests-canvas
     - web-platform-tests-webcodecs
     - web-platform-tests-eme
+    - web-platform-tests-aam
+    - web-platform-tests-webrtc
 
 web-platform-tests-backlog:
     - web-platform-tests-backlog
@@ -105,19 +109,23 @@ browsertime:
     - browsertime-benchmark-wasm
     - browsertime-youtube-playback
     - browsertime-youtube-playback-power
+    - browsertime-media-seek
     - browsertime-custom
     - browsertime-first-install
     - browsertime-responsiveness
     - browsertime-regression-tests
     - browsertime-upload
+    - browsertime-speculation-rules
     - browsertime-speculative
     - browsertime-throttled
     - browsertime-pageload-benchmark
+    - browsertime-nav-bench
     - browsertime-indexeddb
     - browsertime-video-playback-latency
     - browsertime-network-bench
     - browsertime-webcodecs
     - browsertime-trr-performance
+    - browsertime-hev3-connection
 
 browsertime-clang:
     - browsertime-tp6
@@ -140,6 +148,12 @@ browsertime-high-priority:
 
 browsertime-ref-hw:
     - browsertime-benchmark
+    - browsertime-nav-bench
+
+devtools-compat:
+    - devtools-compat-same-version
+    - devtools-compat-beta
+    - devtools-compat-release
 
 awsy:
     - awsy
@@ -158,6 +172,18 @@ mochitest-valgrind:
 desktop-screenshot-capture:
     - mochitest-browser-screenshots
 
+artifact-tests:
+    - mochitest-browser-chrome
+    - mochitest-chrome
+    - mochitest-devtools-chrome
+    - mochitest-plain
+    - xpcshell
+
+### Developer Edition (DevEdition)
+devedition-tests:
+    - mochitest-browser-chrome
+    - mochitest-devtools-chrome
+
 ### Specific platform test sets
 
 # Linux
@@ -173,6 +199,7 @@ linux-tests:
     - mochitest-a11y
     - mochitest-browser-a11y
     - mochitest-browser-chrome
+    - mochitest-browser-chrome-ml-models
     - mochitest-browser-media
     - mochitest-browser-translations
     - mochitest-chrome
@@ -310,13 +337,16 @@ windows11-64-2009-ccov-tests:
     - web-platform-tests-wdspec
     - web-platform-tests-webcodecs
     - web-platform-tests-eme
+    - web-platform-tests-webrtc
 
 windows11-24h2-tests:
-    - cppunittest
     - crashtest
-    - firefox-ui-functional
-    - gtest
     - jsreftest
+    - reftest
+
+windows11-25h2-tests:
+    - cppunittest
+    - gtest
     - marionette-integration
     - marionette-unittest
     - mochitest-a11y
@@ -335,7 +365,6 @@ windows11-24h2-tests:
     - mochitest-webgl1-ext
     - mochitest-webgl2-core
     - mochitest-webgl2-ext
-    - reftest
     - telemetry-tests-client
     - test-verify
     - test-verify-gpu
@@ -411,38 +440,56 @@ macosx1500-64-jittests:
     - jittest
 
 macosx1500-64-tests:
-    - crashtest
-    - jsreftest
-    - mochitest-browser-a11y
-    - mochitest-browser-chrome
-    - mochitest-browser-media
-    - mochitest-browser-translations
-    - mochitest-chrome-gpu
-    - mochitest-media
-    - mochitest-webgl1-core
-    - mochitest-webgl1-ext
-    - mochitest-webgl2-core
-    - mochitest-webgl2-ext
-    - reftest
-    - xpcshell
-    - web-platform-tests-webcodecs
-    - web-platform-tests-eme
-
-macosx1500-aarch64-tests:
-    - cppunittest
-    - mochitest-media
-
-macosx1470-64-tests:
     - cppunittest
     - crashtest
     - firefox-ui-functional
     - gtest
-    - jittest
     - jsreftest
     - marionette-integration
     - marionette-unittest
     - mochitest-a11y
     - mochitest-browser-a11y
+    - mochitest-browser-chrome
+    - mochitest-browser-media
+    - mochitest-browser-translations
+    - mochitest-chrome
+    - mochitest-chrome-gpu
+    - mochitest-devtools-chrome
+    - mochitest-media
+    - mochitest-plain
+    - mochitest-plain-gpu
+    - mochitest-remote
+    - mochitest-webgl1-core
+    - mochitest-webgl1-ext
+    - mochitest-webgl2-core
+    - mochitest-webgl2-ext
+    - reftest
+    - telemetry-tests-client
+    - test-verify
+    - test-verify-gpu
+    - test-verify-wpt
+    - xpcshell
+    - web-platform-tests-crashtest
+    - web-platform-tests-print-reftest
+    - web-platform-tests-reftest
+    - web-platform-tests-wdspec
+    - web-platform-tests-canvas
+    - web-platform-tests-webcodecs
+    - web-platform-tests-eme
+    - web-platform-tests-webrtc
+
+macosx1500-aarch64-tests:
+    - cppunittest
+    - gtest
+    - firefox-ui-functional
+    - jsreftest
+    - marionette-integration
+    - marionette-unittest
+    - crashtest
+    - jittest
+    - mochitest-a11y
+    - mochitest-browser-a11y
+    - mochitest-browser-chrome
     - mochitest-browser-media
     - mochitest-browser-translations
     - mochitest-chrome
@@ -465,17 +512,46 @@ macosx1470-64-tests:
     - web-platform-tests-canvas
     - web-platform-tests-crashtest
     - web-platform-tests-eme
+    - web-platform-tests-webrtc
     - web-platform-tests-print-reftest
     - web-platform-tests-reftest
     - web-platform-tests-wdspec
     - web-platform-tests-webcodecs
     - xpcshell
 
+# Test set for ARM64 VMs (VirtualMac2,1). No GPU, no display, no perf hardware.
+# Limited to suites empirically validated on these workers; tests that need
+# a real WindowServer (focus management, accessibility hierarchy, browser
+# windows, fullscreen, compositor hooks) hang or timeout and are intentionally
+# omitted. web-platform-tests is also omitted pending Bug 2038639 (GPU process
+# leak in APZCTreeManager::CheckerboardFlushObservers on headless macOS).
+# Suites can be re-added as headless support improves.
+#
+# In particular, no browser-chrome flavor suite belongs here: browser-test.js
+# calls SimpleTest.waitForFocus before every test, which awaits a focus event
+# with no timeout, and window activation never completes on these workers. That
+# hangs the browser before the first test and burns the full harness timeout on
+# every retry. See Bug 2059365 (mochitest-remote) and Bug 2050174 (the
+# underlying activation issue).
+macosx1500-aarch64-vms-tests:
+    - cppunittest
+    - crashtest
+    - jittest
+    - jsreftest
+    - marionette-integration
+    - marionette-unittest
+    - mochitest-chrome
+    - mochitest-plain
+    - telemetry-tests-client
+    - xpcshell
+
+macosx1470-64-tests:
+    - cppunittest
+
 macosx1015-64-qr-tests:
     - cppunittest
     - crashtest
     - jittest
-    - mochitest-browser-chrome
     - mochitest-media
     - mochitest-webgl1-core
     - mochitest-webgl1-ext
@@ -507,6 +583,8 @@ macosx64-talos:
 
 macosx1500-64-perftests:
     - browsertime-benchmark
+    - browsertime-nav-bench
+    - browsertime-tp6-essential
 
 # Android
 
@@ -530,21 +608,22 @@ android14-x86_64-tests:
     - web-platform-tests-wdspec
     - web-platform-tests-webcodecs
     - web-platform-tests-eme
+    - web-platform-tests-webrtc
     - xpcshell
 
 android-hw-aarch64-opt-unittests:
     - jittest
 
-android-hw-arm7-pgo-unittests:
-    - jittest-all
-
 android-hw-aarch64-pgo-unittests:
     - jittest
 
-android-hw-arm7-debug-unittests:
+android-hw-aarch64-debug-unittests:
     - jittest
 
-android-hw-aarch64-debug-unittests:
+android-hw-arm7-pgo-unittests:
+    - jittest-all
+
+android-hw-arm7-debug-unittests:
     - jittest
 
 android-hw-aarch64:
@@ -560,7 +639,7 @@ android-hw-browsertime:
     - browsertime-tp6m-essential
     - browsertime-tp6m-webextensions
     - browsertime-tp6m-live
-    - browsertime-benchmark-speedometer-mobile
+    - browsertime-benchmark-speedometer2-mobile
     - browsertime-benchmark-speedometer3-mobile
     - browsertime-youtube-playback-mobile
     - browsertime-benchmark-unity-webgl-mobile
@@ -570,12 +649,16 @@ android-hw-browsertime:
     - browsertime-video-playback-latency-mobile
     - browsertime-youtube-playback-power-mobile
     - browsertime-trr-performance-m
+    - browsertime-hev3-connection-m
 
 android-hw-browsertime-profiling:
     - browsertime-tp6m-profiling
 
 android-hw-speedometer-tests:
-    - browsertime-benchmark-speedometer-mobile
+    - browsertime-benchmark-speedometer2-mobile
+    - browsertime-benchmark-speedometer3-mobile
+
+android-em-arm64-speedometer-tests:
     - browsertime-benchmark-speedometer3-mobile
 
 android-hw-power-tests:

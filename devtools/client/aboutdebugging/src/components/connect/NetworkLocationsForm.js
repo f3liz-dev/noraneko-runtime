@@ -37,8 +37,19 @@ class NetworkLocationsForm extends PureComponent {
     this.state = {
       errorHostValue: null,
       errorMessageId: null,
+      // Incremented on each error so the message is shown again even if the
+      // user dismissed a previous, identical error.
+      errorCount: 0,
       value: "",
     };
+  }
+
+  setError(value, errorMessageId) {
+    this.setState(prevState => ({
+      errorHostValue: value,
+      errorMessageId,
+      errorCount: prevState.errorCount + 1,
+    }));
   }
 
   onSubmit(e) {
@@ -52,18 +63,12 @@ class NetworkLocationsForm extends PureComponent {
     }
 
     if (!value.match(/[^:]+:\d+/)) {
-      this.setState({
-        errorHostValue: value,
-        errorMessageId: "about-debugging-network-location-form-invalid",
-      });
+      this.setError(value, "about-debugging-network-location-form-invalid");
       return;
     }
 
     if (networkLocations.includes(value)) {
-      this.setState({
-        errorHostValue: value,
-        errorMessageId: "about-debugging-network-location-form-duplicate",
-      });
+      this.setError(value, "about-debugging-network-location-form-duplicate");
       return;
     }
 
@@ -72,7 +77,7 @@ class NetworkLocationsForm extends PureComponent {
   }
 
   renderError() {
-    const { errorHostValue, errorMessageId } = this.state;
+    const { errorHostValue, errorMessageId, errorCount } = this.state;
 
     if (!errorMessageId) {
       return null;
@@ -85,6 +90,7 @@ class NetworkLocationsForm extends PureComponent {
           "qa-connect-page__network-form__error-message",
         level: MESSAGE_LEVEL.ERROR,
         isCloseable: true,
+        messageId: `${errorMessageId}-${errorCount}`,
       },
       Localized(
         {
@@ -121,7 +127,7 @@ class NetworkLocationsForm extends PureComponent {
       ),
       dom.input({
         id: "about-debugging-network-locations-host-input",
-        className: "default-input qa-network-form-input",
+        className: "qa-network-form-input",
         placeholder: "localhost:6080",
         type: "text",
         value: this.state.value,
@@ -136,7 +142,7 @@ class NetworkLocationsForm extends PureComponent {
         },
         dom.button(
           {
-            className: "primary-button qa-network-form-submit-button",
+            className: "primary qa-network-form-submit-button",
           },
           "Add"
         )

@@ -5,7 +5,7 @@
 
 const testPathUpgradeable = getRootDirectory(gTestPath).replace(
   "chrome://mochitests/content",
-  // eslint-disable-next-line @microsoft/sdl/no-insecure-url
+  // eslint-disable-next-line sdl/no-insecure-url
   "http://example.org"
 );
 
@@ -25,7 +25,7 @@ add_task(async function () {
     // The page should be upgraded to HTTPS.
     BrowserTestUtils.startLoadingURIString(browser, kTestURI);
     await loaded;
-    await ContentTask.spawn(browser, {}, async () => {
+    await SpecialPowers.spawn(browser, [], async () => {
       ok(
         content.document.location.href.startsWith("https://"),
         "Should be https"

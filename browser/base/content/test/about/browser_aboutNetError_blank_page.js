@@ -6,11 +6,15 @@
 const BLANK_PAGE =
   "https://example.com/browser/browser/base/content/test/about/blank_page.sjs";
 
-function getConnectionState() {
-  // Prevents items that are being lazy loaded causing issues
-  document.getElementById("identity-icon-box").click();
-  gIdentityHandler.refreshIdentityPopup();
-  return document.getElementById("identity-popup").getAttribute("connection");
+async function getConnectionState() {
+  document.getElementById("trust-icon-container").click();
+  let popup = await TestUtils.waitForCondition(
+    () => document.getElementById("trustpanel-popup"),
+    "Waiting for trustpanel-popup to be instantiated"
+  );
+  await BrowserTestUtils.waitForEvent(popup, "popupshown");
+
+  return popup.getAttribute("connection");
 }
 
 async function test_blankPage(
@@ -21,10 +25,7 @@ async function test_blankPage(
   header = "show" // show (zero content-length), hide (no content-length), or lie (non-empty content-length)
 ) {
   await SpecialPowers.pushPrefEnv({
-    set: [
-      ["browser.http.blank_page_with_error_response.enabled", false],
-      ["browser.urlbar.trustPanel.featureGate", false],
-    ],
+    set: [["browser.http.blank_page_with_error_response.enabled", false]],
   });
 
   let browser;
@@ -48,7 +49,7 @@ async function test_blankPage(
   await pageLoaded;
 
   is(
-    getConnectionState(),
+    await getConnectionState(),
     "secure",
     "httpErrorPage/serverError should be a secure neterror"
   );
@@ -71,29 +72,23 @@ async function test_blankPage(
         const card = netErrorCard.wrappedJSObject;
         await card.getUpdateComplete();
 
-        titleEl = card.netErrorTitleText;
+        titleEl = card.errorTitle;
 
-        const introEl = card.shadowRoot.getElementById("netErrorIntro");
+        const introEl = card.shadowRoot.getElementById("error-intro");
         is(
           introEl?.getAttribute("data-l10n-id"),
-          "fp-neterror-http-error-page-intro",
+          "fp-neterror-http-error-intro",
           "Intro element has correct l10n id"
         );
         const introArgs = JSON.parse(introEl?.getAttribute("data-l10n-args"));
         ok(introArgs?.hostname, "Intro has hostname arg");
-        const responseEl = card.shadowRoot.getElementById(
-          "response-status-label"
-        );
-        const responseArgs = JSON.parse(
-          responseEl?.getAttribute("data-l10n-args")
-        );
         is(
-          responseArgs?.responsestatus,
+          introArgs?.responsestatus,
           expectedStatus,
           "Intro has correct responsestatus"
         );
         is(
-          responseArgs?.responsestatustext,
+          introArgs?.responsestatustext,
           expectedText,
           "Intro has correct responsestatustext"
         );

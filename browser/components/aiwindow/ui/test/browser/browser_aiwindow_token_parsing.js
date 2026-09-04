@@ -10,7 +10,7 @@ const {
   consumeStreamChunk,
   flushTokenRemainder,
 } = ChromeUtils.importESModule(
-  "chrome://browser/content/aiwindow/modules/TokenStreamParser.mjs"
+  "moz-src:///browser/components/aiwindow/models/TokenStreamParser.sys.mjs"
 );
 
 add_setup(async function setup() {
@@ -77,6 +77,17 @@ add_task(function test_consumeStreamChunk_followup_token() {
   const r = consumeStreamChunk("Reply §followup: Summarize this§ done.", state);
   Assert.equal(r.plainText, "Reply  done.");
   Assert.deepEqual(r.tokens, [{ key: "followup", value: "Summarize this" }]);
+});
+
+add_task(function test_consumeStreamChunk_kit_token() {
+  const state = createParserState();
+
+  const r = consumeStreamChunk(
+    "Yes, §kit: MENTION_DEFINITE§ Kit is our mascot.",
+    state
+  );
+  Assert.equal(r.plainText, "Yes,  Kit is our mascot.");
+  Assert.deepEqual(r.tokens, [{ key: "kit", value: "MENTION_DEFINITE" }]);
 });
 
 add_task(function test_consumeStreamChunk_unknown_key_is_literal_text() {

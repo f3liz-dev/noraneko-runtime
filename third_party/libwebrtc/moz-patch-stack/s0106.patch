@@ -1,25 +1,32 @@
 From: Michael Froman <mfroman@mozilla.com>
-Date: Tue, 19 Nov 2024 16:05:00 -0600
-Subject: Bug 1928110 - (fix-b9c4c242d4) handle upstream last_arrival_timestamp
- to last_arrival_ntp_timestamp
+Date: Thu, 10 Jul 2025 20:03:00 +0000
+Subject: Bug 1975060 - improve build file generation regarding x11 usage.
+ r=dbaker
 
-Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/6918cf2d9126fa3e3676386349f6e383c298d8ab
+Upstream will be removing use_x11. We override the use_x11 settings
+from within gn_processor.py anyway, so we can remove our hack in
+third_party/libwebrtc/webrtc.gni, and then make gn_processor.py modify
+ozone_platform_x11 rather than use_x11.
+
+Note: these changes produce identical moz.build files for libwebrtc
+and abseil-cpp.
+
+Differential Revision: https://phabricator.services.mozilla.com/D255713
+Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/c8cf67108972d5caefbfbb66146e26e5358493c2
 ---
- modules/rtp_rtcp/source/rtcp_receiver.cc | 4 ++--
- 1 file changed, 2 insertions(+), 2 deletions(-)
+ webrtc.gni | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
 
-diff --git a/modules/rtp_rtcp/source/rtcp_receiver.cc b/modules/rtp_rtcp/source/rtcp_receiver.cc
-index c78494af8a..862bc3f5dc 100644
---- a/modules/rtp_rtcp/source/rtcp_receiver.cc
-+++ b/modules/rtp_rtcp/source/rtcp_receiver.cc
-@@ -346,8 +346,8 @@ void RTCPReceiver::RemoteRTCPSenderInfo(uint32_t* packet_count,
-   MutexLock lock(&rtcp_receiver_lock_);
-   *packet_count = remote_sender_.packets_sent;
-   *octet_count = remote_sender_.bytes_sent;
--  *ntp_timestamp_ms = remote_sender_.last_arrival_timestamp.ToMs();
--  *remote_ntp_timestamp_ms = remote_sender_.last_remote_timestamp.ToMs();
-+  *ntp_timestamp_ms = remote_sender_.last_arrival_ntp_timestamp.ToMs();
-+  *remote_ntp_timestamp_ms = remote_sender_.last_remote_ntp_timestamp.ToMs();
- }
+diff --git a/webrtc.gni b/webrtc.gni
+index c1004f0882..83fe2274cb 100644
+--- a/webrtc.gni
++++ b/webrtc.gni
+@@ -132,7 +132,7 @@ declare_args() {
+   rtc_build_tools = false
  
- std::vector<ReportBlockData> RTCPReceiver::GetLatestReportBlockData() const {
+   # Set this to false to skip building code that requires X11.
+-  rtc_use_x11 = use_x11
++  rtc_use_x11 = ozone_platform_x11
+ 
+   # Set this to use PipeWire on the Wayland display server.
+   # By default it's only enabled on desktop Linux (excludes ChromeOS) and

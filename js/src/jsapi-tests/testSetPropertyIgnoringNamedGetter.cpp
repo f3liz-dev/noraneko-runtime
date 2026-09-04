@@ -1,13 +1,10 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- */
+
+#include "jsapi-tests/tests.h"
 
 #include "jsfriendapi.h"
 
 #include "js/PropertyAndElement.h"  // JS_DefineProperty
 #include "js/Proxy.h"
-
-#include "jsapi-tests/tests.h"
 
 using namespace js;
 using namespace JS;

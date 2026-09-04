@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -68,9 +66,10 @@ static void ApplyClip(nsDisplayListBuilder* aBuilder,
 
 void DisplayListClipState::ClipContainingBlockDescendants(
     nsDisplayListBuilder* aBuilder, const nsRect& aRect,
-    const nsRectCornerRadii* aRadii, DisplayItemClipChain& aClipChainOnStack) {
+    const nsRectCornerRadii* aRadii, const nsMargin* aInset,
+    DisplayItemClipChain& aClipChainOnStack) {
   if (aRadii) {
-    aClipChainOnStack.mClip.SetTo(aRect, aRadii);
+    aClipChainOnStack.mClip.SetTo(aRect, aRadii, aInset);
   } else {
     aClipChainOnStack.mClip.SetTo(aRect);
   }
@@ -144,7 +143,7 @@ void DisplayListClipState::ClipContainingBlockDescendantsToContentBox(
   // If we have a border-radius, we have to clip our content to that
   // radius.
   ClipContainingBlockDescendants(aBuilder, clipRect,
-                                 hasBorderRadius ? &radii : nullptr,
+                                 hasBorderRadius ? &radii : nullptr, nullptr,
                                  aClipChainOnStack);
 }
 

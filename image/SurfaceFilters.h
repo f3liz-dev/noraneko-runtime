@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -12,20 +10,20 @@
 #ifndef mozilla_image_SurfaceFilters_h
 #define mozilla_image_SurfaceFilters_h
 
-#include <algorithm>
 #include <stdint.h>
 #include <string.h>
 
+#include <algorithm>
+
+#include "DownscalingFilter.h"
+#include "SurfaceCache.h"
+#include "SurfacePipe.h"
 #include "mozilla/Likely.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/gfx/Swizzle.h"
 #include "skia/src/core/SkBlitRow.h"
-
-#include "DownscalingFilter.h"
-#include "SurfaceCache.h"
-#include "SurfacePipe.h"
 
 namespace mozilla {
 namespace image {

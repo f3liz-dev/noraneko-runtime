@@ -27,16 +27,13 @@ function installLocale() {
   });
 }
 
-async function getCategoryButton(win, category) {
-  await win.customElements.whenDefined("categories-box");
-
-  let categoriesBox = win.document.getElementById("categories");
-  await categoriesBox.promiseRendered;
-  return categoriesBox.getButtonByName(category);
+async function asyncGetCategoryButton(win, category) {
+  await AboutAddonsTestUtils.waitForCategoriesUpdate(win);
+  return AboutAddonsTestUtils.getCategoryButton(win, category);
 }
 
 async function checkCategory(win, category, { expectHidden, expectSelected }) {
-  let button = await getCategoryButton(win, category);
+  let button = await asyncGetCategoryButton(win, category);
 
   is(
     button.hidden,
@@ -45,7 +42,7 @@ async function checkCategory(win, category, { expectHidden, expectSelected }) {
   );
   if (expectSelected !== undefined) {
     is(
-      button.selected,
+      AboutAddonsTestUtils.isCategoryButtonSelected(win, category),
       expectSelected,
       `${category} button is ${expectSelected ? "" : "not "}selected`
     );
@@ -123,8 +120,8 @@ add_task(async function testLocalesHiddenWhenUninstalled() {
   // and so the assertion may hit a race if any of the
   // providers is taking longer to resolve the getAddonsByTypes
   // async call.
-  await BrowserTestUtils.waitForCondition(async () => {
-    const button = await getCategoryButton(win, "locale");
+  await TestUtils.waitForCondition(async () => {
+    const button = await asyncGetCategoryButton(win, "locale");
     return button.hidden;
   }, "Wait for the locale category button to be hidden");
 
@@ -144,8 +141,8 @@ add_task(async function testLocalesHiddenWithoutDelay() {
   });
   let win = await viewLoaded;
 
-  await BrowserTestUtils.waitForCondition(async () => {
-    const button = await getCategoryButton(win, "locale");
+  await TestUtils.waitForCondition(async () => {
+    const button = await asyncGetCategoryButton(win, "locale");
     return button.hidden;
   }, "Wait for the locale category button to be hidden");
 
@@ -167,8 +164,8 @@ add_task(async function testLocalesShownAfterDelay() {
   });
   let win = await viewLoaded;
 
-  await BrowserTestUtils.waitForCondition(async () => {
-    const button = await getCategoryButton(win, "locale");
+  await TestUtils.waitForCondition(async () => {
+    const button = await asyncGetCategoryButton(win, "locale");
     return !button.hidden;
   }, "Wait for the locale category button to be shown");
 
@@ -219,10 +216,8 @@ add_task(async function testLocalesHiddenIfPreviousViewAndNoLocales() {
   });
   let win = await viewLoaded;
 
-  let categoryUtils = new CategoryUtilities(win);
-
   await TestUtils.waitForCondition(
-    () => categoryUtils.selectedCategory != "locale"
+    () => AboutAddonsTestUtils.getSidebarSelectedCategory(win) != "locale"
   );
 
   await checkCategory(win, "locale", {
@@ -231,7 +226,7 @@ add_task(async function testLocalesHiddenIfPreviousViewAndNoLocales() {
   });
 
   is(
-    categoryUtils.getSelectedViewId(),
+    AboutAddonsTestUtils.getSidebarSelectedViewId(win),
     win.gViewController.defaultViewId,
     "default view is selected"
   );

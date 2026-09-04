@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -324,10 +323,10 @@ static Atomic<bool> gShuttingDownThread(false);
 NS_IMPL_ISUPPORTS(nsUrlClassifierDBServiceWorker, nsIUrlClassifierDBService)
 
 nsUrlClassifierDBServiceWorker::nsUrlClassifierDBServiceWorker()
-    : mUpdateObserverLock("nsUrlClassifierDBServerWorker.mUpdateObserverLock"),
+    : mUpdateObserverLock("nsUrlClassifierDBServerWorker::mUpdateObserverLock"),
       mInStream(false),
       mGethashNoise(0),
-      mPendingLookupLock("nsUrlClassifierDBServerWorker.mPendingLookupLock") {}
+      mPendingLookupLock("nsUrlClassifierDBServerWorker::mPendingLookupLock") {}
 
 nsUrlClassifierDBServiceWorker::~nsUrlClassifierDBServiceWorker() {
   NS_ASSERTION(!mClassifier,
@@ -919,6 +918,11 @@ nsUrlClassifierDBServiceWorker::ClearCache() {
 
 NS_IMETHODIMP
 nsUrlClassifierDBServiceWorker::CleanRealTimeSimulatorCache() {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+nsUrlClassifierDBServiceWorker::ExpireRealTimeSimulatorCache() {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
@@ -1590,8 +1594,7 @@ class nsUrlClassifierRealTimeLookupHandler final
                                        nsIUrlClassifierCallback* aCallback,
                                        bool aIsPrivate)
       : nsUrlClassifierHashCompleterBase(aDBService, aCallback),
-        mDebugEnabled(
-            Preferences::GetBool("browser.safebrowsing.realTime.debug", false)),
+        mDebugEnabled(RealTimeRequestSimulator::RealTimeDebugEnabled()),
         mSimulator(
             StaticPrefs::browser_safebrowsing_realTime_simulation_enabled()
                 ? RealTimeRequestSimulator::GetInstance()
@@ -1650,7 +1653,9 @@ nsresult nsUrlClassifierRealTimeLookupHandler::StartRealTimeLookup(
   NS_ENSURE_TRUE(uri, NS_ERROR_FAILURE);
 
   rv = CreateFeatureHolders(uri);
-  NS_ENSURE_SUCCESS(rv, rv);
+  if (NS_FAILED(rv)) {
+    return rv;
+  }
 
   nsUrlClassifierUtils* utilsService = nsUrlClassifierUtils::GetInstance();
   if (NS_WARN_IF(!utilsService)) {
@@ -1684,7 +1689,7 @@ nsresult nsUrlClassifierRealTimeLookupHandler::CreateFeatureHolders(
 
   // No real-time features found, bail out early.
   if (realTimeFeatures.IsEmpty()) {
-    return NS_ERROR_FAILURE;
+    return NS_ERROR_NOT_AVAILABLE;
   }
 
   // Create the feature holder for the real-time features.
@@ -1701,7 +1706,7 @@ nsresult nsUrlClassifierRealTimeLookupHandler::CreateFeatureHolders(
 
   // No local list features found, bail out earlier.
   if (localListFeatures.IsEmpty()) {
-    return NS_ERROR_FAILURE;
+    return NS_ERROR_NOT_AVAILABLE;
   }
 
   // Create the feature holder for the local list features.
@@ -1726,10 +1731,9 @@ nsresult nsUrlClassifierRealTimeLookupHandler::HandleRealTimeLookupComplete(
   NS_DispatchToMainThread(NS_NewRunnableFunction(
       "nsUrlClassifierRealTimeLookupHandler::RecordGlobalCacheTelemetry",
       [hasGlobalCacheHit, isPrivate = mIsPrivate]() {
-        nsAutoCString etpCategory;
-        nsresult rv = Preferences::GetCString(
-            "browser.contentblocking.category", etpCategory);
-        if (NS_SUCCEEDED(rv)) {
+        const nsCString& etpCategory =
+            RealTimeRequestSimulator::ContentBlockingCategory();
+        if (!etpCategory.IsEmpty()) {
           nsAutoCString label;
           if (etpCategory.EqualsLiteral("standard") ||
               etpCategory.EqualsLiteral("strict") ||
@@ -1921,7 +1925,11 @@ nsUrlClassifierClassifyCallback::HandleResult(const nsACString& aTable,
   nsCString provider;
   nsresult rv = urlUtil->GetProvider(aTable, provider);
 
-  matchedInfo->provider.name = NS_SUCCEEDED(rv) ? provider : ""_ns;
+  if (NS_SUCCEEDED(rv)) {
+    matchedInfo->provider.name = std::move(provider);
+  } else {
+    matchedInfo->provider.name = ""_ns;
+  }
   matchedInfo->provider.priority = 0;
   for (auto const& BuiltInProvider : kBuiltInProviders) {
     if (BuiltInProvider.name.Equals(matchedInfo->provider.name)) {
@@ -1967,7 +1975,10 @@ nsUrlClassifierDBService::GetInstance(nsresult* result) {
   return do_AddRef(sUrlClassifierDBService);
 }
 
-nsUrlClassifierDBService::nsUrlClassifierDBService() : mInUpdate(false) {}
+nsUrlClassifierDBService::nsUrlClassifierDBService()
+    : mInUpdate(false),
+      mDisallowCompletionsTablesLock(
+          "nsUrlClassifierDBService::mDisallowCompletionsTables") {}
 
 nsUrlClassifierDBService::~nsUrlClassifierDBService() {
   sUrlClassifierDBService = nullptr;
@@ -1977,7 +1988,12 @@ nsresult nsUrlClassifierDBService::ReadDisallowCompletionsTablesFromPrefs() {
   nsAutoCString tables;
 
   Preferences::GetCString(DISALLOW_COMPLETION_TABLE_PREF, tables);
-  Classifier::SplitTables(tables, mDisallowCompletionsTables);
+
+  nsTArray<nsCString> parsed;
+  Classifier::SplitTables(tables, parsed);
+
+  MutexAutoLock lock(mDisallowCompletionsTablesLock);
+  mDisallowCompletionsTables = std::move(parsed);
 
   return NS_OK;
 }
@@ -2128,6 +2144,12 @@ nsUrlClassifierDBService::Classify(nsIPrincipal* aPrincipal,
     }
 
     rv = handler->StartRealTimeLookup(aPrincipal);
+    if (rv == NS_ERROR_NOT_AVAILABLE) {
+      // No SafeBrowsing features are configured, so there is nothing to
+      // classify and no callback will be fired.
+      *aResult = false;
+      return NS_OK;
+    }
     NS_ENSURE_SUCCESS(rv, rv);
 
     *aResult = true;
@@ -2655,6 +2677,23 @@ nsUrlClassifierDBService::CleanRealTimeSimulatorCache() {
 }
 
 NS_IMETHODIMP
+nsUrlClassifierDBService::ExpireRealTimeSimulatorCache() {
+  NS_ENSURE_TRUE(gDbBackgroundThread, NS_ERROR_NOT_INITIALIZED);
+
+  RefPtr<RealTimeRequestSimulator> simulator =
+      RealTimeRequestSimulator::GetInstance();
+
+  BackgroundThread()->Dispatch(NS_NewRunnableFunction(
+      "nsUrlClassifierDBService::ExpireRealTimeSimulatorCache", [simulator]() {
+        if (simulator) {
+          simulator->ExpireCache();
+        }
+      }));
+
+  return NS_OK;
+}
+
+NS_IMETHODIMP
 nsUrlClassifierDBService::GetCacheInfo(
     const nsACString& aTable, nsIUrlClassifierGetCacheCallback* aCallback) {
   NS_ENSURE_TRUE(gDbBackgroundThread, NS_ERROR_NOT_INITIALIZED);
@@ -2670,6 +2709,7 @@ nsresult nsUrlClassifierDBService::CacheCompletions(
 }
 
 bool nsUrlClassifierDBService::CanComplete(const nsACString& aTableName) {
+  MutexAutoLock lock(mDisallowCompletionsTablesLock);
   return !mDisallowCompletionsTables.Contains(aTableName);
 }
 
@@ -2871,7 +2911,8 @@ nsUrlClassifierDBService::AsyncClassifyLocalWithFeatures(
         continue;
       }
 
-      ipcFeatures.AppendElement(IPCURLClassifierFeature(name, tables));
+      ipcFeatures.AppendElement(
+          IPCURLClassifierFeature(std::move(name), std::move(tables)));
     }
 
     if (!content->SendPURLClassifierLocalConstructor(actor, aURI,

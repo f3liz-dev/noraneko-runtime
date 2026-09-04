@@ -17,8 +17,11 @@ import org.mozilla.fenix.browser.browsingmode.BrowsingMode
 import org.mozilla.fenix.components.appstate.AppState
 import org.mozilla.fenix.home.bookmarks.Bookmark
 import org.mozilla.fenix.home.bookmarks.controller.BookmarksController
+import org.mozilla.fenix.home.logo.LogoController
+import org.mozilla.fenix.home.logo.TrackingProtectionController
 import org.mozilla.fenix.home.pocket.PocketRecommendedStoriesCategory
 import org.mozilla.fenix.home.pocket.controller.PocketStoriesController
+import org.mozilla.fenix.home.pocket.controller.StoriesImpressionSource
 import org.mozilla.fenix.home.privatebrowsing.controller.PrivateBrowsingController
 import org.mozilla.fenix.home.recentsyncedtabs.RecentSyncedTab
 import org.mozilla.fenix.home.recentsyncedtabs.controller.RecentSyncedTabController
@@ -29,8 +32,9 @@ import org.mozilla.fenix.home.sessioncontrol.DefaultSessionControlController
 import org.mozilla.fenix.home.sessioncontrol.SessionControlInteractor
 import org.mozilla.fenix.home.termsofuse.PrivacyNoticeBannerController
 import org.mozilla.fenix.home.toolbar.ToolbarController
+import org.mozilla.fenix.home.topsites.AddShortcutEntryPoint
+import org.mozilla.fenix.home.topsites.AddShortcutSource
 import org.mozilla.fenix.home.topsites.controller.TopSiteController
-import org.mozilla.fenix.search.toolbar.SearchSelectorController
 
 class SessionControlInteractorTest {
 
@@ -40,11 +44,12 @@ class SessionControlInteractorTest {
     private val bookmarksController: BookmarksController = mockk(relaxed = true)
     private val pocketStoriesController: PocketStoriesController = mockk(relaxed = true)
     private val privateBrowsingController: PrivateBrowsingController = mockk(relaxed = true)
-    private val searchSelectorController: SearchSelectorController = mockk(relaxed = true)
     private val toolbarController: ToolbarController = mockk(relaxed = true)
     private val homeSearchController: HomeSearchController = mockk(relaxed = true)
     private val topSiteController: TopSiteController = mockk(relaxed = true)
     private val privacyNoticeBannerController: PrivacyNoticeBannerController = mockk(relaxed = true)
+    private val trackingProtectionController: TrackingProtectionController = mockk(relaxed = true)
+    private val logoController: LogoController = mockk(relaxed = true)
 
     // Note: the recent visits tests are handled in [RecentVisitsInteractorTest] and [RecentVisitsControllerTest]
     private val recentVisitsController: RecentVisitsController = mockk(relaxed = true)
@@ -61,11 +66,12 @@ class SessionControlInteractorTest {
             recentVisitsController,
             pocketStoriesController,
             privateBrowsingController,
-            searchSelectorController,
             toolbarController,
             homeSearchController,
             topSiteController,
             privacyNoticeBannerController,
+            trackingProtectionController,
+            logoController,
         )
     }
 
@@ -139,18 +145,6 @@ class SessionControlInteractorTest {
     }
 
     @Test
-    fun onPaste() {
-        interactor.onPaste("text")
-        verify { toolbarController.handlePaste("text") }
-    }
-
-    @Test
-    fun onPasteAndGo() {
-        interactor.onPasteAndGo("text")
-        verify { toolbarController.handlePasteAndGo("text") }
-    }
-
-    @Test
     fun onNavigateSearch() {
         interactor.onNavigateSearch()
         verify { toolbarController.handleNavigateSearch() }
@@ -160,12 +154,6 @@ class SessionControlInteractorTest {
     fun onHomeContentFocusedWhileSearchIsActive() {
         interactor.onHomeContentFocusedWhileSearchIsActive()
         verify { homeSearchController.handleHomeContentFocusedWhileSearchIsActive() }
-    }
-
-    @Test
-    fun onRemoveCollectionsPlaceholder() {
-        interactor.onRemoveCollectionsPlaceholder()
-        verify { controller.handleRemoveCollectionsPlaceholder() }
     }
 
     @Test
@@ -238,6 +226,24 @@ class SessionControlInteractorTest {
     }
 
     @Test
+    fun `WHEN save shortcut is called THEN handle the save action in the controller`() {
+        interactor.onSaveShortcut(
+            title = "Firefox",
+            url = "firefox.com",
+            source = AddShortcutSource.MANUAL,
+            entryPoint = AddShortcutEntryPoint.HOMEPAGE,
+        )
+        verify {
+            topSiteController.handleSaveShortcut(
+                title = "Firefox",
+                url = "firefox.com",
+                source = AddShortcutSource.MANUAL,
+                entryPoint = AddShortcutEntryPoint.HOMEPAGE,
+            )
+        }
+    }
+
+    @Test
     fun `GIVEN a PocketStoriesInteractor WHEN a story is shown THEN handle it in a PocketStoriesController`() {
         val shownStory: PocketStory = mockk()
         val storyPosition = Triple(1, 2, 3)
@@ -251,9 +257,11 @@ class SessionControlInteractorTest {
     fun `GIVEN a PocketStoriesInteractor WHEN stories are shown THEN handle it in a PocketStoriesController`() {
         val shownStories: List<PocketStory> = emptyList()
 
-        interactor.onStoriesShown(shownStories)
+        interactor.onStoriesShown(shownStories, StoriesImpressionSource.HOMEPAGE)
 
-        verify { pocketStoriesController.handleStoriesShown(shownStories) }
+        verify {
+            pocketStoriesController.handleStoriesShown(shownStories, StoriesImpressionSource.HOMEPAGE)
+        }
     }
 
     @Test
@@ -270,9 +278,15 @@ class SessionControlInteractorTest {
         val clickedStory: PocketStory = mockk()
         val storyPosition = Triple(1, 2, 3)
 
-        interactor.onStoryClicked(clickedStory, storyPosition)
+        interactor.onStoryClicked(clickedStory, storyPosition, StoriesImpressionSource.HOMEPAGE)
 
-        verify { pocketStoriesController.handleStoryClicked(clickedStory, storyPosition) }
+        verify {
+            pocketStoriesController.handleStoryClicked(
+                clickedStory,
+                storyPosition,
+                StoriesImpressionSource.HOMEPAGE,
+            )
+        }
     }
 
     @Test
@@ -281,5 +295,12 @@ class SessionControlInteractorTest {
         every { appState.bookmarks } returns emptyList()
         interactor.reportSessionMetrics(appState)
         verify { controller.handleReportSessionMetrics(appState) }
+    }
+
+    @Test
+    fun `WHEN the privacy report is tapped THEN tracking protection controller handles the action`() {
+        interactor.onPrivacyReportTapped()
+
+        verify { trackingProtectionController.handleProtectionStatusPillClicked() }
     }
 }

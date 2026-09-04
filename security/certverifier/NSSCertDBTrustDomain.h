@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,8 +5,8 @@
 #ifndef NSSCertDBTrustDomain_h
 #define NSSCertDBTrustDomain_h
 
-#include "CertVerifier.h"
 #include "CRLiteTimestamp.h"
+#include "CertVerifier.h"
 #include "ScopedNSSTypes.h"
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/TimeStamp.h"
@@ -236,7 +234,7 @@ class NSSCertDBTrustDomain : public mozilla::pkix::TrustDomain {
       const nsTArray<uint8_t>& issuerSubjectPublicKeyInfoBytes,
       const nsTArray<uint8_t>& serialNumberBytes,
       const nsTArray<RefPtr<nsICRLiteTimestamp>>& crliteTimestamps,
-      bool& filterCoversCertificate);
+      mozilla::pkix::Time time, bool& filterCoversCertificate);
 
   enum EncodedResponseSource {
     ResponseIsFromNetwork = 1,

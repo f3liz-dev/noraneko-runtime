@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set sw=2 ts=8 et tw=80 : */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,14 +5,14 @@
 #include "DNSServiceBase.h"
 
 #include "DNS.h"
+#include "mozilla/ClearOnShutdown.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/StaticPrefs_network.h"
 #include "nsIDNSService.h"
-#include "nsIProtocolProxyService2.h"
 #include "nsIPrefBranch.h"
+#include "nsIProtocolProxyService2.h"
 #include "nsIProxyInfo.h"
 #include "nsThreadUtils.h"
-#include "mozilla/ClearOnShutdown.h"
 
 #if defined(XP_WIN)
 #  include <shlobj.h>
@@ -34,8 +32,16 @@ NS_IMPL_ISUPPORTS(DNSServiceBase, nsIObserver)
 
 void DNSServiceBase::AddPrefObserver(nsIPrefBranch* aPrefs) {
   aPrefs->AddObserver(kPrefProxyType, this, false);
+  // [pref-trie-audit] "network.dns.disablePrefetch" is an ambiguous prefix of
+  // "network.dns.disablePrefetchFromHTTPS"; triggers only for the exact pref
+  // ("disablePrefetchFromHTTPS" is a StaticPref and needs no callback).
   aPrefs->AddObserver(kPrefDisablePrefetch, this, false);
   // Monitor these to see if there is a change in proxy configuration
+  // [pref-trie-audit] "network.proxy.socks" is an ambiguous prefix of
+  // "network.proxy.socks5_remote_dns", "network.proxy.socks_port",
+  // "network.proxy.socks_remote_dns", "network.proxy.socks_version";
+  // triggers only for the exact pref (the others are StaticPrefs or have their
+  // own observers).
   aPrefs->AddObserver(kPrefNetworkProxySOCKS, this, false);
   aPrefs->AddObserver(kPrefNetworkProxySOCKSVersion, this, false);
 }

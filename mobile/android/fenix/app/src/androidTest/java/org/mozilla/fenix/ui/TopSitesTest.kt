@@ -4,24 +4,31 @@
 
 package org.mozilla.fenix.ui
 
-import androidx.compose.ui.test.junit4.AndroidComposeTestRule
+import android.util.Log
+import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.mozilla.fenix.R
+import org.mozilla.fenix.customannotations.Converted
 import org.mozilla.fenix.customannotations.SmokeTest
+import org.mozilla.fenix.helpers.Constants.RETRY_COUNT
+import org.mozilla.fenix.helpers.Constants.TAG
 import org.mozilla.fenix.helpers.Constants.defaultTopSitesList
 import org.mozilla.fenix.helpers.DataGenerationHelper.generateRandomString
 import org.mozilla.fenix.helpers.DataGenerationHelper.getStringResource
+import org.mozilla.fenix.helpers.FenixTestRule
 import org.mozilla.fenix.helpers.HomeActivityIntentTestRule
 import org.mozilla.fenix.helpers.MockBrowserDataHelper
 import org.mozilla.fenix.helpers.TestAssetHelper.getGenericAsset
 import org.mozilla.fenix.helpers.TestHelper.mDevice
 import org.mozilla.fenix.helpers.TestHelper.verifySnackBarText
-import org.mozilla.fenix.helpers.TestSetup
+import org.mozilla.fenix.helpers.TestHelper.waitForAppWindowToBeUpdated
+import org.mozilla.fenix.helpers.TestHelper.waitUntilSnackbarGone
 import org.mozilla.fenix.helpers.perf.DetectMemoryLeaksRule
 import org.mozilla.fenix.ui.robots.browserScreen
 import org.mozilla.fenix.ui.robots.homeScreen
 import org.mozilla.fenix.ui.robots.navigationToolbar
+import androidx.compose.ui.test.junit4.v2.AndroidComposeTestRule as AndroidComposeTestRuleV2
 
 /**
  * Tests Top Sites functionality
@@ -32,16 +39,52 @@ import org.mozilla.fenix.ui.robots.navigationToolbar
  * - Verifies existence of default top sites available on the home-screen
  */
 
-class TopSitesTest : TestSetup() {
-    @get:Rule
-    val composeTestRule = AndroidComposeTestRule(
-        HomeActivityIntentTestRule.withDefaultSettingsOverrides(skipOnboarding = true),
+class TopSitesTest {
+    @get:Rule(order = 0)
+    val fenixTestRule: FenixTestRule = FenixTestRule()
+
+    private val mockWebServer get() = fenixTestRule.mockWebServer
+
+    @get:Rule(order = 1)
+    val composeTestRule = AndroidComposeTestRuleV2(
+        HomeActivityIntentTestRule.withDefaultSettingsOverrides(),
     ) { it.activity }
 
-    @get:Rule
-    val memoryLeaksRule = DetectMemoryLeaksRule()
+    @get:Rule(order = 2)
+    val memoryLeaksRule = DetectMemoryLeaksRule(composeTestRule = { composeTestRule })
+
+    @Before
+    fun setUp() {
+        // Workaround to make sure the Top sites list displayed before starting the tests.
+        for (i in 1..RETRY_COUNT) {
+            Log.i(TAG, "setUp: Started try #$i")
+            try {
+                homeScreen(composeTestRule) {
+                }.openThreeDotMenu {
+                }.clickSettingsButton {
+                }.goBack(composeTestRule) {
+                    defaultTopSitesList.values.forEach { value ->
+                        verifyExistingTopSitesTabs(value)
+                    }
+                }
+
+                break
+            } catch (e: Throwable) {
+                if (i == RETRY_COUNT) {
+                    throw e
+                } else {
+                    waitForAppWindowToBeUpdated()
+                }
+            }
+        }
+    }
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/532598
+    @Converted(
+        replacedBy = ["org.mozilla.fenix.ui.efficiency.tests.ShortcutsTest#addAWebsiteAsATopSiteTest"],
+        bug = 2048243,
+        since = "2026-06",
+    )
     @SmokeTest
     @Test
     fun addAWebsiteAsATopSiteTest() {
@@ -134,6 +177,7 @@ class TopSitesTest : TestSetup() {
         }
     }
 
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2673886
     @Test
     fun editTopSiteTestWithInvalidURL() {
         val webPage = mockWebServer.getGenericAsset(1)
@@ -206,6 +250,7 @@ class TopSitesTest : TestSetup() {
             defaultTopSitesList.values.forEach { value ->
                 verifyExistingTopSitesTabs(value)
             }
+            verifyAddShortcutButtonExists()
         }
     }
 
@@ -231,6 +276,51 @@ class TopSitesTest : TestSetup() {
         }.openThreeDotMenu {
         }.clickHistoryButton {
             verifyEmptyHistoryView()
+        }
+    }
+
+    // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/4227423
+    @Test
+    fun addAShortcutFromHomepageTest() {
+        val websiteData = object {
+            val title = "Mozilla"
+            val goodUrl = "https://www.mozilla.org/en-US/"
+            val badUrl = "incorrectURL"
+            val popularSite = "Facebook"
+        }
+
+        homeScreen(composeTestRule) {
+        }.clickAddShortcutButton {
+            verifyAddToHomepageBottomSheet()
+            clickOnPopularWebsite(websiteData.popularSite)
+            verifySnackBarText(getStringResource(R.string.snackbar_added_to_shortcuts))
+            waitUntilSnackbarGone()
+            verifyExistingTopSitesList()
+            verifyExistingTopSitesTabs(websiteData.popularSite)
+        }
+
+        homeScreen(composeTestRule) {
+        }.clickAddShortcutButton {
+        }.clickAddWebsiteButton {
+            verifyEnterAWebsiteUrlDialog()
+            enterWebsiteUrl(websiteData.goodUrl)
+            enterShortcutName(websiteData.title)
+            clickCancelInAddWebsiteDialog()
+        }
+
+        homeScreen(composeTestRule) {
+        }.clickAddShortcutButton {
+        }.clickAddWebsiteButton {
+            verifyEnterAWebsiteUrlDialog()
+            enterWebsiteUrl(websiteData.badUrl)
+            enterShortcutName(websiteData.title)
+            clickSaveInAddWebsiteDialog()
+            verifyInvalidUrlError()
+            enterWebsiteUrl(websiteData.goodUrl)
+            enterShortcutName(websiteData.title)
+            clickSaveInAddWebsiteDialog()
+            verifyExistingTopSitesList()
+            verifyExistingTopSitesTabs(websiteData.title)
         }
     }
 }

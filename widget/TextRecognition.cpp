@@ -3,12 +3,13 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "TextRecognition.h"
+
+#include "imgIContainer.h"
+#include "mozilla/dom/ContentChild.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/ShadowRoot.h"
-#include "mozilla/dom/Document.h"
-#include "mozilla/dom/ContentChild.h"
 #include "nsTextNode.h"
-#include "imgIContainer.h"
 
 using namespace mozilla::dom;
 
@@ -74,39 +75,6 @@ auto TextRecognition::FindText(gfx::DataSourceSurface& aSurface,
     return promise;
   }
   return DoFindText(aSurface, aLanguages);
-}
-
-void TextRecognition::FillShadow(ShadowRoot& aShadow,
-                                 const TextRecognitionResult& aResult) {
-  auto& doc = *aShadow.OwnerDoc();
-  RefPtr<Element> div = doc.CreateHTMLElement(nsGkAtoms::div);
-  for (const auto& quad : aResult.quads()) {
-    RefPtr<Element> span = doc.CreateHTMLElement(nsGkAtoms::span);
-    // TODO: We probably want to position them here and so on. For now, expose
-    // the data as attributes so that it's easy to play with the returned values
-    // in JS.
-    {
-      nsAutoString points;
-      for (const auto& point : quad.points()) {
-        points.AppendFloat(point.x);
-        points.Append(u',');
-        points.AppendFloat(point.y);
-        points.Append(u',');
-      }
-      points.Trim(",");
-      span->SetAttribute(u"data-points"_ns, points, IgnoreErrors());
-      nsAutoString confidence;
-      confidence.AppendFloat(quad.confidence());
-      span->SetAttribute(u"data-confidence"_ns, confidence, IgnoreErrors());
-    }
-
-    {
-      RefPtr<nsTextNode> text = doc.CreateTextNode(quad.string());
-      span->AppendChildTo(text, true, IgnoreErrors());
-    }
-    div->AppendChildTo(span, true, IgnoreErrors());
-  }
-  aShadow.AppendChildTo(div, true, IgnoreErrors());
 }
 
 #ifndef XP_MACOSX

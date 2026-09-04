@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -27,9 +26,8 @@
 // Struct info needed for rlbox_load_structs_from_library
 #include "graphite2/Font.h"
 #include "graphite2/GraphiteExtra.h"
-#include "graphite2/Segment.h"
-
 #include "graphite2/GraphiteStructsForRLBox.h"
+#include "graphite2/Segment.h"
 rlbox_load_structs_from_library(graphite);
 
 #endif

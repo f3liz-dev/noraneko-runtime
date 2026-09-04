@@ -1,20 +1,9 @@
-commit 0d58e77eea3c64864668297cee9f93a72be1f262
-Author: Philip Chimento <pchimento@igalia.com>
-Date:   Mon Feb 2 17:35:01 2026 -0800
+commit defaaf1571cd13b183e3f505c6a06e8db316e593
+Author: Kevin Gibbons <bakkot@gmail.com>
+Date:   Mon Jul 27 15:45:06 2026 -0700
 
-    Intl Era/Month Code: Tests for PlainMonthDay reference years
+    tests for Iterator.prototype.join (#4768)
     
-    The reference years for the Chinese and Dangi lunisolar calendars should
-    follow a hardcoded table, which is tested in the various chinese-* and
-    dangi-* tests in this commit.
+    Fixes https://github.com/tc39/test262/issues/4697.
     
-    The behaviour of `{ overflow: 'constrain' }` has changed for leap months
-    that are not known for certain to ever have had 30 days, which is tested
-    in chinese-month-codes.js and dangi-month-codes.js.
-    
-    This also tightens the test expectations for creation of PlainMonthDay
-    in all other calendars, to make sure the reference years are correctly
-    determined from the deterministic steps listed in the spec text.
-    
-    See: https://github.com/tc39/proposal-intl-era-monthcode/pull/108
-    This normative change was adopted in the January 2026 TC39 plenary.
+    Tested against [a polyfill](https://github.com/tc39/proposal-iterator-join/blob/c1498da49d963972b5f6bd286e17f129193485e4/polyfill.js).

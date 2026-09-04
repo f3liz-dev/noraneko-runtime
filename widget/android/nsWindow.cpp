@@ -1,19 +1,21 @@
-/* -*- Mode: c++; c-basic-offset: 2; tab-width: 4; indent-tabs-mode: nil; -*-
- * vim: set sw=2 ts=4 expandtab:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include <algorithm>
-#include <atomic>
+#include "nsWindow.h"
+
 #include <android/bitmap.h>
 #include <android/log.h>
 #include <android/native_window.h>
 #include <android/native_window_jni.h>
 #include <math.h>
+#include <unistd.h>
+
+#include <algorithm>
+#include <atomic>
+#include <numbers>
 #include <queue>
 #include <type_traits>
-#include <unistd.h>
 
 #include "AndroidBridge.h"
 #include "AndroidBridgeUtilities.h"
@@ -23,12 +25,11 @@
 #include "AndroidUiThread.h"
 #include "AndroidView.h"
 #include "AndroidWidgetUtils.h"
-#include "gfxContext.h"
+#include "GLContext.h"
+#include "GLContextProvider.h"
 #include "GeckoEditableSupport.h"
 #include "GeckoViewOutputStream.h"
 #include "GeckoViewSupport.h"
-#include "GLContext.h"
-#include "GLContextProvider.h"
 #include "JavaBuiltins.h"
 #include "JavaExceptions.h"
 #include "KeyEvent.h"
@@ -37,37 +38,16 @@
 #include "ScreenHelperAndroid.h"
 #include "TouchResampler.h"
 #include "WidgetUtils.h"
+#include "WindowEvent.h"
 #include "WindowRenderer.h"
-
+#include "gfxContext.h"
 #include "mozilla/EventForwards.h"
-#include "nsAppShell.h"
-#include "nsContentUtils.h"
-#include "nsDragService.h"
-#include "nsFocusManager.h"
-#include "nsGkAtoms.h"
-#include "nsGfxCIID.h"
-#include "nsIDocShellTreeOwner.h"
-#include "nsLayoutUtils.h"
-#include "nsNetUtil.h"
-#include "nsPrintfCString.h"
-#include "nsString.h"
-#include "nsTArray.h"
-#include "nsThreadUtils.h"
-#include "nsUserIdleService.h"
-#include "nsWidgetsCID.h"
-#include "nsWindow.h"
-
-#include "nsIWidgetListener.h"
-#include "nsIWindowWatcher.h"
-#include "nsIAppWindow.h"
-#include "nsIPrintSettings.h"
-#include "nsIPrintSettingsService.h"
-
-#include "mozilla/PresShell.h"
 #include "mozilla/Logging.h"
 #include "mozilla/MiscEvents.h"
 #include "mozilla/MouseEvents.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/PresShell.h"
+#include "mozilla/ProfilerLabels.h"
 #include "mozilla/ScopeExit.h"
 #include "mozilla/StaticPrefs_android.h"
 #include "mozilla/StaticPrefs_ui.h"
@@ -75,8 +55,8 @@
 #include "mozilla/TouchEvents.h"
 #include "mozilla/WheelHandlingHelper.h"  // for WheelDeltaAdjustmentStrategy
 #include "mozilla/a11y/SessionAccessibility.h"
-#include "mozilla/dom/BrowsingContext.h"
 #include "mozilla/dom/BrowserHost.h"
+#include "mozilla/dom/BrowsingContext.h"
 #include "mozilla/dom/CanonicalBrowsingContext.h"
 #include "mozilla/dom/ContentChild.h"
 #include "mozilla/dom/ContentParent.h"
@@ -97,20 +77,38 @@
 #include "mozilla/java/SessionAccessibilityWrappers.h"
 #include "mozilla/java/SurfaceControlManagerWrappers.h"
 #include "mozilla/jni/NativesInlines.h"
-#include "mozilla/layers/AndroidHardwareBuffer.h"
 #include "mozilla/layers/APZEventState.h"
 #include "mozilla/layers/APZInputBridge.h"
 #include "mozilla/layers/APZThreadUtils.h"
+#include "mozilla/layers/AndroidHardwareBuffer.h"
 #include "mozilla/layers/CompositorBridgeChild.h"
 #include "mozilla/layers/CompositorOGL.h"
 #include "mozilla/layers/CompositorSession.h"
+#include "mozilla/layers/IAPZCTreeManager.h"
 #include "mozilla/layers/LayersTypes.h"
 #include "mozilla/layers/UiCompositorControllerChild.h"
-#include "mozilla/layers/IAPZCTreeManager.h"
 #include "mozilla/net/AsyncUrlChannelClassifier.h"
-#include "mozilla/ProfilerLabels.h"
 #include "mozilla/widget/AndroidVsync.h"
 #include "mozilla/widget/Screen.h"
+#include "nsAppShell.h"
+#include "nsContentUtils.h"
+#include "nsDragService.h"
+#include "nsFocusManager.h"
+#include "nsGfxCIID.h"
+#include "nsIAppWindow.h"
+#include "nsIDocShellTreeOwner.h"
+#include "nsIPrintSettings.h"
+#include "nsIPrintSettingsService.h"
+#include "nsIWidgetListener.h"
+#include "nsIWindowWatcher.h"
+#include "nsLayoutUtils.h"
+#include "nsNetUtil.h"
+#include "nsPrintfCString.h"
+#include "nsString.h"
+#include "nsTArray.h"
+#include "nsThreadUtils.h"
+#include "nsUserIdleService.h"
+#include "nsWidgetsCID.h"
 
 #define GVS_LOG(...) MOZ_LOG(sGVSupportLog, LogLevel::Warning, (__VA_ARGS__))
 
@@ -699,7 +697,7 @@ class NPZCSupport final
   // aOrientation, centered around the touch point.
   static std::pair<float, ScreenSize> ConvertOrientationAndRadius(
       float aOrientation, float aToolMajor, float aToolMinor) {
-    float angle = aOrientation * 180.0f / M_PI;
+    float angle = aOrientation * 180.0f / std::numbers::pi;
     // w3c touchevents spec does not allow orientations == 90
     // this shifts it to -90, which will be shifted to zero below
     if (angle >= 90.0) {
@@ -734,8 +732,8 @@ class NPZCSupport final
     float x = atan2f(sinf(-aOrientation) * r, z);
     float y = atan2f(cosf(-aOrientation) * r, z);
 
-    aSingleTouchData.mTiltX = int32_t(floorf(x * 180.0 / M_PI));
-    aSingleTouchData.mTiltY = int32_t(floorf(y * 180.0 / M_PI));
+    aSingleTouchData.mTiltX = int32_t(floorf(x * 180.0 / std::numbers::pi));
+    aSingleTouchData.mTiltY = int32_t(floorf(y * 180.0 / std::numbers::pi));
   }
 
   void HandleMotionEvent(
@@ -1170,6 +1168,11 @@ class LayerViewSupport final
 
   using Base::AttachNative;
   using Base::DisposeNative;
+
+  template <typename Functor>
+  static void OnNativeCall(Functor&& aCall) {
+    NS_DispatchToMainThread(new WindowEvent<Functor>(std::move(aCall)));
+  }
 
   void OnWeakNonIntrusiveDetach(already_AddRefed<Runnable> aDisposer) {
     RefPtr<Runnable> disposer = aDisposer;
@@ -1873,7 +1876,7 @@ void GeckoViewSupport::Open(
   }
 
   // Prepare an nsIGeckoViewView to pass as argument to the window.
-  RefPtr<AndroidView> androidView = new AndroidView();
+  auto androidView = MakeRefPtr<AndroidView>();
   androidView->mEventDispatcher->Attach(
       java::EventDispatcher::Ref::From(aDispatcher));
   androidView->mInitData = java::GeckoBundle::Ref::From(aInitData);
@@ -2126,8 +2129,7 @@ void GeckoViewSupport::CreatePdf(
   MOZ_ASSERT(NS_IsMainThread());
   const auto pdfErrorMsg = "Could not save this page as PDF.";
   auto stream = java::GeckoInputStream::New(nullptr);
-  RefPtr<GeckoViewOutputStream> streamListener =
-      new GeckoViewOutputStream(stream);
+  auto streamListener = MakeRefPtr<GeckoViewOutputStream>(stream);
 
   nsCOMPtr<nsIPrintSettingsService> printSettingsService =
       do_GetService("@mozilla.org/gfx/printsettings-service;1");
@@ -2210,6 +2212,15 @@ void GeckoViewSupport::PrintToPdf(
   }
   CreatePdf(geckoResult, cbc);
 }
+
+void GeckoViewSupport::PerformHapticFeedback(int32_t aEffect) {
+  GeckoSession::Window::LocalRef window(mGeckoViewWindow);
+  if (!window) {
+    return;
+  }
+  window->PerformHapticFeedback(aEffect);
+}
+
 }  // namespace widget
 }  // namespace mozilla
 
@@ -2565,6 +2576,19 @@ void nsWindow::DoResize(double aX, double aY, double aWidth, double aHeight,
 
   // Should we skip honoring aRepaint here?
   if (aRepaint && FindTopLevel() == nsWindow::TopWindow()) RedrawAll();
+}
+
+void nsWindow::PerformHapticFeedback(HapticFeedbackType aType) {
+  if (Destroyed()) {
+    return;
+  }
+
+  auto acc(mGeckoViewSupport.Access());
+  if (!acc) {
+    return;
+  }
+
+  acc->PerformHapticFeedback(static_cast<int32_t>(aType));
 }
 
 void nsWindow::SetSizeMode(nsSizeMode aMode) {
@@ -3153,7 +3177,7 @@ nsresult nsWindow::SynthesizeNativeTouchPoint(
 
 nsresult nsWindow::SynthesizeNativeMouseEvent(
     LayoutDeviceIntPoint aPoint, NativeMouseMessage aNativeMessage,
-    MouseButton aButton, nsIWidget::Modifiers aModifierFlags,
+    MouseButton aButton, nsIWidget::NativeModifiers aModifierFlags,
     nsISynthesizedEventCallback* aCallback) {
   mozilla::widget::AutoSynthesizedEventCallbackNotifier notifier(aCallback);
 
@@ -3222,7 +3246,7 @@ nsresult nsWindow::SynthesizeNativeMouseMove(
     LayoutDeviceIntPoint aPoint, nsISynthesizedEventCallback* aCallback) {
   return SynthesizeNativeMouseEvent(
       aPoint, NativeMouseMessage::Move, MouseButton::eNotPressed,
-      nsIWidget::Modifiers::NO_MODIFIERS, aCallback);
+      nsIWidget::NativeModifiers::NO_MODIFIERS, aCallback);
 }
 
 void nsWindow::SetCompositorWidgetDelegate(CompositorWidgetDelegate* delegate) {
@@ -3262,8 +3286,8 @@ void nsWindow::ConfigureAPZControllerThread() {
 
 already_AddRefed<GeckoContentController>
 nsWindow::CreateRootContentController() {
-  RefPtr<GeckoContentController> controller =
-      new AndroidContentController(this, mAPZEventState, mAPZC);
+  auto controller =
+      MakeRefPtr<AndroidContentController>(this, mAPZEventState, mAPZC);
   return controller.forget();
 }
 
@@ -3310,17 +3334,19 @@ static int32_t ConvertScrollUpdateSource(
   return java::GeckoSession::ScrollPositionUpdate::SOURCE_USER_INTERACTION;
 }
 
-void nsWindow::NotifyCompositorScrollUpdate(
-    const CompositorScrollUpdate& aUpdate) {
+void nsWindow::NotifyCompositorScrollUpdates(
+    const nsTArray<mozilla::layers::CompositorScrollUpdate>& aUpdates) {
   MOZ_ASSERT(AndroidBridge::IsJavaUiThread());
   if (::mozilla::jni::NativeWeakPtr<LayerViewSupport>::Accessor lvs{
           mLayerViewSupport.Access()}) {
     const auto& compositor = lvs->GetJavaCompositor();
     mContentDocumentDisplayed = true;
-    compositor->NotifyCompositorScrollUpdate(
-        aUpdate.mMetrics.mVisualScrollOffset.x,
-        aUpdate.mMetrics.mVisualScrollOffset.y, aUpdate.mMetrics.mZoom.scale,
-        ConvertScrollUpdateSource(aUpdate.mSource));
+    for (const auto& update : aUpdates) {
+      compositor->NotifyCompositorScrollUpdate(
+          update.mMetrics.mVisualScrollOffset.x,
+          update.mMetrics.mVisualScrollOffset.y, update.mMetrics.mZoom.scale,
+          ConvertScrollUpdateSource(update.mSource));
+    }
   }
 }
 

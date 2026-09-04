@@ -1,26 +1,23 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include <math.h>
 
-#include "prlink.h"
-#include "prenv.h"
-
-#include "nsIGlobalObject.h"
-#include "nsRefPtrHashtable.h"
-#include "nsString.h"
-#include "mozilla/dom/GamepadHandle.h"
-#include "mozilla/dom/GamepadManager.h"
-#include "mozilla/dom/Gamepad.h"
-#include "mozilla/dom/XRSession.h"
-#include "mozilla/dom/XRInputSourceArray.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/StaticPrefs_dom.h"
+#include "mozilla/dom/Gamepad.h"
+#include "mozilla/dom/GamepadHandle.h"
+#include "mozilla/dom/GamepadManager.h"
 #include "mozilla/dom/WebXRBinding.h"
+#include "mozilla/dom/XRInputSourceArray.h"
+#include "mozilla/dom/XRSession.h"
+#include "nsIGlobalObject.h"
+#include "nsRefPtrHashtable.h"
 #include "nsServiceManagerUtils.h"
+#include "nsString.h"
+#include "prenv.h"
+#include "prlink.h"
 
 #ifdef XP_WIN
 #  include "../layers/d3d11/CompositorD3D11.h"
@@ -28,8 +25,8 @@
 
 #include "VRDisplayClient.h"
 #include "VRDisplayPresentation.h"
-#include "VRManagerChild.h"
 #include "VRLayerChild.h"
+#include "VRManagerChild.h"
 
 using namespace mozilla;
 using namespace mozilla::gfx;

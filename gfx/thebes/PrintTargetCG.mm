@@ -1,17 +1,16 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "PrintTargetCG.h"
 
-#include "cairo.h"
 #include "cairo-quartz.h"
-#include "mozilla/gfx/HelpersCairo.h"
+#include "cairo.h"
 #include "mozilla/StaticPrefs_print.h"
+#include "mozilla/gfx/HelpersCairo.h"
+#include "nsIOutputStream.h"
 #include "nsObjCExceptions.h"
 #include "nsString.h"
-#include "nsIOutputStream.h"
 
 namespace mozilla::gfx {
 
@@ -165,6 +164,7 @@ already_AddRefed<DrawTarget> PrintTargetCG::GetReferenceDrawTarget() {
 
 nsresult PrintTargetCG::BeginPrinting(const nsAString& aTitle,
                                       const nsAString& aPrintToFileName,
+                                      uint64_t aInnerWindowId,
                                       int32_t aStartPage, int32_t aEndPage) {
   NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
 
@@ -180,7 +180,7 @@ nsresult PrintTargetCG::BeginPrinting(const nsAString& aTitle,
 
   if (!adjustedTitle.IsEmpty()) {
     CFStringRef cfString = ::CFStringCreateWithCharacters(
-        NULL, reinterpret_cast<const UniChar*>(adjustedTitle.BeginReading()),
+        nullptr, reinterpret_cast<const UniChar*>(adjustedTitle.BeginReading()),
         adjustedTitle.Length());
     if (cfString) {
       ::PMPrintSettingsSetJobName(mPrintSettings, cfString);

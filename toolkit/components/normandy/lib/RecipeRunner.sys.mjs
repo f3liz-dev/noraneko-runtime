@@ -29,7 +29,6 @@ ChromeUtils.defineESModuleGetters(lazy, {
     "resource://services-settings/RemoteSettingsClient.sys.mjs",
   Storage: "resource://normandy/lib/Storage.sys.mjs",
   TargetingContext: "resource://messaging-system/targeting/Targeting.sys.mjs",
-  Uptake: "resource://normandy/lib/Uptake.sys.mjs",
   clearTimeout: "resource://gre/modules/Timer.sys.mjs",
   setTimeout: "resource://gre/modules/Timer.sys.mjs",
 });
@@ -320,44 +319,21 @@ export var RecipeRunner = {
         }
       }
 
-      // Fetch recipes before execution in case we fail and exit early.
-      let recipesAndSignatures;
-      try {
-        recipesAndSignatures = await lazy.gRemoteSettingsClient.get({
-          // Do not return an empty list if an error occurs.
-          emptyListFallback: false,
-        });
-      } catch (e) {
-        await lazy.Uptake.reportRunner(lazy.Uptake.RUNNER_SERVER_ERROR);
-        return;
-      }
-
       const actionsManager = new lazy.ActionsManager();
-
       const legacyHeartbeat = lazy.LegacyHeartbeat.getHeartbeatRecipe();
-      const noRecipes =
-        !recipesAndSignatures.length && legacyHeartbeat === null;
 
       // Execute recipes, if we have any.
-      if (noRecipes) {
+      if (legacyHeartbeat === null) {
         log.debug("No recipes to execute");
       } else {
-        for (const { recipe, signature } of recipesAndSignatures) {
-          let suitability = await this.getRecipeSuitability(recipe, signature);
-          await actionsManager.processRecipe(recipe, suitability);
-        }
-
-        if (legacyHeartbeat !== null) {
-          await actionsManager.processRecipe(
-            legacyHeartbeat,
-            lazy.BaseAction.suitability.FILTER_MATCH
-          );
-        }
+        await actionsManager.processRecipe(
+          legacyHeartbeat,
+          lazy.BaseAction.suitability.FILTER_MATCH
+        );
       }
 
-      await actionsManager.finalize({ noRecipes });
+      await actionsManager.finalize({ noRecipes: legacyHeartbeat === null });
 
-      await lazy.Uptake.reportRunner(lazy.Uptake.RUNNER_SUCCESS);
       Services.obs.notifyObservers(null, "recipe-runner:end");
     } finally {
       this.running = false;
@@ -476,18 +452,10 @@ export var RecipeRunner = {
     let { value: suitability } = await generator.next();
     switch (suitability) {
       case lazy.BaseAction.suitability.SIGNATURE_ERROR: {
-        await lazy.Uptake.reportRecipe(
-          recipe,
-          lazy.Uptake.RECIPE_INVALID_SIGNATURE
-        );
         break;
       }
 
       case lazy.BaseAction.suitability.CAPABILITIES_MISMATCH: {
-        await lazy.Uptake.reportRecipe(
-          recipe,
-          lazy.Uptake.RECIPE_INCOMPATIBLE_CAPABILITIES
-        );
         break;
       }
 
@@ -497,21 +465,10 @@ export var RecipeRunner = {
       }
 
       case lazy.BaseAction.suitability.FILTER_MISMATCH: {
-        // This represents a terminal state for the given recipe, so
-        // report its outcome. Others are reported when executed in
-        // ActionsManager.
-        await lazy.Uptake.reportRecipe(
-          recipe,
-          lazy.Uptake.RECIPE_DIDNT_MATCH_FILTER
-        );
         break;
       }
 
       case lazy.BaseAction.suitability.FILTER_ERROR: {
-        await lazy.Uptake.reportRecipe(
-          recipe,
-          lazy.Uptake.RECIPE_FILTER_BROKEN
-        );
         break;
       }
 

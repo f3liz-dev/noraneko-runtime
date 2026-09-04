@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -53,6 +51,12 @@
 #  define IF_WASM_JSPI(REAL, IMAGINARY) IMAGINARY
 #endif
 
+#ifdef ENABLE_WASM_COMPONENTS
+#  define IF_WASM_COMPONENTS(REAL, IMAGINARY) REAL
+#else
+#  define IF_WASM_COMPONENTS(REAL, IMAGINARY) IMAGINARY
+#endif
+
 #ifdef NIGHTLY_BUILD
 #  define IF_NIGHTLY(REAL, IMAGINARY) REAL
 #else
@@ -60,7 +64,8 @@
 #endif
 
 #define JS_FOR_PROTOTYPES_(REAL, IMAGINARY, REAL_IF_INTL, REAL_IF_WASM_TYPE, \
-                           REAL_IF_WASM_JSPI, REAL_IF_NIGHTLY)               \
+                           REAL_IF_WASM_JSPI, REAL_IF_WASM_COMPONENTS,       \
+                           REAL_IF_NIGHTLY)                                  \
   IMAGINARY(Null, dummy)                                                     \
   REAL(Object, OCLASP(Plain))                                                \
   REAL(Function, &FunctionClass)                                             \
@@ -79,8 +84,7 @@
   REAL(EvalError, ERROR_CLASP(JSEXN_EVALERR))                                \
   REAL(RangeError, ERROR_CLASP(JSEXN_RANGEERR))                              \
   REAL(ReferenceError, ERROR_CLASP(JSEXN_REFERENCEERR))                      \
-  IF_EXPLICIT_RESOURCE_MANAGEMENT(                                           \
-      REAL(SuppressedError, ERROR_CLASP(JSEXN_SUPPRESSEDERR)))               \
+  REAL(SuppressedError, ERROR_CLASP(JSEXN_SUPPRESSEDERR))                    \
   REAL(SyntaxError, ERROR_CLASP(JSEXN_SYNTAXERR))                            \
   REAL(TypeError, ERROR_CLASP(JSEXN_TYPEERR))                                \
   REAL(URIError, ERROR_CLASP(JSEXN_URIERR))                                  \
@@ -132,6 +136,9 @@
   REAL(AsyncGeneratorFunction, CLASP(AsyncGeneratorFunction))                \
   REAL(WebAssembly, OCLASP(WasmNamespace))                                   \
   REAL(WasmModule, OCLASP(WasmModule))                                       \
+  REAL_IF_WASM_COMPONENTS(WasmComponent, OCLASP(WasmComponent))              \
+  REAL_IF_WASM_COMPONENTS(WasmComponentInstance,                             \
+                          OCLASP(WasmComponentInstance))                     \
   REAL(WasmInstance, OCLASP(WasmInstance))                                   \
   REAL(WasmMemory, OCLASP(WasmMemory))                                       \
   REAL(WasmTable, OCLASP(WasmTable))                                         \
@@ -144,10 +151,9 @@
   REAL(WeakRef, OCLASP(WeakRef))                                             \
   REAL(Iterator, OCLASP(Iterator))                                           \
   REAL(AsyncIterator, OCLASP(AsyncIterator))                                 \
-  IF_EXPLICIT_RESOURCE_MANAGEMENT(                                           \
-      REAL(DisposableStack, OCLASP(DisposableStack)))                        \
-  IF_EXPLICIT_RESOURCE_MANAGEMENT(                                           \
-      REAL(AsyncDisposableStack, OCLASP(AsyncDisposableStack)))              \
+  REAL(AbstractModuleSource, &js::AbstractModuleSourceObject::class_)        \
+  REAL(DisposableStack, OCLASP(DisposableStack))                             \
+  REAL(AsyncDisposableStack, OCLASP(AsyncDisposableStack))                   \
   REAL_IF_INTL(Temporal, OCLASP(temporal::Temporal))                         \
   REAL_IF_INTL(Duration, OCLASP(temporal::Duration))                         \
   REAL_IF_INTL(Instant, OCLASP(temporal::Instant))                           \
@@ -168,11 +174,11 @@
 // list do not change depending on configuration settings of the same version of
 // the source.
 
-#define JS_FOR_PROTOTYPES(REAL, IMAGINARY)                      \
-  JS_FOR_PROTOTYPES_(REAL, IMAGINARY, IF_INTL(REAL, IMAGINARY), \
-                     IF_WASM_TYPE(REAL, IMAGINARY),             \
-                     IF_WASM_JSPI(REAL, IMAGINARY),             \
-                     IF_NIGHTLY(REAL, IMAGINARY))
+#define JS_FOR_PROTOTYPES(REAL, IMAGINARY)                          \
+  JS_FOR_PROTOTYPES_(                                               \
+      REAL, IMAGINARY, IF_INTL(REAL, IMAGINARY),                    \
+      IF_WASM_TYPE(REAL, IMAGINARY), IF_WASM_JSPI(REAL, IMAGINARY), \
+      IF_WASM_COMPONENTS(REAL, IMAGINARY), IF_NIGHTLY(REAL, IMAGINARY))
 
 #define JS_FOR_EACH_PROTOTYPE(MACRO) JS_FOR_PROTOTYPES(MACRO, MACRO)
 

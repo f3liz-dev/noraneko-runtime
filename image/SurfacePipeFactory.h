@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,8 +5,8 @@
 #ifndef mozilla_image_SurfacePipeFactory_h
 #define mozilla_image_SurfacePipeFactory_h
 
-#include "SurfacePipe.h"
 #include "SurfaceFilters.h"
+#include "SurfacePipe.h"
 
 namespace mozilla {
 namespace image {
@@ -718,6 +716,8 @@ class SurfacePipeFactory {
     MOZ_ASSERT(aInFormat == gfx::SurfaceFormat::R8G8B8 ||
                aInFormat == gfx::SurfaceFormat::R8G8B8A8 ||
                aInFormat == gfx::SurfaceFormat::R8G8B8X8 ||
+               aInFormat == gfx::SurfaceFormat::CMYK ||
+               aInFormat == gfx::SurfaceFormat::InvertedCMYK ||
                aInFormat == gfx::SurfaceFormat::OS_RGBA ||
                aInFormat == gfx::SurfaceFormat::OS_RGBX);
 
@@ -725,10 +725,12 @@ class SurfacePipeFactory {
                aOutFormat == gfx::SurfaceFormat::OS_RGBX);
 
     const bool inFormatRgb = aInFormat == gfx::SurfaceFormat::R8G8B8;
+    const bool inFormatCmyk = aInFormat == gfx::SurfaceFormat::CMYK ||
+                              aInFormat == gfx::SurfaceFormat::InvertedCMYK;
 
     const bool inFormatOpaque = aInFormat == gfx::SurfaceFormat::OS_RGBX ||
                                 aInFormat == gfx::SurfaceFormat::R8G8B8X8 ||
-                                inFormatRgb;
+                                inFormatRgb || inFormatCmyk;
     const bool outFormatOpaque = aOutFormat == gfx::SurfaceFormat::OS_RGBX;
 
     const bool inFormatOrder = aInFormat == gfx::SurfaceFormat::R8G8B8A8 ||
@@ -741,7 +743,7 @@ class SurfacePipeFactory {
     // because the image's alpha channel will always be opaque. This must be
     // done before downscaling and color management.
     aOutUnpackOrMaskSwizzle =
-        inFormatRgb ||
+        inFormatRgb || inFormatCmyk ||
         (!inFormatOpaque && outFormatOpaque && inFormatOrder == outFormatOrder);
 
     // Late swizzles are for premultiplying RGBA/BGRA_U32 and/or possible

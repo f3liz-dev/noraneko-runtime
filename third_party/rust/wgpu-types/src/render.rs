@@ -1,11 +1,12 @@
 //! Types for configuring render passes and render pipelines (except for vertex attributes).
 
 use bytemuck::{Pod, Zeroable};
+use macro_rules_attribute::derive;
 
 #[cfg(any(feature = "serde", test))]
 use serde::{Deserialize, Serialize};
 
-use crate::{link_to_wgpu_docs, LoadOpDontCare};
+use crate::{link_to_wgpu_docs, ConstDefault, LoadOpDontCare};
 
 #[cfg(doc)]
 use crate::{Features, TextureFormat};
@@ -65,10 +66,23 @@ impl BlendFactor {
     ///
     /// Note that the usage of those blend factors require [`Features::DUAL_SOURCE_BLENDING`].
     #[must_use]
-    pub fn ref_second_blend_source(&self) -> bool {
+    pub fn uses_second_blend_source(&self) -> bool {
         match self {
             BlendFactor::Src1
             | BlendFactor::OneMinusSrc1
+            | BlendFactor::Src1Alpha
+            | BlendFactor::OneMinusSrc1Alpha => true,
+            _ => false,
+        }
+    }
+
+    /// Returns `true` if the blend factor references the source alpha.
+    #[must_use]
+    pub fn uses_source_alpha(&self) -> bool {
+        match self {
+            BlendFactor::SrcAlpha
+            | BlendFactor::OneMinusSrcAlpha
+            | BlendFactor::SrcAlphaSaturated
             | BlendFactor::Src1Alpha
             | BlendFactor::OneMinusSrc1Alpha => true,
             _ => false,
@@ -84,12 +98,12 @@ impl BlendFactor {
 /// For further details on how the blend operations are applied, see
 /// the analogous functionality in OpenGL: <https://www.khronos.org/opengl/wiki/Blending#Blend_Equations>.
 #[repr(C)]
-#[derive(Copy, Clone, Debug, Default, Hash, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, ConstDefault!, Hash, Eq, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "serde", serde(rename_all = "kebab-case"))]
 pub enum BlendOperation {
     /// Src + Dst
-    #[default]
+    #[custom(default)]
     Add = 0,
     /// Src - Dst
     Subtract = 1,
@@ -192,6 +206,20 @@ impl BlendState {
         color: BlendComponent::OVER,
         alpha: BlendComponent::OVER,
     };
+
+    /// Blend mode that does standard additive blending.
+    pub const ADDITIVE: Self = Self {
+        color: BlendComponent {
+            src_factor: BlendFactor::One,
+            dst_factor: BlendFactor::One,
+            operation: BlendOperation::Add,
+        },
+        alpha: BlendComponent {
+            src_factor: BlendFactor::One,
+            dst_factor: BlendFactor::One,
+            operation: BlendOperation::Add,
+        },
+    };
 }
 
 /// Describes the color state of a render pipeline.
@@ -238,6 +266,8 @@ pub struct ColorWrites(u32);
 
 bitflags::bitflags! {
     impl ColorWrites: u32 {
+        /// Do not write any channels
+        const NONE = 0;
         /// Enable red channel writes
         const RED = 1 << 0;
         /// Enable green channel writes
@@ -264,7 +294,7 @@ impl Default for ColorWrites {
 /// Corresponds to [WebGPU `GPUPrimitiveTopology`](
 /// https://gpuweb.github.io/gpuweb/#enumdef-gpuprimitivetopology).
 #[repr(C)]
-#[derive(Copy, Clone, Debug, Default, Hash, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, ConstDefault!, Hash, Eq, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "serde", serde(rename_all = "kebab-case"))]
 pub enum PrimitiveTopology {
@@ -281,7 +311,7 @@ pub enum PrimitiveTopology {
     /// Vertex data is a list of triangles. Each set of 3 vertices composes a new triangle.
     ///
     /// Vertices `0 1 2 3 4 5` create two triangles `0 1 2` and `3 4 5`
-    #[default]
+    #[custom(default)]
     TriangleList = 3,
     /// Vertex data is a triangle strip. Each set of three adjacent vertices form a triangle.
     ///
@@ -298,6 +328,15 @@ impl PrimitiveTopology {
             Self::LineStrip | Self::TriangleStrip => true,
         }
     }
+
+    /// Returns true for triangle topologies.
+    #[must_use]
+    pub fn is_triangles(&self) -> bool {
+        match *self {
+            Self::TriangleList | Self::TriangleStrip => true,
+            Self::PointList | Self::LineList | Self::LineStrip => false,
+        }
+    }
 }
 
 /// Vertex winding order which classifies the "front" face of a triangle.
@@ -305,14 +344,14 @@ impl PrimitiveTopology {
 /// Corresponds to [WebGPU `GPUFrontFace`](
 /// https://gpuweb.github.io/gpuweb/#enumdef-gpufrontface).
 #[repr(C)]
-#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, Debug, ConstDefault!, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "serde", serde(rename_all = "kebab-case"))]
 pub enum FrontFace {
     /// Triangles with vertices in counter clockwise order are considered the front face.
     ///
     /// This is the default with right handed coordinate spaces.
-    #[default]
+    #[custom(default)]
     Ccw = 0,
     /// Triangles with vertices in clockwise order are considered the front face.
     ///
@@ -338,12 +377,12 @@ pub enum Face {
 
 /// Type of drawing mode for polygons
 #[repr(C)]
-#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, Debug, ConstDefault!, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "serde", serde(rename_all = "kebab-case"))]
 pub enum PolygonMode {
     /// Polygons are filled
-    #[default]
+    #[custom(default)]
     Fill = 0,
     /// Polygons are drawn as line segments
     Line = 1,
@@ -356,7 +395,7 @@ pub enum PolygonMode {
 /// Corresponds to [WebGPU `GPUPrimitiveState`](
 /// https://gpuweb.github.io/gpuweb/#dictdef-gpuprimitivestate).
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, ConstDefault!, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "serde", serde(rename_all = "camelCase"))]
 pub struct PrimitiveState {
@@ -365,7 +404,8 @@ pub struct PrimitiveState {
     /// When drawing strip topologies with indices, this is the required format for the index buffer.
     /// This has no effect on non-indexed or non-strip draws.
     ///
-    /// Specifying this value enables primitive restart, allowing individual strips to be separated
+    /// This is required for indexed drawing with strip topology and must match index buffer format, as primitive restart is always enabled
+    /// in all backends and individual strips will be separated
     /// with the index value `0xFFFF` when using `Uint16`, or `0xFFFFFFFF` when using `Uint32`.
     #[cfg_attr(feature = "serde", serde(default))]
     pub strip_index_format: Option<IndexFormat>,
@@ -418,8 +458,9 @@ pub struct MultisampleState {
     pub alpha_to_coverage_enabled: bool,
 }
 
-impl Default for MultisampleState {
-    fn default() -> Self {
+impl MultisampleState {
+    /// This function is identical to [`Default::default()`] except that it is a `const fn`.
+    pub const fn default() -> Self {
         MultisampleState {
             count: 1,
             mask: !0,
@@ -428,25 +469,31 @@ impl Default for MultisampleState {
     }
 }
 
+impl Default for MultisampleState {
+    fn default() -> Self {
+        Self::default() // call inherent function
+    }
+}
+
 /// Format of indices used with pipeline.
 ///
 /// Corresponds to [WebGPU `GPUIndexFormat`](
 /// https://gpuweb.github.io/gpuweb/#enumdef-gpuindexformat).
 #[repr(C)]
-#[derive(Copy, Clone, Debug, Default, Hash, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, ConstDefault!, Hash, Eq, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "serde", serde(rename_all = "kebab-case"))]
 pub enum IndexFormat {
     /// Indices are 16 bit unsigned integers.
     Uint16 = 0,
     /// Indices are 32 bit unsigned integers.
-    #[default]
+    #[custom(default)]
     Uint32 = 1,
 }
 
 impl IndexFormat {
     /// Returns the size in bytes of the index format
-    pub fn byte_size(&self) -> usize {
+    pub fn byte_size(&self) -> u32 {
         match self {
             IndexFormat::Uint16 => 2,
             IndexFormat::Uint32 => 4,
@@ -459,12 +506,12 @@ impl IndexFormat {
 /// Corresponds to [WebGPU `GPUStencilOperation`](
 /// https://gpuweb.github.io/gpuweb/#enumdef-gpustenciloperation).
 #[repr(C)]
-#[derive(Copy, Clone, Debug, Default, Hash, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, ConstDefault!, Hash, Eq, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "serde", serde(rename_all = "kebab-case"))]
 pub enum StencilOperation {
     /// Keep stencil value unchanged.
-    #[default]
+    #[custom(default)]
     Keep = 0,
     /// Set stencil value to zero.
     Zero = 1,
@@ -533,7 +580,11 @@ impl StencilFaceState {
     }
 }
 
+impl crate::macros::ConstDefaultHelper for StencilFaceState {
+    const DEFAULT: Self = Self::IGNORE;
+}
 impl Default for StencilFaceState {
+    /// Returns [`StencilFaceState::IGNORE`] as the default.
     fn default() -> Self {
         Self::IGNORE
     }
@@ -544,7 +595,7 @@ impl Default for StencilFaceState {
 /// Corresponds to [WebGPU `GPUCompareFunction`](
 /// https://gpuweb.github.io/gpuweb/#enumdef-gpucomparefunction).
 #[repr(C)]
-#[derive(Copy, Clone, Debug, Hash, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, ConstDefault!, Hash, Eq, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "serde", serde(rename_all = "kebab-case"))]
 pub enum CompareFunction {
@@ -567,6 +618,7 @@ pub enum CompareFunction {
     /// Function passes if new value is greater than or equal to existing value
     GreaterEqual = 7,
     /// Function always passes
+    #[custom(default)]
     Always = 8,
 }
 
@@ -588,7 +640,7 @@ impl CompareFunction {
 /// Corresponds to a portion of [WebGPU `GPUDepthStencilState`](
 /// https://gpuweb.github.io/gpuweb/#dictdef-gpudepthstencilstate).
 #[repr(C)]
-#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, ConstDefault!, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct StencilState {
     /// Front face mode.
@@ -638,7 +690,7 @@ impl StencilState {
 /// Corresponds to a portion of [WebGPU `GPUDepthStencilState`](
 /// https://gpuweb.github.io/gpuweb/#dictdef-gpudepthstencilstate).
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug, ConstDefault!)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct DepthBiasState {
     /// Constant depth biasing factor, in basic units of the depth format.
@@ -714,7 +766,8 @@ pub enum LoadOp<V> {
     ///
     /// - All pixels in the render target must be written to before
     ///   any read or a [`StoreOp::Store`] occurs.
-    DontCare(#[cfg_attr(feature = "serde", serde(skip))] LoadOpDontCare) = 2,
+    #[cfg_attr(feature = "serde", serde(skip))] // unsafe to use, so cannot be (de)serialized
+    DontCare(LoadOpDontCare) = 2,
 }
 
 impl<V> LoadOp<V> {
@@ -739,12 +792,12 @@ impl<V: Default> Default for LoadOp<V> {
 ///
 /// Corresponds to [WebGPU `GPUStoreOp`](https://gpuweb.github.io/gpuweb/#enumdef-gpustoreop).
 #[repr(C)]
-#[derive(Copy, Clone, Debug, Hash, Eq, PartialEq, Default)]
+#[derive(Copy, Clone, Debug, Hash, Eq, PartialEq, ConstDefault!)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[cfg_attr(feature = "serde", serde(rename_all = "kebab-case"))]
 pub enum StoreOp {
     /// Stores the resulting value of the render pass for this attachment.
-    #[default]
+    #[custom(default)]
     Store = 0,
     /// Discards the resulting value of the render pass for this attachment.
     ///
@@ -797,10 +850,18 @@ pub struct DepthStencilState {
     ///
     #[doc = link_to_wgpu_docs!(["CEbrp"]: "struct.CommandEncoder.html#method.begin_render_pass")]
     pub format: crate::TextureFormat,
-    /// If disabled, depth will not be written to.
-    pub depth_write_enabled: bool,
+    /// Whether to write updated depth values to the depth attachment.
+    ///
+    /// If `format` is a depth or depth/stencil format, then this must be `Some`.
+    /// Otherwise, specifying `None` is preferred, but `Some(false)` is also
+    /// accepted.
+    pub depth_write_enabled: Option<bool>,
     /// Comparison function used to compare depth values in the depth test.
-    pub depth_compare: CompareFunction,
+    ///
+    /// If `depth_write_enabled` is `Some(true)` or if `depth_fail_op` for either
+    /// stencil face is not `Keep`, then this must be `Some`. Otherwise, specifying
+    /// `None` is preferred, but `Some(CompareFunction::Always)` is also accepted.
+    pub depth_compare: Option<CompareFunction>,
     /// Stencil state.
     #[cfg_attr(feature = "serde", serde(default))]
     pub stencil: StencilState,
@@ -810,16 +871,34 @@ pub struct DepthStencilState {
 }
 
 impl DepthStencilState {
+    /// Construct `DepthStencilState` for a stencil operation with no depth operation.
+    ///
+    /// Panics if `format` does not have a stencil aspect.
+    pub fn stencil(format: crate::TextureFormat, stencil: StencilState) -> DepthStencilState {
+        assert!(
+            format.has_stencil_aspect(),
+            "{format:?} is not a stencil format"
+        );
+        DepthStencilState {
+            format,
+            depth_write_enabled: None,
+            depth_compare: None,
+            stencil,
+            bias: DepthBiasState::default(),
+        }
+    }
+
     /// Returns true if the depth testing is enabled.
     #[must_use]
     pub fn is_depth_enabled(&self) -> bool {
-        self.depth_compare != CompareFunction::Always || self.depth_write_enabled
+        self.depth_compare.unwrap_or_default() != CompareFunction::Always
+            || self.depth_write_enabled.unwrap_or_default()
     }
 
     /// Returns true if the state doesn't mutate the depth buffer.
     #[must_use]
     pub fn is_depth_read_only(&self) -> bool {
-        !self.depth_write_enabled
+        !self.depth_write_enabled.unwrap_or_default()
     }
 
     /// Returns true if the state doesn't mutate the stencil.
@@ -877,7 +956,7 @@ pub struct RenderBundleDescriptor<L> {
 impl<L> RenderBundleDescriptor<L> {
     /// Takes a closure and maps the label of the render bundle descriptor into another.
     #[must_use]
-    pub fn map_label<K>(&self, fun: impl FnOnce(&L) -> K) -> RenderBundleDescriptor<K> {
+    pub fn map_label<'a, K>(&'a self, fun: impl FnOnce(&'a L) -> K) -> RenderBundleDescriptor<K> {
         RenderBundleDescriptor {
             label: fun(&self.label),
         }
@@ -892,7 +971,7 @@ impl<T> Default for RenderBundleDescriptor<Option<T>> {
 
 /// Argument buffer layout for `draw_indirect` commands.
 #[repr(C)]
-#[derive(Copy, Clone, Debug, Default, Pod, Zeroable)]
+#[derive(Copy, Clone, Debug, ConstDefault!, Pod, Zeroable)]
 pub struct DrawIndirectArgs {
     /// The number of vertices to draw.
     pub vertex_count: u32,
@@ -916,7 +995,7 @@ impl DrawIndirectArgs {
 
 /// Argument buffer layout for `draw_indexed_indirect` commands.
 #[repr(C)]
-#[derive(Copy, Clone, Debug, Default, Pod, Zeroable)]
+#[derive(Copy, Clone, Debug, ConstDefault!, Pod, Zeroable)]
 pub struct DrawIndexedIndirectArgs {
     /// The number of indices to draw.
     pub index_count: u32,
@@ -940,9 +1019,9 @@ impl DrawIndexedIndirectArgs {
     }
 }
 
-/// Argument buffer layout for `dispatch_indirect` commands.
+/// Argument buffer layout for `dispatch_workgroups_indirect` commands.
 #[repr(C)]
-#[derive(Copy, Clone, Debug, Default, Pod, Zeroable)]
+#[derive(Copy, Clone, Debug, ConstDefault!, Pod, Zeroable)]
 pub struct DispatchIndirectArgs {
     /// The number of work groups in X dimension.
     pub x: u32,

@@ -14,22 +14,42 @@ import mozilla.components.support.base.log.logger.Logger
  * Class responsible for request audio focus and reacting to audio focus changes.
  *
  * https://developer.android.com/guide/topics/media-apps/audio-focus
+ *
+ *
+ * @param audioManager The audio manager handling audio focus.
+ * @param store The browser store.
+ * @param onTransientFocusLoss Callback invoked when the transient focus loss state changes.
+ *   Called with `true` when a transient loss begins ([AudioManager.AUDIOFOCUS_LOSS_TRANSIENT] or
+ *   [AudioManager.AUDIOFOCUS_REQUEST_DELAYED]), and with `false` when it ends
+ *   ([AudioManager.AUDIOFOCUS_GAIN], [AudioManager.AUDIOFOCUS_LOSS], or [abandon]).
+ *   The caller can use this to keep a mediaPlayback foreground service alive during transient
+ *   interruptions so that WIU (While In Use) capabilities are retained and audio focus can be
+ *   reclaimed when focus is returned.
  */
 internal class AudioFocus(
     audioManager: AudioManager,
     val store: BrowserStore,
+    private val onTransientFocusLoss: (Boolean) -> Unit = {},
 ) : AudioManager.OnAudioFocusChangeListener {
     private val logger = Logger("AudioFocus")
     private var playDelayed = false
-    private var resumeOnFocusGain = false
     private var sessionId: String? = null
 
     private val audioFocusController = AudioFocusControllerV26(audioManager, this)
 
     @Synchronized
-    fun request(tabId: String?) {
+    fun request(
+        tabId: String?,
+        type: MediaSession.AudioSessionType = MediaSession.AudioSessionType.PLAYBACK,
+    ) {
         sessionId = tabId
-        val result = audioFocusController.request()
+        if (type == MediaSession.AudioSessionType.AMBIENT) {
+            // Ambient audio mixes freely with everything else, so do not take
+            // audio focus for it.
+            logger.debug("request: ambient type, not taking audio focus")
+            return
+        }
+        val result = audioFocusController.request(type)
         processAudioFocusResult(result)
     }
 
@@ -38,7 +58,7 @@ internal class AudioFocus(
         audioFocusController.abandon()
         sessionId = null
         playDelayed = false
-        resumeOnFocusGain = false
+        onTransientFocusLoss(false)
     }
 
     private fun processAudioFocusResult(result: Int) {
@@ -51,19 +71,21 @@ internal class AudioFocus(
             AudioManager.AUDIOFOCUS_REQUEST_GRANTED -> {
                 // Granted: Gecko already started playing media.
                 playDelayed = false
-                resumeOnFocusGain = false
             }
             AudioManager.AUDIOFOCUS_REQUEST_FAILED -> {
                 // Failed: Pause media since we didn't get audio focus.
+                // On API 35+, this is also returned when the app is in the background without a
+                // foreground service, instead of throwing an exception.
                 sessionState?.mediaSessionState?.controller?.pause()
                 playDelayed = false
-                resumeOnFocusGain = false
             }
             AudioManager.AUDIOFOCUS_REQUEST_DELAYED -> {
-                // Delayed: Pause media until we gain focus via callback
+                // Delayed: pause media and keep the foreground service alive. The intent to play
+                // is still active; onTransientFocusLoss(true) prevents the foreground service from
+                // being torn down while waiting for AUDIOFOCUS_GAIN to resume playback.
+                onTransientFocusLoss(true)
                 sessionState?.mediaSessionState?.controller?.pause()
                 playDelayed = true
-                resumeOnFocusGain = false
             }
             else -> throw IllegalStateException("Unknown audio focus request response: $result")
         }
@@ -75,26 +97,27 @@ internal class AudioFocus(
         val sessionState = sessionId?.let {
             store.state.findTabOrCustomTab(it)
         }
+        val controller = sessionState?.mediaSessionState?.controller
 
         when (focusChange) {
             AudioManager.AUDIOFOCUS_GAIN -> {
-                if (playDelayed || resumeOnFocusGain) {
-                    sessionState?.mediaSessionState?.controller?.play()
+                if (playDelayed) {
+                    controller?.play()
                     playDelayed = false
-                    resumeOnFocusGain = false
                 }
+                controller?.onSystemAudioFocusChanged(MediaSession.SystemAudioFocusChange.GAIN)
+                onTransientFocusLoss(false)
             }
 
             AudioManager.AUDIOFOCUS_LOSS -> {
-                sessionState?.mediaSessionState?.controller?.pause()
-                resumeOnFocusGain = false
+                controller?.onSystemAudioFocusChanged(MediaSession.SystemAudioFocusChange.PERMANENT_LOSS)
                 playDelayed = false
+                onTransientFocusLoss(false)
             }
 
             AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
-                sessionState?.mediaSessionState?.controller?.pause()
-                resumeOnFocusGain = sessionState?.mediaSessionState?.playbackState == MediaSession.PlaybackState.PLAYING
-
+                onTransientFocusLoss(true)
+                controller?.onSystemAudioFocusChanged(MediaSession.SystemAudioFocusChange.TRANSIENT_LOSS)
                 playDelayed = false
             }
 

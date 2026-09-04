@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -18,36 +16,43 @@
  * @See nsIBinaryInputStream
  * @See nsIBinaryOutputStream
  */
-#include <algorithm>
-#include <string.h>
-
 #include "nsBinaryStream.h"
 
-#include "mozilla/EndianUtils.h"
-#include "mozilla/PodOperations.h"
-#include "mozilla/RefPtr.h"
-#include "mozilla/Span.h"
-#include "mozilla/UniquePtr.h"
+#include <string.h>
 
-#include "nsCRT.h"
-#include "nsString.h"
-#include "nsISerializable.h"
-#include "nsIClassInfo.h"
-#include "nsComponentManagerUtils.h"
-#include "nsIURI.h"       // for NS_IURI_IID
-#include "nsIX509Cert.h"  // for NS_IX509CERT_IID
+#include <algorithm>
 
+#include "StaticComponents.h"
 #include "js/ArrayBuffer.h"  // JS::{GetArrayBuffer{,ByteLength},IsArrayBufferObject}
 #include "js/ArrayBufferMaybeShared.h"  // JS::IsImmutableArrayBufferMaybeShared
 #include "js/GCAPI.h"                   // JS::AutoCheckCannotGC
 #include "js/RootingAPI.h"              // JS::{Handle,Rooted}
 #include "js/Value.h"                   // JS::Value
+#include "mozilla/CheckedInt.h"
+#include "mozilla/EndianUtils.h"
+#include "mozilla/PodOperations.h"
+#include "mozilla/RefPtr.h"
+#include "mozilla/Span.h"
+#include "mozilla/UniquePtr.h"
+#include "nsCRT.h"
+#include "nsComponentManagerUtils.h"
+#include "nsIClassInfo.h"
+#include "nsISerializable.h"
+#include "nsIURI.h"       // for NS_IURI_IID
+#include "nsIX509Cert.h"  // for NS_IX509CERT_IID
+#include "nsString.h"
 
 using mozilla::AsBytes;
 using mozilla::MakeUnique;
 using mozilla::PodCopy;
 using mozilla::Span;
 using mozilla::UniquePtr;
+
+static bool IsCIDSerializable(const nsID& aCID) {
+  const mozilla::xpcom::StaticModule* module =
+      mozilla::xpcom::StaticComponents::LookupByCID(aCID);
+  return module && module->mIsSerializable;
+}
 
 already_AddRefed<nsIObjectOutputStream> NS_NewObjectOutputStream(
     nsIOutputStream* aOutputStream) {
@@ -310,20 +315,24 @@ nsBinaryOutputStream::WriteCompoundObject(nsISupports* aObject,
 
   nsCID cid;
   nsresult rv = classInfo->GetClassIDNoAlloc(&cid);
-  if (NS_SUCCEEDED(rv)) {
-    rv = WriteID(cid);
-  } else {
-    nsCID* cidptr = nullptr;
-    rv = classInfo->GetClassID(&cidptr);
+  if (NS_FAILED(rv)) {
+    std::unique_ptr<nsCID> cidptr;
+    rv = classInfo->GetClassID(mozilla::getter_Transfers(cidptr));
     if (NS_WARN_IF(NS_FAILED(rv))) {
       return rv;
     }
 
-    rv = WriteID(*cidptr);
-
-    free(cidptr);
+    cid = *cidptr;
   }
 
+  if (NS_WARN_IF(!IsCIDSerializable(cid))) {
+    MOZ_ASSERT_UNREACHABLE(
+        "static component entry was not marked as serializable for "
+        "nsISerializable");
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+
+  rv = WriteID(cid);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
@@ -734,6 +743,12 @@ nsBinaryInputStream::ReadString(nsAString& aString) {
     return NS_OK;
   }
 
+  mozilla::CheckedUint32 byteLength(length);
+  byteLength *= sizeof(char16_t);
+  if (!byteLength.isValid()) {
+    return NS_ERROR_OUT_OF_MEMORY;
+  }
+
   // pre-allocate output buffer, and get direct access to buffer...
   if (!aString.SetLength(length, mozilla::fallible)) {
     return NS_ERROR_OUT_OF_MEMORY;
@@ -743,13 +758,13 @@ nsBinaryInputStream::ReadString(nsAString& aString) {
   closure.mWriteCursor = aString.BeginWriting();
   closure.mHasCarryoverByte = false;
 
-  rv = ReadSegments(WriteSegmentToString, &closure, length * sizeof(char16_t),
+  rv = ReadSegments(WriteSegmentToString, &closure, byteLength.value(),
                     &bytesRead);
   if (NS_FAILED(rv)) {
     return rv;
   }
 
-  if (bytesRead != length * sizeof(char16_t)) {
+  if (bytesRead != byteLength.value()) {
     return NS_ERROR_FAILURE;
   }
 
@@ -947,6 +962,10 @@ nsBinaryInputStream::ReadObject(bool aIsStrongRef, nsISupports** aObject) {
     iid = newCertIID;
   }
   // END HACK
+
+  if (NS_WARN_IF(!IsCIDSerializable(cid))) {
+    return NS_ERROR_NOT_AVAILABLE;
+  }
 
   nsCOMPtr<nsISupports> object = do_CreateInstance(cid, &rv);
   if (NS_WARN_IF(NS_FAILED(rv))) {

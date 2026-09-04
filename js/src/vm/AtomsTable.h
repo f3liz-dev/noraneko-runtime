@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -29,10 +27,7 @@ struct AtomHasher {
   static inline HashNumber hash(const Lookup& l);
   static MOZ_ALWAYS_INLINE bool match(const WeakHeapPtr<JSAtom*>& entry,
                                       const Lookup& lookup);
-  static void rekey(WeakHeapPtr<JSAtom*>& k,
-                    const WeakHeapPtr<JSAtom*>& newKey) {
-    k = newKey;
-  }
+  static void rekey(WeakHeapPtr<JSAtom*>& k, JSAtom* newKey) { k = newKey; }
 };
 
 struct js::AtomHasher::Lookup {
@@ -42,12 +37,12 @@ struct js::AtomHasher::Lookup {
     const char* utf8Bytes;
   };
   enum { TwoByteChar, Latin1, UTF8 } type;
-  size_t length;
-  size_t byteLength;
-  const JSAtom* atom; /* Optional. */
+  size_t length = 0;
+  size_t byteLength = 0;
+  const JSAtom* atom = nullptr; /* Optional. */
   JS::AutoCheckCannotGC nogc;
 
-  HashNumber hash;
+  HashNumber hash = 0;
 
   MOZ_ALWAYS_INLINE Lookup(const char* utf8Bytes, size_t byteLen, size_t length,
                            HashNumber hash)
@@ -70,7 +65,7 @@ struct js::AtomHasher::Lookup {
         type(Latin1),
         length(length),
         atom(nullptr),
-        hash(mozilla::HashString(chars, length)) {}
+        hash(mozilla::HashLatin1AsUTF16(chars, length)) {}
 
   MOZ_ALWAYS_INLINE Lookup(HashNumber hash, const char16_t* chars,
                            size_t length)
@@ -89,7 +84,7 @@ struct js::AtomHasher::Lookup {
         length(length),
         atom(nullptr),
         hash(hash) {
-    MOZ_ASSERT(hash == mozilla::HashString(chars, length));
+    MOZ_ASSERT(hash == mozilla::HashLatin1AsUTF16(chars, length));
   }
 
   inline explicit Lookup(const JSAtom* atom)
@@ -99,7 +94,7 @@ struct js::AtomHasher::Lookup {
         hash(atom->hash()) {
     if (type == Latin1) {
       latin1Chars = atom->latin1Chars(nogc);
-      MOZ_ASSERT(mozilla::HashString(latin1Chars, length) == hash);
+      MOZ_ASSERT(mozilla::HashLatin1AsUTF16(latin1Chars, length) == hash);
     } else {
       MOZ_ASSERT(type == TwoByteChar);
       twoByteChars = atom->twoByteChars(nogc);
@@ -141,9 +136,9 @@ class FrozenAtomSet {
     return mSet->shallowSizeOfIncludingThis(mallocSizeOf);
   }
 
-  using Range = AtomSet::Range;
+  using Iterator = AtomSet::Iterator;
 
-  AtomSet::Range all() const { return mSet->all(); }
+  AtomSet::Iterator iter() const { return mSet->iter(); }
 };
 
 class AtomsTable {
@@ -162,7 +157,7 @@ class AtomsTable {
 
  public:
   // An iterator used for sweeping atoms incrementally.
-  using SweepIterator = AtomSet::Enum;
+  using SweepIterator = AtomSet::ModIterator;
 
   AtomsTable();
   ~AtomsTable();

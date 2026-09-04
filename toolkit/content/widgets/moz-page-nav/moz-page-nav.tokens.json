@@ -1,0 +1,122 @@
+{
+  "border": {
+    "color": {
+      "value": "{border.color.transparent}"
+    }
+  },
+  "button": {
+    "background": {
+      "color": {
+        "@base": {
+          "value": "{button.background.color.ghost.@base}"
+        },
+        "hover": {
+          "value": "{button.background.color.ghost.hover}"
+        },
+        "active": {
+          "value": "{button.background.color.ghost.active}"
+        },
+        "selected": {
+          "value": "color-mix(in srgb, currentColor 8%, transparent)"
+        }
+      }
+    },
+    "border": {
+      "color": {
+        "@base": {
+          "value": "unset"
+        },
+        "hover": {
+          "value": "{button.border.color.ghost.hover}"
+        },
+        "active": {
+          "value": "{button.border.color.ghost.active}"
+        }
+      },
+      "radius": {
+        "@base": {
+          "value": "{button.border.radius}"
+        },
+        "focused": {
+          "value": "{border.radius.small}"
+        }
+      }
+    },
+    "gap": {
+      "value": "{space.xsmall}"
+    },
+    "indicator": {
+      "background": {
+        "color": {
+          "value": "{color.accent.primary.@base}"
+        }
+      },
+      "width": {
+        "value": "4px"
+      }
+    },
+    "padding": {
+      "@base": {
+        "value": "{space.small} {space.medium}"
+      },
+      "small": {
+        "value": "{space.small}"
+      }
+    },
+    "text": {
+      "color": {
+        "@base": {
+          "value": "{button.text.color.ghost.@base}"
+        },
+        "hover": {
+          "value": "{button.text.color.ghost.hover}"
+        },
+        "active": {
+          "value": "{button.text.color.ghost.active}"
+        },
+        "selected": {
+          "value": "{color.accent.primary.@base}"
+        }
+      }
+    }
+  },
+  "focus": {
+    "outline": {
+      "offset": {
+        "value": "{focus.outline.inset}"
+      }
+    },
+    "padding": {
+      "value": "0px"
+    }
+  },
+  "gap": {
+    "value": "{space.large}"
+  },
+  "heading": {
+    "logo": {
+      "size": {
+        "value": "{icon.size.large}"
+      }
+    }
+  },
+  "hr": {
+    "background": {
+      "color": {
+        "value": "{border.color.@base}"
+      }
+    }
+  },
+  "margin": {
+    "block": {
+      "start": {
+        "value": "{page.space.block.start}"
+      }
+    },
+    "inline": {
+      "start": {
+        "value": "40px"
+      }
+    }
+  }
+}

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,8 +5,9 @@
 #ifndef MOZILLA_GFX_BUFFERHOST_H
 #define MOZILLA_GFX_BUFFERHOST_H
 
-#include <stdint.h>              // for uint64_t
-#include <stdio.h>               // for FILE
+#include <stdint.h>  // for uint64_t
+#include <stdio.h>   // for FILE
+
 #include "gfxRect.h"             // for gfxRect
 #include "mozilla/Assertions.h"  // for MOZ_ASSERT, etc
 #include "mozilla/RefPtr.h"      // for RefPtr, RefCounted, etc
@@ -18,11 +17,11 @@
 #include "mozilla/ipc/ProtocolUtils.h"
 #include "mozilla/layers/CompositorTypes.h"  // for TextureInfo, etc
 // #include "mozilla/layers/LayersTypes.h"      // for LayerRenderState, etc
+#include "Units.h"  // for CSSToScreenScale
 #include "mozilla/layers/LayersMessages.h"
 #include "mozilla/layers/TextureHost.h"  // for TextureHost
 #include "nsCOMPtr.h"                    // for already_AddRefed
 #include "nscore.h"                      // for nsACString
-#include "Units.h"                       // for CSSToScreenScale
 
 namespace mozilla {
 

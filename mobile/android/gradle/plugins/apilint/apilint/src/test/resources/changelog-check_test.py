@@ -5,8 +5,10 @@
 import json
 import os
 import subprocess as sp
+import sys
 import tempfile
 import unittest
+from contextlib import contextmanager
 
 FOLDER = "src/test/resources/changelog-check-test"
 
@@ -20,10 +22,20 @@ ERROR_CODE_MAP = {
 }
 
 
+@contextmanager
+def temp_file_path(suffix=""):
+    fd, path = tempfile.mkstemp(suffix=suffix, text=True)
+    os.close(fd)
+    try:
+        yield path
+    finally:
+        os.unlink(path)
+
+
 class ChangelogCheckTest(unittest.TestCase):
     def t(self, changelog, api, expected):
         test = [
-            "python3",
+            sys.executable,
             "src/main/resources/changelog-check.py",
             "--changelog-file",
             f"{FOLDER}/{changelog}",
@@ -34,20 +46,22 @@ class ChangelogCheckTest(unittest.TestCase):
             code = sp.call(test, stdout=devnull)
         self.assertEqual(code, expected)
 
-        json_file = tempfile.NamedTemporaryFile(mode="w+", encoding="UTF-8")
-        test.extend(["--result-json", json_file.name])
-        with open(os.devnull, "w") as devnull:
-            sp.call(test, stdout=devnull)
+        with temp_file_path(suffix=".json") as json_filename:
+            test.extend(["--result-json", json_filename])
+            with open(os.devnull, "w") as devnull:
+                sp.call(test, stdout=devnull)
 
-        json_file.seek(0)
-        result = json.load(json_file)
+            with open(json_filename, encoding="UTF-8") as json_file:
+                result = json.load(json_file)
 
-        if expected == OK_CODE:
-            self.assertEqual(len(result["failures"]), 0)
-        else:
-            self.assertEqual(len(result["failures"]), 1)
-            self.assertEqual(result["failures"][0]["rule"], ERROR_CODE_MAP[expected])
-            self.assertEqual(result["failures"][0]["error"], True)
+            if expected == OK_CODE:
+                self.assertEqual(len(result["failures"]), 0)
+            else:
+                self.assertEqual(len(result["failures"]), 1)
+                self.assertEqual(
+                    result["failures"][0]["rule"], ERROR_CODE_MAP[expected]
+                )
+                self.assertEqual(result["failures"][0]["error"], True)
 
     def test_changelogWithRightVersionNoError(self):
         self.t("changelog-with-right-version.md", "api-changelog.txt", OK_CODE)

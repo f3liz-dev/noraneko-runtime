@@ -1,5 +1,3 @@
-/* -*- Mode: indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set sts=2 sw=2 et tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -31,78 +29,6 @@ const { getInnerWindowID, promiseEvent } = ExtensionUtils;
 
 const { BaseContext, CanOfAPIs, SchemaAPIManager, redefineGetter } =
   ExtensionCommon;
-
-const initializeBackgroundPage = context => {
-  // Override the `alert()` method inside background windows;
-  // we alias it to console.log().
-  // See: https://bugzilla.mozilla.org/show_bug.cgi?id=1203394
-  let alertDisplayedWarning = false;
-  const innerWindowID = getInnerWindowID(context.contentWindow);
-
-  /** @param {{ text, filename, lineNumber?, columnNumber? }} options */
-  function logWarningMessage({ text, filename, lineNumber, columnNumber }) {
-    let consoleMsg = Cc["@mozilla.org/scripterror;1"].createInstance(
-      Ci.nsIScriptError
-    );
-    consoleMsg.initWithWindowID(
-      text,
-      filename,
-      lineNumber,
-      columnNumber,
-      Ci.nsIScriptError.warningFlag,
-      "webextension",
-      innerWindowID
-    );
-    Services.console.logMessage(consoleMsg);
-  }
-
-  function ignoredSuspendListener() {
-    logWarningMessage({
-      text: "Background event page was not terminated on idle because a DevTools toolbox is attached to the extension.",
-      filename: context.contentWindow.location.href,
-    });
-  }
-
-  if (!context.extension.manifest.background.persistent) {
-    context.extension.on(
-      "background-script-suspend-ignored",
-      ignoredSuspendListener
-    );
-    context.callOnClose({
-      close: () => {
-        context.extension.off(
-          "background-script-suspend-ignored",
-          ignoredSuspendListener
-        );
-      },
-    });
-  }
-
-  let alertOverwrite = text => {
-    const { filename, columnNumber, lineNumber } = Components.stack.caller;
-
-    if (!alertDisplayedWarning) {
-      context.childManager.callParentAsyncFunction(
-        "runtime.openBrowserConsole",
-        []
-      );
-
-      logWarningMessage({
-        text: "alert() is not supported in background windows; please use console.log instead.",
-        filename,
-        lineNumber,
-        columnNumber,
-      });
-
-      alertDisplayedWarning = true;
-    }
-
-    logWarningMessage({ text, filename, lineNumber, columnNumber });
-  };
-  Cu.exportFunction(alertOverwrite, context.contentWindow, {
-    defineAs: "alert",
-  });
-};
 
 var apiManager = new (class extends SchemaAPIManager {
   constructor() {
@@ -310,11 +236,6 @@ class ExtensionPageContextChild extends ExtensionBaseContextChild {
    */
   constructor(extension, params) {
     super(extension, Object.assign(params, { envType: "addon_child" }));
-
-    if (this.viewType == "background") {
-      initializeBackgroundPage(this);
-    }
-
     this.extension.views.add(this);
   }
 

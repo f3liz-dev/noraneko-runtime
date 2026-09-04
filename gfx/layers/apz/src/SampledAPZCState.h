@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -11,6 +9,7 @@
 #include "mozilla/Maybe.h"
 #include "mozilla/ScrollGeneration.h"
 #include "mozilla/layers/CompositorScrollUpdate.h"
+#include "nsTArray.h"
 
 namespace mozilla {
 namespace layers {
@@ -22,7 +21,7 @@ class SampledAPZCState {
   SampledAPZCState(const FrameMetrics& aMetrics,
                    Maybe<CompositionPayload>&& aPayload,
                    APZScrollGeneration aGeneration,
-                   std::vector<CompositorScrollUpdate>&& aUpdates);
+                   nsTArray<CompositorScrollUpdate>&& aUpdates);
 
   bool operator==(const SampledAPZCState& aOther) const;
   bool operator!=(const SampledAPZCState& aOther) const;
@@ -32,7 +31,7 @@ class SampledAPZCState {
   CSSToParentLayerScale GetZoom() const { return mZoom; }
   Maybe<CompositionPayload> TakeScrollPayload();
   const APZScrollGeneration& Generation() const { return mGeneration; }
-  const std::vector<CompositorScrollUpdate> Updates() const { return mUpdates; }
+  const nsTArray<CompositorScrollUpdate>& Updates() const { return mUpdates; }
 
   void UpdateScrollProperties(const FrameMetrics& aMetrics);
   void UpdateScrollPropertiesWithRelativeDelta(const FrameMetrics& aMetrics,
@@ -62,7 +61,7 @@ class SampledAPZCState {
   Maybe<CompositionPayload> mScrollPayload;
   APZScrollGeneration mGeneration;
   // Compositor scroll updates since the last sample.
-  std::vector<CompositorScrollUpdate> mUpdates;
+  nsTArray<CompositorScrollUpdate> mUpdates;
 
   void RemoveFractionalAsyncDelta();
   // A handy wrapper to call

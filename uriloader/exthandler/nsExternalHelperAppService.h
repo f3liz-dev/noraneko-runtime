@@ -1,5 +1,4 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -37,6 +36,10 @@ class nsIMIMEInfo;
 class nsITransfer;
 class nsIPrincipal;
 class MaybeCloseWindowHelper;
+
+namespace mozilla::dom {
+class WindowContext;
+}  // namespace mozilla::dom
 
 #define EXTERNAL_APP_HANDLER_IID \
   {0x50eb7479, 0x71ff, 0x4ef8, {0xb3, 0x1e, 0x3b, 0x59, 0xc8, 0xab, 0xb9, 0x24}}
@@ -135,6 +138,35 @@ class nsExternalHelperAppService : public nsIExternalHelperAppService,
   static bool ExternalProtocolIsBlockedBySandbox(
       mozilla::dom::BrowsingContext* aBrowsingContext,
       const bool aHasValidUserGestureActivation);
+
+  /**
+   * Whether a navigation to `aScheme` triggered by `aTriggeringPrincipal`
+   * requires transient user activation to be launched without first showing the
+   * external protocol prompt. This is true when the
+   * `network.protocol-handler.prompt-without-user-activation` pref is enabled,
+   * the load was triggered by web content, and the scheme would otherwise take
+   * the silent-launch shortcut (i.e.
+   * `network.protocol-handler.external.<scheme>` is set). Currently the only
+   * such scheme is mailto. Must be kept in sync with
+   * nsContentDispatchChooser._hasProtocolHandlerPermission, which makes the
+   * matching decision about whether to prompt. See bug 299116.
+   */
+  static bool SchemeRequiresUserActivationToLaunch(
+      nsIPrincipal* aTriggeringPrincipal, const nsACString& aScheme);
+
+  /**
+   * Consume the transient user gesture activation on `aWindowContext` when
+   * navigating to `aScheme` is gated by
+   * SchemeRequiresUserActivationToLaunch(). This ensures a single user gesture
+   * can launch at most one such external protocol (the silent-launch shortcut),
+   * preventing one gesture from chaining multiple launches. Must be called in
+   * the content process that hosts `aWindowContext`. A no-op for non-gated
+   * schemes, a null window context, or when there is no activation to consume.
+   * See bug 299116.
+   */
+  static void MaybeConsumeUserActivationForExternalScheme(
+      mozilla::dom::WindowContext* aWindowContext,
+      nsIPrincipal* aTriggeringPrincipal, const nsACString& aScheme);
 
   /**
    * Logging Module. Usage: set MOZ_LOG=HelperAppService:level, where level
@@ -314,7 +346,8 @@ class nsExternalAppHandler final : public nsIStreamListener,
                        mozilla::dom::BrowsingContext* aBrowsingContext,
                        nsIInterfaceRequestor* aWindowContext,
                        nsExternalHelperAppService* aExtProtSvc,
-                       const nsAString& aSuggestedFileName, uint32_t aReason,
+                       const nsAString& aSuggestedFileName,
+                       nsIHelperAppLauncherDialog::reason aReason,
                        bool aForceSave);
 
   /**
@@ -408,7 +441,7 @@ class nsExternalAppHandler final : public nsIStreamListener,
    * reason the dialog was shown (unknown content type, server requested it,
    * etc).
    */
-  uint32_t mReason;
+  nsIHelperAppLauncherDialog::reason mReason;
 
   /**
    * Indicates if the nsContentSecurityUtils rate this download as

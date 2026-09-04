@@ -171,6 +171,22 @@ class NetworkParentActor extends Actor {
     }
     this.networkEventWatcher.removeOverride(url);
   }
+
+  setLocalModeMappings(mappings) {
+    if (!this.networkEventWatcher) {
+      throw new Error("Not listening for network events");
+    }
+    this.networkEventWatcher.setLocalModeMappings(mappings);
+  }
+
+  setBodyLimit(bodyLimit) {
+    // We will always call this method, even if we are still using legacy listener.
+    // Do not throw, we will always persist in that deprecated codepath.
+    if (!this.networkEventWatcher) {
+      return;
+    }
+    this.networkEventWatcher.setBodyLimit(bodyLimit);
+  }
 }
 
 exports.NetworkParentActor = NetworkParentActor;

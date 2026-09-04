@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -20,6 +18,7 @@
 #include "Helpers.h"
 
 #include "nsNetUtil.h"
+#include "nsIEffectiveTLDService.h"
 #include "nsReadableUtils.h"
 #include "nsStreamUtils.h"
 #include "plbase64.h"
@@ -186,6 +185,44 @@ nsFaviconService::ExpireAllFavicons() {
   return conn->ExecuteAsync(stmts, callback, getter_AddRefs(ps));
 }
 
+NS_IMETHODIMP
+nsFaviconService::ExpireFaviconsForPage(nsIURI* aPageURI, JSContext* aContext,
+                                        dom::Promise** _retval) {
+  MOZ_ASSERT(NS_IsMainThread());
+  NS_ENSURE_ARG(aPageURI);
+
+  ErrorResult result;
+  RefPtr<dom::Promise> promise =
+      dom::Promise::Create(xpc::CurrentNativeGlobal(aContext), result);
+  if (NS_WARN_IF(result.Failed())) {
+    return result.StealNSResult();
+  }
+
+  if (AppShutdown::IsInOrBeyond(ShutdownPhase::AppShutdownConfirmed)) {
+    promise->MaybeResolveWithUndefined();
+    promise.forget(_retval);
+    return NS_OK;
+  }
+
+  RefPtr<Database> DB = Database::GetDatabase();
+  if (MOZ_UNLIKELY(!DB)) {
+    promise->MaybeReject(NS_ERROR_UNEXPECTED);
+    promise.forget(_retval);
+    return NS_OK;
+  }
+
+  nsCOMPtr<nsIURI> pageURI = GetExposableURI(aPageURI);
+  RefPtr<AsyncExpireFaviconsForPage> event =
+      new AsyncExpireFaviconsForPage(pageURI, promise);
+  nsresult rv = DB->DispatchToAsyncThread(event);
+  if (NS_FAILED(rv)) {
+    promise->MaybeReject(rv);
+  }
+
+  promise.forget(_retval);
+  return NS_OK;
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 //// nsIFaviconService
 
@@ -330,7 +367,7 @@ nsFaviconService::SetFaviconForPage(nsIURI* aPageURI, nsIURI* aFaviconURI,
     rv = imgLoader::GetMimeTypeFromContent((const char*)buffer.Elements(),
                                            bufferLength, sniffedMimeType);
     if (NS_SUCCEEDED(rv)) {
-      mimeType = sniffedMimeType;
+      mimeType = std::move(sniffedMimeType);
     } else {
       // When the MIME type is not available, fall back to checking for SVG in
       // the initial part of the buffer.
@@ -362,12 +399,12 @@ nsFaviconService::SetFaviconForPage(nsIURI* aPageURI, nsIURI* aFaviconURI,
   }
 
   IconPayload payload;
-  payload.mimeType = mimeType;
+  payload.mimeType = std::move(mimeType);
   payload.data.Assign(TO_CHARBUFFER(buffer.Elements()), buffer.Length());
   if (payload.mimeType.EqualsLiteral(SVG_MIME_TYPE)) {
     payload.width = UINT16_MAX;
   }
-  icon.payloads.AppendElement(payload);
+  icon.payloads.AppendElement(std::move(payload));
 
   rv = OptimizeIconSizes(icon);
   NS_ENSURE_SUCCESS(rv, rv);
@@ -549,6 +586,12 @@ RefPtr<mozilla::places::BoolPromise> nsFaviconService::AsyncTryCopyFavicons(
   nsCOMPtr<nsIURI> fromPageURI = GetExposableURI(aFromPageURI);
   nsCOMPtr<nsIURI> toPageURI = GetExposableURI(aToPageURI);
 
+  if ((!fromPageURI->SchemeIs("http") && !fromPageURI->SchemeIs("https")) ||
+      (!toPageURI->SchemeIs("http") && !toPageURI->SchemeIs("https"))) {
+    promise->Resolve(false, __func__);
+    return promise;
+  }
+
   bool canAddToHistory;
   nsNavHistory* navHistory = nsNavHistory::GetHistoryService();
   if (MOZ_UNLIKELY(!navHistory)) {
@@ -562,6 +605,28 @@ RefPtr<mozilla::places::BoolPromise> nsFaviconService::AsyncTryCopyFavicons(
   }
   canAddToHistory = !!canAddToHistory &&
                     aFaviconLoadType != nsIFaviconService::FAVICON_LOAD_PRIVATE;
+
+  // Only copy icons between pages from the same site (same eTLD+1) to prevent
+  // icons from unrelated domains (e.g. cross-domain SSO pages) from being
+  // associated with unrelated sites. Subdomains of the same base domain are
+  // allowed.
+  nsCOMPtr<nsIEffectiveTLDService> tldService =
+      do_GetService(NS_EFFECTIVETLDSERVICE_CONTRACTID);
+  if (!tldService) {
+    promise->Resolve(false, __func__);
+    return promise;
+  }
+  nsAutoCString fromBaseDomain, toBaseDomain;
+  if (NS_FAILED(tldService->GetBaseDomain(fromPageURI, 0, fromBaseDomain))) {
+    fromPageURI->GetAsciiHost(fromBaseDomain);
+  }
+  if (NS_FAILED(tldService->GetBaseDomain(toPageURI, 0, toBaseDomain))) {
+    toPageURI->GetAsciiHost(toBaseDomain);
+  }
+  if (!fromBaseDomain.Equals(toBaseDomain)) {
+    promise->Resolve(false, __func__);
+    return promise;
+  }
 
   RefPtr<AsyncTryCopyFaviconsRunnable> runnable =
       new AsyncTryCopyFaviconsRunnable(fromPageURI, toPageURI, canAddToHistory,

@@ -21,7 +21,7 @@ use crate::{
 };
 
 /// Configuration options for the dot backend
-#[derive(Clone, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct Options {
     /// Only emit function bodies
     pub cfg_only: bool,
@@ -413,6 +413,22 @@ impl StatementGraph {
                         "CoopStore"
                     }
                 }
+                S::RayPipelineFunction(func) => match func {
+                    crate::RayPipelineFunction::TraceRay {
+                        acceleration_structure,
+                        descriptor,
+                        payload,
+                    } => {
+                        self.dependencies.push((
+                            id,
+                            acceleration_structure,
+                            "acceleration_structure",
+                        ));
+                        self.dependencies.push((id, descriptor, "descriptor"));
+                        self.dependencies.push((id, payload, "payload"));
+                        "TraceRay"
+                    }
+                },
             };
             // Set the last node to the merge node
             last_node = merge_id;

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,8 +5,10 @@
 #ifndef GFX_SCROLLABLELAYERGUID_H
 #define GFX_SCROLLABLELAYERGUID_H
 
-#include <iosfwd>                        // for ostream
-#include <stdint.h>                      // for uint8_t, uint32_t, uint64_t
+#include <stdint.h>  // for uint8_t, uint32_t, uint64_t
+
+#include <iosfwd>  // for ostream
+
 #include "mozilla/layers/LayersTypes.h"  // for LayersId
 #include "nsHashKeys.h"                  // for nsUint64HashKey
 
@@ -35,7 +35,8 @@ struct ScrollableLayerGuid {
   uint32_t mPresShellId;
   ViewID mScrollId;
 
-  ScrollableLayerGuid();
+  constexpr ScrollableLayerGuid()
+      : mLayersId{0}, mPresShellId(0), mScrollId(0) {}
 
   ScrollableLayerGuid(LayersId aLayersId, uint32_t aPresShellId,
                       ViewID aScrollId);

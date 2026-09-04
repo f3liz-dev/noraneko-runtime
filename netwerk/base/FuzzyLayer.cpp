@@ -1,20 +1,18 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "FuzzyLayer.h"
-#include "nsTHashMap.h"
+
+#include "mozilla/Logging.h"
+#include "mozilla/StaticMutex.h"
 #include "nsDeque.h"
 #include "nsIRunnable.h"
 #include "nsSocketTransportService2.h"
+#include "nsTHashMap.h"
 #include "nsThreadUtils.h"
-
-#include "prmem.h"
 #include "prio.h"
-#include "mozilla/Logging.h"
-#include "mozilla/StaticMutex.h"
+#include "prmem.h"
 
 namespace mozilla {
 namespace net {
@@ -40,11 +38,14 @@ typedef struct {
 } NetworkFuzzingBuffer;
 
 // This holds all connections we have currently open.
-MOZ_RUNINIT static nsTHashMap<nsPtrHashKey<PRFileDesc>, NetworkFuzzingBuffer*>
+constinit static nsTHashMap<nsPtrHashKey<PRFileDesc>, NetworkFuzzingBuffer*>
     gConnectedNetworkFuzzingBuffers;
 
 // This holds all buffers for connections we can still open.
-MOZ_RUNINIT static nsDeque<NetworkFuzzingBuffer> gNetworkFuzzingBuffers;
+// Intentionally leaked to avoid destructor running after XPCOM shutdown
+// (nsDeque dtor -> NS_LogDtor -> mutex lock on already-destroyed mutex).
+MOZ_RUNINIT static nsDeque<NetworkFuzzingBuffer>& gNetworkFuzzingBuffers =
+    *new nsDeque<NetworkFuzzingBuffer>();
 
 // This is `true` once all connections are closed and either there are
 // no buffers left to be used or all remaining buffers are marked optional.

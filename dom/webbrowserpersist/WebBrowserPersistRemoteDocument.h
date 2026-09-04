@@ -1,5 +1,4 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -39,14 +38,14 @@ class WebBrowserPersistRemoteDocument final
   using Attrs = WebBrowserPersistDocumentAttrs;
   WebBrowserPersistDocumentParent* mActor;
   Attrs mAttrs;
-  nsCOMPtr<nsISHEntry> mSHEntry;
+  RefPtr<dom::SessionHistoryEntry> mSHEntry;
   nsCOMPtr<nsICookieJarSettings> mCookieJarSettings;
-  nsCOMPtr<nsIInputStream> mPostData;
   nsCOMPtr<nsIPrincipal> mPrincipal;
+  nsCOMPtr<nsIInputStream> mPostData;
 
   friend class WebBrowserPersistDocumentParent;
   WebBrowserPersistRemoteDocument(WebBrowserPersistDocumentParent* aActor,
-                                  const Attrs& aAttrs,
+                                  Attrs&& aAttrs, nsIPrincipal* aPrincipal,
                                   nsIInputStream* aPostData);
   ~WebBrowserPersistRemoteDocument();
 

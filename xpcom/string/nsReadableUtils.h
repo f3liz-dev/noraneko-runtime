@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -14,9 +12,8 @@
  */
 
 #include "mozilla/Assertions.h"
-#include "nsAString.h"
 #include "mozilla/TextUtils.h"
-
+#include "nsAString.h"
 #include "nsTArrayForwardDeclare.h"
 
 // From the nsstring crate
@@ -518,35 +515,62 @@ void ToLowerCase(const nsACString& aSource, nsACString& aDest);
  */
 
 bool FindInReadable(const nsAString& aPattern, nsAString::const_iterator&,
-                    nsAString::const_iterator&,
-                    nsStringComparator = nsTDefaultStringComparator);
+                    nsAString::const_iterator&);
 bool FindInReadable(const nsACString& aPattern, nsACString::const_iterator&,
-                    nsACString::const_iterator&,
-                    nsCStringComparator = nsTDefaultStringComparator);
+                    nsACString::const_iterator&);
 
 /* sometimes we don't care about where the string was, just that we
  * found it or not */
-inline bool FindInReadable(
-    const nsAString& aPattern, const nsAString& aSource,
-    nsStringComparator aCompare = nsTDefaultStringComparator) {
-  nsAString::const_iterator start, end;
-  aSource.BeginReading(start);
-  aSource.EndReading(end);
-  return FindInReadable(aPattern, start, end, aCompare);
+inline bool FindInReadable(const nsAString& aPattern,
+                           const nsAString& aSource) {
+  return aSource.Contains(aPattern);
 }
-
-inline bool FindInReadable(
-    const nsACString& aPattern, const nsACString& aSource,
-    nsCStringComparator aCompare = nsTDefaultStringComparator) {
-  nsACString::const_iterator start, end;
-  aSource.BeginReading(start);
-  aSource.EndReading(end);
-  return FindInReadable(aPattern, start, end, aCompare);
+inline bool FindInReadable(const nsACString& aPattern,
+                           const nsACString& aSource) {
+  return aSource.Contains(aPattern);
 }
 
 bool CaseInsensitiveFindInReadable(const nsACString& aPattern,
                                    nsACString::const_iterator&,
                                    nsACString::const_iterator&);
+bool CaseInsensitiveFindInReadable(const nsAString& aPattern,
+                                   nsAString::const_iterator&,
+                                   nsAString::const_iterator&);
+inline bool CaseInsensitiveFindInReadable(const nsACString& aPattern,
+                                          const nsACString& aSource) {
+  nsACString::const_iterator start, end;
+  aSource.BeginReading(start);
+  aSource.EndReading(end);
+  return CaseInsensitiveFindInReadable(aPattern, start, end);
+}
+inline bool CaseInsensitiveFindInReadable(const nsAString& aPattern,
+                                          const nsAString& aSource) {
+  nsAString::const_iterator start, end;
+  aSource.BeginReading(start);
+  aSource.EndReading(end);
+  return CaseInsensitiveFindInReadable(aPattern, start, end);
+}
+
+bool AsciiCaseInsensitiveFindInReadable(const nsACString& aPattern,
+                                        nsACString::const_iterator&,
+                                        nsACString::const_iterator&);
+bool AsciiCaseInsensitiveFindInReadable(const nsAString& aPattern,
+                                        nsAString::const_iterator&,
+                                        nsAString::const_iterator&);
+inline bool AsciiCaseInsensitiveFindInReadable(const nsACString& aPattern,
+                                               const nsACString& aSource) {
+  nsACString::const_iterator start, end;
+  aSource.BeginReading(start);
+  aSource.EndReading(end);
+  return AsciiCaseInsensitiveFindInReadable(aPattern, start, end);
+}
+inline bool AsciiCaseInsensitiveFindInReadable(const nsAString& aPattern,
+                                               const nsAString& aSource) {
+  nsAString::const_iterator start, end;
+  aSource.BeginReading(start);
+  aSource.EndReading(end);
+  return AsciiCaseInsensitiveFindInReadable(aPattern, start, end);
+}
 
 /**
  * Finds the rightmost occurrence of |aPattern|
@@ -555,11 +579,13 @@ bool CaseInsensitiveFindInReadable(const nsACString& aPattern,
  * and makes |aSearchStart == aSearchEnd|.
  */
 bool RFindInReadable(const nsAString& aPattern, nsAString::const_iterator&,
-                     nsAString::const_iterator&,
-                     nsStringComparator = nsTDefaultStringComparator);
+                     nsAString::const_iterator&);
 bool RFindInReadable(const nsACString& aPattern, nsACString::const_iterator&,
-                     nsACString::const_iterator&,
-                     nsCStringComparator = nsTDefaultStringComparator);
+                     nsACString::const_iterator&);
+
+bool CaseInsensitiveRFindInReadable(const nsACString& aPattern,
+                                    nsACString::const_iterator&,
+                                    nsACString::const_iterator&);
 
 /**
  * Finds the leftmost occurrence of |aChar|, if any in the range
@@ -599,11 +625,10 @@ const nsCString& VoidCString();
  * Returns 0 if the strings are equal, -1 if aUTF8String is less
  * than aUTF16Count, and 1 in the reverse case. Errors are replaced
  * with U+FFFD and then the U+FFFD is compared as if it had occurred
- * in the input. If aErr is not nullptr, *aErr is set to true if
- * either string had malformed sequences.
+ * in the input.
  */
 int32_t CompareUTF8toUTF16(const nsACString& aUTF8String,
-                           const nsAString& aUTF16String, bool* aErr = nullptr);
+                           const nsAString& aUTF16String);
 
 void AppendUCS4ToUTF16(const uint32_t aSource, nsAString& aDest);
 

@@ -1,22 +1,21 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "Image.h"
 
-#include "imgRequest.h"
 #include "WebRenderImageProvider.h"
-#include "nsIObserverService.h"
-#include "nsRefreshDriver.h"
-#include "nsContentUtils.h"
+#include "imgRequest.h"
 #include "mozilla/Atomics.h"
-#include "mozilla/gfx/Point.h"
-#include "mozilla/gfx/Rect.h"
-#include "mozilla/gfx/SourceSurfaceRawData.h"
 #include "mozilla/Services.h"
 #include "mozilla/SizeOfState.h"
 #include "mozilla/TimeStamp.h"
+#include "mozilla/gfx/Point.h"
+#include "mozilla/gfx/Rect.h"
+#include "mozilla/gfx/SourceSurfaceRawData.h"
+#include "nsContentUtils.h"
+#include "nsIObserverService.h"
+#include "nsRefreshDriver.h"
 // for Tie
 #include "mozilla/layers/SharedSurfacesChild.h"
 

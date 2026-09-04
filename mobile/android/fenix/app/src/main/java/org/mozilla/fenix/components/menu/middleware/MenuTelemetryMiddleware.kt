@@ -10,7 +10,6 @@ import mozilla.telemetry.glean.private.NoExtras
 import org.mozilla.fenix.GleanMetrics.AppMenu
 import org.mozilla.fenix.GleanMetrics.Events
 import org.mozilla.fenix.GleanMetrics.HomeMenu
-import org.mozilla.fenix.GleanMetrics.Menu
 import org.mozilla.fenix.GleanMetrics.ReaderMode
 import org.mozilla.fenix.GleanMetrics.Translations
 import org.mozilla.fenix.components.menu.MenuAccessPoint
@@ -37,6 +36,12 @@ class MenuTelemetryMiddleware(
         next(action)
 
         when (action) {
+            MenuAction.Navigate.CustomizeHomepage -> Events.browserMenuAction.record(
+                Events.BrowserMenuActionExtra(
+                    item = "customize_homepage",
+                ),
+            )
+
             MenuAction.AddBookmark -> Events.browserMenuAction.record(
                 Events.BrowserMenuActionExtra(
                     item = "add_bookmark",
@@ -183,6 +188,12 @@ class MenuTelemetryMiddleware(
                 )
             }
 
+            MenuAction.MoveToNonPrivateTab -> Events.browserMenuAction.record(
+                Events.BrowserMenuActionExtra(
+                    item = "move_to_non_private_tab",
+                ),
+            )
+
             MenuAction.DeleteBrowsingDataAndQuit -> Events.browserMenuAction.record(
                 Events.BrowserMenuActionExtra(
                     item = "quit",
@@ -276,10 +287,6 @@ class MenuTelemetryMiddleware(
                 )
             }
 
-            MenuAction.OnCFRShown -> Menu.showCfr.record(NoExtras())
-
-            MenuAction.OnCFRDismiss -> Menu.dismissCfr.record(NoExtras())
-
             MenuAction.Navigate.Summarizer,
             MenuAction.InitAction,
             is MenuAction.CustomMenuItemAction,
@@ -291,6 +298,11 @@ class MenuTelemetryMiddleware(
             is MenuAction.InstallAddonSuccess,
             is MenuAction.UpdateInstallAddonInProgress,
             is MenuAction.UpdateAvailableAddons,
+            is MenuAction.OnSummarizationMenuExposed,
+            is MenuAction.InitializeSummarizationMenuState,
+            is MenuAction.UpdateIPProtectionMenuState,
+            is MenuAction.OnMoreMenuClicked,
+            is MenuAction.Navigate.IPProtectionSettings,
             -> Unit
         }
     }

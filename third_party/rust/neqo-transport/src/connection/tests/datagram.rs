@@ -6,30 +6,37 @@
 
 use std::{cell::RefCell, rc::Rc};
 
-use neqo_common::event::Provider as _;
+use neqo_common::{event::Provider as _, to_u64};
 use static_assertions::const_assert;
 
 use super::{
-    assert_error, connect_force_idle, default_server, new_client, new_server, now, AT_LEAST_PTO,
+    AT_LEAST_PTO, assert_error, connect_force_idle, default_server, new_client, new_server, now,
 };
 use crate::{
+    CloseReason, Connection, ConnectionParameters, Error, MIN_INITIAL_PACKET_SIZE, Pmtud,
+    StreamType,
     connection::tests::DEFAULT_ADDR,
     events::{ConnectionEvent, OutgoingDatagramOutcome},
     frame::FrameType,
     packet,
     quic_datagrams::QuicDatagram,
     send_stream::{RetransmissionPriority, TransmissionPriority},
-    CloseReason, Connection, ConnectionParameters, Error, Pmtud, StreamType,
-    MIN_INITIAL_PACKET_SIZE,
 };
 
-// FIXME: The 27 here is a magic constant that the original code also (implicitly) had.
-const DATAGRAM_LEN_MTU: usize = Pmtud::default_plpmtu(DEFAULT_ADDR.ip()) - 27;
+/// Minimum overhead for a short header packet carrying a DATAGRAM frame:
+/// - 8 bytes: minimum connection ID length (from `CountingConnectionIdGenerator`)
+/// - 1 byte: short header (header form, spin, reserved, key phase, PN length)
+/// - 1 byte: minimum packet number encoding
+/// - 1 byte: DATAGRAM frame type
+/// - 16 bytes: AEAD authentication tag
+const MIN_DATAGRAM_PACKET_OVERHEAD: usize = 8 + 1 + 1 + 1 + 16;
+const DATAGRAM_LEN_MTU: usize =
+    Pmtud::default_plpmtu(DEFAULT_ADDR.ip()) - MIN_DATAGRAM_PACKET_OVERHEAD;
 const DATA_MTU: &[u8] = &[1; DATAGRAM_LEN_MTU];
 const DATA_BIGGER_THAN_MTU: &[u8] = &[0; 2 * DATAGRAM_LEN_MTU];
 const_assert!(DATA_BIGGER_THAN_MTU.len() > DATAGRAM_LEN_MTU);
-const DATAGRAM_LEN_SMALLER_THAN_MTU: u64 = MIN_INITIAL_PACKET_SIZE as u64;
-const_assert!(DATAGRAM_LEN_SMALLER_THAN_MTU < DATAGRAM_LEN_MTU as u64);
+const DATAGRAM_LEN_SMALLER_THAN_MTU: u64 = to_u64(MIN_INITIAL_PACKET_SIZE);
+const_assert!(DATAGRAM_LEN_SMALLER_THAN_MTU < to_u64(DATAGRAM_LEN_MTU));
 const DATA_SMALLER_THAN_MTU: &[u8] = &[0; MIN_INITIAL_PACKET_SIZE];
 const_assert!(DATA_SMALLER_THAN_MTU.len() < DATAGRAM_LEN_MTU);
 const DATA_SMALLER_THAN_MTU_2: &[u8] = &[0; MIN_INITIAL_PACKET_SIZE / 2];
@@ -44,6 +51,15 @@ impl crate::connection::test_internal::FrameWriter for InsertDatagram<'_> {
     fn write_frames(&mut self, builder: &mut packet::Builder<&mut Vec<u8>>) {
         builder.encode_varint(FrameType::Datagram);
         builder.encode(self.data);
+    }
+}
+
+struct InsertEmptyDatagram;
+
+impl crate::connection::test_internal::FrameWriter for InsertEmptyDatagram {
+    fn write_frames(&mut self, builder: &mut packet::Builder<&mut Vec<u8>>) {
+        builder.encode_varint(FrameType::DatagramWithLen);
+        builder.encode_vvec(&[]);
     }
 }
 
@@ -365,7 +381,7 @@ fn datagram_lost() {
     let dgram_lost = client.stats().datagram_tx.lost;
     let out = client.process_output(now).dgram();
     assert!(out.is_some()); // PING probing
-                            // Datagram is not sent again.
+    // Datagram is not sent again.
     assert_eq!(client.stats().frame_tx.ping, pings_sent + 1);
     assert_eq!(client.stats().frame_tx.datagram, dgram_sent2);
     assert_eq!(client.stats().datagram_tx.lost, dgram_lost + 1);
@@ -402,6 +418,23 @@ fn dgram_too_big() {
 
     let out = server
         .test_write_frames(InsertDatagram { data: DATA_MTU }, now())
+        .dgram()
+        .unwrap();
+    client.process_input(out, now());
+
+    assert_error(&client, &CloseReason::Transport(Error::ProtocolViolation));
+}
+
+#[test]
+fn dgram_unsupported() {
+    let mut client = new_client(ConnectionParameters::default().datagram_size(0));
+    let mut server = default_server();
+    connect_force_idle(&mut client, &mut server);
+
+    // The client advertised max_datagram_frame_size=0, so any DATAGRAM frame,
+    // including an empty one, is a connection error (RFC 9221, Section 3).
+    let out = server
+        .test_write_frames(InsertEmptyDatagram, now())
         .dgram()
         .unwrap();
     client.process_input(out, now());
@@ -470,17 +503,12 @@ fn send_datagram(sender: &mut Connection, receiver: &mut Connection, data: Vec<u
 #[test]
 fn multiple_datagram_events() {
     const DATA_SIZE: usize = MIN_INITIAL_PACKET_SIZE;
-    const MAX_QUEUE: usize = 3;
     const FIRST_DATAGRAM: &[u8] = &[0; DATA_SIZE];
     const SECOND_DATAGRAM: &[u8] = &[1; DATA_SIZE];
     const THIRD_DATAGRAM: &[u8] = &[2; DATA_SIZE];
     const FOURTH_DATAGRAM: &[u8] = &[3; DATA_SIZE];
 
-    let mut client = new_client(
-        ConnectionParameters::default()
-            .datagram_size(u64::try_from(DATA_SIZE).unwrap())
-            .incoming_datagram_queue(MAX_QUEUE),
-    );
+    let mut client = new_client(ConnectionParameters::default().datagram_size(to_u64(DATA_SIZE)));
     let mut server = default_server();
     connect_force_idle(&mut client, &mut server);
 
@@ -511,53 +539,6 @@ fn multiple_datagram_events() {
     });
     assert_eq!(datagrams.next().unwrap(), FOURTH_DATAGRAM);
     assert!(datagrams.next().is_none());
-}
-
-#[test]
-fn too_many_datagram_events() {
-    const DATA_SIZE: usize = MIN_INITIAL_PACKET_SIZE;
-    const MAX_QUEUE: usize = 2;
-    const FIRST_DATAGRAM: &[u8] = &[0; DATA_SIZE];
-    const SECOND_DATAGRAM: &[u8] = &[1; DATA_SIZE];
-    const THIRD_DATAGRAM: &[u8] = &[2; DATA_SIZE];
-    const FOURTH_DATAGRAM: &[u8] = &[3; DATA_SIZE];
-
-    let mut client = new_client(
-        ConnectionParameters::default()
-            .datagram_size(u64::try_from(DATA_SIZE).unwrap())
-            .incoming_datagram_queue(MAX_QUEUE),
-    );
-    let mut server = default_server();
-    connect_force_idle(&mut client, &mut server);
-
-    send_datagram(&mut server, &mut client, FIRST_DATAGRAM.to_vec());
-    send_datagram(&mut server, &mut client, SECOND_DATAGRAM.to_vec());
-    send_datagram(&mut server, &mut client, THIRD_DATAGRAM.to_vec());
-
-    // Datagram with FIRST_DATAGRAM data will be dropped.
-    assert!(matches!(
-        client.next_event().unwrap(),
-        ConnectionEvent::IncomingDatagramDropped
-    ));
-    assert!(matches!(
-        client.next_event().unwrap(),
-        ConnectionEvent::Datagram(data) if data == SECOND_DATAGRAM
-    ));
-    assert!(matches!(
-        client.next_event().unwrap(),
-        ConnectionEvent::Datagram(data) if data == THIRD_DATAGRAM
-    ));
-    assert!(client.next_event().is_none());
-    assert_eq!(client.stats().incoming_datagram_dropped, 1);
-
-    // New events can be queued.
-    send_datagram(&mut server, &mut client, FOURTH_DATAGRAM.to_vec());
-    assert!(matches!(
-        client.next_event().unwrap(),
-        ConnectionEvent::Datagram(data) if data == FOURTH_DATAGRAM
-    ));
-    assert!(client.next_event().is_none());
-    assert_eq!(client.stats().incoming_datagram_dropped, 1);
 }
 
 #[test]

@@ -148,6 +148,8 @@ export const ATTRIBUTE_TRANSFORMS = Object.freeze({
   isFxAEnabled: typeAssertions.boolean,
   isFxASignedIn: typeAssertions.boolean,
   isMSIX: typeAssertions.boolean,
+  launchOnLoginAllowedByPolicy: typeAssertions.boolean,
+  launchOnLoginEnabled: typeAssertions.boolean,
   locale: typeAssertions.string,
   memoryMB: typeAssertions.quantity,
   os: pick(
@@ -238,6 +240,9 @@ export const PREFS = Object.freeze({
   "nimbus.qa.pref-2": PREF_STRING,
   "security.sandbox.content.level": PREF_INT,
   "termsofuse.acceptedDate": PREF_STRING,
+  "termsofuse.acceptedVersion": PREF_INT,
+  "termsofuse.bypassNotification": PREF_BOOL,
+  "termsofuse.firstAcceptedDate": PREF_STRING,
   "trailhead.firstrun.didSeeAboutWelcome": PREF_BOOL,
 });
 

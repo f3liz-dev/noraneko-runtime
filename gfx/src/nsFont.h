@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,6 +6,7 @@
 #define nsFont_h_
 
 #include <cstdint>
+
 #include "gfxFontConstants.h"  // for NS_FONT_KERNING_AUTO, etc
 #include "gfxFontVariations.h"
 #include "mozilla/ServoStyleConsts.h"
@@ -18,7 +17,7 @@ struct gfxFontStyle;
 
 // Font structure.
 struct nsFont final {
-  typedef mozilla::FontStretch FontStretch;
+  typedef mozilla::FontWidth FontWidth;
   typedef mozilla::FontSlantStyle FontSlantStyle;
   typedef mozilla::FontWeight FontWeight;
 
@@ -46,10 +45,10 @@ struct nsFont final {
   mozilla::StyleFontLanguageOverride languageOverride{0};
 
   // Font-selection/rendering properties corresponding to CSS font-style,
-  // font-weight, font-stretch. These are all 16-bit types.
+  // font-weight, font-width. These are all 16-bit types.
   FontSlantStyle style = FontSlantStyle::NORMAL;
   FontWeight weight = FontWeight::NORMAL;
-  FontStretch stretch = FontStretch::NORMAL;
+  FontWidth width = FontWidth::NORMAL;
 
   // Some font-variant-alternates property values require
   // font-specific settings defined via @font-feature-values rules.

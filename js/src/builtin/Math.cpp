@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -15,11 +13,16 @@
 #include "mozilla/MathAlgorithms.h"
 #include "mozilla/WrappingOperations.h"
 
+#include <bit>
 #include <cmath>
 
 #include "fdlibm.h"
 #include "jsapi.h"
 #include "jstypes.h"
+
+#if defined(ANDROID) && (defined(__arm__) || defined(__aarch64__))
+#  include <android/api-level.h>
+#endif
 
 #include "jit/InlinableNatives.h"
 #include "js/Class.h"
@@ -60,6 +63,27 @@ static inline bool UseFdlibmForSinCosTan(const CallArgs& args) {
          args.callee().nonCCWRealm()->creationOptions().alwaysUseFdlibm();
 }
 
+static MOZ_ALWAYS_INLINE double pow_libm_or_fdlibm(double x, double y) {
+#if defined(ANDROID) && (defined(__arm__) || defined(__aarch64__))
+  // ARM Android API <= 28 ships bionic's old FreeBSD e_pow.c on devices
+  // whose OEM didn't backport arm-optimized-routines, returning a 1-ULP
+  // off result for Math.pow(PI, -100) (1.9275814160560204e-50 vs the
+  // modern-libm consensus 1.9275814160560206e-50). Use fdlibm_pow on
+  // those devices to pin the consensus value; let API >= 29 (which
+  // AOSP moved to arm-optimized-routines) keep the fast bionic path.
+  // android_get_device_api_level() result is cached in a function-local
+  // static, so the cost after the first call is one branch.
+  static const int sApiLevel = android_get_device_api_level();
+  if (sApiLevel <= 28) {
+    return fdlibm_pow(x, y);
+  }
+#endif
+  // Every other platform's libm pow already produces the consensus value
+  // for the inputs the math fingerprint samples, so we keep the faster
+  // platform path.
+  return std::pow(x, y);
+}
+
 // Stack alignment on x86 Windows is 4 byte. Align to 16 bytes when calling
 // rounding functions with double parameters.
 //
@@ -89,7 +113,7 @@ static bool math_function(JSContext* cx, CallArgs& args) {
   // NB: Always stored as a double so the math function can be inlined
   // through MMathFunction.
   double z = F(x);
-  args.rval().setDouble(z);
+  args.rval().setDoubleAssumeCanonicalNaN(z);
   return true;
 }
 
@@ -108,7 +132,7 @@ static bool math_abs(JSContext* cx, unsigned argc, Value* vp) {
     return false;
   }
 
-  args.rval().setNumber(math_abs_impl(x));
+  args.rval().setNumberAssumeCanonicalNaN(math_abs_impl(x));
   return true;
 }
 
@@ -161,7 +185,7 @@ static bool math_atan2(JSContext* cx, unsigned argc, Value* vp) {
   }
 
   double z = ecmaAtan2(y, x);
-  args.rval().setDouble(z);
+  args.rval().setDoubleAssumeCanonicalNaN(z);
   return true;
 }
 
@@ -184,7 +208,7 @@ static bool math_ceil(JSContext* cx, unsigned argc, Value* vp) {
     return false;
   }
 
-  args.rval().setNumber(math_ceil_impl(x));
+  args.rval().setNumberAssumeCanonicalNaN(math_ceil_impl(x));
   return true;
 }
 
@@ -201,12 +225,7 @@ static bool math_clz32(JSContext* cx, unsigned argc, Value* vp) {
     return false;
   }
 
-  if (n == 0) {
-    args.rval().setInt32(32);
-    return true;
-  }
-
-  args.rval().setInt32(mozilla::CountLeadingZeroes32(n));
+  args.rval().setInt32(std::countl_zero(n));
   return true;
 }
 
@@ -258,7 +277,7 @@ static bool math_floor(JSContext* cx, unsigned argc, Value* vp) {
     return false;
   }
 
-  args.rval().setNumber(math_floor_impl(x));
+  args.rval().setNumberAssumeCanonicalNaN(math_floor_impl(x));
   return true;
 }
 
@@ -296,7 +315,7 @@ bool js::RoundFloat32(JSContext* cx, HandleValue arg, MutableHandleValue res) {
     return false;
   }
 
-  res.setDouble(static_cast<double>(f));
+  res.setDoubleAssumeCanonicalNaN(static_cast<double>(f));
   return true;
 }
 
@@ -351,7 +370,7 @@ static bool math_f16round(JSContext* cx, unsigned argc, Value* vp) {
   }
 
   // Steps 2-6.
-  args.rval().setDouble(RoundFloat16(d));
+  args.rval().setDoubleAssumeCanonicalNaN(RoundFloat16(d));
   return true;
 }
 
@@ -386,7 +405,7 @@ bool js::math_max(JSContext* cx, unsigned argc, Value* vp) {
     }
     maxval = math_max_impl(x, maxval);
   }
-  args.rval().setNumber(maxval);
+  args.rval().setNumberAssumeCanonicalNaN(maxval);
   return true;
 }
 
@@ -411,7 +430,7 @@ bool js::math_min(JSContext* cx, unsigned argc, Value* vp) {
     }
     minval = math_min_impl(x, minval);
   }
-  args.rval().setNumber(minval);
+  args.rval().setNumberAssumeCanonicalNaN(minval);
   return true;
 }
 
@@ -472,10 +491,13 @@ double js::powi(double x, int32_t y) {
       }
     }
 
-    // Fall-back to use std::pow to reduce floating point precision errors.
+    // Fall-back to libm pow to reduce floating point precision errors.
+    // |pow_libm_or_fdlibm| dispatches to fdlibm on the ARM Android subset
+    // whose bionic pow diverges; everywhere else it's plain std::pow.
   }
 
-  return std::pow(x, static_cast<double>(y));  // Avoid pow(double, int).
+  return pow_libm_or_fdlibm(x,
+                            static_cast<double>(y));  // Avoid pow(double, int).
 }
 
 double js::ecmaPow(double x, double y) {
@@ -505,7 +527,9 @@ double js::ecmaPow(double x, double y) {
 
   /*
    * Special case for square roots. Note that pow(x, 0.5) != sqrt(x)
-   * when x = -0.0, so we have to guard for this.
+   * when x = -0.0, so we have to guard for this. std::sqrt is IEEE-mandated
+   * correctly-rounded and is bit-deterministic across platforms (FSQRT /
+   * SQRTSD), so we use it here.
    */
   if (std::isfinite(x) && x != 0.0) {
     if (y == 0.5) {
@@ -515,7 +539,7 @@ double js::ecmaPow(double x, double y) {
       return 1.0 / std::sqrt(x);
     }
   }
-  return std::pow(x, y);
+  return pow_libm_or_fdlibm(x, y);
 }
 
 static bool math_pow(JSContext* cx, unsigned argc, Value* vp) {
@@ -532,7 +556,7 @@ static bool math_pow(JSContext* cx, unsigned argc, Value* vp) {
   }
 
   double z = ecmaPow(x, y);
-  args.rval().setNumber(z);
+  args.rval().setNumberAssumeCanonicalNaN(z);
   return true;
 }
 
@@ -556,7 +580,7 @@ static bool math_random(JSContext* cx, unsigned argc, Value* vp) {
   if (js::SupportDifferentialTesting()) {
     args.rval().setDouble(0);
   } else {
-    args.rval().setDouble(math_random_impl(cx));
+    args.rval().setDoubleAssumeCanonicalNaN(math_random_impl(cx));
   }
   return true;
 }
@@ -596,7 +620,7 @@ static bool math_round(JSContext* cx, unsigned argc, Value* vp) {
     return false;
   }
 
-  args.rval().setNumber(math_round_impl(x));
+  args.rval().setNumberAssumeCanonicalNaN(math_round_impl(x));
   return true;
 }
 
@@ -810,7 +834,7 @@ bool js::math_hypot_handle(JSContext* cx, HandleValueArray args,
     }
 
     double result = ecmaHypot(x, y);
-    res.setDouble(result);
+    res.setDoubleAssumeCanonicalNaN(result);
     return true;
   }
 
@@ -838,7 +862,7 @@ bool js::math_hypot_handle(JSContext* cx, HandleValueArray args,
   double result = isInfinite ? PositiveInfinity<double>()
                   : isNaN    ? GenericNaN()
                              : scale * std::sqrt(sumsq);
-  res.setDouble(result);
+  res.setDoubleAssumeCanonicalNaN(result);
   return true;
 }
 
@@ -860,7 +884,7 @@ bool js::math_trunc(JSContext* cx, unsigned argc, Value* vp) {
     return false;
   }
 
-  args.rval().setNumber(math_trunc_impl(x));
+  args.rval().setNumberAssumeCanonicalNaN(math_trunc_impl(x));
   return true;
 }
 
@@ -886,13 +910,15 @@ static bool math_sign(JSContext* cx, unsigned argc, Value* vp) {
     return false;
   }
 
-  args.rval().setNumber(math_sign_impl(x));
+  args.rval().setNumberAssumeCanonicalNaN(math_sign_impl(x));
   return true;
 }
 
 double js::math_cbrt_impl(double x) {
   AutoUnsafeCallWithABI unsafe;
-  return fdlibm_cbrt(x);
+  // fdlibm_cbrt can return a non-canonical NaN when the thread has FTZ/DAZ
+  // enabled (see --disable-main-thread-denormals), so canonicalize the result.
+  return JS::CanonicalizeNaN(fdlibm_cbrt(x));
 }
 
 static bool math_cbrt(JSContext* cx, unsigned argc, Value* vp) {
@@ -1057,7 +1083,7 @@ static bool math_sumPrecise(JSContext* cx, unsigned argc, Value* vp) {
       break;
   }
 
-  args.rval().setNumber(rval);
+  args.rval().setNumberAssumeCanonicalNaN(rval);
   return true;
 }
 
@@ -1235,7 +1261,8 @@ static const JSPropertySpec math_static_properties[] = {
 
 static JSObject* CreateMathObject(JSContext* cx, JSProtoKey key) {
   RootedObject proto(cx, &cx->global()->getObjectPrototype());
-  return NewTenuredObjectWithGivenProto(cx, &MathClass, proto);
+  return NewObjectWithGivenProto(cx, &MathClass, proto,
+                                 {.newKind = TenuredObject});
 }
 
 static const ClassSpec MathClassSpec = {

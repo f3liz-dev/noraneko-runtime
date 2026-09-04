@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -10,6 +8,8 @@
 #include <memory>
 
 #include "SVGAttrTearoffTable.h"
+#include "mozilla/NotNull.h"
+#include "mozilla/RefPtr.h"
 #include "mozilla/SMILAttr.h"
 #include "mozilla/dom/SVGAnimatedRect.h"
 #include "mozilla/gfx/Point.h"
@@ -49,9 +49,19 @@ struct SVGViewBox {
            std::isfinite(height);
   }
 
-  bool IsEmpty() const { return !none && (width <= .0f || height <= .0f); }
+  bool IsNone() const { return none; }
 
-  bool IsValid() const { return IsFinite() && !IsEmpty(); }
+  /*
+   * A viewBox that is empty causes the element not to be rendered.
+   */
+  bool IsEmpty() const { return !none && (width <= 0.f || height <= 0.f); }
+
+  /*
+   * A viewBox that is invalid is ignored.
+   */
+  bool IsValid() const {
+    return !none && IsFinite() && width >= 0.f && height >= 0.f;
+  }
 
   friend std::ostream& operator<<(std::ostream& stream,
                                   const SVGViewBox& aViewBox) {
@@ -89,7 +99,9 @@ class SVGAnimatedViewBox {
    * string, or if any of the four rect values were too big to store in a
    * float, or the width/height are negative.
    */
-  bool HasRect() const;
+  bool HasRect() const {
+    return (mAnimVal || mHasBaseVal) && GetAnimValue().IsValid();
+  }
 
   /**
    * Returns true if the corresponding "viewBox" attribute either defined a
@@ -97,9 +109,18 @@ class SVGAnimatedViewBox {
    */
   bool IsExplicitlySet() const {
     if (mAnimVal || mHasBaseVal) {
-      return GetAnimValue().IsValid();
+      const SVGViewBox& viewBox = GetAnimValue();
+      return viewBox.IsNone() || viewBox.IsValid();
     }
     return false;
+  }
+
+  /**
+   * Returns true if the corresponding the viewBox width or height
+   * are <= 0.
+   */
+  bool IsEmpty() const {
+    return (mAnimVal || mHasBaseVal) && GetAnimValue().IsEmpty();
   }
 
   const SVGViewBox& GetBaseValue() const { return mBaseVal; }
@@ -129,9 +150,9 @@ class SVGAnimatedViewBox {
   already_AddRefed<dom::SVGAnimatedRect> ToSVGAnimatedRect(
       SVGElement* aSVGElement);
 
-  already_AddRefed<dom::SVGRect> ToDOMBaseVal(SVGElement* aSVGElement);
+  MovingNotNull<RefPtr<dom::SVGRect>> ToDOMBaseVal(SVGElement* aSVGElement);
 
-  already_AddRefed<dom::SVGRect> ToDOMAnimVal(SVGElement* aSVGElement);
+  MovingNotNull<RefPtr<dom::SVGRect>> ToDOMAnimVal(SVGElement* aSVGElement);
 
   std::unique_ptr<SMILAttr> ToSMILAttr(SVGElement* aSVGElement);
 

@@ -2,7 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
-/* stylelint-disable-next-line media-query-no-invalid */
 @media -moz-pref("sidebar.verticalTabs") {
   :host {
     --button-size-icon: var(--tab-min-height);
@@ -26,7 +25,6 @@
   max-width: 100%;
   padding-inline: 0;
 
-  /* stylelint-disable-next-line media-query-no-invalid */
   @media -moz-pref("sidebar.verticalTabs") {
     display: flex;
     flex-direction: column;
@@ -35,7 +33,10 @@
       /* TODO: Should this be some other pixel value between 5/6? Need to be careful of Linux where font size is larger */
       --tab-pinned-horizontal-count: 5;
       /* TODO: These --space-* tokens should use semantic names shared with tabs.css */
-      width: calc(var(--tab-pinned-horizontal-count) * var(--tab-pinned-min-width-expanded) + 2 * var(--tab-pinned-container-margin-inline-expanded) + 1px);
+      width: var(
+        --sidebar-expanded-launcher-width,
+        calc(var(--tab-pinned-horizontal-count) * var(--tab-pinned-min-width-expanded) + 2 * var(--tab-pinned-container-margin-inline-expanded) + 1px)
+      );
     }
 
     :host([customWidth]) & {
@@ -50,13 +51,15 @@
   margin-inline: var(--tab-inner-inline-margin);
   margin-block-end: var(--space-small);
   min-height: 2px;
+  @media -moz-pref("browser.nova.enabled") {
+    min-height: 4px;
+  }
 
   &:hover {
     background-color: var(--focus-outline-color);
     border-radius: var(--border-radius-medium);
   }
 
-  /* stylelint-disable-next-line media-query-no-invalid */
   @media not -moz-pref("sidebar.visibility", "expand-on-hover") {
     /* We need these rules to apply at all times when the sidebar.visibility
     pref is not set to "expand-on-hover" as opposed to when the "sidebar-expand-on-hover" attribute
@@ -81,21 +84,35 @@
   }
 
   > moz-button:not(.tools-overflow) {
-    --button-outer-padding-inline: var(--space-medium);
+    /* --sidebar-launcher-button-padding-inline is set in the parent doc
+     * (browser/themes/shared/sidebar.css) so it can react to the document's
+     * uidensity attribute; falls back to --space-medium for any context
+     * that doesn't set it. The auto-compact width check uses a fixed
+     * reference width matching the non-compact value, so the launcher must
+     * visibly shrink in compact mode to keep the trigger stable. */
+    --button-outer-padding-inline: var(--sidebar-launcher-button-padding-inline, var(--space-medium));
     --button-outer-padding-block: var(--space-xxsmall);
 
     &:first-of-type {
       --button-outer-padding-block-start: var(--space-small);
+
+      @media -moz-pref("browser.nova.enabled") and (not -moz-pref("sidebar.verticalTabs")) {
+        --button-outer-padding-block-start: 4px;
+      }
     }
 
     &:last-of-type {
       --button-outer-padding-block-end: var(--space-small);
+
+      @media -moz-pref("browser.nova.enabled") and (not -moz-pref("sidebar.verticalTabs")) {
+        --button-outer-padding-block-end: 4px;
+      }
     }
   }
 
   moz-button:not([type~="ghost"]):not(:hover) {
     &::part(button) {
-      background-color: var(--toolbarbutton-active-background);
+      background-color: var(--toolbarbutton-background-color-active);
     }
   }
 
@@ -119,7 +136,10 @@
     padding-inline: var(--space-medium);
     padding-block-end: var(--space-small);
 
-    /* stylelint-disable-next-line media-query-no-invalid */
+    @media -moz-pref("browser.nova.enabled") {
+      gap: 12.5px;
+    }
+
     @media -moz-pref("sidebar.visibility", "expand-on-hover") {
       /* We need these rules to apply at all times when the sidebar.visibility
       pref is set to "expand-on-hover" as opposed to when the "sidebar-expand-on-hover" attribute
@@ -152,7 +172,6 @@
     align-items: flex-end;
   }
 
-  /* stylelint-disable-next-line media-query-no-invalid */
   @media -moz-pref("sidebar.visibility", "expand-on-hover") {
     /* We need these rules to apply at all times when the sidebar.visibility
     pref is set to "expand-on-hover" as opposed to when the "sidebar-expand-on-hover" attribute

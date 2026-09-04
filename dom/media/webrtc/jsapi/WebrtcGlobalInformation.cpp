@@ -64,7 +64,7 @@ class WebrtcContentParents {
   static std::vector<RefPtr<WebrtcGlobalParent>> sContentParents;
 };
 
-MOZ_RUNINIT std::vector<RefPtr<WebrtcGlobalParent>>
+MOZ_GLIBCXX_CONSTINIT std::vector<RefPtr<WebrtcGlobalParent>>
     WebrtcContentParents::sContentParents;
 
 WebrtcGlobalParent* WebrtcContentParents::Alloc() {
@@ -143,7 +143,7 @@ GetStatsPromiseForThisProcess(const nsAString& aPcIdFilter) {
     MOZ_RELEASE_ASSERT(aResult.IsResolve(), "AllSettled should never reject!");
     for (auto& reportResult : aResult.ResolveValue()) {
       if (reportResult.IsResolve()) {
-        reports.AppendElement(*reportResult.ResolveValue());
+        reports.AppendElement(std::move(*reportResult.ResolveValue()));
       }
     }
     return PWebrtcGlobalParent::GetStatsPromise::CreateAndResolve(
@@ -272,9 +272,9 @@ void WebrtcGlobalInformation::GatherHistory() {
       if (result.IsReject()) {
         return;
       }
-      for (const auto& report : result.ResolveValue()) {
+      for (auto& report : result.ResolveValue()) {
         WebrtcGlobalStatsHistory::Record(
-            MakeUnique<RTCStatsReportInternal>(report));
+            MakeUnique<RTCStatsReportInternal>(std::move(report)));
       }
     };
     promise->Then(GetMainThreadSerialEventTarget(), __func__,
@@ -534,7 +534,7 @@ void WebrtcGlobalInformation::GetLogging(
 }
 
 static bool sLastAECDebug = false;
-MOZ_RUNINIT static Maybe<nsCString> sAecDebugLogDir;
+constinit static Maybe<nsCString> sAecDebugLogDir;
 
 void WebrtcGlobalInformation::SetAecDebug(const GlobalObject& aGlobal,
                                           bool aEnable) {

@@ -4,7 +4,6 @@ from webdriver.error import TimeoutException
 from webdriver.bidi.error import UnknownErrorException
 from webdriver.bidi.modules.script import ContextTarget
 
-from tests.bidi import wait_for_bidi_events
 from ... import int_interval
 from .. import assert_navigation_info
 
@@ -20,7 +19,7 @@ PAGE_REDIRECTED_HTML = "/webdriver/tests/bidi/network/support/redirected.html"
 USER_PROMPT_OPENED_EVENT = "browsingContext.userPromptOpened"
 
 
-async def test_unsubscribe(bidi_session):
+async def test_unsubscribe(bidi_session, wait_for_bidi_events):
     await bidi_session.session.subscribe(events=[NAVIGATION_STARTED_EVENT])
     await bidi_session.session.unsubscribe(events=[NAVIGATION_STARTED_EVENT])
 
@@ -37,7 +36,7 @@ async def test_unsubscribe(bidi_session):
     await bidi_session.browsing_context.create(type_hint="tab")
 
     with pytest.raises(TimeoutException):
-        await wait_for_bidi_events(bidi_session, events, 1, timeout=0.5)
+        await wait_for_bidi_events(events, 1, timeout=0.5)
 
     remove_listener()
 
@@ -60,6 +59,7 @@ async def test_subscribe(
             "context": new_tab["context"],
             "navigation": result["navigation"],
             "url": url,
+            **({"userContext": new_tab["userContext"]} if "userContext" in event else {})
         },
     )
 
@@ -86,6 +86,7 @@ async def test_timestamp(
             "context": new_tab["context"],
             "navigation": result["navigation"],
             "timestamp": int_interval(time_start, time_end),
+            **({"userContext": new_tab["userContext"]} if "userContext" in event else {})
         },
     )
 
@@ -126,6 +127,7 @@ async def test_iframe(
             "context": top_context["context"],
             "navigation": result["navigation"],
             "url": test_page_same_origin_frame,
+            **({"userContext": top_context["userContext"]} if "userContext" in events[0] else {})
         },
     )
 
@@ -134,6 +136,7 @@ async def test_iframe(
         {
             "context": children_info[0]["context"],
             "url": test_page,
+            **({"userContext": children_info[0]["userContext"]} if "userContext" in events[1] else {})
         },
     )
     assert events[1]["navigation"] is not None
@@ -184,6 +187,7 @@ async def test_nested_iframes(
             "context": root_info["context"],
             "navigation": result["navigation"],
             "url": test_page_nested_frames,
+            **({"userContext": root_info["userContext"]} if "userContext" in events[0] else {})
         },
     )
 
@@ -192,6 +196,7 @@ async def test_nested_iframes(
         {
             "context": child1_info["context"],
             "url": test_page_same_origin_frame,
+            **({"userContext": child1_info["userContext"]} if "userContext" in events[1] else {})
         },
     )
     assert events[1]["navigation"] is not None
@@ -202,6 +207,7 @@ async def test_nested_iframes(
         {
             "context": child2_info["context"],
             "url": test_page,
+            **({"userContext": child2_info["userContext"]} if "userContext" in events[2] else {})
         },
     )
     assert events[2]["navigation"] is not None
@@ -236,7 +242,7 @@ async def test_same_document_navigation(bidi_session, new_tab, url, subscribe_ev
 
 
 @pytest.mark.parametrize("sandbox", [None, "sandbox_1"])
-async def test_document_write(bidi_session, subscribe_events, new_tab, sandbox):
+async def test_document_write(bidi_session, subscribe_events, wait_for_bidi_events, new_tab, sandbox):
     await subscribe_events(events=[NAVIGATION_STARTED_EVENT])
 
     # Track all received browsingContext.navigationStarted events in the events array
@@ -256,7 +262,7 @@ async def test_document_write(bidi_session, subscribe_events, new_tab, sandbox):
     )
 
     with pytest.raises(TimeoutException):
-        await wait_for_bidi_events(bidi_session, events, 1, timeout=0.5)
+        await wait_for_bidi_events(events, 1, timeout=0.5)
 
     remove_listener()
 
@@ -275,7 +281,12 @@ async def test_page_with_base_tag(
 
     assert_navigation_info(
         event,
-        {"context": new_tab["context"], "navigation": result["navigation"], "url": url},
+        {
+            "context": new_tab["context"],
+            "navigation": result["navigation"],
+            "url": url,
+            **({"userContext": new_tab["userContext"]} if "userContext" in event else {})
+        },
     )
 
 
@@ -308,6 +319,7 @@ async def test_invalid_navigation(
         {
             "context": new_tab["context"],
             "url": url,
+            **({"userContext": new_tab["userContext"]} if "userContext" in navigation_info else {})
         },
     )
     assert navigation_info["navigation"] is not None
@@ -316,7 +328,7 @@ async def test_invalid_navigation(
 
 
 async def test_redirect_http_equiv(
-    bidi_session, subscribe_events, top_context, url
+    bidi_session, subscribe_events, top_context, url, wait_for_bidi_events
 ):
     await subscribe_events(events=[NAVIGATION_STARTED_EVENT])
 
@@ -342,13 +354,14 @@ async def test_redirect_http_equiv(
 
     # Wait until we receive two events, one for the initial navigation and one
     # for the http-equiv "redirect".
-    await wait_for_bidi_events(bidi_session, events, 2)
+    await wait_for_bidi_events(events, 2)
 
     assert_navigation_info(
         events[0],
         {
             "context": top_context["context"],
             "url": http_equiv_url,
+            **({"userContext": top_context["userContext"]} if "userContext" in events[0] else {})
         },
     )
     assert_navigation_info(
@@ -356,6 +369,7 @@ async def test_redirect_http_equiv(
         {
             "context": top_context["context"],
             "url": redirected_url,
+            **({"userContext": top_context["userContext"]} if "userContext" in events[1] else {})
         },
     )
 
@@ -394,6 +408,7 @@ async def test_redirect_navigation(
         {
             "context": top_context["context"],
             "url": redirect_url,
+            **({"userContext": top_context["userContext"]} if "userContext" in events[0] else {})
         },
     )
 
@@ -468,7 +483,7 @@ async def test_with_beforeunload_prompt(
 
 
 @pytest.mark.parametrize("type_hint", ["tab", "window"])
-async def test_new_context(bidi_session, subscribe_events, type_hint):
+async def test_new_context(bidi_session, subscribe_events, type_hint, wait_for_bidi_events):
     await subscribe_events(events=[NAVIGATION_STARTED_EVENT])
 
     # Track all received browsingContext.navigationStarted events in the events array
@@ -485,7 +500,7 @@ async def test_new_context(bidi_session, subscribe_events, type_hint):
 
     # In the future we can wait for "browsingContext.contextCreated" event instead.
     with pytest.raises(TimeoutException):
-        await wait_for_bidi_events(bidi_session, events, 1, timeout=0.5)
+        await wait_for_bidi_events(events, 1, timeout=0.5)
 
     remove_listener()
 
@@ -508,13 +523,14 @@ async def test_navigate_to_about_blank(
             "context": new_tab["context"],
             "navigation": result["navigation"],
             "url": url,
+            **({"userContext": new_tab["userContext"]} if "userContext" in event else {})
         },
     )
 
 
 @pytest.mark.parametrize("url", ["", "about:blank", "about:blank?test"])
 async def test_window_open_with_about_blank(
-    bidi_session, subscribe_events, top_context, url
+    bidi_session, subscribe_events, top_context, url, wait_for_bidi_events
 ):
     await subscribe_events(events=[NAVIGATION_STARTED_EVENT])
 
@@ -536,7 +552,7 @@ async def test_window_open_with_about_blank(
 
     # In the future we can wait for "browsingContext.contextCreated" event instead.
     with pytest.raises(TimeoutException):
-        await wait_for_bidi_events(bidi_session, events, 1, timeout=0.5)
+        await wait_for_bidi_events(events, 1, timeout=0.5)
 
     remove_listener()
 
@@ -568,5 +584,6 @@ async def test_window_open_with_url(
         {
             "context": result[1]["context"],
             "url": url,
+            **({"userContext": result[1]["userContext"]} if "userContext" in event else {})
         },
     )

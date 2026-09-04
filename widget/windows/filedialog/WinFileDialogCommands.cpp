@@ -1,26 +1,34 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/widget/filedialog/WinFileDialogCommands.h"
 
-#include <type_traits>
 #include <shobjidl.h>
 #include <shtypes.h>
 #include <winerror.h>
+
+#include <atomic>
+#include <type_traits>
+
 #include "WinUtils.h"
 #include "mozilla/Logging.h"
 #include "mozilla/RefPtr.h"
+#include "mozilla/StaticPrefs_security.h"
+#include "mozilla/TimeStamp.h"
 #include "mozilla/WinHeaderOnlyUtils.h"
 #include "mozilla/ipc/LaunchError.h"
 #include "mozilla/ipc/ProtocolUtils.h"
 #include "mozilla/ipc/UtilityProcessManager.h"
 #include "mozilla/mscom/ApartmentRegion.h"
+#include "nsBaseFilePicker.h"
 #include "nsThreadUtils.h"
 
 namespace mozilla::widget::filedialog {
+
+// The default Windows thread stack size of 1Mb may not be enough for some
+// DLLs that are added to the file dialog by 3rd party apps.  Try 4Mb.
+const size_t kWindowsFileDialogStackSize = 4 * 1024 * 1024;
 
 const char* Error::KindName(Error::Kind kind) {
   switch (kind) {
@@ -232,18 +240,24 @@ mozilla::Result<nsString, Error> GetFolderResults(::IFileDialog* dialog) {
   }
 
   // If the user chose a Win7 Library, resolve to the library's
-  // default save folder.
-  RefPtr<IShellLibrary> shellLib;
-  RefPtr<IShellItem> folderPath;
-  MOZ_ENSURE_HRESULT_OK(
-      "CoCreateInstance(CLSID_ShellLibrary)",
-      CoCreateInstance(CLSID_ShellLibrary, nullptr, CLSCTX_INPROC_SERVER,
-                       IID_IShellLibrary, getter_AddRefs(shellLib)));
+  // default save folder. Only do this for items which are known not to be
+  // filesystem objects, like the user's Documents library (but not .library-ms
+  // files).
+  SFGAOF attrs = 0;
+  if (SUCCEEDED(item->GetAttributes(SFGAO_FILESYSTEM, &attrs)) &&
+      !(attrs & SFGAO_FILESYSTEM)) {
+    RefPtr<IShellLibrary> shellLib;
+    RefPtr<IShellItem> folderPath;
+    MOZ_ENSURE_HRESULT_OK(
+        "CoCreateInstance(CLSID_ShellLibrary)",
+        CoCreateInstance(CLSID_ShellLibrary, nullptr, CLSCTX_INPROC_SERVER,
+                         IID_IShellLibrary, getter_AddRefs(shellLib)));
 
-  if (shellLib && SUCCEEDED(shellLib->LoadLibraryFromItem(item, STGM_READ)) &&
-      SUCCEEDED(shellLib->GetDefaultSaveFolder(DSFT_DETECT, IID_IShellItem,
-                                               getter_AddRefs(folderPath)))) {
-    item.swap(folderPath);
+    if (shellLib && SUCCEEDED(shellLib->LoadLibraryFromItem(item, STGM_READ)) &&
+        SUCCEEDED(shellLib->GetDefaultSaveFolder(DSFT_DETECT, IID_IShellItem,
+                                                 getter_AddRefs(folderPath)))) {
+      item.swap(folderPath);
+    }
   }
 
   // get the folder's file system path
@@ -255,6 +269,65 @@ mozilla::Result<nsString, Error> GetFolderResults(::IFileDialog* dialog) {
 #undef MOZ_ENSURE_HRESULT_OK
 
 namespace detail {
+
+// IFileDialogEvents implementation that ignores a confirmation that arrives
+// before the input-protection time range has passed, by returning S_FALSE from
+// OnFileOk, which keeps the dialog open. It uses the shared timing check in
+// nsBaseFilePicker::IsWithinInputProtectionTimeRange.
+class FileDialogInputProtector final : public IFileDialogEvents {
+ public:
+  FileDialogInputProtector() : mShowTime(mozilla::TimeStamp::Now()) {}
+
+  // IUnknown
+  IFACEMETHODIMP QueryInterface(REFIID aRefIID, void** aResult) override {
+    if (aRefIID == IID_IUnknown || aRefIID == IID_IFileDialogEvents) {
+      *aResult = static_cast<IFileDialogEvents*>(this);
+      AddRef();
+      return S_OK;
+    }
+    *aResult = nullptr;
+    return E_NOINTERFACE;
+  }
+  IFACEMETHODIMP_(ULONG) AddRef() override { return ++mRefCnt; }
+  IFACEMETHODIMP_(ULONG) Release() override {
+    ULONG count = --mRefCnt;
+    if (count == 0) {
+      delete this;
+    }
+    return count;
+  }
+
+  // IFileDialogEvents
+  IFACEMETHODIMP OnFileOk(IFileDialog*) override {
+    if (nsBaseFilePicker::IsWithinInputProtectionTimeRange(
+            mShowTime, mozilla::TimeStamp::Now(),
+            mozilla::StaticPrefs::security_notification_enable_delay())) {
+      // Keep the dialog open and ignore this confirmation.
+      return S_FALSE;
+    }
+    return S_OK;
+  }
+  IFACEMETHODIMP OnFolderChanging(IFileDialog*, IShellItem*) override {
+    return S_OK;
+  }
+  IFACEMETHODIMP OnFolderChange(IFileDialog*) override { return S_OK; }
+  IFACEMETHODIMP OnSelectionChange(IFileDialog*) override { return S_OK; }
+  IFACEMETHODIMP OnShareViolation(IFileDialog*, IShellItem*,
+                                  FDE_SHAREVIOLATION_RESPONSE*) override {
+    return S_OK;
+  }
+  IFACEMETHODIMP OnTypeChange(IFileDialog*) override { return S_OK; }
+  IFACEMETHODIMP OnOverwrite(IFileDialog*, IShellItem*,
+                             FDE_OVERWRITE_RESPONSE*) override {
+    return S_OK;
+  }
+
+ private:
+  ~FileDialogInputProtector() = default;
+  std::atomic<ULONG> mRefCnt{0};
+  mozilla::TimeStamp mShowTime;
+};
+
 void LogProcessingError(LogModule* aModule, ipc::IProtocol* aCaller,
                         ipc::HasResultCodes::Result aCode,
                         const char* aReason) {
@@ -358,8 +431,9 @@ RefPtr<Promise<Res>> SpawnFileDialogThread(const char (&where)[N],
 
   RefPtr<nsIThread> thread;
   {
-    nsresult rv = NS_NewNamedThread("File Dialog", getter_AddRefs(thread),
-                                    nullptr, {.isUiThread = true});
+    nsresult rv = NS_NewNamedThread(
+        "File Dialog", getter_AddRefs(thread), nullptr,
+        {.stackSize = kWindowsFileDialogStackSize, .isUiThread = true});
     if (NS_FAILED(rv)) {
       return Promise<Res>::CreateAndReject(
           MOZ_FD_LOCAL_ERROR("NS_NewNamedThread", (HRESULT)rv), where);
@@ -457,7 +531,8 @@ using inner_result_of =
 template <typename ExtractorF,
           typename RetT = inner_result_of<ExtractorF, IFileDialog*>>
 auto SpawnPickerT(HWND parent, FileDialogType type, ExtractorF&& extractor,
-                  nsTArray<Command> commands) -> RefPtr<Promise<Maybe<RetT>>> {
+                  nsTArray<Command> commands, bool aNeedsInputProtection)
+    -> RefPtr<Promise<Maybe<RetT>>> {
   using ActionRetT = Result<Maybe<RetT>, Error>;
 
   return detail::SpawnFileDialogThread<Maybe<RetT>>(
@@ -470,7 +545,25 @@ auto SpawnPickerT(HWND parent, FileDialogType type, ExtractorF&& extractor,
 
         MOZ_TRY(ApplyCommands(dialog, commands));
 
-        if (HRESULT const rv = dialog->Show(parent); FAILED(rv)) {
+        // Ignore confirmations that arrive before the input-protection time
+        // range has passed. Advise is best effort: if it fails we just lose
+        // this check, which is harmless. The protector is created right before
+        // Show so its clock starts when the dialog becomes visible. We only do
+        // this for content-initiated pickers; aNeedsInputProtection carries
+        // that decision from the parent process.
+        RefPtr<FileDialogInputProtector> protector;
+        DWORD adviseCookie = 0;
+        bool advised = false;
+        if (aNeedsInputProtection) {
+          protector = MakeRefPtr<FileDialogInputProtector>();
+          advised = SUCCEEDED(dialog->Advise(protector.get(), &adviseCookie));
+        }
+
+        HRESULT const rv = dialog->Show(parent);
+        if (advised) {
+          dialog->Unadvise(adviseCookie);
+        }
+        if (FAILED(rv)) {
           if (rv == HRESULT_FROM_WIN32(ERROR_CANCELLED)) {
             return ActionRetT{Nothing()};
           }
@@ -487,15 +580,17 @@ auto SpawnPickerT(HWND parent, FileDialogType type, ExtractorF&& extractor,
 
 RefPtr<Promise<Maybe<Results>>> SpawnFilePicker(HWND parent,
                                                 FileDialogType type,
-                                                nsTArray<Command> commands) {
-  return detail::SpawnPickerT(parent, type, GetFileResults,
-                              std::move(commands));
+                                                nsTArray<Command> commands,
+                                                bool aNeedsInputProtection) {
+  return detail::SpawnPickerT(parent, type, GetFileResults, std::move(commands),
+                              aNeedsInputProtection);
 }
 
 RefPtr<Promise<Maybe<nsString>>> SpawnFolderPicker(HWND parent,
-                                                   nsTArray<Command> commands) {
+                                                   nsTArray<Command> commands,
+                                                   bool aNeedsInputProtection) {
   return detail::SpawnPickerT(parent, FileDialogType::Open, GetFolderResults,
-                              std::move(commands));
+                              std::move(commands), aNeedsInputProtection);
 }
 
 }  // namespace mozilla::widget::filedialog

@@ -15,13 +15,15 @@ import uuid
 from functools import partial
 from pprint import pprint
 
+import attr
 import mozpack.path as mozpath
 import sentry_sdk
 import yaml
 from mach.decorators import Command, CommandArgument, SubCommand
 from mach.registrar import Registrar
-from mozbuild.util import cpu_count, memoize
+from mozbuild.util import cpu_count
 from mozfile import load_source
+from mozlint.result import Issue, IssueEncoder, ResultSummary
 
 here = os.path.abspath(os.path.dirname(__file__))
 topsrcdir = os.path.abspath(os.path.dirname(os.path.dirname(here)))
@@ -104,6 +106,12 @@ BASE_LINK = "http://gecko-docs.mozilla.org-l1.s3-website.us-west-2.amazonaws.com
     action="store_true",
     help="Disable generating Python/JS API documentation",
 )
+@CommandArgument(
+    "--errors-file",
+    dest="errors_file",
+    default=None,
+    help="File to store errors in, in JSON format. Typically used for code review bot.",
+)
 def build_docs(
     command_context,
     path=None,
@@ -121,6 +129,7 @@ def build_docs(
     disable_warnings_check=False,
     verbose=None,
     no_autodoc=False,
+    errors_file=None,
 ):
     # TODO: Bug 1704891 - move the ESLint setup tools to a shared place.
     import setup_helper
@@ -149,7 +158,7 @@ def build_docs(
 
     from moztreedocs.package import create_tarball
 
-    unique_id = "%s/%s" % (project(), str(uuid.uuid1()))
+    unique_id = f"{project()}/{str(uuid.uuid1())}"
 
     outdir = outdir or os.path.join(command_context.topobjdir, "docs")
     savedir = os.path.join(outdir, fmt)
@@ -170,7 +179,7 @@ def build_docs(
         print(_dump_sphinx_backtrace())
         return die(
             "failed to generate documentation:\n"
-            "%s: could not find docs at this location" % path
+            f"{path}: could not find docs at this location"
         )
 
     if linkcheck:
@@ -187,11 +196,10 @@ def build_docs(
     if status != 0:
         print(_dump_sphinx_backtrace())
         return die(
-            "failed to generate documentation:\n"
-            "%s: sphinx return code %d" % (path, status)
+            f"failed to generate documentation:\n{path}: sphinx return code {status}"
         )
     else:
-        print("\nGenerated documentation:\n%s" % savedir)
+        print(f"\nGenerated documentation:\n{savedir}")
 
     if not disable_warnings_check:
         with open(os.path.join(DOC_ROOT, "config.yml")) as fh:
@@ -199,7 +207,7 @@ def build_docs(
 
         [fatal_errors, known_errors] = _check_sphinx_warnings(warnings, docs_config)
 
-        log_results(fatal_errors, known_errors)
+        log_results(fatal_errors, known_errors, command_context.topsrcdir, errors_file)
         if len(fatal_errors):
             return 1
 
@@ -220,9 +228,9 @@ def build_docs(
             json.dump(manager().trees, fh)
 
     if archive:
-        archive_path = os.path.join(outdir, "%s.tar.gz" % project())
+        archive_path = os.path.join(outdir, f"{project()}.tar.gz")
         create_tarball(archive_path, savedir)
-        print("Archived to %s" % archive_path)
+        print(f"Archived to {archive_path}")
 
     if upload:
         _s3_upload(savedir, project(), unique_id, version())
@@ -239,7 +247,7 @@ def build_docs(
         host, port = http.split(":", 1)
         port = int(port)
     except ValueError:
-        return die("invalid address: %s" % http)
+        return die(f"invalid address: {http}")
 
     server = Server()
 
@@ -361,7 +369,7 @@ def toggle_no_autodoc():
     moztreedocs._SphinxManager.NO_AUTODOC = True
 
 
-@memoize
+@functools.cache
 def _read_project_properties():
     path = os.path.normpath(manager().conf_py_path)
     conf = load_source("doc_conf", path)
@@ -428,7 +436,7 @@ def _s3_upload(root, project, unique_id, version=None):
     files = list(distribution_files(root))
     key_prefixes = []
     if version:
-        key_prefixes.append("%s/%s" % (project, version))
+        key_prefixes.append(f"{project}/{version}")
 
     # Until we redirect / to main/latest, upload the main docs
     # to the root.
@@ -453,9 +461,10 @@ def _s3_upload(root, project, unique_id, version=None):
         if (version and prefix.endswith(version)) or prefix == unique_id:
             continue
 
-        if prefix:
-            prefix += "/"
-        all_redirects.update({prefix + k: prefix + v for k, v in redirects.items()})
+        redirect_prefix = prefix + "/" if prefix else ""
+        all_redirects.update({
+            redirect_prefix + k: redirect_prefix + v for k, v in redirects.items()
+        })
 
     print("Redirects currently staged")
     pprint(all_redirects, indent=1)
@@ -526,7 +535,7 @@ def show_reference_targets(command_context, fmt="html", outdir=None):
 
 
 def die(msg, exit_code=1):
-    msg = "%s %s: %s" % (sys.argv[0], sys.argv[1], msg)
+    msg = f"{sys.argv[0]} {sys.argv[1]}: {msg}"
     print(msg, file=sys.stderr)
     return exit_code
 
@@ -548,7 +557,7 @@ def transform_error_regexp():
     )
 
 
-def transform_error(msg):
+def transform_error(msg, level):
     match = transform_error_regexp().match(msg)
     if match:
         filePath = match.group(1)
@@ -565,13 +574,17 @@ def transform_error(msg):
                 "relpath": filePath.replace(staging_path, original_path),
                 # Remove the first character, as it'll be the :
                 "lineno": (
-                    int(match.group(2)[1:]) if match.group(2) is not None else None
+                    int(match.group(2)[1:])
+                    if match.group(2) is not None and match.group(2)[1:].isdigit()
+                    else None
                 ),
+                "level": level,
                 "message": match.group(3),
             }
 
     return {
         "linter": "source-test-doc-upload",
+        "level": level,
         "message": msg,
     }
 
@@ -592,7 +605,36 @@ def print_result_to_stderr(known_or_unexpected, result_details):
     )
 
 
-def log_results(fatal_errors, known_errors):
+@attr.s(slots=True, kw_only=True)
+class AnalysisFormatIssue(Issue):
+    """
+    Adapter for the Issue class to produce results in a code review bot
+    compatible manner. Namely, use of line rather than lineno, and `path` as
+    the relative path rather than absolute.
+    """
+
+    line = attr.ib(default=None)
+
+    def __attrs_post_init__(self):
+        root = ResultSummary.root
+        assert root is not None, "Missing ResultSummary.root"
+        if os.path.isabs(self.path):
+            self.path = mozpath.relpath(self.path, root)
+        else:
+            self.path = mozpath.normpath(self.path)
+        self.line = self.lineno
+
+
+def create_issue(result):
+    """Creates an AnalysisFormatIssue from the given result"""
+    args = {}
+    for arg in attr.fields(AnalysisFormatIssue):
+        if arg.init:
+            args[arg.name] = result.get(arg.name)
+    return AnalysisFormatIssue(**args)
+
+
+def log_results(fatal_errors, known_errors, root, error_file=None):
     """
     This will always output to stdout, but optionally also dump messages
     to error_file in the JSON format needed for the review bot.
@@ -600,14 +642,31 @@ def log_results(fatal_errors, known_errors):
     Ideally we should reuse mozlint's logger here.
     """
 
+    result = ResultSummary(root)
+
     for m in known_errors:
-        result_details = transform_error(m)
+        # We log known errors as warnings for mozlint, so that they'll still
+        # be raised in the Code Review UI, and developers can see if they can
+        # fix them.
+        result_details = transform_error(m, "warning")
         print_result_to_stderr("KNOWN", result_details)
+        if "relpath" in result_details:
+            result.issues[result_details["relpath"]].append(
+                create_issue(result_details)
+            )
 
     print(f"Known Failures: {len(known_errors)}")
 
     for m in fatal_errors:
-        result_details = transform_error(m)
+        result_details = transform_error(m, "error")
         print_result_to_stderr("UNEXPECTED", result_details)
+        if "relpath" in result_details:
+            result.issues[result_details["relpath"]].append(
+                create_issue(result_details)
+            )
 
     print(f"Failures: {len(fatal_errors)}")
+
+    if error_file:
+        with open(error_file, "w") as fh:
+            json.dump(result.issues, fh, cls=IssueEncoder)

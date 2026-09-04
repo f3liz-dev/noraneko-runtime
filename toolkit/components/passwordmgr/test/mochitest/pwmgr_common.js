@@ -675,16 +675,29 @@ function registerRunTests(existingPasswordFieldsCount = 0, callback) {
   });
 }
 
-function enablePrimaryPassword() {
-  setPrimaryPassword(true);
+async function enablePrimaryPassword() {
+  await setPrimaryPassword(true);
 }
 
-function disablePrimaryPassword() {
-  setPrimaryPassword(false);
+async function disablePrimaryPassword() {
+  await setPrimaryPassword(false);
 }
 
 function setPrimaryPassword(enable) {
+  let primaryPasswordSet = new Promise(resolve => {
+    PWMGR_COMMON_PARENT.addMessageListener(
+      "primaryPasswordSet",
+      function primaryPasswordSet() {
+        PWMGR_COMMON_PARENT.removeMessageListener(
+          "primaryPasswordSet",
+          primaryPasswordSet
+        );
+        resolve();
+      }
+    );
+  });
   PWMGR_COMMON_PARENT.sendAsyncMessage("setPrimaryPassword", { enable });
+  return primaryPasswordSet;
 }
 
 function isLoggedIn() {
@@ -750,7 +763,8 @@ async function promiseFormsProcessed(expectedCount = 1) {
 
 async function loadFormIntoWindow(origin, html, win, expectedCount = 1, task) {
   const token = `channel${Math.random().toString().slice(2)}`;
-  const bc = new BroadcastChannel(token);
+  const bc =
+    SpecialPowers.wrap(BroadcastChannel).unpartitionedTestingChannel(token);
   const loadedPromise = new Promise(resolve => (bc.onmessage = resolve));
 
   let processedPromise = promiseFormsProcessed(expectedCount);
@@ -839,8 +853,8 @@ function runInParent(aFunctionOrURL) {
 function manageLoginsInParent() {
   return runInParent(function addLoginsInParentInner() {
     /* eslint-env mozilla/chrome-script */
-    addMessageListener("removeAllUserFacingLogins", () => {
-      Services.logins.removeAllUserFacingLogins();
+    addMessageListener("removeAllUserFacingLogins", async () => {
+      await Services.logins.removeAllUserFacingLoginsAsync();
     });
 
     addMessageListener("getLogins", async () => {

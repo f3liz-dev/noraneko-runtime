@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -28,7 +26,7 @@ namespace mozilla::dom {
 #  undef LOG_INTERNAL
 #endif  // LOG_INTERNAL
 #define LOG_INTERNAL(level, msg, ...) \
-  MOZ_LOG(gWebCodecsLog, LogLevel::level, (msg, ##__VA_ARGS__))
+  MOZ_LOG_FMT(gWebCodecsLog, LogLevel::level, msg, ##__VA_ARGS__)
 
 #ifdef LOG
 #  undef LOG
@@ -51,7 +49,8 @@ namespace mozilla::dom {
 #define LOGV(msg, ...) LOG_INTERNAL(Verbose, msg, ##__VA_ARGS__)
 
 NS_IMPL_CYCLE_COLLECTION_INHERITED(AudioEncoder, DOMEventTargetHelper,
-                                   mErrorCallback, mOutputCallback)
+                                   mErrorCallback, mOutputCallback,
+                                   mPendingFlushPromises)
 NS_IMPL_ADDREF_INHERITED(AudioEncoder, DOMEventTargetHelper)
 NS_IMPL_RELEASE_INHERITED(AudioEncoder, DOMEventTargetHelper)
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(AudioEncoder)
@@ -147,7 +146,7 @@ static void CloneConfiguration(RootedDictionary<AudioEncoderConfig>& aDest,
 }
 
 static bool IsAudioEncodeSupported(const nsAString& aCodec) {
-  LOG("IsEncodeSupported: %s", NS_ConvertUTF16toUTF8(aCodec).get());
+  LOG("IsEncodeSupported: {}", NS_ConvertUTF16toUTF8(aCodec).get());
 
   return aCodec.EqualsLiteral("opus") || aCodec.EqualsLiteral("vorbis");
 }
@@ -266,7 +265,7 @@ bool AudioEncoderTraits::IsSupported(
   bool canEncode =
       CanEncode(MakeRefPtr<AudioEncoderConfigInternal>(aConfig), errorMessage);
   if (!canEncode) {
-    LOGE("Can't encode configuration %s: %s", aConfig.ToString().get(),
+    LOGE("Can't encode configuration {}: {}", aConfig.ToString().get(),
          errorMessage.get());
   }
   return canEncode;
@@ -310,7 +309,7 @@ bool AudioEncoderTraits::Validate(const AudioEncoderConfig& aConfig,
   if ((aConfig.mBitrate.WasPassed() && aConfig.mBitrate.Value() == 0)) {
     aErrorMessage.AssignLiteral(
         "Invalid AudioEncoderConfig: bitrate equal to 0");
-    LOGE("%s", aErrorMessage.get());
+    LOGE("{}", aErrorMessage.get());
     return false;
   }
 
@@ -378,11 +377,11 @@ AudioEncoder::AudioEncoder(
                       std::move(aOutputCallback)) {
   MOZ_ASSERT(mErrorCallback);
   MOZ_ASSERT(mOutputCallback);
-  LOG("AudioEncoder %p ctor", this);
+  LOG("AudioEncoder {} ctor", fmt::ptr(this));
 }
 
 AudioEncoder::~AudioEncoder() {
-  LOG("AudioEncoder %p dtor", this);
+  LOG("AudioEncoder {} dtor", fmt::ptr(this));
   (void)ResetInternal(NS_ERROR_DOM_ABORT_ERR);
 }
 
@@ -414,7 +413,7 @@ already_AddRefed<AudioEncoder> AudioEncoder::Constructor(
 already_AddRefed<Promise> AudioEncoder::IsConfigSupported(
     const GlobalObject& aGlobal, const AudioEncoderConfig& aConfig,
     ErrorResult& aRv) {
-  LOG("AudioEncoder::IsConfigSupported, config: %s",
+  LOG("AudioEncoder::IsConfigSupported, config: {}",
       NS_ConvertUTF16toUTF8(aConfig.mCodec).get());
 
   nsCOMPtr<nsIGlobalObject> global = do_QueryInterface(aGlobal.GetAsSupports());
@@ -443,7 +442,7 @@ already_AddRefed<Promise> AudioEncoder::IsConfigSupported(
   auto configInternal = MakeRefPtr<AudioEncoderConfigInternal>(aConfig);
   bool canEncode = CanEncode(configInternal, errorMessage);
   if (!canEncode) {
-    LOG("CanEncode failed: %s", errorMessage.get());
+    LOG("CanEncode failed: {}", errorMessage.get());
   }
   RootedDictionary<AudioEncoderSupport> s(aGlobal.Context());
   s.mConfig.Construct(std::move(config));

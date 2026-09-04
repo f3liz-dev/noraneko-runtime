@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -785,8 +783,11 @@ uint32_t MacroAssembler::pushFakeReturnAddress(Register scratch) {
 // ===============================================================
 // WebAssembly
 
-FaultingCodeOffset MacroAssembler::wasmTrapInstruction() {
-  return FaultingCodeOffset(ud2().offset());
+FaultingCodeRange MacroAssembler::wasmTrapInstruction() {
+  auto before = currentOffset();
+  ud2();
+  auto after = currentOffset();
+  return FaultingCodeRange(before, after);
 }
 
 void MacroAssembler::wasmBoundsCheck32(Condition cond, Register index,
@@ -1177,10 +1178,7 @@ static void CompareExchange(MacroAssembler& masm,
     masm.movl(oldval, output);
   }
 
-  if (access) {
-    masm.append(*access, wasm::TrapMachineInsn::Atomic,
-                FaultingCodeOffset(masm.currentOffset()));
-  }
+  auto before = masm.currentOffset();
 
   // NOTE: the generated code must match the assembly code in gen_cmpxchg in
   // GenerateAtomicOperations.py
@@ -1197,6 +1195,12 @@ static void CompareExchange(MacroAssembler& masm,
       break;
     default:
       MOZ_CRASH("Invalid");
+  }
+
+  auto after = masm.currentOffset();
+  if (access) {
+    masm.appendAndVerify(*access, wasm::TrapMachineInsn::Atomic,
+                         FaultingCodeRange(before, after));
   }
 
   ExtendTo32(masm, type, output);
@@ -1238,10 +1242,7 @@ static void AtomicExchange(MacroAssembler& masm,
     masm.movl(value, output);
   }
 
-  if (access) {
-    masm.append(*access, wasm::TrapMachineInsn::Atomic,
-                FaultingCodeOffset(masm.currentOffset()));
-  }
+  auto before = masm.currentOffset();
 
   switch (Scalar::byteSize(type)) {
     case 1:
@@ -1257,6 +1258,13 @@ static void AtomicExchange(MacroAssembler& masm,
     default:
       MOZ_CRASH("Invalid");
   }
+
+  auto after = masm.currentOffset();
+  if (access) {
+    masm.appendAndVerify(*access, wasm::TrapMachineInsn::Atomic,
+                         FaultingCodeRange(before, after));
+  }
+
   ExtendTo32(masm, type, output);
 }
 
@@ -1438,16 +1446,15 @@ static void AtomicFetchOp(MacroAssembler& masm,
   };
 
   // Add trap instruction directly before the load.
-  if (access) {
-    masm.append(*access, WasmTrapMachineInsn(arrayType, op),
-                FaultingCodeOffset(masm.currentOffset()));
-  }
+  auto before = masm.currentOffset();
+  auto after = before;
 
   switch (op) {
     case AtomicOp::Add:
     case AtomicOp::Sub:
       // `add` and `sub` operations can be optimized with XADD.
       lock_xadd();
+      after = masm.currentOffset();
 
       ExtendTo32(masm, arrayType, output);
       break;
@@ -1459,6 +1466,7 @@ static void AtomicFetchOp(MacroAssembler& masm,
 
       // Load memory into eax.
       load();
+      after = masm.currentOffset();
 
       // Loop.
       Label again;
@@ -1483,6 +1491,13 @@ static void AtomicFetchOp(MacroAssembler& masm,
 
     default:
       MOZ_CRASH();
+  }
+
+  MOZ_ASSERT(before < after);
+  // Add trap instruction directly before the load.
+  if (access) {
+    masm.appendAndVerify(*access, WasmTrapMachineInsn(arrayType, op),
+                         FaultingCodeRange(before, after));
   }
 }
 
@@ -1546,10 +1561,7 @@ static void AtomicEffectOp(MacroAssembler& masm,
                            const wasm::MemoryAccessDesc* access,
                            Scalar::Type arrayType, AtomicOp op, V value,
                            const T& mem) {
-  if (access) {
-    masm.append(*access, wasm::TrapMachineInsn::Atomic,
-                FaultingCodeOffset(masm.currentOffset()));
-  }
+  auto before = masm.currentOffset();
 
   switch (Scalar::byteSize(arrayType)) {
     case 1:
@@ -1617,6 +1629,12 @@ static void AtomicEffectOp(MacroAssembler& masm,
       break;
     default:
       MOZ_CRASH();
+  }
+
+  auto after = masm.currentOffset();
+  if (access) {
+    masm.appendAndVerify(*access, wasm::TrapMachineInsn::Atomic,
+                         FaultingCodeRange(before, after));
   }
 }
 

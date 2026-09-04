@@ -1,14 +1,14 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "WinTextEventDispatcherListener.h"
+
 #include "KeyboardLayout.h"
+#include "WinIMEHandler.h"
 #include "mozilla/TextEventDispatcher.h"
 #include "mozilla/widget/IMEData.h"
 #include "nsWindow.h"
-#include "WinIMEHandler.h"
-#include "WinTextEventDispatcherListener.h"
 
 namespace mozilla {
 namespace widget {
@@ -28,10 +28,6 @@ void WinTextEventDispatcherListener::Shutdown() { sInstance = nullptr; }
 
 NS_IMPL_ISUPPORTS(WinTextEventDispatcherListener, TextEventDispatcherListener,
                   nsISupportsWeakReference)
-
-WinTextEventDispatcherListener::WinTextEventDispatcherListener() {}
-
-WinTextEventDispatcherListener::~WinTextEventDispatcherListener() {}
 
 NS_IMETHODIMP
 WinTextEventDispatcherListener::NotifyIME(

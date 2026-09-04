@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -13,6 +11,7 @@
 #include <limits>
 #include <memory>
 
+#include "NSSErrorsService.h"
 #include "cert.h"
 #include "cms.h"
 #include "cryptohi.h"
@@ -20,7 +19,6 @@
 #include "mozilla/Likely.h"
 #include "nsDebug.h"
 #include "nsError.h"
-#include "NSSErrorsService.h"
 #include "pk11hpke.h"
 #include "pk11pub.h"
 #include "pkcs12.h"
@@ -419,9 +417,6 @@ MOZ_TYPE_SPECIFIC_UNIQUE_PTR_TEMPLATE(UniqueNSSCMSMessage, NSSCMSMessage,
 MOZ_TYPE_SPECIFIC_UNIQUE_PTR_TEMPLATE(UniqueNSSCMSSignedData, NSSCMSSignedData,
                                       NSS_CMSSignedData_Destroy)
 
-MOZ_TYPE_SPECIFIC_UNIQUE_PTR_TEMPLATE(UniquePK11GenericObject,
-                                      PK11GenericObject,
-                                      PK11_DestroyGenericObject)
 MOZ_TYPE_SPECIFIC_UNIQUE_PTR_TEMPLATE(UniquePK11SlotList, PK11SlotList,
                                       PK11_FreeSlotList)
 

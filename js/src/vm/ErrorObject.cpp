@@ -1,17 +1,16 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sw=2 et tw=80:
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-
-#include "vm/ErrorObject-inl.h"
 
 #include "mozilla/Assertions.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/DebugOnly.h"
 #include "mozilla/Maybe.h"
 
+#include <algorithm>
+#include <cmath>
+#include <cstring>
 #include <utility>
 
 #include "jspubtd.h"
@@ -54,6 +53,7 @@
 #include "vm/ToSource.h"  // js::ValueToSource
 
 #include "vm/Compartment-inl.h"
+#include "vm/ErrorObject-inl.h"
 #include "vm/JSContext-inl.h"
 #include "vm/JSObject-inl.h"
 #include "vm/ObjectOperations-inl.h"
@@ -76,9 +76,7 @@ const JSClass ErrorObject::protoClasses[JSEXN_ERROR_LIMIT] = {
     IMPLEMENT_ERROR_PROTO_CLASS(EvalError),
     IMPLEMENT_ERROR_PROTO_CLASS(RangeError),
     IMPLEMENT_ERROR_PROTO_CLASS(ReferenceError),
-#ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
     IMPLEMENT_ERROR_PROTO_CLASS(SuppressedError),
-#endif
     IMPLEMENT_ERROR_PROTO_CLASS(SyntaxError),
     IMPLEMENT_ERROR_PROTO_CLASS(TypeError),
     IMPLEMENT_ERROR_PROTO_CLASS(URIError),
@@ -110,6 +108,12 @@ static const JSFunctionSpec error_static_methods[] = {
     JS_FS_END,
 };
 
+static const JSPropertySpec error_static_properties[] = {
+    JS_INT32_PS("stackTraceLimit", int32_t(MAX_REPORTED_STACK_DEPTH),
+                JSPROP_ENUMERATE),
+    JS_PS_END,
+};
+
 // Error.prototype and NativeError.prototype have own .message and .name
 // properties.
 #define COMMON_ERROR_PROPERTIES(name) \
@@ -131,9 +135,7 @@ IMPLEMENT_NATIVE_ERROR_PROPERTIES(AggregateError)
 IMPLEMENT_NATIVE_ERROR_PROPERTIES(EvalError)
 IMPLEMENT_NATIVE_ERROR_PROPERTIES(RangeError)
 IMPLEMENT_NATIVE_ERROR_PROPERTIES(ReferenceError)
-#ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
 IMPLEMENT_NATIVE_ERROR_PROPERTIES(SuppressedError)
-#endif
 IMPLEMENT_NATIVE_ERROR_PROPERTIES(SyntaxError)
 IMPLEMENT_NATIVE_ERROR_PROPERTIES(TypeError)
 IMPLEMENT_NATIVE_ERROR_PROPERTIES(URIError)
@@ -167,16 +169,15 @@ IMPLEMENT_NATIVE_ERROR_PROPERTIES(SuspendError)
 
 const ClassSpec ErrorObject::classSpecs[JSEXN_ERROR_LIMIT] = {
     {ErrorObject::createConstructor, ErrorObject::createProto,
-     error_static_methods, nullptr, error_methods, error_properties},
+     error_static_methods, error_static_properties, error_methods,
+     error_properties},
 
     IMPLEMENT_NATIVE_ERROR_SPEC(InternalError),
     IMPLEMENT_NATIVE_ERROR_SPEC(AggregateError),
     IMPLEMENT_NATIVE_ERROR_SPEC(EvalError),
     IMPLEMENT_NATIVE_ERROR_SPEC(RangeError),
     IMPLEMENT_NATIVE_ERROR_SPEC(ReferenceError),
-#ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
     IMPLEMENT_NATIVE_ERROR_SPEC(SuppressedError),
-#endif
     IMPLEMENT_NATIVE_ERROR_SPEC(SyntaxError),
     IMPLEMENT_NATIVE_ERROR_SPEC(TypeError),
     IMPLEMENT_NATIVE_ERROR_SPEC(URIError),
@@ -210,16 +211,7 @@ const ClassSpec ErrorObject::classSpecs[JSEXN_ERROR_LIMIT] = {
 static void exn_finalize(JS::GCContext* gcx, JSObject* obj);
 
 static const JSClassOps ErrorObjectClassOps = {
-    nullptr,       // addProperty
-    nullptr,       // delProperty
-    nullptr,       // enumerate
-    nullptr,       // newEnumerate
-    nullptr,       // resolve
-    nullptr,       // mayResolve
-    exn_finalize,  // finalize
-    nullptr,       // call
-    nullptr,       // construct
-    nullptr,       // trace
+    .finalize = exn_finalize,
 };
 
 const JSClass ErrorObject::classes[JSEXN_ERROR_LIMIT] = {
@@ -229,9 +221,7 @@ const JSClass ErrorObject::classes[JSEXN_ERROR_LIMIT] = {
     IMPLEMENT_ERROR_CLASS(EvalError),
     IMPLEMENT_ERROR_CLASS(RangeError),
     IMPLEMENT_ERROR_CLASS(ReferenceError),
-#ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
     IMPLEMENT_ERROR_CLASS(SuppressedError),
-#endif
     IMPLEMENT_ERROR_CLASS(SyntaxError),
     IMPLEMENT_ERROR_CLASS(TypeError),
     IMPLEMENT_ERROR_CLASS(URIError),
@@ -268,11 +258,7 @@ static ErrorObject* CreateErrorObject(JSContext* cx, const CallArgs& args,
   // non-standard fileName and lineNumber arguments when we have an options
   // object argument and the exception type is not SuppressedError.
   bool hasOptions =
-#ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
       args.get(messageArg + 1).isObject() && exnType != JSEXN_SUPPRESSEDERR;
-#else
-      args.get(messageArg + 1).isObject();
-#endif
 
   Rooted<mozilla::Maybe<Value>> cause(cx, mozilla::Nothing());
   if (hasOptions) {
@@ -327,13 +313,24 @@ static ErrorObject* CreateErrorObject(JSContext* cx, const CallArgs& args,
     columnNumber = JS::ColumnNumberOneOrigin(tmp.oneOriginValue());
   }
 
+  mozilla::Maybe<uint32_t> limit = GetStackTraceLimit(cx);
   RootedObject stack(cx);
-  if (!CaptureStack(cx, &stack)) {
+  if (!CaptureStack(cx, &stack, limit.valueOr(0))) {
     return nullptr;
   }
 
-  return ErrorObject::create(cx, exnType, stack, fileName, sourceId, lineNumber,
-                             columnNumber, nullptr, message, cause, proto);
+  Rooted<ErrorObject*> errObject(
+      cx,
+      ErrorObject::create(cx, exnType, stack, fileName, sourceId, lineNumber,
+                          columnNumber, nullptr, message, cause, proto));
+  if (!errObject) {
+    return nullptr;
+  }
+  if (limit.isNothing() && !DefineDataProperty(cx, errObject, cx->names().stack,
+                                               JS::UndefinedHandleValue)) {
+    return nullptr;
+  }
+  return errObject;
 }
 
 static bool Error(JSContext* cx, unsigned argc, Value* vp) {
@@ -349,10 +346,8 @@ static bool Error(JSContext* cx, unsigned argc, Value* vp) {
   MOZ_ASSERT(exnType != JSEXN_AGGREGATEERR,
              "AggregateError has its own constructor function");
 
-#ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
   MOZ_ASSERT(exnType != JSEXN_SUPPRESSEDERR,
              "SuppressedError has its own constuctor function");
-#endif
 
   JSProtoKey protoKey =
       JSCLASS_CACHED_PROTO_KEY(&ErrorObject::classes[exnType]);
@@ -419,7 +414,6 @@ static bool AggregateError(JSContext* cx, unsigned argc, Value* vp) {
   return true;
 }
 
-#ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
 // Explicit Resource Management Proposal
 // SuppressedError ( error, suppressed, message )
 // https://arai-a.github.io/ecma262-compare/?pr=3000&id=sec-suppressederror
@@ -471,7 +465,6 @@ static bool SuppressedError(JSContext* cx, unsigned argc, Value* vp) {
   args.rval().setObject(*obj);
   return true;
 }
-#endif
 
 /* static */
 JSObject* ErrorObject::createProto(JSContext* cx, JSProtoKey key) {
@@ -512,14 +505,10 @@ JSObject* ErrorObject::createConstructor(JSContext* cx, JSProtoKey key) {
     if (type == JSEXN_AGGREGATEERR) {
       native = AggregateError;
       nargs = 2;
-    }
-#ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
-    else if (type == JSEXN_SUPPRESSEDERR) {
+    } else if (type == JSEXN_SUPPRESSEDERR) {
       native = SuppressedError;
       nargs = 3;
-    }
-#endif
-    else {
+    } else {
       native = Error;
       nargs = 1;
     }
@@ -577,7 +566,7 @@ bool js::ErrorObject::init(JSContext* cx, Handle<ErrorObject*> obj,
   cx->check(obj, stack);
 
   // Null out early in case of error, for exn_finalize's sake.
-  obj->initReservedSlot(ERROR_REPORT_SLOT, PrivateValue(nullptr));
+  obj->initReservedSlotTyped(ERROR_REPORT_SLOT, PrivateValue(nullptr));
 
   if (!SharedShape::ensureInitialCustomShape<ErrorObject>(cx, obj)) {
     return false;
@@ -622,8 +611,8 @@ bool js::ErrorObject::init(JSContext* cx, Handle<ErrorObject*> obj,
       obj->lookupPure(NameToId(cx->names().cause))->slot() == CAUSE_SLOT);
 
   JSErrorReport* report = errorReport.release();
-  obj->initReservedSlot(STACK_SLOT, ObjectOrNullValue(stack));
-  obj->setReservedSlot(ERROR_REPORT_SLOT, PrivateValue(report));
+  obj->initReservedSlotTyped(STACK_SLOT, ObjectOrNullValue(stack));
+  obj->setReservedSlotTyped(ERROR_REPORT_SLOT, PrivateValue(report));
   obj->initReservedSlot(FILENAME_SLOT, StringValue(fileName));
   obj->initReservedSlot(LINENUMBER_SLOT, Int32Value(lineNumber));
   obj->initReservedSlot(COLUMNNUMBER_SLOT,
@@ -636,10 +625,11 @@ bool js::ErrorObject::init(JSContext* cx, Handle<ErrorObject*> obj,
   } else {
     obj->initReservedSlot(CAUSE_SLOT, MagicValue(JS_ERROR_WITHOUT_CAUSE));
   }
-  obj->initReservedSlot(SOURCEID_SLOT, Int32Value(sourceId));
+  obj->initReservedSlotTyped(SOURCEID_SLOT, Int32Value(sourceId));
   if (obj->mightBeWasmTrap()) {
-    MOZ_ASSERT(JSCLASS_RESERVED_SLOTS(obj->getClass()) > WASM_TRAP_SLOT);
-    obj->initReservedSlot(WASM_TRAP_SLOT, BooleanValue(false));
+    MOZ_ASSERT(JSCLASS_RESERVED_SLOTS(obj->getClass()) >
+               WASM_TRAP_SLOT.index());
+    obj->initReservedSlotTyped(WASM_TRAP_SLOT, BooleanValue(false));
   }
 
   return true;
@@ -728,45 +718,8 @@ JSErrorReport* js::ErrorObject::getOrCreateErrorReport(JSContext* cx) {
   if (!copy) {
     return nullptr;
   }
-  setReservedSlot(ERROR_REPORT_SLOT, PrivateValue(copy.get()));
+  setReservedSlotTyped(ERROR_REPORT_SLOT, PrivateValue(copy.get()));
   return copy.release();
-}
-
-static bool FindErrorInstanceOrPrototype(JSContext* cx, HandleObject obj,
-                                         MutableHandleObject result) {
-  // Walk up the prototype chain until we find an error object instance or
-  // prototype object. This allows code like:
-  //  Object.create(Error.prototype).stack
-  // or
-  //   function NYI() { }
-  //   NYI.prototype = new Error;
-  //   (new NYI).stack
-  // to continue returning stacks that are useless, but at least don't throw.
-
-  RootedObject curr(cx, obj);
-  RootedObject target(cx);
-  do {
-    target = CheckedUnwrapStatic(curr);
-    if (!target) {
-      ReportAccessDenied(cx);
-      return false;
-    }
-    if (IsErrorProtoKey(StandardProtoKeyOrNull(target))) {
-      result.set(target);
-      return true;
-    }
-
-    if (!GetPrototype(cx, curr, &curr)) {
-      return false;
-    }
-  } while (curr);
-
-  // We walked the whole prototype chain and did not find an Error
-  // object.
-  JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
-                            JSMSG_INCOMPATIBLE_PROTO, "Error", "(get stack)",
-                            obj->getClass()->name);
-  return false;
 }
 
 static MOZ_ALWAYS_INLINE bool IsObject(HandleValue v) { return v.isObject(); }
@@ -780,10 +733,9 @@ bool js::ErrorObject::getStack(JSContext* cx, unsigned argc, Value* vp) {
 
 /* static */
 bool js::ErrorObject::getStack_impl(JSContext* cx, const CallArgs& args) {
-  RootedObject thisObj(cx, &args.thisv().toObject());
-
-  RootedObject obj(cx);
-  if (!FindErrorInstanceOrPrototype(cx, thisObj, &obj)) {
+  RootedObject obj(cx, CheckedUnwrapStatic(&args.thisv().toObject()));
+  if (!obj) {
+    ReportAccessDenied(cx);
     return false;
   }
 
@@ -845,8 +797,8 @@ bool js::ErrorObject::setStack_impl(JSContext* cx, const CallArgs& args) {
 
 void js::ErrorObject::setFromWasmTrap() {
   MOZ_ASSERT(mightBeWasmTrap());
-  MOZ_ASSERT(JSCLASS_RESERVED_SLOTS(getClass()) > WASM_TRAP_SLOT);
-  setReservedSlot(WASM_TRAP_SLOT, BooleanValue(true));
+  MOZ_ASSERT(JSCLASS_RESERVED_SLOTS(getClass()) > WASM_TRAP_SLOT.index());
+  setReservedSlotTyped(WASM_TRAP_SLOT, BooleanValue(true));
 }
 
 JSString* js::ErrorToSource(JSContext* cx, HandleObject obj) {
@@ -1013,6 +965,42 @@ static bool exn_isError(JSContext* cx, unsigned argc, Value* vp) {
 
 // The below is the "documentation" from https://v8.dev/docs/stack-trace-api
 //
+// Setting it to 0 disables stack trace collection. Any finite integer value
+// can be used as the maximum number of frames to collect. Setting it to
+// Infinity means that all frames get collected. This variable only affects
+// the current context; it has to be set explicitly for each context that
+// needs a different value.
+//
+// Undocumented, but setting it to `undefined` will cause the `stack`
+// property to also be `undefined`. In this case, we return Nothing.
+mozilla::Maybe<uint32_t> js::GetStackTraceLimit(JSContext* cx) {
+  if (!JS::Prefs::experimental_error_stack_trace_limit()) {
+    return mozilla::Some(uint32_t(MAX_REPORTED_STACK_DEPTH));
+  }
+  JSObject* errorCtor = cx->global()->maybeGetConstructor(JSProto_Error);
+  if (!errorCtor) {
+    return mozilla::Some(uint32_t(MAX_REPORTED_STACK_DEPTH));
+  }
+  Value limitVal;
+  if (!GetPropertyPure(cx, errorCtor, NameToId(cx->names().stackTraceLimit),
+                       &limitVal)) {
+    return mozilla::Some(uint32_t(MAX_REPORTED_STACK_DEPTH));
+  }
+  if (limitVal.isUndefined()) {
+    return mozilla::Nothing();
+  }
+  if (!limitVal.isNumber()) {
+    return mozilla::Some(uint32_t(0));
+  }
+  double d = limitVal.toNumber();
+  if (std::isnan(d) || d < 0) {
+    return mozilla::Some(uint32_t(0));
+  }
+  return mozilla::Some(uint32_t(std::min(d, double(MAX_REPORTED_STACK_DEPTH))));
+}
+
+// The below is the "documentation" from https://v8.dev/docs/stack-trace-api
+//
 //  ## Stack trace collection for custom exceptions
 //
 //  The stack trace mechanism used for built-in errors is implemented using a
@@ -1065,27 +1053,32 @@ static bool exn_captureStackTrace(JSContext* cx, unsigned argc, Value* vp) {
     }
   }
 
-  RootedObject stack(cx);
-  if (!CaptureCurrentStack(
-          cx, &stack, JS::StackCapture(JS::MaxFrames(MAX_REPORTED_STACK_DEPTH)),
-          caller)) {
-    return false;
-  }
+  mozilla::Maybe<uint32_t> limit = GetStackTraceLimit(cx);
+  RootedValue stackVal(cx, UndefinedValue());
+  if (limit.isSome()) {
+    RootedObject stack(cx);
+    if (*limit > 0) {
+      if (!CaptureCurrentStack(
+              cx, &stack, JS::StackCapture(JS::MaxFrames(*limit)), caller)) {
+        return false;
+      }
+    }
 
-  RootedString stackString(cx);
+    RootedString stackString(cx);
 
-  // Do frame filtering based on the current realm, to filter out any
-  // chrome frames which could exist on the stack.
-  JSPrincipals* principals = cx->realm()->principals();
-  if (!BuildStackString(cx, principals, stack, &stackString)) {
-    return false;
+    // Do frame filtering based on the current realm, to filter out any
+    // chrome frames which could exist on the stack.
+    JSPrincipals* principals = cx->realm()->principals();
+    if (!BuildStackString(cx, principals, stack, &stackString)) {
+      return false;
+    }
+    stackVal.setString(stackString);
   }
 
   // V8 installs a non-enumerable, configurable getter-setter on the object.
   // JSC installs a non-enumerable, configurable, writable value on the
   // object. We are following JSC here, not V8.
-  RootedValue string(cx, StringValue(stackString));
-  if (!DefineDataProperty(cx, obj, cx->names().stack, string, 0)) {
+  if (!DefineDataProperty(cx, obj, cx->names().stack, stackVal, 0)) {
     return false;
   }
 
@@ -1243,16 +1236,19 @@ struct SuppressErrorsGuard {
   ~SuppressErrorsGuard() { JS::SetWarningReporter(cx, prevReporter); }
 };
 
-bool js::CaptureStack(JSContext* cx, MutableHandleObject stack) {
-  return CaptureCurrentStack(
-      cx, stack, JS::StackCapture(JS::MaxFrames(MAX_REPORTED_STACK_DEPTH)));
+bool js::CaptureStack(JSContext* cx, MutableHandleObject stack,
+                      uint32_t limit) {
+  if (limit == 0) {
+    return true;
+  }
+  return CaptureCurrentStack(cx, stack, JS::StackCapture(JS::MaxFrames(limit)));
 }
 
 JSString* js::ComputeStackString(JSContext* cx) {
   SuppressErrorsGuard seg(cx);
 
   RootedObject stack(cx);
-  if (!CaptureStack(cx, &stack)) {
+  if (!CaptureStack(cx, &stack, MAX_REPORTED_STACK_DEPTH)) {
     return nullptr;
   }
 
@@ -1366,8 +1362,9 @@ bool js::ErrorToException(JSContext* cx, JSErrorReport* reportp,
   // Error reports don't provide a |cause|, so we default to |Nothing| here.
   auto cause = JS::NothingHandleValue;
 
+  mozilla::Maybe<uint32_t> limit = GetStackTraceLimit(cx);
   RootedObject stack(cx);
-  if (!CaptureStack(cx, &stack)) {
+  if (!CaptureStack(cx, &stack, limit.valueOr(0))) {
     return false;
   }
 
@@ -1376,11 +1373,18 @@ bool js::ErrorToException(JSContext* cx, JSErrorReport* reportp,
     return false;
   }
 
-  ErrorObject* errObject =
+  Rooted<ErrorObject*> errObject(
+      cx,
       ErrorObject::create(cx, exnType, stack, fileName, sourceId, lineNumber,
-                          columnNumber, std::move(report), messageStr, cause);
+                          columnNumber, std::move(report), messageStr, cause));
   if (!errObject) {
     return false;
+  }
+  if (limit.isNothing()) {
+    if (!DefineDataProperty(cx, errObject, cx->names().stack,
+                            JS::UndefinedHandleValue)) {
+      return false;
+    }
   }
 
   // Throw it.
@@ -1566,6 +1570,71 @@ JSString* JS::ErrorReportBuilder::maybeCreateReportFromDOMException(
   return messageStr;
 }
 
+// Build a side-effect-free preview of a non-Error exception object by listing
+// its own string-keyed property names, e.g. |Object { code, message }|,
+// instead of the unhelpful bare "Object". This runs while reporting an
+// exception without side effects, so it must not execute user code: only own
+// properties are inspected and getters and proxy traps are never invoked.
+// Indexed properties stored as dense elements are not included.
+// Cross-compartment wrappers (including cross-origin objects) are not native
+// and are left opaque. Returns just |ClassName| when there are no such
+// properties.
+static JSString* DescribeUncaughtObjectNoSideEffects(JSContext* cx,
+                                                     HandleObject exnObject) {
+  if (!exnObject->is<NativeObject>()) {
+    return nullptr;
+  }
+
+  Rooted<NativeObject*> nobj(cx, &exnObject->as<NativeObject>());
+
+  AutoClearPendingException acpe(cx);
+  JSStringBuilder sb(cx);
+
+  const char* className = nobj->getClass()->name;
+  if (!sb.append(className, strlen(className))) {
+    return nullptr;
+  }
+
+  static constexpr uint32_t MaxProps = 10;
+
+  uint32_t written = 0;
+  Rooted<JSString*> key(cx);
+  for (ShapePropertyIter<CanGC> iter(cx, nobj->shape()); !iter.done(); iter++) {
+    if (!iter->key().isString()) {
+      continue;
+    }
+    if (written == MaxProps) {
+      if (!sb.append(", ...")) {
+        return nullptr;
+      }
+      break;
+    }
+    if (written == 0) {
+      if (!sb.append(" { ")) {
+        return nullptr;
+      }
+    } else if (!sb.append(", ")) {
+      return nullptr;
+    }
+    key = iter->key().toString();
+    if (!sb.append(key)) {
+      return nullptr;
+    }
+    written++;
+  }
+
+  if (written == 0) {
+    // Just return the className as a string.
+    return sb.finishString();
+  }
+
+  if (!sb.append(" }")) {
+    return nullptr;
+  }
+
+  return sb.finishString();
+}
+
 bool JS::ErrorReportBuilder::init(JSContext* cx,
                                   const JS::ExceptionStack& exnStack,
                                   SniffingBehavior sniffingBehavior) {
@@ -1606,8 +1675,16 @@ bool JS::ErrorReportBuilder::init(JSContext* cx,
     } else {
       str = nullptr;
     }
-  } else if (exnObject && sniffingBehavior == NoSideEffects) {
-    str = cx->names().Object;
+  } else if (exnObject && sniffingBehavior != WithSideEffects) {
+    // Reporting a non-Error object without running user code. For callers that
+    // opted in, show a preview built from its own property names instead of
+    // the bare "Object".
+    if (sniffingBehavior == NoSideEffectsListPropertyNames) {
+      str = DescribeUncaughtObjectNoSideEffects(cx, exnObject);
+    }
+    if (!str) {
+      str = cx->names().Object;
+    }
   } else {
     str = js::ToString<CanGC>(cx, exnStack.exception());
   }
@@ -1839,9 +1916,21 @@ JSObject* js::CopyErrorObject(JSContext* cx, Handle<ErrorObject*> err) {
   JSExnType errorType = err->type();
 
   // Create the Error object.
-  return ErrorObject::create(cx, errorType, stack, fileName, sourceId,
-                             lineNumber, columnNumber, std::move(copyReport),
-                             message, cause);
+  Rooted<ErrorObject*> copy(
+      cx,
+      ErrorObject::create(cx, errorType, stack, fileName, sourceId, lineNumber,
+                          columnNumber, std::move(copyReport), message, cause));
+  if (!copy) {
+    return nullptr;
+  }
+
+  // Preserve the Wasm trap flag so that a copied trap remains uncatchable by
+  // Wasm exception handling (catch_all).
+  if (err->mightBeWasmTrap() && err->fromWasmTrap()) {
+    copy->setFromWasmTrap();
+  }
+
+  return copy;
 }
 
 JS_PUBLIC_API bool JS::CreateError(JSContext* cx, JSExnType type,
@@ -1952,7 +2041,7 @@ const char* js::ValueToSourceForError(JSContext* cx, HandleValue val,
 bool js::GetInternalError(JSContext* cx, unsigned errorNumber,
                           MutableHandleValue error) {
   FixedInvokeArgs<1> args(cx);
-  args[0].set(Int32Value(errorNumber));
+  args[0].setInt32(errorNumber);
   return CallSelfHostedFunction(cx, cx->names().GetInternalError,
                                 NullHandleValue, args, error);
 }
@@ -1960,7 +2049,7 @@ bool js::GetInternalError(JSContext* cx, unsigned errorNumber,
 bool js::GetTypeError(JSContext* cx, unsigned errorNumber,
                       MutableHandleValue error) {
   FixedInvokeArgs<1> args(cx);
-  args[0].set(Int32Value(errorNumber));
+  args[0].setInt32(errorNumber);
   return CallSelfHostedFunction(cx, cx->names().GetTypeError, NullHandleValue,
                                 args, error);
 }
@@ -1968,7 +2057,7 @@ bool js::GetTypeError(JSContext* cx, unsigned errorNumber,
 bool js::GetAggregateError(JSContext* cx, unsigned errorNumber,
                            MutableHandleValue error) {
   FixedInvokeArgs<1> args(cx);
-  args[0].set(Int32Value(errorNumber));
+  args[0].setInt32(errorNumber);
   return CallSelfHostedFunction(cx, cx->names().GetAggregateError,
                                 NullHandleValue, args, error);
 }

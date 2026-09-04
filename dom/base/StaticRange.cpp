@@ -1,11 +1,10 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/StaticRange.h"
 
+#include "mozilla/dom/CrossShadowBoundaryRange.h"
 #include "mozilla/dom/StaticRangeBinding.h"
 #include "nsContentUtils.h"
 #include "nsINode.h"
@@ -109,7 +108,8 @@ bool StaticRange::IsValid() const {
     return false;
   }
 
-  const Maybe<int32_t> pointOrder = nsContentUtils::ComparePoints(mStart, mEnd);
+  const Maybe<int32_t> pointOrder =
+      nsContentUtils::ComparePoints<TreeKind::ShadowIncludingDOM>(mStart, mEnd);
   return pointOrder.isSome() && *pointOrder <= 0;
 }
 
@@ -137,6 +137,13 @@ void StaticRange::DoSetRange(const RangeBoundaryBase<SPT, SRT>& aStartBoundary,
   mAreStartAndEndInSameTree =
       RangeUtils::ComputeRootNode(mStart.GetContainer()) ==
       RangeUtils::ComputeRootNode(mEnd.GetContainer());
+
+  // CrossShadowBoundaryRange must keep its mutation observer registered on the
+  // common ancestor of the current boundaries. This is the single point every
+  // boundary change funnels through, so update it here for all of them.
+  if (IsCrossShadowBoundaryRange()) {
+    AsCrossShadowBoundaryRange()->UpdateCommonAncestor();
+  }
 }
 
 /* static */

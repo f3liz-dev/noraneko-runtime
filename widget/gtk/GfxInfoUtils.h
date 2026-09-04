@@ -1,6 +1,4 @@
-/* vim: se cin sw=2 ts=2 et : */
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,7 +6,13 @@
 #ifndef WIDGET_GTK_GFXINFO_UTILS_h_
 #define WIDGET_GTK_GFXINFO_UTILS_h_
 
+// Print test results to stdout and logging to stderr
+#define OUTPUT_PIPE 1
 #define LOG_PIPE 2
+
+#include <fcntl.h>
+#include <stdio.h>
+#include <unistd.h>
 
 #include <cstdarg>
 
@@ -23,7 +27,7 @@ static void log(const char* format, ...) {
   va_end(args);
 }
 
-static int output_pipe = 1;
+static int output_pipe = OUTPUT_PIPE;
 static void close_logging() {
   // we want to redirect to /dev/null stdout, stderr, and while we're at it,
   // any PR logging file descriptors. To that effect, we redirect all positive

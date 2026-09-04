@@ -31,6 +31,14 @@ export function initialSourcesState() {
     mutableBreakpointPositions: new Map(),
 
     /**
+     * Set(Source ID: string)
+     *
+     * This is a list of IDs for the style sheet sources which have been disabled and
+     * no longer have an impact on the page.
+     */
+    mutableDisabledStylesheetsIDs: new Set(),
+
+    /**
      * List of all breakable lines for original sources only.
      *
      * Map(source id => promise or array<int> : breakable line numbers>)
@@ -123,7 +131,6 @@ export function initialSourcesState() {
   };
   /* eslint-disable sort-keys */
 }
-
 function update(state = initialSourcesState(), action) {
   switch (action.type) {
     case "ADD_SOURCES":
@@ -254,6 +261,10 @@ function update(state = initialSourcesState(), action) {
     case "REMOVE_SOURCES": {
       return removeSourcesAndActors(state, action);
     }
+
+    case "SET_STYLESHEET_VISIBILITY": {
+      return updateDisabledStyleSheets(state, action);
+    }
   }
 
   return state;
@@ -382,7 +393,7 @@ function removeSourcesAndActors(state, action) {
   }
 
   for (const removedActor of action.actors) {
-    const sourceId = removedActor.source;
+    const sourceId = removedActor.sourceObject.id;
     const actorsForSource = mutableSourceActors.get(sourceId);
     // actors may have already been cleared by the previous for..loop
     if (!actorsForSource) {
@@ -419,7 +430,7 @@ function insertSourceActors(state, action) {
   // The `sourceActor` objects are defined from `newGeneratedSources` action:
   // https://searchfox.org/mozilla-central/rev/4646b826a25d3825cf209db890862b45fa09ffc3/devtools/client/debugger/src/actions/sources/newSources.js#300-314
   for (const sourceActor of sourceActors) {
-    const sourceId = sourceActor.source;
+    const sourceId = sourceActor.sourceObject.id;
     // We always clone the array of source actors as we return it from selectors.
     // So the map is mutable, but its values are considered immutable and will change
     // anytime there is a new actor added per source ID.
@@ -437,11 +448,28 @@ function insertSourceActors(state, action) {
   if (scriptActors.length) {
     // If new HTML sources are being added, we need to clear the breakpoint
     // positions since the new source is a <script> with new breakpoints.
-    for (const { source } of scriptActors) {
-      state.mutableBreakpointPositions.delete(source);
+    for (const { sourceObject } of scriptActors) {
+      state.mutableBreakpointPositions.delete(sourceObject.id);
     }
   }
 
+  return { ...state };
+}
+
+function updateDisabledStyleSheets(state, action) {
+  const { sourceId, isDisabled } = action;
+  const { mutableDisabledStylesheetsIDs } = state;
+  if (isDisabled) {
+    if (mutableDisabledStylesheetsIDs.has(sourceId)) {
+      return state;
+    }
+    mutableDisabledStylesheetsIDs.add(sourceId);
+  } else {
+    if (!mutableDisabledStylesheetsIDs.has(sourceId)) {
+      return state;
+    }
+    mutableDisabledStylesheetsIDs.delete(sourceId);
+  }
   return { ...state };
 }
 

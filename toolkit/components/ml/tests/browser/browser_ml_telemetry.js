@@ -31,6 +31,9 @@ function getGleanCount(metricsName, engineId = "default-engine") {
   return metrics[engineId]?.testGetValue()?.count || 0;
 }
 
+const TELEMETRY_TEST_STUB_URL =
+  "chrome://mochitests/content/browser/toolkit/components/ml/tests/browser/ml_telemetry_stub.worker.mjs";
+
 /**
  * Check that we record the engine creation and the inference run
  */
@@ -117,6 +120,7 @@ add_task(async function test_default_telemetry() {
     checkNumber("cores");
     checkNumber("cpu_utilization");
     checkNumber("memory_bytes");
+    checkNumber("system_memory_mb");
 
     Assert.equal(extra.feature_id, "test-feature");
     Assert.equal(extra.engine_id, "default-engine");
@@ -254,67 +258,6 @@ add_task(async function test_model_download_telemetry_success() {
   // Allow any url
   Services.env.set("MOZ_ALLOW_EXTERNAL_ML_HUB", "true");
 
-  // Mocking function used in the workers or child doesn't work.
-  // So we are stubbing the code run by the worker.
-  const workerCode = `
-  // Inject the original worker code
-
-  ${await getMLEngineWorkerCode()}
-
-  // Stub
-  ChromeUtils.defineESModuleGetters(
-  lazy,
-  {
-    createFileUrl: "chrome://global/content/ml/Utils.sys.mjs",
-
-  },
-  { global: "current" }
-);
-
-  // Change the getBackend to a mocked version that doesn't actually do inference
-  // but does initiate model downloads
-
-  lazy.getBackend = async function (
-    mlEngineWorker,
-    _,
-    {
-      modelHubUrlTemplate,
-      modelHubRootUrl,
-      modelId,
-      modelRevision,
-      modelFile,
-      engineId,
-    } = {}
-  ) {
-    const url = lazy.createFileUrl({
-      model: modelId,
-      revision: modelRevision,
-      file: modelFile,
-      urlTemplate: modelHubUrlTemplate,
-      rootUrl: modelHubRootUrl,
-    });
-
-    const result = await mlEngineWorker.getModelFile({url}).catch(() => {});
-
-    // Download Another file using engineId as revision
-    const url2 = lazy.createFileUrl({
-      model: modelId,
-      revision: engineId,
-      file: modelFile,
-      urlTemplate: modelHubUrlTemplate,
-      rootUrl: modelHubRootUrl,
-    });
-    const result2 = await mlEngineWorker.getModelFile({url: url2}).catch(() => {});
-
-    return {
-      run: () => {},
-    };
-  };
-`;
-
-  const blob = new Blob([workerCode], { type: "application/javascript" });
-  const blobURL = URL.createObjectURL(blob);
-
   let wasmBufferStub = sinon
     .stub(MLEngineParent, "getWasmArrayBuffer")
     .returns(new ArrayBuffer(16));
@@ -322,7 +265,7 @@ add_task(async function test_model_download_telemetry_success() {
   let promiseStub = sinon
     .stub(MLEngineParent, "getWorkerConfig")
     .callsFake(function () {
-      return { url: blobURL, options: { type: "module" } };
+      return { url: TELEMETRY_TEST_STUB_URL, options: { type: "module" } };
     });
 
   await IndexedDBCache.init({ reset: true });
@@ -330,9 +273,9 @@ add_task(async function test_model_download_telemetry_success() {
 
   await createEngine({
     engineId: "main",
-    taskName: "real-wllama-text-generation",
+    taskName: "real-llama-text-generation",
     featureId: "link-preview",
-    backend: "wllama",
+    backend: "llama.cpp",
     modelId: "acme/bert",
     modelHubUrlTemplate: "{model}/resolve/{revision}",
     modelRevision: "v0.1",
@@ -360,6 +303,17 @@ add_task(async function test_model_download_telemetry_success() {
       "end_download_success",
     ]
   );
+
+  let endDownload = observed.at(-1);
+  let fileDurationSum = observed
+    .filter(obj => obj.extra.step === "end_file_download_success")
+    .reduce((sum, obj) => sum + Number(obj.extra.duration), 0);
+  Assert.greaterOrEqual(
+    Number(endDownload.extra.duration),
+    fileDurationSum,
+    "end_download_success reports the total model download time, which spans at least the individual file downloads"
+  );
+
   await EngineProcess.destroyMLEngine();
   await IndexedDBCache.init({ reset: true });
 
@@ -376,67 +330,6 @@ add_task(async function test_model_download_telemetry_fail() {
   // Allow any url
   Services.env.set("MOZ_ALLOW_EXTERNAL_ML_HUB", "true");
 
-  // Mocking function used in the workers or child doesn't work.
-  // So we are stubbing the code run by the worker.
-  const workerCode = `
-  // Inject the original worker code
-
-  ${await getMLEngineWorkerCode()}
-
-  // Stub
-  ChromeUtils.defineESModuleGetters(
-  lazy,
-  {
-    createFileUrl: "chrome://global/content/ml/Utils.sys.mjs",
-
-  },
-  { global: "current" }
-);
-
-  // Change the getBackend to a mocked version that doesn't actually do inference
-  // but does initiate model downloads
-
-  lazy.getBackend = async function (
-    mlEngineWorker,
-    _,
-    {
-      modelHubUrlTemplate,
-      modelHubRootUrl,
-      modelId,
-      modelRevision,
-      modelFile,
-      engineId,
-    } = {}
-  ) {
-    const url = lazy.createFileUrl({
-      model: modelId,
-      revision: modelRevision,
-      file: modelFile,
-      urlTemplate: modelHubUrlTemplate,
-      rootUrl: modelHubRootUrl,
-    });
-
-    const result = await mlEngineWorker.getModelFile({url}).catch(() => {});
-
-    // Download Another file using engineId as revision
-    const url2 = lazy.createFileUrl({
-      model: modelId,
-      revision: engineId,
-      file: modelFile,
-      urlTemplate: modelHubUrlTemplate,
-      rootUrl: modelHubRootUrl,
-    });
-    const result2 = await mlEngineWorker.getModelFile({url: url2}).catch(() => {});
-
-    return {
-      run: () => {},
-    };
-  };
-`;
-
-  const blob = new Blob([workerCode], { type: "application/javascript" });
-  const blobURL = URL.createObjectURL(blob);
-
   let wasmBufferStub = sinon
     .stub(MLEngineParent, "getWasmArrayBuffer")
     .returns(new ArrayBuffer(16));
@@ -444,16 +337,16 @@ add_task(async function test_model_download_telemetry_fail() {
   let promiseStub = sinon
     .stub(MLEngineParent, "getWorkerConfig")
     .callsFake(function () {
-      return { url: blobURL, options: { type: "module" } };
+      return { url: TELEMETRY_TEST_STUB_URL, options: { type: "module" } };
     });
 
   await IndexedDBCache.init({ reset: true });
   await EngineProcess.destroyMLEngine();
   await createEngine({
     engineId: "main",
-    taskName: "real-wllama-text-generation",
+    taskName: "real-llama-text-generation",
     featureId: "link-preview",
-    backend: "wllama",
+    backend: "llama.cpp",
     modelId: "acme-not-found/bert",
     modelHubUrlTemplate: "{model}/resolve/{revision}",
     modelRevision: "v0.1",
@@ -498,67 +391,6 @@ add_task(async function test_model_download_telemetry_mixed() {
   // Allow any url
   Services.env.set("MOZ_ALLOW_EXTERNAL_ML_HUB", "true");
 
-  // Mocking function used in the workers or child doesn't work.
-  // So we are stubbing the code run by the worker.
-  const workerCode = `
-  // Inject the original worker code
-
-  ${await getMLEngineWorkerCode()}
-
-  // Stub
-  ChromeUtils.defineESModuleGetters(
-  lazy,
-  {
-    createFileUrl: "chrome://global/content/ml/Utils.sys.mjs",
-
-  },
-  { global: "current" }
-);
-
-  // Change the getBackend to a mocked version that doesn't actually do inference
-  // but does initiate model downloads
-
-  lazy.getBackend = async function (
-    mlEngineWorker,
-    _,
-    {
-      modelHubUrlTemplate,
-      modelHubRootUrl,
-      modelId,
-      modelRevision,
-      modelFile,
-      engineId,
-    } = {}
-  ) {
-    const url = lazy.createFileUrl({
-      model: modelId,
-      revision: modelRevision,
-      file: modelFile,
-      urlTemplate: modelHubUrlTemplate,
-      rootUrl: modelHubRootUrl,
-    });
-
-    const result = await mlEngineWorker.getModelFile({url}).catch(() => {});
-
-    // Download Another file using engineId as revision
-    const url2 = lazy.createFileUrl({
-      model: modelId,
-      revision: engineId,
-      file: modelFile,
-      urlTemplate: modelHubUrlTemplate,
-      rootUrl: modelHubRootUrl,
-    });
-    const result2 = await mlEngineWorker.getModelFile({url: url2}).catch(() => {});
-
-    return {
-      run: () => {},
-    };
-  };
-`;
-
-  const blob = new Blob([workerCode], { type: "application/javascript" });
-  const blobURL = URL.createObjectURL(blob);
-
   let wasmBufferStub = sinon
     .stub(MLEngineParent, "getWasmArrayBuffer")
     .returns(new ArrayBuffer(16));
@@ -566,14 +398,14 @@ add_task(async function test_model_download_telemetry_mixed() {
   let promiseStub = sinon
     .stub(MLEngineParent, "getWorkerConfig")
     .callsFake(function () {
-      return { url: blobURL, options: { type: "module" } };
+      return { url: TELEMETRY_TEST_STUB_URL, options: { type: "module" } };
     });
 
   await createEngine({
     engineId: "main",
-    taskName: "real-wllama-text-generation",
+    taskName: "real-llama-text-generation",
     featureId: "link-preview",
-    backend: "wllama",
+    backend: "llama.cpp",
     modelId: "acme/bert",
     modelHubUrlTemplate: "{model}/resolve/{revision}",
     modelRevision: "v0.4",
@@ -782,8 +614,21 @@ add_task(async function test_run_with_generator_telemetry() {
     checkNumber("cores");
     checkNumber("cpu_utilization");
     checkNumber("memory_bytes");
+    checkNumber("system_memory_mb");
     checkNumber("character_count");
+    checkNumber("time_to_first_chunk");
     Assert.ok(!extra.token_count, "Token count is not implemented yet.");
+
+    Assert.notEqual(
+      extra.average_chunk_time,
+      null,
+      "average_chunk_time is recorded when more than one chunk streams"
+    );
+    Assert.greaterOrEqual(
+      Number(extra.average_chunk_time),
+      0,
+      "average_chunk_time should be a non-negative number"
+    );
 
     Assert.equal(extra.feature_id, "about-inference");
     Assert.equal(extra.backend, "openai");

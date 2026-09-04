@@ -50,6 +50,29 @@ let ignoreTasksCache = null;
 let componentsData = null;
 let dailyStatsMap = new Map();
 
+const MOCHITEST_FLAVOR_PREFIXES = [
+  ["devtools", "devtools"],
+  ["browser", "browser-chrome"],
+  ["chrome", "chrome"],
+  ["a11y", "a11y"],
+  ["plain", "plain"],
+  ["media", "media"],
+  ["remote", "remote"],
+  ["webgl", "webgl"],
+];
+
+function classifyMochitestFlavor(jobName) {
+  const m = jobName.match(/mochitest-(\w+)/);
+  if (m) {
+    for (const [prefix, flavor] of MOCHITEST_FLAVOR_PREFIXES) {
+      if (m[1].startsWith(prefix)) {
+        return flavor;
+      }
+    }
+  }
+  return "other";
+}
+
 if (!fs.existsSync(OUTPUT_DIR)) {
   fs.mkdirSync(OUTPUT_DIR, { recursive: true });
 }
@@ -64,12 +87,17 @@ function getDateString(daysAgo = 0) {
   return date.toISOString().split("T")[0];
 }
 
-async function fetchJson(url) {
+// `optional` is for artifacts that may legitimately not exist, eg. a file that
+// was added after the previous run generated its artifacts: a miss is expected
+// and shouldn't be reported as an error.
+async function fetchJson(url, optional = false) {
   const response = await fetch(url);
   if (!response.ok) {
-    console.error(
-      `Failed to fetch ${url}: HTTP ${response.status} ${response.statusText}`
-    );
+    if (!optional) {
+      console.error(
+        `Failed to fetch ${url}: HTTP ${response.status} ${response.statusText}`
+      );
+    }
     return null;
   }
   return response.json();
@@ -189,7 +217,11 @@ async function fetchHarnessData(targetDate) {
 }
 
 // Process jobs using worker threads with dynamic job distribution
-async function processJobsWithWorkers(jobs, targetDate = null) {
+async function processJobsWithWorkers(
+  jobs,
+  targetDate = null,
+  onJobResult = null
+) {
   if (jobs.length === 0) {
     return [];
   }
@@ -239,6 +271,12 @@ async function processJobsWithWorkers(jobs, targetDate = null) {
                 invalidJobCount++;
               }
             } else {
+              // Let the caller fold large per-job data (markers) into a
+              // running accumulator and free it, so the main thread doesn't
+              // hold every job's raw markers at once.
+              if (onJobResult) {
+                onJobResult(message.result);
+              }
               results.push(message.result);
             }
           }
@@ -382,126 +420,232 @@ function shouldIncludeMessage(status) {
   return status === "SKIP" || status.startsWith("FAIL");
 }
 
-// Create string tables and store raw data efficiently
-function createDataTables(jobResults) {
-  const tables = {
-    jobNames: [],
-    testPaths: [],
-    testNames: [],
-    repositories: [],
-    statuses: [],
-    taskIds: [],
-    messages: [],
-    crashSignatures: [],
-    components: [],
-    commitIds: [],
-  };
+// Create the building blocks of our columnar JSON formats: the string tables and
+// the interning primitive that keeps them deduplicated, plus the taskInfo and
+// testInfo side tables describing the tasks and tests the file refers to.
+// `extraTableNames` are the string tables specific to one format.
+function createColumnarTables(extraTableNames) {
+  const tables = {};
+  const stringMaps = {};
+  for (const tableName of [
+    "jobNames",
+    "testPaths",
+    "testNames",
+    "repositories",
+    "taskIds",
+    "components",
+    "commitIds",
+    ...extraTableNames,
+  ]) {
+    tables[tableName] = [];
+    stringMaps[tableName] = new Map();
+  }
 
-  // Maps for O(1) string lookups
-  const stringMaps = {
-    jobNames: new Map(),
-    testPaths: new Map(),
-    testNames: new Map(),
-    repositories: new Map(),
-    statuses: new Map(),
-    taskIds: new Map(),
-    messages: new Map(),
-    crashSignatures: new Map(),
-    components: new Map(),
-    commitIds: new Map(),
-  };
+  // Intern a string into one of the tables, returning its index, or null for a
+  // null/undefined value. Empty strings are interned like any other value.
+  function internString(tableName, value) {
+    if (value === null || value === undefined) {
+      return null;
+    }
+    const map = stringMaps[tableName];
+    let index = map.get(value);
+    if (index === undefined) {
+      index = tables[tableName].length;
+      tables[tableName].push(value);
+      map.set(value, index);
+    }
+    return index;
+  }
 
-  // Task info maps task ID index to repository and job name indexes
+  function componentIdForPath(filePath) {
+    const componentString = getComponentString(findComponentForPath(filePath));
+    return componentString ? internString("components", componentString) : null;
+  }
+
+  // Parallel arrays indexed by taskIdId.
   const taskInfo = {
     repositoryIds: [],
     jobNameIds: [],
     commitIds: [],
   };
 
-  // Test info maps test ID index to test path and name indexes
+  // Intern the task a job result comes from, recording the task's repository,
+  // job name and commit the first time we see it.
+  function getTaskIdId(result) {
+    const taskIdId = internString(
+      "taskIds",
+      `${result.taskId}.${result.retryId}`
+    );
+    if (taskInfo.repositoryIds[taskIdId] === undefined) {
+      taskInfo.repositoryIds[taskIdId] = internString(
+        "repositories",
+        result.repository
+      );
+      taskInfo.jobNameIds[taskIdId] = internString("jobNames", result.jobName);
+      taskInfo.commitIds[taskIdId] = internString("commitIds", result.commitId);
+    }
+    return taskIdId;
+  }
+
+  // Parallel arrays indexed by testId.
   const testInfo = {
     testPathIds: [],
     testNameIds: [],
     componentIds: [],
   };
+  const testIds = new Map();
 
-  // Map for fast testId lookup: fullPath -> testId
-  const testIdMap = new Map();
+  // Intern a test by its full path, split into a directory and a file name, and
+  // look up its Bugzilla component.
+  function getTestId(fullPath) {
+    let testId = testIds.get(fullPath);
+    if (testId !== undefined) {
+      return testId;
+    }
+
+    const lastSlashIndex = fullPath.lastIndexOf("/");
+    let testPath, testName;
+    if (lastSlashIndex === -1) {
+      testPath = "";
+      testName = fullPath;
+    } else {
+      testPath = fullPath.substring(0, lastSlashIndex);
+      testName = fullPath.substring(lastSlashIndex + 1);
+    }
+
+    testId = testInfo.testPathIds.length;
+    testInfo.testPathIds.push(internString("testPaths", testPath));
+    testInfo.testNameIds.push(internString("testNames", testName));
+    testInfo.componentIds.push(componentIdForPath(fullPath));
+    testIds.set(fullPath, testId);
+    return testId;
+  }
+
+  return {
+    tables,
+    internString,
+    componentIdForPath,
+    taskInfo,
+    getTaskIdId,
+    testInfo,
+    getTestId,
+  };
+}
+
+// Zeroed reference counts for each string table, for the caller to fill in
+// before calling sortTablesByFrequency.
+function createFrequencyCounts(tables) {
+  const frequencyCounts = {};
+  for (const [tableName, table] of Object.entries(tables)) {
+    frequencyCounts[tableName] = new Array(table.length).fill(0);
+  }
+  return frequencyCounts;
+}
+
+// Sort each string table by how often its entries are referenced and drop the
+// unreferenced ones, so that the most frequent strings get the smallest indices
+// and the file compresses better. Returns the sorted tables and, for each table,
+// a map from old to new index.
+function sortTablesByFrequency(tables, frequencyCounts) {
+  const sortedTables = {};
+  const indexMaps = {};
+
+  for (const [tableName, table] of Object.entries(tables)) {
+    const counts = frequencyCounts[tableName];
+    const sorted = table
+      .map((value, oldIndex) => ({ value, oldIndex, count: counts[oldIndex] }))
+      .filter(item => item.count > 0)
+      .sort((a, b) => {
+        if (b.count !== a.count) {
+          return b.count - a.count;
+        }
+        // Codepoint order rather than localeCompare, which would sort with the
+        // host's default locale and make the output machine dependent.
+        return a.value < b.value ? -1 : 1;
+      });
+
+    sortedTables[tableName] = sorted.map(item => item.value);
+    indexMaps[tableName] = new Map(
+      sorted.map((item, newIndex) => [item.oldIndex, newIndex])
+    );
+  }
+
+  return { sortedTables, indexMaps };
+}
+
+// taskInfo's arrays are indexed by taskIdId, so remapping the taskIds table
+// means rebuilding them at the new indices.
+function remapTaskInfo(taskInfo, indexMaps) {
+  const sortedTaskInfo = {
+    repositoryIds: [],
+    jobNameIds: [],
+    commitIds: [],
+  };
+  const hasChunks = !!taskInfo.chunks;
+  if (hasChunks) {
+    sortedTaskInfo.chunks = [];
+  }
+
+  for (
+    let oldTaskIdId = 0;
+    oldTaskIdId < taskInfo.repositoryIds.length;
+    oldTaskIdId++
+  ) {
+    const newTaskIdId = indexMaps.taskIds.get(oldTaskIdId);
+    if (newTaskIdId === undefined) {
+      continue;
+    }
+    sortedTaskInfo.repositoryIds[newTaskIdId] = indexMaps.repositories.get(
+      taskInfo.repositoryIds[oldTaskIdId]
+    );
+    sortedTaskInfo.jobNameIds[newTaskIdId] = indexMaps.jobNames.get(
+      taskInfo.jobNameIds[oldTaskIdId]
+    );
+    sortedTaskInfo.commitIds[newTaskIdId] =
+      taskInfo.commitIds[oldTaskIdId] === null
+        ? null
+        : indexMaps.commitIds.get(taskInfo.commitIds[oldTaskIdId]);
+    if (hasChunks) {
+      sortedTaskInfo.chunks[newTaskIdId] = taskInfo.chunks[oldTaskIdId] ?? null;
+    }
+  }
+
+  return sortedTaskInfo;
+}
+
+function remapTestInfo(testInfo, indexMaps) {
+  return {
+    testPathIds: testInfo.testPathIds.map(oldId =>
+      indexMaps.testPaths.get(oldId)
+    ),
+    testNameIds: testInfo.testNameIds.map(oldId =>
+      indexMaps.testNames.get(oldId)
+    ),
+    componentIds: testInfo.componentIds.map(oldId =>
+      oldId === null ? null : indexMaps.components.get(oldId)
+    ),
+  };
+}
+
+// Create string tables and store raw data efficiently
+function createDataTables(jobResults) {
+  const { tables, internString, taskInfo, getTaskIdId, testInfo, getTestId } =
+    createColumnarTables(["statuses", "messages", "crashSignatures"]);
 
   // Test runs grouped by test ID, then by status ID
   // testRuns[testId] = array of status groups for that test
   const testRuns = [];
-
-  function findStringIndex(tableName, string) {
-    const table = tables[tableName];
-    const map = stringMaps[tableName];
-
-    let index = map.get(string);
-    if (index === undefined) {
-      index = table.length;
-      table.push(string);
-      map.set(string, index);
-    }
-    return index;
-  }
 
   for (const result of jobResults) {
     if (!result || !result.timings) {
       continue;
     }
 
-    const jobNameId = findStringIndex("jobNames", result.jobName);
-    const repositoryId = findStringIndex("repositories", result.repository);
-    const commitId = result.commitId
-      ? findStringIndex("commitIds", result.commitId)
-      : null;
+    const taskIdId = getTaskIdId(result);
 
     for (const timing of result.timings) {
-      const fullPath = timing.path;
-
-      // Check if we already have this test
-      let testId = testIdMap.get(fullPath);
-      if (testId === undefined) {
-        // New test - need to process path/name split and create entry
-        const lastSlashIndex = fullPath.lastIndexOf("/");
-
-        let testPath, testName;
-        if (lastSlashIndex === -1) {
-          // No directory, just the filename
-          testPath = "";
-          testName = fullPath;
-        } else {
-          testPath = fullPath.substring(0, lastSlashIndex);
-          testName = fullPath.substring(lastSlashIndex + 1);
-        }
-
-        const testPathId = findStringIndex("testPaths", testPath);
-        const testNameId = findStringIndex("testNames", testName);
-
-        // Look up the component for this test
-        const componentIdRaw = findComponentForPath(fullPath);
-        const componentString = getComponentString(componentIdRaw);
-        const componentId = componentString
-          ? findStringIndex("components", componentString)
-          : null;
-
-        testId = testInfo.testPathIds.length;
-        testInfo.testPathIds.push(testPathId);
-        testInfo.testNameIds.push(testNameId);
-        testInfo.componentIds.push(componentId);
-        testIdMap.set(fullPath, testId);
-      }
-
-      const statusId = findStringIndex("statuses", timing.status || "UNKNOWN");
-      const taskIdString = `${result.taskId}.${result.retryId}`;
-      const taskIdId = findStringIndex("taskIds", taskIdString);
-
-      // Store task info only once per unique task ID
-      if (taskInfo.repositoryIds[taskIdId] === undefined) {
-        taskInfo.repositoryIds[taskIdId] = repositoryId;
-        taskInfo.jobNameIds[taskIdId] = jobNameId;
-        taskInfo.commitIds[taskIdId] = commitId;
-      }
+      const testId = getTestId(timing.path);
+      const statusId = internString("statuses", timing.status || "UNKNOWN");
 
       // Initialize test group if it doesn't exist
       if (!testRuns[testId]) {
@@ -535,18 +679,16 @@ function createDataTables(jobResults) {
 
       // Store message ID for statuses that should include messages (or null if no message)
       if (shouldIncludeMessage(timing.status)) {
-        const messageId = timing.message
-          ? findStringIndex("messages", timing.message)
-          : null;
-        statusGroup.messageIds.push(messageId);
+        statusGroup.messageIds.push(
+          internString("messages", timing.message || null)
+        );
       }
 
       // Store crash data for CRASH status (or null if not available)
       if (timing.status === "CRASH") {
-        const crashSignatureId = timing.crashSignature
-          ? findStringIndex("crashSignatures", timing.crashSignature)
-          : null;
-        statusGroup.crashSignatureIds.push(crashSignatureId);
+        statusGroup.crashSignatureIds.push(
+          internString("crashSignatures", timing.crashSignature || null)
+        );
         statusGroup.minidumps.push(timing.minidump || null);
       }
     }
@@ -565,18 +707,7 @@ function sortStringTablesByFrequency(dataStructure) {
   const { tables, taskInfo, testInfo, testRuns } = dataStructure;
 
   // Count frequency of each index for each table
-  const frequencyCounts = {
-    jobNames: new Array(tables.jobNames.length).fill(0),
-    testPaths: new Array(tables.testPaths.length).fill(0),
-    testNames: new Array(tables.testNames.length).fill(0),
-    repositories: new Array(tables.repositories.length).fill(0),
-    statuses: new Array(tables.statuses.length).fill(0),
-    taskIds: new Array(tables.taskIds.length).fill(0),
-    messages: new Array(tables.messages.length).fill(0),
-    crashSignatures: new Array(tables.crashSignatures.length).fill(0),
-    components: new Array(tables.components.length).fill(0),
-    commitIds: new Array(tables.commitIds.length).fill(0),
-  };
+  const frequencyCounts = createFrequencyCounts(tables);
 
   // Count taskInfo references
   for (const jobNameId of taskInfo.jobNameIds) {
@@ -619,7 +750,8 @@ function sortStringTablesByFrequency(dataStructure) {
         return;
       }
 
-      // Handle both aggregated format (counts/days) and detailed format (taskIdIds)
+      // Handle aggregated format (counts/days), bucket format (durations),
+      // and detailed format (taskIdIds)
       if (statusGroup.taskIdIds) {
         // Check if taskIdIds is array of arrays (aggregated) or flat array (daily)
         const isArrayOfArrays =
@@ -647,10 +779,28 @@ function sortStringTablesByFrequency(dataStructure) {
             frequencyCounts.taskIds[taskIdId]++;
           }
         }
+      } else if (
+        statusGroup.durations &&
+        Array.isArray(statusGroup.durations[0])
+      ) {
+        // Bucket pass format: durations is array of arrays
+        const totalRuns = statusGroup.durations.reduce(
+          (sum, arr) => sum + arr.length,
+          0
+        );
+        frequencyCounts.statuses[statusId] += totalRuns;
       } else if (statusGroup.counts) {
         // Aggregated passing tests - count total runs
         const totalRuns = statusGroup.counts.reduce((a, b) => a + b, 0);
         frequencyCounts.statuses[statusId] += totalRuns;
+      }
+
+      if (statusGroup.jobNameIds) {
+        for (const jobNameId of statusGroup.jobNameIds) {
+          if (jobNameId !== null) {
+            frequencyCounts.jobNames[jobNameId]++;
+          }
+        }
       }
 
       if (statusGroup.messageIds) {
@@ -671,74 +821,12 @@ function sortStringTablesByFrequency(dataStructure) {
     });
   }
 
-  // Create sorted tables and index mappings (sorted by frequency descending)
-  const sortedTables = {};
-  const indexMaps = {};
-
-  for (const [tableName, table] of Object.entries(tables)) {
-    const counts = frequencyCounts[tableName];
-
-    // Create array with value, oldIndex, and count
-    const indexed = table.map((value, oldIndex) => ({
-      value,
-      oldIndex,
-      count: counts[oldIndex],
-    }));
-
-    // Sort by count descending, then by value for deterministic order when counts are equal
-    indexed.sort((a, b) => {
-      if (b.count !== a.count) {
-        return b.count - a.count;
-      }
-      return a.value.localeCompare(b.value);
-    });
-
-    // Extract sorted values and create mapping
-    sortedTables[tableName] = indexed.map(item => item.value);
-    indexMaps[tableName] = new Map(
-      indexed.map((item, newIndex) => [item.oldIndex, newIndex])
-    );
-  }
-
-  // Remap taskInfo indices
-  // taskInfo arrays are indexed by taskIdId, and when taskIds get remapped,
-  // we need to rebuild the arrays at the new indices
-  const sortedTaskInfo = {
-    repositoryIds: [],
-    jobNameIds: [],
-    commitIds: [],
-  };
-
-  for (
-    let oldTaskIdId = 0;
-    oldTaskIdId < taskInfo.repositoryIds.length;
-    oldTaskIdId++
-  ) {
-    const newTaskIdId = indexMaps.taskIds.get(oldTaskIdId);
-    sortedTaskInfo.repositoryIds[newTaskIdId] = indexMaps.repositories.get(
-      taskInfo.repositoryIds[oldTaskIdId]
-    );
-    sortedTaskInfo.jobNameIds[newTaskIdId] = indexMaps.jobNames.get(
-      taskInfo.jobNameIds[oldTaskIdId]
-    );
-    sortedTaskInfo.commitIds[newTaskIdId] =
-      taskInfo.commitIds[oldTaskIdId] === null
-        ? null
-        : indexMaps.commitIds.get(taskInfo.commitIds[oldTaskIdId]);
-  }
-
-  // Remap testInfo indices
-  const sortedTestInfo = {
-    testPathIds: testInfo.testPathIds.map(oldId =>
-      indexMaps.testPaths.get(oldId)
-    ),
-    testNameIds: testInfo.testNameIds.map(oldId =>
-      indexMaps.testNames.get(oldId)
-    ),
-    componentIds: testInfo.componentIds.map(oldId =>
-      oldId === null ? null : indexMaps.components.get(oldId)
-    ),
-  };
+  const { sortedTables, indexMaps } = sortTablesByFrequency(
+    tables,
+    frequencyCounts
+  );
+  const sortedTaskInfo = remapTaskInfo(taskInfo, indexMaps);
+  const sortedTestInfo = remapTestInfo(testInfo, indexMaps);
 
   // Remap testRuns indices
   const sortedTestRuns = testRuns.map(testGroup => {
@@ -751,13 +839,41 @@ function sortStringTablesByFrequency(dataStructure) {
         return statusGroup;
       }
 
-      // Handle aggregated format (counts/days) differently from detailed format
-      if (statusGroup.counts) {
-        // Aggregated passing tests - no remapping needed
-        return {
+      // Bucket pass format: durations is array of arrays, with jobNameIds
+      if (
+        statusGroup.durations &&
+        Array.isArray(statusGroup.durations[0]) &&
+        !statusGroup.taskIdIds
+      ) {
+        const remapped = {
+          durations: statusGroup.durations,
+          days: statusGroup.days,
+        };
+        if (statusGroup.jobNameIds) {
+          remapped.jobNameIds = statusGroup.jobNameIds.map(oldId =>
+            oldId === null ? null : indexMaps.jobNames.get(oldId)
+          );
+        }
+        return remapped;
+      }
+
+      // Aggregated counts format (may have jobNameIds/messageIds in bucket files)
+      if (statusGroup.counts && !statusGroup.taskIdIds) {
+        const remapped = {
           counts: statusGroup.counts,
           days: statusGroup.days,
         };
+        if (statusGroup.jobNameIds) {
+          remapped.jobNameIds = statusGroup.jobNameIds.map(oldId =>
+            oldId === null ? null : indexMaps.jobNames.get(oldId)
+          );
+        }
+        if (statusGroup.messageIds) {
+          remapped.messageIds = statusGroup.messageIds.map(oldId =>
+            oldId === null ? null : indexMaps.messages.get(oldId)
+          );
+        }
+        return remapped;
       }
 
       // Check if this is aggregated format (array of arrays) or daily format (flat array)
@@ -945,6 +1061,340 @@ function createResourceUsageData(jobResults) {
   };
 }
 
+// Create an incremental accumulator for error/warning marker data.
+//
+// The data is fully columnar: on top of the shared string tables, the `messages`
+// table interns each unique (marker name, message text, file, line, component)
+// so a line and file are stored once per distinct message rather than once per
+// occurrence. Occurrences are grouped by (test, message) into `markers`, with
+// per-group taskIdIds/counts sub-arrays, so the test and message are stored once
+// per group rather than once per (test, task, message) occurrence. This supports
+// aggregating by test, by message, and by component, plus per-task drill-down,
+// while keeping the on-disk size small.
+//
+// `feedJob(result)` folds one job's markers in (so the caller can free the raw
+// markers and avoid holding every job's markers at once); `finalize()` returns
+// the assembled { tables, messages, taskInfo, testInfo, markers } structure.
+function createMarkerAccumulator() {
+  const {
+    tables,
+    internString,
+    componentIdForPath,
+    taskInfo,
+    getTaskIdId,
+    testInfo,
+    getTestId,
+  } = createColumnarTables(["markerNames", "messageTexts", "files"]);
+
+  // Interned (marker name, message text, file, line, component) table, indexed
+  // by messageId. The marker name lives here because it is intrinsic to the
+  // diagnostic, not to each occurrence.
+  const messages = {
+    markerNameIds: [],
+    textIds: [],
+    fileIds: [],
+    lines: [],
+    componentIds: [],
+  };
+  const messageIds = new Map();
+
+  function internMessage(markerNameId, textId, fileId, line, componentId) {
+    const key = `${markerNameId}|${textId}|${fileId}|${line}|${componentId}`;
+    let index = messageIds.get(key);
+    if (index === undefined) {
+      index = messages.markerNameIds.length;
+      messages.markerNameIds.push(markerNameId);
+      messages.textIds.push(textId);
+      messages.fileIds.push(fileId);
+      messages.lines.push(line);
+      messages.componentIds.push(componentId);
+      messageIds.set(key, index);
+    }
+    return index;
+  }
+
+  // Occurrences accumulated as a nested map: testId -> messageId -> taskIdId ->
+  // count. Grouping by (test, message) as markers arrive means finalize() can
+  // emit the grouped columnar form directly, without ever holding one row per
+  // (test, task, message) occurrence (there are tens of millions of those in a
+  // day, but far fewer distinct (test, message) groups).
+  const groups = new Map();
+
+  // Cache the component lookup, which walks the component tree and is done for
+  // every occurrence: a day's markers come from far fewer distinct files than
+  // there are occurrences.
+  const fileComponentIds = new Map();
+  function componentIdForFile(file) {
+    if (!fileComponentIds.has(file)) {
+      fileComponentIds.set(file, file ? componentIdForPath(file) : null);
+    }
+    return fileComponentIds.get(file);
+  }
+
+  function getMessageId(markerNameId, message, file, line, testId) {
+    return internMessage(
+      markerNameId,
+      internString("messageTexts", message),
+      internString("files", file),
+      line,
+      // Attribute the message to the component of its source file, falling back
+      // to the component of the running test when the file maps to no component
+      // (console.* markers have no file at all).
+      componentIdForFile(file) ?? testInfo.componentIds[testId]
+    );
+  }
+
+  function feedJob(result) {
+    if (!result.markers.length) {
+      return;
+    }
+
+    const taskIdId = getTaskIdId(result);
+
+    for (const marker of result.markers) {
+      // The test that was running when the marker was emitted (empty when the
+      // marker fired outside of any test, e.g. during setup/shutdown).
+      const testId = getTestId(marker.test || "");
+      const messageId = getMessageId(
+        internString("markerNames", marker.name),
+        marker.message,
+        marker.file,
+        marker.line,
+        testId
+      );
+
+      let byMessage = groups.get(testId);
+      if (byMessage === undefined) {
+        byMessage = new Map();
+        groups.set(testId, byMessage);
+      }
+      let byTask = byMessage.get(messageId);
+      if (byTask === undefined) {
+        byTask = new Map();
+        byMessage.set(messageId, byTask);
+      }
+      byTask.set(taskIdId, (byTask.get(taskIdId) || 0) + 1);
+    }
+  }
+
+  // Emit the grouped columnar form: one entry per (test, message) group, with
+  // parallel taskIdIds/counts sub-arrays. Indices are still in interning order;
+  // sortMarkerStringTables frequency-sorts and orders them. The nested map is
+  // drained as it is walked so its (large) inner maps can be reclaimed.
+  function finalize() {
+    const markers = {
+      testIds: [],
+      messageIds: [],
+      taskIdIds: [],
+      counts: [],
+    };
+    for (const [testId, byMessage] of groups) {
+      for (const [messageId, byTask] of byMessage) {
+        const taskIdIds = [];
+        const counts = [];
+        for (const [taskIdId, count] of byTask) {
+          taskIdIds.push(taskIdId);
+          counts.push(count);
+        }
+        markers.testIds.push(testId);
+        markers.messageIds.push(messageId);
+        markers.taskIdIds.push(taskIdIds);
+        markers.counts.push(counts);
+      }
+      groups.delete(testId);
+    }
+
+    return { tables, messages, taskInfo, testInfo, markers };
+  }
+
+  return { feedJob, finalize };
+}
+
+// Sort the marker string tables and the message table by frequency and remap all
+// indices, so that the most frequent values get the smallest indices and the file
+// compresses better. Operates on the structure produced by
+// createMarkerAccumulator.
+function sortMarkerStringTables(dataStructure) {
+  const { tables, messages, taskInfo, testInfo, markers } = dataStructure;
+
+  const frequencyCounts = createFrequencyCounts(tables);
+
+  for (const jobNameId of taskInfo.jobNameIds) {
+    frequencyCounts.jobNames[jobNameId]++;
+  }
+  for (const repositoryId of taskInfo.repositoryIds) {
+    frequencyCounts.repositories[repositoryId]++;
+  }
+  for (const commitId of taskInfo.commitIds) {
+    if (commitId !== null) {
+      frequencyCounts.commitIds[commitId]++;
+    }
+  }
+
+  for (const testPathId of testInfo.testPathIds) {
+    frequencyCounts.testPaths[testPathId]++;
+  }
+  for (const testNameId of testInfo.testNameIds) {
+    frequencyCounts.testNames[testNameId]++;
+  }
+  for (const componentId of testInfo.componentIds) {
+    if (componentId !== null) {
+      frequencyCounts.components[componentId]++;
+    }
+  }
+
+  for (const markerNameId of messages.markerNameIds) {
+    frequencyCounts.markerNames[markerNameId]++;
+  }
+  for (const textId of messages.textIds) {
+    if (textId !== null) {
+      frequencyCounts.messageTexts[textId]++;
+    }
+  }
+  for (const fileId of messages.fileIds) {
+    if (fileId !== null) {
+      frequencyCounts.files[fileId]++;
+    }
+  }
+  for (const componentId of messages.componentIds) {
+    if (componentId !== null) {
+      frequencyCounts.components[componentId]++;
+    }
+  }
+
+  for (const groupTasks of markers.taskIdIds) {
+    for (const taskIdId of groupTasks) {
+      frequencyCounts.taskIds[taskIdId]++;
+    }
+  }
+
+  const { sortedTables, indexMaps } = sortTablesByFrequency(
+    tables,
+    frequencyCounts
+  );
+
+  // Remap the message table's string indices, then reorder its rows by how often
+  // occurrences reference them (most-referenced first), so that the messageId
+  // values stored per occurrence are small.
+  const remappedMarkerNameIds = messages.markerNameIds.map(id =>
+    indexMaps.markerNames.get(id)
+  );
+  const remappedTextIds = messages.textIds.map(id =>
+    id === null ? null : indexMaps.messageTexts.get(id)
+  );
+  const remappedFileIds = messages.fileIds.map(id =>
+    id === null ? null : indexMaps.files.get(id)
+  );
+  const remappedMessageComponentIds = messages.componentIds.map(id =>
+    id === null ? null : indexMaps.components.get(id)
+  );
+
+  const messageRefCounts = new Array(messages.markerNameIds.length).fill(0);
+  for (let g = 0; g < markers.messageIds.length; g++) {
+    messageRefCounts[markers.messageIds[g]] += markers.taskIdIds[g].length;
+  }
+  const messageOrder = Array.from(
+    { length: messages.markerNameIds.length },
+    (_, i) => i
+  ).sort((a, b) => messageRefCounts[b] - messageRefCounts[a] || a - b);
+
+  const messageRowMap = new Map();
+  messageOrder.forEach((oldId, newId) => messageRowMap.set(oldId, newId));
+
+  const sortedMessages = {
+    markerNameIds: messageOrder.map(i => remappedMarkerNameIds[i]),
+    textIds: messageOrder.map(i => remappedTextIds[i]),
+    fileIds: messageOrder.map(i => remappedFileIds[i]),
+    lines: messageOrder.map(i => messages.lines[i]),
+    componentIds: messageOrder.map(i => remappedMessageComponentIds[i]),
+  };
+
+  // Remap and reorder the grouped occurrences. testIds index into testInfo,
+  // whose row order is unchanged, so they need no remap; messageIds are remapped
+  // through messageRowMap (message rows were reordered by reference frequency);
+  // taskIdIds index into tables.taskIds (reordered by frequency). Within each
+  // group the tasks are sorted ascending (carrying their counts) and then
+  // delta-encoded on the way out, so the stored deltas are small positive
+  // integers. Groups are ordered by (test, message).
+  const { testIds } = markers;
+  const groupCount = testIds.length;
+
+  const newMessageIds = markers.messageIds.map(id => messageRowMap.get(id));
+  const sortedTaskIdIds = new Array(groupCount);
+  const sortedCounts = new Array(groupCount);
+  for (let g = 0; g < groupCount; g++) {
+    const tasks = markers.taskIdIds[g];
+    const groupCounts = markers.counts[g];
+    const remapped = tasks.map((id, j) => [
+      indexMaps.taskIds.get(id),
+      groupCounts[j],
+    ]);
+    remapped.sort((a, b) => a[0] - b[0]);
+    let prev = 0;
+    const deltas = new Array(remapped.length);
+    const counts = new Array(remapped.length);
+    for (let j = 0; j < remapped.length; j++) {
+      deltas[j] = remapped[j][0] - prev;
+      prev = remapped[j][0];
+      counts[j] = remapped[j][1];
+    }
+    sortedTaskIdIds[g] = deltas;
+    sortedCounts[g] = counts;
+  }
+
+  const order = Array.from({ length: groupCount }, (_, i) => i);
+  order.sort(
+    (a, b) => testIds[a] - testIds[b] || newMessageIds[a] - newMessageIds[b]
+  );
+
+  return {
+    tables: sortedTables,
+    messages: sortedMessages,
+    taskInfo: remapTaskInfo(taskInfo, indexMaps),
+    testInfo: remapTestInfo(testInfo, indexMaps),
+    markers: {
+      testIds: order.map(i => testIds[i]),
+      messageIds: order.map(i => newMessageIds[i]),
+      taskIdIds: order.map(i => sortedTaskIdIds[i]),
+      counts: order.map(i => sortedCounts[i]),
+    },
+  };
+}
+
+// Total the occurrences of each marker name (markers.counts holds one array of
+// per-task counts per group), eg. { "C++ warning": 8137, "console.error": 12 }.
+function markerOccurrencesByName({ tables, messages, markers }) {
+  const occurrences = {};
+  for (let g = 0; g < markers.messageIds.length; g++) {
+    const nameId = messages.markerNameIds[markers.messageIds[g]];
+    const name = tables.markerNames[nameId];
+    for (const count of markers.counts[g]) {
+      occurrences[name] = (occurrences[name] || 0) + count;
+    }
+  }
+  return occurrences;
+}
+
+// Save the error/warning marker file, if we managed to build it, and report
+// whether we now have that file. This is the largest of our outputs and the least
+// critical one, and JSON.stringify has a string length limit that a mochitest day
+// can reach, so a failure here is logged and otherwise ignored rather than costing
+// us the day's timings and stats.
+function saveMarkerData(markerData, filePath) {
+  if (!markerData) {
+    return false;
+  }
+
+  try {
+    saveJsonFile(markerData, filePath);
+  } catch (error) {
+    console.error(`Error saving ${filePath}:`, error);
+    return false;
+  }
+
+  return true;
+}
+
 // Helper to save a JSON file and log its size
 function saveJsonFile(data, filePath) {
   fs.writeFileSync(filePath, JSON.stringify(data));
@@ -977,11 +1427,25 @@ async function processJobsAndCreateData(
     return null;
   }
 
-  // Process jobs to extract test timings
+  // Process jobs to extract test timings. Fold each job's error/warning markers
+  // into the accumulator as it arrives and free the raw markers, so the main
+  // thread never holds every job's (potentially millions of) markers at once.
+  // The marker data is a secondary output: if building it fails we give up on it
+  // and still produce the day's timings, resource usage and stats.
+  let markerAccumulator = createMarkerAccumulator();
   const jobProcessingStart = Date.now();
   const { results: jobResults, invalidJobCount } = await processJobsWithWorkers(
     jobs,
-    targetLabel
+    targetLabel,
+    result => {
+      try {
+        markerAccumulator?.feedJob(result);
+      } catch (error) {
+        console.error("Error accumulating error/warning markers:", error);
+        markerAccumulator = null;
+      }
+      delete result.markers;
+    }
   );
   const jobProcessingTime = Date.now() - jobProcessingStart;
   console.log(
@@ -1091,6 +1555,37 @@ async function processJobsAndCreateData(
     }
   }
 
+  // Finalize the error/warning marker data folded in during job processing.
+  // Occurrences carry no timestamp: all markers from a job share the job's time
+  // (recoverable from the task ID via the resources file), and the only
+  // aggregation is per-day, determined by which daily file a marker is in.
+  let markerData = null;
+  if (markerAccumulator) {
+    try {
+      const markerStructure = sortMarkerStringTables(
+        markerAccumulator.finalize()
+      );
+      markerData = {
+        metadata: {
+          ...metadata,
+          startTime,
+          generatedAt: new Date().toISOString(),
+          jobCount: jobs.length,
+          processedJobCount: jobResults.length,
+          invalidJobCount,
+          markerCounts: markerOccurrencesByName(markerStructure),
+        },
+        tables: markerStructure.tables,
+        messages: markerStructure.messages,
+        taskInfo: markerStructure.taskInfo,
+        testInfo: markerStructure.testInfo,
+        markers: markerStructure.markers,
+      };
+    } catch (error) {
+      console.error("Error building error/warning marker data:", error);
+    }
+  }
+
   // Build output with metadata
   return {
     testData: {
@@ -1108,6 +1603,7 @@ async function processJobsAndCreateData(
       testRuns: dataStructure.testRuns,
     },
     resourceData: createResourceUsageData(jobResults),
+    markerData,
   };
 }
 
@@ -1170,6 +1666,11 @@ async function processRevisionData(project, revision, forceRefetch = false) {
       `${HARNESS}-${project}-${revision}-resources.json`
     );
     saveJsonFile(output.resourceData, resourceCacheFile);
+    const errorsCacheFile = path.join(
+      OUTPUT_DIR,
+      `${HARNESS}-${project}-${revision}-errors.json`
+    );
+    saveMarkerData(output.markerData, errorsCacheFile);
 
     return output;
   } catch (error) {
@@ -1234,7 +1735,7 @@ async function fetchPreviousRunData() {
       console.log(`Found ${previousStats.dates.length} days of previous stats`);
       for (let i = 0; i < previousStats.dates.length; i++) {
         const date = previousStats.dates[i];
-        dailyStatsMap.set(date, {
+        const entry = {
           totalTestRuns: previousStats.totalTestRuns[i],
           failedTestRuns: previousStats.failedTestRuns[i],
           skippedTestRuns: previousStats.skippedTestRuns[i],
@@ -1242,7 +1743,29 @@ async function fetchPreviousRunData() {
           failedJobs: previousStats.failedJobs[i],
           invalidJobs: previousStats.invalidJobs[i],
           ignoredJobs: previousStats.ignoredJobs[i],
-        });
+        };
+        if (previousStats.flavors) {
+          entry.flavors = {};
+          for (const [flavor, data] of Object.entries(previousStats.flavors)) {
+            entry.flavors[flavor] = {
+              totalTestRuns: data.totalTestRuns[i],
+              failedTestRuns: data.failedTestRuns[i],
+              skippedTestRuns: data.skippedTestRuns[i],
+              processedJobCount: data.processedJobCount[i],
+              failedJobs: data.failedJobs[i],
+              ignoredJobs: data.ignoredJobs[i],
+            };
+          }
+        }
+        if (previousStats.markerCounts) {
+          entry.markerCounts = {};
+          for (const [name, counts] of Object.entries(
+            previousStats.markerCounts
+          )) {
+            entry.markerCounts[name] = counts[i];
+          }
+        }
+        dailyStatsMap.set(date, entry);
       }
     }
 
@@ -1253,15 +1776,29 @@ async function fetchPreviousRunData() {
 }
 
 // Process data for a single date
-async function processDateData(targetDate, forceRefetch = false) {
+async function processDateData(
+  targetDate,
+  forceRefetch = false,
+  acceptIncomplete = false
+) {
   const timingsFilename = `${HARNESS}-${targetDate}.json`;
   const resourcesFilename = `${HARNESS}-${targetDate}-resources.json`;
+  const errorsFilename = `${HARNESS}-${targetDate}-errors.json`;
   const timingsPath = path.join(OUTPUT_DIR, timingsFilename);
   const resourcesPath = path.join(OUTPUT_DIR, resourcesFilename);
+  const errorsPath = path.join(OUTPUT_DIR, errorsFilename);
 
   // Check if we already have data for this date
   if (fs.existsSync(timingsPath) && !forceRefetch) {
-    console.log(`Data for ${targetDate} already exists. Skipping.`);
+    console.log(`Data for ${targetDate} already exists, recomputing stats.`);
+    const testData = JSON.parse(fs.readFileSync(timingsPath, "utf-8"));
+    const existing = dailyStatsMap.get(targetDate);
+    calculateStatsFromData(
+      testData,
+      targetDate,
+      existing?.ignoredJobs,
+      existing?.failedJobs
+    );
     return;
   }
 
@@ -1283,6 +1820,29 @@ async function processDateData(targetDate, forceRefetch = false) {
   const ignoredJobsCount = allDateJobs.length - jobs.length;
   const failedJobsCount = jobs.filter(j => j.state === "failed").length;
 
+  // Per-flavor job counts from the raw job list
+  let flavorJobCounts = null;
+  if (HARNESS === "mochitest") {
+    flavorJobCounts = {};
+    for (const job of allDateJobs) {
+      const flavor = classifyMochitestFlavor(job.name);
+      if (flavor === "other") {
+        continue;
+      }
+      if (!flavorJobCounts[flavor]) {
+        flavorJobCounts[flavor] = { total: 0, failed: 0, ignored: 0 };
+      }
+      if (ignoreTasksCache.has(job.task)) {
+        flavorJobCounts[flavor].ignored++;
+      } else {
+        flavorJobCounts[flavor].total++;
+        if (job.state === "failed") {
+          flavorJobCounts[flavor].failed++;
+        }
+      }
+    }
+  }
+
   console.log(
     `Found ${allDateJobs.length} jobs for ${targetDate} (${ignoredJobsCount} ignored, ${jobs.length} to process)`
   );
@@ -1299,9 +1859,10 @@ async function processDateData(targetDate, forceRefetch = false) {
     previousRunData.dates.has(targetDate)
   ) {
     try {
-      const [timings, resources] = await Promise.all([
+      const [timings, resources, errors] = await Promise.all([
         fetchJson(`${previousRunData.artifactsUrl}/${timingsFilename}`),
         fetchJson(`${previousRunData.artifactsUrl}/${resourcesFilename}`),
+        fetchJson(`${previousRunData.artifactsUrl}/${errorsFilename}`, true),
       ]);
 
       if (timings && resources) {
@@ -1311,7 +1872,7 @@ async function processDateData(targetDate, forceRefetch = false) {
           (timings.metadata.invalidJobCount || 0);
 
         // Check if previous run processed fewer jobs (had retryable errors or incomplete data)
-        if (actualProcessedCount < expectedJobCount) {
+        if (!acceptIncomplete && actualProcessedCount < expectedJobCount) {
           const missingJobs = expectedJobCount - actualProcessedCount;
           console.log(
             `Ignoring artifact from previous run: missing ${missingJobs} jobs (expected ${expectedJobCount}, got ${actualProcessedCount})`
@@ -1320,13 +1881,19 @@ async function processDateData(targetDate, forceRefetch = false) {
           console.log(`Fetched valid artifact from previous run.`);
           saveJsonFile(timings, timingsPath);
           saveJsonFile(resources, resourcesPath);
+          // Missing for the days generated before we started producing it.
+          const savedErrors = saveMarkerData(errors, errorsPath);
 
           calculateStatsFromData(
             timings,
             targetDate,
             ignoredJobsCount,
-            failedJobsCount
+            failedJobsCount,
+            flavorJobCounts
           );
+          if (savedErrors) {
+            recordMarkerCounts(targetDate, errors);
+          }
           return;
         }
       } else {
@@ -1339,6 +1906,11 @@ async function processDateData(targetDate, forceRefetch = false) {
         `Error fetching artifact from previous run: ${error.message}`
       );
     }
+  }
+
+  if (acceptIncomplete) {
+    console.log(`No previous data available for ${targetDate}, skipping.`);
+    return;
   }
 
   if (forceRefetch) {
@@ -1364,8 +1936,14 @@ async function processDateData(targetDate, forceRefetch = false) {
       output.testData,
       targetDate,
       ignoredJobsCount,
-      failedJobsCount
+      failedJobsCount,
+      flavorJobCounts
     );
+
+    // Only report the counts if we have a file the dashboard can drill into.
+    if (saveMarkerData(output.markerData, errorsPath)) {
+      recordMarkerCounts(targetDate, output.markerData);
+    }
   } catch (error) {
     console.error(`Error processing ${targetDate}:`, error);
   }
@@ -1612,70 +2190,100 @@ async function createAggregatedFailuresFile(dates) {
     }
   }
 
+  function compareNullable(a, b) {
+    if (a === b) {
+      return 0;
+    }
+    if (a === null || a === undefined) {
+      return 1;
+    }
+    if (b === null || b === undefined) {
+      return -1;
+    }
+    return a - b;
+  }
+
   function aggregateRunsByDay(
     statusGroup,
-    includeMessages = false,
-    returnTaskIds = false
+    {
+      includeMessages = false,
+      includeTaskIds = false,
+      includeJobNames = false,
+      includeDurations = false,
+    } = {}
   ) {
     const buckets = new Map();
     const length = statusGroup.timestamps.length;
 
+    function getOrCreateBucket(
+      key,
+      dayBucket,
+      messageId,
+      crashSignatureId,
+      jobNameId
+    ) {
+      let bucket = buckets.get(key);
+      if (!bucket) {
+        bucket = { day: dayBucket, count: 0, messageId, crashSignatureId };
+        if (includeTaskIds) {
+          bucket.taskIdIds = [];
+          bucket.minidumps = [];
+        }
+        if (includeDurations) {
+          bucket.durations = [];
+        }
+        if (includeJobNames) {
+          bucket.jobNameId = jobNameId;
+        }
+        buckets.set(key, bucket);
+      }
+      return bucket;
+    }
+
     for (let i = 0; i < length; i++) {
       const dayBucket = Math.floor(statusGroup.timestamps[i] / 86400);
-      let key = dayBucket;
+      let key = `${dayBucket}`;
 
       const messageId = statusGroup.messageIds?.[i];
       const crashSignatureId = statusGroup.crashSignatureIds?.[i];
+      const jobNameId = statusGroup.jobNameIds?.[i];
+
+      if (includeJobNames && jobNameId !== undefined) {
+        key += `:j${jobNameId}`;
+      }
 
       if (includeMessages && typeof messageId === "number") {
-        key = `${dayBucket}:m${messageId}`;
+        key += `:m${messageId}`;
       } else if (includeMessages && typeof crashSignatureId === "number") {
-        key = `${dayBucket}:c${crashSignatureId}`;
+        key += `:c${crashSignatureId}`;
       }
 
-      if (!buckets.has(key)) {
-        buckets.set(key, {
-          day: dayBucket,
-          count: 0,
-          taskIdIds: [],
-          minidumps: [],
-          messageId,
-          crashSignatureId,
-        });
-      }
-      const bucket = buckets.get(key);
+      const bucket = getOrCreateBucket(
+        key,
+        dayBucket,
+        messageId,
+        crashSignatureId,
+        jobNameId
+      );
       bucket.count++;
-      if (returnTaskIds && statusGroup.taskIdIds) {
+      if (includeTaskIds && statusGroup.taskIdIds) {
         bucket.taskIdIds.push(statusGroup.taskIdIds[i]);
       }
-      if (returnTaskIds && statusGroup.minidumps) {
+      if (includeTaskIds && statusGroup.minidumps) {
         bucket.minidumps.push(statusGroup.minidumps[i] ?? null);
+      }
+      if (includeDurations && statusGroup.durations) {
+        bucket.durations.push(statusGroup.durations[i]);
       }
     }
 
     const aggregated = Array.from(buckets.values()).sort((a, b) => {
-      if (a.day !== b.day) {
-        return a.day - b.day;
-      }
-      if (a.messageId !== b.messageId) {
-        if (a.messageId === null || a.messageId === undefined) {
-          return 1;
-        }
-        if (b.messageId === null || b.messageId === undefined) {
-          return -1;
-        }
-        return a.messageId - b.messageId;
-      }
-      if (a.crashSignatureId !== b.crashSignatureId) {
-        if (a.crashSignatureId === null || a.crashSignatureId === undefined) {
-          return 1;
-        }
-        if (b.crashSignatureId === null || b.crashSignatureId === undefined) {
-          return -1;
-        }
-        return a.crashSignatureId - b.crashSignatureId;
-      }
-      return 0;
+      return (
+        a.day - b.day ||
+        compareNullable(a.jobNameId, b.jobNameId) ||
+        compareNullable(a.messageId, b.messageId) ||
+        compareNullable(a.crashSignatureId, b.crashSignatureId)
+      );
     });
 
     const days = [];
@@ -1689,10 +2297,16 @@ async function createAggregatedFailuresFile(dates) {
       days,
     };
 
-    if (returnTaskIds) {
+    if (includeTaskIds) {
       result.taskIdIds = aggregated.map(a => a.taskIdIds);
+    } else if (includeDurations) {
+      result.durations = aggregated.map(a => a.durations);
     } else {
       result.counts = aggregated.map(a => a.count);
+    }
+
+    if (includeJobNames) {
+      result.jobNameIds = aggregated.map(a => a.jobNameId ?? null);
     }
 
     if (includeMessages) {
@@ -1708,7 +2322,7 @@ async function createAggregatedFailuresFile(dates) {
           a => a.crashSignatureId ?? null
         );
       }
-      if (returnTaskIds && aggregated.some(a => a.minidumps?.length)) {
+      if (includeTaskIds && aggregated.some(a => a.minidumps?.length)) {
         result.minidumps = aggregated.map(a => a.minidumps);
       }
     }
@@ -1740,11 +2354,10 @@ async function createAggregatedFailuresFile(dates) {
       if (isPass) {
         finalTestRuns[testId][statusId] = aggregateRunsByDay(statusGroup);
       } else {
-        finalTestRuns[testId][statusId] = aggregateRunsByDay(
-          statusGroup,
-          true,
-          true
-        );
+        finalTestRuns[testId][statusId] = aggregateRunsByDay(statusGroup, {
+          includeMessages: true,
+          includeTaskIds: true,
+        });
       }
     }
   }
@@ -1843,13 +2456,224 @@ async function createAggregatedFailuresFile(dates) {
     `Successfully created aggregated files with ${outputData.metadata.totalTestCount} tests`
   );
   console.log(`  Tests with failures: ${testsWithFailures}`);
+
+  // --- Bucket file generation ---
+  const TOTAL_BUCKETS = 64;
+
+  function getBucketIndex(fullPath) {
+    let hash = 0;
+    for (let i = 0; i < fullPath.length; i++) {
+      hash = ((hash << 5) - hash + fullPath.charCodeAt(i)) | 0;
+    }
+    return ((hash % TOTAL_BUCKETS) + TOTAL_BUCKETS) % TOTAL_BUCKETS;
+  }
+
+  console.log("\nGenerating bucket files...");
+
+  // Build jobNameBaseMap: merged jobNameId -> { baseId, chunk }
+  // Strip chunk suffixes like "-1", "-2" from job names.
+  const bucketJobNames = [];
+  const bucketJobNameMap = new Map();
+  const jobNameBaseMap = new Map();
+
+  for (let id = 0; id < mergedTables.jobNames.length; id++) {
+    const jobName = mergedTables.jobNames[id];
+    let baseName = jobName;
+    let chunkNumber = null;
+    const chunkMatch = jobName.match(/^(.+)-(\d+)(-cf)?$/);
+    if (chunkMatch) {
+      baseName = chunkMatch[1] + (chunkMatch[3] || "");
+      chunkNumber = parseInt(chunkMatch[2], 10);
+    }
+
+    let baseId = bucketJobNameMap.get(baseName);
+    if (baseId === undefined) {
+      baseId = bucketJobNames.length;
+      bucketJobNames.push(baseName);
+      bucketJobNameMap.set(baseName, baseId);
+    }
+
+    jobNameBaseMap.set(id, { baseId, chunk: chunkNumber });
+  }
+
+  // Build bucketTaskInfo: extend mergedTaskInfo with chunks, using base jobNameIds
+  const bucketTaskInfo = {
+    repositoryIds: mergedTaskInfo.repositoryIds.slice(),
+    jobNameIds: mergedTaskInfo.jobNameIds.map(id => {
+      if (id === undefined) {
+        return undefined;
+      }
+      return jobNameBaseMap.get(id).baseId;
+    }),
+    commitIds: mergedTaskInfo.commitIds.slice(),
+    chunks: mergedTaskInfo.jobNameIds.map(id => {
+      if (id === undefined) {
+        return null;
+      }
+      return jobNameBaseMap.get(id).chunk;
+    }),
+  };
+
+  function aggregateTestForBucket(testId) {
+    const testGroup = mergedTestRuns[testId];
+    if (!testGroup) {
+      return [];
+    }
+
+    const result = [];
+    for (let statusId = 0; statusId < testGroup.length; statusId++) {
+      const statusGroup = testGroup[statusId];
+      if (!statusGroup?.timestamps?.length) {
+        continue;
+      }
+
+      const status = mergedTables.statuses[statusId];
+      const isPass = status.startsWith("PASS");
+      const isSkip = status === "SKIP";
+
+      if (isPass) {
+        const sg = {
+          timestamps: statusGroup.timestamps,
+          durations: statusGroup.durations,
+          jobNameIds: statusGroup.jobNameIds.map(
+            id => jobNameBaseMap.get(id).baseId
+          ),
+        };
+        result[statusId] = aggregateRunsByDay(sg, {
+          includeJobNames: true,
+          includeDurations: true,
+        });
+      } else if (isSkip) {
+        const sg = {
+          timestamps: statusGroup.timestamps,
+          jobNameIds: statusGroup.jobNameIds.map(
+            id => jobNameBaseMap.get(id).baseId
+          ),
+          messageIds: statusGroup.messageIds,
+        };
+        result[statusId] = aggregateRunsByDay(sg, {
+          includeMessages: true,
+          includeJobNames: true,
+        });
+      } else {
+        result[statusId] = aggregateRunsByDay(statusGroup, {
+          includeMessages: true,
+          includeTaskIds: true,
+        });
+      }
+    }
+    return result;
+  }
+
+  // Group tests by bucket index
+  const bucketGroups = new Array(TOTAL_BUCKETS).fill(null).map(() => []);
+
+  for (const [fullPath, testId] of testPathMap) {
+    const bucketIdx = getBucketIndex(fullPath);
+    bucketGroups[bucketIdx].push({ fullPath, testId });
+  }
+
+  // Write bucket files, aggregating each test on demand per bucket
+  let totalBucketSize = 0;
+  let nonEmptyBuckets = 0;
+
+  for (let bucketIdx = 0; bucketIdx < TOTAL_BUCKETS; bucketIdx++) {
+    const tests = bucketGroups[bucketIdx];
+
+    // Build testInfo and testRuns for this bucket using global indices;
+    // sortStringTablesByFrequency will compact out unused table entries.
+    const localTestInfo = {
+      testPathIds: [],
+      testNameIds: [],
+      componentIds: [],
+    };
+    const localTestRuns = [];
+    let testsWithFailures = 0;
+
+    for (let localTestId = 0; localTestId < tests.length; localTestId++) {
+      const { testId } = tests[localTestId];
+
+      localTestInfo.testPathIds.push(mergedTestInfo.testPathIds[testId]);
+      localTestInfo.testNameIds.push(mergedTestInfo.testNameIds[testId]);
+      localTestInfo.componentIds.push(mergedTestInfo.componentIds[testId]);
+
+      const aggregated = aggregateTestForBucket(testId);
+      localTestRuns[localTestId] = aggregated;
+
+      if (
+        aggregated.some(
+          (sg, idx) => sg && !mergedTables.statuses[idx].startsWith("PASS")
+        )
+      ) {
+        testsWithFailures++;
+      }
+    }
+
+    const bucketHex = bucketIdx.toString(16).padStart(2, "0");
+    const bucketFile = path.join(OUTPUT_DIR, `${HARNESS}-${bucketHex}.json`);
+
+    const bucketData = {
+      metadata: {
+        startDate,
+        endDate,
+        days: dates.length,
+        startTime,
+        generatedAt: new Date().toISOString(),
+        totalTestCount: tests.length,
+        testsWithFailures,
+        totalBuckets: TOTAL_BUCKETS,
+        bucketIndex: bucketIdx,
+        aggregatedFrom: dailyFiles.map(f => path.basename(f.filePath)),
+      },
+      tables: {
+        jobNames: bucketJobNames,
+        testPaths: mergedTables.testPaths,
+        testNames: mergedTables.testNames,
+        repositories: mergedTables.repositories,
+        statuses: mergedTables.statuses,
+        taskIds: mergedTables.taskIds,
+        messages: mergedTables.messages,
+        crashSignatures: mergedTables.crashSignatures,
+        components: mergedTables.components,
+        commitIds: mergedTables.commitIds,
+      },
+      taskInfo: bucketTaskInfo,
+      testInfo: localTestInfo,
+      testRuns: localTestRuns,
+    };
+
+    const sortedBucketData = sortStringTablesByFrequency(bucketData);
+
+    saveJsonFile(
+      {
+        metadata: bucketData.metadata,
+        tables: sortedBucketData.tables,
+        taskInfo: sortedBucketData.taskInfo,
+        testInfo: sortedBucketData.testInfo,
+        testRuns: sortedBucketData.testRuns,
+      },
+      bucketFile
+    );
+
+    if (tests.length) {
+      nonEmptyBuckets++;
+    }
+    const fileSize = fs.statSync(bucketFile).size;
+    totalBucketSize += fileSize;
+  }
+
+  const totalBucketSizeMB = Math.round(totalBucketSize / (1024 * 1024));
+  console.log(
+    `Generated ${TOTAL_BUCKETS} bucket files (${nonEmptyBuckets} non-empty, ${totalBucketSizeMB}MB total)`
+  );
 }
 
 function calculateStatsFromData(
   testData,
   targetDate,
   ignoredJobsCount = 0,
-  failedJobsCount = 0
+  failedJobsCount = 0,
+  flavorJobCounts = null
 ) {
   const stats = {
     totalTestRuns: 0,
@@ -1859,7 +2683,43 @@ function calculateStatsFromData(
     failedJobs: failedJobsCount,
     invalidJobs: testData.metadata.invalidJobCount || 0,
     ignoredJobs: ignoredJobsCount,
+    // The marker counts don't depend on the timing data the rest of the stats is
+    // computed from, so keep the ones a previous run or computation found.
+    markerCounts: dailyStatsMap.get(targetDate)?.markerCounts,
   };
+
+  const trackFlavors = HARNESS === "mochitest";
+  let flavorByJobNameId, flavorStatsMap;
+
+  if (trackFlavors) {
+    flavorByJobNameId = testData.tables.jobNames.map(classifyMochitestFlavor);
+    flavorStatsMap = new Map();
+  }
+
+  function addToFlavors(taskIdIds, isFailed, isSkipped) {
+    if (!trackFlavors) {
+      return;
+    }
+    for (const taskIdId of taskIdIds) {
+      const jobNameId = testData.taskInfo.jobNameIds[taskIdId];
+      const flavor = flavorByJobNameId[jobNameId];
+      if (flavor === "other") {
+        continue;
+      }
+      let fStats = flavorStatsMap.get(flavor);
+      if (!fStats) {
+        fStats = { totalTestRuns: 0, failedTestRuns: 0, skippedTestRuns: 0 };
+        flavorStatsMap.set(flavor, fStats);
+      }
+      fStats.totalTestRuns++;
+      if (isFailed) {
+        fStats.failedTestRuns++;
+      }
+      if (isSkipped) {
+        fStats.skippedTestRuns++;
+      }
+    }
+  }
 
   for (const testGroup of testData.testRuns) {
     for (let statusId = 0; statusId < testGroup.length; statusId++) {
@@ -1872,27 +2732,46 @@ function calculateStatsFromData(
       const runCount = statusGroup.taskIdIds.length;
       stats.totalTestRuns += runCount;
 
-      if (
-        status.startsWith("FAIL") ||
-        status === "CRASH" ||
-        status === "TIMEOUT"
-      ) {
+      const isFailed =
+        status.startsWith("FAIL") || status === "CRASH" || status === "TIMEOUT";
+
+      if (isFailed) {
         stats.failedTestRuns += runCount;
+        addToFlavors(statusGroup.taskIdIds, true, false);
       } else if (status === "SKIP") {
         if (statusGroup.messageIds) {
-          for (const messageId of statusGroup.messageIds) {
-            if (
-              messageId == null ||
-              !testData.tables.messages[messageId].startsWith("run-if")
-            ) {
+          for (let i = 0; i < statusGroup.messageIds.length; i++) {
+            const messageId = statusGroup.messageIds[i];
+            const isRunIf =
+              messageId != null &&
+              testData.tables.messages[messageId].startsWith("run-if");
+            if (!isRunIf) {
               stats.skippedTestRuns++;
             }
+            addToFlavors([statusGroup.taskIdIds[i]], false, !isRunIf);
           }
         } else {
           stats.skippedTestRuns += runCount;
+          addToFlavors(statusGroup.taskIdIds, false, true);
         }
+      } else {
+        addToFlavors(statusGroup.taskIdIds, false, false);
       }
     }
+  }
+
+  if (trackFlavors) {
+    const flavors = {};
+    for (const [flavor, fStats] of flavorStatsMap) {
+      flavors[flavor] = { ...fStats };
+      if (flavorJobCounts && flavorJobCounts[flavor]) {
+        const jc = flavorJobCounts[flavor];
+        flavors[flavor].processedJobCount = jc.total;
+        flavors[flavor].failedJobs = jc.failed;
+        flavors[flavor].ignoredJobs = jc.ignored;
+      }
+    }
+    stats.flavors = flavors;
   }
 
   console.log(
@@ -1902,6 +2781,14 @@ function calculateStatsFromData(
   dailyStatsMap.set(targetDate, stats);
 
   return stats;
+}
+
+// Record in a day's stats how many occurrences of each error and warning marker
+// its errors file holds, so that the dashboard can show which days are noisy, and
+// for which markers, without downloading the errors files.
+function recordMarkerCounts(targetDate, markerData) {
+  dailyStatsMap.get(targetDate).markerCounts =
+    markerData?.metadata.markerCounts;
 }
 
 async function saveStatsFile() {
@@ -1928,6 +2815,49 @@ async function saveStatsFile() {
     ignoredJobs: [],
   };
 
+  // Collect all flavor names across all dates
+  const allFlavors = new Set();
+  for (const date of allDates) {
+    const stats = dailyStatsMap.get(date);
+    if (stats.flavors) {
+      for (const flavor of Object.keys(stats.flavors)) {
+        allFlavors.add(flavor);
+      }
+    }
+  }
+
+  if (allFlavors.size > 0) {
+    output.flavors = {};
+    for (const flavor of [...allFlavors].sort()) {
+      output.flavors[flavor] = {
+        totalTestRuns: [],
+        failedTestRuns: [],
+        skippedTestRuns: [],
+        processedJobCount: [],
+        failedJobs: [],
+        ignoredJobs: [],
+      };
+    }
+  }
+
+  // Same for the marker names, which only the days that have an errors file have.
+  const allMarkerNames = new Set();
+  for (const date of allDates) {
+    const { markerCounts } = dailyStatsMap.get(date);
+    if (markerCounts) {
+      for (const name of Object.keys(markerCounts)) {
+        allMarkerNames.add(name);
+      }
+    }
+  }
+
+  if (allMarkerNames.size > 0) {
+    output.markerCounts = {};
+    for (const name of [...allMarkerNames].sort()) {
+      output.markerCounts[name] = [];
+    }
+  }
+
   for (const date of allDates) {
     const stats = dailyStatsMap.get(date);
     output.totalTestRuns.push(stats.totalTestRuns);
@@ -1937,6 +2867,33 @@ async function saveStatsFile() {
     output.failedJobs.push(stats.failedJobs);
     output.invalidJobs.push(stats.invalidJobs);
     output.ignoredJobs.push(stats.ignoredJobs);
+
+    // Not every date has every flavor (a flavor may not have run on a
+    // given day, or flavor data may be missing for older dates carried
+    // forward from a pre-flavor stats file), so fall back to 0.
+    if (output.flavors) {
+      for (const flavor of Object.keys(output.flavors)) {
+        const fStats = stats.flavors?.[flavor];
+        output.flavors[flavor].totalTestRuns.push(fStats?.totalTestRuns || 0);
+        output.flavors[flavor].failedTestRuns.push(fStats?.failedTestRuns || 0);
+        output.flavors[flavor].skippedTestRuns.push(
+          fStats?.skippedTestRuns || 0
+        );
+        output.flavors[flavor].processedJobCount.push(
+          fStats?.processedJobCount || 0
+        );
+        output.flavors[flavor].failedJobs.push(fStats?.failedJobs || 0);
+        output.flavors[flavor].ignoredJobs.push(fStats?.ignoredJobs || 0);
+      }
+    }
+
+    // A day that has no errors file (it predates them, or building it failed) and
+    // a marker that fired on no job of the day both fall back to 0.
+    if (output.markerCounts) {
+      for (const name of Object.keys(output.markerCounts)) {
+        output.markerCounts[name].push(stats.markerCounts?.[name] || 0);
+      }
+    }
   }
 
   const statsFileName = `${HARNESS}-stats.json`;
@@ -2022,24 +2979,27 @@ async function main() {
     `Fetching ${HARNESS} test data for the last ${numDays} day${numDays > 1 ? "s" : ""}: ${dates.join(", ")}`
   );
 
-  const processedDates = [];
-  const ONE_HOUR_MS = 60 * 60 * 1000;
+  const TIME_LIMIT_HOURS = 1.5;
+  const TIME_LIMIT_MS = TIME_LIMIT_HOURS * 60 * 60 * 1000;
+  let acceptIncomplete = false;
 
   for (const date of dates) {
     console.log(`\n=== Processing ${date} ===`);
-    await processDateData(date, forceRefetch);
-    processedDates.push(date);
+    await processDateData(date, forceRefetch, acceptIncomplete);
 
-    // Check if we've been running for more than 1 hour
-    const elapsedTime = Date.now() - scriptStartTime;
-    if (elapsedTime > ONE_HOUR_MS) {
-      const remainingDates = dates.length - processedDates.length;
-      if (remainingDates > 0) {
-        console.log(
-          `\nStopping after 1 hour of processing. Skipping ${remainingDates} remaining date${remainingDates > 1 ? "s" : ""}.`
-        );
+    // After the time limit, accept incomplete data from the previous run
+    // instead of re-processing from scratch, to avoid losing data entirely.
+    if (!acceptIncomplete) {
+      const elapsedTime = Date.now() - scriptStartTime;
+      if (elapsedTime > TIME_LIMIT_MS) {
+        const remainingDates = dates.length - dates.indexOf(date) - 1;
+        if (remainingDates > 0) {
+          console.log(
+            `\nStopping full processing after ${TIME_LIMIT_HOURS} hours. Accepting incomplete previous data for ${remainingDates} remaining date${remainingDates > 1 ? "s" : ""}.`
+          );
+        }
+        acceptIncomplete = true;
       }
-      break;
     }
   }
 
@@ -2076,8 +3036,8 @@ async function main() {
   await saveStatsFile();
 
   // Create aggregated failures file if processing multiple days
-  if (processedDates.length > 1) {
-    await createAggregatedFailuresFile(processedDates);
+  if (dates.length > 1) {
+    await createAggregatedFailuresFile(dates);
   }
 }
 

@@ -4,27 +4,28 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use std::time::Duration;
+use std::{hint::black_box, time::Duration};
 
-use criterion::{BenchmarkGroup, Criterion};
+use criterion::{BatchSize::SmallInput, Criterion, Throughput};
+use neqo_common::to_u64;
 use neqo_transport::{ConnectionParameters, State};
 use test_fixture::{
     boxed,
     sim::{
+        ReadySimulator, Simulator,
         connection::{Node, ReachState, ReceiveData, SendData},
         network::{Delay, TailDrop},
-        ReadySimulator, Simulator,
     },
 };
 
 const DELAY: Duration = Duration::from_millis(10);
-pub const TRANSFER_AMOUNT: usize = 1 << 22; // 4Mbyte
+const TRANSFER_AMOUNT: usize = 1 << 22; // 4MiB
 
 const FIXED_SEED: &str = "62df6933ba1f543cece01db8f27fb2025529b27f93df39e19f006e1db3b8c843";
 
 /// Creates a ready simulator for benchmarking transfer.
 #[must_use]
-pub fn setup(label: &str, seed: Option<&str>, pacing: bool) -> ReadySimulator {
+fn setup(label: &str, seed: Option<&str>, pacing: bool) -> ReadySimulator {
     let nodes = boxed![
         Node::new_client(
             ConnectionParameters::default()
@@ -54,36 +55,30 @@ pub fn setup(label: &str, seed: Option<&str>, pacing: bool) -> ReadySimulator {
     sim.setup()
 }
 
-/// Runs transfer benchmarks for all configurations.
-///
-/// The closure receives the benchmark group, group name, label, seed, and pacing flag,
-/// allowing each benchmark to define its own measurement approach.
-pub fn benchmark<M>(c: &mut Criterion, mut measure: M)
-where
-    M: FnMut(
-        &mut BenchmarkGroup<'_, criterion::measurement::WallTime>,
-        &str,
-        &str,
-        Option<&str>,
-        bool,
-    ),
-{
-    // Handle SIMULATION_SEED environment variable for varying-seeds config
+/// Runs transfer benchmarks using `iter_batched`, grouping results under
+/// `name_prefix` (e.g. `"walltime"` or `"simulated"`).
+pub fn bench(c: &mut Criterion, name_prefix: &str) {
     let env_seed = std::env::var("SIMULATION_SEED").ok();
     let configs: [(&str, Option<&str>); 2] = [
         ("varying-seeds", env_seed.as_deref()),
         ("same-seed", Some(FIXED_SEED)),
     ];
 
+    let mut group = c.benchmark_group("transfer");
+    group.noise_threshold(0.03);
+    group.throughput(Throughput::Bytes(to_u64(TRANSFER_AMOUNT)));
     for (label, seed) in configs {
         for pacing in [false, true] {
-            let name = format!("transfer/pacing-{pacing}/{label}");
-            let mut group = c.benchmark_group(&name);
-            group.noise_threshold(0.03);
-            measure(&mut group, &name, label, seed, pacing);
-            group.finish();
+            group.bench_function(&format!("{name_prefix}/pacing-{pacing}/{label}"), |b| {
+                b.iter_batched(
+                    || setup(label, seed, pacing),
+                    |sim| black_box(sim.run()),
+                    SmallInput,
+                );
+            });
         }
     }
+    group.finish();
 }
 
 /// Returns the criterion configuration for transfer benchmarks.

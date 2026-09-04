@@ -41,23 +41,66 @@ async function writeJsonFile(filename, data) {
   console.log(`Saved ${filePath} - ${Math.round(stats.size / 1024)}KB`);
 }
 
-async function fetchJson(url) {
-  const response = await fetch(url);
-  if (!response.ok) {
-    console.error(
-      `Failed to fetch ${url}: HTTP ${response.status} ${response.statusText}`
-    );
-    return null;
+const MAX_FETCH_ATTEMPTS = 4;
+
+// Network-level failures encountered across the whole run. Populated by the
+// fetch helpers and summarized at the end so a degraded run is visible in the
+// log rather than silently dropping data.
+let networkRetryCount = 0;
+const networkGiveUpUrls = [];
+
+function describeError(err) {
+  let message = err.message;
+  if (err.cause) {
+    message += ` (${err.cause.code || err.cause.message})`;
   }
-  return response.json();
+  return message;
+}
+
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+// Run a fetch (and its body read) with retries on network-level failures, which
+// Node's fetch surfaces as thrown errors ("fetch failed") rather than a non-ok
+// response. Returns the awaited body via readBody, or null once retries are
+// exhausted so a single transient failure doesn't abort the whole run.
+async function fetchWithRetry(url, readBody, logHttpError = true) {
+  for (let attempt = 1; attempt <= MAX_FETCH_ATTEMPTS; attempt++) {
+    try {
+      const response = await fetch(url);
+      if (!response.ok) {
+        if (logHttpError) {
+          console.error(
+            `Failed to fetch ${url}: HTTP ${response.status} ${response.statusText}`
+          );
+        }
+        return null;
+      }
+      return await readBody(response);
+    } catch (e) {
+      networkRetryCount++;
+      const lastAttempt = attempt === MAX_FETCH_ATTEMPTS;
+      console.error(
+        `Network error fetching ${url} (attempt ${attempt}/${MAX_FETCH_ATTEMPTS}): ${describeError(e)}` +
+          (lastAttempt ? " - giving up" : ", retrying")
+      );
+      if (lastAttempt) {
+        networkGiveUpUrls.push(url);
+        return null;
+      }
+      await sleep(500 * 2 ** (attempt - 1));
+    }
+  }
+  return null;
+}
+
+async function fetchJson(url) {
+  return fetchWithRetry(url, response => response.json());
 }
 
 async function fetchText(url) {
-  const response = await fetch(url);
-  if (!response.ok) {
-    return null;
-  }
-  return response.text();
+  return fetchWithRetry(url, response => response.text(), false);
 }
 
 function getTaskPath(taskId, retryId) {
@@ -122,24 +165,53 @@ function getArtifactPrefix(jobName) {
   return null;
 }
 
+const MIN_PUSHES = 2;
+
 async function fetchPushesForDate(project, targetDate) {
   console.log(`Fetching pushes for ${project} on ${targetDate}...`);
 
-  const startDate = new Date(targetDate + "T00:00:00.000Z");
   const endDate = new Date(targetDate + "T23:59:59.999Z");
-
-  const startTimestamp = Math.floor(startDate.getTime() / 1000);
   const endTimestamp = Math.floor(endDate.getTime() / 1000);
 
-  const url = `https://treeherder.mozilla.org/api/project/${project}/push/?full=true&count=100&push_timestamp__gte=${startTimestamp}&push_timestamp__lte=${endTimestamp}`;
+  const startDate = new Date(targetDate + "T00:00:00.000Z");
+  const startTimestamp = Math.floor(startDate.getTime() / 1000);
+
+  const baseUrl = `https://treeherder.mozilla.org/api/project/${project}/push/?full=true`;
+  const url = `${baseUrl}&count=100&push_timestamp__gte=${startTimestamp}&push_timestamp__lte=${endTimestamp}`;
 
   const result = await fetchJson(url);
   if (!result || !result.results) {
     throw new Error(`Failed to fetch pushes for ${project} on ${targetDate}`);
   }
 
-  console.log(`Found ${result.results.length} pushes`);
-  return result.results;
+  let pushes = result.results;
+  console.log(`Found ${pushes.length} pushes for ${targetDate}`);
+
+  if (pushes.length < MIN_PUSHES) {
+    console.log(
+      `Found fewer than ${MIN_PUSHES} pushes for ${targetDate}, fetching recent pushes...`
+    );
+    const recentUrl = `${baseUrl}&count=${MIN_PUSHES}&push_timestamp__lte=${endTimestamp}`;
+    const recentResult = await fetchJson(recentUrl);
+    if (recentResult && recentResult.results) {
+      for (const push of recentResult.results) {
+        if (!pushes.find(p => p.id === push.id)) {
+          pushes.push(push);
+        }
+      }
+      console.log(
+        `Now have ${pushes.length} pushes after including recent history`
+      );
+    }
+
+    if (pushes.length < MIN_PUSHES) {
+      throw new Error(
+        `Could only find ${pushes.length} pushes, need at least ${MIN_PUSHES}`
+      );
+    }
+  }
+
+  return pushes;
 }
 
 async function fetchTestJobsForPush(project, pushId) {
@@ -405,6 +477,20 @@ async function processDate(targetDate) {
     `Collected ${durations.length} manifest timings across ${tables.manifest.array.length} unique manifests and ${tables.jobName.array.length} job types`
   );
 
+  console.log(
+    `Network: ${networkRetryCount} transient error(s) retried, ` +
+      `${networkGiveUpUrls.length} request(s) dropped after ${MAX_FETCH_ATTEMPTS} attempts`
+  );
+  for (const url of networkGiveUpUrls) {
+    console.log(`  Dropped after retries: ${url}`);
+  }
+
+  if (durations.length === 0) {
+    throw new Error(
+      "No manifest timing data collected. Aborting to avoid overwriting previous data with empty results."
+    );
+  }
+
   const taskIds = [];
   const taskJobNameIds = [];
   const taskCommitIds = [];
@@ -523,4 +609,10 @@ async function main() {
   await processDate(yesterday);
 }
 
-main().catch(console.error);
+main().catch(err => {
+  console.error(`FatalError: ${describeError(err)}`);
+  if (err.stack) {
+    console.error(err.stack);
+  }
+  process.exit(1);
+});

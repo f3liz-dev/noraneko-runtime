@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,30 +5,30 @@
 #include "ShutdownPhase.h"
 #ifdef XP_WIN
 #  include <windows.h>
+
 #  include "mozilla/PreXULSkeletonUI.h"
 #else
 #  include <unistd.h>
 #endif
 
+#include "AppShutdown.h"
 #include "ProfilerControl.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/CmdLineAndEnvUtils.h"
+#include "mozilla/LateWriteChecks.h"
 #include "mozilla/PoisonIOInterposer.h"
 #include "mozilla/Printf.h"
-#include "mozilla/scache/StartupCache.h"
+#include "mozilla/Services.h"
 #include "mozilla/SpinEventLoopUntil.h"
 #include "mozilla/StartupTimeline.h"
 #include "mozilla/StaticPrefs_toolkit.h"
-#include "mozilla/LateWriteChecks.h"
-#include "mozilla/Services.h"
+#include "mozilla/scache/StartupCache.h"
 #include "nsAppDirectoryServiceDefs.h"
 #include "nsAppRunner.h"
 #include "nsDirectoryServiceUtils.h"
 #include "nsExceptionHandler.h"
 #include "nsICertStorage.h"
 #include "nsThreadUtils.h"
-
-#include "AppShutdown.h"
 
 // TODO: understand why on Android we cannot include this and if we should
 #ifndef ANDROID
@@ -227,7 +225,7 @@ void AppShutdown::Init(AppShutdownMode aMode, int aExitCode,
   // Very early shutdowns can happen before the startup cache is even
   // initialized; don't bother initializing it during shutdown.
   if (auto* cache = scache::StartupCache::GetSingletonNoInit()) {
-    cache->MaybeInitShutdownWrite();
+    cache->MaybeKickOffShutdownWrite();
   }
 }
 

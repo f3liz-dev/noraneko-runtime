@@ -3,13 +3,12 @@ http://creativecommons.org/publicdomain/zero/1.0/ */
 
 "use strict";
 
-const { FormAutofill } = ChromeUtils.importESModule(
-  "resource://autofill/FormAutofill.sys.mjs"
-);
-
 add_setup(async function () {
   await SpecialPowers.pushPrefEnv({
-    set: [["toolkit.osKeyStore.unofficialBuildOnlyLogin", ""]],
+    set: [
+      ["toolkit.osKeyStore.unofficialBuildOnlyLogin", ""],
+      ["extensions.formautofill.heuristics.fillOnDynamicFormChanges", false],
+    ],
   });
 });
 
@@ -118,7 +117,6 @@ add_task(async function test_doorhanger_not_shown_when_autofill_untouched() {
 
   await Services.fog.testFlushAllChildren();
   Services.fog.testResetFOG();
-  Services.telemetry.clearEvents();
 
   await setStorage(TEST_CREDIT_CARD_1);
   let creditCards = await getCreditCards();
@@ -243,11 +241,6 @@ add_task(
           TEST_CREDIT_CARD_1["cc-number"]
         );
 
-        /* eslint-disable mozilla/no-arbitrary-setTimeout */
-        await new Promise(resolve => {
-          setTimeout(resolve, FormAutofill.fillOnDynamicFormChangeTimeout);
-        });
-
         await focusUpdateSubmitForm(browser, {
           focusSelector: "#cc-name",
           newValues: {
@@ -308,11 +301,6 @@ add_task(
           "#cc-number",
           TEST_CREDIT_CARD_1["cc-number"]
         );
-
-        /* eslint-disable mozilla/no-arbitrary-setTimeout */
-        await new Promise(resolve => {
-          setTimeout(resolve, FormAutofill.fillOnDynamicFormChangeTimeout);
-        });
 
         await focusUpdateSubmitForm(browser, {
           focusSelector: "#cc-name",

@@ -76,6 +76,14 @@ add_task(async function test_1_qwac() {
         "1-QWAC Test Locality\nEX",
         "QWAC location text as expected"
       );
+
+      let euTrustMark = document.getElementById(
+        "identity-popup-content-eu-trust-mark"
+      );
+      Assert.ok(
+        BrowserTestUtils.isVisible(euTrustMark),
+        "EU trust mark visible"
+      );
     }
   );
 });
@@ -142,13 +150,18 @@ add_task(async function test_2_qwac() {
       "2-QWAC Test Locality\nEX",
       "QWAC location text as expected"
     );
+
+    let euTrustMark = document.getElementById(
+      "identity-popup-content-eu-trust-mark"
+    );
+    Assert.ok(BrowserTestUtils.isVisible(euTrustMark), "EU trust mark visible");
   });
 });
 
 // Also check that there are conditions where this isn't shown.
 add_task(async function test_non_qwac() {
   let uris = [
-    // eslint-disable-next-line @microsoft/sdl/no-insecure-url
+    // eslint-disable-next-line sdl/no-insecure-url
     "http://example.com",
     "https://example.com",
     "data:,Hello%2C World!",
@@ -203,6 +216,14 @@ add_task(async function test_non_qwac() {
       ok(
         !BrowserTestUtils.isVisible(qwacLocation),
         "QWAC location text not visible"
+      );
+
+      let euTrustMark = document.getElementById(
+        "identity-popup-content-eu-trust-mark"
+      );
+      Assert.ok(
+        !BrowserTestUtils.isVisible(euTrustMark),
+        "EU trust mark not visible"
       );
     });
   }

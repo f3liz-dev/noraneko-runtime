@@ -1,18 +1,16 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "xpcAccessibleDocument.h"
-#include "xpcAccessibleImage.h"
-#include "xpcAccessibleTable.h"
-#include "xpcAccessibleTableCell.h"
 
-#include "nsAccUtils.h"
 #include "DocAccessible-inl.h"
 #include "mozilla/a11y/DocAccessibleParent.h"
 #include "mozilla/dom/CanonicalBrowsingContext.h"
+#include "nsAccUtils.h"
+#include "xpcAccessibleImage.h"
+#include "xpcAccessibleTable.h"
+#include "xpcAccessibleTableCell.h"
 
 using namespace mozilla;
 using namespace mozilla::a11y;
@@ -56,7 +54,7 @@ xpcAccessibleDocument::GetTitle(nsAString& aTitle) {
 
   nsAutoString title;
   Intl()->Title(title);
-  aTitle = title;
+  aTitle = std::move(title);
   return NS_OK;
 }
 

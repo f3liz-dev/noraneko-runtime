@@ -175,7 +175,9 @@ MatchComponentType(const SEC_ASN1Template* templateEntry,
             /* optional component. This is the hard case. Now we need to
                look at the subtemplate to get the expected kind */
             const SEC_ASN1Template* subTemplate =
-                SEC_ASN1GetSubtemplate(templateEntry, dest, PR_FALSE);
+                SEC_ASN1GetSubtemplate(templateEntry,
+                                       (char*)dest + templateEntry->offset,
+                                       PR_FALSE);
             if (!subTemplate) {
                 PORT_SetError(SEC_ERROR_BAD_TEMPLATE);
                 return SECFailure;
@@ -401,7 +403,9 @@ DecodeInline(void* dest,
              SECItem* src, PLArenaPool* arena, PRBool checkTag)
 {
     const SEC_ASN1Template* inlineTemplate =
-        SEC_ASN1GetSubtemplate(templateEntry, dest, PR_FALSE);
+        SEC_ASN1GetSubtemplate(templateEntry,
+                               (char*)dest + templateEntry->offset,
+                               PR_FALSE);
     return DecodeItem((void*)((char*)dest + templateEntry->offset),
                       inlineTemplate, src, arena, checkTag);
 }
@@ -412,7 +416,9 @@ DecodePointer(void* dest,
               SECItem* src, PLArenaPool* arena, PRBool checkTag)
 {
     const SEC_ASN1Template* ptrTemplate =
-        SEC_ASN1GetSubtemplate(templateEntry, dest, PR_FALSE);
+        SEC_ASN1GetSubtemplate(templateEntry,
+                               (char*)dest + templateEntry->offset,
+                               PR_FALSE);
     if (!ptrTemplate) {
         PORT_SetError(SEC_ERROR_INVALID_ARGS);
         return SECFailure;
@@ -498,7 +504,9 @@ DecodeGroup(void* dest,
     void** entries = NULL;
 
     const SEC_ASN1Template* subTemplate =
-        SEC_ASN1GetSubtemplate(templateEntry, dest, PR_FALSE);
+        SEC_ASN1GetSubtemplate(templateEntry,
+                               (char*)dest + templateEntry->offset,
+                               PR_FALSE);
 
     source = *src;
 
@@ -522,11 +530,18 @@ DecodeGroup(void* dest,
             }
         } while ((SECSuccess == rv) && (counter.len));
 
+        /* Limit entry data to 1 GiB. */
+        if (SECSuccess == rv && subTemplate->size &&
+            totalEntries > ((size_t)1 << 30) / subTemplate->size) {
+            PORT_SetError(SEC_ERROR_BAD_DER);
+            rv = SECFailure;
+        }
+
         if (SECSuccess == rv) {
             /* allocate room for pointer array and entries */
             /* we want to allocate the array even if there is 0 entry */
             entries = (void**)PORT_ArenaZAlloc(arena, sizeof(void*) * (totalEntries + 1) + /* the extra one is for NULL termination */
-                                                          subTemplate->size * totalEntries);
+                                                          (size_t)subTemplate->size * totalEntries);
 
             if (entries) {
                 entries[totalEntries] = NULL; /* terminate the array */
@@ -535,12 +550,12 @@ DecodeGroup(void* dest,
                 rv = SECFailure;
             }
             if (SECSuccess == rv) {
-                void* entriesData = (unsigned char*)entries + (unsigned long)(sizeof(void*) * (totalEntries + 1));
+                void* entriesData = (unsigned char*)entries + sizeof(void*) * (totalEntries + 1);
                 /* and fix the pointers in the array */
                 PRUint32 entriesIndex = 0;
                 for (entriesIndex = 0; entriesIndex < totalEntries; entriesIndex++) {
                     entries[entriesIndex] =
-                        (char*)entriesData + (subTemplate->size * entriesIndex);
+                        (char*)entriesData + ((size_t)subTemplate->size * entriesIndex);
                 }
             }
         }

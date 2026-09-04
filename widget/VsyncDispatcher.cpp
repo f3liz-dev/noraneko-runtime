@@ -1,16 +1,16 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "MainThreadUtils.h"
 #include "VsyncDispatcher.h"
+
+#include "MainThreadUtils.h"
 #include "VsyncSource.h"
 #include "gfxPlatform.h"
+#include "mozilla/StaticPrefs_gfx.h"
 #include "mozilla/layers/Compositor.h"
 #include "mozilla/layers/CompositorBridgeParent.h"
 #include "mozilla/layers/CompositorThread.h"
-#include "mozilla/StaticPrefs_gfx.h"
 
 using namespace mozilla::layers;
 

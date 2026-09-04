@@ -32,7 +32,7 @@ use cocoa::{
     INSProgressIndicator, INSRunLoop, INSScrollView, INSStackView, INSText, INSTextContainer,
     INSTextField, INSTextView, INSView, INSWindow, NSApplication_NSEvent, NSArray_NSArrayCreation,
     NSAttributedString_NSExtendedAttributedString, NSDictionary_NSDictionaryCreation,
-    NSMutableParagraphStyle_, NSRunLoop_NSRunLoopConveniences, NSStackView_NSStackViewGravityAreas,
+    NSRunLoop_NSRunLoopConveniences, NSStackView_NSStackViewGravityAreas,
     NSString_NSStringExtensionMethods, NSTextField_NSTextFieldConvenience,
     NSView_NSConstraintBasedLayoutInstallingConstraints, NSView_NSConstraintBasedLayoutLayering,
     PNSObject,
@@ -334,7 +334,11 @@ objc_class! {
                 // In newer versions of macos, makeMainWindow doesn't seem to work reliably when
                 // called from applicationDidFinishLaunching, so we call it here from
                 // windowDidBecomeKey.
-                unsafe { w.makeMainWindow() };
+                unsafe {
+                    w.center();
+                    w.setContentSize_(w.minSize());
+                    w.makeMainWindow();
+                }
                 self.window_type = WindowType::Main { make_main: false };
             }
         }
@@ -613,8 +617,8 @@ impl WindowRenderer {
                 content_parent.setTitlePosition_(cocoa::NSNoTitle);
                 content_parent.setTransparent_(runtime::YES);
                 content_parent.setContentViewMargins_(cocoa::NSSize {
-                    width: 5.0,
-                    height: 5.0,
+                    width: 8.0,
+                    height: 8.0,
                 });
                 if ViewRenderer::new_with_selector(self.rtl, *content_parent, sel!(setContentView:))
                     .render(*e)
@@ -1084,6 +1088,8 @@ fn render_element(
             unsafe {
                 sv.init();
                 sv.setHasVerticalScroller_(runtime::YES);
+                sv.setBorderType_(cocoa::NSBezelBorder);
+                sv.setDrawsBackground_(runtime::YES);
             }
             if let Some(content) = content {
                 ViewRenderer::new_with_selector(rtl, sv, sel!(setDocumentView:))
@@ -1106,7 +1112,14 @@ fn render_element(
                 if rtl {
                     let ps = StrongRef::new(cocoa::NSMutableParagraphStyle::alloc());
                     ps.init();
-                    ps.setAlignment_(cocoa::NSTextAlignmentRight);
+                    // Bug 2046054: XCode 27 beta changes the `NSMutableParagraphStyle` interfaces
+                    // such that `cocoabind` declarations are different. Rather than conditionally
+                    // importing `NSMutableParagraphStyle_` for older versions, we just use a
+                    // `msg_send!`.
+                    //
+                    // In the future when we don't need to support toolchain versions prior to this,
+                    // we can use `ps.setAlignment_(cocoa::NSTextAlignmentRight);` directly.
+                    let () = msg_send![*ps, setAlignment: cocoa::NSTextAlignmentRight];
                     // We don't `use cocoa::NSTextView_NSSharing` because it has some methods which
                     // conflict with others that make it inconvenient.
                     cocoa::NSTextView_NSSharing::setDefaultParagraphStyle_(&*tv, (*ps).into());

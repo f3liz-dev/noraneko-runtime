@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -41,7 +39,7 @@ enum FeatureState {
 //
 //   COMPONENT_EXPORT(MY_COMPONENT) BASE_DECLARE_FEATURE(kMyFeature);
 #define BASE_DECLARE_FEATURE(kFeature) \
-  extern CONSTINIT const base::Feature kFeature
+  extern constinit const base::Feature kFeature
 
 // Provides a definition for `kFeature` with `name` and `default_state`, e.g.
 //
@@ -50,7 +48,7 @@ enum FeatureState {
 // Features should *not* be defined in header files; do not use this macro in
 // header files.
 #define BASE_FEATURE(feature, name, default_state) \
-  CONSTINIT const base::Feature feature(           \
+  constinit const base::Feature feature(           \
       name, default_state, base::internal::FeatureMacroHandshake::kSecret)
 
 // Provides a forward declaration for `feature_object_name` in a header file,
@@ -69,7 +67,7 @@ enum FeatureState {
 // base::GetFieldTrialParamByFeatureAsInt or equivalent functions for other
 // types directly.
 #define BASE_DECLARE_FEATURE_PARAM(T, feature_object_name) \
-  extern CONSTINIT const base::FeatureParam<T> feature_object_name
+  extern constinit const base::FeatureParam<T> feature_object_name
 
 // Provides a definition for `feature_object_name` with `T`, `feature`, `name`
 // and `default_value`, with an internal parsed value cache, e.g.
@@ -97,7 +95,7 @@ enum FeatureState {
         storage);                                                       \
   }                                                                     \
   } /* field_trial_params_internal */                                   \
-  CONSTINIT const base::FeatureParam<T> feature_object_name(            \
+  constinit const base::FeatureParam<T> feature_object_name(            \
       feature, name, default_value,                                     \
       &field_trial_params_internal::                                    \
           GetFeatureParamWithCacheFor##feature_object_name)
@@ -114,7 +112,7 @@ enum FeatureState {
     return param;                                                      \
   }                                                                    \
   } /* field_trial_params_internal */                                  \
-  CONSTINIT const base::FeatureParam<T> feature_object_name(           \
+  constinit const base::FeatureParam<T> feature_object_name(           \
       feature, name, default_value, options,                           \
       &field_trial_params_internal::                                   \
           GetFeatureParamWithCacheFor##feature_object_name)

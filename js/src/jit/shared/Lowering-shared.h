@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -152,10 +150,16 @@ class LIRGeneratorShared {
   // the value fits in an int32.
   inline LAllocation useRegisterOrInt32Constant(MDefinition* mir);
   inline LAllocation useAnyOrInt32Constant(MDefinition* mir);
+  inline LAllocation useAnyOrInt32ConstantAtStart(MDefinition* mir);
 
   // Like useRegisterOrInt32Constant, but uses a constant only if
   // |int32val * Scalar::byteSize(type)| doesn't overflow int32.
-  LAllocation useRegisterOrIndexConstant(MDefinition* mir, Scalar::Type type);
+  LAllocation useRegisterOrIndexConstant(MDefinition* mir, Scalar::Type type,
+                                         bool useAtStart = false);
+  LAllocation useRegisterOrIndexConstantAtStart(MDefinition* mir,
+                                                Scalar::Type type) {
+    return useRegisterOrIndexConstant(mir, type, /* useAtStart= */ true);
+  }
 
   inline LUse useRegisterForTypedLoad(MDefinition* mir, MIRType type);
 
@@ -274,6 +278,7 @@ class LIRGeneratorShared {
 
   inline LInt64Allocation useInt64RegisterAtStart(MDefinition* mir);
   inline LInt64Allocation useInt64RegisterOrConstantAtStart(MDefinition* mir);
+  inline LInt64Allocation useInt64RegisterOrZeroAtStart(MDefinition* mir);
   inline LInt64Allocation useInt64OrConstantAtStart(MDefinition* mir);
 
 #ifdef JS_NUNBOX32

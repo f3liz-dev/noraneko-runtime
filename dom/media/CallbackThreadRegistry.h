@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -11,8 +9,6 @@
 #include <mozilla/DataMutex.h>
 #include <nsTArray.h>
 
-#include <thread>
-
 namespace mozilla {
 
 // This class is a singleton that tracks various callback threads and makes
@@ -23,13 +19,12 @@ namespace mozilla {
 // path.
 class CallbackThreadRegistry final {
  public:
-  CallbackThreadRegistry();
+  CallbackThreadRegistry() = default;
 
-  ~CallbackThreadRegistry() {
-    // It would be nice to be able to assert that all threads have been
-    // unregistered, but we can't: it's legal to suspend an audio stream, so
-    // that the callback isn't called, and then immediately destroy it.
-  }
+  // It would be nice to be able to assert that all threads have been
+  // unregistered, but we can't: it's legal to suspend an audio stream, so
+  // that the callback isn't called, and then immediately destroy it.
+  ~CallbackThreadRegistry() = default;
 
   CallbackThreadRegistry(const CallbackThreadRegistry&) = delete;
   CallbackThreadRegistry& operator=(const CallbackThreadRegistry&) = delete;
@@ -52,7 +47,8 @@ class CallbackThreadRegistry final {
     ProfilerThreadId mId;  // from profiler_current_thread_id
     int mUserCount = 0;
   };
-  DataMutex<nsTArray<ThreadUserCount>> mThreadIds;
+  DataMutex<nsTArray<ThreadUserCount>> mThreadIds{
+      "CallbackThreadRegistry::mThreadIds"};
 };
 
 }  // namespace mozilla

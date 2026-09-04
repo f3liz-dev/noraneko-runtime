@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -18,8 +16,10 @@
 #include "mozilla/Result.h"
 #include "mozilla/ScopeExit.h"
 #include "mozilla/StringBuffer.h"
+#include "mozilla/TextControlElement.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/dom/AbstractRange.h"
+#include "mozilla/dom/ChildIterator.h"
 #include "mozilla/dom/Comment.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/DocumentType.h"
@@ -221,7 +221,7 @@ class nsDocumentEncoder : public nsIDocumentEncoder {
    public:
     virtual ~RangeNodeContext() = default;
 
-    virtual bool IncludeInContext(nsINode& aNode) const { return false; }
+    virtual bool IncludeInContext(nsINode& aNode) const;
 
     virtual int32_t GetImmediateContextCount(
         const nsTArray<nsINode*>& aAncestorArray) const {
@@ -968,7 +968,6 @@ nsresult nsDocumentEncoder::NodeSerializer::SerializeToStringRecursive(
       aNode, GetAllowRangeCrossShadowBoundary(mFlags));
 
   if (shadowRoot) {
-    MOZ_ASSERT(StaticPrefs::dom_shadowdom_selection_across_boundary_enabled());
     // Serialize the ShadowRoot first when the entire node needs to be
     // serialized.
     SerializeToStringRecursive(shadowRoot, aSerializeRoot, aMaxLength);
@@ -1234,16 +1233,6 @@ nsDocumentEncoder::RangeSerializer::SerializeNodePartiallyContainedInRange(
   return NS_OK;
 }
 
-static nsINode* GetChildAtInFlatTreeForSelection(const nsINode& aNode,
-                                                 const uint32_t aIndex) {
-  if (ShadowRoot* shadowRoot = aNode.GetShadowRoot()) {
-    if (shadowRoot->IsUAWidget()) {
-      return aNode.GetChildAt_Deprecated(aIndex);
-    }
-  }
-  return aNode.GetChildAtInFlatTree(aIndex);
-}
-
 nsresult nsDocumentEncoder::RangeSerializer::SerializeChildrenOfContent(
     nsIContent& aContent, uint32_t aStartOffset, uint32_t aEndOffset,
     const nsRange* aRange, int32_t aDepth) {
@@ -1260,12 +1249,10 @@ nsresult nsDocumentEncoder::RangeSerializer::SerializeChildrenOfContent(
     return NS_OK;
   }
 
-  nsINode* childAsNode =
+  nsIContent* child =
       mAllowCrossShadowBoundary == AllowRangeCrossShadowBoundary::Yes
-          ? GetChildAtInFlatTreeForSelection(aContent, aStartOffset)
+          ? aContent.GetChildAtInFlatTreeForSelection(aStartOffset)
           : aContent.GetChildAt_Deprecated(aStartOffset);
-
-  MOZ_ASSERT_IF(childAsNode, childAsNode->IsContent());
 
   auto GetNextSibling = [this, &aContent](
                             nsINode* aCurrentNode,
@@ -1283,25 +1270,36 @@ nsresult nsDocumentEncoder::RangeSerializer::SerializeChildrenOfContent(
     return aCurrentNode->GetNextSibling();
   };
 
-  for (size_t j = aStartOffset; childAsNode && j < aEndOffset; ++j) {
+  for (size_t j = aStartOffset; child && j < aEndOffset; ++j) {
     nsresult rv{NS_OK};
     const bool isFirstOrLastNodeToSerialize =
         j == aStartOffset || j == aEndOffset - 1;
     if (isFirstOrLastNodeToSerialize) {
-      rv = SerializeRangeNodes(aRange, childAsNode, aDepth + 1);
+      rv = SerializeRangeNodes(aRange, child, aDepth + 1);
     } else {
       rv = mNodeSerializer.SerializeToStringRecursive(
-          childAsNode, NodeSerializer::SerializeRoot::eYes);
+          child, NodeSerializer::SerializeRoot::eYes);
     }
 
     if (NS_FAILED(rv)) {
       return rv;
     }
 
-    childAsNode = GetNextSibling(childAsNode, j);
+    child = GetNextSibling(child, j);
   }
 
   return NS_OK;
+}
+
+bool nsDocumentEncoder::RangeNodeContext::IncludeInContext(
+    nsINode& aNode) const {
+  // Thunderbird wraps quoted replies in <span _moz_quote="true">, styled
+  // pre-wrap so the plaintext serializer leaves the "> " lines unwrapped.
+  // Re-emit it as context; otherwise selecting only its contents drops the
+  // span's start tag and the quote is re-wrapped without its "> " markers.
+  const nsIContent* const content = nsIContent::FromNodeOrNull(&aNode);
+  return content && content->IsHTMLElement(nsGkAtoms::span) &&
+         content->AsElement()->HasAttr(nsGkAtoms::mozquote);
 }
 
 nsresult nsDocumentEncoder::RangeContextSerializer::SerializeRangeContextStart(
@@ -1421,10 +1419,10 @@ nsresult nsDocumentEncoder::RangeSerializer::SerializeRangeToString(
   nsContentUtils::GetInclusiveAncestors(mClosestCommonInclusiveAncestorOfRange,
                                         mCommonInclusiveAncestors);
   if (mAllowCrossShadowBoundary == AllowRangeCrossShadowBoundary::Yes) {
-    nsContentUtils::GetFlattenedTreeAncestorsAndOffsets(
+    nsContentUtils::GetFlattenedTreeAncestorsAndOffsetsForSelection(
         startContainer, startOffset, inclusiveAncestorsOfStart,
         inclusiveAncestorsOffsetsOfStart);
-    nsContentUtils::GetFlattenedTreeAncestorsAndOffsets(
+    nsContentUtils::GetFlattenedTreeAncestorsAndOffsetsForSelection(
         endContainer, endOffset, inclusiveAncestorsOfEnd,
         inclusiveAncestorsOffsetsOfEnd);
   } else {
@@ -1531,7 +1529,7 @@ nsDocumentEncoder::EncodeToStringWithMaxLength(uint32_t aMaxLength,
   bool setOutput = false;
   MOZ_ASSERT(!mCachedBuffer);
   // Try to cache the buffer.
-  if (StringBuffer* outputBuffer = output.GetStringBuffer()) {
+  if (StringBuffer* outputBuffer = output.GetOwnedStringBuffer()) {
     if (outputBuffer->StorageSize() == kStringBufferSizeInBytes &&
         !outputBuffer->IsReadonly()) {
       mCachedBuffer = outputBuffer;
@@ -1639,43 +1637,15 @@ class nsHTMLCopyEncoder final : public nsDocumentEncoder {
  protected:
   [[nodiscard]] TreeKind GetTreeKind() const {
     return mFlags & nsIDocumentEncoder::AllowCrossShadowBoundary
-               ? TreeKind::Flat
+               ? TreeKind::FlatForSelection
                : TreeKind::DOM;
   }
   nsresult PromoteRange(nsRange* inRange);
-  struct MOZ_STACK_CLASS RangeInNode {
-    [[nodiscard]] RawRangeBoundary StartRef() const {
-      return RawRangeBoundary(mContainer, mStartOffset,
-                              // Do not compute previous sibling of the child at
-                              // mStartOffset immediately.
-                              RangeBoundarySetBy::Offset, mTreeKind);
-    }
-    [[nodiscard]] RawRangeBoundary EndRef() const {
-      return RawRangeBoundary(mContainer, mEndOffset,
-                              // Do not compute previous sibling of the child at
-                              // mEndOffset immediately.
-                              RangeBoundarySetBy::Offset, mTreeKind);
-    }
-
-    [[nodiscard]] nsINode* GetParentNode() const {
-      MOZ_ASSERT(mContainer);
-      return mTreeKind == TreeKind::Flat
-                 ? mContainer->GetFlattenedTreeParentNodeForSelection()
-                 : mContainer->GetParentNode();
-    }
-
-    nsINode* mContainer = nullptr;
-    uint32_t mStartOffset = 0;
-    uint32_t mEndOffset = 0;
-    const TreeKind mTreeKind;
-  };
-  Result<RangeInNode, nsresult> PromoteAncestorChain(
-      const RangeInNode& aRangeInNode) const;
 
   /**
    * Return a promoted start point which may be extended to a point at an
    * ancestor element or error.  This climbs up the flattened tree if
-   * aPoint.GetTreeKind() is TreeKind::Flat.
+   * aPoint.GetTreeKind() is TreeKind::FlatForSelection.
    *
    * @param aPoint      Must be set to a valid point.
    * @param aCommon     This is used as an ancestor limiter when climbing up the
@@ -1688,7 +1658,7 @@ class nsHTMLCopyEncoder final : public nsDocumentEncoder {
   /**
    * Return a promoted end point which may be extended to a point after an
    * ancestor element or error.  This climbs up the flattened tree if
-   * aPoint.GetTreeKind() is TreeKind::Flat.
+   * aPoint.GetTreeKind() is TreeKind::FlatForSelection.
    *
    * @param aPoint      Must be set to a valid point.
    * @param aCommon     This is used as an ancestor limiter when climbing up the
@@ -1710,6 +1680,18 @@ class nsHTMLCopyEncoder final : public nsDocumentEncoder {
   static Result<RawRangeBoundary, nsresult> GetParentPoint(
       const RawRangeBoundary& aPoint);
 
+  /**
+   * Return the point after the container node of aPoint.  If the container is a
+   * root of a generated content, this returns unset boundary instead of an
+   * error.
+   *
+   * @param aPoint      Must be set to a valid point.
+   * @return            Even if it's not an error, the boundary may be unset if
+   *                    aPoint's container is a root node of generated content.
+   */
+  static Result<RawRangeBoundary, nsresult> GetPointAfterContainer(
+      const RawRangeBoundary& aPoint);
+
   [[nodiscard]] static Maybe<uint32_t> ComputeIndexOfContent(
       const nsINode* aParent, const nsIContent* aChild, TreeKind aTreeKind);
   static bool IsMozBR(Element* aNode);
@@ -1718,7 +1700,7 @@ class nsHTMLCopyEncoder final : public nsDocumentEncoder {
   /**
    * Return true if the child node at the offset of aPoint does not follow a
    * meaningful child in the container.  This checks the flattened tree siblings
-   * if aPoint.GetTreeKind() is TreeKind::Flat.
+   * if aPoint.GetTreeKind() is TreeKind::FlatForSelection.
    *
    * @param aPoint      Must refers a child node, i.e., must not point the end
    *                    of the container.
@@ -1728,10 +1710,10 @@ class nsHTMLCopyEncoder final : public nsDocumentEncoder {
   /**
    * Return true if the child node at the offset of aPoint is not followed by a
    * meaningful child in the container.  This checks the flattened tree siblings
-   * if aPoint.GetTreeKind() is TreeKind::Flat.
+   * if aPoint.GetTreeKind() is TreeKind::FlatForSelection.
    *
-   * @param aPoint      Must refers a child node, i.e., must not point the end
-   *                    of the container.
+   * @param aPoint      Must refers a child node if not pointing to the end of
+   *                    the container.
    */
   static bool ChildIsLastNode(const RawRangeBoundary& aPoint);
 
@@ -1801,16 +1783,10 @@ nsHTMLCopyEncoder::SetSelection(Selection* aSelection) {
   RefPtr<nsRange> range = aSelection->GetRangeAt(0);
   nsINode* commonParent = range->GetClosestCommonInclusiveAncestor();
 
-  for (nsCOMPtr<nsIContent> selContent(
-           nsIContent::FromNodeOrNull(commonParent));
-       selContent; selContent = selContent->GetParent()) {
-    // checking for selection inside a plaintext form widget
-    if (selContent->IsAnyOfHTMLElements(nsGkAtoms::input,
-                                        nsGkAtoms::textarea)) {
-      mIsTextWidget = true;
-      break;
-    }
-  }
+  mIsTextWidget =
+      commonParent &&
+      TextControlElement::FromNodeOrNull(
+          commonParent->GetClosestNativeAnonymousSubtreeRootParentOrHost());
 
   // normalize selection if we are not in a widget
   if (mIsTextWidget) {
@@ -1932,7 +1908,7 @@ nsHTMLCopyEncoder::EncodeToStringWithContext(nsAString& aContextString,
   infoString.AppendInt(mRangeSerializer.mContextInfoDepth.mStart);
   infoString.Append(char16_t(','));
   infoString.AppendInt(mRangeSerializer.mContextInfoDepth.mEnd);
-  aInfoString = infoString;
+  aInfoString = std::move(infoString);
 
   return rv;
 }
@@ -1965,25 +1941,38 @@ nsresult nsHTMLCopyEncoder::PromoteRange(nsRange* inRange) {
     return NS_ERROR_UNEXPECTED;
   }
   const RawRangeBoundary startRef = [&]() -> RawRangeBoundary {
-    const auto& ref = inRange->MayCrossShadowBoundaryStartRef();
-    // XXX If GetTreeKind() returns TreeKind::DOM but ref.GetTreeKind() returns
-    // TreeKind::Flat, what should we do?  The result may cross the shadow DOM
-    // boundaries even though the our user do not want that.
-    if (GetTreeKind() == TreeKind::Flat && ref.GetTreeKind() == TreeKind::DOM) {
-      return ref.AsRaw().AsRangeBoundaryInFlatTree(
-          inRange->Collapsed() ? RangeBoundaryFor::Collapsed
-                               : RangeBoundaryFor::Start);
+    if (GetTreeKind() == TreeKind::DOM) {
+      // XXX If GetTreeKind() returns TreeKind::DOM but
+      // inRange->MayCrossShadowBoundaryStartRef().GetTreeKind() returns
+      // TreeKind::FlatForSelection, what should we do?  The result may cross
+      // the shadow DOM boundaries even though the our user do not want that.
+      return inRange->MayCrossShadowBoundaryStartRef().AsRaw();
     }
-    return ref.AsRaw();
+    MOZ_ASSERT(GetTreeKind() == TreeKind::FlatForSelection);
+    const RangeBoundaryFor startBoundaryIsFor =
+        inRange->Collapsed() ? RangeBoundaryFor::Collapsed
+                             : RangeBoundaryFor::Start;
+    // Ensure the range boundary is in a flattened node.
+    return inRange->MayCrossShadowBoundaryStartRef()
+        .AsRaw()
+        .GetRangeBoundaryInFlatTree(startBoundaryIsFor);
   }();
   const RawRangeBoundary endRef = [&]() -> RawRangeBoundary {
-    const auto& ref = inRange->MayCrossShadowBoundaryEndRef();
-    if (GetTreeKind() == TreeKind::Flat && ref.GetTreeKind() == TreeKind::DOM) {
-      return ref.AsRaw().AsRangeBoundaryInFlatTree(
-          inRange->Collapsed() ? RangeBoundaryFor::Collapsed
-                               : RangeBoundaryFor::End);
+    if (GetTreeKind() == TreeKind::DOM) {
+      // XXX If GetTreeKind() returns TreeKind::DOM but
+      // inRange->MayCrossShadowBoundaryEndRef().GetTreeKind() returns
+      // TreeKind::FlatForSelection, what should we do?  The result may cross
+      // the shadow DOM boundaries even though the our user do not want that.
+      return inRange->MayCrossShadowBoundaryEndRef().AsRaw();
     }
-    return ref.AsRaw();
+    MOZ_ASSERT(GetTreeKind() == TreeKind::FlatForSelection);
+    const RangeBoundaryFor endBoundaryIsFor = inRange->Collapsed()
+                                                  ? RangeBoundaryFor::Collapsed
+                                                  : RangeBoundaryFor::End;
+    // Ensure the range boundary is in a flattened node.
+    return inRange->MayCrossShadowBoundaryEndRef()
+        .AsRaw()
+        .GetRangeBoundaryInFlatTree(endBoundaryIsFor);
   }();
   MOZ_ASSERT(startRef.GetTreeKind() == endRef.GetTreeKind());
   const nsINode* const commonAncestor =
@@ -2008,28 +1997,6 @@ nsresult nsHTMLCopyEncoder::PromoteRange(nsRange* inRange) {
   RawRangeBoundary promotedEndPoint = promotedEndPointOrError.unwrap();
   MOZ_ASSERT(promotedEndPoint.IsSet());
 
-  // if both range endpoints are at the common ancestor, check for possible
-  // inclusion of ancestors
-  using OffsetFilter = RawRangeBoundary::OffsetFilter;
-  if (StaticPrefs::dom_serializer_includeCommonAncestor_enabled() &&
-      promotedStartPoint.GetContainer() == commonAncestor &&
-      promotedEndPoint.GetContainer() == commonAncestor) {
-    MOZ_ASSERT(promotedStartPoint.GetTreeKind() ==
-               promotedEndPoint.GetTreeKind());
-    Result<RangeInNode, nsresult> promotedRangeOrError =
-        PromoteAncestorChain(RangeInNode{
-            promotedStartPoint.GetContainer(),
-            *promotedStartPoint.Offset(OffsetFilter::kValidOrInvalidOffsets),
-            *promotedEndPoint.Offset(OffsetFilter::kValidOrInvalidOffsets),
-            promotedStartPoint.GetTreeKind()});
-    if (MOZ_UNLIKELY(promotedRangeOrError.isErr())) {
-      return promotedRangeOrError.propagateErr();
-    }
-    const RangeInNode promotedRange = promotedRangeOrError.unwrap();
-    promotedStartPoint = promotedRange.StartRef();
-    promotedEndPoint = promotedRange.EndRef();
-  }
-
   // set the range to the new values
   ErrorResult err;
   inRange->SetStart(promotedStartPoint.AsRangeBoundaryInDOMTree(), err,
@@ -2043,54 +2010,6 @@ nsresult nsHTMLCopyEncoder::PromoteRange(nsRange* inRange) {
     return err.StealNSResult();
   }
   return NS_OK;
-}
-
-// PromoteAncestorChain will promote a range represented by aRangeInNode.
-// The promotion is different from that found in GetPromoted(Start|End)Point: it
-// will only promote one endpoint if it can promote the other.  Thus,
-// RangeInNode has only one nsINode* member, mContainer.
-Result<nsHTMLCopyEncoder::RangeInNode, nsresult>
-nsHTMLCopyEncoder::PromoteAncestorChain(const RangeInNode& aRangeInNode) const {
-  MOZ_ASSERT(aRangeInNode.mContainer);
-  using OffsetFilter = RawRangeBoundary::OffsetFilter;
-  RangeInNode rangeInNode = aRangeInNode;
-  while (true) {
-    nsINode* const parentNode = rangeInNode.GetParentNode();
-    if (MOZ_UNLIKELY(!parentNode)) {
-      break;
-    }
-    // passing parent as last param to GetPromotedStartPoint() allows it to
-    // promote only one level up the hierarchy.
-    Result<RawRangeBoundary, nsresult> promotedStartPointOrError =
-        GetPromotedStartPoint(rangeInNode.StartRef(), parentNode);
-    if (NS_WARN_IF(promotedStartPointOrError.isErr())) {
-      return Err(NS_ERROR_FAILURE);
-    }
-    // then we make the same attempt with the endpoint
-    Result<RawRangeBoundary, nsresult> promotedEndPointOrError =
-        GetPromotedEndPoint(rangeInNode.EndRef(), parentNode);
-    if (NS_WARN_IF(promotedEndPointOrError.isErr())) {
-      return Err(NS_ERROR_FAILURE);
-    }
-    const RawRangeBoundary promotedStartPoint =
-        promotedStartPointOrError.unwrap();
-    MOZ_ASSERT(promotedStartPoint.IsSet());
-    const RawRangeBoundary promotedEndPoint = promotedEndPointOrError.unwrap();
-    MOZ_ASSERT(promotedEndPoint.IsSet());
-    // if both endpoints were promoted one level and isEditable is the same as
-    // the original node, keep looping - otherwise we are done.
-    if (promotedStartPoint.GetContainer() != parentNode ||
-        promotedEndPoint.GetContainer() != parentNode ||
-        parentNode->IsEditable() != aRangeInNode.mContainer->IsEditable()) {
-      break;
-    }
-    rangeInNode.mContainer = parentNode;
-    rangeInNode.mStartOffset =
-        *promotedStartPoint.Offset(OffsetFilter::kValidOrInvalidOffsets);
-    rangeInNode.mEndOffset =
-        *promotedEndPoint.Offset(OffsetFilter::kValidOrInvalidOffsets);
-  }
-  return rangeInNode;
 }
 
 Result<RawRangeBoundary, nsresult> nsHTMLCopyEncoder::GetPromotedStartPoint(
@@ -2230,23 +2149,27 @@ Result<RawRangeBoundary, nsresult> nsHTMLCopyEncoder::GetPromotedEndPoint(
   RawRangeBoundary point(aPoint.GetTreeKind());
   bool resetPromotion = false;
 
-  // some special casing for text nodes
-  if (auto* const nodeAsText = Text::FromNode(aPoint.GetContainer())) {
-    // if not at end of text node, we are done
-    if (!aPoint.IsEndOfContainer()) {
-      // unless everything after us in just whitespace.  NOTE: we need a more
-      // general solution that truly detects all cases of non-significant
-      // whitespace with no false alarms.
-      if (!nodeAsText->TextEndsWithOnlyWhitespace(
-              *aPoint.Offset(OffsetFilter::kValidOrInvalidOffsets))) {
-        return aPoint;
+  // Some special casing for CharacterData nodes.
+  if (aPoint.GetContainer()->IsCharacterData()) {
+    if (auto* const nodeAsText = Text::FromNode(aPoint.GetContainer())) {
+      // if not at end of text node, we are done
+      if (!aPoint.IsEndOfContainer()) {
+        // unless everything after us is just whitespace.  NOTE: we need a more
+        // general solution that truly detects all cases of non-significant
+        // whitespace with no false alarms.
+        if (!nodeAsText->TextEndsWithOnlyWhitespace(
+                *aPoint.Offset(OffsetFilter::kValidOrInvalidOffsets))) {
+          return aPoint;
+        }
+        resetPromotion = true;
       }
-      resetPromotion = true;
+      // If it points the end of a `Text`, we want to extend the end boundary
+      // to the parent element.
     }
-    // If it points the end of a `Text`, we want to extend the end boundary
-    // to the parent element.
+    // For other CharacterData nodes, we always extend the end boundary to the
+    // parent element.
     Result<RawRangeBoundary, nsresult> parentPointOrError =
-        GetParentPoint(aPoint);
+        GetPointAfterContainer(aPoint);
     if (NS_WARN_IF(parentPointOrError.isErr())) {
       return parentPointOrError.propagateErr();
     }
@@ -2258,65 +2181,26 @@ Result<RawRangeBoundary, nsresult> nsHTMLCopyEncoder::GetPromotedEndPoint(
           "being removed");
       return aPoint;
     }
-    if (point.GetContainer() == aCommon) {
+    if (point.GetContainer() == aCommon ||
+        IsRoot(point.GetContainer(), point.GetTreeKind())) {
       return aPoint;
     }
+    NS_WARNING_ASSERTION(
+        point.GetPreviousSiblingOfChildAtOffset(),
+        nsFmtCString(
+            FMT_STRING("Not pointing a child node:\npoint={}\naPoint={}\n"),
+            point, aPoint)
+            .get());
+    MOZ_ASSERT(point.GetPreviousSiblingOfChildAtOffset());
   } else {
-    if (aPoint.GetContainer()->HasChildNodes()) {
-      if (aPoint.GetContainer() == aCommon) {
-        return aPoint;
-      }
-      // If aPoint points the first child of the container, we can climb up the
-      // tree from aPoint.
-      if (aPoint.IsStartOfContainer()) {
-        point = aPoint;
-      }
-      // If aPoint points a non-first child of the container, we should climb up
-      // the tree from the previous sibling of the pointing child.
-      else {
-        nsIContent* const previousSibling =
-            aPoint.GetPreviousSiblingOfChildAtOffset();
-        if (NS_WARN_IF(!previousSibling)) {
-          return Err(NS_ERROR_FAILURE);
-        }
-        point =
-            RawRangeBoundary::FromChild(*previousSibling, aPoint.GetTreeKind());
-      }
-    }
-    // If the container of aPoint has no child node, we can climb up the tree
-    // from its parent point.
-    else {
-      Result<RawRangeBoundary, nsresult> parentPointOrError =
-          GetParentPoint(aPoint);
-      if (NS_WARN_IF(parentPointOrError.isErr())) {
-        return RawRangeBoundary(aPoint.GetTreeKind());
-      }
-      point = parentPointOrError.unwrap();
-      if (MOZ_UNLIKELY(!point.IsSet())) {
-        NS_WARNING(fmt::format("aPoint={}", aPoint).c_str());
-        MOZ_ASSERT_UNREACHABLE(
-            "Selection shouldn't start/end in generated content nor content "
-            "being removed");
-        return aPoint;
-      }
-    }
+    point = aPoint;
   }
-  NS_WARNING_ASSERTION(
-      point.GetChildAtOffset(),
-      nsFmtCString(
-          FMT_STRING("Not pointing a child node:\npoint={}\naPoint={}\n"),
-          point, aPoint)
-          .get());
-  MOZ_ASSERT(point.GetChildAtOffset());
+  MOZ_ASSERT(point.IsSet());
+  MOZ_ASSERT(!IsRoot(point.GetContainer(), point.GetTreeKind()));
 
   // finding the real end for this point.  look up the tree for as long as we
   // are the last node in the container, and as long as we haven't hit the
   // body node.
-  if (aPoint.GetContainer() != point.GetChildAtOffset() &&
-      IsRoot(point.GetChildAtOffset(), point.GetTreeKind())) {
-    return aPoint;
-  }
-
   while (point.GetContainer() != aCommon &&
          !IsRoot(point.GetContainer(), point.GetTreeKind()) &&
          ChildIsLastNode(point)) {
@@ -2331,13 +2215,14 @@ Result<RawRangeBoundary, nsresult> nsHTMLCopyEncoder::GetPromotedEndPoint(
     }
 
     Result<RawRangeBoundary, nsresult> parentPointOrError =
-        GetParentPoint(point);
+        GetPointAfterContainer(point);
     if (MOZ_UNLIKELY(parentPointOrError.isErr())) {
+      NS_WARNING(fmt::format("point={}", point).c_str());
       return parentPointOrError.propagateErr();
     }
 
     if (MOZ_UNLIKELY(!parentPointOrError.inspect().IsSet())) {
-      NS_WARNING(fmt::format("aPoint={}", aPoint).c_str());
+      NS_WARNING(fmt::format("point={}", point).c_str());
       MOZ_ASSERT_UNREACHABLE(
           "Selection shouldn't start/end in generated content nor content "
           "being removed");
@@ -2346,16 +2231,7 @@ Result<RawRangeBoundary, nsresult> nsHTMLCopyEncoder::GetPromotedEndPoint(
     point = parentPointOrError.unwrap();
   }
 
-  if (resetPromotion) {
-    return aPoint;
-  }
-  // We want to be AFTER the node.
-  nsIContent* const childAtOffset = point.GetChildAtOffset();
-  return childAtOffset
-             ? RawRangeBoundary::After(*childAtOffset, point.GetTreeKind())
-             : RawRangeBoundary::EndOfParent(*point.GetContainer(),
-                                             RangeBoundarySetBy::Ref,
-                                             point.GetTreeKind());
+  return resetPromotion ? aPoint : point;
 }
 
 bool nsHTMLCopyEncoder::IsMozBR(Element* aElement) {
@@ -2369,15 +2245,9 @@ Maybe<uint32_t> nsHTMLCopyEncoder::ComputeIndexOfContent(
   MOZ_ASSERT(aParent);
   MOZ_ASSERT(aChild);
 
-  if (aTreeKind == TreeKind::DOM) {
-    return aParent->ComputeIndexOf(aChild);
-  }
-  // If the parent of the container has a shadow root which is for <use> or a
-  // UI widget, we shouldn't treat it as a shadow host.
-  if (aParent->GetShadowRoot() && !aParent->GetShadowRootForSelection()) {
-    return aParent->ComputeIndexOf(aChild);
-  }
-  return aParent->ComputeFlatTreeIndexOf(aChild);
+  return aTreeKind == TreeKind::DOM
+             ? aParent->ComputeIndexOf(aChild)
+             : aParent->ComputeFlatTreeForSelectionIndexOf(aChild);
 }
 
 Result<RawRangeBoundary, nsresult> nsHTMLCopyEncoder::GetParentPoint(
@@ -2392,7 +2262,7 @@ Result<RawRangeBoundary, nsresult> nsHTMLCopyEncoder::GetParentPoint(
 
   // If the container is a ShadowRoot, GetFlattenedTreeParentNodeForSelection()
   // returns nullptr. However, we want to keep handling in the host.
-  if (aPoint.GetTreeKind() == TreeKind::Flat) {
+  if (aPoint.GetTreeKind() == TreeKind::FlatForSelection) {
     if (ShadowRoot* const shadowRoot = ShadowRoot::FromNode(containerContent)) {
       Element* const host = shadowRoot->GetHost();
       if (MOZ_UNLIKELY(!host)) {
@@ -2413,7 +2283,7 @@ Result<RawRangeBoundary, nsresult> nsHTMLCopyEncoder::GetParentPoint(
   }
 
   nsINode* const containerParentNode =
-      aPoint.GetTreeKind() == TreeKind::Flat
+      aPoint.GetTreeKind() == TreeKind::FlatForSelection
           ? containerContent->GetFlattenedTreeParentNodeForSelection()
           : containerContent->GetParentNode();
   if (MOZ_UNLIKELY(!containerParentNode)) {
@@ -2432,6 +2302,40 @@ Result<RawRangeBoundary, nsresult> nsHTMLCopyEncoder::GetParentPoint(
       RangeBoundarySetBy::Offset, aPoint.GetTreeKind());
 }
 
+Result<RawRangeBoundary, nsresult> nsHTMLCopyEncoder::GetPointAfterContainer(
+    const RawRangeBoundary& aPoint) {
+  MOZ_ASSERT(aPoint.IsSet());
+
+  nsIContent* const containerContent =
+      nsIContent::FromNodeOrNull(aPoint.GetContainer());
+  if (MOZ_UNLIKELY(!containerContent)) {
+    return Err(NS_ERROR_NULL_POINTER);
+  }
+
+  // If the container is a ShadowRoot, RawRangeBoundary::After() returns an
+  // unset point. However, we want to keep handling in the host.
+  if (aPoint.GetTreeKind() == TreeKind::FlatForSelection) {
+    if (ShadowRoot* const shadowRoot = ShadowRoot::FromNode(containerContent)) {
+      Element* const host = shadowRoot->GetHost();
+      if (MOZ_UNLIKELY(!host)) {
+        return Err(NS_ERROR_NULL_POINTER);
+      }
+
+      // Return the point after the host element.
+      RawRangeBoundary afterHost =
+          RawRangeBoundary::After(*host, aPoint.GetTreeKind());
+      if (MOZ_UNLIKELY(!afterHost.IsSet())) {
+        // The host element may not be a part of the flattened tree, i.e., its
+        // parent node is another shadow host and not assigned to any <slot>.
+        return Err(NS_ERROR_NULL_POINTER);
+      }
+      return std::move(afterHost);
+    }
+  }
+
+  return RawRangeBoundary::After(*containerContent, aPoint.GetTreeKind());
+}
+
 bool nsHTMLCopyEncoder::IsRoot(nsINode* aNode, TreeKind aKind) const {
   nsCOMPtr<nsIContent> content = nsIContent::FromNodeOrNull(aNode);
   if (!content) {
@@ -2442,7 +2346,7 @@ bool nsHTMLCopyEncoder::IsRoot(nsINode* aNode, TreeKind aKind) const {
     return content->IsHTMLElement(nsGkAtoms::div);
   }
 
-  if (aKind == TreeKind::Flat) {
+  if (aKind == TreeKind::FlatForSelection) {
     // If we're handling the flattened tree and aNode is a ShadowRoot,
     // GetParentPoint() for a point whose container is aNode will return the
     // point at the host. However, if the host is not a part of the flattened
@@ -2495,25 +2399,26 @@ bool nsHTMLCopyEncoder::ChildIsFirstNode(const RawRangeBoundary& aPoint) {
   const auto ChildIsSignificant = [](nsIContent& aContent) {
     return !aContent.TextIsOnlyWhitespace();
   };
-  if (aPoint.GetTreeKind() == TreeKind::Flat) {
-    if (const HTMLSlotElement* slot =
-            HTMLSlotElement::FromNode(aPoint.GetContainer())) {
-      const auto assignedNodes = slot->AssignedNodes();
-      if (!assignedNodes.IsEmpty()) {
-        for (const uint32_t offset : Reversed(IntegerRange(*aPoint.Offset(
-                 RawRangeBoundary::OffsetFilter::kValidOrInvalidOffsets)))) {
-          nsIContent* const sibling =
-              nsIContent::FromNode(assignedNodes[offset]);
-          if (sibling && ChildIsSignificant(*sibling)) {
-            return false;
-          }
-        }
-        return true;
+  if (aPoint.GetTreeKind() == TreeKind::FlatForSelection) {
+    FlattenedChildIteratorForSelection iter(aPoint.GetContainer());
+    if (!iter.Seek(aPoint.GetChildAtOffset())) {
+      return false;
+    }
+    for (nsIContent* sibling = iter.GetPreviousChild(); sibling;
+         sibling = iter.GetPreviousChild()) {
+      if (ChildIsSignificant(*sibling)) {
+        return false;
       }
     }
+    return true;
   }
-  for (nsIContent* sibling = aPoint.GetPreviousSiblingOfChildAtOffset();
-       sibling; sibling = sibling->GetPreviousSibling()) {
+
+  ChildIterator iter(aPoint.GetContainer());
+  if (!iter.Seek(aPoint.GetChildAtOffset())) {
+    return false;
+  }
+  for (nsIContent* sibling = iter.GetPreviousChild(); sibling;
+       sibling = iter.GetPreviousChild()) {
     if (ChildIsSignificant(*sibling)) {
       return false;
     }
@@ -2522,6 +2427,13 @@ bool nsHTMLCopyEncoder::ChildIsFirstNode(const RawRangeBoundary& aPoint) {
 }
 
 bool nsHTMLCopyEncoder::ChildIsLastNode(const RawRangeBoundary& aPoint) {
+  MOZ_ASSERT(aPoint.IsSet());
+  MOZ_ASSERT(!aPoint.GetContainer()->IsCharacterData());
+
+  if (aPoint.IsEndOfContainer()) {
+    return true;
+  }
+
   MOZ_ASSERT(aPoint.GetChildAtOffset());
 
   // need to check if any nodes after us are really visible.
@@ -2537,33 +2449,25 @@ bool nsHTMLCopyEncoder::ChildIsLastNode(const RawRangeBoundary& aPoint) {
     }
     return !aContent.TextIsOnlyWhitespace();
   };
-  if (aPoint.GetTreeKind() == TreeKind::Flat) {
-    if (const HTMLSlotElement* slot =
-            HTMLSlotElement::FromNode(aPoint.GetContainer())) {
-      const auto assignedNodes = slot->AssignedNodes();
-      if (!assignedNodes.IsEmpty()) {
-        const uint32_t length = assignedNodes.Length();
-        const uint32_t nextOffset =
-            *aPoint.Offset(
-                RawRangeBoundary::OffsetFilter::kValidOrInvalidOffsets) +
-            1;
-        if (nextOffset >= length) {
-          return true;
-        }
-        for (const uint32_t offset :
-             IntegerRange(nextOffset, assignedNodes.Length())) {
-          nsIContent* const sibling =
-              nsIContent::FromNode(assignedNodes[offset]);
-          if (sibling && ChildIsSignificant(*sibling)) {
-            return false;
-          }
-        }
-        return true;
+  if (aPoint.GetTreeKind() == TreeKind::FlatForSelection) {
+    FlattenedChildIteratorForSelection iter(aPoint.GetContainer());
+    if (!iter.Seek(aPoint.GetChildAtOffset())) {
+      return false;
+    }
+    for (nsIContent* sibling = iter.Get(); sibling;
+         sibling = iter.GetNextChild()) {
+      if (ChildIsSignificant(*sibling)) {
+        return false;
       }
     }
+    return true;
   }
-  for (nsIContent* sibling = aPoint.GetNextSiblingOfChildAtOffset(); sibling;
-       sibling = sibling->GetNextSibling()) {
+  ChildIterator iter(aPoint.GetContainer());
+  if (!iter.Seek(aPoint.GetChildAtOffset())) {
+    return false;
+  }
+  for (nsIContent* sibling = iter.Get(); sibling;
+       sibling = iter.GetNextChild()) {
     if (ChildIsSignificant(*sibling)) {
       return false;
     }

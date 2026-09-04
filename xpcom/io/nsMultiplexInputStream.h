@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -12,15 +10,15 @@
 #ifndef _nsMultiplexInputStream_h_
 #define _nsMultiplexInputStream_h_
 
+#include "mozilla/ipc/InputStreamUtils.h"
+#include "nsCOMPtr.h"
+#include "nsIAsyncInputStream.h"
 #include "nsIBufferedStreams.h"
 #include "nsICloneableInputStream.h"
+#include "nsIIPCSerializableInputStream.h"
+#include "nsIInputStreamLength.h"
 #include "nsIMultiplexInputStream.h"
 #include "nsISeekableStream.h"
-#include "nsCOMPtr.h"
-#include "nsIIPCSerializableInputStream.h"
-#include "mozilla/ipc/InputStreamUtils.h"
-#include "nsIAsyncInputStream.h"
-#include "nsIInputStreamLength.h"
 #include "nsNetUtil.h"
 #include "nsStreamUtils.h"
 
@@ -79,7 +77,7 @@ class nsMultiplexInputStream final : public nsIMultiplexInputStream,
         nsresult rv = NS_NewBufferedInputStream(getter_AddRefs(bufferedStream),
                                                 mBufferedStream.forget(), 4096);
         NS_ENSURE_SUCCESS(rv, rv);
-        mBufferedStream = bufferedStream;
+        mBufferedStream = std::move(bufferedStream);
       }
 
       mAsyncStream = do_QueryInterface(mBufferedStream);

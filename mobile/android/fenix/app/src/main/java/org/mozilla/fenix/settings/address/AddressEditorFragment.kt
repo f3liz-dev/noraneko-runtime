@@ -12,11 +12,13 @@ import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
 import androidx.navigation.fragment.navArgs
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import mozilla.components.concept.engine.Engine
 import mozilla.components.concept.engine.autofill.AddressStructure
 import mozilla.components.lib.state.helpers.StoreProvider.Companion.fragmentStore
 import org.mozilla.fenix.SecureFragment
+import org.mozilla.fenix.e2e.SystemInsetsPaddedFragment
 import org.mozilla.fenix.ext.hideToolbar
 import org.mozilla.fenix.ext.requireComponents
 import org.mozilla.fenix.settings.address.store.AddressEnvironment
@@ -28,12 +30,11 @@ import org.mozilla.fenix.settings.address.ui.edit.EditAddressScreen
 import org.mozilla.fenix.theme.FirefoxTheme
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
-import kotlin.coroutines.suspendCoroutine
 
 /**
  * Displays an address editor for adding and editing an address.
  */
-class AddressEditorFragment : SecureFragment() {
+class AddressEditorFragment : SecureFragment(), SystemInsetsPaddedFragment {
     private val args by navArgs<AddressEditorFragmentArgs>()
 
     override fun onCreateView(
@@ -86,12 +87,17 @@ class AddressEditorFragment : SecureFragment() {
 
 private suspend fun Engine.getAddressStructure(countryCode: String): AddressStructure {
     return withContext(Dispatchers.Main) {
-        suspendCoroutine { continuation ->
-            getAddressStructure(
+        suspendCancellableCoroutine { continuation ->
+            val operation = getAddressStructure(
                 countryCode = countryCode,
                 onSuccess = { fields -> continuation.resume(fields) },
                 onError = { throwable -> continuation.resumeWithException(throwable) },
             )
+
+            continuation.invokeOnCancellation {
+                @Suppress("DeferredResultUnused")
+                operation.cancel()
+            }
         }
     }
 }

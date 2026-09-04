@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,21 +5,22 @@
 #ifdef MOZ_WAYLAND
 
 #  include "WaylandVsyncSource.h"
-#  include "nsThreadUtils.h"
-#  include "nsISupportsImpl.h"
-#  include "MainThreadUtils.h"
-#  include "nsGtkUtils.h"
-#  include "mozilla/StaticPrefs_layout.h"
-#  include "mozilla/StaticPrefs_widget.h"
-#  include "mozilla/widget/WindowOcclusionState.h"
-#  include "nsWindow.h"
 
 #  include <gdk/gdkwayland.h>
 
+#  include "MainThreadUtils.h"
+#  include "mozilla/StaticPrefs_layout.h"
+#  include "mozilla/StaticPrefs_widget.h"
+#  include "mozilla/widget/WindowOcclusionState.h"
+#  include "nsGtkUtils.h"
+#  include "nsISupportsImpl.h"
+#  include "nsThreadUtils.h"
+#  include "nsWindow.h"
+
 #  ifdef MOZ_LOGGING
+#    include "Units.h"
 #    include "mozilla/Logging.h"
 #    include "nsTArray.h"
-#    include "Units.h"
 extern mozilla::LazyLogModule gWidgetVsync;
 #    undef LOG
 #    define LOG(str, ...)                             \
@@ -72,25 +71,29 @@ void WaylandVsyncSource::Init() {
   // by WaylandVsyncSource::Shutdown() and
   // releases mWaylandSurface / MozContainer release.
   //
-  // WaylandVsyncSource can be used by layour code after
+  // WaylandVsyncSource can be used by layout code after
   // nsWindow::Destroy()/WaylandVsyncSource::Shutdown() but
   // only as an empty shell.
-  mWaylandSurface->SetFrameCallbackLocked(
+  mWaylandSurface->SetVSyncCallbackHandlerLocked(
       surfaceLock,
-      [this, self = RefPtr{this}](wl_callback* aCallback,
-                                  uint32_t aTime) -> void {
+      [this, self = RefPtr{this}](wl_callback* aCallback, uint32_t aTime,
+                                  bool aEmulated) -> void {
         {
           MutexAutoLock lock(mMutex);
           if (!mVsyncSourceEnabled || !mVsyncEnabled || !mWaylandSurface) {
             return;
           }
-          if (aTime && mLastFrameTime == aTime) {
+
+          // Last recorded time has the same time base so we can compare it
+          // and skip redundant callbacks.
+          if (mLastTimeEmulated == aEmulated && mLastTime == aTime) {
             return;
           }
-          mLastFrameTime = aTime;
+          mLastTimeEmulated = aEmulated;
+          mLastTime = aTime;
         }
-        LOG("WaylandVsyncSource frame callback, routed %d time %d", !aCallback,
-            aTime);
+        LOG("WaylandVsyncSource frame callback, routed %d time %d emulated %d",
+            !aCallback, aTime, aEmulated);
 
         VisibleWindowCallback(aTime);
 
@@ -101,6 +104,12 @@ void WaylandVsyncSource::Init() {
         SetHiddenWindowVSync();
       },
       /* aEmulateFrameCallback */ true);
+
+  // Set a condition when we should run the emulated VSync.
+  mWaylandSurface->SetVSyncEmulateCheckLocked(
+      surfaceLock, [surface = RefPtr{mWaylandSurface}]() -> bool {
+        return !surface->IsMapped() || !surface->HasBufferAttached();
+      });
 }
 
 WaylandVsyncSource::WaylandVsyncSource(nsWindow* aWindow)
@@ -150,7 +159,7 @@ void WaylandVsyncSource::SetVSyncEventsStateLocked(
     MozClearHandleID(mHiddenWindowTimerID, g_source_remove);
   }
   WaylandSurfaceLock lock(mWaylandSurface);
-  mWaylandSurface->SetFrameCallbackStateLocked(lock, aEnabled);
+  mWaylandSurface->SetVSyncCallbackStateLocked(lock, aEnabled);
 }
 
 void WaylandVsyncSource::EnableVsync() {
@@ -349,6 +358,14 @@ void WaylandVsyncSource::Shutdown() {
   MutexAutoLock lock(mMutex);
 
   LOG("WaylandVsyncSource::Shutdown fps %f\n", GetFPS(mVsyncRate));
+
+  {
+    // Remove all references from callbacks
+    WaylandSurfaceLock surfaceLock(mWaylandSurface);
+    mWaylandSurface->ClearVSyncCallbackHandlerLocked(surfaceLock);
+    mWaylandSurface->SetVSyncEmulateCheckLocked(surfaceLock, nullptr,
+                                                /* aForce */ true);
+  }
 
   mWaylandSurface = nullptr;
   mWindow = nullptr;

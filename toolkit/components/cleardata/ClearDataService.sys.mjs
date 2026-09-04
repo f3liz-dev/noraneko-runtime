@@ -38,6 +38,12 @@ XPCOMUtils.defineLazyServiceGetter(
   "@mozilla.org/bounce-tracking-protection;1",
   Ci.nsIBounceTrackingProtection
 );
+XPCOMUtils.defineLazyServiceGetter(
+  lazy,
+  "sslTokensCache",
+  "@mozilla.org/network/ssl-tokens-cache;1",
+  Ci.nsISSLTokensCache
+);
 
 XPCOMUtils.defineLazyPreferenceGetter(
   lazy,
@@ -323,160 +329,6 @@ const CookieCleaner = {
       Services.cache2.clearAllOriginDictionaries();
       aResolve();
     });
-  },
-};
-
-// A cleaner for clearing cookie banner handling exceptions.
-const CookieBannerExceptionCleaner = {
-  async deleteAll() {
-    try {
-      Services.cookieBanners.removeAllDomainPrefs(false);
-    } catch (e) {
-      // Don't throw an error if the cookie banner handling is disabled.
-      if (e.result != Cr.NS_ERROR_NOT_AVAILABLE) {
-        throw e;
-      }
-    }
-  },
-
-  async deleteByPrincipal(aPrincipal) {
-    try {
-      Services.cookieBanners.removeDomainPref(aPrincipal.URI, false);
-    } catch (e) {
-      // Don't throw an error if the cookie banner handling is disabled.
-      if (e.result != Cr.NS_ERROR_NOT_AVAILABLE) {
-        throw e;
-      }
-    }
-  },
-
-  async deleteBySite(aSchemelessSite, aOriginAttributesPattern) {
-    let { privateBrowsingId } = aOriginAttributesPattern;
-
-    try {
-      let uri = Services.io.newURI("https://" + aSchemelessSite);
-
-      // privateBrowsingId unset clears both normal and private browsing.
-      // Otherwise only clear either normal or private browsing depending on the
-      // value.
-      if (
-        privateBrowsingId == null ||
-        privateBrowsingId ===
-          Services.scriptSecurityManager.DEFAULT_PRIVATE_BROWSING_ID
-      ) {
-        Services.cookieBanners.removeDomainPref(uri, false);
-      }
-      if (
-        privateBrowsingId == null ||
-        privateBrowsingId !==
-          Services.scriptSecurityManager.DEFAULT_PRIVATE_BROWSING_ID
-      ) {
-        Services.cookieBanners.removeDomainPref(uri, true);
-      }
-    } catch (e) {
-      // Don't throw an error if the cookie banner handling is disabled.
-      if (e.result != Cr.NS_ERROR_NOT_AVAILABLE) {
-        throw e;
-      }
-    }
-  },
-
-  async deleteByHost(aHost, aOriginAttributes) {
-    try {
-      let isPrivate =
-        !!aOriginAttributes.privateBrowsingId &&
-        aOriginAttributes.privateBrowsingId !==
-          Services.scriptSecurityManager.DEFAULT_PRIVATE_BROWSING_ID;
-
-      Services.cookieBanners.removeDomainPref(
-        Services.io.newURI("https://" + aHost),
-        isPrivate
-      );
-    } catch (e) {
-      // Don't throw an error if the cookie banner handling is disabled.
-      if (e.result != Cr.NS_ERROR_NOT_AVAILABLE) {
-        throw e;
-      }
-    }
-  },
-};
-
-// A cleaner for cleaning cookie banner handling executed records.
-const CookieBannerExecutedRecordCleaner = {
-  async deleteAll() {
-    try {
-      Services.cookieBanners.removeAllExecutedRecords(false);
-    } catch (e) {
-      // Don't throw an error if the cookie banner handling is disabled.
-      if (e.result != Cr.NS_ERROR_NOT_AVAILABLE) {
-        throw e;
-      }
-    }
-  },
-
-  async deleteByPrincipal(aPrincipal) {
-    try {
-      Services.cookieBanners.removeExecutedRecordForSite(
-        aPrincipal.baseDomain,
-        false
-      );
-    } catch (e) {
-      // Don't throw an error if the cookie banner handling is disabled.
-      if (e.result != Cr.NS_ERROR_NOT_AVAILABLE) {
-        throw e;
-      }
-    }
-  },
-
-  async deleteBySite(aSchemelessSite, aOriginAttributesPattern) {
-    let { privateBrowsingId } = aOriginAttributesPattern;
-
-    try {
-      // privateBrowsingId unset clears both normal and private browsing.
-      // Otherwise only clear either normal or private browsing depending on the
-      // value
-      if (
-        privateBrowsingId == null ||
-        privateBrowsingId ===
-          Services.scriptSecurityManager.DEFAULT_PRIVATE_BROWSING_ID
-      ) {
-        Services.cookieBanners.removeExecutedRecordForSite(
-          aSchemelessSite,
-          false
-        );
-      }
-      if (
-        privateBrowsingId == null ||
-        privateBrowsingId !==
-          Services.scriptSecurityManager.DEFAULT_PRIVATE_BROWSING_ID
-      ) {
-        Services.cookieBanners.removeExecutedRecordForSite(
-          aSchemelessSite,
-          true
-        );
-      }
-    } catch (e) {
-      // Don't throw an error if the cookie banner handling is disabled.
-      if (e.result != Cr.NS_ERROR_NOT_AVAILABLE) {
-        throw e;
-      }
-    }
-  },
-
-  async deleteByHost(aHost, aOriginAttributes) {
-    try {
-      let isPrivate =
-        !!aOriginAttributes.privateBrowsingId &&
-        aOriginAttributes.privateBrowsingId !==
-          Services.scriptSecurityManager.DEFAULT_PRIVATE_BROWSING_ID;
-
-      Services.cookieBanners.removeExecutedRecordForSite(aHost, isPrivate);
-    } catch (e) {
-      // Don't throw error if the cookie banner handling is disabled.
-      if (e.result != Cr.NS_ERROR_NOT_AVAILABLE) {
-        throw e;
-      }
-    }
   },
 };
 
@@ -1455,7 +1307,7 @@ const AuthCacheCleaner = {
 };
 
 // Type of the shutdown exception permission.
-const SHUTDOWN_EXCEPTION_PERMISSION = "cookie";
+const SHUTDOWN_EXCEPTION_PERMISSION = "persist-data-on-shutdown";
 
 const ShutdownExceptionsCleaner = {
   async _deleteInternal(filter) {
@@ -1526,9 +1378,10 @@ const ShutdownExceptionsCleaner = {
 };
 
 const PermissionsCleaner = {
-  _deleteInternal(filter) {
+  async _deleteInternal(filter) {
     Services.perms.all
-      // Skip shutdown exception permission because it is handled by ShutDownExceptionsCleaner
+      // Skip persist-data-on-shutdown because it is handled by
+      // ShutdownExceptionsCleaner.
       .filter(({ type }) => type != SHUTDOWN_EXCEPTION_PERMISSION)
       .filter(filter)
       .forEach(perm => {
@@ -1538,6 +1391,8 @@ const PermissionsCleaner = {
           console.error(ex);
         }
       });
+    // Clean up interaction tracking data for removed permissions.
+    await Services.perms.removeOrphanedInteractionRecords();
   },
 
   _thirdPartyStoragePermissionMatchesHost(permissionType, aHost) {
@@ -1566,7 +1421,7 @@ const PermissionsCleaner = {
   },
 
   async deleteByHost(aHost) {
-    this._deleteInternal(({ principal, type }) => {
+    await this._deleteInternal(({ principal, type }) => {
       let principalHost = this._getPrincipalHost(principal);
       if (!principalHost?.length) {
         return false;
@@ -1580,7 +1435,7 @@ const PermissionsCleaner = {
   },
 
   async deleteByPrincipal(aPrincipal) {
-    this._deleteInternal(({ principal, type }) => {
+    await this._deleteInternal(({ principal, type }) => {
       if (principal.equals(aPrincipal)) {
         return true;
       }
@@ -1604,7 +1459,7 @@ const PermissionsCleaner = {
       delete aOriginAttributesPattern.userContextId;
     }
 
-    this._deleteInternal(
+    await this._deleteInternal(
       ({ principal, type }) =>
         hasSite({ principal }, aSchemelessSite, aOriginAttributesPattern) ||
         this._thirdPartyStoragePermissionMatchesHost(type, aSchemelessSite)
@@ -1734,6 +1589,39 @@ const PreferencesCleaner = {
         },
       });
     });
+  },
+};
+
+const TlsTokenCacheCleaner = {
+  async deleteByHost(aHost, aOriginAttributes) {
+    // Only propagate partitionKey into the OA pattern: TLS tokens are keyed
+    // by host:port + full OA suffix, but we want to clear all tokens for a
+    // given host regardless of container (userContextId) or other attributes.
+    // The partitionKey is included so that clearing from a given first-party
+    // site only affects tokens partitioned under that site.
+    let pattern = {};
+    if (aOriginAttributes.partitionKey) {
+      pattern.partitionKey = aOriginAttributes.partitionKey;
+    }
+    lazy.sslTokensCache.removeSSLTokensByHostAndOriginAttributesPattern(
+      aHost,
+      JSON.stringify(pattern)
+    );
+  },
+
+  async deleteByPrincipal(aPrincipal) {
+    return this.deleteByHost(aPrincipal.host, aPrincipal.originAttributes);
+  },
+
+  async deleteBySite(aSchemelessSite, aOriginAttributesPattern) {
+    lazy.sslTokensCache.removeSSLTokensBySiteAndOriginAttributesPattern(
+      aSchemelessSite,
+      JSON.stringify(aOriginAttributesPattern)
+    );
+  },
+
+  async deleteAll() {
+    lazy.sslTokensCache.clearSSLExternalAndInternalSessionCache();
   },
 };
 
@@ -2187,6 +2075,8 @@ const StoragePermissionsCleaner = {
       }
       Services.perms.removePermission(perm);
     });
+    // Clean up interaction tracking data for removed permissions.
+    await Services.perms.removeOrphanedInteractionRecords();
   },
 
   async deleteByPrincipal(aPrincipal) {
@@ -2205,6 +2095,8 @@ const StoragePermissionsCleaner = {
         Services.perms.removePermission(perm);
       }
     }
+    // Clean up interaction tracking data for removed permissions.
+    await Services.perms.removeOrphanedInteractionRecords();
   },
 
   async deleteBySite(aSchemelessSite, aOriginAttributesPattern) {
@@ -2226,6 +2118,8 @@ const StoragePermissionsCleaner = {
         Services.perms.removePermission(perm);
       }
     }
+    // Clean up interaction tracking data for removed permissions.
+    await Services.perms.removeOrphanedInteractionRecords();
   },
 
   async deleteByLocalFiles() {
@@ -2235,6 +2129,8 @@ const StoragePermissionsCleaner = {
         Services.perms.removePermission(perm);
       }
     }
+    // Clean up interaction tracking data for removed permissions.
+    await Services.perms.removeOrphanedInteractionRecords();
   },
 
   async deleteAll() {
@@ -2251,6 +2147,8 @@ const StoragePermissionsCleaner = {
 
       Services.perms.removePermission(perm);
     });
+    // Clean up interaction tracking data for removed permissions.
+    await Services.perms.removeOrphanedInteractionRecords();
   },
 
   _getStoragePermissions() {
@@ -2330,6 +2228,11 @@ const FLAGS_MAP = [
   },
 
   {
+    flag: Ci.nsIClearDataService.CLEAR_TLS_TOKEN_CACHE,
+    cleaners: [TlsTokenCacheCleaner],
+  },
+
+  {
     flag: Ci.nsIClearDataService.CLEAR_DOWNLOADS,
     cleaners: [DownloadsCleaner, AboutHomeStartupCacheCleaner],
   },
@@ -2405,16 +2308,6 @@ const FLAGS_MAP = [
   },
 
   {
-    flag: Ci.nsIClearDataService.CLEAR_COOKIE_BANNER_EXCEPTION,
-    cleaners: [CookieBannerExceptionCleaner],
-  },
-
-  {
-    flag: Ci.nsIClearDataService.CLEAR_COOKIE_BANNER_EXECUTED_RECORD,
-    cleaners: [CookieBannerExecutedRecordCleaner],
-  },
-
-  {
     flag: Ci.nsIClearDataService.CLEAR_FINGERPRINTING_PROTECTION_STATE,
     cleaners: [FingerprintingProtectionStateCleaner],
   },
@@ -2439,6 +2332,16 @@ const FLAGS_MAP = [
     cleaners: [BfcacheCleaner],
   },
 ];
+
+// Returns the nsIClearDataService.CLEAR_* constant name matching a single flag
+// value, for use in log messages. Falls back to the hexadecimal value.
+function flagToName(aFlag) {
+  return (
+    Object.entries(Ci.nsIClearDataService).find(
+      ([key, value]) => key.startsWith("CLEAR_") && value === aFlag
+    )?.[0] ?? `0x${aFlag.toString(16)}`
+  );
+}
 
 export function ClearDataService() {
   this._initialize();
@@ -2670,6 +2573,7 @@ ClearDataService.prototype = Object.freeze({
 
     gPBMCleanupInProgress = true;
 
+    let timerId = Glean.privateBrowsingCleanup.duration.start();
     let collector = new PBMCleanupCollector();
 
     // Fire the notification with collector as subject. Sync observers
@@ -2682,13 +2586,19 @@ ClearDataService.prototype = Object.freeze({
     collector.promise
       .then(hadFailures => {
         gPBMCleanupInProgress = false;
+        Glean.privateBrowsingCleanup.duration.stopAndAccumulate(timerId);
+        Glean.privateBrowsingCleanup.errorRate.addToDenominator(1);
         if (hadFailures) {
+          Glean.privateBrowsingCleanup.errorRate.addToNumerator(1);
           console.error("PBM cleanup: one or more observers reported failure");
         }
         aCallback.onDataDeleted(hadFailures ? 1 : 0);
       })
       .catch(e => {
         gPBMCleanupInProgress = false;
+        Glean.privateBrowsingCleanup.duration.cancel(timerId);
+        Glean.privateBrowsingCleanup.errorRate.addToDenominator(1);
+        Glean.privateBrowsingCleanup.errorRate.addToNumerator(1);
         console.error("PBM cleanup error:", e);
         aCallback.onDataDeleted(1);
       });
@@ -2719,7 +2629,10 @@ ClearDataService.prototype = Object.freeze({
       return Promise.all(
         c.cleaners.map(cleaner => {
           return aHelper(cleaner).catch(e => {
-            console.error(e);
+            console.error(
+              `ClearDataService failed to clear ${flagToName(c.flag)}:`,
+              e
+            );
             resultFlags |= c.flag;
           });
         })

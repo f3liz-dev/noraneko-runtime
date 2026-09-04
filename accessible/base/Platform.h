@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,8 +6,9 @@
 #define mozilla_a11y_Platform_h
 
 #include <stdint.h>
-#include "nsStringFwd.h"
+
 #include "Units.h"
+#include "nsStringFwd.h"
 
 #if defined(ANDROID)
 #  include "nsTArray.h"
@@ -61,6 +60,12 @@ bool ShouldA11yBeEnabled();
 void SetInstantiator(const uint32_t aInstantiatorPid);
 bool GetInstantiator(nsIFile** aOutInstantiator);
 #endif
+
+/**
+ * Return a string describing the platform a11y instantiators.
+ * Exposed through nsIXULRuntime.accessibilityInstantiator.
+ */
+void GetHumanReadableInstantiatorStr(nsAString& aResult);
 
 /**
  * Called to initialize platform specific accessibility support.
@@ -125,6 +130,10 @@ void PlatformTextSelectionChangeEvent(Accessible* aTarget,
 
 void PlatformRoleChangedEvent(Accessible* aTarget, const a11y::role& aRole,
                               uint8_t aRoleMapEntryIndex);
+
+void PlatformFocusedAccLocationChanged(Accessible* aFocusedAcc);
+
+bool PlatformShouldTrackFocusedAccLocation();
 #endif
 
 // Get the cache domains needed by any known clients interacting with Gecko. If

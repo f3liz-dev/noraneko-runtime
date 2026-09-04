@@ -119,30 +119,25 @@
 ; the system's graphics capabilities and behavior.
 ; It is separate because it may crash, and handling this within Firefox
 ; itself would be more challenging.
-@BINPATH@/glxtest
+@BINPATH@/gfxtest
 @BINPATH@/@DLL_PREFIX@mozgtk@DLL_SUFFIX@
 #ifdef MOZ_WAYLAND
 @BINPATH@/@DLL_PREFIX@mozwayland@DLL_SUFFIX@
-#endif
-#ifdef MOZ_ENABLE_V4L2
-; Similar to glxtest, this tests the hardware decoding for Video for Linux.
-; Currently, it doesn't ship for Firefox targeting typical Intel CPU (or compatible).
-@BINPATH@/v4l2test
-#endif
-#ifdef MOZ_ENABLE_VAAPI
-; Similar to glxtest, this tests the capabilities of the Video Acceleration API (VA-API).
-@BINPATH@/vaapitest
 #endif
 #endif
 
 ; We don't have a complete view of which dlls to expect when doing an artifact
 ; build because we haven't run the relevant parts of configure, so we guess
 ; here and trust what came from our source build.
-#if defined(MOZ_ARTIFACT_BUILDS) && defined(XP_WIN)
+#ifdef MOZ_ARTIFACT_BUILDS
+#ifdef XP_WIN
 @BINPATH@/vcruntime*.dll
 @BINPATH@/msvcp*.dll
-@BINPATH@/libEGL.dll
-@BINPATH@/libGLESv2.dll
+#endif
+#if defined(XP_WIN) || defined(XP_MACOSX)
+@BINPATH@/libEGL@DLL_SUFFIX@
+@BINPATH@/libGLESv2@DLL_SUFFIX@
+#endif
 #endif
 
 #ifdef ONNX_RUNTIME
@@ -207,14 +202,21 @@
 @RESPATH@/browser/actors/*
 @RESPATH@/actors/*
 
-; ANGLE GLES-on-D3D rendering library
+; ANGLE GLES rendering libraries
 #ifdef MOZ_ANGLE_RENDERER
-@BINPATH@/libEGL.dll
-@BINPATH@/libGLESv2.dll
+@BINPATH@/libEGL@DLL_SUFFIX@
+@BINPATH@/libGLESv2@DLL_SUFFIX@
 #endif # MOZ_ANGLE_RENDERER
 
 #ifdef MOZ_DXCOMPILER
 @BINPATH@/@MOZ_DXC_DLL_NAME@
+#endif
+
+; Bundled stub PDFs handed to the OS "Open with" picker by the
+; set-default-PDF-handler flow (see WindowsSetDefaultAppCmdHandler).
+#ifdef XP_WIN
+@RESPATH@/browser/confused_fox.pdf
+@RESPATH@/browser/blank.pdf
 #endif
 
 ; [Browser Chrome Files]
@@ -253,6 +255,11 @@
 @RESPATH@/icons/updater.png
 #endif
 #endif
+#endif
+
+; shell assets
+#ifdef XP_WIN
+@RESPATH@/browser/components/shell/assets/kit.gif
 #endif
 
 ; [Default Preferences]

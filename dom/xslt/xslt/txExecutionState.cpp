@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -128,7 +127,7 @@ nsresult txExecutionState::init(
 
   // Initiate first instruction. This has to be done last since findTemplate
   // might use us.
-  txStylesheet::ImportFrame* frame = 0;
+  txStylesheet::ImportFrame* frame = nullptr;
   txExpandedName nullName;
   txInstruction* templ;
   rv =

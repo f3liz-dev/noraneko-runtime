@@ -10,52 +10,23 @@ const {
   constructRealTimeInfoInjectionMessage,
   getLocalIsoTime,
   getCurrentTabMetadata,
-  constructRelevantMemoriesContextMessage,
   parseContentWithTokens,
   detectTokens,
+  sanitizeUntrustedContent,
+  expandUrlTokens,
+  expandUrlTokensInToolParams,
+  replaceUrlsWithTokens,
+  resolveMentionUrls,
 } = ChromeUtils.importESModule(
   "moz-src:///browser/components/aiwindow/models/ChatUtils.sys.mjs"
 );
-const { MemoriesManager } = ChromeUtils.importESModule(
-  "moz-src:///browser/components/aiwindow/models/memories/MemoriesManager.sys.mjs"
-);
-const { MemoryStore } = ChromeUtils.importESModule(
-  "moz-src:///browser/components/aiwindow/services/MemoryStore.sys.mjs"
+
+const { ChatConversation } = ChromeUtils.importESModule(
+  "moz-src:///browser/components/aiwindow/ui/modules/ChatConversation.sys.mjs"
 );
 const { sinon } = ChromeUtils.importESModule(
   "resource://testing-common/Sinon.sys.mjs"
 );
-
-/**
- * Constants for test memories
- */
-const TEST_MEMORIES = [
-  {
-    memory_summary: "Loves drinking coffee",
-    category: "Food & Drink",
-    intent: "Plan / Organize",
-    score: 3,
-  },
-  {
-    memory_summary: "Buys dog food online",
-    category: "Pets & Animals",
-    intent: "Buy / Acquire",
-    score: 4,
-  },
-];
-
-/**
- * Helper function bulk-add memories
- */
-async function clearAndAddMemories() {
-  const memories = await MemoryStore.getMemories();
-  for (const memory of memories) {
-    await MemoryStore.hardDeleteMemory(memory.id);
-  }
-  for (const memory of TEST_MEMORIES) {
-    await MemoryStore.addMemory(memory);
-  }
-}
 
 /**
  * Constants for preference keys and test values
@@ -104,147 +75,91 @@ add_task(function test_getLocalIsoTime_returns_offset_timestamp() {
 });
 
 add_task(async function test_getCurrentTabMetadata_returns_browser_info() {
-  const sb = sinon.createSandbox();
-  const tracker = { getTopWindow: sb.stub() };
-  const fakeBrowser = {
-    currentURI: { spec: "https://example.com/article" },
-    contentTitle: "Example Article",
-    documentTitle: "Document Title",
-  };
+  const contextMentions = [
+    {
+      type: "currentTab",
+      url: "https://example.com/article",
+      label: "Example Article",
+    },
+  ];
 
-  tracker.getTopWindow.returns({
-    gBrowser: { selectedBrowser: fakeBrowser },
-  });
+  const result = await getCurrentTabMetadata(contextMentions);
 
-  try {
-    const result = await getCurrentTabMetadata({
-      BrowserWindowTracker: tracker,
-    });
-
-    Assert.equal(
-      result.url,
-      "https://example.com/article",
-      "Should return URL"
-    );
-    Assert.equal(
-      result.title,
-      "Example Article",
-      "Should return title from contentTitle"
-    );
-    Assert.equal(
-      result.description,
-      "",
-      "Description should be empty (not yet implemented)"
-    );
-  } finally {
-    sb.restore();
-  }
+  Assert.equal(result.url, "https://example.com/article", "Should return URL");
+  Assert.equal(
+    result.title,
+    sanitizeUntrustedContent("Example Article"),
+    "Should return title from contextMentions label"
+  );
+  Assert.equal(
+    result.description,
+    "",
+    "Description should be empty (not yet implemented)"
+  );
 });
 
 add_task(
-  async function test_getCurrentTabMetadata_falls_back_to_documentTitle() {
-    const sb = sinon.createSandbox();
-    const tracker = { getTopWindow: sb.stub() };
-    const fakeBrowser = {
-      currentURI: { spec: "https://example.com/page" },
-      contentTitle: "", // Empty contentTitle
-      documentTitle: "Document Title Fallback",
-    };
+  async function test_getCurrentTabMetadata_returns_empty_when_no_currentTab() {
+    const contextMentions = [
+      { type: "tab", url: "https://other.com", label: "Other" },
+    ];
 
-    tracker.getTopWindow.returns({
-      gBrowser: { selectedBrowser: fakeBrowser },
-    });
+    const result = await getCurrentTabMetadata(contextMentions);
 
-    try {
-      const result = await getCurrentTabMetadata({
-        BrowserWindowTracker: tracker,
-      });
-
-      Assert.equal(
-        result.title,
-        "Document Title Fallback",
-        "Should fall back to documentTitle when contentTitle is empty"
-      );
-    } finally {
-      sb.restore();
-    }
+    Assert.equal(result.url, "", "Should return empty URL");
+    Assert.equal(result.title, "", "Should return empty title");
+    Assert.equal(result.description, "", "Should return empty description");
   }
 );
 
 add_task(
   async function test_getCurrentTabMetadata_constructRealTimeInfoInjectionMessage() {
-    const sb = sinon.createSandbox();
-    const tracker = { getTopWindow: sb.stub() };
-    const fakeBrowser = {
-      currentURI: { spec: "https://example.com/page" },
-      contentTitle: "", // Empty contentTitle
-      documentTitle: "Document Title Fallback",
-    };
+    const contextMentions = [
+      {
+        type: "currentTab",
+        url: "https://example.com/page",
+        label: "Example Page",
+      },
+    ];
     const locale = Services.locale.appLocaleAsBCP47;
     const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
-    tracker.getTopWindow.returns({
-      gBrowser: { selectedBrowser: fakeBrowser },
-    });
+    const mapping =
+      await constructRealTimeInfoInjectionMessage(contextMentions);
 
-    try {
-      const mapping = await constructRealTimeInfoInjectionMessage({
-        BrowserWindowTracker: tracker,
-      });
+    Assert.equal(mapping.url, "https://example.com/page", "Should include URL");
+    Assert.equal(
+      mapping.title,
+      sanitizeUntrustedContent("Example Page"),
+      "Should include title"
+    );
+    Assert.equal(mapping.description, "", "Should include description");
 
-      // Test that it returns a mapping object with the correct properties
-      Assert.equal(
-        mapping.url,
-        "https://example.com/page",
-        "Should include URL"
-      );
-      Assert.equal(
-        mapping.title,
-        "Document Title Fallback",
-        "Should include title"
-      );
-      Assert.equal(mapping.description, "", "Should include description");
-
-      Assert.equal(mapping.locale, locale, "Should include locale");
-      Assert.equal(mapping.timezone, timezone, "Should include timezone");
-      Assert.ok(
-        /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/.test(mapping.isoTimestamp),
-        `Should have valid ISO timestamp format (YYYY-MM-DDTHH:MM:SS), got: ${mapping.isoTimestamp}`
-      );
-      Assert.ok(
-        /^\d{4}-\d{2}-\d{2}$/.test(mapping.todayDate),
-        `Should have valid date format (YYYY-MM-DD), got: ${mapping.todayDate}`
-      );
-      Assert.equal(
-        mapping.hasTabInfo,
-        true,
-        "Should indicate tab info is present"
-      );
-    } finally {
-      sb.restore();
-    }
+    Assert.equal(mapping.locale, locale, "Should include locale");
+    Assert.equal(mapping.timezone, timezone, "Should include timezone");
+    Assert.ok(
+      /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/.test(mapping.isoTimestamp),
+      `Should have valid ISO timestamp format (YYYY-MM-DDTHH:MM:SS), got: ${mapping.isoTimestamp}`
+    );
+    Assert.ok(
+      /^\d{4}-\d{2}-\d{2}$/.test(mapping.todayDate),
+      `Should have valid date format (YYYY-MM-DD), got: ${mapping.todayDate}`
+    );
+    Assert.equal(
+      mapping.hasTabInfo,
+      true,
+      "Should indicate tab info is present"
+    );
   }
 );
 
 add_task(
   async function test_constructRealTimeInfoInjectionMessage_without_tab_info() {
     const sb = sinon.createSandbox();
-    const tracker = { getTopWindow: sb.stub() };
-    const pageData = {
-      getCached: sb.stub(),
-    };
-
-    tracker.getTopWindow.returns({
-      gBrowser: { selectedBrowser: null },
-    });
-    pageData.getCached.returns(null);
     const clock = sb.useFakeTimers({ now: Date.UTC(2025, 11, 27, 14, 0, 0) });
 
     try {
-      const mapping = await constructRealTimeInfoInjectionMessage({
-        BrowserWindowTracker: tracker,
-        PageDataService: pageData,
-      });
+      const mapping = await constructRealTimeInfoInjectionMessage([]);
 
       Assert.equal(mapping.url, "", "Should not have URL");
       Assert.equal(mapping.title, "", "Should not have title");
@@ -260,111 +175,6 @@ add_task(
       Assert.ok(mapping.todayDate, "Should still include date");
     } finally {
       clock.restore();
-      sb.restore();
-    }
-  }
-);
-
-add_task(async function test_constructRelevantMemoriesContextMessage() {
-  await clearAndAddMemories();
-  MemoriesManager._clearEmbeddingsCache();
-
-  const sb = sinon.createSandbox();
-  try {
-    // Mock getRelevantMemories to return coffee memory
-    const stub = sb.stub(MemoriesManager, "getRelevantMemories").resolves([
-      {
-        id: "food_drink.16ec1838",
-        memory_summary: "Loves drinking coffee",
-        category: "Food & Drink",
-        intent: "Plan / Organize",
-        score: 3,
-        similarity: 0.95,
-      },
-    ]);
-
-    // Create fake engine instance for loading prompts
-    const fakeEngine = {
-      async loadPrompt() {
-        return `# Existing Memories
-
-Below is a list of existing memory texts with their unique IDs:
-
-{relevantMemoriesList}
-
-Use them to personalized your response using the following guidelines:`;
-      },
-    };
-
-    const relevantMemoriesContextMessage =
-      await constructRelevantMemoriesContextMessage(
-        "I love drinking coffee",
-        fakeEngine
-      );
-    Assert.ok(stub.calledOnce, "getRelevantMemories should be called once");
-
-    // Check relevantMemoriesContextMessage's top level structure
-    Assert.strictEqual(
-      typeof relevantMemoriesContextMessage,
-      "object",
-      "Should return an object"
-    );
-    Assert.equal(
-      Object.keys(relevantMemoriesContextMessage).length,
-      2,
-      "Should have 2 keys"
-    );
-
-    // Check specific fields
-    Assert.equal(
-      relevantMemoriesContextMessage.role,
-      "system",
-      "Should have role 'system'"
-    );
-    Assert.ok(
-      relevantMemoriesContextMessage.content.includes("# Existing Memories"),
-      "Should include prompt template text"
-    );
-    Assert.ok(
-      relevantMemoriesContextMessage.content.includes("Loves drinking coffee"),
-      "Should include memory content about coffee"
-    );
-  } finally {
-    sb.restore();
-  }
-});
-
-add_task(
-  async function test_constructRelevantMemoriesContextMessage_no_relevant_memories() {
-    await clearAndAddMemories();
-    MemoriesManager._clearEmbeddingsCache();
-
-    const sb = sinon.createSandbox();
-    try {
-      // Mock getRelevantMemories to return empty array (no matches)
-      const stub = sb.stub(MemoriesManager, "getRelevantMemories").resolves([]);
-
-      // Create fake engine instance (won't be called since no memories returned)
-      const fakeEngine = {
-        async loadPrompt() {
-          return "# Existing Memories";
-        },
-      };
-
-      const relevantMemoriesContextMessage =
-        await constructRelevantMemoriesContextMessage(
-          "I love drinking coffee",
-          fakeEngine
-        );
-      Assert.ok(stub.calledOnce, "getRelevantMemories should be called once");
-
-      // No relevant memories, so returned value should be null
-      Assert.equal(
-        relevantMemoriesContextMessage,
-        null,
-        "Should return null when there are no relevant memories"
-      );
-    } finally {
       sb.restore();
     }
   }
@@ -542,109 +352,312 @@ add_task(function test_detectTokens_custom_key() {
   );
 });
 
-// extractValidUrls tests
-const { extractValidUrls } = ChromeUtils.importESModule(
-  "moz-src:///browser/components/aiwindow/models/ChatUtils.sys.mjs"
-);
+// expandUrlTokens tests
 
-add_task(function test_extractValidUrls_basic() {
-  const sources = [
-    { url: "https://example1.com", title: "Page 1" },
-    { url: "https://example2.com", title: "Page 2" },
+add_task(function test_expandUrlTokens_bare_token() {
+  const mapping = new Map([["GITHUB_COM_1", "https://github.com/foo"]]);
+  const result = expandUrlTokens(
+    "Check out §url_token: GITHUB_COM_1§ for details.",
+    mapping
+  );
+  Assert.equal(
+    result,
+    "Check out https://github.com/foo for details.",
+    "Bare token should be replaced with full URL"
+  );
+});
+
+add_task(function test_expandUrlTokens_bracketed_id_in_href_resolved() {
+  const mapping = new Map([["GITHUB_COM_1", "https://github.com/foo"]]);
+  const result = expandUrlTokens(
+    "[Click here](§url_token: GITHUB_COM_1§)",
+    mapping
+  );
+  Assert.equal(
+    result,
+    "[Click here](https://github.com/foo)",
+    "Bracketed ID in href should be expanded to full URL"
+  );
+});
+
+add_task(function test_expandUrlTokens_same_domain() {
+  const mapping = new Map([
+    ["GITHUB_COM_1", "https://github.com/foo"],
+    ["GITHUB_COM_2", "https://github.com/foo/bar"],
+  ]);
+  const result = expandUrlTokens(
+    "[Click here](§url_token: GITHUB_COM_2§)",
+    mapping
+  );
+  Assert.equal(
+    result,
+    "[Click here](https://github.com/foo/bar)",
+    "Bracketed ID in href should be expanded to longer URL"
+  );
+});
+
+add_task(function test_expandUrlTokens_no_space() {
+  const mapping = new Map([["GITHUB_COM_1", "https://github.com/foo"]]);
+  const result = expandUrlTokens(
+    "[Click here](§url_token:GITHUB_COM_1§)",
+    mapping
+  );
+  Assert.equal(
+    result,
+    "[Click here](https://github.com/foo)",
+    "Should handle missing space after token type and still expand to correct URL"
+  );
+});
+
+add_task(function test_expandUrlTokens_no_mapping() {
+  const mapping = new Map();
+  const result = expandUrlTokens(
+    "[Click here](§url_token: GITHUB_COM_2§)",
+    mapping
+  );
+  Assert.equal(
+    result,
+    "[Click here](§url_token: GITHUB_COM_2§)",
+    "ID should remain unchanged if not in mapping"
+  );
+});
+
+add_task(function test_expandUrlTokens_lowercase() {
+  const mapping = new Map([["github_com_1", "https://github.com/foo"]]);
+  const result = expandUrlTokens(
+    "[Click here](§url_token: github_com_1§)",
+    mapping
+  );
+  Assert.equal(
+    result,
+    "[Click here](§url_token: github_com_1§)",
+    "Shouldn't match lowercase ID"
+  );
+});
+
+add_task(function test_expandUrlTokens_no_digits() {
+  const mapping = new Map([["GITHUB_COM", "https://github.com/foo"]]);
+  const result = expandUrlTokens(
+    "[Click here](§url_token: GITHUB_COM§)",
+    mapping
+  );
+  Assert.equal(
+    result,
+    "[Click here](§url_token: GITHUB_COM§)",
+    "Shouldn't match tags missing digits"
+  );
+});
+
+add_task(function test_expandUrlTokens_special_characters() {
+  const mapping = new Map([["GITHUB_COM$_1", "https://github.com/foo"]]);
+  const result = expandUrlTokens(
+    "[Click here](§url_token: GITHUB_COM$_1§)",
+    mapping
+  );
+  Assert.equal(
+    result,
+    "[Click here](§url_token: GITHUB_COM$_1§)",
+    "Shouldn't match tags with special characters"
+  );
+});
+
+add_task(function test_expandUrlTokens_missing_separator() {
+  const mapping = new Map([["GITHUB_COM_1", "https://github.com/foo"]]);
+  const result = expandUrlTokens(
+    "[Click here](url_token: GITHUB_COM_1)",
+    mapping
+  );
+  Assert.equal(
+    result,
+    "[Click here](url_token: GITHUB_COM_1)",
+    "Shouldn't match missing § separators"
+  );
+});
+
+add_task(function test_expandUrlTokens_wrong_tag_name() {
+  const mapping = new Map([["GITHUB_COM_1", "https://github.com/foo"]]);
+  const result = expandUrlTokens("[Click here](§url: GITHUB_COM_1§)", mapping);
+  Assert.equal(
+    result,
+    "[Click here](§url: GITHUB_COM_1§)",
+    "Shouldn't match wrong tag name"
+  );
+});
+
+add_task(function test_expandUrlTokensInToolParams_array_trailing_comma() {
+  const mapping = new Map([["FACEBOOK_COM_1", "https://www.facebook.com/"]]);
+  const toolParams = { url_tokens: ["§url_token: FACEBOOK_COM_1§,"] };
+  expandUrlTokensInToolParams(toolParams, mapping);
+  Assert.deepEqual(
+    toolParams.url_tokens,
+    ["https://www.facebook.com/"],
+    "Trailing comma around a token should be dropped so the URL still matches"
+  );
+});
+
+add_task(function test_expandUrlTokensInToolParams_array_unmapped_token() {
+  const mapping = new Map([["GITHUB_COM_1", "https://github.com/foo"]]);
+  const toolParams = { url_tokens: ["§url_token: UNKNOWN_1§,"] };
+  expandUrlTokensInToolParams(toolParams, mapping);
+  Assert.deepEqual(
+    toolParams.url_tokens,
+    ["§url_token: UNKNOWN_1§,"],
+    "An unmapped token should be left untouched"
+  );
+});
+
+add_task(function test_expandUrlTokensInToolParams_array_multiple_tokens() {
+  const mapping = new Map([
+    ["GITHUB_COM_1", "https://github.com/foo"],
+    ["GITHUB_COM_2", "https://github.com/bar"],
+  ]);
+  const toolParams = {
+    url_tokens: ["§url_token: GITHUB_COM_1§ and §url_token: GITHUB_COM_2§"],
+  };
+  expandUrlTokensInToolParams(toolParams, mapping);
+  Assert.deepEqual(
+    toolParams.url_tokens,
+    ["https://github.com/foo and https://github.com/bar"],
+    "Entries with multiple tokens should fall back to plain expansion"
+  );
+});
+
+add_task(function test_replaceUrlsWithTokens_serp_content_format() {
+  const conversation = new ChatConversation({});
+
+  const serpUrl = "https://www.google.com/search?q=example";
+  const inlineUrl = "https://github.com/mozilla/gecko-dev";
+  replaceUrlsWithTokens(conversation, [
+    {
+      role: "tool",
+      content: `Search results from <${serpUrl}>:\n\nSee ${inlineUrl} for the source.`,
+    },
+  ]);
+
+  Assert.ok(
+    conversation.urlToToken.has(serpUrl),
+    "URL in angle-bracket header from #extractSerpContent should be extracted without trailing >"
+  );
+  Assert.ok(
+    conversation.urlToToken.has(inlineUrl),
+    "URL in SERP content body should also be extracted"
+  );
+});
+
+add_task(function test_replaceUrlsWithTokens_assistant_tool_calls() {
+  const conversation = new ChatConversation({});
+  const contentUrl = "https://github.com/mozilla/gecko-dev";
+  const toolOnlyUrl = "https://www.facebook.com/";
+  const plainText = "no url here";
+  const messages = [
+    {
+      role: "tool",
+      content: `See ${contentUrl} for the source.`,
+    },
+    {
+      role: "assistant",
+      content: "",
+      tool_calls: [
+        {
+          id: "call_1",
+          type: "function",
+          function: {
+            name: "get_page_content",
+            arguments: JSON.stringify({
+              url_list: [contentUrl, toolOnlyUrl, plainText],
+            }),
+          },
+        },
+      ],
+    },
   ];
-  const urls = extractValidUrls(sources);
+  replaceUrlsWithTokens(conversation, messages);
 
-  Assert.equal(urls.length, 2, "Should extract two URLs");
-  Assert.equal(urls[0], "https://example1.com", "First URL");
-  Assert.equal(urls[1], "https://example2.com", "Second URL");
+  const contentToken = conversation.urlToToken.get(contentUrl);
+  const toolOnlyToken = conversation.urlToToken.get(toolOnlyUrl);
+  Assert.ok(
+    contentToken,
+    "URL from the tool message content should be tokenized"
+  );
+  Assert.ok(
+    toolOnlyToken,
+    "URL present only in tool call arguments should be extracted into a token"
+  );
+  Assert.equal(
+    messages[1].tool_calls[0].function.arguments,
+    JSON.stringify({
+      url_list: [
+        `§url_token: ${contentToken}§`,
+        `§url_token: ${toolOnlyToken}§`,
+        plainText,
+      ],
+    }),
+    "URLs should be replaced with tokens while a list item containing no URL is left unchanged"
+  );
 });
 
-add_task(function test_extractValidUrls_deduplication() {
-  const sources = [
-    { url: "https://example.com", title: "Page 1" },
-    { url: "https://example.com", title: "Page 1 duplicate" },
-    { url: "https://other.com", title: "Other Page" },
-  ];
-  const urls = extractValidUrls(sources);
+add_task(function test_replaceUrlsWithTokens_runExtraction_content_format() {
+  const conversation = new ChatConversation({});
 
-  Assert.equal(urls.length, 2, "Should deduplicate URLs");
-  Assert.equal(urls[0], "https://example.com", "First unique URL");
-  Assert.equal(urls[1], "https://other.com", "Second unique URL");
+  const pageUrl = "http://example.com/some/page";
+  const inlineUrl = "https://mozilla.org/en-US/firefox";
+  replaceUrlsWithTokens(conversation, [
+    {
+      role: "tool",
+      content: `Content from <${pageUrl}>:\n\nVisit ${inlineUrl} for more info.`,
+    },
+  ]);
+
+  Assert.ok(
+    conversation.urlToToken.has(pageUrl),
+    "URL in angle-bracket header from #runExtraction should be extracted without trailing >"
+  );
+  Assert.ok(
+    conversation.urlToToken.has(inlineUrl),
+    "URL in extracted page content body should also be extracted"
+  );
 });
 
-add_task(function test_extractValidUrls_filters_chrome() {
-  const sources = [
-    { url: "chrome://browser/content/test.html", title: "Chrome Page" },
-    { url: "https://example.com", title: "Normal Page" },
-  ];
-  const urls = extractValidUrls(sources);
-
-  Assert.equal(urls.length, 1, "Should filter chrome:// URL");
-  Assert.equal(urls[0], "https://example.com", "Should include https URL");
+add_task(function test_resolveMentionUrls_resolves_single_mention() {
+  const url = "https://example.com/1";
+  const result = resolveMentionUrls(
+    `Summarize [@Page 1](mention:?href=${encodeURIComponent(url)})`
+  );
+  Assert.equal(
+    result,
+    `Summarize [@Page 1](${url})`,
+    "Inline @mention URL should be correctly rewritten"
+  );
 });
 
-add_task(function test_extractValidUrls_filters_about() {
-  const sources = [
-    { url: "about:config", title: "Config Page" },
-    { url: "https://example.com", title: "Normal Page" },
-  ];
-  const urls = extractValidUrls(sources);
-
-  Assert.equal(urls.length, 1, "Should filter about: URL");
-  Assert.equal(urls[0], "https://example.com", "Should include https URL");
+add_task(function test_resolveMentionUrls_resolves_multiple_mentions() {
+  const url1 = "https://example.com/1";
+  const url2 = "https://example.com/2?a=b";
+  const result = resolveMentionUrls(
+    `[@One](mention:?href=${encodeURIComponent(url1)}) and [@Two](mention:?href=${encodeURIComponent(url2)})`
+  );
+  Assert.equal(
+    result,
+    `[@One](${url1}) and [@Two](${url2})`,
+    "All inline @mention URLs preserve their query strings"
+  );
 });
 
-add_task(function test_extractValidUrls_filters_resource() {
-  const sources = [
-    { url: "resource://gre/modules/test.js", title: "Resource" },
-    { url: "https://example.com", title: "Normal Page" },
-  ];
-  const urls = extractValidUrls(sources);
-
-  Assert.equal(urls.length, 1, "Should filter resource:// URL");
-  Assert.equal(urls[0], "https://example.com", "Should include https URL");
+add_task(function test_resolveMentionUrls_does_not_change_non_mention_urls() {
+  const text = "See [docs](https://example.com/docs) for more.";
+  Assert.equal(
+    resolveMentionUrls(text),
+    text,
+    "Non-mention URLs are unchanged"
+  );
 });
 
-add_task(function test_extractValidUrls_filters_moz_extension() {
-  const sources = [
-    { url: "moz-extension://abc123/page.html", title: "Extension" },
-    { url: "https://example.com", title: "Normal Page" },
-  ];
-  const urls = extractValidUrls(sources);
-
-  Assert.equal(urls.length, 1, "Should filter moz-extension:// URL");
-  Assert.equal(urls[0], "https://example.com", "Should include https URL");
-});
-
-add_task(function test_extractValidUrls_skips_missing_url() {
-  const sources = [
-    { title: "No URL Page" },
-    { url: "", title: "Empty URL Page" },
-    { url: "https://example.com", title: "Normal Page" },
-  ];
-  const urls = extractValidUrls(sources);
-
-  Assert.equal(urls.length, 1, "Should skip sources without URLs");
-  Assert.equal(urls[0], "https://example.com", "Should include valid URL");
-});
-
-add_task(function test_extractValidUrls_empty_array() {
-  const urls = extractValidUrls([]);
-  Assert.equal(urls.length, 0, "Should return empty array");
-});
-
-add_task(function test_extractValidUrls_null_input() {
-  const urls = extractValidUrls(null);
-  Assert.equal(urls.length, 0, "Should return empty array for null");
-});
-
-add_task(function test_extractValidUrls_non_string_url() {
-  const sources = [
-    { url: 123, title: "Numeric URL" },
-    { url: "https://example.com", title: "Normal Page" },
-  ];
-  const urls = extractValidUrls(sources);
-
-  Assert.equal(urls.length, 1, "Should skip non-string URLs");
-  Assert.equal(urls[0], "https://example.com", "Should include string URL");
+add_task(function test_resolveMentionUrls_invalid_mentions() {
+  const text =
+    "These [@One](mention:?foo=bar) are [@Two](mention:?href=) invalid [@Three](mention:?) mentions.";
+  Assert.equal(
+    resolveMentionUrls(text),
+    text,
+    "Invalid mentions are unchanged"
+  );
 });

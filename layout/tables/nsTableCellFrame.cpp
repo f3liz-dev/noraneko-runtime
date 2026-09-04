@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -12,6 +11,7 @@
 #include "gfxUtils.h"
 #include "mozilla/ComputedStyle.h"
 #include "mozilla/PresShell.h"
+#include "mozilla/ReflowInput.h"
 #include "mozilla/ScrollContainerFrame.h"
 #include "mozilla/StaticPrefs_layout.h"
 #include "mozilla/gfx/2D.h"
@@ -69,8 +69,7 @@ void nsTableCellFrame::Init(nsIContent* aContent, nsContainerFrame* aParent,
   if (aPrevInFlow) {
     // Set the column index
     nsTableCellFrame* cellFrame = (nsTableCellFrame*)aPrevInFlow;
-    uint32_t colIndex = cellFrame->ColIndex();
-    SetColIndex(colIndex);
+    mColIndex = cellFrame->mColIndex;
   } else {
     // Although the spec doesn't say that writing-mode is not applied to
     // table-cells, we still override style value here because we want to
@@ -234,7 +233,17 @@ void nsTableCellFrame::RemoveFrame(DestroyContext&, ChildListID, nsIFrame*) {
 }
 #endif
 
-void nsTableCellFrame::SetColIndex(int32_t aColIndex) { mColIndex = aColIndex; }
+void nsTableCellFrame::SetColIndex(int32_t aColIndex) {
+  MOZ_ASSERT(!GetPrevContinuation());
+  mColIndex = aColIndex;
+  // Keep our continuations in sync. Cells can be reindexed dynamically (e.g.
+  // when rows are removed), and all continuations should agree on the column
+  // index.
+  for (nsIFrame* cont = GetNextContinuation(); cont;
+       cont = cont->GetNextContinuation()) {
+    static_cast<nsTableCellFrame*>(cont)->mColIndex = aColIndex;
+  }
+}
 
 /* virtual */
 nsMargin nsTableCellFrame::GetUsedMargin() const {

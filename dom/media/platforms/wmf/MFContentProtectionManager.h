@@ -10,7 +10,12 @@
 #include <windows.media.protection.h>
 #include <wrl.h>
 
+#include <functional>
+
 #include "MFCDMProxy.h"
+#include "mozilla/Mutex.h"
+#include "nsISerialEventTarget.h"
+#include "nsITimer.h"
 
 namespace mozilla {
 
@@ -31,7 +36,7 @@ class MFContentProtectionManager
   MFContentProtectionManager();
   ~MFContentProtectionManager();
 
-  HRESULT RuntimeClassInitialize();
+  HRESULT RuntimeClassInitialize(nsISerialEventTarget* aManagerThread);
 
   void Shutdown();
 
@@ -64,13 +69,35 @@ class MFContentProtectionManager
 
   HRESULT SetCDMProxy(MFCDMProxy* aCDMProxy);
 
-  MFCDMProxy* GetCDMProxy() const { return mCDMProxy; }
+  // Set a callback that fires on the manager thread after a delay if
+  // BeginEnableContent has not been answered by EndEnableContent, signalling a
+  // key wait.
+  void SetNotifyWaitingForKeyCallback(std::function<void()>&& aCallback);
+
+  RefPtr<MFCDMProxy> GetCDMProxy();
 
  private:
   HRESULT SetPMPServer(
       ABI::Windows::Media::Protection::IMediaProtectionPMPServer* aPMPServer);
 
-  RefPtr<MFCDMProxy> mCDMProxy;
+  void AssertOnManagerThread() const;
+
+  void NotifyWaitingForKey();
+
+  void ArmWaitingForKeyTimer();
+  void CancelWaitingForKeyTimer();
+
+  mozilla::Mutex mMutex;
+
+  RefPtr<MFCDMProxy> mCDMProxy MOZ_GUARDED_BY(mMutex);
+  std::function<void()> mNotifyWaitingForKeyCb MOZ_GUARDED_BY(mMutex);
+
+  // Set once during construction, before Media Foundation is given this
+  // manager, so it is safe to read from any thread.
+  nsCOMPtr<nsISerialEventTarget> mManagerThread;
+
+  // Only used on mManagerThread, which is also the timer's target thread.
+  nsCOMPtr<nsITimer> mWaitingForKeyTimer;
 
   Microsoft::WRL::ComPtr<ABI::Windows::Foundation::Collections::IPropertySet>
       mPMPServerSet;

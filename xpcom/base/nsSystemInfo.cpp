@@ -1,26 +1,25 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "nsAppRunner.h"
 #include "nsSystemInfo.h"
-#include "prsystem.h"
-#include "prio.h"
-#include "mozilla/SSE.h"
-#include "mozilla/arm.h"
-#include "mozilla/dom/DOMMozPromiseRequestHolder.h"
+
+#include "js/PropertyAndElement.h"  // JS_SetProperty
+#include "jsapi.h"
 #include "mozilla/Hal.h"
 #include "mozilla/LazyIdleThread.h"
 #include "mozilla/LookAndFeel.h"
+#include "mozilla/SSE.h"
 #include "mozilla/Sprintf.h"
 #include "mozilla/Try.h"
 #include "mozilla/Vector.h"
-#include "jsapi.h"
-#include "js/PropertyAndElement.h"  // JS_SetProperty
+#include "mozilla/arm.h"
+#include "mozilla/dom/DOMMozPromiseRequestHolder.h"
 #include "mozilla/dom/Promise.h"
 #include "mozilla/glean/XpcomMetrics.h"
+#include "nsAppRunner.h"
+#include "prio.h"
+#include "prsystem.h"
 
 #ifdef XP_WIN
 #  include <comutil.h>
@@ -34,16 +33,16 @@
 #    include <wrl.h>
 #    include <wscapi.h>
 #  endif  // __MINGW32__
+#  include "WinUtils.h"
 #  include "base/scoped_handle_win.h"
 #  include "mozilla/DynamicallyLinkedFunctionPtr.h"
+#  include "mozilla/NotNull.h"
 #  include "mozilla/WindowsVersion.h"
 #  include "nsAppDirectoryServiceDefs.h"
 #  include "nsDirectoryServiceDefs.h"
 #  include "nsDirectoryServiceUtils.h"
-#  include "nsWindowsHelpers.h"
 #  include "nsIWindowsRegKey.h"
-#  include "WinUtils.h"
-#  include "mozilla/NotNull.h"
+#  include "nsWindowsHelpers.h"
 
 #endif
 
@@ -52,23 +51,25 @@
 #endif
 
 #ifdef MOZ_WIDGET_GTK
-#  include <gtk/gtk.h>
 #  include <dlfcn.h>
+#  include <gtk/gtk.h>
+
 #  include "mozilla/WidgetUtilsGtk.h"
 #endif
 
 #if defined(XP_LINUX)
 #  include <unistd.h>
+
 #  include <fstream>
 #  ifndef ANDROID
 #    include <link.h>
 #  endif
+#  include <map>
+#  include <string>
+
 #  include "mozilla/Tokenizer.h"
 #  include "mozilla/widget/LSBUtils.h"
 #  include "nsCharSeparatedTokenizer.h"
-
-#  include <map>
-#  include <string>
 #endif
 
 #ifdef MOZ_WIDGET_ANDROID
@@ -124,7 +125,7 @@ static void SimpleParseKeyValuePairs(
       // We want the value even if there was just one token, to cover the
       // case where we had the key, and the value was blank (seems to be
       // a valid scenario some files.)
-      aKeyValuePairs[key] = value;
+      aKeyValuePairs[key] = std::move(value);
     }
   }
 }
@@ -560,7 +561,7 @@ static nsresult ProcessIsRosettaTranslated(bool& isRosetta) {
 #  else
   int ret = 0;
   size_t size = sizeof(ret);
-  if (sysctlbyname("sysctl.proc_translated", &ret, &size, NULL, 0) == -1) {
+  if (sysctlbyname("sysctl.proc_translated", &ret, &size, nullptr, 0) == -1) {
     if (errno != ENOENT) {
       fprintf(stderr, "Failed to check for translation environment\n");
     }
@@ -778,65 +779,66 @@ nsresult CollectProcessInfo(ProcessInfo& info) {
   uint32_t sysctlValue32 = 0;
   size_t len = 0;
   len = sizeof(sysctlValue64);
-  if (!sysctlbyname("hw.cpufrequency_max", &sysctlValue64, &len, NULL, 0)) {
+  if (!sysctlbyname("hw.cpufrequency_max", &sysctlValue64, &len, nullptr, 0)) {
     cpuSpeed = static_cast<int>(sysctlValue64 / 1000000);
   }
   MOZ_ASSERT(sizeof(sysctlValue64) == len);
 
   len = sizeof(sysctlValue32);
-  if (!sysctlbyname("hw.physicalcpu_max", &sysctlValue32, &len, NULL, 0)) {
+  if (!sysctlbyname("hw.physicalcpu_max", &sysctlValue32, &len, nullptr, 0)) {
     physicalCPUs = static_cast<int>(sysctlValue32);
   }
   MOZ_ASSERT(sizeof(sysctlValue32) == len);
 
   len = sizeof(sysctlValue32);
-  if (!sysctlbyname("hw.logicalcpu_max", &sysctlValue32, &len, NULL, 0)) {
+  if (!sysctlbyname("hw.logicalcpu_max", &sysctlValue32, &len, nullptr, 0)) {
     logicalCPUs = static_cast<int>(sysctlValue32);
   }
   MOZ_ASSERT(sizeof(sysctlValue32) == len);
 
   len = sizeof(sysctlValue64);
-  if (!sysctlbyname("hw.l2cachesize", &sysctlValue64, &len, NULL, 0)) {
+  if (!sysctlbyname("hw.l2cachesize", &sysctlValue64, &len, nullptr, 0)) {
     cacheSizeL2 = static_cast<int>(sysctlValue64 / 1024);
   }
   MOZ_ASSERT(sizeof(sysctlValue64) == len);
 
   len = sizeof(sysctlValue64);
-  if (!sysctlbyname("hw.l3cachesize", &sysctlValue64, &len, NULL, 0)) {
+  if (!sysctlbyname("hw.l3cachesize", &sysctlValue64, &len, nullptr, 0)) {
     cacheSizeL3 = static_cast<int>(sysctlValue64 / 1024);
   }
   MOZ_ASSERT(sizeof(sysctlValue64) == len);
 
-  if (!sysctlbyname("machdep.cpu.vendor", NULL, &len, NULL, 0)) {
+  if (!sysctlbyname("machdep.cpu.vendor", nullptr, &len, nullptr, 0)) {
     char* cpuVendorStr = new char[len];
-    if (!sysctlbyname("machdep.cpu.vendor", cpuVendorStr, &len, NULL, 0)) {
+    if (!sysctlbyname("machdep.cpu.vendor", cpuVendorStr, &len, nullptr, 0)) {
       cpuVendor = cpuVendorStr;
     }
     delete[] cpuVendorStr;
   }
 
-  if (!sysctlbyname("machdep.cpu.brand_string", NULL, &len, NULL, 0)) {
+  if (!sysctlbyname("machdep.cpu.brand_string", nullptr, &len, nullptr, 0)) {
     char* cpuNameStr = new char[len];
-    if (!sysctlbyname("machdep.cpu.brand_string", cpuNameStr, &len, NULL, 0)) {
+    if (!sysctlbyname("machdep.cpu.brand_string", cpuNameStr, &len, nullptr,
+                      0)) {
       cpuName = cpuNameStr;
     }
     delete[] cpuNameStr;
   }
 
   len = sizeof(sysctlValue32);
-  if (!sysctlbyname("machdep.cpu.family", &sysctlValue32, &len, NULL, 0)) {
+  if (!sysctlbyname("machdep.cpu.family", &sysctlValue32, &len, nullptr, 0)) {
     cpuFamily = static_cast<int>(sysctlValue32);
   }
   MOZ_ASSERT(sizeof(sysctlValue32) == len);
 
   len = sizeof(sysctlValue32);
-  if (!sysctlbyname("machdep.cpu.model", &sysctlValue32, &len, NULL, 0)) {
+  if (!sysctlbyname("machdep.cpu.model", &sysctlValue32, &len, nullptr, 0)) {
     cpuModel = static_cast<int>(sysctlValue32);
   }
   MOZ_ASSERT(sizeof(sysctlValue32) == len);
 
   len = sizeof(sysctlValue32);
-  if (!sysctlbyname("machdep.cpu.stepping", &sysctlValue32, &len, NULL, 0)) {
+  if (!sysctlbyname("machdep.cpu.stepping", &sysctlValue32, &len, nullptr, 0)) {
     cpuStepping = static_cast<int>(sysctlValue32);
   }
   MOZ_ASSERT(sizeof(sysctlValue32) == len);
@@ -1279,7 +1281,7 @@ nsresult CollectProcessInfo(ProcessInfo& info) {
     for (int32_t cpu = 0; cpu < info.cpuCount; ++cpu) {
       nsPrintfCString core_cpus(
           "/sys/devices/system/cpu/cpu%d/topology/core_cpus", cpu);
-      std::ifstream input(core_cpus.Data());
+      std::ifstream input(core_cpus.get());
       // Kernel versions before 5.3 didn't have core_cpus, they had
       // thread_siblings instead, with the same content. As of writing, kernel
       // version 6.9 still has both, but thread_siblings has been deprecated
@@ -1287,7 +1289,7 @@ nsresult CollectProcessInfo(ProcessInfo& info) {
       if (input.fail()) {
         core_cpus.Truncate(core_cpus.Length() - sizeof("core_cpus") + 1);
         core_cpus.AppendLiteral("thread_siblings");
-        input.open(core_cpus.Data());
+        input.open(core_cpus.get());
       }
       std::string line;
       if (!getline(input, line)) {
@@ -1538,10 +1540,10 @@ nsresult nsSystemInfo::Init() {
                {PR_SI_RELEASE, "version"},
                {PR_SI_RELEASE_BUILD, "build"}};
 
-  for (uint32_t i = 0; i < (sizeof(items) / sizeof(items[0])); i++) {
+  for (auto item : items) {
     char buf[SYS_INFO_BUFFER_LENGTH];
-    if (PR_GetSystemInfo(items[i].cmd, buf, sizeof(buf)) == PR_SUCCESS) {
-      rv = SetPropertyAsACString(NS_ConvertASCIItoUTF16(items[i].name),
+    if (PR_GetSystemInfo(item.cmd, buf, sizeof(buf)) == PR_SUCCESS) {
+      rv = SetPropertyAsACString(NS_ConvertASCIItoUTF16(item.name),
                                  nsDependentCString(buf));
       if (NS_WARN_IF(NS_FAILED(rv))) {
         return rv;
@@ -1578,9 +1580,9 @@ nsresult nsSystemInfo::Init() {
 #endif
   if (virtualMem) SetUint64Property(u"virtualmemsize"_ns, virtualMem);
 
-  for (uint32_t i = 0; i < std::size(cpuPropItems); i++) {
-    rv = SetPropertyAsBool(NS_ConvertASCIItoUTF16(cpuPropItems[i].name),
-                           cpuPropItems[i].propfun());
+  for (auto cpuPropItem : cpuPropItems) {
+    rv = SetPropertyAsBool(NS_ConvertASCIItoUTF16(cpuPropItem.name),
+                           cpuPropItem.propfun());
     if (NS_WARN_IF(NS_FAILED(rv))) {
       return rv;
     }
@@ -2351,4 +2353,15 @@ nsSystemInfo::GetProcessInfo(JSContext* aCx, Promise** aResult) {
   promise.forget(aResult);
 
   return NS_OK;
+}
+
+NS_IMETHODIMP
+nsSystemInfo::IsWindows10BuildOrLater(uint32_t aBuildNumber, bool* aResult) {
+#ifdef XP_WIN
+  NS_ENSURE_ARG_POINTER(aResult);
+  *aResult = mozilla::IsWindows10BuildOrLater(aBuildNumber);
+  return NS_OK;
+#else
+  return NS_ERROR_NOT_AVAILABLE;
+#endif
 }

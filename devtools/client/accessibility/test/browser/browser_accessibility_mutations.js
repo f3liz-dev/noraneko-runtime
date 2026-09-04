@@ -25,7 +25,7 @@ const documentRowOOP = {
 };
 const subtree = [
   {
-    role: "heading",
+    role: "heading (level 1)",
     name: `"Top level header"`,
   },
   {
@@ -47,7 +47,7 @@ const frameSubtree = [
 const subtreeOOP = [...frameSubtree, ...subtree];
 const renamed = [
   {
-    role: "heading",
+    role: "heading (level 1)",
     name: `"New Header"`,
   },
   {
@@ -92,7 +92,7 @@ function removeRow(rowNumber) {
 
       content.document.getElementById("p").remove();
     });
-    await BrowserTestUtils.waitForCondition(
+    await TestUtils.waitForCondition(
       () => doc.querySelectorAll(".treeRow").length === rowNumber - 1,
       "Tree updated."
     );

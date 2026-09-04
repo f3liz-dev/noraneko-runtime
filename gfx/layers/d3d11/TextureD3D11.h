@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,6 +7,7 @@
 
 #include <d3d11.h>
 #include <d3d11_1.h>
+
 #include <vector>
 
 #include "d3d9.h"
@@ -68,8 +67,10 @@ class D3D11TextureData final : public TextureData {
   static already_AddRefed<TextureClient> CreateTextureClient(
       ID3D11Texture2D* aTexture, uint32_t aIndex, gfx::IntSize aSize,
       gfx::SurfaceFormat aFormat, gfx::ColorSpace2 aColorSpace,
-      gfx::ColorRange aColorRange, KnowsCompositor* aKnowsCompositor,
-      ZeroCopyUsageInfo* aUsageInfo, const RefPtr<FenceD3D11> aWriteFence);
+      gfx::ColorRange aColorRange, gfx::TransferFunction aTransferFunction,
+      const Maybe<gfx::HDRMetadata>& aHDRMetadata,
+      KnowsCompositor* aKnowsCompositor, ZeroCopyUsageInfo* aUsageInfo,
+      const RefPtr<FenceD3D11> aWriteFence);
 
   virtual ~D3D11TextureData();
 
@@ -106,6 +107,16 @@ class D3D11TextureData final : public TextureData {
 
   gfx::ColorRange GetColorRange() const { return mColorRange; }
   void SetColorRange(gfx::ColorRange aColorRange) { mColorRange = aColorRange; }
+  void SetTransferFunction(gfx::TransferFunction aTransferFunction) {
+    mTransferFunction = aTransferFunction;
+  }
+  gfx::TransferFunction GetTransferFunction() const {
+    return mTransferFunction;
+  }
+  void SetHDRMetadata(const Maybe<gfx::HDRMetadata>& aHDRMetadata) {
+    mHDRMetadata = aHDRMetadata;
+  }
+  const Maybe<gfx::HDRMetadata>& GetHDRMetadata() const { return mHDRMetadata; }
 
   gfx::IntSize GetSize() const { return mSize; }
   gfx::SurfaceFormat GetSurfaceFormat() const { return mFormat; }
@@ -150,6 +161,8 @@ class D3D11TextureData final : public TextureData {
 
  private:
   gfx::ColorRange mColorRange = gfx::ColorRange::LIMITED;
+  gfx::TransferFunction mTransferFunction = gfx::TransferFunction::SRGB;
+  Maybe<gfx::HDRMetadata> mHDRMetadata;
   bool mNeedsClear = false;
 
   const RefPtr<ID3D11Device> mDevice;
@@ -164,15 +177,14 @@ class DXGIYCbCrTextureData : public TextureData {
   friend class gl::GLBlitHelper;
 
  public:
-  static DXGIYCbCrTextureData* Create(ID3D11Texture2D* aTextureCb,
-                                      ID3D11Texture2D* aTextureY,
-                                      ID3D11Texture2D* aTextureCr,
-                                      const gfx::IntSize& aSize,
-                                      const gfx::IntSize& aSizeY,
-                                      const gfx::IntSize& aSizeCbCr,
-                                      const gfx::ColorDepth aColorDepth,
-                                      const gfx::YUVColorSpace aYUVColorSpace,
-                                      const gfx::ColorRange aColorRange);
+  static DXGIYCbCrTextureData* Create(
+      ID3D11Texture2D* aTextureCb, ID3D11Texture2D* aTextureY,
+      ID3D11Texture2D* aTextureCr, const gfx::IntSize& aSize,
+      const gfx::IntSize& aSizeY, const gfx::IntSize& aSizeCbCr,
+      const gfx::ColorDepth aColorDepth,
+      const gfx::YUVColorSpace aYUVColorSpace,
+      const gfx::ColorRange aColorRange,
+      const gfx::TransferFunction aTransferFunction);
 
   bool Lock(OpenMode) override { return true; }
 
@@ -206,6 +218,7 @@ class DXGIYCbCrTextureData : public TextureData {
   const gfx::ColorDepth mColorDepth;
   const gfx::YUVColorSpace mYUVColorSpace;
   const gfx::ColorRange mColorRange;
+  const gfx::TransferFunction mTransferFunction;
   const CompositeProcessFencesHolderId mFencesHolderId;
   const RefPtr<FenceD3D11> mWriteFence;
 
@@ -217,6 +230,7 @@ class DXGIYCbCrTextureData : public TextureData {
                        const gfx::ColorDepth aColorDepth,
                        const gfx::YUVColorSpace aYUVColorSpace,
                        const gfx::ColorRange aColorRange,
+                       const gfx::TransferFunction aTransferFunction,
                        const CompositeProcessFencesHolderId aFencesHolderId,
                        const RefPtr<FenceD3D11> aWriteFence);
   virtual ~DXGIYCbCrTextureData();
@@ -231,7 +245,7 @@ class DXGIYCbCrTextureData : public TextureData {
  */
 class TextureSourceD3D11 {
  public:
-  TextureSourceD3D11() : mFormatOverride(DXGI_FORMAT_UNKNOWN) {}
+  TextureSourceD3D11() = default;
   virtual ~TextureSourceD3D11() = default;
 
   virtual ID3D11Texture2D* GetD3D11Texture() const { return mTexture; }
@@ -243,7 +257,7 @@ class TextureSourceD3D11 {
   gfx::IntSize mSize;
   RefPtr<ID3D11Texture2D> mTexture;
   RefPtr<ID3D11ShaderResourceView> mSRV;
-  DXGI_FORMAT mFormatOverride;
+  DXGI_FORMAT mFormatOverride{DXGI_FORMAT_UNKNOWN};
 };
 
 /**
@@ -274,7 +288,7 @@ class DataTextureSourceD3D11 : public DataTextureSource,
   DataTextureSourceD3D11(gfx::SurfaceFormat aFormat,
                          TextureSourceProvider* aProvider, TextureFlags aFlags);
 
-  virtual ~DataTextureSourceD3D11();
+  virtual ~DataTextureSourceD3D11() = default;
 
   const char* Name() const override { return "DataTextureSourceD3D11"; }
 
@@ -403,6 +417,8 @@ class DXGITextureHostD3D11 : public TextureHost {
   const Maybe<CompositeProcessFencesHolderId> mFencesHolderId;
   const gfx::ColorSpace2 mColorSpace;
   const gfx::ColorRange mColorRange;
+  const gfx::TransferFunction mTransferFunction;
+  const Maybe<gfx::HDRMetadata> mHDRMetadata;
 
  protected:
   RefPtr<FenceD3D11> mReadFence;
@@ -425,6 +441,9 @@ class DXGIYCbCrTextureHostD3D11 : public TextureHost {
     return mYUVColorSpace;
   }
   gfx::ColorRange GetColorRange() const override { return mColorRange; }
+  gfx::TransferFunction GetTransferFunction() const override {
+    return mTransferFunction;
+  };
 
   gfx::IntSize GetSize() const override { return mSize; }
 
@@ -468,6 +487,7 @@ class DXGIYCbCrTextureHostD3D11 : public TextureHost {
   const gfx::ColorDepth mColorDepth;
   const gfx::YUVColorSpace mYUVColorSpace;
   const gfx::ColorRange mColorRange;
+  const gfx::TransferFunction mTransferFunction;
   const CompositeProcessFencesHolderId mFencesHolderId;
 
  protected:

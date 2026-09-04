@@ -23,6 +23,7 @@
 #include "api/rtc_error.h"
 #include "api/test/rtc_error_matchers.h"
 #include "p2p/test/test_turn_server.h"
+#include "pc/peer_connection.h"
 #include "pc/test/fake_rtc_certificate_generator.h"
 #include "pc/test/integration_test_helpers.h"
 #include "rtc_base/socket_address.h"
@@ -231,13 +232,10 @@ TEST_F(PeerConnectionPrAnswerSwitchTest, SendMediaNoDataChannel) {
         SetSdpType(sdp, SdpType::kPrAnswer);
       });
   caller()->CreateAndSetAndSignalOffer();
-  ASSERT_THAT(WaitUntil(
-                  [&] {
-                    return caller()->pc()->signaling_state() ==
-                           PeerConnectionInterface::kHaveRemotePrAnswer;
-                  },
-                  IsTrue()),
-              IsRtcOk());
+  ASSERT_TRUE(WaitUntil([&] {
+    return caller()->pc()->signaling_state() ==
+           PeerConnectionInterface::kHaveRemotePrAnswer;
+  }));
   WaitConnected(/* prAnswer= */ true, caller(), callee());
   MediaExpectations media_expectations;
   media_expectations.CalleeExpectsSomeAudio();
@@ -245,18 +243,19 @@ TEST_F(PeerConnectionPrAnswerSwitchTest, SendMediaNoDataChannel) {
   ASSERT_TRUE(ExpectNewFrames(media_expectations));
   // Send original offer to second callee and wait for settlement.
   second_callee->ReceiveSdpMessage(SdpType::kOffer, saved_offer);
-  EXPECT_THAT(
-      WaitUntil([&] { return caller()->SignalingStateStable(); }, IsTrue()),
-      IsRtcOk());
+  EXPECT_TRUE(WaitUntil([&] { return caller()->SignalingStateStable(); }));
   WaitConnected(/* prAnswer= */ false, caller(), second_callee.get());
   ASSERT_FALSE(HasFailure());
 }
 
-// This test completes, but is disabled because feedback type switching
-// does not work yet.
-// TODO: issues.webrtc.org/448848876 - enable when underlying issue fixed.
-TEST_F(PeerConnectionPrAnswerSwitchTest, DISABLED_MediaWithCcfbFirstThenTwcc) {
-  SetFieldTrials("WebRTC-RFC8888CongestionControlFeedback/Enabled,offer:true/");
+TEST_F(PeerConnectionPrAnswerSwitchTest, MediaWithCcfbFirstThenTwcc) {
+  // CCFB negotiation is asymmetric: the generator sets the flag but doesn't
+  // add it to codecs' feedback_params, while the parser adds it to codecs'
+  // feedback_params. This causes false positive munging detection (71, 86)
+  // when the prAnswer is re-parsed.
+  SetFieldTrials(
+      "WebRTC-RFC8888CongestionControlFeedback/Enabled,offer:true/"
+      "WebRTC-NoSdpMangleAllowForTesting/Enabled,71,86/");
   SetFieldTrials("Callee2",
                  "WebRTC-RFC8888CongestionControlFeedback/Disabled/");
   std::unique_ptr<PeerConnectionIntegrationWrapper> second_callee =
@@ -272,52 +271,60 @@ TEST_F(PeerConnectionPrAnswerSwitchTest, DISABLED_MediaWithCcfbFirstThenTwcc) {
         SetSdpType(sdp, SdpType::kPrAnswer);
       });
   caller()->CreateAndSetAndSignalOffer();
-  ASSERT_THAT(WaitUntil(
-                  [&] {
-                    return caller()->pc()->signaling_state() ==
-                           PeerConnectionInterface::kHaveRemotePrAnswer;
-                  },
-                  IsTrue()),
-              IsRtcOk());
+  ASSERT_TRUE(WaitUntil([&] {
+    return caller()->pc()->signaling_state() ==
+           PeerConnectionInterface::kHaveRemotePrAnswer;
+  }));
   WaitConnected(/* prAnswer= */ true, caller(), callee());
   MediaExpectations media_expectations;
   media_expectations.CalleeExpectsSomeAudio();
   media_expectations.CalleeExpectsSomeVideo();
   ASSERT_TRUE(ExpectNewFrames(media_expectations));
-  auto pc_internal = caller()->pc_internal();
-  EXPECT_THAT(
-      WaitUntil(
-          [&] {
-            return pc_internal->FeedbackAccordingToRfc8888CountForTesting();
-          },
-          Gt(0)),
-      IsRtcOk());
+  PeerConnection* caller_pc_internal = caller()->pc_internal();
+  EXPECT_THAT(WaitUntil(
+                  [&] {
+                    return caller_pc_internal
+                        ->FeedbackAccordingToRfc8888CountForTesting();
+                  },
+                  Gt(0)),
+              IsRtcOk());
   // There should be no transport-cc generated.
-  EXPECT_THAT(pc_internal->FeedbackAccordingToTransportCcCountForTesting(),
-              Eq(0));
-  // The final answer does TWCC.
-  second_callee->ReceiveSdpMessage(SdpType::kOffer, saved_offer);
   EXPECT_THAT(
-      WaitUntil([&] { return caller()->SignalingStateStable(); }, IsTrue()),
-      IsRtcOk());
+      caller_pc_internal->FeedbackAccordingToTransportCcCountForTesting(),
+      Eq(0));
+  // The final answer does TWCC and send audio and video.
+  second_callee->AddAudioVideoTracks();
+  second_callee->ReceiveSdpMessage(SdpType::kOffer, saved_offer);
+  EXPECT_TRUE(WaitUntil([&] { return caller()->SignalingStateStable(); }));
   WaitConnected(/* prAnswer= */ false, caller(), second_callee.get());
   ASSERT_FALSE(HasFailure());
 
-  int old_ccfb_count = pc_internal->FeedbackAccordingToRfc8888CountForTesting();
+  int old_ccfb_count =
+      caller_pc_internal->FeedbackAccordingToRfc8888CountForTesting();
   int old_twcc_count =
-      pc_internal->FeedbackAccordingToTransportCcCountForTesting();
-  EXPECT_THAT(
-      WaitUntil(
-          [&] {
-            return pc_internal->FeedbackAccordingToTransportCcCountForTesting();
-          },
-          Gt(old_twcc_count)),
-      IsRtcOk());
+      caller_pc_internal->FeedbackAccordingToTransportCcCountForTesting();
+  EXPECT_THAT(WaitUntil(
+                  [&] {
+                    return caller_pc_internal
+                        ->FeedbackAccordingToTransportCcCountForTesting();
+                  },
+                  Gt(old_twcc_count)),
+              IsRtcOk());
   // These expects are easier to interpret than the WaitUntil log result.
-  EXPECT_THAT(pc_internal->FeedbackAccordingToTransportCcCountForTesting(),
-              Gt(old_twcc_count));
-  EXPECT_THAT(pc_internal->FeedbackAccordingToRfc8888CountForTesting(),
+  EXPECT_THAT(
+      caller_pc_internal->FeedbackAccordingToTransportCcCountForTesting(),
+      Gt(old_twcc_count));
+  EXPECT_THAT(caller_pc_internal->FeedbackAccordingToRfc8888CountForTesting(),
               Eq(old_ccfb_count));
+
+  PeerConnection* second_callee_pc_internal = second_callee->pc_internal();
+  EXPECT_THAT(WaitUntil(
+                  [&] {
+                    return second_callee_pc_internal
+                        ->FeedbackAccordingToTransportCcCountForTesting();
+                  },
+                  Gt(0)),
+              IsRtcOk());
 }
 
 }  // namespace webrtc

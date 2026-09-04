@@ -4,14 +4,22 @@
 
 import { MultilineEditor } from "chrome://browser/content/multilineeditor/multiline-editor.mjs";
 import { createMentionsPlugin } from "chrome://browser/content/multilineeditor/plugins/MentionsPlugin.mjs";
+import { createCommandsPlugin } from "chrome://browser/content/multilineeditor/plugins/CommandsPlugin.mjs";
 
-/** @typedef {import("../../aiwindow/ui/components/smartwindow-panel-list/smartwindow-panel-list.mjs").SmartwindowPanelList} SmartwindowPanelList */
+/**
+ * @import {SmartbarInput} from "chrome://browser/content/urlbar/SmartbarInput.mjs"
+ * @typedef {import("../../aiwindow/ui/components/smartwindow-panel-list/smartwindow-panel-list.mjs").SmartwindowPanelList} SmartwindowPanelList
+ */
 
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
+  AIWindowUI:
+    "moz-src:///browser/components/aiwindow/ui/modules/AIWindowUI.sys.mjs",
   MENTION_TYPE:
     "moz-src:///browser/components/urlbar/SmartbarMentionsPanelSearch.sys.mjs",
+  MonitorUIUtils:
+    "moz-src:///browser/components/aiwindow/ui/modules/MonitorUIUtils.sys.mjs",
   SkippableTimer: "moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs",
   SmartbarMentionsPanelSearch:
     "moz-src:///browser/components/urlbar/SmartbarMentionsPanelSearch.sys.mjs",
@@ -27,6 +35,13 @@ XPCOMUtils.defineLazyPreferenceGetter(
   "browser.urlbar.mentions.maxResults"
 );
 
+XPCOMUtils.defineLazyPreferenceGetter(
+  lazy,
+  "agentEnabled",
+  "browser.smartwindow.agent.enabled",
+  false
+);
+
 ChromeUtils.defineLazyGetter(lazy, "log", function () {
   return console.createInstance({
     prefix: "SmartbarMentionsPanel",
@@ -36,6 +51,71 @@ ChromeUtils.defineLazyGetter(lazy, "log", function () {
 
 // Debounce delay for the mention suggestions query.
 const MENTION_QUERY_DEBOUNCE_MS = 150;
+
+const AGENT_COMMAND_ITEMS = [
+  {
+    id: "watch",
+    l10nId: "smartbar-command-watch-label",
+    descriptionL10nId: "smartbar-command-watch-description",
+    icon: "chrome://browser/content/aiwindow/assets/agent-watch.svg",
+  },
+];
+
+// Marks the shared panel as showing "/" command results, so the mention and
+// command selection handlers don't cross fire on the same panel
+const COMMAND_TRIGGER = "inline-command";
+
+/**
+ * Whether agent command can run right now
+ *
+ * @returns {boolean}
+ */
+function isAgentCommandAvailable() {
+  return lazy.agentEnabled && lazy.MonitorUIUtils.isMonitorRegionSupported();
+}
+
+/**
+ * Whether the input begins with a known agent command, e.g. "/watch ...".
+ *
+ * @param {string} value - Raw smartbar input
+ * @returns {boolean}
+ */
+export function isAgentCommand(value) {
+  if (!isAgentCommandAvailable()) {
+    return false;
+  }
+  const match = /^\/(\w{1,20})/.exec(String(value ?? "").trimStart());
+  return (
+    !!match &&
+    AGENT_COMMAND_ITEMS.some(command => command.id === match[1].toLowerCase())
+  );
+}
+
+/**
+ * Command suggestions whose id starts with the typed query
+ *
+ * @param {string} query - Text typed after the "/" trigger
+ * @returns {Array<{headerL10nId: string, items: Array}>} Panel groups, empty when nothing matches
+ */
+function getCommandSuggestions(query) {
+  if (!isAgentCommandAvailable()) {
+    return [];
+  }
+  const normalized = query.trim().toLowerCase();
+  const items = AGENT_COMMAND_ITEMS.filter(command =>
+    command.id.startsWith(normalized)
+  );
+  return items.length
+    ? [{ headerL10nId: "smartbar-command-tasks-header", items }]
+    : [];
+}
+
+const PLACEHOLDER_HINT_L10N_IDS = [
+  "smartbar-placeholder-hint-1",
+  "smartbar-placeholder-hint-2",
+  "smartbar-placeholder-hint-3",
+  "smartbar-placeholder-hint-4",
+];
 
 /**
  * @typedef {object} TabMention
@@ -53,11 +133,17 @@ const MENTION_QUERY_DEBOUNCE_MS = 150;
  */
 
 /**
+ * @typedef {object} MentionSuggestionsResult
+ * @property {TabMentionGroup[]} groups - The grouped mention suggestions
+ * @property {number} totalCount - Total number of mention items across all groups
+ */
+
+/**
  * Get mention suggestions matching the search query.
  *
  * @param {import("../SmartbarMentionsPanelSearch.sys.mjs").SmartbarMentionsPanelSearch} mentionSearch - Search for mention suggestions
  * @param {string} searchString - Query to match against title and URL
- * @returns {Array<TabMentionGroup>}
+ * @returns {MentionSuggestionsResult}
  */
 function getMentionSuggestions(mentionSearch, searchString) {
   try {
@@ -87,15 +173,18 @@ function getMentionSuggestions(mentionSearch, searchString) {
         icon,
       }));
 
-    return [
-      {
-        headerL10nId: "smartbar-mentions-list-recent-tabs-label",
-        items: deduplicated,
-      },
-    ];
+    return {
+      groups: [
+        {
+          headerL10nId: "smartbar-mentions-list-recent-tabs-label",
+          items: deduplicated,
+        },
+      ],
+      totalCount: deduplicated.length,
+    };
   } catch (e) {
     lazy.log.error("Error querying tabs:", e);
-    return [];
+    return { groups: [], totalCount: 0 };
   }
 }
 
@@ -119,14 +208,50 @@ const getAnchorPos = (range, view) => {
 };
 
 /**
+ * Handles a suggestion panel's "panel-keydown"
+ *
+ * @param {MultilineEditor} editorElement - The editor element
+ * @param {CustomEvent} e - The panel-keydown event
+ */
+function refocusEditorOnUnhandledPanelKey(editorElement, e) {
+  const { originalEvent } = e.detail;
+  if (["Tab", "ArrowUp", "ArrowDown", "Enter"].includes(originalEvent.key)) {
+    return;
+  }
+  editorElement.focus();
+}
+
+/**
+ *  Prevent Smartbar submission while mentions panel is open
+ *
+ * @param {() => boolean} isPanelOpen - Whether the plugin's panel is open
+ * @param {KeyboardEvent} e - The editor keydown event
+ */
+function suppressEnterWhilePanelOpen(isPanelOpen, e) {
+  if (isPanelOpen() && e.key === "Enter") {
+    e.stopPropagation();
+  }
+}
+
+/**
  * Setup context button to show mentions panel.
  *
- * @param {HTMLElement} container - The urlbar input container
+ * @param {SmartbarInput} smartbarInput - The smartbar input element
  * @param {SmartwindowPanelList} panelList - The panel list component
  */
-function setupContextMentionsButton(container, panelList) {
-  const smartbarRoot = container.parentElement;
-  const contextButton = smartbarRoot.querySelector("context-icon-button");
+function setupContextMentionsButton(smartbarInput, panelList) {
+  const contextButton = smartbarInput.querySelector("context-icon-button");
+
+  panelList.addEventListener("shown", () => {
+    // TODO: Bug 2064550 - use dataset instead
+    if (panelList.getAttribute("data-triggered-by") === "context-mention") {
+      contextButton.setAttribute("active", "");
+    }
+  });
+
+  panelList.addEventListener("hidden", () => {
+    contextButton.removeAttribute("active");
+  });
 
   contextButton.addEventListener("aiwindow-context-button:on-click", () => {
     const contextMentionSearch = new lazy.SmartbarMentionsPanelSearch(
@@ -134,9 +259,23 @@ function setupContextMentionsButton(container, panelList) {
       window.browsingContext.topChromeWindow
     );
     panelList.anchor = contextButton;
-    panelList.groups = getMentionSuggestions(contextMentionSearch, "");
+    const { groups, totalCount } = getMentionSuggestions(
+      contextMentionSearch,
+      ""
+    );
+    panelList.groups = groups;
+    // TODO: Bug 2064550 - use dataset instead
     panelList.setAttribute("data-triggered-by", "context-mention");
     panelList.toggle();
+
+    const { chat_id, message_seq } = smartbarInput.conversationTelemetryInfo;
+    Glean.smartWindow.addTabsClick.record({
+      chat_id,
+      location: smartbarInput.sapLocation,
+      message_seq: String(message_seq),
+      tabs_available: String(totalCount),
+      tabs_preselected: String(smartbarInput.contextWebsitesCount),
+    });
   });
 }
 
@@ -153,6 +292,15 @@ function setupMentionsPlugin(editorElement, panelList) {
   let mentionSearch = null;
   let latestMentionData = null;
 
+  document.l10n
+    .formatValue("smartbar-mention-typing-placeholder")
+    .then(text => {
+      editorElement.style.setProperty(
+        "--multiline-editor-mention-placeholder",
+        `" ${text}"`
+      );
+    });
+
   const handleMentionsChange = () => {
     if (!latestMentionData || !mentionSearch) {
       return;
@@ -161,10 +309,14 @@ function setupMentionsPlugin(editorElement, panelList) {
     // Don't trim() the query - we need to preserve spaces to match tab titles
     // that contain spaces (e.g., "@my tab" should match "my tab title")
     const query = text.substring(1);
-    panelList.groups = getMentionSuggestions(mentionSearch, query);
+    const { groups } = getMentionSuggestions(mentionSearch, query);
+    panelList.groups = groups;
     mentionChangeTimer = null;
   };
 
+  const smartbarInput = /** @type {SmartbarInput} */ (
+    editorElement.closest("moz-smartbar")
+  );
   const plugin = createMentionsPlugin({
     triggerChar: "@",
     allowSpaces: true,
@@ -194,12 +346,28 @@ function setupMentionsPlugin(editorElement, panelList) {
         window.browsingContext.topChromeWindow
       );
       panelList.anchor = getAnchorPos(mentionData.range, mentionData.view);
-      panelList.groups = getMentionSuggestions(mentionSearch, "");
+      const { groups, totalCount } = getMentionSuggestions(mentionSearch, "");
+      panelList.groups = groups;
+      // TODO: Bug 2064550 - use dataset instead
       panelList.setAttribute("data-triggered-by", "inline-mention");
       panelList.show();
+      editorElement.setAttribute("data-mention-placeholder", "");
+
+      const { chat_id, message_seq } = smartbarInput.conversationTelemetryInfo;
+      Glean.smartWindow.mentionStart.record({
+        chat_id,
+        location: smartbarInput.sapLocation,
+        mentions_available: String(totalCount),
+        message_seq: String(message_seq),
+      });
     },
     onChange: mentionData => {
       latestMentionData = mentionData;
+
+      editorElement.toggleAttribute(
+        "data-mention-placeholder",
+        mentionData.text.length <= 1
+      );
 
       if (!mentionChangeTimer) {
         mentionChangeTimer = new lazy.SkippableTimer({
@@ -212,6 +380,7 @@ function setupMentionsPlugin(editorElement, panelList) {
     onExit: () => {
       isHandlingMentions = false;
       panelList.hide();
+      editorElement.removeAttribute("data-mention-placeholder");
 
       // Cancel pending queries
       if (mentionChangeTimer) {
@@ -223,23 +392,65 @@ function setupMentionsPlugin(editorElement, panelList) {
     },
   });
 
-  const handleItemSelected = e => {
-    const { id, label } = e.detail;
+  const handleChipDisconnected = e => {
+    if (e.detail.type === "in-line") {
+      const { chat_id, message_seq } = smartbarInput.conversationTelemetryInfo;
+      Glean.smartWindow.mentionRemove.record({
+        chat_id,
+        location: smartbarInput.sapLocation,
+        mentions: String(plugin.mentions.getAll().length),
+        message_seq: String(message_seq),
+      });
+    }
+  };
 
+  const handleItemSelected = e => {
+    // TODO: Bug 2064550 - use dataset instead
+    // "/" command selections are handled by the commands plugin
+    if (panelList.getAttribute("data-triggered-by") === COMMAND_TRIGGER) {
+      return;
+    }
+    const { id, label, icon } = e.detail;
+
+    // TODO: Bug 2064550 - use dataset instead
     const isContextButtonTrigger =
       panelList.getAttribute("data-triggered-by") === "context-mention";
+
+    const { chat_id, message_seq } = smartbarInput.conversationTelemetryInfo;
+
     // If the mention suggestions are triggered by the context “+”-button,
     // add the mention to the context header.
     if (isContextButtonTrigger) {
-      const smartbarInput = editorElement.closest("moz-smartbar");
-      // @ts-ignore - addContextMention method exists on SmartbarInput
+      const tabsPreselected = smartbarInput.contextWebsitesCount;
       smartbarInput.addContextMention({
         type: "tab",
         url: id,
         label,
+        iconSrc: icon,
+      });
+      Glean.smartWindow.addTabsSelection.record({
+        chat_id,
+        location: smartbarInput.sapLocation,
+        message_seq: String(message_seq),
+        tabs_available: String(
+          panelList.groups.reduce((sum, group) => sum + group.items.length, 0)
+        ),
+        tabs_preselected: String(tabsPreselected),
+        tabs_selected: String(smartbarInput.contextWebsitesCount),
       });
     } else {
-      // Add inline mention when triggered by typing “@”
+      // Add inline mention when triggered by typing "@".
+      // Inline mentions are not added as context chips.
+      Glean.smartWindow.mentionSelect.record({
+        chat_id,
+        length: label.length,
+        location: smartbarInput.sapLocation,
+        mentions_available: panelList.groups.reduce(
+          (sum, group) => sum + group.items.length,
+          0
+        ),
+        message_seq: String(message_seq),
+      });
       plugin.mentions.insert(
         {
           type: "tab",
@@ -250,25 +461,162 @@ function setupMentionsPlugin(editorElement, panelList) {
         latestMentionData?.range.to ?? 1
       );
     }
+    // TODO: Bug 2064550 - use dataset instead
     panelList.removeAttribute("data-triggered-by");
   };
 
-  const handlePanelKeyDown = e => {
-    const { originalEvent } = e.detail;
-    // The keys below should be handled by the panel for navigation
-    if (["Tab", "ArrowUp", "ArrowDown", "Enter"].includes(originalEvent.key)) {
+  const handlePanelKeyDown = e =>
+    refocusEditorOnUnhandledPanelKey(editorElement, e);
+  const handleEditorKeyDown = e =>
+    suppressEnterWhilePanelOpen(() => isHandlingMentions, e);
+
+  panelList.addEventListener("item-selected", handleItemSelected);
+  panelList.addEventListener("panel-keydown", handlePanelKeyDown);
+  editorElement.addEventListener("keydown", handleEditorKeyDown, {
+    capture: true,
+  });
+  editorElement.addEventListener(
+    "ai-website-chip:disconnected",
+    handleChipDisconnected
+  );
+
+  /**
+   * Adds the following properties to `editorElement`:
+   *
+   * @property {boolean} isHandlingMentions - Whether the mentions panel is open
+   * @property {boolean} hasMention - Whether the editor has inline mentions
+   */
+  Object.defineProperties(editorElement, {
+    isHandlingMentions: {
+      get: () => isHandlingMentions,
+    },
+    hasMention: {
+      get: () => plugin.mentions.hasMention(),
+    },
+    getAllMentions: {
+      value: () => plugin.mentions.getAll(),
+    },
+    /**
+     * Inserts an inline mention at the specified text offset
+     *
+     * @param {Node} mention
+     * @param {number} textOffset
+     */
+    insertMention: {
+      value: (mention, textOffset) => {
+        const pos = editorElement.textOffsetToPos(textOffset);
+        plugin.mentions.insertNode(mention, pos);
+      },
+    },
+  });
+
+  return plugin;
+}
+
+/**
+ * Typing "/" at the start of the input opens a dropdown of agent commands.
+ * Picking one completes the input to "/<command> " and
+ * the user types the prompt after it.
+ * Shares the same panel as mentions, distinguished by the
+ * COMMAND_TRIGGER marker.
+ *
+ * @param {MultilineEditor} editorElement - The editor element
+ * @param {SmartwindowPanelList} panelList - The panel list component
+ * @returns {object} plugin - The command plugin bundle
+ */
+function setupCommandsPlugin(editorElement, panelList) {
+  let isHandlingCommands = false;
+  let latestCommandData = null;
+  const smartbarInput = /** @type {SmartbarInput} */ (
+    editorElement.closest("moz-smartbar")
+  );
+
+  const isLeadingCommand = () =>
+    editorElement.value.trimStart().startsWith("/");
+
+  const updatePanel = query => {
+    const groups = getCommandSuggestions(query);
+    panelList.groups = groups;
+    if (!groups.length) {
+      panelList.hide();
+      return false;
+    }
+    panelList.anchor = smartbarInput;
+    // TODO: Bug 2064550 - use dataset instead
+    panelList.setAttribute("data-triggered-by", COMMAND_TRIGGER);
+    panelList.show();
+    return true;
+  };
+
+  const onExitPalette = () => {
+    isHandlingCommands = false;
+    latestCommandData = null;
+    // TODO: Bug 2064550 - use dataset instead
+    if (panelList.getAttribute("data-triggered-by") === COMMAND_TRIGGER) {
+      panelList.hide();
+      panelList.removeAttribute("data-triggered-by");
+    }
+  };
+
+  // Selecting a command runs it immediately
+  const executeCommand = (id, submitType) => {
+    if (!latestCommandData) {
       return;
     }
+    onExitPalette();
+    smartbarInput.submitChat(null, `/${id}`, submitType);
+  };
 
-    // Refocus editor and let any other key events bubble to the Smartbar
-    editorElement.focus();
+  const handleItemSelected = e => {
+    // TODO: Bug 2064550 - use dataset instead
+    if (
+      panelList.getAttribute("data-triggered-by") !== COMMAND_TRIGGER ||
+      !latestCommandData
+    ) {
+      return;
+    }
+    executeCommand(e.detail.id, "button");
+  };
+
+  const handlePanelKeyDown = e => {
+    if (e.detail?.originalEvent?.key === "Escape") {
+      onExitPalette();
+      return;
+    }
+    refocusEditorOnUnhandledPanelKey(editorElement, e);
   };
 
   const handleEditorKeyDown = e => {
-    // Prevent Smartbar submission while mentions panel is open
-    if (isHandlingMentions && e.key === "Enter") {
-      e.stopPropagation();
+    if (
+      !isHandlingCommands ||
+      e.shiftKey ||
+      e.altKey ||
+      e.ctrlKey ||
+      e.metaKey
+    ) {
+      return;
     }
+
+    const keyHandlers = {
+      ArrowDown: () => panelList.moveSelection(1),
+      ArrowUp: () => panelList.moveSelection(-1),
+      Enter: () => {
+        const selected = panelList.getSelectedItem();
+        if (selected) {
+          executeCommand(selected.id, "enter");
+        }
+      },
+      Escape: () => onExitPalette(),
+    };
+
+    const handler = keyHandlers[e.key];
+    if (!handler) {
+      return;
+    }
+
+    handler();
+    e.preventDefault();
+    e.stopPropagation();
   };
 
   panelList.addEventListener("item-selected", handleItemSelected);
@@ -276,11 +624,43 @@ function setupMentionsPlugin(editorElement, panelList) {
   editorElement.addEventListener("keydown", handleEditorKeyDown, {
     capture: true,
   });
-  Object.defineProperty(editorElement, "isHandlingMentions", {
-    get: () => isHandlingMentions,
+
+  /**
+   * Exposes command state on the editor element so consumers can read it
+   *
+   * @property {boolean} isHandlingCommands - Whether the command palette is
+   *   currently showing suggestions
+   */
+  Object.defineProperties(editorElement, {
+    isHandlingCommands: {
+      get: () => isHandlingCommands,
+    },
   });
 
-  return plugin;
+  return createCommandsPlugin({
+    triggerChar: "/",
+    allowSpaces: false,
+    onEnter: data => {
+      // Open the palette for any leading "/" so it can show and filter while
+      // the user is still typing the command name
+      if (!isLeadingCommand()) {
+        return;
+      }
+      // TODO: Bug 2060584 - record command telemetry
+      latestCommandData = data;
+      isHandlingCommands = updatePanel(data.text.substring(1));
+    },
+    onChange: data => {
+      if (!isLeadingCommand()) {
+        return;
+      }
+      latestCommandData = data;
+      isHandlingCommands = updatePanel(data.text.substring(1));
+    },
+    onExit: () => {
+      onExitPalette();
+    },
+  });
 }
 
 /**
@@ -323,6 +703,16 @@ export function createEditor(inputElement) {
   editorElement.id = inputElement.id;
   editorElement.value = inputElement.value ?? "";
 
+  const isSidebarMode =
+    window.browsingContext?.embedderElement?.id === lazy.AIWindowUI.BROWSER_ID;
+  document.l10n
+    .formatValues(PLACEHOLDER_HINT_L10N_IDS.map(id => ({ id })))
+    .then(hints => {
+      editorElement.placeholderHints = hints;
+      editorElement.showPlaceholderAnimation = !isSidebarMode;
+    })
+    .catch(console.error);
+
   inputElement.replaceWith(editorElement);
 
   const container = editorElement.closest(".urlbar-input-container");
@@ -330,11 +720,21 @@ export function createEditor(inputElement) {
     container.querySelector("smartwindow-panel-list")
   );
   panelList.placeholderL10nId = "smartbar-mentions-list-no-results-label";
+  panelList.sidebarMode = isSidebarMode;
+
+  const smartbarInput = /** @type {SmartbarInput} */ (
+    editorElement.closest("moz-smartbar")
+  );
 
   const mentionsPlugin = setupMentionsPlugin(editorElement, panelList);
-  editorElement.plugins = [mentionsPlugin];
+  const plugins = [mentionsPlugin];
+  // Enable the "/" command palette in every Smart Window smartbar
+  if (smartbarInput.sapName === "smartbar") {
+    plugins.push(setupCommandsPlugin(editorElement, panelList));
+  }
+  editorElement.plugins = plugins;
 
-  setupContextMentionsButton(/** @type {HTMLElement} */ (container), panelList);
+  setupContextMentionsButton(smartbarInput, panelList);
 
   return {
     input: editorElement,

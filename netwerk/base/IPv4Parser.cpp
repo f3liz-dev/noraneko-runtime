@@ -1,11 +1,10 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "IPv4Parser.h"
+
 #include "mozilla/EndianUtils.h"
-#include "nsPrintfCString.h"
 #include "nsTArray.h"
 
 namespace mozilla::net::IPv4Parser {
@@ -66,6 +65,12 @@ nsresult ParseIPv4Number10(const nsACString& input, uint32_t& number,
     MOZ_ASSERT(c >= '0' && c <= '9');
     value *= 10;
     value += c - '0';
+    // Any IPv4 number must fit in 32 bits. Bail out as soon as we exceed
+    // that to avoid silently wrapping the uint64_t accumulator.
+    if (value > 0xffffffffu) {
+      number = 0;
+      return NS_ERROR_FAILURE;
+    }
   }
   if (value <= maxNumber) {
     number = value;
@@ -106,6 +111,12 @@ nsresult ParseIPv4Number(const nsACString& input, int32_t base,
       value += c - 'a' + 10;
     } else if (c >= 'A' && c <= 'F') {
       value += c - 'A' + 10;
+    }
+    // Any IPv4 number must fit in 32 bits. Bail out as soon as we exceed
+    // that to avoid silently wrapping the uint64_t accumulator.
+    if (value > 0xffffffffu) {
+      number = 0;
+      return NS_ERROR_FAILURE;
     }
   }
 
@@ -186,8 +197,14 @@ nsresult NormalizeIPv4(const nsACString& host, nsCString& result) {
 
   uint8_t ipSegments[4];
   NetworkEndian::writeUint32(ipSegments, ipv4);
-  result = nsPrintfCString("%d.%d.%d.%d", ipSegments[0], ipSegments[1],
-                           ipSegments[2], ipSegments[3]);
+  result.Truncate();
+  result.AppendInt(ipSegments[0]);
+  result.Append('.');
+  result.AppendInt(ipSegments[1]);
+  result.Append('.');
+  result.AppendInt(ipSegments[2]);
+  result.Append('.');
+  result.AppendInt(ipSegments[3]);
   return NS_OK;
 }
 

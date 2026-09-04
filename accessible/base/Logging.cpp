@@ -1,24 +1,14 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "Logging.h"
 
-#include "LocalAccessible-inl.h"
 #include "AccEvent.h"
-#include "DocAccessible.h"
 #include "DocAccessible-inl.h"
-#include "nsAccessibilityService.h"
-#include "nsCoreUtils.h"
+#include "DocAccessible.h"
+#include "LocalAccessible-inl.h"
 #include "OuterDocAccessible.h"
-
-#include "nsDocShellLoadTypes.h"
-#include "nsIChannel.h"
-#include "nsIWebProgress.h"
-#include "prenv.h"
-#include "nsIDocShellTreeItem.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/ScrollContainerFrame.h"
@@ -29,6 +19,14 @@
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/HTMLBodyElement.h"
 #include "mozilla/dom/Selection.h"
+#include "nsAccessibilityService.h"
+#include "nsCoreUtils.h"
+#include "nsDocShellLoadTypes.h"
+#include "nsIChannel.h"
+#include "nsIDocShellTreeItem.h"
+#include "nsIWebProgress.h"
+#include "nsPIDOMWindowInlines.h"
+#include "prenv.h"
 
 using namespace mozilla;
 using namespace mozilla::a11y;
@@ -74,14 +72,14 @@ static void EnableLogging(const char* aModulesStr) {
   const char* token = aModulesStr;
   while (*token != '\0') {
     size_t tokenLen = strcspn(token, ",");
-    for (unsigned int idx = 0; idx < std::size(sModuleMap); idx++) {
-      if (strncmp(token, sModuleMap[idx].mStr, tokenLen) == 0) {
+    for (auto entry : sModuleMap) {
+      if (strncmp(token, entry.mStr, tokenLen) == 0) {
 #if !defined(MOZ_PROFILING) && (!defined(DEBUG) || defined(MOZ_OPTIMIZE))
         // Stack tracing on profiling enabled or debug not optimized builds.
         if (strncmp(token, "stack", tokenLen) == 0) break;
 #endif
-        sModules |= sModuleMap[idx].mModule;
-        printf("\n\nmodule enabled: %s\n", sModuleMap[idx].mStr);
+        sModules |= entry.mModule;
+        printf("\n\nmodule enabled: %s\n", entry.mStr);
         break;
       }
     }
@@ -621,7 +619,7 @@ void logging::SelChange(dom::Selection* aSelection, DocAccessible* aDocument,
                         int16_t aReason) {
   SelectionType type = aSelection->GetType();
 
-  const char* strType = 0;
+  const char* strType = nullptr;
   if (type == SelectionType::eNormal) {
     strType = "normal";
   } else if (type == SelectionType::eSpellCheck) {
@@ -977,9 +975,9 @@ bool logging::IsEnabledAll(uint32_t aModules) {
 }
 
 bool logging::IsEnabled(const nsAString& aModuleStr) {
-  for (unsigned int idx = 0; idx < std::size(sModuleMap); idx++) {
-    if (aModuleStr.EqualsASCII(sModuleMap[idx].mStr)) {
-      return sModules & sModuleMap[idx].mModule;
+  for (auto entry : sModuleMap) {
+    if (aModuleStr.EqualsASCII(entry.mStr)) {
+      return sModules & entry.mModule;
     }
   }
 

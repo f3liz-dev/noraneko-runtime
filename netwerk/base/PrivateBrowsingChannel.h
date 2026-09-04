@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=4 sts=2 sw=2 et cin: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,12 +5,12 @@
 #ifndef mozilla_net_PrivateBrowsingChannel_h_
 #define mozilla_net_PrivateBrowsingChannel_h_
 
-#include "nsIPrivateBrowsingChannel.h"
 #include "nsCOMPtr.h"
-#include "nsILoadGroup.h"
-#include "nsILoadContext.h"
-#include "nsIInterfaceRequestorUtils.h"
 #include "nsIInterfaceRequestor.h"
+#include "nsIInterfaceRequestorUtils.h"
+#include "nsILoadContext.h"
+#include "nsILoadGroup.h"
+#include "nsIPrivateBrowsingChannel.h"
 #include "nsNetUtil.h"
 
 namespace mozilla {

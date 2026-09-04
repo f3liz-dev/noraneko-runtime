@@ -69,6 +69,8 @@ const modifiedStyleSheets = new WeakMap();
  */
 class StyleSheetsManager extends EventEmitter {
   #abortController;
+  // Map<resourceId, Promise<string>>
+  #initialExternalStyleSheetTextMap = new Map();
   // Map<resourceId, AbortController>
   #mqlChangeAbortControllerMap = new Map();
   #styleSheetCount = 0;
@@ -398,6 +400,10 @@ class StyleSheetsManager extends EventEmitter {
    * @returns {string}
    */
   async getText(resourceId) {
+    if (!this.#styleSheetMap.has(resourceId)) {
+      return "";
+    }
+
     const styleSheet = this.#styleSheetMap.get(resourceId);
 
     const modifiedText = modifiedStyleSheets.get(styleSheet);
@@ -408,7 +414,29 @@ class StyleSheetsManager extends EventEmitter {
       return modifiedText;
     }
 
-    return getStyleSheetText(styleSheet);
+    if (
+      styleSheet.href &&
+      this.#initialExternalStyleSheetTextMap.has(resourceId)
+    ) {
+      return this.#initialExternalStyleSheetTextMap.get(resourceId);
+    }
+
+    const getTextPromise = getStyleSheetText(styleSheet);
+    // If this is an external stylesheet, cache the promise that gets its text so we
+    // avoid having (potentially a lot of) concurrent network requests that would cause
+    // a spike in memory usage (see Bug 2034445)
+    if (
+      styleSheet.href &&
+      !this.#initialExternalStyleSheetTextMap.has(resourceId)
+    ) {
+      this.#initialExternalStyleSheetTextMap.set(resourceId, getTextPromise);
+      // Remove the promise from the Map if it rejects
+      getTextPromise.catch(() => {
+        this.#initialExternalStyleSheetTextMap.delete(resourceId);
+      });
+    }
+
+    return getTextPromise;
   }
 
   /**
@@ -498,7 +526,7 @@ class StyleSheetsManager extends EventEmitter {
   #startTransition(resourceId, kind, cause) {
     const styleSheet = this.#styleSheetMap.get(resourceId);
     const document = styleSheet.associatedDocument;
-    const window = document.ownerGlobal;
+    const window = document.documentGlobal;
 
     if (!this.#transitionSheetLoaded) {
       this.#transitionSheetLoaded = true;
@@ -644,7 +672,7 @@ class StyleSheetsManager extends EventEmitter {
     let win;
     const getStyleSheetAssociatedWindow = () => {
       if (!win) {
-        win = styleSheet.associatedDocument?.ownerGlobal;
+        win = styleSheet.associatedDocument?.documentGlobal;
       }
       return win;
     };
@@ -794,7 +822,12 @@ class StyleSheetsManager extends EventEmitter {
    * @returns {string}
    */
   getNodeHref(styleSheet) {
-    const { ownerNode } = styleSheet;
+    const { associatedDocument, constructed, ownerNode } = styleSheet;
+
+    if (constructed && associatedDocument) {
+      return styleSheet.associatedDocument.location.href;
+    }
+
     if (!ownerNode) {
       return null;
     }
@@ -927,7 +960,7 @@ class StyleSheetsManager extends EventEmitter {
       applicable &&
       styleSheet.associatedDocument &&
       (!this.#targetActor.ignoreSubFrames ||
-        styleSheet.associatedDocument.ownerGlobal ===
+        styleSheet.associatedDocument.documentGlobal ===
           this.#targetActor.window) &&
       this.#shouldListSheet(styleSheet) &&
       !this.#haveAncestorWithSameURL(styleSheet)
@@ -1006,6 +1039,9 @@ class StyleSheetsManager extends EventEmitter {
     if (this.#mqlChangeAbortControllerMap.has(existingResourceId)) {
       this.#mqlChangeAbortControllerMap.get(existingResourceId).abort();
       this.#mqlChangeAbortControllerMap.delete(existingResourceId);
+    }
+    if (this.#initialExternalStyleSheetTextMap.has(existingResourceId)) {
+      this.#initialExternalStyleSheetTextMap.delete(existingResourceId);
     }
 
     for (const onDestroyed of this.#watchListeners.onDestroyed) {

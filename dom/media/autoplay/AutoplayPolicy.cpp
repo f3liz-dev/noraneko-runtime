@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,8 +7,10 @@
 #include "mozilla/Components.h"
 #include "mozilla/Logging.h"
 #include "mozilla/MediaManager.h"
+#include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/StaticPrefs_media.h"
 #include "mozilla/dom/AudioContext.h"
+#include "mozilla/dom/ContentMediaController.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/FeaturePolicyUtils.h"
 #include "mozilla/dom/HTMLMediaElement.h"
@@ -26,11 +26,12 @@
 #include "nsIPermissionManager.h"
 #include "nsIPrincipal.h"
 #include "nsPIDOMWindow.h"
+#include "nsPIDOMWindowInlines.h"
 
 mozilla::LazyLogModule gAutoplayPermissionLog("Autoplay");
 
 #define AUTOPLAY_LOG(msg, ...) \
-  MOZ_LOG(gAutoplayPermissionLog, LogLevel::Debug, (msg, ##__VA_ARGS__))
+  MOZ_LOG_FMT(gAutoplayPermissionLog, LogLevel::Debug, msg, ##__VA_ARGS__)
 
 using namespace mozilla::dom;
 
@@ -144,13 +145,13 @@ static uint32_t DefaultAutoplayBehaviour() {
 
 static bool IsMediaElementInaudible(const HTMLMediaElement& aElement) {
   if (aElement.Volume() == 0.0 || aElement.Muted()) {
-    AUTOPLAY_LOG("Media %p is muted.", &aElement);
+    AUTOPLAY_LOG("Media {} is muted.", fmt::ptr(&aElement));
     return true;
   }
 
   if (!aElement.HasAudio() &&
       aElement.ReadyState() >= HTMLMediaElement_Binding::HAVE_METADATA) {
-    AUTOPLAY_LOG("Media %p has no audio track", &aElement);
+    AUTOPLAY_LOG("Media {} has no audio track", fmt::ptr(&aElement));
     return true;
   }
 
@@ -167,22 +168,22 @@ static bool IsAllowedToPlayByBlockingModel(const HTMLMediaElement& aElement) {
   if (policy == sPOLICY_STICKY_ACTIVATION) {
     const bool isAllowed =
         IsWindowAllowedToPlayOverall(aElement.OwnerDoc()->GetInnerWindow());
-    AUTOPLAY_LOG("Use 'sticky-activation', isAllowed=%d", isAllowed);
+    AUTOPLAY_LOG("Use 'sticky-activation', isAllowed={}", isAllowed);
     return isAllowed;
   }
   // If element is blessed, it would always be allowed to play().
   const bool isElementBlessed = aElement.IsBlessed();
   if (policy == sPOLICY_USER_INPUT_DEPTH) {
     const bool isUserInput = UserActivation::IsHandlingUserInput();
-    AUTOPLAY_LOG("Use 'User-Input-Depth', isBlessed=%d, isUserInput=%d",
+    AUTOPLAY_LOG("Use 'User-Input-Depth', isBlessed={}, isUserInput={}",
                  isElementBlessed, isUserInput);
     return isElementBlessed || isUserInput;
   }
   const bool hasTransientActivation =
       aElement.OwnerDoc()->HasValidTransientUserGestureActivation();
   AUTOPLAY_LOG(
-      "Use 'transient-activation', isBlessed=%d, "
-      "hasValidTransientActivation=%d",
+      "Use 'transient-activation', isBlessed={}, "
+      "hasValidTransientActivation={}",
       isElementBlessed, hasTransientActivation);
   return isElementBlessed || hasTransientActivation;
 }
@@ -224,7 +225,32 @@ static bool IsGVAutoplayRequestAllowed(const HTMLMediaElement& aElement,
 }
 #endif
 
+/* static */
+bool AutoplayPolicy::IsAudioInterruptedByPlatform(nsPIDOMWindowInner* aWindow) {
+  MOZ_ASSERT(NS_IsMainThread());
+  if (!StaticPrefs::dom_audio_session_block_start_during_interrupt_enabled()) {
+    return false;
+  }
+  if (!aWindow) {
+    return false;
+  }
+  ContentMediaController* controller =
+      nsGlobalWindowInner::Cast(aWindow)->GetContentMediaController();
+  return controller && controller->IsAudioInterruptedByPlatform();
+}
+
 static bool IsAllowedToPlayInternal(const HTMLMediaElement& aElement) {
+  // While the platform has interrupted the tab's audio, block only audible
+  // media from starting on its own. Inaudible media (muted, zero volume, or no
+  // audio track) does not compete for audio focus, so it is left to the normal
+  // autoplay rules below.
+  if (!IsMediaElementInaudible(aElement) &&
+      AutoplayPolicy::IsAudioInterruptedByPlatform(
+          aElement.OwnerDoc()->GetInnerWindow())) {
+    AUTOPLAY_LOG("Media {} blocked: audible playback interrupted by platform",
+                 fmt::ptr(&aElement));
+    return false;
+  }
 #if defined(MOZ_WIDGET_ANDROID)
   if (StaticPrefs::media_geckoview_autoplay_request()) {
     return IsGVAutoplayRequestAllowed(
@@ -240,8 +266,8 @@ static bool IsAllowedToPlayInternal(const HTMLMediaElement& aElement) {
       SiteAutoplayPerm(aElement.OwnerDoc()->GetInnerWindow());
 
   AUTOPLAY_LOG(
-      "IsAllowedToPlayInternal, isInaudible=%d,"
-      "isUsingAutoplayModel=%d, sitePermission=%d, defaultBehaviour=%d",
+      "IsAllowedToPlayInternal, isInaudible={},"
+      "isUsingAutoplayModel={}, sitePermission={}, defaultBehaviour={}",
       isInaudible, isUsingAutoplayModel, sitePermission, defaultBehaviour);
 
   // For site permissions we store permissionManager values except
@@ -274,8 +300,8 @@ static bool IsAllowedToPlayInternal(const HTMLMediaElement& aElement) {
 /* static */
 bool AutoplayPolicy::IsAllowedToPlay(const HTMLMediaElement& aElement) {
   const bool result = IsAllowedToPlayInternal(aElement);
-  AUTOPLAY_LOG("IsAllowedToPlay, mediaElement=%p, isAllowToPlay=%s", &aElement,
-               result ? "allowed" : "blocked");
+  AUTOPLAY_LOG("IsAllowedToPlay, mediaElement={}, isAllowToPlay={}",
+               fmt::ptr(&aElement), result ? "allowed" : "blocked");
   return result;
 }
 
@@ -294,6 +320,12 @@ bool AutoplayPolicy::IsAllowedToPlay(const AudioContext& aContext) {
    */
   if (aContext.IsOffline()) {
     return true;
+  }
+
+  if (IsAudioInterruptedByPlatform(aContext.GetOwnerWindow())) {
+    AUTOPLAY_LOG("AudioContext {} blocked: audio interrupted by platform",
+                 fmt::ptr(&aContext));
+    return false;
   }
 
   if (!IsEnableBlockingWebAudioByUserGesturePolicy()) {
@@ -329,6 +361,9 @@ enum class DocumentAutoplayPolicy : uint8_t {
 
 /* static */
 DocumentAutoplayPolicy IsDocAllowedToPlay(const Document& aDocument) {
+  // TODO(bug 2050309): when the platform has interrupted the tab's audio,
+  // return Disallowed here so the Autoplay Policy Detection API mirrors the
+  // IsAllowedToPlay gate. The web-observable reflection is a follow-up.
   RefPtr<nsPIDOMWindowInner> window = aDocument.GetInnerWindow();
 
 #if defined(MOZ_WIDGET_ANDROID)
@@ -357,9 +392,9 @@ DocumentAutoplayPolicy IsDocAllowedToPlay(const Document& aDocument) {
       IsWindowAllowedToPlayByTraits(window);
 
   AUTOPLAY_LOG(
-      "IsDocAllowedToPlay(), policy=%d, sitePermission=%d, "
-      "globalPermission=%d, isWindowAllowedToPlayByGesture=%d, "
-      "isWindowAllowedToPlayByTraits=%d",
+      "IsDocAllowedToPlay(), policy={}, sitePermission={}, "
+      "globalPermission={}, isWindowAllowedToPlayByGesture={}, "
+      "isWindowAllowedToPlayByTraits={}",
       policy, sitePermission, globalPermission, isWindowAllowedToPlayByGesture,
       isWindowAllowedToPlayByTraits);
 
@@ -401,6 +436,9 @@ uint32_t AutoplayPolicy::GetSiteAutoplayPermission(nsIPrincipal* aPrincipal) {
 /* static */
 dom::AutoplayPolicy AutoplayPolicy::GetAutoplayPolicy(
     const dom::HTMLMediaElement& aElement) {
+  // TODO(bug 2050309): when the platform has interrupted the tab's audio,
+  // report Disallowed here so the Autoplay Policy Detection API mirrors the
+  // IsAllowedToPlay gate. The web-observable reflection is a follow-up.
   // Note, the site permission can contain following values :
   // - UNKNOWN_ACTION : no permission set for this site
   // - ALLOW_ACTION : allowed to autoplay
@@ -415,8 +453,8 @@ dom::AutoplayPolicy AutoplayPolicy::GetAutoplayPolicy(
       IsAllowedToPlayByBlockingModel(aElement);
 
   AUTOPLAY_LOG(
-      "IsAllowedToPlay(element), sitePermission=%d, globalPermission=%d, "
-      "isAllowedToPlayByBlockingModel=%d",
+      "IsAllowedToPlay(element), sitePermission={}, globalPermission={}, "
+      "isAllowedToPlayByBlockingModel={}",
       sitePermission, globalPermission, isAllowedToPlayByBlockingModel);
 
 #if defined(MOZ_WIDGET_ANDROID)

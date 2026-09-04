@@ -18,6 +18,8 @@ class nsUrlClassifierUtils final : public nsIUrlClassifierUtils,
  public:
   typedef nsClassHashtable<nsCStringHashKey, nsCString> ProviderDictType;
 
+  nsUrlClassifierUtils(const nsUrlClassifierUtils&) = delete;
+
   NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSIURLCLASSIFIERUTILS
   NS_DECL_NSIOBSERVER
@@ -51,13 +53,10 @@ class nsUrlClassifierUtils final : public nsIUrlClassifierUtils,
   static bool IsInSafeMode();
 
  private:
-  nsUrlClassifierUtils();
+  nsUrlClassifierUtils() = default;
   ~nsUrlClassifierUtils();
 
   nsresult Init();
-
-  // Disallow copy constructor
-  nsUrlClassifierUtils(const nsUrlClassifierUtils&);
 
   // Function to tell if we should encode a character.
   bool ShouldURLEscape(const unsigned char c) const;
@@ -68,7 +67,8 @@ class nsUrlClassifierUtils final : public nsIUrlClassifierUtils,
 
   // The provider lookup table and its mutex.
   ProviderDictType mProviderDict;
-  mozilla::Mutex mProviderDictLock MOZ_UNANNOTATED;
+  mozilla::Mutex mProviderDictLock MOZ_UNANNOTATED{
+      "nsUrlClassifierUtils.mProviderDictLock"};
 };
 
 #endif  // nsUrlClassifierUtils_h_

@@ -25,6 +25,9 @@ add_task(async function test_fetchMany() {
 
   // Add missing page info from the database.
   for (let page of pages) {
+    page.placeId = await PlacesTestUtils.getDatabaseValue("moz_places", "id", {
+      url: page.url,
+    });
     page.guid = await PlacesTestUtils.getDatabaseValue("moz_places", "guid", {
       url: page.url,
     });
@@ -70,7 +73,7 @@ add_task(async function test_fetch_nonexistent() {
   await PlacesUtils.history.clear();
   await PlacesUtils.bookmarks.eraseEverything();
 
-  let uri = NetUtil.newURI("http://doesntexist.in.db");
+  let uri = Services.io.newURI("http://doesntexist.in.db");
   let fetched = await PlacesUtils.history.fetchMany([uri]);
   Assert.equal(fetched.size, 0, "Map should contain no entries");
 });

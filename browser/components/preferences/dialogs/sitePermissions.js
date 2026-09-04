@@ -10,8 +10,15 @@ var { AppConstants } = ChromeUtils.importESModule(
 const { SitePermissions } = ChromeUtils.importESModule(
   "resource:///modules/SitePermissions.sys.mjs"
 );
-const { PermissionUI } = ChromeUtils.importESModule(
-  "resource:///modules/PermissionUI.sys.mjs"
+var { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
+);
+
+XPCOMUtils.defineLazyServiceGetter(
+  this,
+  "SiteCategory",
+  "@mozilla.org/site-category;1",
+  Ci.nsISiteCategory
 );
 
 const sitePermissionsL10n = {
@@ -53,7 +60,7 @@ const sitePermissionsL10n = {
     window: "permissions-site-autoplay-window2",
     description: "permissions-site-autoplay-desc",
   },
-  localhost: {
+  "loopback-network": {
     window: "permissions-site-localhost-window",
     description: "permissions-site-localhost-desc",
     disableLabel: "permissions-site-localhost-disable-label",
@@ -597,7 +604,7 @@ var gSitePermissionsManager = {
     if (this._type === "desktop-notification") {
       for (let group of this._permissionsToDelete.values()) {
         Glean.webNotificationPermission.permissionRevokedPreferences.record({
-          site_category: PermissionUI.getSiteCategory(group.principal),
+          site_category: SiteCategory.getCategory(group.principal),
         });
       }
     }
@@ -679,7 +686,7 @@ var gSitePermissionsManager = {
       SitePermissions.setDefault("autoplay-media", Number(menulist.value));
     });
 
-    menulist.menupopup.setAttribute("incontentshell", "false");
+    menulist.menupopup.setAttribute("escapecontentshell", true);
 
     menulist.disabled = Services.prefs.prefIsLocked(AUTOPLAY_PREF);
 

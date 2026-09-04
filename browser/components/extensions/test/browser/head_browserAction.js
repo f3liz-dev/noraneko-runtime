@@ -1,5 +1,3 @@
-/* -*- Mode: indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
 
 /* exported testPopupSize */
@@ -19,7 +17,7 @@ function waitUntilValue({
   times = 1,
 } = {}) {
   let i = 0;
-  return BrowserTestUtils.waitForCondition(async () => {
+  return TestUtils.waitForCondition(async () => {
     const oldVal = await getValue();
     await delay(delayTime);
     const newVal = await getValue();

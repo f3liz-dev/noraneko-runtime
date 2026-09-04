@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,13 +5,13 @@
 #ifndef mozilla_layers_AnimationStorageData_h
 #define mozilla_layers_AnimationStorageData_h
 
+#include "X11UndefineNone.h"
+#include "mozilla/ServoStyleConsts.h"  // for ComputedTimingFunction
+#include "mozilla/TimeStamp.h"         // for TimeStamp
+#include "mozilla/TimingParams.h"
 #include "mozilla/dom/Nullable.h"
-#include "mozilla/ServoStyleConsts.h"       // for ComputedTimingFunction
 #include "mozilla/layers/LayersMessages.h"  // for TransformData, etc
 #include "mozilla/layers/LayersTypes.h"     // for LayersId
-#include "mozilla/TimeStamp.h"              // for TimeStamp
-#include "mozilla/TimingParams.h"
-#include "X11UndefineNone.h"
 
 namespace mozilla {
 

@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -28,9 +26,9 @@ class PluralRulesObject : public NativeObject {
   static const JSClass class_;
   static const JSClass& protoClass_;
 
-  static constexpr uint32_t LOCALE_SLOT = 0;
-  static constexpr uint32_t OPTIONS_SLOT = 1;
-  static constexpr uint32_t PLURAL_RULES_SLOT = 2;
+  JS_DEFINE_TYPED_SLOT(0, LOCALE_SLOT, Object, String, Undefined);
+  JS_DEFINE_TYPED_SLOT(1, OPTIONS_SLOT, Double, Undefined);
+  JS_DEFINE_TYPED_SLOT(2, PLURAL_RULES_SLOT, Private, Undefined);
   static constexpr uint32_t SLOT_COUNT = 3;
 
   // Estimated memory use for UPluralRules (see IcuMemoryUsage).
@@ -39,10 +37,12 @@ class PluralRulesObject : public NativeObject {
   // object.
   static constexpr size_t UPluralRulesEstimatedMemoryUse = 5736;
 
-  bool isLocaleResolved() const { return getFixedSlot(LOCALE_SLOT).isString(); }
+  bool isLocaleResolved() const {
+    return getFixedSlotTyped(LOCALE_SLOT).isString();
+  }
 
   JSObject* getRequestedLocales() const {
-    const auto& slot = getFixedSlot(LOCALE_SLOT);
+    const auto& slot = getFixedSlotTyped(LOCALE_SLOT);
     if (slot.isUndefined()) {
       return nullptr;
     }
@@ -50,11 +50,11 @@ class PluralRulesObject : public NativeObject {
   }
 
   void setRequestedLocales(JSObject* requestedLocales) {
-    setFixedSlot(LOCALE_SLOT, JS::ObjectValue(*requestedLocales));
+    setFixedSlotTyped(LOCALE_SLOT, JS::ObjectValue(*requestedLocales));
   }
 
   JSLinearString* getLocale() const {
-    const auto& slot = getFixedSlot(LOCALE_SLOT);
+    const auto& slot = getFixedSlotTyped(LOCALE_SLOT);
     if (slot.isUndefined()) {
       return nullptr;
     }
@@ -62,7 +62,7 @@ class PluralRulesObject : public NativeObject {
   }
 
   void setLocale(JSLinearString* locale) {
-    setFixedSlot(LOCALE_SLOT, JS::StringValue(locale));
+    setFixedSlotTyped(LOCALE_SLOT, JS::StringValue(locale));
   }
 
   PluralRulesOptions getOptions() const;
@@ -70,7 +70,7 @@ class PluralRulesObject : public NativeObject {
   void setOptions(const PluralRulesOptions& options);
 
   mozilla::intl::PluralRules* getPluralRules() const {
-    const auto& slot = getFixedSlot(PLURAL_RULES_SLOT);
+    const auto& slot = getFixedSlotTyped(PLURAL_RULES_SLOT);
     if (slot.isUndefined()) {
       return nullptr;
     }
@@ -78,7 +78,7 @@ class PluralRulesObject : public NativeObject {
   }
 
   void setPluralRules(mozilla::intl::PluralRules* pluralRules) {
-    setFixedSlot(PLURAL_RULES_SLOT, PrivateValue(pluralRules));
+    setFixedSlotTyped(PLURAL_RULES_SLOT, PrivateValue(pluralRules));
   }
 
  private:

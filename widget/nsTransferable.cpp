@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -13,26 +12,27 @@ Notes to self:
 */
 
 #include "nsTransferable.h"
+
+#include "mozilla/StaticPrefs_browser.h"
+#include "mozilla/UniquePtr.h"
 #include "nsAnonymousTemporaryFile.h"
 #include "nsArray.h"
 #include "nsArrayUtils.h"
-#include "nsString.h"
-#include "nsReadableUtils.h"
-#include "nsTArray.h"
-#include "nsIFormatConverter.h"
-#include "nsIContentPolicy.h"
 #include "nsCOMPtr.h"
-#include "nsXPCOM.h"
-#include "nsISupportsPrimitives.h"
-#include "nsPrimitiveHelpers.h"
-#include "nsDirectoryServiceDefs.h"
-#include "nsDirectoryService.h"
 #include "nsCRT.h"
-#include "nsNetUtil.h"
+#include "nsDirectoryService.h"
+#include "nsDirectoryServiceDefs.h"
+#include "nsIContentPolicy.h"
+#include "nsIFormatConverter.h"
 #include "nsILoadContext.h"
+#include "nsISupportsPrimitives.h"
+#include "nsNetUtil.h"
+#include "nsPrimitiveHelpers.h"
+#include "nsReadableUtils.h"
+#include "nsString.h"
+#include "nsTArray.h"
+#include "nsXPCOM.h"
 #include "nsXULAppAPI.h"
-#include "mozilla/StaticPrefs_browser.h"
-#include "mozilla/UniquePtr.h"
 
 using namespace mozilla;
 
@@ -114,6 +114,7 @@ void DataStruct::GetData(nsISupports** aData) {
 void DataStruct::ClearData() {
   if (mCacheFD) {
     PR_Close(mCacheFD);
+    mCacheFD = nullptr;
   }
   mData = nullptr;
 }

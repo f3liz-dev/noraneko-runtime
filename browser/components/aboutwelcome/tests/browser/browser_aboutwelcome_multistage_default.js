@@ -134,7 +134,7 @@ const isMSIX =
 
 const TEST_SET_DEFAULT_AND_PIN_CONTENT = [
   {
-    id: "AW_EASY_SETUP_NEEDS_DEFAULT_AND_PIN",
+    id: "AW_EASY_SETUP",
     content: {
       position: "split",
       split_narrow_bkg_position: "-60px",
@@ -159,7 +159,7 @@ async function openAboutWelcome() {
     "about:welcome",
     true
   );
-  await ContentTask.spawn(gBrowser.selectedBrowser, {}, async function () {
+  await SpecialPowers.spawn(gBrowser.selectedBrowser, [], async function () {
     // Mark the first entry as having been interacted with.
     content.document.notifyUserGestureActivation();
   });
@@ -501,7 +501,7 @@ add_task(async function test_AWMultistage_Themes() {
   );
   await onButtonClick(browser, "button.primary");
 
-  await ContentTask.spawn(browser, "Themes", async () => {
+  await SpecialPowers.spawn(browser, ["Themes"], async () => {
     await ContentTaskUtils.waitForCondition(
       () => content.document.querySelector("label.select-item"),
       "Theme Icons"
@@ -724,7 +724,7 @@ add_setup(async function () {
 add_task(async function test_FxA_metricsFlowURI() {
   let browser = await openAboutWelcome();
 
-  await ContentTask.spawn(browser, {}, async () => {
+  await SpecialPowers.spawn(browser, [], async () => {
     Assert.ok(
       await ContentTaskUtils.waitForCondition(
         () => content.document.querySelector("div.onboardingContainer"),
@@ -810,7 +810,7 @@ add_task(async function test_AMO_untranslated_strings() {
     ],
 
     //Unexpected selectors:
-    ["main.AW_EASY_SETUP_NEEDS_DEFAULT"]
+    ["main.AW_EASY_SETUP"]
   );
 
   registerCleanupFunction(async () => {

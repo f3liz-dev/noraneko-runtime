@@ -1,6 +1,4 @@
-/* -*- Mode: C; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sw=2 et tw=0 ft=c:
- *
+/*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -840,32 +838,19 @@
     MACRO(NewTarget, new_target, NULL, 1, 0, 1, JOF_BYTE) \
     /*
      * Dynamic import of the module specified by the string value on the top of
-     * the stack.
+     * the stack. The phase operand selects evaluation vs. source phase.
      *
-     * Implements: [Import Calls][1].
+     * Implements: [Import Calls][1], [Source Phase Import Calls][2].
      *
      * [1]: https://tc39.es/ecma262/#sec-import-calls
+     * [2]: https://tc39.es/proposal-source-phase-imports/#sec-import-calls
      *
      *   Category: Expressions
      *   Type: Other expressions
-     *   Operands:
+     *   Operands: uint8_t phase (ImportPhase enum value)
      *   Stack: moduleId, options => promise
      */ \
-    MACRO(DynamicImport, dynamic_import, NULL, 1, 2, 1, JOF_BYTE) \
-    /*
-     * Dynamic import.source of the module specified by the string value on the
-     * top of the stack.
-     *
-     * Implements: [Import Calls][1].
-     *
-     * [1]: https://tc39.es/proposal-source-phase-imports/#sec-import-calls
-     *
-     *   Category: Expressions
-     *   Type: Other expressions
-     *   Operands:
-     *   Stack: moduleId => promise
-     */ \
-    IF_SOURCE_PHASE_IMPORTS(MACRO(DynamicImportSource, dynamic_import_source, NULL, 1, 1, 1, JOF_BYTE)) \
+    MACRO(DynamicImport, dynamic_import, NULL, 2, 2, 1, JOF_UINT8) \
     /*
      * Push the `import.meta` object.
      *
@@ -2259,7 +2244,8 @@
      */ \
     MACRO(CheckResumeKind, check_resume_kind, NULL, 1, 3, 1, JOF_BYTE) \
     /*
-     * Resume execution of a generator, async function, or async generator.
+     * Resume execution of a generator function. Async functions and modules are
+     * resumed without going through this op.
      *
      * This behaves something like a call instruction. It pushes a stack frame
      * (the one saved when `gen` was suspended, rather than a fresh one) and
@@ -2583,7 +2569,7 @@
      *   Operands:
      *   Stack: error, suppressed => suppressedError
      */ \
-    IF_EXPLICIT_RESOURCE_MANAGEMENT(MACRO(CreateSuppressedError, create_suppressed_error, NULL, 1, 2, 1, JOF_BYTE)) \
+    MACRO(CreateSuppressedError, create_suppressed_error, NULL, 1, 2, 1, JOF_BYTE) \
     /*
      * Create and throw an Error object.
      *
@@ -3361,7 +3347,7 @@
      *   Operands: UsingHint hint
      *   Stack: v, method, needsClosure =>
      */ \
-    IF_EXPLICIT_RESOURCE_MANAGEMENT(MACRO(AddDisposable, add_disposable, NULL, 2, 3, 0, JOF_UINT8|JOF_USES_ENV)) \
+    MACRO(AddDisposable, add_disposable, NULL, 2, 3, 0, JOF_UINT8|JOF_USES_ENV) \
     /*
      * Get the dispose capability of the present environment object.
      * In case the dispose capability of the environment
@@ -3376,7 +3362,7 @@
      *   Operands:
      *   Stack: => disposeCapability
      */ \
-    IF_EXPLICIT_RESOURCE_MANAGEMENT(MACRO(TakeDisposeCapability, take_dispose_capability, NULL, 1, 0, 1, JOF_BYTE|JOF_USES_ENV)) \
+    MACRO(TakeDisposeCapability, take_dispose_capability, NULL, 1, 0, 1, JOF_BYTE|JOF_USES_ENV) \
     /*
      * Push the current VariableEnvironment (the environment on the environment
      * chain designated to receive new variables).
@@ -3597,16 +3583,6 @@
      */ \
     MACRO(NopDestructuring, nop_destructuring, NULL, 1, 0, 0, JOF_BYTE) \
     /*
-     * No-op instruction only emitted in some self-hosted functions. Not
-     * handled by the JITs or Baseline Interpreter so the script always runs in
-     * the C++ interpreter.
-     *
-     *   Category: Other
-     *   Operands:
-     *   Stack: =>
-     */ \
-    MACRO(ForceInterpreter, force_interpreter, NULL, 1, 0, 0, JOF_BYTE) \
-    /*
      * Examine the top stack value, asserting that it's either a self-hosted
      * function or a self-hosted intrinsic. This does nothing in a non-debug
      * build.
@@ -3639,79 +3615,22 @@
  * a power of two.  Use this macro to do so.
  */
 
-#ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
-#  ifdef ENABLE_SOURCE_PHASE_IMPORTS
-#    define FOR_EACH_TRAILING_UNUSED_OPCODE(MACRO) \
-      MACRO(243)                                   \
-      MACRO(244)                                   \
-      MACRO(245)                                   \
-      MACRO(246)                                   \
-      MACRO(247)                                   \
-      MACRO(248)                                   \
-      MACRO(249)                                   \
-      MACRO(250)                                   \
-      MACRO(251)                                   \
-      MACRO(252)                                   \
-      MACRO(253)                                   \
-      MACRO(254)                                   \
-      MACRO(255)
-#  else
-#    define FOR_EACH_TRAILING_UNUSED_OPCODE(MACRO) \
-      MACRO(242)                                   \
-      MACRO(243)                                   \
-      MACRO(244)                                   \
-      MACRO(245)                                   \
-      MACRO(246)                                   \
-      MACRO(247)                                   \
-      MACRO(248)                                   \
-      MACRO(249)                                   \
-      MACRO(250)                                   \
-      MACRO(251)                                   \
-      MACRO(252)                                   \
-      MACRO(253)                                   \
-      MACRO(254)                                   \
-      MACRO(255)
-#  endif
-#else
-#  ifdef ENABLE_SOURCE_PHASE_IMPORTS
-#    define FOR_EACH_TRAILING_UNUSED_OPCODE(MACRO) \
-      MACRO(240)                                   \
-      MACRO(241)                                   \
-      MACRO(242)                                   \
-      MACRO(243)                                   \
-      MACRO(244)                                   \
-      MACRO(245)                                   \
-      MACRO(246)                                   \
-      MACRO(247)                                   \
-      MACRO(248)                                   \
-      MACRO(249)                                   \
-      MACRO(250)                                   \
-      MACRO(251)                                   \
-      MACRO(252)                                   \
-      MACRO(253)                                   \
-      MACRO(254)                                   \
-      MACRO(255)
-#  else
-#    define FOR_EACH_TRAILING_UNUSED_OPCODE(MACRO) \
-      MACRO(239)                                   \
-      MACRO(240)                                   \
-      MACRO(241)                                   \
-      MACRO(242)                                   \
-      MACRO(243)                                   \
-      MACRO(244)                                   \
-      MACRO(245)                                   \
-      MACRO(246)                                   \
-      MACRO(247)                                   \
-      MACRO(248)                                   \
-      MACRO(249)                                   \
-      MACRO(250)                                   \
-      MACRO(251)                                   \
-      MACRO(252)                                   \
-      MACRO(253)                                   \
-      MACRO(254)                                   \
-      MACRO(255)
-#  endif
-#endif
+#define FOR_EACH_TRAILING_UNUSED_OPCODE(MACRO) \
+  MACRO(241)                                   \
+  MACRO(242)                                   \
+  MACRO(243)                                   \
+  MACRO(244)                                   \
+  MACRO(245)                                   \
+  MACRO(246)                                   \
+  MACRO(247)                                   \
+  MACRO(248)                                   \
+  MACRO(249)                                   \
+  MACRO(250)                                   \
+  MACRO(251)                                   \
+  MACRO(252)                                   \
+  MACRO(253)                                   \
+  MACRO(254)                                   \
+  MACRO(255)
 
 namespace js {
 

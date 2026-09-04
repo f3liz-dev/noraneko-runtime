@@ -1,16 +1,21 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "CompositorOGL.h"
-#include <stddef.h>             // for size_t
-#include <stdint.h>             // for uint32_t, uint8_t
-#include <stdlib.h>             // for free, malloc
-#include "GLContextProvider.h"  // for GLContextProvider
+
+#include <stddef.h>  // for size_t
+#include <stdint.h>  // for uint32_t, uint8_t
+#include <stdlib.h>  // for free, malloc
+
+#include "GLBlitHelper.h"
 #include "GLContext.h"          // for GLContext
+#include "GLContextProvider.h"  // for GLContextProvider
+#include "GLReadTexImageHelper.h"
 #include "GLUploadHelpers.h"
+#include "HeapCopyOfStackArray.h"
+#include "OGLShaderProgram.h"  // for ShaderProgramOGL, etc
+#include "ScopedGLHelpers.h"
 #include "gfxCrashReporterUtils.h"  // for ScopedGfxFeatureReporter
 #include "gfxEnv.h"                 // for gfxEnv
 #include "gfxPlatform.h"            // for gfxPlatform
@@ -23,18 +28,19 @@
 #include "mozilla/StaticPrefs_nglayout.h"
 #include "mozilla/gfx/BasePoint.h"  // for BasePoint
 #include "mozilla/gfx/Matrix.h"     // for Matrix4x4, Matrix
-#include "mozilla/gfx/Triangle.h"   // for Triangle
-#include "mozilla/gfx/gfxVars.h"    // for gfxVars
+#include "mozilla/gfx/Swizzle.h"
+#include "mozilla/gfx/Triangle.h"  // for Triangle
+#include "mozilla/gfx/gfxVars.h"   // for gfxVars
+#include "mozilla/layers/CompositingRenderTargetOGL.h"
+#include "mozilla/layers/Effects.h"  // for EffectChain, TexturedEffect, etc
 #include "mozilla/layers/ImageDataSerializer.h"
 #include "mozilla/layers/NativeLayer.h"
-#include "mozilla/layers/CompositingRenderTargetOGL.h"
-#include "mozilla/layers/Effects.h"      // for EffectChain, TexturedEffect, etc
-#include "mozilla/layers/TextureHost.h"  // for TextureSource, etc
-#include "mozilla/layers/TextureHostOGL.h"  // for TextureSourceOGL, etc
 #include "mozilla/layers/PTextureParent.h"  // for OtherPid() on PTextureParent
+#include "mozilla/layers/TextureHost.h"     // for TextureSource, etc
+#include "mozilla/layers/TextureHostOGL.h"  // for TextureSourceOGL, etc
 #include "mozilla/mozalloc.h"               // for operator delete, etc
-#include "nsAppRunner.h"
 #include "nsAString.h"
+#include "nsAppRunner.h"
 #include "nsClassHashtable.h"
 #include "nsIConsoleService.h"      // for nsIConsoleService, etc
 #include "nsIWidget.h"              // for nsIWidget
@@ -43,12 +49,6 @@
 #include "nsRect.h"                 // for mozilla::gfx::IntRect
 #include "nsServiceManagerUtils.h"  // for do_GetService
 #include "nsString.h"               // for nsString, nsAutoCString, etc
-#include "OGLShaderProgram.h"       // for ShaderProgramOGL, etc
-#include "ScopedGLHelpers.h"
-#include "GLReadTexImageHelper.h"
-#include "HeapCopyOfStackArray.h"
-#include "GLBlitHelper.h"
-#include "mozilla/gfx/Swizzle.h"
 #ifdef MOZ_WIDGET_GTK
 #  include "mozilla/widget/GtkCompositorWidget.h"
 #endif
@@ -101,7 +101,6 @@ class AsyncReadbackBufferOGL final : public AsyncReadbackBuffer {
 
   void Bind() const {
     mGL->fBindBuffer(LOCAL_GL_PIXEL_PACK_BUFFER, mBufferHandle);
-    mGL->fPixelStorei(LOCAL_GL_PACK_ALIGNMENT, 1);
   }
 
  protected:
@@ -155,18 +154,17 @@ bool AsyncReadbackBufferOGL::MapAndCopyInto(DataSourceSurface* aSurface,
     return false;
   }
 
-  int32_t srcStride = mSize.width * 4;  // Bind() sets an alignment of 1
+  // Swizzle to the destination format and flip vertically in one pass.
   DataSourceSurface::ScopedMap map(aSurface, DataSourceSurface::WRITE);
-  uint8_t* destData = map.GetData();
-  int32_t destStride = map.GetStride();
-  SurfaceFormat destFormat = aSurface->GetFormat();
-  for (int32_t destRow = 0; destRow < aReadSize.height; destRow++) {
-    // Turn srcData upside down during the copy.
-    int32_t srcRow = aReadSize.height - 1 - destRow;
-    const uint8_t* src = &srcData[srcRow * srcStride];
-    uint8_t* dest = &destData[destRow * destStride];
-    SwizzleData(src, srcStride, SurfaceFormat::R8G8B8A8, dest, destStride,
-                destFormat, IntSize(aReadSize.width, 1));
+  if (!map.IsMapped()) {
+    return false;
+  }
+
+  if (!SwizzleYFlipData(srcData, mSize.width * 4, SurfaceFormat::R8G8B8A8,
+                        map.GetData(), map.GetStride(), aSurface->GetFormat(),
+                        aReadSize)) {
+    MOZ_ASSERT_UNREACHABLE("Swizzle not supported?");
+    return false;
   }
 
   mGL->fUnmapBuffer(LOCAL_GL_PIXEL_PACK_BUFFER);
@@ -192,7 +190,7 @@ CompositorOGL::CompositorOGL(widget::CompositorWidget* aWidget,
       mTriangleVBO(0),
       mPreviousFrameDoneSync(nullptr),
       mThisFrameDoneSync(nullptr),
-      mHasBGRA(0),
+      mHasBGRA(false),
       mUseExternalSurfaceSize(aUseExternalSurfaceSize),
       mFrameInProgress(false),
       mDestroyed(false),
@@ -419,8 +417,7 @@ bool CompositorOGL::Initialize(nsCString* const out_failureReason) {
     mGLContext->fGenFramebuffers(1, &testFBO);
     GLuint testTexture = 0;
 
-    for (uint32_t i = 0; i < std::size(textureTargets); i++) {
-      GLenum target = textureTargets[i];
+    for (unsigned int target : textureTargets) {
       if (!target) continue;
 
       mGLContext->fGenTextures(1, &testTexture);
@@ -673,8 +670,9 @@ bool CompositorOGL::ReadbackRenderTarget(CompositingRenderTarget* aSource,
   ScopedPackState scopedPackState(mGLContext);
   static_cast<AsyncReadbackBufferOGL*>(aDest)->Bind();
 
+  mGLContext->fPixelStorei(LOCAL_GL_PACK_ALIGNMENT, 1);
   mGLContext->fReadPixels(0, 0, size.width, size.height, LOCAL_GL_RGBA,
-                          LOCAL_GL_UNSIGNED_BYTE, 0);
+                          LOCAL_GL_UNSIGNED_BYTE, nullptr);
 
   if (previousTarget != aSource) {
     SetRenderTarget(previousTarget);
@@ -1410,7 +1408,7 @@ void WriteSnapshotToDumpFile_internal(T* aObj, DataSourceSurface* aSurf) {
   } else {
     nsCString uri = gfxUtils::GetAsDataURI(aSurf);
     nsPrintfCString string(R"(array["%s-%)" PRIu64 R"("]="%s";\n)",
-                           aObj->Name(), uint64_t(aObj), uri.BeginReading());
+                           aObj->Name(), uint64_t(aObj), uri.get());
     fprintf_stderr(gfxUtils::sDumpPaintFile, "%s", string.get());
   }
 }
@@ -1498,7 +1496,7 @@ void CompositorOGL::InsertFrameDoneSync() {
 
   EGLSync sync = nullptr;
   if (AndroidHardwareBufferManager::Get()) {
-    sync = egl->fCreateSync(LOCAL_EGL_SYNC_NATIVE_FENCE_ANDROID, nullptr);
+    sync = egl->fCreateSyncKHR(LOCAL_EGL_SYNC_NATIVE_FENCE_ANDROID, nullptr);
   }
   if (sync) {
     int fenceFd = egl->fDupNativeFenceFDANDROID(sync);

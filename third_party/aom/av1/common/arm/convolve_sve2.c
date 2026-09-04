@@ -23,8 +23,19 @@
 #include "aom_dsp/arm/mem_neon.h"
 #include "aom_dsp/arm/transpose_neon.h"
 #include "aom_ports/mem.h"
-#include "av1/common/arm/highbd_convolve_sve2.h"
+#include "av1/common/arm/convolve_sve2.h"
 #include "av1/common/arm/convolve_neon_i8mm.h"
+
+// clang-format off
+DECLARE_ALIGNED(16, const uint16_t, kSVEDotProdMergeBlockTbl[24]) = {
+  // Shift left and insert new last column in transposed 4x4 block.
+  1, 2, 3, 0, 5, 6, 7, 4,
+  // Shift left and insert two new columns in transposed 4x4 block.
+  2, 3, 0, 1, 6, 7, 4, 5,
+  // Shift left and insert three new columns in transposed 4x4 block.
+  3, 0, 1, 2, 7, 4, 5, 6,
+};
+// clang-format on
 
 static inline int32x4_t highbd_convolve12_4_2d_v(int16x8_t s0[2],
                                                  int16x8_t s1[2],
@@ -49,10 +60,7 @@ static inline void convolve_2d_sr_vert_12tap_sve2(
   // The no-op filter should never be used here.
   assert(vgetq_lane_s16(y_filter_0_7, 5) != 128);
 
-  const int bd = 8;
-  const int16x8_t sub_const = vdupq_n_s16(1 << (bd - 1));
-
-  uint16x8x3_t merge_block_tbl = vld1q_u16_x3(kDotProdMergeBlockTbl);
+  uint16x8x3_t merge_block_tbl = vld1q_u16_x3(kSVEDotProdMergeBlockTbl);
   // Scale indices by size of the true vector length to avoid reading from an
   // 'undefined' portion of a vector on a system with SVE vectors > 128-bit.
   uint16x8_t correction0 =
@@ -117,9 +125,6 @@ static inline void convolve_2d_sr_vert_12tap_sve2(
       int16x8_t dd23 =
           vcombine_s16(vqrshrn_n_s32(d2, 2 * FILTER_BITS - ROUND0_BITS),
                        vqrshrn_n_s32(d3, 2 * FILTER_BITS - ROUND0_BITS));
-
-      dd01 = vsubq_s16(dd01, sub_const);
-      dd23 = vsubq_s16(dd23, sub_const);
 
       uint8x8_t d01 = vqmovun_s16(dd01);
       uint8x8_t d23 = vqmovun_s16(dd23);

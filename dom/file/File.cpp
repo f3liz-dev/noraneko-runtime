@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,6 +7,7 @@
 #include "FileBlobImpl.h"
 #include "MemoryBlobImpl.h"
 #include "MultipartBlobImpl.h"
+#include "StreamBlobImpl.h"
 #include "mozilla/dom/BlobBinding.h"
 #include "mozilla/dom/FileBinding.h"
 #include "mozilla/dom/FileCreatorHelper.h"
@@ -202,6 +201,35 @@ already_AddRefed<Promise> File::CreateFromFileName(
   RefPtr<Promise> promise =
       FileCreatorHelper::CreateFile(global, file, aBag, false, aRv);
   return promise.forget();
+}
+
+/* static */
+already_AddRefed<File> File::CreateFromNsIInputStream(
+    const GlobalObject& aGlobal, nsIInputStream* aInputStream, uint64_t aSize,
+    const ChromeFilePropertyBag& aBag, SystemCallerGuarantee aGuarantee,
+    ErrorResult& aRv) {
+  if (!XRE_IsParentProcess()) {
+    aRv.ThrowInvalidAccessError(
+        "This is expected to be called only from the parent process");
+    return nullptr;
+  }
+
+  nsCOMPtr<nsIGlobalObject> global = do_QueryInterface(aGlobal.GetAsSupports());
+  if (NS_WARN_IF(!global)) {
+    aRv.Throw(NS_ERROR_FAILURE);
+    return nullptr;
+  }
+
+  int64_t lastModified = aBag.mLastModified.WasPassed()
+                             ? aBag.mLastModified.Value() * PR_USEC_PER_MSEC
+                             : PR_Now();
+
+  nsCOMPtr<nsIInputStream> inputStream = aInputStream;
+  RefPtr<StreamBlobImpl> impl =
+      StreamBlobImpl::Create(inputStream.forget(), aBag.mName, aBag.mType,
+                             lastModified, aSize, u"StreamBlobImpl"_ns);
+
+  return do_AddRef(File::Create(global, impl));
 }
 
 }  // namespace mozilla::dom

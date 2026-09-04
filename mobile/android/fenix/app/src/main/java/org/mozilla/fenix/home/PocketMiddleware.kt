@@ -17,7 +17,6 @@ import mozilla.components.lib.state.Store
 import mozilla.components.service.pocket.PocketStoriesService
 import mozilla.components.service.pocket.PocketStory
 import mozilla.components.service.pocket.PocketStory.ContentRecommendation
-import mozilla.components.service.pocket.PocketStory.PocketRecommendedStory
 import mozilla.components.service.pocket.PocketStory.SponsoredContent
 import mozilla.components.support.utils.RunWhenReadyQueue
 import org.mozilla.fenix.components.AppStore
@@ -44,7 +43,12 @@ interface PocketSettings {
  * @param settings [Settings] used for fetching and storing pocket related settings.
  */
 class SettingsBackedPocketSettings(private val settings: Settings) : PocketSettings {
-    override val showPocketRecommendationsFeature get() = settings.showPocketRecommendationsFeature
+    override val showPocketRecommendationsFeature
+        get() = (
+            settings.showPocketRecommendationsFeature ||
+                settings.privateModeAndStoriesEntryPointEnabled
+            )
+
     override val showPocketSponsoredStories get() = settings.showPocketSponsoredStories
 }
 
@@ -146,13 +150,6 @@ internal fun persistStoriesImpressions(
     updatedStories: List<PocketStory>,
 ) {
     coroutineScope.launch {
-        pocketStoriesService.updateStoriesTimesShown(
-            updatedStories.filterIsInstance<PocketRecommendedStory>()
-                .map {
-                    it.copy(timesShown = it.timesShown.inc())
-                },
-        )
-
         pocketStoriesService.updateRecommendationsImpressions(
             recommendationsShown = updatedStories.filterIsInstance<ContentRecommendation>().map {
                 it.copy(impressions = it.impressions.inc())

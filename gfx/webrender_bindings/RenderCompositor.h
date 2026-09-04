@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,13 +5,12 @@
 #ifndef MOZILLA_GFX_RENDERCOMPOSITOR_H
 #define MOZILLA_GFX_RENDERCOMPOSITOR_H
 
+#include "GLTypes.h"
+#include "Units.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/layers/Fence.h"
 #include "mozilla/webrender/WebRenderTypes.h"
-#include "Units.h"
-
-#include "GLTypes.h"
 
 namespace mozilla {
 
@@ -125,6 +122,11 @@ class RenderCompositor {
 
   virtual bool UseLayerCompositor() const { return false; }
 
+  // Request RenderCompositor to enable taking screenshot
+  // In WebRender layer compositor case, taking screenshot will be ready in at
+  // most one WebRender composition.
+  //
+  // @return true if taking screenshot is ready.
   virtual bool EnableAsyncScreenshot() { return false; }
 
   // Interface for wr::Compositor
@@ -175,13 +177,22 @@ class RenderCompositor {
                                 size_t aNumDirtyRects,
                                 const wr::DeviceIntRect* aOpaqueRects,
                                 size_t aNumOpaqueRects) {}
-  virtual void EnableNativeCompositor(bool aEnable) {}
   virtual void DeInit() {}
   // Overrides any of the default compositor capabilities for behavior this
   // compositor might require.
   virtual void GetCompositorCapabilities(CompositorCapabilities* aCaps);
 
   virtual void GetWindowVisibility(WindowVisibility* aVisibility);
+
+  // Called from WebRender Renderer::composite_simple().
+  // WindowProperties is used to control how to composite with WebRender layer
+  // compositor.
+  //
+  // @param WindowProperties::is_opaque Notify if rendering window is opaque.
+  // WebRender might use this to optimize layer allocation.
+  // @param WindowProperties::enable_screenshot Requests to WebRender to use
+  // only one content layer during composite for taking screenshot except debug
+  // layer.
   virtual void GetWindowProperties(WindowProperties* aProperties);
 
   // Interface for partial present
@@ -223,7 +234,7 @@ class RenderCompositor {
 #ifdef MOZ_WIDGET_ANDROID
   virtual bool MaybeCaptureScreenPixels(
       const gfx::IntRect& aSourceRect,
-      RefPtr<layers::AndroidHardwareBuffer> aHardwareBuffer) {
+      layers::AndroidHardwareBuffer* aHardwareBuffer) {
     return false;
   }
 #endif

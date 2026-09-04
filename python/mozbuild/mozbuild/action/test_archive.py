@@ -36,6 +36,7 @@ TEST_HARNESS_BINS = [
     "GenerateOCSPResponse",
     "OCSPStaplingServer",
     "SanctionsTestServer",
+    "ZeroRttAcceptServer",
     "SmokeDMD",
     "certutil",
     "crashinject",
@@ -228,6 +229,12 @@ ARCHIVE_FILES = {
             "base": "build/pgo/certs",
             "pattern": "**",
             "dest": "certs",
+        },
+        # Harness used by testing/mozharness/scripts/devtools_compat.py.
+        {
+            "source": buildconfig.topobjdir,
+            "base": "_tests/testing",
+            "pattern": "devtools_compat/**",
         },
     ],
     "cppunittest": [

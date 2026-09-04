@@ -13,17 +13,18 @@
 
 #include <stdint.h>
 
-#include <functional>
 #include <memory>
 #include <queue>
 #include <string>
 
 #include "absl/functional/any_invocable.h"
+#include "absl/strings/string_view.h"
 #include "api/environment/environment.h"
 #include "api/jsep.h"
 #include "api/peer_connection_interface.h"
 #include "api/rtc_error.h"
 #include "api/scoped_refptr.h"
+#include "api/task_queue/pending_task_safety_flag.h"
 #include "api/task_queue/task_queue_base.h"
 #include "p2p/base/transport_description_factory.h"
 #include "pc/codec_vendor.h"
@@ -32,7 +33,6 @@
 #include "pc/sdp_state_provider.h"
 #include "rtc_base/rtc_certificate.h"
 #include "rtc_base/rtc_certificate_generator.h"
-#include "rtc_base/weak_ptr.h"
 
 namespace webrtc {
 // This class is used to create offer/answer session description. Certificates
@@ -53,7 +53,7 @@ class WebRtcSessionDescriptionFactory {
       bool dtls_enabled,
       std::unique_ptr<RTCCertificateGeneratorInterface> cert_generator,
       scoped_refptr<RTCCertificate> certificate,
-      std::function<void(const scoped_refptr<RTCCertificate>&)>
+      absl::AnyInvocable<void(scoped_refptr<RTCCertificate>) &&>
           on_certificate_ready,
       CodecLookupHelper* codec_lookup_helper,
       const Environment& env);
@@ -66,7 +66,7 @@ class WebRtcSessionDescriptionFactory {
 
   static void CopyCandidatesFromSessionDescription(
       const SessionDescriptionInterface* source_desc,
-      const std::string& content_name,
+      absl::string_view content_name,
       SessionDescriptionInterface* dest_desc);
 
   void CreateOffer(
@@ -142,13 +142,11 @@ class WebRtcSessionDescriptionFactory {
   const std::unique_ptr<RTCCertificateGeneratorInterface> cert_generator_;
   const SdpStateProvider* sdp_info_;
   const std::string session_id_;
+  const Environment env_;
   CertificateRequestState certificate_request_state_;
   std::queue<absl::AnyInvocable<void() &&>> callbacks_;
 
-  std::function<void(const scoped_refptr<RTCCertificate>&)>
-      on_certificate_ready_;
-
-  WeakPtrFactory<WebRtcSessionDescriptionFactory> weak_factory_{this};
+  ScopedTaskSafety safety_;
 };
 }  // namespace webrtc
 

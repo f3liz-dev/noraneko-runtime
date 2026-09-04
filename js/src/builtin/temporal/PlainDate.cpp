@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -213,11 +211,12 @@ static PlainDateObject* CreateTemporalDate(JSContext* cx, const CallArgs& args,
 
   // Step 4.
   auto packedDate = PackedDate::pack(isoDate);
-  object->initFixedSlot(PlainDateObject::PACKED_DATE_SLOT,
-                        PrivateUint32Value(packedDate.value));
+  object->initFixedSlotTyped(PlainDateObject::PACKED_DATE_SLOT,
+                             PrivateUint32Value(packedDate.value));
 
   // Step 5.
-  object->initFixedSlot(PlainDateObject::CALENDAR_SLOT, calendar.toSlotValue());
+  object->initFixedSlotTyped(PlainDateObject::CALENDAR_SLOT,
+                             calendar.toSlotValue());
 
   // Step 6.
   return object;
@@ -245,11 +244,12 @@ PlainDateObject* js::temporal::CreateTemporalDate(
 
   // Step 4.
   auto packedDate = PackedDate::pack(isoDate);
-  object->initFixedSlot(PlainDateObject::PACKED_DATE_SLOT,
-                        PrivateUint32Value(packedDate.value));
+  object->initFixedSlotTyped(PlainDateObject::PACKED_DATE_SLOT,
+                             PrivateUint32Value(packedDate.value));
 
   // Step 5.
-  object->initFixedSlot(PlainDateObject::CALENDAR_SLOT, calendar.toSlotValue());
+  object->initFixedSlotTyped(PlainDateObject::CALENDAR_SLOT,
+                             calendar.toSlotValue());
 
   // Step 6.
   return object;

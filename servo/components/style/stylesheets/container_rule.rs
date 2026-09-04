@@ -7,14 +7,14 @@
 //! [container]: https://drafts.csswg.org/css-contain-3/#container-rule
 
 use crate::computed_value_flags::ComputedValueFlags;
-use crate::derives::*;
-use crate::dom::TElement;
+use crate::dom::{AttributeTracker, TElement};
 use crate::logical_geometry::{LogicalSize, WritingMode};
 use crate::parser::ParserContext;
 use crate::properties::ComputedValues;
 use crate::queries::feature::{AllowsRanges, Evaluator, FeatureFlags, QueryFeatureDescription};
 use crate::queries::values::Orientation;
 use crate::queries::{FeatureType, QueryCondition};
+use crate::selector_map::{PrecomputedHashMap, PrecomputedHashSet};
 use crate::shared_lock::{
     DeepCloneWithLock, Locked, SharedRwLock, SharedRwLockReadGuard, ToCssWithGuard,
 };
@@ -22,21 +22,24 @@ use crate::stylesheets::{CssRules, CustomMediaEvaluator};
 use crate::stylist::Stylist;
 use crate::values::computed::{CSSPixelLength, ContainerType, Context, Ratio};
 use crate::values::specified::ContainerName;
+use crate::{derives::*, LocalName};
 use app_units::Au;
 use cssparser::{Parser, SourceLocation};
 use euclid::default::Size2D;
 #[cfg(feature = "gecko")]
 use malloc_size_of::{MallocSizeOfOps, MallocUnconditionalShallowSizeOf};
 use selectors::kleene_value::KleeneValue;
+use selectors::matching::ElementSelectorFlags;
 use servo_arc::Arc;
 use std::fmt::{self, Write};
+use style_traits::arc_slice::ArcSlice;
 use style_traits::{CssStringWriter, CssWriter, ParseError, StyleParseErrorKind, ToCss};
 
 /// A container rule.
 #[derive(Debug, ToShmem)]
 pub struct ContainerRule {
-    /// The container query and name.
-    pub condition: Arc<ContainerCondition>,
+    /// The container queries and name.
+    pub conditions: ContainerConditions,
     /// The nested rules inside the block.
     pub rules: Arc<Locked<CssRules>>,
     /// The source position where this rule was found.
@@ -44,16 +47,6 @@ pub struct ContainerRule {
 }
 
 impl ContainerRule {
-    /// Returns the query condition, if any.
-    pub fn query_condition(&self) -> Option<&QueryCondition> {
-        self.condition.condition.as_ref()
-    }
-
-    /// Returns the query name filter.
-    pub fn container_name(&self) -> &ContainerName {
-        &self.condition.name
-    }
-
     /// Measure heap usage.
     #[cfg(feature = "gecko")]
     pub fn size_of(&self, guard: &SharedRwLockReadGuard, ops: &mut MallocSizeOfOps) -> usize {
@@ -67,7 +60,7 @@ impl DeepCloneWithLock for ContainerRule {
     fn deep_clone_with_lock(&self, lock: &SharedRwLock, guard: &SharedRwLockReadGuard) -> Self {
         let rules = self.rules.read_with(guard);
         Self {
-            condition: self.condition.clone(),
+            conditions: self.conditions.clone(),
             rules: Arc::new(lock.wrap(rules.deep_clone_with_lock(lock, guard))),
             source_location: self.source_location.clone(),
         }
@@ -79,17 +72,54 @@ impl ToCssWithGuard for ContainerRule {
         dest.write_str("@container ")?;
         {
             let mut writer = CssWriter::new(dest);
-            if !self.condition.name.is_none() {
-                self.condition.name.to_css(&mut writer)?;
-                if self.condition.condition.is_some() {
-                    writer.write_char(' ')?;
-                }
-            }
-            if let Some(ref condition) = self.condition.condition {
-                condition.to_css(&mut writer)?;
-            }
+            self.conditions.to_css(&mut writer)?;
         }
         self.rules.read_with(guard).to_css_block(guard, dest)
+    }
+}
+
+/// Contains all container conditions for a container rule.
+///
+/// https://drafts.csswg.org/css-conditional-5/#container-rule
+#[derive(Clone, Debug, ToCss, ToShmem)]
+#[css(comma)]
+pub struct ContainerConditions(#[css(iterable)] pub ArcSlice<ContainerCondition>);
+
+/// A set of attribute names used for invalidation of attr() inside
+/// style container queries.
+pub type AttrReferenceSet = PrecomputedHashSet<LocalName>;
+
+/// Whether this container uses attr() references and if so whether or not this
+/// is a named or unnamed container query. Used for determining which kind of
+/// restyle hint we need when traversing invalidation.
+#[derive(Debug, Clone, Copy, MallocSizeOf, PartialEq, Eq, PartialOrd, Ord)]
+#[repr(C)]
+pub enum ContainerAttributeDependencyKind {
+    /// This container does not use attr() references.
+    None = 0,
+    /// This unnamed container uses attr() references.
+    UnnamedContainer = 1,
+    /// This named container uses attr() references.
+    NamedContainer = 2,
+}
+
+impl ContainerAttributeDependencyKind {
+    /// A named container that uses attr needs to invalidate all descendants that
+    /// are affected by style container queries. If we only have an unnamed
+    /// container or no attribute dependencies we keep looking for a condition that
+    /// would require us to invalidate more.
+    pub fn element_container_dependency_kind<E: TElement>(
+        element: E,
+        local_name: &LocalName,
+        stylist: &Stylist,
+    ) -> Self {
+        let mut name_kind = ContainerAttributeDependencyKind::None;
+        stylist.any_applicable_rule_data(element, |data| {
+            let value = data.might_have_attribute_dependency_in_container(local_name);
+            name_kind = std::cmp::max(name_kind, value);
+            name_kind == ContainerAttributeDependencyKind::NamedContainer
+        });
+        name_kind
     }
 }
 
@@ -101,6 +131,8 @@ pub struct ContainerCondition {
     condition: Option<QueryCondition>,
     #[css(skip)]
     flags: FeatureFlags,
+    #[css(skip)]
+    attributes_referenced: AttrReferenceSet,
 }
 
 /// The result of a successful container query lookup.
@@ -163,6 +195,16 @@ where
 }
 
 impl ContainerCondition {
+    /// Get the name of this condition.
+    #[inline]
+    pub fn name(&self) -> &ContainerName {
+        &self.name
+    }
+    /// Get the query condition of this condition
+    #[inline]
+    pub fn query_condition(&self) -> Option<&QueryCondition> {
+        self.condition.as_ref()
+    }
     /// Parse a container condition.
     pub fn parse<'a>(
         context: &ParserContext,
@@ -178,6 +220,10 @@ impl ContainerCondition {
         if condition.is_none() && name.is_none() {
             return Err(input.new_custom_error(StyleParseErrorKind::UnspecifiedError));
         }
+        let mut attributes_referenced = AttrReferenceSet::default();
+        condition
+            .as_ref()
+            .map(|c| c.collect_attribute_references(&mut attributes_referenced));
         let flags = condition
             .as_ref()
             .map_or(FeatureFlags::empty(), |c| c.cumulative_flags());
@@ -185,6 +231,7 @@ impl ContainerCondition {
             name,
             condition,
             flags,
+            attributes_referenced,
         })
     }
 
@@ -266,7 +313,7 @@ impl ContainerCondition {
     }
 
     /// Tries to match a container query condition for a given element.
-    pub(crate) fn matches<E>(
+    pub fn matches<E>(
         &self,
         stylist: &Stylist,
         element: E,
@@ -285,35 +332,92 @@ impl ContainerCondition {
                 return KleeneValue::from(result.is_some());
             },
         };
+        // We have to tag the invalidation flags here because style container
+        // query matching may return early if we cannot find a suitable
+        // container element right now. However, we must also consider the case
+        // when an ancestor becomes a container and we have to invalidate this
+        // element from not matching to matching.
+        if self.flags.contains(FeatureFlags::STYLE) {
+            invalidation_flags.insert(ComputedValueFlags::DEPENDS_ON_CONTAINER_STYLE_QUERY);
+        }
         let (container, info) = match result {
-            Some(r) => (Some(r.element), Some((r.info, r.style))),
-            None => (None, None),
+            Some(r) => (r.element, (r.info, r.style)),
+            None => {
+                // If we did not find the named (or any) container,
+                // the query must fail to match.
+                return KleeneValue::False;
+            },
         };
         // Set up the lookup for the container in question, as the condition may be using container
         // query lengths.
-        let size_query_container_lookup = ContainerSizeQuery::for_option_element(
+        let size_query_container_lookup = ContainerSizeQuery::for_element(
             container, /* known_parent_style = */ None, /* is_pseudo = */ false,
         );
+        let mut attribute_tracker = AttributeTracker::new(&container);
         Context::for_container_query_evaluation(
             stylist.device(),
             Some(stylist),
-            info,
+            Some(info),
             size_query_container_lookup,
+            &container,
             |context| {
-                let matches = condition.matches(context, &mut CustomMediaEvaluator::none());
-                if context
-                    .style()
-                    .flags()
-                    .contains(ComputedValueFlags::USES_VIEWPORT_UNITS)
-                {
+                let matches = condition.matches(
+                    context,
+                    &mut CustomMediaEvaluator::none(),
+                    &mut attribute_tracker,
+                );
+                let flags = context.style().flags();
+                if flags.contains(ComputedValueFlags::USES_VIEWPORT_UNITS) {
                     // TODO(emilio): Might need something similar to improve
                     // invalidation of font relative container-query lengths.
                     invalidation_flags
                         .insert(ComputedValueFlags::USES_VIEWPORT_UNITS_ON_CONTAINER_QUERIES);
                 }
+                if flags.contains(ComputedValueFlags::USES_FONT_OR_WM_RELATIVE_UNITS) {
+                    invalidation_flags.insert(
+                        ComputedValueFlags::USES_FONT_OR_WM_RELATIVE_UNITS_ON_CONTAINER_QUERIES,
+                    );
+                }
+                if flags.intersects(ComputedValueFlags::tree_counting_function_flags()) {
+                    // Container query usage of sibling-index() and sibling-count() requires
+                    // redoing selector matches on sibling changes. Although this is not itself
+                    // a selector, the HAS_SLOW_SELECTOR flag is reused here because it has the
+                    // required invalidation behavior.
+                    container.apply_selector_flags(ElementSelectorFlags::HAS_SLOW_SELECTOR);
+                }
                 matches
             },
         )
+    }
+
+    /// Get the attribute functions referenced by this condition, if any.
+    pub fn get_attributes_referenced(&self) -> &AttrReferenceSet {
+        &self.attributes_referenced
+    }
+
+    /// Insert the attribute dependencies and attribute dependency kind into
+    /// the attribute_dependencies set and the attr_function_dependencies map.
+    pub fn insert_attribute_references_in_dependency_map(
+        &self,
+        kind_map: &mut PrecomputedHashMap<LocalName, ContainerAttributeDependencyKind>,
+        attribute_dependencies: &mut AttrReferenceSet,
+    ) {
+        let name_kind = if self.name.is_none() {
+            ContainerAttributeDependencyKind::UnnamedContainer
+        } else {
+            ContainerAttributeDependencyKind::NamedContainer
+        };
+        for attr in self.get_attributes_referenced() {
+            kind_map
+                .entry(attr.clone())
+                .and_modify(|v| {
+                    if *v == ContainerAttributeDependencyKind::UnnamedContainer {
+                        *v = name_kind
+                    }
+                })
+                .or_insert(name_kind);
+            attribute_dependencies.insert(attr.clone());
+        }
     }
 }
 

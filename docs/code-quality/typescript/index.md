@@ -1,4 +1,5 @@
 # TypeScript
+
 In firefox-main, we are introducing the use of [TypeScript](https://www.typescriptlang.org/)
 to help provide type autocompletion, static analysis and type checking of our
 JavaScript code.
@@ -24,6 +25,7 @@ on Matrix.
 TypeScript is currently only enabled on a [limited set of directories](https://searchfox.org/firefox-main/source/tools/lint/typescript.yml).
 
 ## Editor Support
+
 VS Code has TypeScript support built-in and should work "out of the box".
 
 For other editors, see this [TypeScript Wiki Page](https://github.com/Microsoft/TypeScript/wiki/TypeScript-Editor-Support).
@@ -44,6 +46,11 @@ automating it](https://bugzilla.mozilla.org/show_bug.cgi?id=1975513).
 In the meantime, developers using TypeScript must update the type definitions
 [manually using some scripts](updatingTypes.md).
 
+## Best Practices
+
+For working with TypeScript we have some [best practices](bestPractices.md)
+which will help to get the type definitions set up correctly.
+
 ## Frequently Asked Questions
 
 * Why does running TypeScript check and report errors in other files?
@@ -51,7 +58,7 @@ In the meantime, developers using TypeScript must update the type definitions
   * Additionally, the way that TypeScript works means that it will run across
     the whole project regardless, so we report all the issues that it reports.
 * Will my patches get backed out due to TypeScript failures?
-  * Currently no. Whilst we have a [TypeScript Linter on CI](../lint/linters/typescript.rst)
+  * Currently no. Whilst we have a [TypeScript Linter on CI](../lint/linters/typescript.md)
     it is currently tier-3 which is hidden from the sheriffs view.
   * Failures will however, be reported on reviews on Phabricator.
   * We will promote the linter to tier-2 and tier-1 once we have more automation
@@ -84,3 +91,11 @@ The Lint & Formatting channel (#lint:mozilla.org) on Matrix is the best place
   useful in understanding how TypeScript works and how types may be set up.
   * The [JavaScript section starting here](https://www.typescriptlang.org/docs/handbook/intro-to-js-ts.html),
     is especially useful for firefox-main development.
+
+```{toctree}
+:hidden:
+:maxdepth: 1
+
+bestPractices
+updatingTypes
+```

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,12 +7,12 @@
 #ifndef mozilla_CompactPair_h
 #define mozilla_CompactPair_h
 
-#include "mozilla/Attributes.h"
-
 #include <cstddef>
 #include <tuple>
 #include <type_traits>
 #include <utility>
+
+#include "mozilla/Attributes.h"
 
 namespace mozilla {
 
@@ -74,11 +72,9 @@ class CompactPair {
  * will return a CompactPair<Foo, Bar>.
  */
 template <typename A, typename B>
-CompactPair<std::remove_cv_t<std::remove_reference_t<A>>,
-            std::remove_cv_t<std::remove_reference_t<B>>>
-MakeCompactPair(A&& aA, B&& aB) {
-  return CompactPair<std::remove_cv_t<std::remove_reference_t<A>>,
-                     std::remove_cv_t<std::remove_reference_t<B>>>(
+CompactPair<std::remove_cvref_t<A>, std::remove_cvref_t<B>> MakeCompactPair(
+    A&& aA, B&& aB) {
+  return CompactPair<std::remove_cvref_t<A>, std::remove_cvref_t<B>>(
       std::forward<A>(aA), std::forward<B>(aB));
 }
 

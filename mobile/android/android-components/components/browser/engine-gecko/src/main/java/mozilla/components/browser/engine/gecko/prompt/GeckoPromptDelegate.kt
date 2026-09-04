@@ -29,6 +29,7 @@ import mozilla.components.concept.storage.Address
 import mozilla.components.concept.storage.CreditCardEntry
 import mozilla.components.concept.storage.Login
 import mozilla.components.concept.storage.LoginEntry
+import mozilla.components.support.base.log.logger.Logger
 import mozilla.components.support.ktx.android.net.toFileUri
 import mozilla.components.support.ktx.kotlin.ifNullOrEmpty
 import mozilla.components.support.ktx.kotlin.toDate
@@ -52,6 +53,7 @@ import org.mozilla.geckoview.GeckoSession.PromptDelegate.IdentityCredential.Acco
 import org.mozilla.geckoview.GeckoSession.PromptDelegate.IdentityCredential.PrivacyPolicyPrompt
 import org.mozilla.geckoview.GeckoSession.PromptDelegate.IdentityCredential.ProviderSelectorPrompt
 import org.mozilla.geckoview.GeckoSession.PromptDelegate.PromptResponse
+import org.mozilla.geckoview.GeckoSession.PromptDelegate.WebAuthnRelatedOriginPrompt
 import java.security.InvalidParameterException
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -267,7 +269,12 @@ internal class GeckoPromptDelegate(private val geckoEngineSession: GeckoEngineSe
                     creditCards = request.options.map { it.value.toCreditCardEntry() },
                     onDismiss = onDismiss,
                     onConfirm = onConfirm,
-                ),
+                ).also {
+                    request.delegate = PromptInstanceDismissDelegate(
+                        geckoEngineSession,
+                        it,
+                    )
+                },
             )
         }
 
@@ -369,7 +376,12 @@ internal class GeckoPromptDelegate(private val geckoEngineSession: GeckoEngineSe
                     generatedPassword = generatedPassword,
                     onConfirm = onConfirmSelect,
                     onDismiss = onDismiss,
-                ),
+                ).also {
+                    prompt.delegate = PromptInstanceDismissDelegate(
+                        geckoEngineSession,
+                        it,
+                    )
+                },
             )
         }
         return geckoResult
@@ -429,6 +441,49 @@ internal class GeckoPromptDelegate(private val geckoEngineSession: GeckoEngineSe
         return geckoResult
     }
 
+    override fun onAddressSave(
+        session: GeckoSession,
+        request: AutocompleteRequest<Autocomplete.AddressSaveOption>,
+    ): GeckoResult<PromptResponse> {
+        val incoming = request.options[0].value
+        Logger("GeckoPromptDelegate").info(
+            "onAddressSave: received from Gecko: $incoming",
+        )
+
+        val geckoResult = GeckoResult<PromptResponse>()
+
+        val onConfirm: (Address) -> Unit = { address ->
+            if (!request.isComplete) {
+                geckoResult.complete(
+                    request.confirm(
+                        Autocomplete.AddressSaveOption(address.toAutocompleteAddress()),
+                    ),
+                )
+            }
+        }
+
+        val onDismiss: () -> Unit = {
+            request.dismissSafely(geckoResult)
+        }
+
+        geckoEngineSession.notifyObservers {
+            onPromptRequest(
+                PromptRequest.SaveAddress(
+                    address = incoming.toAddress(),
+                    onConfirm = onConfirm,
+                    onDismiss = onDismiss,
+                ).also {
+                    request.delegate = PromptInstanceDismissDelegate(
+                        geckoEngineSession,
+                        it,
+                    )
+                },
+            )
+        }
+
+        return geckoResult
+    }
+
     override fun onAddressSelect(
         session: GeckoSession,
         request: AutocompleteRequest<Autocomplete.AddressSelectOption>,
@@ -455,7 +510,12 @@ internal class GeckoPromptDelegate(private val geckoEngineSession: GeckoEngineSe
                     addresses = request.options.map { it.value.toAddress() },
                     onConfirm = onConfirm,
                     onDismiss = onDismiss,
-                ),
+                ).also {
+                    request.delegate = PromptInstanceDismissDelegate(
+                        geckoEngineSession,
+                        it,
+                    )
+                },
             )
         }
 
@@ -795,6 +855,33 @@ internal class GeckoPromptDelegate(private val geckoEngineSession: GeckoEngineSe
             onPromptRequest(PromptRequest.BeforeUnload(title, onAllow, onDeny, onDismiss))
         }
 
+        return geckoResult
+    }
+
+    override fun onWebAuthnRelatedOriginPrompt(
+        session: GeckoSession,
+        geckoPrompt: WebAuthnRelatedOriginPrompt,
+    ): GeckoResult<PromptResponse>? {
+        val geckoResult = GeckoResult<PromptResponse>()
+        val onConfirm: () -> Unit = {
+            if (!geckoPrompt.isComplete) {
+                geckoResult.complete(geckoPrompt.confirm(AllowOrDeny.ALLOW))
+            }
+        }
+        val onDismiss: () -> Unit = {
+            geckoPrompt.dismissSafely(geckoResult)
+        }
+        geckoEngineSession.notifyObservers {
+            onPromptRequest(
+                PromptRequest.WebAuthnRelatedOriginPrompt(
+                    geckoPrompt.origin ?: "",
+                    geckoPrompt.rpId ?: "",
+                    geckoPrompt.isCreate,
+                    onConfirm,
+                    onDismiss,
+                ),
+            )
+        }
         return geckoResult
     }
 

@@ -45,7 +45,7 @@ void CSFLogV(CSFLogLevel priority, const char* sourceFile, int sourceLine,
 #  define MAX_MESSAGE_LENGTH 1024
   char message[MAX_MESSAGE_LENGTH];
 
-  const char* threadName = NULL;
+  const char* threadName = nullptr;
 
   // Check if we're the main thread...
   if (NS_IsMainThread()) {
@@ -60,9 +60,8 @@ void CSFLogV(CSFLogLevel priority, const char* sourceFile, int sourceLine,
   }
 
   VsprintfLiteral(message, format, args);
-  MOZ_LOG(
-      gSignalingLog, level,
-      ("[%s|%s] %s:%d: %s", threadName, tag, sourceFile, sourceLine, message));
+  MOZ_LOG_FMT(gSignalingLog, level, "[{}|{}] {}:{}: {}", threadName, tag,
+              sourceFile, sourceLine, message);
 #endif
 }
 

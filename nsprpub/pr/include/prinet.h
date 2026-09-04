@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -34,8 +33,8 @@
 
 #if defined(XP_UNIX)
 #include <sys/types.h>
-#include <sys/socket.h>     /* AF_INET */
-#include <netinet/in.h>         /* INADDR_ANY, ..., ntohl(), ... */
+#include <sys/socket.h> /* AF_INET */
+#include <netinet/in.h> /* INADDR_ANY, ..., ntohl(), ... */
 #ifdef XP_UNIX
 #ifdef AIX
 /*

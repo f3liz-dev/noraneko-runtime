@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -11,11 +10,11 @@
 #include "base/task.h"
 #include "base/thread.h"
 #include "base/time.h"
+#include "mozilla/Atomics.h"
 #include "mozilla/Monitor.h"
 #include "mozilla/Mutex.h"
 #include "mozilla/ReentrantMonitor.h"
-#include "mozilla/StaticMonitor.h"
-#include "nsTArray.h"
+#include "mozilla/StaticMutex.h"
 #include "nsThreadUtils.h"
 
 #ifdef XP_WIN
@@ -26,44 +25,45 @@
 
 namespace mozilla::gmp {
 
-static MessageLoop* sMainLoop = nullptr;
 static GMPChild* sChild = nullptr;
 
-static StaticMonitor sMainLoopMonitor;
-static nsTArray<RefPtr<Runnable>>* sMainLoopPendingEvents
-    MOZ_GUARDED_BY(sMainLoopMonitor) = nullptr;
-static bool sMainLoopHasPendingProcess MOZ_GUARDED_BY(sMainLoopMonitor) = false;
-
-static bool IsOnChildMainThread() {
-  return sMainLoop && sMainLoop == MessageLoop::current();
-}
+// sShutdown is atomic so GMPRunnable::Run() can check it lock-free. The
+// counters and the shutdown snapshot are serialized by sPlatformStateMutex so
+// that closing admission and reading whether any plugin execution remains is a
+// single transaction.
+static Atomic<bool> sShutdown{false};
+static StaticMutex sPlatformStateMutex;
+static uint32_t sLiveThreads MOZ_GUARDED_BY(sPlatformStateMutex) = 0;
+static uint32_t sLivePluginObjects MOZ_GUARDED_BY(sPlatformStateMutex) = 0;
 
 // We just need a refcounted wrapper for GMPTask objects.
 class GMPRunnable final : public Runnable {
  public:
-  explicit GMPRunnable(GMPTask* aTask)
-      : Runnable("mozilla::gmp::GMPRunnable"), mTask(aTask) {
+  GMPRunnable(GMPTask* aTask, bool aCancelOnShutdown)
+      : Runnable("mozilla::gmp::GMPRunnable"),
+        mTask(aTask),
+        mCancelOnShutdown(aCancelOnShutdown) {
     MOZ_ASSERT(mTask);
   }
 
   NS_IMETHOD Run() override {
-    mTask->Run();
-    mTask->Destroy();
+    if (!(mCancelOnShutdown && sShutdown)) {
+      mTask->Run();
+      mTask->Destroy();
+    }
     mTask = nullptr;
     return NS_OK;
   }
 
  private:
   GMPTask* mTask;
+  const bool mCancelOnShutdown;
 };
 
 class GMPSyncRunnable final : public Runnable {
  public:
-  GMPSyncRunnable(GMPTask* aTask, MessageLoop* aMessageLoop)
-      : Runnable("mozilla::gmp::GMPSyncRunnable"),
-        mDone(false),
-        mTask(aTask),
-        mMonitor("GMPSyncRunnable") {
+  explicit GMPSyncRunnable(GMPTask* aTask)
+      : Runnable("mozilla::gmp::GMPSyncRunnable"), mTask(aTask) {
     MOZ_ASSERT(mTask);
   }
 
@@ -72,7 +72,7 @@ class GMPSyncRunnable final : public Runnable {
     // 1) Nobody should be blocking the main thread.
     // 2) This prevents deadlocks when doing sync calls to main which if the
     //    main thread tries to do a sync call back to the calling thread.
-    MOZ_ASSERT(!IsOnChildMainThread());
+    MOZ_ASSERT(!NS_IsMainThread());
 
     MonitorAutoLock lock(mMonitor);
     while (!mDone) {
@@ -91,9 +91,9 @@ class GMPSyncRunnable final : public Runnable {
   }
 
  private:
-  bool mDone MOZ_GUARDED_BY(mMonitor);
+  bool mDone MOZ_GUARDED_BY(mMonitor) = false;
   GMPTask* mTask;
-  Monitor mMonitor;
+  Monitor mMonitor{"GMPSyncRunnable"};
 };
 
 class GMPThreadImpl final : public GMPThread {
@@ -106,8 +106,8 @@ class GMPThreadImpl final : public GMPThread {
   void Join() override;
 
  private:
-  Mutex mMutex MOZ_UNANNOTATED;
-  base::Thread mThread MOZ_GUARDED_BY(mMutex);
+  Mutex mMutex{"GMPThreadImpl"};
+  base::Thread mThread MOZ_GUARDED_BY(mMutex){"GMPThread"};
 };
 
 GMPErr CreateThread(GMPThread** aThread) {
@@ -115,82 +115,41 @@ GMPErr CreateThread(GMPThread** aThread) {
     return GMPGenericErr;
   }
 
+  StaticMutexAutoLock lock(sPlatformStateMutex);
+  if (sShutdown) {
+    return GMPGenericErr;
+  }
+
   *aThread = new GMPThreadImpl();
+  ++sLiveThreads;
 
   return GMPNoErr;
 }
 
-bool SpinPendingGmpEventsUntil(const SpinPendingPredicate& aPred,
-                               uint32_t aTimeoutMs) {
-  MOZ_ASSERT(IsOnChildMainThread());
-
-  auto timeout = TimeDuration::FromMilliseconds(aTimeoutMs);
-
-  while (!aPred()) {
-    nsTArray<RefPtr<Runnable>> pendingEvents;
-    {
-      StaticMonitorAutoLock lock(sMainLoopMonitor);
-      while (sMainLoopPendingEvents->IsEmpty()) {
-        if (lock.Wait(timeout) == CVStatus::Timeout) {
-          return false;
-        }
-      }
-      pendingEvents = std::move(*sMainLoopPendingEvents);
-    }
-
-    for (auto& event : pendingEvents) {
-      event->Run();
-    }
-  }
-
-  return true;
-}
-
-static void ProcessPendingGmpEvents() {
-  MOZ_ASSERT(IsOnChildMainThread());
-
-  nsTArray<RefPtr<Runnable>> pendingEvents;
-  {
-    StaticMonitorAutoLock lock(sMainLoopMonitor);
-    pendingEvents = std::move(*sMainLoopPendingEvents);
-    sMainLoopHasPendingProcess = false;
-  }
-
-  for (auto& event : pendingEvents) {
-    event->Run();
-  }
-}
-
-static void QueueForMainThread(RefPtr<Runnable>&& aRunnable) {
-  StaticMonitorAutoLock lock(sMainLoopMonitor);
-  sMainLoopPendingEvents->AppendElement(std::move(aRunnable));
-  if (!sMainLoopHasPendingProcess) {
-    sMainLoop->PostTask(NewRunnableFunction(
-        "mozilla::gmp::ProcessPendingGmpEvents", &ProcessPendingGmpEvents));
-    sMainLoopHasPendingProcess = true;
-  }
-  lock.Notify();
-}
-
 GMPErr RunOnMainThread(GMPTask* aTask) {
-  if (!aTask || !sMainLoop) {
+  if (!aTask || sShutdown) {
     return GMPGenericErr;
   }
 
-  RefPtr<GMPRunnable> r = new GMPRunnable(aTask);
-  QueueForMainThread(std::move(r));
+  if (NS_FAILED(NS_DispatchToMainThread(
+          MakeAndAddRef<GMPRunnable>(aTask, /* aCancelOnShutdown */ true)))) {
+    return GMPGenericErr;
+  }
+
   return GMPNoErr;
 }
 
 GMPErr SyncRunOnMainThread(GMPTask* aTask) {
-  if (!aTask || !sMainLoop || IsOnChildMainThread()) {
+  if (!aTask || sShutdown || NS_IsMainThread()) {
     return GMPGenericErr;
   }
 
-  RefPtr<GMPSyncRunnable> r = new GMPSyncRunnable(aTask, sMainLoop);
-  QueueForMainThread(RefPtr{r});
-  r->WaitUntilDone();
+  RefPtr<GMPSyncRunnable> r = new GMPSyncRunnable(aTask);
+  if (NS_FAILED(NS_DispatchToMainThread(r))) {
+    return GMPGenericErr;
+  }
 
+  r->WaitUntilDone();
   return GMPNoErr;
 }
 
@@ -205,7 +164,7 @@ class MOZ_CAPABILITY("mutex") GMPMutexImpl final : public GMPMutex {
   void Destroy() override;
 
  private:
-  ReentrantMonitor mMonitor MOZ_UNANNOTATED;
+  ReentrantMonitor mMonitor{"gmp-mutex"};
 };
 
 GMPErr CreateMutex(GMPMutex** aMutex) {
@@ -234,7 +193,7 @@ GMPErr CreateRecord(const char* aRecordName, uint32_t aRecordNameSize,
 }
 
 GMPErr SetTimerOnMainThread(GMPTask* aTask, int64_t aTimeoutMS) {
-  if (!aTask || !sMainLoop || !IsOnChildMainThread()) {
+  if (!aTask || sShutdown || !NS_IsMainThread()) {
     return GMPGenericErr;
   }
   GMPTimerChild* timers = sChild->GetGMPTimers();
@@ -251,18 +210,8 @@ GMPErr GetClock(GMPTimestamp* aOutTime) {
 }
 
 void InitPlatformAPI(GMPPlatformAPI& aPlatformAPI, GMPChild* aChild) {
-  if (!sMainLoop) {
-    sMainLoop = MessageLoop::current();
-  }
   if (!sChild) {
     sChild = aChild;
-  }
-
-  {
-    StaticMonitorAutoLock lock(sMainLoopMonitor);
-    if (!sMainLoopPendingEvents) {
-      sMainLoopPendingEvents = new nsTArray<RefPtr<Runnable>>();
-    }
   }
 
   aPlatformAPI.version = 0;
@@ -275,12 +224,23 @@ void InitPlatformAPI(GMPPlatformAPI& aPlatformAPI, GMPChild* aChild) {
   aPlatformAPI.getcurrenttime = &GetClock;
 }
 
-void ShutdownPlatformAPI() {
-  StaticMonitorAutoLock lock(sMainLoopMonitor);
-  if (sMainLoopPendingEvents) {
-    delete sMainLoopPendingEvents;
-    sMainLoopPendingEvents = nullptr;
-  }
+void AddPluginObject() {
+  StaticMutexAutoLock lock(sPlatformStateMutex);
+  ++sLivePluginObjects;
+}
+
+void RemovePluginObject() {
+  StaticMutexAutoLock lock(sPlatformStateMutex);
+  --sLivePluginObjects;
+}
+
+PlatformShutdownResult ShutdownPlatformAPI() {
+  MOZ_ASSERT(NS_IsMainThread());
+  StaticMutexAutoLock lock(sPlatformStateMutex);
+  sShutdown = true;
+  return sLiveThreads == 0 && sLivePluginObjects == 0
+             ? PlatformShutdownResult::ReadyToUnload
+             : PlatformShutdownResult::PluginExecutionOutstanding;
 }
 
 void SendFOGData(ipc::ByteBuf&& buf) {
@@ -300,11 +260,13 @@ RefPtr<PGMPChild::GetModulesTrustPromise> SendGetModulesTrust(
 }
 #endif
 
-GMPThreadImpl::GMPThreadImpl() : mMutex("GMPThreadImpl"), mThread("GMPThread") {
-  MOZ_COUNT_CTOR(GMPThread);
-}
+GMPThreadImpl::GMPThreadImpl() { MOZ_COUNT_CTOR(GMPThread); }
 
-GMPThreadImpl::~GMPThreadImpl() { MOZ_COUNT_DTOR(GMPThread); }
+GMPThreadImpl::~GMPThreadImpl() {
+  MOZ_COUNT_DTOR(GMPThread);
+  StaticMutexAutoLock lock(sPlatformStateMutex);
+  --sLiveThreads;
+}
 
 void GMPThreadImpl::Post(GMPTask* aTask) {
   MutexAutoLock lock(mMutex);
@@ -317,7 +279,7 @@ void GMPThreadImpl::Post(GMPTask* aTask) {
     }
   }
 
-  RefPtr<GMPRunnable> r = new GMPRunnable(aTask);
+  RefPtr<GMPRunnable> r = new GMPRunnable(aTask, /* aCancelOnShutdown */ false);
   mThread.message_loop()->PostTask(
       NewRunnableMethod("gmp::GMPRunnable::Run", r.get(), &GMPRunnable::Run));
 }
@@ -332,9 +294,7 @@ void GMPThreadImpl::Join() {
   delete this;
 }
 
-GMPMutexImpl::GMPMutexImpl() : mMonitor("gmp-mutex") {
-  MOZ_COUNT_CTOR(GMPMutexImpl);
-}
+GMPMutexImpl::GMPMutexImpl() { MOZ_COUNT_CTOR(GMPMutexImpl); }
 
 GMPMutexImpl::~GMPMutexImpl() { MOZ_COUNT_DTOR(GMPMutexImpl); }
 

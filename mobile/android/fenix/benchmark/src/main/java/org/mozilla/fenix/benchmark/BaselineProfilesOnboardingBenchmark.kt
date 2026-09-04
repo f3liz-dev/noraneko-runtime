@@ -16,9 +16,8 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.mozilla.fenix.benchmark.utils.TARGET_PACKAGE
 import org.mozilla.fenix.benchmark.utils.clearPackageData
-import org.mozilla.fenix.benchmark.utils.completeOnboarding
 import org.mozilla.fenix.benchmark.utils.measureRepeatedDefault
-import org.mozilla.fenix.benchmark.utils.revokeNotificationPermission
+import org.mozilla.fenix.benchmark.utils.onboardingJourney
 
 /**
  * This test class benchmarks the speed of completing onboarding. Run this benchmark to verify how effective
@@ -50,11 +49,11 @@ class BaselineProfilesOnboardingBenchmark {
     @get:Rule
     val benchmarkRule = MacrobenchmarkRule()
 
-    @Ignore("Failing: https://bugzilla.mozilla.org/show_bug.cgi?id=2021112")
+    @Ignore("Failing due to new nightly config: https://bugzilla.mozilla.org/show_bug.cgi?id=2031266")
     @Test
     fun onboardingNone() = onboardingBenchmark(CompilationMode.None())
 
-    @Ignore("Failing: https://bugzilla.mozilla.org/show_bug.cgi?id=2021112")
+    @Ignore("Failing due to new nightly config: https://bugzilla.mozilla.org/show_bug.cgi?id=2031266")
     @Test
     fun onboarding() =
         onboardingBenchmark(CompilationMode.Partial(baselineProfileMode = BaselineProfileMode.Require))
@@ -68,12 +67,10 @@ class BaselineProfilesOnboardingBenchmark {
             setupBlock = {
                 pressHome()
                 device.clearPackageData(packageName = packageName)
-                device.revokeNotificationPermission(packageName = packageName)
                 killProcess()
             },
         ) {
-            startActivityAndWait()
-            device.completeOnboarding()
+            onboardingJourney()
             killProcess()
         }
 }

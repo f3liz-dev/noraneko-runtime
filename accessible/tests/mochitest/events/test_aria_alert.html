@@ -18,48 +18,48 @@
           src="../events.js"></script>
 
   <script type="application/javascript">
-    function showAlert(aID) {
-      this.DOMNode = document.createElement("div");
-
-      this.invoke = function showAlert_invoke() {
-        this.DOMNode.setAttribute("role", "alert");
-        this.DOMNode.setAttribute("id", aID);
-        var text = document.createTextNode("alert");
-        this.DOMNode.appendChild(text);
-        document.body.appendChild(this.DOMNode);
-      };
-
-      this.getID = function showAlert_getID() {
-        return "Show ARIA alert " + aID;
-      };
-    }
-
-    function changeAlert(aID) {
-      this.__defineGetter__("DOMNode", function() { return getNode(aID); });
-
-      this.invoke = function changeAlert_invoke() {
-        this.DOMNode.textContent = "new alert";
-      };
-
-      this.getID = function showAlert_getID() {
-        return "Change ARIA alert " + aID;
-      };
-    }
-
     // //////////////////////////////////////////////////////////////////////////
     // Do tests
-
-    // gA11yEventDumpToConsole = true; // debuging
     // enableLogging("tree,events,verbose");
 
-    var gQueue = null;
-    function doTests() {
-      gQueue = new eventQueue(nsIAccessibleEvent.EVENT_ALERT);
+    async function doTests() {
+      let alerted = waitForEvent(EVENT_ALERT, "alert");
+      let div = document.createElement("div");
+      div.setAttribute("role", "alert");
+      div.setAttribute("id", "alert");
+      div.appendChild(document.createTextNode("alert"));
+      document.body.appendChild(div);
+      await alerted;
 
-      gQueue.push(new showAlert("alert"));
-      gQueue.push(new changeAlert("alert"));
+      alerted = waitForEvent(EVENT_ALERT, "alert");
+      getNode("alert").textContent = "new alert";
+      await alerted;
 
-      gQueue.invoke(); // Will call SimpleTest.finish();
+      // Regression test for Coverity CID 1473402: the "inside alert" context
+      // flag must propagate to descendants, so inserting content into a nested
+      // (non-alert) descendant of an existing alert must still fire EVENT_ALERT
+      // on the alert ancestor.
+      let nestedAlert = document.createElement("div");
+      nestedAlert.setAttribute("role", "alert");
+      nestedAlert.setAttribute("id", "nestedAlert");
+      let inner = document.createElement("div");
+      inner.setAttribute("role", "group");
+      inner.setAttribute("id", "inner");
+      nestedAlert.appendChild(inner);
+
+      // Showing the alert subtree fires EVENT_ALERT via the show path.
+      alerted = waitForEvent(EVENT_ALERT, "nestedAlert");
+      document.body.appendChild(nestedAlert);
+      await alerted;
+
+      // Inserting into the nested descendant must fire EVENT_ALERT too; this
+      // relies on the inside-alert flag set when "inner" was bound to its
+      // parent. Before the fix the flag was never set, so no event fired here.
+      alerted = waitForEvent(EVENT_ALERT, "nestedAlert");
+      getNode("inner").appendChild(document.createTextNode("nested alert content"));
+      await alerted;
+
+      SimpleTest.finish();
     }
 
     SimpleTest.waitForExplicitFinish();

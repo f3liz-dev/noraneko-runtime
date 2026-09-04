@@ -99,6 +99,7 @@ export const NavigationState = {
  */
 class NavigationRegistry extends EventEmitter {
   #contextListener;
+  #downloadIds;
   #downloadListener;
   #downloadNavigations;
   #managers;
@@ -118,6 +119,10 @@ class NavigationRegistry extends EventEmitter {
     // Keep track of ongoing download navigations, from Download object to
     // navigation id.
     this.#downloadNavigations = new WeakMap();
+
+    // Keep track of download ids, from Download object to download id. The id
+    // is shared between the download-started and download-end events.
+    this.#downloadIds = new WeakMap();
 
     this.#webProgressListener = new lazy.ParentWebProgressListener();
 
@@ -772,8 +777,26 @@ class NavigationRegistry extends EventEmitter {
       lazy.NavigableManager.getIdForBrowsingContext(browsingContext);
     const url = download.source.url;
 
-    const navigation = this.#navigations.get(navigableId);
+    let navigation = this.#navigations.get(navigableId);
     let navigationId = null;
+
+    // If there is no started navigation for the download triggered
+    // by `Content-Disposition` header, it means that the navigation
+    // is happening in the temporary browsing context. To align with other
+    // scenarios generate the navigation in the same context where the download
+    // takes place.
+    if (
+      (!navigation || navigation.state !== NavigationState.Started) &&
+      download.source.triggeredByContentDispositionHeader
+    ) {
+      navigation = notifyNavigationStarted({
+        contextDetails: {
+          context: browsingContext,
+        },
+        url,
+      });
+    }
+
     if (navigation && navigation.state === NavigationState.Started) {
       // navigationId is optional and should only be set if there is an ongoing
       // navigation.
@@ -788,6 +811,10 @@ class NavigationRegistry extends EventEmitter {
     // singleton and consistent navigation ids across sessions.
     this.emit(NAVIGATION_EVENTS.DownloadStarted, {
       contextId: browsingContext.id,
+      downloadId: this.#downloadIds.getOrInsertComputed(
+        download,
+        lazy.generateUUID
+      ),
       navigationId,
       navigableId,
       suggestedFilename: PathUtils.filename(download.target.path),
@@ -818,6 +845,10 @@ class NavigationRegistry extends EventEmitter {
     this.emit(NAVIGATION_EVENTS.DownloadEnd, {
       canceled,
       contextId: browsingContext.id,
+      downloadId: this.#downloadIds.getOrInsertComputed(
+        download,
+        lazy.generateUUID
+      ),
       filepath: download.target.path,
       navigableId,
       navigationId,

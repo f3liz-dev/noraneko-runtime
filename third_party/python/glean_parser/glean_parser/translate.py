@@ -26,6 +26,7 @@ from . import metrics
 from . import ruby_server
 from . import rust
 from . import rust_server
+from . import rust_sym
 from . import swift
 from . import util
 
@@ -56,7 +57,7 @@ class Outputter:
 
 
 OUTPUTTERS = {
-    "go_server": Outputter(go_server.output_go, []),
+    "go_server": Outputter(go_server.output_go_logger, []),
     "javascript": Outputter(javascript.output_javascript, []),
     "typescript": Outputter(javascript.output_typescript, []),
     "javascript_server": Outputter(javascript_server.output_javascript, []),
@@ -68,6 +69,7 @@ OUTPUTTERS = {
     "swift": Outputter(swift.output_swift, ["*.swift"]),
     "rust": Outputter(rust.output_rust, []),
     "rust_server": Outputter(rust_server.output_rust, []),
+    "rust_sym": Outputter(rust_sym.output_rust, []),
 }
 
 

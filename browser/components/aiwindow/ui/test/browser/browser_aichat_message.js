@@ -69,9 +69,10 @@ add_task(async function test_ai_chat_message_rendering() {
       }
 
       function setRoleAndMessage(el, role, message) {
-        // Set both property + attribute to avoid any reflection differences.
-        el.role = role;
-        el.setAttribute("role", role);
+        // `role` reflects to `data-message-role` (the `role` attribute is the
+        // native ARIA role and collides with Element.prototype.role), so drive
+        // it via that attribute rather than the `role` property/attribute.
+        el.setAttribute("data-message-role", role);
 
         el.message = message;
         el.setAttribute("message", message);
@@ -205,8 +206,9 @@ add_task(async function test_user_message_website_mentions_render_as_chips() {
       // Set properties on the unwrapped element AND set attributes to guarantee update.
       const elJS = el.wrappedJSObject || el;
 
-      elJS.role = "user";
-      el.setAttribute("role", "user");
+      // `role` reflects to `data-message-role` (the `role` attribute is the
+      // native ARIA role), so drive it via that attribute.
+      el.setAttribute("data-message-role", "user");
 
       elJS.message = markdown;
       el.setAttribute("message", markdown);
@@ -268,9 +270,11 @@ add_task(async function test_user_message_website_mentions_render_as_chips() {
 
       const img = chip.shadowRoot.querySelector("img.chip-icon");
       Assert.ok(img, "chip should render <img class='chip-icon'>");
+      const imgSrc = img.getAttribute("src");
       Assert.ok(
-        img.getAttribute("src").startsWith("page-icon:https://www.google.com"),
-        `chip img src should use page-icon:https://www.google.com (got: ${img.getAttribute("src")})`
+        imgSrc.startsWith("page-icon:https://www.google.com") ||
+          imgSrc.endsWith("defaultFavicon.svg"),
+        `chip img src should use page-icon or fallback favicon (got: ${imgSrc})`
       );
 
       const label = chip.shadowRoot.querySelector(".chip-label");
@@ -319,8 +323,7 @@ add_task(
         doc.body.appendChild(el);
 
         const elJS = el.wrappedJSObject || el;
-        elJS.role = "user";
-        el.setAttribute("role", "user");
+        el.setAttribute("data-message-role", "user");
         elJS.message = emptyMarkdown;
         el.setAttribute("message", emptyMarkdown);
 
@@ -415,3 +418,79 @@ add_task(
     }
   }
 );
+
+add_task(async function test_empty_links_render_as_plain_text() {
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.smartwindow.enabled", true]],
+  });
+
+  const tab = await BrowserTestUtils.openNewForegroundTab(
+    gBrowser,
+    "about:aichatcontent"
+  );
+  const browser = tab.linkedBrowser;
+
+  try {
+    await SpecialPowers.spawn(browser, [], async () => {
+      if (content.document.readyState !== "complete") {
+        await ContentTaskUtils.waitForEvent(content, "load");
+      }
+
+      await content.customElements.whenDefined("ai-chat-message");
+
+      const doc = content.document;
+
+      // A markdown link with an empty destination (`[text]()`) is rendered by
+      // markdown-it as `<a href="">text</a>`. It should be unwrapped to plain
+      // text for both roles so it isn't shown as a dead, mislabeled link, while
+      // a real link stays clickable.
+      for (const role of ["assistant", "user"]) {
+        const markdown = `An [empty link]() next to a [real link](https://example.com/).`;
+
+        const el = doc.createElement("ai-chat-message");
+        doc.body.appendChild(el);
+
+        const elJS = el.wrappedJSObject || el;
+        el.setAttribute("data-message-role", role);
+        elJS.message = markdown;
+        el.setAttribute("message", markdown);
+
+        await ContentTaskUtils.waitForCondition(
+          () => el.shadowRoot?.querySelector(`.message-${role}`),
+          () =>
+            `Expected .message-${role}. shadowRoot=${
+              el.shadowRoot ? el.shadowRoot.innerHTML : "<no shadowRoot>"
+            }`
+        );
+
+        const msg = el.shadowRoot.querySelector(`.message-${role}`);
+        info(`message-${role} HTML: ${msg.innerHTML}`);
+
+        const anchors = Array.from(msg.querySelectorAll("a"));
+
+        // The empty link is gone; only the real link remains as an anchor.
+        Assert.equal(
+          anchors.length,
+          1,
+          `${role}: only the real link should remain an anchor`
+        );
+        Assert.equal(
+          anchors[0].getAttribute("href"),
+          "https://example.com/",
+          `${role}: the real link keeps its href`
+        );
+
+        // The empty link's text is preserved as plain text in the message.
+        Assert.ok(
+          msg.textContent.includes("empty link"),
+          `${role}: empty link text should be preserved`
+        );
+
+        el.remove();
+      }
+    });
+  } finally {
+    BrowserTestUtils.removeTab(tab);
+    await SpecialPowers.popPrefEnv();
+  }
+});

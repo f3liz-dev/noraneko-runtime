@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,17 +8,14 @@
 #include <stddef.h>  // size_t
 #include <stdint.h>  // uint32_t
 
-#include "js/TypeDecls.h"  // JS::Latin1Char
-
-#include "mozilla/Variant.h"  // Variant
-#include "mozilla/RefPtr.h"   // RefPtr
-
-#include "nsDebug.h"  // NS_WARNING
-
 #include "BasePrincipal.h"
 #include "ContentPrincipalJSONHandler.h"
 #include "NullPrincipalJSONHandler.h"
 #include "SharedJSONHandler.h"
+#include "js/TypeDecls.h"     // JS::Latin1Char
+#include "mozilla/RefPtr.h"   // RefPtr
+#include "mozilla/Variant.h"  // Variant
+#include "nsDebug.h"          // NS_WARNING
 
 namespace mozilla {
 

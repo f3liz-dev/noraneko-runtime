@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  *
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -10,27 +8,29 @@
 
 #include "GLContext.h"
 #include "GLContextEGL.h"
+#include "OGLShaderProgram.h"
 #include "ScopedGLHelpers.h"
 #include "mozilla/layers/BuildConstants.h"
 #include "mozilla/layers/CompositorOGL.h"
 #include "mozilla/layers/Effects.h"
 #include "mozilla/layers/TextureHostOGL.h"
 #include "mozilla/widget/CompositorWidget.h"
-#include "OGLShaderProgram.h"
 
 #ifdef MOZ_WIDGET_ANDROID
+#  include <android/native_window.h>
+#  include <android/native_window_jni.h>
+
 #  include "mozilla/java/GeckoSurfaceTextureWrappers.h"
 #  include "mozilla/layers/AndroidHardwareBuffer.h"
 #  include "mozilla/webrender/RenderAndroidHardwareBufferTextureHost.h"
 #  include "mozilla/webrender/RenderAndroidSurfaceTextureHost.h"
 #  include "mozilla/widget/AndroidCompositorWidget.h"
-#  include <android/native_window.h>
-#  include <android/native_window_jni.h>
 #endif
 
 #ifdef MOZ_WIDGET_GTK
-#  include "mozilla/widget/GtkCompositorWidget.h"
 #  include <gdk/gdk.h>
+
+#  include "mozilla/widget/GtkCompositorWidget.h"
 #  ifdef MOZ_X11
 #    include <gdk/gdkx.h>
 #  endif
@@ -317,7 +317,7 @@ bool RenderCompositorOGLSWGL::MaybeReadback(
 #ifdef MOZ_WIDGET_ANDROID
 bool RenderCompositorOGLSWGL::MaybeCaptureScreenPixels(
     const gfx::IntRect& aSourceRect,
-    RefPtr<layers::AndroidHardwareBuffer> aHardwareBuffer) {
+    layers::AndroidHardwareBuffer* aHardwareBuffer) {
   auto* const gl = GetGLContext();
   gl::ScopedBindFramebuffer scopedBind(gl);
 
@@ -392,7 +392,7 @@ bool RenderCompositorOGLSWGL::MaybeCaptureScreenPixels(
                        LOCAL_GL_LINEAR);
 
   if (EGLSync sync =
-          egl->fCreateSync(LOCAL_EGL_SYNC_NATIVE_FENCE_ANDROID, nullptr)) {
+          egl->fCreateSyncKHR(LOCAL_EGL_SYNC_NATIVE_FENCE_ANDROID, nullptr)) {
     auto fence = UniqueFileHandle(egl->fDupNativeFenceFDANDROID(sync));
     if (fence) {
       aHardwareBuffer->SetAcquireFence(std::move(fence));

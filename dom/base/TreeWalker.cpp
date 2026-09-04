@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=4 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -27,7 +25,7 @@ TreeWalker::TreeWalker(nsINode* aRoot, uint32_t aWhatToShow,
                        NodeFilter* aFilter)
     : nsTraversal(aRoot, aWhatToShow, aFilter), mCurrentNode(aRoot) {}
 
-TreeWalker::~TreeWalker() { /* destructor code */ }
+TreeWalker::~TreeWalker() = default;
 
 /*
  * nsISupports and cycle collection stuff
@@ -143,13 +141,32 @@ already_AddRefed<nsINode> TreeWalker::PreviousNode(ErrorResult& aResult) {
   return nullptr;
 }
 
+static already_AddRefed<nsINode> EnsureAddRefed(nsCOMPtr<nsINode>& aNode) {
+  return aNode.forget();
+}
+
+static already_AddRefed<nsINode> EnsureAddRefed(nsINode*& aNode) {
+  return do_AddRef(aNode);
+}
+
 already_AddRefed<nsINode> TreeWalker::NextNode(ErrorResult& aResult) {
+  // With no filter TestNode() cannot run script, and the loop performs no
+  // refcount decrements before its final assignment to mCurrentNode, so
+  // nothing can destroy a node mid-walk.
+  if (!mFilter) {
+    return NextNodeInternal<nsINode*>(aResult);
+  }
+  return NextNodeInternal<nsCOMPtr<nsINode>>(aResult);
+}
+
+template <typename NodePtr>
+already_AddRefed<nsINode> TreeWalker::NextNodeInternal(ErrorResult& aResult) {
   int16_t filtered =
       NodeFilter_Binding::FILTER_ACCEPT;  // pre-init for inner loop
 
-  nsCOMPtr<nsINode> node = mCurrentNode;
+  NodePtr node = mCurrentNode;
 
-  while (1) {
+  while (true) {
     nsINode* firstChild;
     while (filtered != NodeFilter_Binding::FILTER_REJECT &&
            (firstChild = node->GetFirstChild())) {
@@ -163,7 +180,7 @@ already_AddRefed<nsINode> TreeWalker::NextNode(ErrorResult& aResult) {
       if (filtered == NodeFilter_Binding::FILTER_ACCEPT) {
         // Node found
         mCurrentNode = node;
-        return node.forget();
+        return EnsureAddRefed(node);
       }
     }
 
@@ -191,7 +208,7 @@ already_AddRefed<nsINode> TreeWalker::NextNode(ErrorResult& aResult) {
     if (filtered == NodeFilter_Binding::FILTER_ACCEPT) {
       // Node found
       mCurrentNode = node;
-      return node.forget();
+      return EnsureAddRefed(node);
     }
   }
 
@@ -276,7 +293,7 @@ already_AddRefed<nsINode> TreeWalker::NextSiblingInternal(
     return nullptr;
   }
 
-  while (1) {
+  while (true) {
     nsINode* sibling =
         aReversed ? node->GetPreviousSibling() : node->GetNextSibling();
 

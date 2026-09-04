@@ -1,21 +1,21 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "LocalAccessible-inl.h"
+#include "DocAccessibleWrap.h"
+
 #include "AccAttributes.h"
 #include "DocAccessibleChild.h"
-#include "DocAccessibleWrap.h"
-#include "nsIDocShell.h"
-#include "nsLayoutUtils.h"
-#include "nsAccessibilityService.h"
-#include "nsAccUtils.h"
+#include "LocalAccessible-inl.h"
 #include "Pivot.h"
 #include "SessionAccessibility.h"
 #include "TraversalRule.h"
 #include "mozilla/PresShell.h"
+#include "mozilla/dom/Document.h"
+#include "nsAccUtils.h"
+#include "nsAccessibilityService.h"
+#include "nsIDocShell.h"
+#include "nsLayoutUtils.h"
 
 using namespace mozilla;
 using namespace mozilla::a11y;

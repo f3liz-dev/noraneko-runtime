@@ -6,34 +6,37 @@
 
 package org.mozilla.fenix.ui
 
-import androidx.compose.ui.test.junit4.AndroidComposeTestRule
 import androidx.core.net.toUri
 import androidx.test.rule.ActivityTestRule
 import org.junit.Rule
 import org.junit.Test
 import org.mozilla.fenix.IntentReceiverActivity
+import org.mozilla.fenix.customannotations.Converted
 import org.mozilla.fenix.customannotations.SmokeTest
-import org.mozilla.fenix.ext.settings
+import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.helpers.DataGenerationHelper.createCustomTabIntent
+import org.mozilla.fenix.helpers.FenixTestRule
 import org.mozilla.fenix.helpers.HomeActivityIntentTestRule
 import org.mozilla.fenix.helpers.TestAssetHelper.enhancedTrackingProtectionAsset
 import org.mozilla.fenix.helpers.TestAssetHelper.getGenericAsset
 import org.mozilla.fenix.helpers.TestAssetHelper.waitingTimeLong
 import org.mozilla.fenix.helpers.TestHelper.appContext
-import org.mozilla.fenix.helpers.TestSetup
 import org.mozilla.fenix.helpers.perf.DetectMemoryLeaksRule
 import org.mozilla.fenix.ui.robots.browserScreen
 import org.mozilla.fenix.ui.robots.customTabScreen
 import org.mozilla.fenix.ui.robots.navigationToolbar
+import androidx.compose.ui.test.junit4.v2.AndroidComposeTestRule as AndroidComposeTestRuleV2
 
-class UnifiedTrustPanelTest : TestSetup() {
-    @get:Rule
+class UnifiedTrustPanelTest {
+    @get:Rule(order = 0)
+    val fenixTestRule: FenixTestRule = FenixTestRule()
+
+    private val mockWebServer get() = fenixTestRule.mockWebServer
+
+    @get:Rule(order = 1)
     val composeTestRule =
-        AndroidComposeTestRule(
-            HomeActivityIntentTestRule(
-                isUnifiedTrustPanelEnabled = true,
-                isPWAsPromptEnabled = false,
-            ),
+        AndroidComposeTestRuleV2(
+            HomeActivityIntentTestRule(),
         ) { it.activity }
 
     @get:Rule
@@ -43,10 +46,15 @@ class UnifiedTrustPanelTest : TestSetup() {
         false,
     )
 
-    @get:Rule
-    val memoryLeaksRule = DetectMemoryLeaksRule()
+    @get:Rule(order = 2)
+    val memoryLeaksRule = DetectMemoryLeaksRule(composeTestRule = { composeTestRule })
 
     // TestRail: https://mozilla.testrail.io/index.php?/cases/view/3186718
+    @Converted(
+        replacedBy = ["org.mozilla.fenix.ui.efficiency.tests.UnifiedTrustPanelTest#verifySecurePageConnectionFromQuickSettingsWithNoTrackersTest"],
+        bug = 2057420,
+        since = "2026-07",
+    )
     @SmokeTest
     @Test
     fun verifySecurePageConnectionFromQuickSettingsWithNoTrackersTest() {
@@ -81,10 +89,15 @@ class UnifiedTrustPanelTest : TestSetup() {
     }
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/3186721
+    @Converted(
+        replacedBy = ["org.mozilla.fenix.ui.efficiency.tests.UnifiedTrustPanelTest#verifyInsecurePageConnectionFromQuickSettingsWithTrackersTest"],
+        bug = 2057420,
+        since = "2026-07",
+    )
     @SmokeTest
     @Test
     fun verifyInsecurePageConnectionFromQuickSettingsWithTrackersTest() {
-        appContext.settings().setStrictETP()
+        appContext.components.settings.setStrictETP()
         val genericPage = mockWebServer.getGenericAsset(1)
         val trackingProtectionPage = mockWebServer.enhancedTrackingProtectionAsset.url
 
@@ -128,6 +141,11 @@ class UnifiedTrustPanelTest : TestSetup() {
     }
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/3186723
+    @Converted(
+        replacedBy = ["org.mozilla.fenix.ui.efficiency.tests.UnifiedTrustPanelTest#verifyClearCookiesAndSiteDataFromQuickSettingsTest"],
+        bug = 2040857,
+        since = "2026-06",
+    )
     @SmokeTest
     @Test
     fun verifyClearCookiesAndSiteDataFromQuickSettingsTest() {
@@ -148,18 +166,21 @@ class UnifiedTrustPanelTest : TestSetup() {
     // TestRail: https://mozilla.testrail.io/index.php?/cases/view/3186719
     @Test
     fun verifySecurePageConnectionFromQuickSettingsWithTrackersTest() {
-        appContext.settings().setStrictETP()
+        appContext.components.settings.setStrictETP()
         val genericPage = mockWebServer.getGenericAsset(1)
         val trackingProtectionPage = "https://senglehardt.com/test/trackingprotection/test_pages/tracking_protection"
 
         // browsing a generic page to allow GV to load on a fresh run
         navigationToolbar(composeTestRule) {
         }.enterURLAndEnterToBrowser(genericPage.url) {
+            verifyPageContent(genericPage.content)
         }
 
         navigationToolbar(composeTestRule) {
         }.enterURLAndEnterToBrowser(trackingProtectionPage.toUri()) {
+            waitForPageToLoad()
             verifyPageContent("Tracker Blocking")
+            verifyPageContent("BLOCKED")
         }
         navigationToolbar(composeTestRule) {
         }.openUnifiedTrustPanel {
@@ -263,7 +284,7 @@ class UnifiedTrustPanelTest : TestSetup() {
     @SmokeTest
     @Test
     fun verifySecurePageConnectionFromQuickSettingsWithTrackersInCustomTabsTest() {
-        appContext.settings().setStrictETP()
+        appContext.components.settings.setStrictETP()
         val genericPage = mockWebServer.getGenericAsset(1)
         val customTabPage = "https://senglehardt.com/test/trackingprotection/test_pages/tracking_protection"
 
@@ -313,6 +334,11 @@ class UnifiedTrustPanelTest : TestSetup() {
     }
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/3186711
+    @Converted(
+        replacedBy = ["org.mozilla.fenix.ui.efficiency.tests.UnifiedTrustPanelTest#verifyInsecurePageConnectionFromQuickSettingsWithNoTrackersInCustomTabsTest"],
+        bug = 2057413,
+        since = "2026-07",
+    )
     @SmokeTest
     @Test
     fun verifyInsecurePageConnectionFromQuickSettingsWithNoTrackersInCustomTabsTest() {
@@ -353,6 +379,11 @@ class UnifiedTrustPanelTest : TestSetup() {
     }
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/3186714
+    @Converted(
+        replacedBy = ["org.mozilla.fenix.ui.efficiency.tests.UnifiedTrustPanelTest#verifyClearCookiesAndSiteDataFromQuickSettingsInCustomTabsTest"],
+        bug = 2057421,
+        since = "2026-07",
+    )
     @SmokeTest
     @Test
     fun verifyClearCookiesAndSiteDataFromQuickSettingsInCustomTabsTest() {
@@ -376,7 +407,7 @@ class UnifiedTrustPanelTest : TestSetup() {
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/3186712
     @Test
     fun verifyInsecurePageConnectionFromQuickSettingsWithTrackersInCustomTabsTest() {
-        appContext.settings().setStrictETP()
+        appContext.components.settings.setStrictETP()
 
         val customTabPage = mockWebServer.enhancedTrackingProtectionAsset.url
 

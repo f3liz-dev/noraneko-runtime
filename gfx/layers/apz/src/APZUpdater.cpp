@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -136,28 +134,34 @@ void APZUpdater::ProcessPendingTasks(const wr::WrWindowId& aWindowId) {
 void APZUpdater::ClearTree(LayersId aRootLayersId) {
   MOZ_ASSERT(CompositorThreadHolder::IsInCompositorThread());
   RefPtr<APZUpdater> self = this;
-  RunOnUpdaterThread(
-      aRootLayersId,
-      NS_NewRunnableFunction("APZUpdater::ClearTree",
-                             [=]() {
-                               self->mApz->ClearTree();
-                               self->mDestroyed = true;
+  RefPtr<Runnable> task =
+      NS_NewRunnableFunction("APZUpdater::ClearTree", [=]() {
+        self->mApz->ClearTree();
+        self->mDestroyed = true;
 
-                               // Once ClearTree is called on the
-                               // APZCTreeManager, we are in a shutdown phase.
-                               // After this point it's ok if WebRender cannot
-                               // get a hold of the updater via the window id,
-                               // and it's a good point to remove the mapping
-                               // and avoid leaving a dangling pointer to this
-                               // object.
-                               StaticMutexAutoLock lock(sWindowIdLock);
-                               if (self->mWindowId) {
-                                 MOZ_ASSERT(sWindowIdMap);
-                                 sWindowIdMap->erase(
-                                     wr::AsUint64(*(self->mWindowId)));
-                               }
-                             }),
-      DuringShutdown::Yes);
+        // Once ClearTree is called on the APZCTreeManager, we are in a
+        // shutdown phase. After this point it's ok if WebRender cannot get a
+        // hold of the updater via the window id, and it's a good point to
+        // remove the mapping and avoid leaving a dangling pointer to this
+        // object.
+        StaticMutexAutoLock lock(sWindowIdLock);
+        if (self->mWindowId) {
+          MOZ_ASSERT(sWindowIdMap);
+          sWindowIdMap->erase(wr::AsUint64(*(self->mWindowId)));
+        }
+      });
+
+  // If the updater (scene builder) thread was never established then a task
+  // queued via RunOnUpdaterThread can never be drained (WakeSceneBuilder has
+  // no WebRenderAPI to wake), and the task holds a strong reference to this
+  // APZUpdater, leaking the whole tree. Run the task directly on the compositor
+  // thread in that case.
+  if (!HasUpdaterThread()) {
+    task->Run();
+    return;
+  }
+
+  RunOnUpdaterThread(aRootLayersId, task.forget(), DuringShutdown::Yes);
 }
 
 void APZUpdater::UpdateFocusState(LayersId aRootLayerTreeId,
@@ -247,8 +251,8 @@ void APZUpdater::UpdateScrollDataAndTreeState(
               } else {
                 // Clobber the first-paint flag so that we will never run into
                 // the first-paint branch in
-                // AsyncPanZoomController::NotifyLayersUpdated even if the next
-                // transaction is a paint-skip transaction.
+                // AsyncPanZoomController::NotifyMainThreadTransaction even if
+                // the next transaction is a paint-skip transaction.
                 self->mScrollData[aOriginatingLayersId].SetIsFirstPaint(false);
               }
             }
@@ -447,6 +451,17 @@ bool APZUpdater::IsUpdaterThread() const {
     return mUpdaterThreadId && PlatformThread::CurrentId() == *mUpdaterThreadId;
   }
   return CompositorThreadHolder::IsInCompositorThread();
+}
+
+bool APZUpdater::HasUpdaterThread() const {
+  MutexAutoLock lock(mThreadIdLock);
+  return mUpdaterThreadId.isSome();
+}
+
+void APZUpdater::AssertOnUpdaterThreadOrNotInitialized() const {
+  if (APZThreadUtils::GetThreadAssertionsEnabled()) {
+    MOZ_ASSERT(IsUpdaterThread() || !HasUpdaterThread());
+  }
 }
 
 void APZUpdater::RunOnControllerThread(LayersId aLayersId,

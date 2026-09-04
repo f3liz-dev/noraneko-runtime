@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -143,7 +142,20 @@ interface nsIIOService : nsISupports
                                                       in unsigned long aSecurityFlags,
                                                       in nsContentPolicyType aContentPolicyType,
                                                       in unsigned long aSandboxFlags,
+                                                      in unsigned long long aAssociatedBrowsingContextID,
                                                       out nsIChannel aResult);
+
+    /**
+     * Equivalent to newChannelFromURIWithLoadInfo(aURI, aLoadInfo), but also
+     * allows setting the proxy uri/flags (like newChannelFromURIWithProxyFlags).
+     * This lets callers such as the WebSocket handshake reuse a loadInfo that
+     * Init() can consult (e.g. for the associated BrowsingContext) while still
+     * resolving a proxy.
+     */
+    nsIChannel newChannelFromURIWithProxyFlagsAndLoadInfo(in nsIURI aURI,
+                                                          in nsIURI aProxyURI,
+                                                          in unsigned long aProxyFlags,
+                                                          in nsILoadInfo aLoadInfo);
 
     /**
      * Equivalent to newChannelFromURI(aURI, aLoadingNode, ...)

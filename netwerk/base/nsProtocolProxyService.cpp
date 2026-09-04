@@ -1,46 +1,44 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=4 sw=2 sts=2 et: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "nsProtocolProxyService.h"
+
 #include "SimpleChannel.h"
 #include "mozilla/AutoRestore.h"
-
-#include "nsProtocolProxyService.h"
-#include "nsProxyInfo.h"
-#include "nsIClassInfoImpl.h"
-#include "nsIIOService.h"
-#include "nsIObserverService.h"
-#include "nsIProtocolHandler.h"
-#include "nsIProtocolProxyCallback.h"
-#include "nsIChannel.h"
-#include "nsICancelable.h"
-#include "nsDNSService2.h"
-#include "nsPIDNSService.h"
-#include "nsIPrefBranch.h"
-#include "nsIPrefService.h"
-#include "nsContentUtils.h"
-#include "nsCRT.h"
-#include "nsThreadUtils.h"
-#include "nsQueryObject.h"
-#include "nsSOCKSIOLayer.h"
-#include "nsString.h"
-#include "nsNetUtil.h"
-#include "nsNetCID.h"
-#include "prnetdb.h"
-#include "nsPACMan.h"
-#include "nsProxyRelease.h"
-#include "mozilla/Mutex.h"
 #include "mozilla/CondVar.h"
-#include "nsISystemProxySettings.h"
-#include "nsINetworkLinkService.h"
-#include "nsIHttpChannelInternal.h"
-#include "mozilla/dom/nsMixedContentBlocker.h"
 #include "mozilla/Logging.h"
+#include "mozilla/Mutex.h"
 #include "mozilla/ScopeExit.h"
 #include "mozilla/StaticPrefs_network.h"
 #include "mozilla/Tokenizer.h"
+#include "mozilla/dom/nsMixedContentBlocker.h"
+#include "nsCRT.h"
+#include "nsContentUtils.h"
+#include "nsDNSService2.h"
+#include "nsICancelable.h"
+#include "nsIChannel.h"
+#include "nsIClassInfoImpl.h"
+#include "nsIHttpChannelInternal.h"
+#include "nsIIOService.h"
+#include "nsINetworkLinkService.h"
+#include "nsIObserverService.h"
+#include "nsIPrefBranch.h"
+#include "nsIPrefService.h"
+#include "nsIProtocolHandler.h"
+#include "nsIProtocolProxyCallback.h"
+#include "nsISystemProxySettings.h"
+#include "nsNetCID.h"
+#include "nsNetUtil.h"
+#include "nsPACMan.h"
+#include "nsPIDNSService.h"
+#include "nsProxyInfo.h"
+#include "nsProxyRelease.h"
+#include "nsQueryObject.h"
+#include "nsSOCKSIOLayer.h"
+#include "nsString.h"
+#include "nsThreadUtils.h"
+#include "prnetdb.h"
 
 //----------------------------------------------------------------------------
 
@@ -1356,7 +1354,7 @@ const char* nsProtocolProxyService::ExtractProxyInfo(const char* start,
     }
 
     if (!urlHost.IsEmpty()) {
-      pi->mHost = urlHost;
+      pi->mHost = std::move(urlHost);
 
       int32_t tPort;
       if (NS_SUCCEEDED(pacURI->GetPort(&tPort)) && tPort != -1) {
@@ -1586,7 +1584,7 @@ nsresult nsProtocolProxyService::AsyncResolveInternal(
     nsCOMPtr<nsISystemProxySettings> sp2 =
         do_GetService(NS_SYSTEMPROXYSETTINGS_CONTRACTID);
     if (sp2 != mSystemProxySettings) {
-      mSystemProxySettings = sp2;
+      mSystemProxySettings = std::move(sp2);
       ResetPACThread();
     }
   }
@@ -2166,15 +2164,24 @@ nsresult nsProtocolProxyService::Resolve_Internal(nsIChannel* channel,
     return NS_OK;
   }
 
-  bool mainThreadOnly;
-  if (mSystemProxySettings && mProxyConfig == PROXYCONFIG_SYSTEM &&
-      NS_SUCCEEDED(mSystemProxySettings->GetMainThreadOnly(&mainThreadOnly)) &&
-      !mainThreadOnly) {
-    *usePACThread = true;
-    return NS_OK;
-  }
-
   if (mSystemProxySettings && mProxyConfig == PROXYCONFIG_SYSTEM) {
+    bool mainThreadOnly = false;
+    if (NS_SUCCEEDED(
+            mSystemProxySettings->GetMainThreadOnly(&mainThreadOnly)) &&
+        !mainThreadOnly) {
+      *usePACThread = true;
+      return NS_OK;
+    }
+
+    if (StaticPrefs::network_proxy_fast_path_system_direct()) {
+      bool systemDirect = false;
+      if (NS_SUCCEEDED(
+              mSystemProxySettings->GetSystemProxyDirect(&systemDirect)) &&
+          systemDirect) {
+        return NS_OK;
+      }
+    }
+
     // If the system proxy setting implementation is not threadsafe (e.g
     // linux gconf), we'll do it inline here. Such implementations promise
     // not to block
@@ -2516,6 +2523,30 @@ nsProtocolProxyService::NotifyProxyConfigChangedInternal() {
     callback->OnProxyConfigChanged();
   }
   return NS_OK;
+}
+
+bool nsProtocolProxyService::IsEffectivelyDirect() {
+  MOZ_ASSERT(NS_IsMainThread());
+
+  if (!StaticPrefs::network_proxy_fast_path_system_direct()) {
+    return false;
+  }
+
+  if (!mFilters.IsEmpty()) {
+    return false;
+  }
+
+  if (mProxyConfig == PROXYCONFIG_DIRECT) {
+    return true;
+  }
+
+  if (mProxyConfig == PROXYCONFIG_SYSTEM && mSystemProxySettings) {
+    bool systemDirect = false;
+    mSystemProxySettings->GetSystemProxyDirect(&systemDirect);
+    return systemDirect;
+  }
+
+  return false;
 }
 
 }  // namespace net

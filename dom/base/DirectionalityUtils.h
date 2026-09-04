@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -17,6 +15,7 @@ class nsAttrValue;
 namespace mozilla::dom {
 class Element;
 class HTMLSlotElement;
+class ShadowRoot;
 class Text;
 struct UnbindContext;
 }  // namespace mozilla::dom
@@ -49,11 +48,6 @@ Directionality RecomputeDirectionality(mozilla::dom::Element* aElement,
                                        bool aNotify = true);
 
 /**
- * https://html.spec.whatwg.org/#parent-directionality
- */
-Directionality GetParentDirectionality(const mozilla::dom::Element* aElement);
-
-/**
  * Set the directionality of any descendants of a node that do not themselves
  * have a dir attribute.
  * For performance reasons we walk down the descendant tree in the rare case
@@ -64,37 +58,16 @@ void SetDirectionalityOnDescendants(mozilla::dom::Element* aElement,
                                     Directionality aDir, bool aNotify = true);
 
 /**
- * Walk the descendants of a node in tree order and, for any text node
- * descendant that determines the directionality of some element and is not a
- * descendant of another descendant of the original node with dir=auto,
- * redetermine that element's directionality
- */
-void WalkDescendantsResetAutoDirection(mozilla::dom::Element* aElement);
-
-/**
- * In case a element was added to a slot it may change the directionality
- * of ancestors or assigned nodes.
+ * Update flags on assigned node and auto directionality of the slot.
  */
 void SlotAssignedNodeAdded(dom::HTMLSlotElement* aSlot,
                            nsIContent& aAssignedNode);
 
 /**
- * In case a element was removed from a slot it may change the directionality
- * of ancestors or assigned nodes.
+ * Update flags on assigned node and auto directionality of the slot.
  */
 void SlotAssignedNodeRemoved(dom::HTMLSlotElement* aSlot,
                              nsIContent& aUnassignedNode);
-
-/**
- * After setting dir=auto on an element, walk its descendants in tree order.
- * If the node doesn't have the NODE_ANCESTOR_HAS_DIR_AUTO flag, set the
- * NODE_ANCESTOR_HAS_DIR_AUTO flag on all of its descendants.
- * Resolve the directionality of the element by the "downward propagation
- * algorithm" (defined in section 3 in the comments at the beginning of
- * DirectionalityUtils.cpp)
- */
-void WalkDescendantsSetDirAuto(mozilla::dom::Element* aElement,
-                               bool aNotify = true);
 
 /**
  * After unsetting dir=auto on an element, walk its descendants in tree order,
@@ -123,13 +96,21 @@ void TextNodeChangedDirection(dom::Text* aTextNode, Directionality aOldDir,
  * When a text node is appended to an element, find any ancestors with dir=auto
  * whose directionality will be determined by the text node
  */
-void SetDirectionFromNewTextNode(dom::Text* aTextNode);
+void SetDirectionFromNewTextNode(dom::Text* aTextNode, nsINode* aParent);
 
 /**
  * When a text node is removed from a document, find any ancestors whose
  * directionality it determined and redetermine their directionality
  */
 void ResetDirectionSetByTextNode(dom::Text*, dom::UnbindContext&);
+
+/**
+ * Similar to text nodes, slots can also determine the directionality of
+ * ancestors. These need to be updated if the slot is removed.
+ * https://html.spec.whatwg.org/#contained-text-auto-directionality
+ */
+void ResetDirectionSetBySlotHost(dom::HTMLSlotElement*, dom::UnbindContext&,
+                                 dom::ShadowRoot*);
 
 /**
  * Update directionality of this and other affected elements.

@@ -199,7 +199,7 @@ async function hasPrivateAllowed(id) {
 }
 
 async function assertBackButtonIsDisabled(win) {
-  let backButton = await BrowserTestUtils.waitForCondition(async () => {
+  let backButton = await TestUtils.waitForCondition(async () => {
     let backButton = win.document.querySelector(".back-button");
 
     // Wait until the button is visible in the page.
@@ -515,9 +515,15 @@ add_task(async function testFullDetails() {
   ok(!card.hasAttribute("expanded"), "The list card is not expanded");
 
   // Make sure the preview is hidden.
-  let preview = card.querySelector(".card-heading-image");
-  ok(preview, "There is a preview");
-  is(preview.hidden, true, "The preview is hidden");
+  let themePreview = card.querySelector("theme-preview");
+  ok(themePreview, "There is a theme-preview component");
+  await themePreview.updateComplete;
+  let previewImage = card.querySelector(".card-heading-image");
+  is(
+    previewImage,
+    null,
+    "The theme preview image is not rendered for type extension"
+  );
 
   let loaded = waitForViewLoad(win);
   card.querySelector('[action="expand"]').click();
@@ -537,9 +543,13 @@ add_task(async function testFullDetails() {
   );
 
   // Make sure the preview is hidden.
-  preview = card.querySelector(".card-heading-image");
-  ok(preview, "There is a preview");
-  is(preview.hidden, true, "The preview is hidden");
+  await themePreview.updateComplete;
+  previewImage = card.querySelector(".card-heading-image");
+  is(
+    previewImage,
+    null,
+    "The theme preview image is not rendered for type extension"
+  );
 
   let details = card.querySelector("addon-details");
 
@@ -819,6 +829,12 @@ add_task(async function testDefaultTheme() {
   ok(preview, "There is a preview");
   ok(!preview.hidden, "The preview is visible");
 
+  let icon = card.querySelector(".addon-icon");
+  is_element_hidden(
+    icon,
+    "Addon Card icon DOM element should be hidden for addon type theme"
+  );
+
   // Check all the deck buttons are hidden.
   assertDeckHeadingHidden(card.details.tabGroup);
 
@@ -1044,9 +1060,8 @@ add_task(async function testPrivateBrowsingExtension() {
 
 add_task(async function testInvalidExtension() {
   let win = await open_manager("addons://detail/foo");
-  let categoryUtils = new CategoryUtilities(win);
   is(
-    categoryUtils.selectedCategory,
+    AboutAddonsTestUtils.getSidebarSelectedCategory(win),
     "discover",
     "Should fall back to the discovery pane"
   );
@@ -1062,9 +1077,8 @@ add_task(async function testInvalidExtensionNoDiscover() {
   });
 
   let win = await open_manager("addons://detail/foo");
-  let categoryUtils = new CategoryUtilities(win);
   is(
-    categoryUtils.selectedCategory,
+    AboutAddonsTestUtils.getSidebarSelectedCategory(win),
     "extension",
     "Should fall back to the extension list if discover is disabled"
   );
@@ -1324,7 +1338,9 @@ add_task(async function testGoBackButtonIsDisabledAfterBrowserBackButton() {
   await assertBackButtonIsDisabled(win);
 
   // Navigate to the extensions list.
-  await new CategoryUtilities(win).openType("extension");
+  let viewLoaded = wait_for_view_load(win);
+  AboutAddonsTestUtils.clickCategoryButton(win, "extension");
+  await viewLoaded;
 
   // Click on the browser back button.
   gBrowser.goBack();
@@ -1580,7 +1596,7 @@ add_task(async function testQuarantinedDomainsUserAllowedUI() {
 
   info("Switch to theme list view");
   loaded = waitForViewLoad(win);
-  doc.querySelector("#categories > [name=theme]").click();
+  AboutAddonsTestUtils.clickCategoryButton(win, "theme");
   await loaded;
 
   info("Test quarantineIgnoredByUser UI on a non extension addon type (theme)");
@@ -1597,7 +1613,7 @@ add_task(async function testQuarantinedDomainsUserAllowedUI() {
 
   info("Switch to extension list view");
   loaded = waitForViewLoad(win);
-  doc.querySelector("#categories > [name=extension]").click();
+  AboutAddonsTestUtils.clickCategoryButton(win, "extension");
   await loaded;
 
   loaded = waitForViewLoad(win);
@@ -1622,7 +1638,7 @@ add_task(async function testQuarantinedDomainsUserAllowedUI() {
 
   info("Switch to extension list view");
   loaded = waitForViewLoad(win);
-  doc.querySelector("#categories > [name=extension]").click();
+  AboutAddonsTestUtils.clickCategoryButton(win, "extension");
   await loaded;
 
   loaded = waitForViewLoad(win);

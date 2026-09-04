@@ -8,6 +8,7 @@
 #include "mozilla/StaticPrefs_media.h"
 #include "mozilla/dom/HTMLMediaElement.h"
 #include "nsGlobalWindowInner.h"
+#include "nsPIDOMWindowInlines.h"
 
 mozilla::LazyLogModule gGVAutoplayRequestLog("GVAutoplay");
 
@@ -20,14 +21,14 @@ using RStatus = GVAutoplayRequestStatus;
 #undef REQUEST_LOG
 #define REQUEST_LOG(msg, ...)                                          \
   if (MOZ_LOG_TEST(gGVAutoplayRequestLog, mozilla::LogLevel::Debug)) { \
-    MOZ_LOG(gGVAutoplayRequestLog, LogLevel::Debug,                    \
-            ("Request=%p, Type=%s, " msg, this,                        \
-             EnumValueToString(this->mType), ##__VA_ARGS__));          \
+    MOZ_LOG_FMT(gGVAutoplayRequestLog, LogLevel::Debug,                \
+                "Request={}, Type={}, " msg, fmt::ptr(this),           \
+                EnumValueToString(this->mType), ##__VA_ARGS__);        \
   }
 
 #undef LOG
 #define LOG(msg, ...) \
-  MOZ_LOG(gGVAutoplayRequestLog, LogLevel::Debug, (msg, ##__VA_ARGS__))
+  MOZ_LOG_FMT(gGVAutoplayRequestLog, LogLevel::Debug, msg, ##__VA_ARGS__)
 
 static RStatus GetRequestStatus(BrowsingContext* aContext, RType aType) {
   MOZ_ASSERT(aContext);
@@ -51,10 +52,22 @@ enum class TestRequest : uint32_t {
 };
 
 NS_IMPL_CYCLE_COLLECTION_INHERITED(GVAutoplayPermissionRequest,
-                                   ContentPermissionRequestBase)
+                                   ContentPermissionRequestBase, mContext)
 
 NS_IMPL_ISUPPORTS_CYCLE_COLLECTION_INHERITED_0(GVAutoplayPermissionRequest,
                                                ContentPermissionRequestBase)
+
+static void NotifyRequestStatusChanged(nsPIDOMWindowInner* aWindow) {
+  if (!aWindow) {
+    return;
+  }
+  nsCOMPtr<nsIObserverService> obs = mozilla::services::GetObserverService();
+  if (obs) {
+    obs->NotifyObservers(ToSupports(aWindow),
+                         kGVAutoplayRequestStatusChangedTopic,
+                         /* no extra string data */ nullptr);
+  }
+}
 
 /* static */
 void GVAutoplayPermissionRequest::CreateRequest(nsGlobalWindowInner* aWindow,
@@ -66,7 +79,7 @@ void GVAutoplayPermissionRequest::CreateRequest(nsGlobalWindowInner* aWindow,
   const TestRequest testingPref = static_cast<TestRequest>(
       StaticPrefs::media_geckoview_autoplay_request_testing());
   if (testingPref != TestRequest::ePromptAsNormal) {
-    LOG("Create testing request, tesing value=%u",
+    LOG("Create testing request, tesing value={}",
         static_cast<uint32_t>(testingPref));
     if (testingPref == TestRequest::eAllowAllAsync) {
       request->RequestDelayedTask(
@@ -117,7 +130,7 @@ GVAutoplayPermissionRequest::~GVAutoplayPermissionRequest() {
 }
 
 void GVAutoplayPermissionRequest::SetRequestStatus(RStatus aStatus) {
-  REQUEST_LOG("SetRequestStatus, new status=%s", EnumValueToString(aStatus));
+  REQUEST_LOG("SetRequestStatus, new status={}", EnumValueToString(aStatus));
   MOZ_ASSERT(mContext);
   AssertIsOnMainThread();
   if (mType == RType::eAUDIBLE) {
@@ -139,11 +152,12 @@ GVAutoplayPermissionRequest::Cancel() {
   // Additionally, we tolerate `canceled` if the request was already canceled.
   // See Bug 1996123 for details on the multiple cancel.
   const RStatus status = GetRequestStatus(mContext, mType);
-  REQUEST_LOG("Cancel, current status=%s", EnumValueToString(status));
+  REQUEST_LOG("Cancel, current status={}", EnumValueToString(status));
   MOZ_ASSERT(status == RStatus::ePENDING || status == RStatus::eDENIED ||
              status == RStatus::eUNKNOWN);
   if ((status == RStatus::ePENDING) && !mContext->IsDiscarded()) {
     SetRequestStatus(RStatus::eDENIED);
+    NotifyRequestStatusChanged(mWindow);
   }
   mContext = nullptr;
   return NS_OK;
@@ -159,18 +173,12 @@ GVAutoplayPermissionRequest::Allow(JS::Handle<JS::Value> aChoices) {
   // Additionally, we tolerate `allowed` if the request was already allowed.
   // See Bug 1996123 for details on the multiple allow.
   const RStatus status = GetRequestStatus(mContext, mType);
-  REQUEST_LOG("Allow, current status=%s", EnumValueToString(status));
+  REQUEST_LOG("Allow, current status={}", EnumValueToString(status));
   MOZ_ASSERT(status == RStatus::ePENDING || status == RStatus::eALLOWED ||
              status == RStatus::eUNKNOWN);
   if (status == RStatus::ePENDING) {
     SetRequestStatus(RStatus::eALLOWED);
-    // Permission grant may arrive late and elements may be suspended.
-    // We message to wake them up and resume downloading data if needed.
-    nsCOMPtr<nsIObserverService> obs = mozilla::services::GetObserverService();
-    if (obs) {
-      obs->NotifyObservers(ToSupports(mWindow), kGVAutoplayAllowedTopic,
-                           /* no extra string data */ nullptr);
-    }
+    NotifyRequestStatusChanged(mWindow);
   }
   mContext = nullptr;
   return NS_OK;

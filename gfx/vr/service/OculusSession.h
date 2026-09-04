@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,15 +5,14 @@
 #ifndef GFX_VR_SERVICE_OCULUSSESSION_H
 #define GFX_VR_SERVICE_OCULUSSESSION_H
 
+#include "ShaderDefinitionsD3D11.h"  // for VertexShaderConstants and PixelShaderConstants
 #include "VRSession.h"
-
 #include "moz_external_vr.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/gfx/2D.h"
 #include "nsTArray.h"
 #include "oculus/ovr_capi_dynamic.h"
 #include "prlink.h"
-#include "ShaderDefinitionsD3D11.h"  // for VertexShaderConstants and PixelShaderConstants
 
 struct ID3D11Device;
 

@@ -15,7 +15,7 @@ There are many different ways in which captive portal network might attempt to d
     - They might not be intercepted at all.
 
 ## Implementation
-The [CaptivePortalService](https://searchfox.org/mozilla-central/source/netwerk/base/CaptivePortalService.h) controls when the checks are performed. Consumers can check the state on [nsICaptivePortalService](https://searchfox.org/mozilla-central/source/netwerk/base/nsICaptivePortalService.idl) to determine the state of the captive portal.
+The [CaptivePortalService](https://searchfox.org/firefox-main/source/netwerk/base/CaptivePortalService.h) controls when the checks are performed. Consumers can check the state on [nsICaptivePortalService](https://searchfox.org/firefox-main/source/netwerk/base/nsICaptivePortalService.idl) to determine the state of the captive portal.
 - UNKNOWN
     - The checks have not been performed or have timed out.
 - NOT_CAPTIVE
@@ -24,10 +24,18 @@ The [CaptivePortalService](https://searchfox.org/mozilla-central/source/netwerk/
     - A captive portal was previously detected, but has been unlocked by the user. This state might cause the browser to increase the frequency of the captive portal checks.
 - LOCKED_PORTAL
     - A captive portal was detected, and internet connectivity is not currently available.
-    - A [captive portal notification bar](https://searchfox.org/mozilla-central/source/browser/base/content/browser-captivePortal.js) might be displayed to the user.
+    - A [captive portal notification bar](https://searchfox.org/firefox-main/source/browser/base/content/browser-captivePortal.js) might be displayed to the user.
 
-The Captive portal service uses [CaptiveDetect.sys.mjs](https://searchfox.org/mozilla-central/source/toolkit/components/captivedetect/CaptiveDetect.sys.mjs) to perform the checks, which in turn uses XMLHttpRequest.
+The Captive portal service uses [CaptiveDetect.sys.mjs](https://searchfox.org/firefox-main/source/toolkit/components/captivedetect/CaptiveDetect.sys.mjs) to perform the checks, which in turn uses XMLHttpRequest.
 This request needs to be exempted from HTTPS upgrades, DNS over HTTPS, and many new browser features in order to function as expected.
+
+A response means there is no captive portal when it is a 200 or a 204 whose body is exactly `captivedetect.canonicalContent`. A 204 carries no body, so it is only accepted when no content is expected, which is how the default endpoint is configured; some deployments answer that same endpoint with an empty 200, which is accepted too. Anything else is taken as interference: another 2xx, a 3xx redirect, or a 511 starts the login flow, while other errors are retried up to `captivedetect.maxRetryCount` times.
+
+```{warning}
+
+`captivedetect.canonicalURL` and `captivedetect.canonicalContent` must always be changed together. Pointing the URL at an endpoint that answers with a body while leaving the expected content empty makes every check report a captive portal - this is what happened to profiles carrying a stale URL override when the default endpoint moved to a 204 (see [bug 2052715](https://bugzilla.mozilla.org/show_bug.cgi?id=2052715)). Both preferences are read on every check, so correcting one takes effect without a restart.
+
+```
 
 ```{note}
 
@@ -47,11 +55,13 @@ pref("network.captive-portal-service.maxInterval", 1500000); // 25 minutes
 // Every 10 checks, the delay is increased by a factor of 5
 pref("network.captive-portal-service.backoffFactor", "5.0");
 
-// The URL used to perform the captive portal checks
-pref("captivedetect.canonicalURL", "http://detectportal.firefox.com/canonical.html");
-// The response we expect to receive back for the canonical URL
-// It contains valid HTML that when loaded in a browser redirects the user
-// to a support page explaining captive portals.
+// The URL used to perform the captive portal checks.
+// It answers with an empty 204 when there is no captive portal.
+pref("captivedetect.canonicalURL", "http://detectportal.firefox.com/generate_204");
+// The response we expect to receive back when the canonical URL answers with a
+// non-empty body, which is the case for the older /canonical.html endpoint this
+// pref may still be pointed at. It contains valid HTML that when loaded in a
+// browser redirects the user to a support page explaining captive portals.
 pref("captivedetect.canonicalContent", "<meta http-equiv=\"refresh\" content=\"0;url=https://support.mozilla.org/kb/captive-portal\"/>");
 
 // The timeout for each request.

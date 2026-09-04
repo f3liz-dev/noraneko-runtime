@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -26,10 +24,7 @@ namespace mozilla::dom {
 NS_IMPL_CYCLE_COLLECTION_CLASS(DOMSVGNumber)
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(DOMSVGNumber)
-  // We may not belong to a list, so we must null check tmp->mList.
-  if (tmp->mList) {
-    tmp->mList->mItems[tmp->mListIndex] = nullptr;
-  }
+  tmp->CleanupWeakRefs();
   NS_IMPL_CYCLE_COLLECTION_UNLINK_PRESERVED_WRAPPER
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mList)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mParent)
@@ -72,6 +67,18 @@ DOMSVGNumber::DOMSVGNumber(SVGSVGElement* aParent)
       mAttrEnum(0),
       mIsAnimValItem(false),
       mValue(0.0f) {}
+
+void DOMSVGNumber::CleanupWeakRefs() {
+  // Our mList's weak ref to us must be nulled out when we die (or when we're
+  // cycle collected), so that we don't leave behind a pointer to
+  // free / soon-to-be-free memory. If GC has unlinked us using the cycle
+  // collector code, then that has already happened, and mList is null.
+  if (mList) {
+    MOZ_RELEASE_ASSERT(mList->mItems[mListIndex] == this,
+                       "Clearing out the wrong list index...?");
+    mList->mItems[mListIndex] = nullptr;
+  }
+}
 
 float DOMSVGNumber::Value() {
   if (mIsAnimValItem && HasOwner()) {

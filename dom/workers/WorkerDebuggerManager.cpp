@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -75,15 +73,7 @@ class WorkerDebuggerEnumerator final : public nsSimpleEnumerator {
  public:
   explicit WorkerDebuggerEnumerator(
       const nsTArray<nsCOMPtr<nsIWorkerDebugger>>& aDebuggers)
-      : mIndex(0) {
-    for (auto debugger : aDebuggers) {
-      bool isRemote;
-      (void)debugger->GetIsRemote(&isRemote);
-      if (!isRemote) {
-        mDebuggers.AppendElement(debugger);
-      }
-    }
-  }
+      : mDebuggers(aDebuggers.Clone()), mIndex(0) {}
 
   NS_DECL_NSISIMPLEENUMERATOR
 
@@ -281,9 +271,9 @@ void WorkerDebuggerManager::RegisterDebugger(
   AssertIsOnMainThread();
 
   mDebuggers.AppendElement(aRemoteWorkerDebugger);
-  //  for (const auto& listener : CloneListeners()) {
-  //    listener->OnRegister(aRemoteWorkerDebugger);
-  //  }
+  for (const auto& listener : CloneListeners()) {
+    listener->OnRegister(aRemoteWorkerDebugger);
+  }
 }
 
 void WorkerDebuggerManager::UnregisterDebugger(
@@ -292,16 +282,16 @@ void WorkerDebuggerManager::UnregisterDebugger(
   AssertIsOnMainThread();
 
   mDebuggers.RemoveElement(aRemoteWorkerDebugger);
-  //  for (const auto& listener : CloneListeners()) {
-  //    listener->OnUnregister(aRemoteWorkerDebugger);
-  //  }
+  for (const auto& listener : CloneListeners()) {
+    listener->OnUnregister(aRemoteWorkerDebugger);
+  }
 }
 
 void WorkerDebuggerManager::RegisterDebuggerMainThread(
     WorkerPrivate* aWorkerPrivate, bool aNotifyListeners) {
   AssertIsOnMainThread();
 
-  RefPtr<WorkerDebugger> debugger = new WorkerDebugger(aWorkerPrivate);
+  RefPtr<WorkerDebugger> debugger = WorkerDebugger::Create(aWorkerPrivate);
   mDebuggers.AppendElement(debugger);
 
   aWorkerPrivate->SetDebugger(debugger);

@@ -35,7 +35,7 @@ NitGenerator = Generator["GlinterNit", None, None]
 
 
 def noop(*args):
-    """ A noop `LintGenerator`. Never yields a GlinterNit."""
+    """A noop `LintGenerator`. Never yields a GlinterNit."""
     return
     yield
 
@@ -82,34 +82,6 @@ def _hamming_distance(str1: str, str2: str) -> int:
         if ch1 != ch2:
             diffs += 1
     return diffs
-
-
-def check_common_prefix(
-    category_name: str, metrics: Iterable[metrics.Metric]
-) -> LintGenerator:
-    """
-    Check if all metrics begin with a common prefix.
-    """
-    metric_words = sorted([_split_words(metric.name) for metric in metrics])
-
-    if len(metric_words) < 2:
-        return
-
-    first = metric_words[0]
-    last = metric_words[-1]
-
-    for i in range(min(len(first), len(last))):
-        if first[i] != last[i]:
-            break
-
-    if i > 0:
-        common_prefix = "_".join(first[:i])
-        yield (
-            f"Within category '{category_name}', all metrics begin with "
-            f"prefix '{common_prefix}'. "
-            "Remove the prefixes on the metric names and (possibly) "
-            "rename the category."
-        )
 
 
 def check_unit_in_name(
@@ -307,8 +279,12 @@ def check_event_on_non_events_ping(
     An event metric should usually go on the `events` ping or a custom ping,
     not on a builtin ping.
     """
-    disallowed_pings = set(pings.RESERVED_PING_NAMES) - {"default", "events"} | {"health"}
-    if metric.type == "event" and any([ping in disallowed_pings for ping in metric.send_in_pings]):
+    disallowed_pings = set(pings.RESERVED_PING_NAMES) - {"default", "events"} | {
+        "health"
+    }
+    if metric.type == "event" and any(
+        [ping in disallowed_pings for ping in metric.send_in_pings]
+    ):
         yield (
             "An event metric should usually go on the `events` ping or a custom ping, "
             + "not on a builtin ping."
@@ -461,7 +437,8 @@ def check_name_too_similar(
 CATEGORY_CHECKS: Dict[
     str, Tuple[Callable[[str, Iterable[metrics.Metric]], LintGenerator], CheckType]
 ] = {
-    "COMMON_PREFIX": (check_common_prefix, CheckType.error),
+    # Keeping it to not break when it is listed in `no_lint`
+    "COMMON_PREFIX": (noop, CheckType.error),
     "CATEGORY_GENERIC": (check_category_generic, CheckType.error),
 }
 
@@ -709,7 +686,11 @@ def lint_metrics(
 
             for check_name, (check_func, check_type) in METRIC_CHECKS.items():
                 new_nits = list(check_func(metric, parser_config))
-                if check_unused_lints and check_name in metric.no_lint and not len(new_nits):
+                if (
+                    check_unused_lints
+                    and check_name in metric.no_lint
+                    and not len(new_nits)
+                ):
                     nits.append(
                         GlinterNit(
                             "UNUSED_NO_LINT",

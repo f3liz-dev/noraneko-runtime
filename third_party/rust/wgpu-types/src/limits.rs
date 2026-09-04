@@ -18,11 +18,11 @@ use crate::{Features, TextureFormat};
 macro_rules! with_limits {
     ($macro_name:ident) => {
         $macro_name!(max_texture_dimension_1d, Ordering::Less);
-        $macro_name!(max_texture_dimension_1d, Ordering::Less);
         $macro_name!(max_texture_dimension_2d, Ordering::Less);
         $macro_name!(max_texture_dimension_3d, Ordering::Less);
         $macro_name!(max_texture_array_layers, Ordering::Less);
         $macro_name!(max_bind_groups, Ordering::Less);
+        $macro_name!(max_bind_groups_plus_vertex_buffers, Ordering::Less);
         $macro_name!(max_bindings_per_bind_group, Ordering::Less);
         $macro_name!(
             max_dynamic_uniform_buffers_per_pipeline_layout,
@@ -38,12 +38,22 @@ macro_rules! with_limits {
         $macro_name!(max_storage_textures_per_shader_stage, Ordering::Less);
         $macro_name!(max_uniform_buffers_per_shader_stage, Ordering::Less);
         $macro_name!(max_binding_array_elements_per_shader_stage, Ordering::Less);
+        $macro_name!(
+            max_binding_array_acceleration_structure_elements_per_shader_stage,
+            Ordering::Less
+        );
+        $macro_name!(
+            max_binding_array_sampler_elements_per_shader_stage,
+            Ordering::Less
+        );
+
         $macro_name!(max_uniform_buffer_binding_size, Ordering::Less);
         $macro_name!(max_storage_buffer_binding_size, Ordering::Less);
         $macro_name!(max_vertex_buffers, Ordering::Less);
         $macro_name!(max_buffer_size, Ordering::Less);
         $macro_name!(max_vertex_attributes, Ordering::Less);
         $macro_name!(max_vertex_buffer_array_stride, Ordering::Less);
+        $macro_name!(max_inter_stage_shader_variables, Ordering::Less);
         $macro_name!(min_uniform_buffer_offset_alignment, Ordering::Greater);
         $macro_name!(min_storage_buffer_offset_alignment, Ordering::Greater);
         $macro_name!(max_color_attachments, Ordering::Less);
@@ -58,8 +68,10 @@ macro_rules! with_limits {
         $macro_name!(max_immediate_size, Ordering::Less);
         $macro_name!(max_non_sampler_bindings, Ordering::Less);
 
-        $macro_name!(max_task_mesh_workgroup_total_count, Ordering::Less);
-        $macro_name!(max_task_mesh_workgroups_per_dimension, Ordering::Less);
+        $macro_name!(max_task_workgroup_total_count, Ordering::Less);
+        $macro_name!(max_task_workgroups_per_dimension, Ordering::Less);
+        $macro_name!(max_mesh_workgroup_total_count, Ordering::Less);
+        $macro_name!(max_mesh_workgroups_per_dimension, Ordering::Less);
         $macro_name!(max_task_invocations_per_workgroup, Ordering::Less);
         $macro_name!(max_task_invocations_per_dimension, Ordering::Less);
         $macro_name!(max_mesh_invocations_per_workgroup, Ordering::Less);
@@ -74,8 +86,16 @@ macro_rules! with_limits {
         $macro_name!(max_blas_primitive_count, Ordering::Less);
         $macro_name!(max_blas_geometry_count, Ordering::Less);
         $macro_name!(max_tlas_instance_count, Ordering::Less);
+        $macro_name!(max_acceleration_structures_per_shader_stage, Ordering::Less);
+        $macro_name!(
+            max_buffers_and_acceleration_structures_per_shader_stage,
+            Ordering::Less
+        );
 
         $macro_name!(max_multiview_view_count, Ordering::Less);
+
+        $macro_name!(max_ray_dispatch_count, Ordering::Less);
+        $macro_name!(max_ray_recursion_depth, Ordering::Less);
     };
 }
 
@@ -83,7 +103,7 @@ macro_rules! with_limits {
 ///
 /// We provide three different defaults.
 /// - [`Limits::downlevel_defaults()`]. This is a set of limits that is guaranteed to work on almost
-///   all backends, including "downlevel" backends such as OpenGL and D3D11, other than WebGL. For
+///   all backends, including the "downlevel" OpenGL backend, but excluding WebGL2. For
 ///   most applications we recommend using these limits, assuming they are high enough for your
 ///   application, and you do not intend to support WebGL.
 /// - [`Limits::downlevel_webgl2_defaults()`] This is a set of limits that is lower even than the
@@ -112,6 +132,8 @@ macro_rules! with_limits {
 ///
 /// [`downlevel_defaults()`]: Limits::downlevel_defaults
 #[repr(C)]
+// Even though this type is simple, it is not copy because it is large.
+// https://rust-lang.github.io/rust-clippy/master/#large_types_passed_by_value
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "serde", serde(rename_all = "camelCase", default))]
@@ -134,6 +156,9 @@ pub struct Limits {
     pub max_texture_array_layers: u32,
     /// Amount of bind groups that can be attached to a pipeline at the same time. Defaults to 4. Higher is "better".
     pub max_bind_groups: u32,
+    /// The maximum number of bind group and vertex buffer slots used simultaneously, counting any empty slots below the highest index.
+    /// Defaults to 24. Higher is "better".
+    pub max_bind_groups_plus_vertex_buffers: u32,
     /// Maximum binding index allowed in `create_bind_group_layout`. Defaults to 1000. Higher is "better".
     pub max_bindings_per_bind_group: u32,
     /// Amount of uniform buffer bindings that can be dynamic in a single pipeline. Defaults to 8. Higher is "better".
@@ -155,14 +180,18 @@ pub struct Limits {
     ///
     /// This "defaults" to 0. However if binding arrays are supported, all devices can support 500,000. Higher is "better".
     pub max_binding_array_elements_per_shader_stage: u32,
+    /// Amount of individual acceleration structures within binding arrays that can be accessed in a single shader stage.
+    ///
+    /// This "defaults" to 0. Higher is "better".
+    pub max_binding_array_acceleration_structure_elements_per_shader_stage: u32,
     /// Amount of individual samplers within binding arrays that can be accessed in a single shader stage.
     ///
     /// This "defaults" to 0. However if binding arrays are supported, all devices can support 1,000. Higher is "better".
     pub max_binding_array_sampler_elements_per_shader_stage: u32,
     /// Maximum size in bytes of a binding to a uniform buffer. Defaults to 64 KiB. Higher is "better".
-    pub max_uniform_buffer_binding_size: u32,
+    pub max_uniform_buffer_binding_size: u64,
     /// Maximum size in bytes of a binding to a storage buffer. Defaults to 128 MiB. Higher is "better".
-    pub max_storage_buffer_binding_size: u32,
+    pub max_storage_buffer_binding_size: u64,
     /// Maximum length of `VertexState::buffers` when creating a `RenderPipeline`.
     /// Defaults to 8. Higher is "better".
     pub max_vertex_buffers: u32,
@@ -215,7 +244,7 @@ pub struct Limits {
     /// The maximum value of the `workgroup_size` Z dimension for a compute stage `ShaderModule` entry-point.
     /// Defaults to 64. Higher is "better".
     pub max_compute_workgroup_size_z: u32,
-    /// The maximum value for each dimension of a `ComputePass::dispatch(x, y, z)` operation.
+    /// The maximum value for each dimension of a `ComputePass::dispatch_workgroups(x, y, z)` operation.
     /// Defaults to 65535. Higher is "better".
     pub max_compute_workgroups_per_dimension: u32,
 
@@ -224,7 +253,7 @@ pub struct Limits {
     ///
     /// Expect the size to be:
     /// - Vulkan: 128-256 bytes
-    /// - DX12: 256 bytes
+    /// - DX12: 128 bytes
     /// - Metal: 4096 bytes
     /// - OpenGL doesn't natively support immediates, and are emulated with uniforms,
     ///   so this number is less useful but likely 256.
@@ -240,12 +269,20 @@ pub struct Limits {
     /// to create many bind groups at the cost of a large up-front allocation at device creation.
     pub max_non_sampler_bindings: u32,
 
-    /// The maximum total value for a `RenderPass::draw_mesh_tasks(x, y, z)` operation or the
-    /// `@builtin(mesh_task_size)` returned from a task shader.  Higher is "better".
-    pub max_task_mesh_workgroup_total_count: u32,
-    /// The maximum value for each dimension of a `RenderPass::draw_mesh_tasks(x, y, z)` operation.
+    /// The maximum total value for a `RenderPass::draw_mesh_tasks(x, y, z)` call on a mesh pipeline with a task shader.
+    /// Higher is "better".
+    pub max_task_workgroup_total_count: u32,
+    /// The maximum value for each dimension of a `RenderPass::draw_mesh_tasks(x, y, z)` call on a mesh pipeline with a task shader.
+    /// Higher is "better".
+    pub max_task_workgroups_per_dimension: u32,
+    /// The maximum product of arguments of a `RenderPass::draw_mesh_tasks(x, y, z)` operation on a mesh shader pipeline
+    /// without task shaders.
     /// Also for task shader outputs. Higher is "better".
-    pub max_task_mesh_workgroups_per_dimension: u32,
+    pub max_mesh_workgroup_total_count: u32,
+    /// The maximum value for each dimension of a `RenderPass::draw_mesh_tasks(x, y, z)` operation on a mesh shader pipeline
+    /// without task shaders.
+    /// Also for task shader outputs. Higher is "better".
+    pub max_mesh_workgroups_per_dimension: u32,
     // These are fundamentally different. It is very common for limits on mesh shaders to be much lower.
     /// Maximum total number of invocations, or threads, per task shader workgroup. Higher is "better".
     pub max_task_invocations_per_workgroup: u32,
@@ -285,9 +322,25 @@ pub struct Limits {
     /// Requesting more than 0 during device creation only makes sense if [`Features::EXPERIMENTAL_RAY_QUERY`]
     /// is enabled.
     pub max_acceleration_structures_per_shader_stage: u32,
+    /// The combined number of buffers (storage and uniform), vertex buffers, and acceleration
+    /// structures that can be bound in a single shader stage.
+    pub max_buffers_and_acceleration_structures_per_shader_stage: u32,
 
     /// The maximum number of views that can be used in multiview rendering
     pub max_multiview_view_count: u32,
+
+    /// The maximum total number (`x*y*z`) of rays able to be dispatched by a trace rays call in a ray
+    /// tracing pass. Requesting more than 0 during device creation only makes sense if [`Features::EXPERIMENTAL_RAY_TRACING_PIPELINES`]
+    /// is enabled.
+    ///
+    /// Currently only affects wgpu-hal
+    pub max_ray_dispatch_count: u32,
+    /// The maximum number that one can pass into a ray tracing pipeline creation to be the maximum ray
+    /// recursion depth. (the maximum of the max ray recursion depth) Requesting more than 0 during device
+    /// creation only makes sense if [`Features::EXPERIMENTAL_RAY_TRACING_PIPELINES`] is enabled.
+    ///
+    /// Currently only affects wgpu-hal
+    pub max_ray_recursion_depth: u32,
 }
 
 impl Default for Limits {
@@ -297,7 +350,7 @@ impl Default for Limits {
 }
 
 impl Limits {
-    /// These default limits are guaranteed to to work on all modern
+    /// These default limits are guaranteed to work on all modern
     /// backends and guaranteed to be supported by WebGPU
     ///
     /// Those limits are as follows:
@@ -309,6 +362,7 @@ impl Limits {
     ///     max_texture_dimension_3d: 2048,
     ///     max_texture_array_layers: 256,
     ///     max_bind_groups: 4,
+    ///     max_bind_groups_plus_vertex_buffers: 24,
     ///     max_bindings_per_bind_group: 1000,
     ///     max_dynamic_uniform_buffers_per_pipeline_layout: 8,
     ///     max_dynamic_storage_buffers_per_pipeline_layout: 4,
@@ -318,6 +372,7 @@ impl Limits {
     ///     max_storage_textures_per_shader_stage: 4,
     ///     max_uniform_buffers_per_shader_stage: 12,
     ///     max_binding_array_elements_per_shader_stage: 0,
+    ///     max_binding_array_acceleration_structure_elements_per_shader_stage: 0,
     ///     max_binding_array_sampler_elements_per_shader_stage: 0,
     ///     max_uniform_buffer_binding_size: 64 << 10, // (64 KiB)
     ///     max_storage_buffer_binding_size: 128 << 20, // (128 MiB)
@@ -338,8 +393,10 @@ impl Limits {
     ///     max_compute_workgroups_per_dimension: 65535,
     ///     max_immediate_size: 0,
     ///     max_non_sampler_bindings: 1_000_000,
-    ///     max_task_mesh_workgroup_total_count: 0,
-    ///     max_task_mesh_workgroups_per_dimension: 0,
+    ///     max_task_workgroup_total_count: 0,
+    ///     max_task_workgroups_per_dimension: 0,
+    ///     max_mesh_workgroup_total_count: 0,
+    ///     max_mesh_workgroups_per_dimension: 0,
     ///     max_task_invocations_per_workgroup: 0,
     ///     max_task_invocations_per_dimension: 0,
     ///     max_mesh_invocations_per_workgroup: 0,
@@ -353,7 +410,10 @@ impl Limits {
     ///     max_blas_geometry_count: 0,
     ///     max_tlas_instance_count: 0,
     ///     max_acceleration_structures_per_shader_stage: 0,
+    ///     max_buffers_and_acceleration_structures_per_shader_stage: 28, // sum of storage buffers, uniform buffers and vertex buffers limits
     ///     max_multiview_view_count: 0,
+    ///     max_ray_dispatch_count: 0,
+    ///     max_ray_recursion_depth: 0,
     /// });
     /// ```
     ///
@@ -367,6 +427,7 @@ impl Limits {
             max_texture_dimension_3d: 2048,
             max_texture_array_layers: 256,
             max_bind_groups: 4,
+            max_bind_groups_plus_vertex_buffers: 24,
             max_bindings_per_bind_group: 1000,
             max_dynamic_uniform_buffers_per_pipeline_layout: 8,
             max_dynamic_storage_buffers_per_pipeline_layout: 4,
@@ -376,6 +437,7 @@ impl Limits {
             max_storage_textures_per_shader_stage: 4,
             max_uniform_buffers_per_shader_stage: 12,
             max_binding_array_elements_per_shader_stage: 0,
+            max_binding_array_acceleration_structure_elements_per_shader_stage: 0,
             max_binding_array_sampler_elements_per_shader_stage: 0,
             max_uniform_buffer_binding_size: 64 << 10, // (64 KiB)
             max_storage_buffer_binding_size: 128 << 20, // (128 MiB)
@@ -397,8 +459,10 @@ impl Limits {
             max_immediate_size: 0,
             max_non_sampler_bindings: 1_000_000,
 
-            max_task_mesh_workgroup_total_count: 0,
-            max_task_mesh_workgroups_per_dimension: 0,
+            max_task_workgroup_total_count: 0,
+            max_task_workgroups_per_dimension: 0,
+            max_mesh_workgroup_total_count: 0,
+            max_mesh_workgroups_per_dimension: 0,
             max_task_invocations_per_workgroup: 0,
             max_task_invocations_per_dimension: 0,
             max_mesh_invocations_per_workgroup: 0,
@@ -413,12 +477,16 @@ impl Limits {
             max_blas_geometry_count: 0,
             max_tlas_instance_count: 0,
             max_acceleration_structures_per_shader_stage: 0,
+            max_buffers_and_acceleration_structures_per_shader_stage: 28,
 
             max_multiview_view_count: 0,
+
+            max_ray_dispatch_count: 0,
+            max_ray_recursion_depth: 0,
         }
     }
 
-    /// These default limits are guaranteed to be compatible with GLES-3.1, and D3D11
+    /// These default limits are guaranteed to be compatible with GLES-3.1.
     ///
     /// Those limits are as follows (different from default are marked with *):
     /// ```rust
@@ -429,6 +497,7 @@ impl Limits {
     ///     max_texture_dimension_3d: 256, // *
     ///     max_texture_array_layers: 256,
     ///     max_bind_groups: 4,
+    ///     max_bind_groups_plus_vertex_buffers: 24,
     ///     max_bindings_per_bind_group: 1000,
     ///     max_dynamic_uniform_buffers_per_pipeline_layout: 8,
     ///     max_dynamic_storage_buffers_per_pipeline_layout: 4,
@@ -438,6 +507,7 @@ impl Limits {
     ///     max_storage_textures_per_shader_stage: 4,
     ///     max_uniform_buffers_per_shader_stage: 12,
     ///     max_binding_array_elements_per_shader_stage: 0,
+    ///     max_binding_array_acceleration_structure_elements_per_shader_stage: 0,
     ///     max_binding_array_sampler_elements_per_shader_stage: 0,
     ///     max_uniform_buffer_binding_size: 16 << 10, // * (16 KiB)
     ///     max_storage_buffer_binding_size: 128 << 20, // (128 MiB)
@@ -459,8 +529,10 @@ impl Limits {
     ///     max_buffer_size: 256 << 20, // (256 MiB)
     ///     max_non_sampler_bindings: 1_000_000,
     ///
-    ///     max_task_mesh_workgroup_total_count: 0,
-    ///     max_task_mesh_workgroups_per_dimension: 0,
+    ///     max_task_workgroup_total_count: 0,
+    ///     max_task_workgroups_per_dimension: 0,
+    ///     max_mesh_workgroup_total_count: 0,
+    ///     max_mesh_workgroups_per_dimension: 0,
     ///     max_task_invocations_per_workgroup: 0,
     ///     max_task_invocations_per_dimension: 0,
     ///     max_mesh_invocations_per_workgroup: 0,
@@ -475,8 +547,12 @@ impl Limits {
     ///     max_blas_geometry_count: 0,
     ///     max_tlas_instance_count: 0,
     ///     max_acceleration_structures_per_shader_stage: 0,
+    ///     max_buffers_and_acceleration_structures_per_shader_stage: 24, // * sum of storage buffers, uniform buffers and vertex buffers limits
     ///
     ///     max_multiview_view_count: 0,
+    ///
+    ///     max_ray_dispatch_count: 0,
+    ///     max_ray_recursion_depth: 0,
     /// });
     /// ```
     #[must_use]
@@ -491,11 +567,12 @@ impl Limits {
             max_color_attachments: 4,
             // see: https://developer.apple.com/metal/Metal-Feature-Set-Tables.pdf#page=7
             max_compute_workgroup_storage_size: 16352,
+            max_buffers_and_acceleration_structures_per_shader_stage: 24,
             ..Self::defaults()
         }
     }
 
-    /// These default limits are guaranteed to be compatible with GLES-3.0, and D3D11, and WebGL2
+    /// These default limits are guaranteed to be compatible with GLES-3.0 and WebGL2
     ///
     /// Those limits are as follows (different from `downlevel_defaults` are marked with +,
     /// *'s from `downlevel_defaults` shown as well.):
@@ -507,6 +584,7 @@ impl Limits {
     ///     max_texture_dimension_3d: 256, // *
     ///     max_texture_array_layers: 256,
     ///     max_bind_groups: 4,
+    ///     max_bind_groups_plus_vertex_buffers: 24,
     ///     max_bindings_per_bind_group: 1000,
     ///     max_dynamic_uniform_buffers_per_pipeline_layout: 8,
     ///     max_dynamic_storage_buffers_per_pipeline_layout: 0, // +
@@ -516,6 +594,7 @@ impl Limits {
     ///     max_storage_textures_per_shader_stage: 0, // +
     ///     max_uniform_buffers_per_shader_stage: 11, // +
     ///     max_binding_array_elements_per_shader_stage: 0,
+    ///     max_binding_array_acceleration_structure_elements_per_shader_stage: 0,
     ///     max_binding_array_sampler_elements_per_shader_stage: 0,
     ///     max_uniform_buffer_binding_size: 16 << 10, // * (16 KiB)
     ///     max_storage_buffer_binding_size: 0, // * +
@@ -537,8 +616,10 @@ impl Limits {
     ///     max_buffer_size: 256 << 20, // (256 MiB),
     ///     max_non_sampler_bindings: 1_000_000,
     ///
-    ///     max_task_mesh_workgroup_total_count: 0,
-    ///     max_task_mesh_workgroups_per_dimension: 0,
+    ///     max_task_workgroup_total_count: 0,
+    ///     max_task_workgroups_per_dimension: 0,
+    ///     max_mesh_workgroup_total_count: 0,
+    ///     max_mesh_workgroups_per_dimension: 0,
     ///     max_task_invocations_per_workgroup: 0,
     ///     max_task_invocations_per_dimension: 0,
     ///     max_mesh_invocations_per_workgroup: 0,
@@ -553,8 +634,12 @@ impl Limits {
     ///     max_blas_geometry_count: 0,
     ///     max_tlas_instance_count: 0,
     ///     max_acceleration_structures_per_shader_stage: 0,
+    ///     max_buffers_and_acceleration_structures_per_shader_stage: 19, // * sum of storage buffers, uniform buffers and vertex buffers limits
     ///
     ///     max_multiview_view_count: 0,
+    ///
+    ///     max_ray_dispatch_count: 0,
+    ///     max_ray_recursion_depth: 0,
     /// });
     /// ```
     #[must_use]
@@ -576,8 +661,88 @@ impl Limits {
             // Value supported by Intel Celeron B830 on Windows (OpenGL 3.1)
             max_inter_stage_shader_variables: 15,
 
+            max_buffers_and_acceleration_structures_per_shader_stage: 19,
+
             // Most of the values should be the same as the downlevel defaults
             ..Self::downlevel_defaults()
+        }
+    }
+
+    /// Sets each limit to `i32::MAX` (or 1, in the case of lower-is-better limits).
+    ///
+    /// These values do not reflect the capabilities of any actual device. They are
+    /// used by the noop backend, and by the test that makes sure `with_limits!` is
+    /// exhaustive.
+    #[must_use]
+    pub const fn unlimited() -> Self {
+        /// Guaranteed to be no bigger than isize::MAX which is the maximum size of an allocation,
+        /// except on 16-bit platforms which we certainly don’t fit in.
+        const ALLOC_MAX_U32: u32 = i32::MAX as u32;
+        /// Guaranteed to be no bigger than isize::MAX which is the maximum size of an allocation,
+        /// except on 16-bit platforms which we certainly don’t fit in.
+        const ALLOC_MAX_U64: u64 = i32::MAX as u64;
+
+        Self {
+            max_texture_dimension_1d: ALLOC_MAX_U32,
+            max_texture_dimension_2d: ALLOC_MAX_U32,
+            max_texture_dimension_3d: ALLOC_MAX_U32,
+            max_texture_array_layers: ALLOC_MAX_U32,
+            max_bind_groups: ALLOC_MAX_U32,
+            max_bind_groups_plus_vertex_buffers: ALLOC_MAX_U32,
+            max_bindings_per_bind_group: ALLOC_MAX_U32,
+            max_dynamic_uniform_buffers_per_pipeline_layout: ALLOC_MAX_U32,
+            max_dynamic_storage_buffers_per_pipeline_layout: ALLOC_MAX_U32,
+            max_sampled_textures_per_shader_stage: ALLOC_MAX_U32,
+            max_samplers_per_shader_stage: ALLOC_MAX_U32,
+            max_storage_buffers_per_shader_stage: ALLOC_MAX_U32,
+            max_storage_textures_per_shader_stage: ALLOC_MAX_U32,
+            max_uniform_buffers_per_shader_stage: ALLOC_MAX_U32,
+            max_binding_array_elements_per_shader_stage: ALLOC_MAX_U32,
+            max_binding_array_sampler_elements_per_shader_stage: ALLOC_MAX_U32,
+            max_binding_array_acceleration_structure_elements_per_shader_stage: ALLOC_MAX_U32,
+            max_uniform_buffer_binding_size: ALLOC_MAX_U64,
+            max_storage_buffer_binding_size: ALLOC_MAX_U64,
+            max_vertex_buffers: ALLOC_MAX_U32,
+            max_buffer_size: ALLOC_MAX_U64,
+            max_vertex_attributes: ALLOC_MAX_U32,
+            max_vertex_buffer_array_stride: ALLOC_MAX_U32,
+            max_inter_stage_shader_variables: ALLOC_MAX_U32,
+            min_uniform_buffer_offset_alignment: 1,
+            min_storage_buffer_offset_alignment: 1,
+            max_color_attachments: ALLOC_MAX_U32,
+            max_color_attachment_bytes_per_sample: ALLOC_MAX_U32,
+            max_compute_workgroup_storage_size: ALLOC_MAX_U32,
+            max_compute_invocations_per_workgroup: ALLOC_MAX_U32,
+            max_compute_workgroup_size_x: ALLOC_MAX_U32,
+            max_compute_workgroup_size_y: ALLOC_MAX_U32,
+            max_compute_workgroup_size_z: ALLOC_MAX_U32,
+            max_compute_workgroups_per_dimension: ALLOC_MAX_U32,
+            max_immediate_size: ALLOC_MAX_U32,
+            max_non_sampler_bindings: ALLOC_MAX_U32,
+
+            max_task_workgroup_total_count: ALLOC_MAX_U32,
+            max_task_workgroups_per_dimension: ALLOC_MAX_U32,
+            max_mesh_workgroup_total_count: ALLOC_MAX_U32,
+            max_mesh_workgroups_per_dimension: ALLOC_MAX_U32,
+            max_task_invocations_per_workgroup: ALLOC_MAX_U32,
+            max_task_invocations_per_dimension: ALLOC_MAX_U32,
+            max_mesh_invocations_per_workgroup: ALLOC_MAX_U32,
+            max_mesh_invocations_per_dimension: ALLOC_MAX_U32,
+            max_task_payload_size: ALLOC_MAX_U32,
+            max_mesh_output_vertices: ALLOC_MAX_U32,
+            max_mesh_output_primitives: ALLOC_MAX_U32,
+            max_mesh_output_layers: ALLOC_MAX_U32,
+            max_mesh_multiview_view_count: ALLOC_MAX_U32,
+
+            max_blas_primitive_count: ALLOC_MAX_U32,
+            max_blas_geometry_count: ALLOC_MAX_U32,
+            max_tlas_instance_count: ALLOC_MAX_U32,
+            max_acceleration_structures_per_shader_stage: ALLOC_MAX_U32,
+            max_buffers_and_acceleration_structures_per_shader_stage: ALLOC_MAX_U32,
+
+            max_multiview_view_count: ALLOC_MAX_U32,
+            max_ray_dispatch_count: ALLOC_MAX_U32,
+            max_ray_recursion_depth: ALLOC_MAX_U32,
         }
     }
 
@@ -615,7 +780,9 @@ impl Limits {
             max_blas_geometry_count: (1 << 24) - 1, // 2^24 - 1: Vulkan's minimum
             max_tlas_instance_count: (1 << 24) - 1, // 2^24 - 1: Vulkan's minimum
             max_blas_primitive_count: 1 << 28,      // 2^28: Metal's minimum
-            max_acceleration_structures_per_shader_stage: 16, // Vulkan's minimum
+            // On metal acceleration structures are limited because they share buffer slots
+            max_acceleration_structures_per_shader_stage: 1,
+            max_buffers_and_acceleration_structures_per_shader_stage: 29,
             ..self
         }
     }
@@ -630,6 +797,19 @@ impl Limits {
             max_blas_primitive_count: other.max_blas_primitive_count,
             max_acceleration_structures_per_shader_stage: other
                 .max_acceleration_structures_per_shader_stage,
+            max_buffers_and_acceleration_structures_per_shader_stage: other
+                .max_buffers_and_acceleration_structures_per_shader_stage,
+            ..self
+        }
+    }
+
+    /// The minimum guaranteed limits for acceleration structures if you enable [`Features::EXPERIMENTAL_RAY_TRACING_PIPELINES`]
+    /// These may change in the future (including downwards).
+    #[must_use]
+    pub const fn using_minimum_supported_ray_tracing_pipeline_values(self) -> Self {
+        Self {
+            max_ray_dispatch_count: 1 << 30,
+            max_ray_recursion_depth: 1,
             ..self
         }
     }
@@ -641,10 +821,17 @@ impl Limits {
     #[must_use]
     pub const fn using_recommended_minimum_mesh_shader_values(self) -> Self {
         Self {
-            // This limitation comes from metal
-            max_task_mesh_workgroup_total_count: 1024,
-            // This is a DirectX limitation
-            max_task_mesh_workgroups_per_dimension: 256,
+            // These are DirectX limitations (both nvidia and AMD match these exactly on vulkan)
+            // Note that Mac2 (newest intel macs) support up to 1024, but this is low enough,
+            // to make use of mesh shaders nonviable in most cases.
+            // We therefore, don't expose mesh shading on these devices.
+            // In contrast, here is no limit for any A-series or M-series chip.
+            max_task_workgroup_total_count: 2u32.pow(22),
+            max_task_workgroups_per_dimension: 65535,
+            // These are metal limitations
+            // M3 ups both of these to 1M
+            max_mesh_workgroup_total_count: 1024,
+            max_mesh_workgroups_per_dimension: 1024,
             // Nvidia limit on vulkan
             max_task_invocations_per_workgroup: 128,
             max_task_invocations_per_dimension: 64,
@@ -759,6 +946,94 @@ impl Limits {
         with_limits!(or_worse_value_from);
 
         self
+    }
+
+    /// Sets all native-only limits to zero, except for `max_non_sampler_bindings`.
+    pub fn zero_native_only(&mut self) {
+        let Self {
+            max_texture_dimension_1d: _,
+            max_texture_dimension_2d: _,
+            max_texture_dimension_3d: _,
+            max_texture_array_layers: _,
+            max_bind_groups: _,
+            max_bind_groups_plus_vertex_buffers: _,
+            max_bindings_per_bind_group: _,
+            max_dynamic_uniform_buffers_per_pipeline_layout: _,
+            max_dynamic_storage_buffers_per_pipeline_layout: _,
+            max_sampled_textures_per_shader_stage: _,
+            max_samplers_per_shader_stage: _,
+            max_storage_buffers_per_shader_stage: _,
+            max_storage_textures_per_shader_stage: _,
+            max_uniform_buffers_per_shader_stage: _,
+            max_uniform_buffer_binding_size: _,
+            max_storage_buffer_binding_size: _,
+            max_vertex_buffers: _,
+            max_buffer_size: _,
+            max_vertex_attributes: _,
+            max_vertex_buffer_array_stride: _,
+            max_inter_stage_shader_variables: _,
+            min_uniform_buffer_offset_alignment: _,
+            min_storage_buffer_offset_alignment: _,
+            max_color_attachments: _,
+            max_color_attachment_bytes_per_sample: _,
+            max_compute_workgroup_storage_size: _,
+            max_compute_invocations_per_workgroup: _,
+            max_compute_workgroup_size_x: _,
+            max_compute_workgroup_size_y: _,
+            max_compute_workgroup_size_z: _,
+            max_compute_workgroups_per_dimension: _,
+            max_immediate_size: _,
+            max_non_sampler_bindings: _, // This is more of an internal setting rather than a limit and it can't be 0.
+
+            max_binding_array_elements_per_shader_stage,
+            max_binding_array_acceleration_structure_elements_per_shader_stage,
+            max_binding_array_sampler_elements_per_shader_stage,
+            max_task_workgroup_total_count,
+            max_task_workgroups_per_dimension,
+            max_mesh_workgroup_total_count,
+            max_mesh_workgroups_per_dimension,
+            max_task_invocations_per_workgroup,
+            max_task_invocations_per_dimension,
+            max_mesh_invocations_per_workgroup,
+            max_mesh_invocations_per_dimension,
+            max_task_payload_size,
+            max_mesh_output_vertices,
+            max_mesh_output_primitives,
+            max_mesh_output_layers,
+            max_mesh_multiview_view_count,
+            max_blas_primitive_count,
+            max_blas_geometry_count,
+            max_tlas_instance_count,
+            max_acceleration_structures_per_shader_stage,
+            max_buffers_and_acceleration_structures_per_shader_stage,
+            max_multiview_view_count,
+            max_ray_dispatch_count,
+            max_ray_recursion_depth,
+        } = self;
+        *max_binding_array_elements_per_shader_stage = 0;
+        *max_binding_array_acceleration_structure_elements_per_shader_stage = 0;
+        *max_binding_array_sampler_elements_per_shader_stage = 0;
+        *max_task_workgroup_total_count = 0;
+        *max_task_workgroups_per_dimension = 0;
+        *max_mesh_workgroup_total_count = 0;
+        *max_mesh_workgroups_per_dimension = 0;
+        *max_task_invocations_per_workgroup = 0;
+        *max_task_invocations_per_dimension = 0;
+        *max_mesh_invocations_per_workgroup = 0;
+        *max_mesh_invocations_per_dimension = 0;
+        *max_task_payload_size = 0;
+        *max_mesh_output_vertices = 0;
+        *max_mesh_output_primitives = 0;
+        *max_mesh_output_layers = 0;
+        *max_mesh_multiview_view_count = 0;
+        *max_blas_primitive_count = 0;
+        *max_blas_geometry_count = 0;
+        *max_tlas_instance_count = 0;
+        *max_acceleration_structures_per_shader_stage = 0;
+        *max_buffers_and_acceleration_structures_per_shader_stage = 0;
+        *max_multiview_view_count = 0;
+        *max_ray_dispatch_count = 0;
+        *max_ray_recursion_depth = 0;
     }
 }
 
@@ -952,6 +1227,15 @@ bitflags::bitflags! {
         ///
         /// Not supported by Vulkan on Mesa when [`Features::SHADER_F16`] is absent.
         const SHADER_F16_IN_F32 = 1 << 23;
+
+        /// Supports features introduced in MSL 2.1.
+        const MSL2_1 = 1 << 24;
+
+        /// The adapter supports the WebGPU texture compression requirement:
+        /// BC || (ETC2 && ASTC).
+        ///
+        /// See <https://www.w3.org/TR/webgpu/#adapter-capability-guarantees>.
+        const TEXTURE_COMPRESSION = 1 << 25;
     }
 }
 
@@ -977,4 +1261,62 @@ pub enum ShaderModel {
     Sm4,
     /// WebGPU supports shader module 5.
     Sm5,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use alloc::{format, string::String, vec::Vec};
+
+    fn side_by_side(left: &str, right: &str) -> String {
+        let left_lines: Vec<&str> = left.lines().map(str::trim).collect();
+        let right_lines: Vec<&str> = right.lines().map(str::trim).collect();
+        let max_lines = left_lines.len().max(right_lines.len());
+        let diffs: Vec<(&str, &str)> = (0..max_lines)
+            .map(|i| {
+                let l = *left_lines.get(i).unwrap_or(&"");
+                let r = *right_lines.get(i).unwrap_or(&"");
+                (l, r)
+            })
+            .filter(|(l, r)| l != r)
+            .collect();
+        let left_width = diffs.iter().map(|(l, _)| l.len()).max().unwrap_or(0);
+        let mut out = String::new();
+        for (l, r) in &diffs {
+            out += &format!("{:<width$}  |  {}\n", l, r, width = left_width);
+        }
+        out
+    }
+
+    #[test]
+    fn with_limits_exhaustive() {
+        // Check that all limits are included in `with_limits!`, by using it to
+        // replicate `Limits::unlimited()`.
+        let mut limits = Limits::default();
+
+        macro_rules! set_to_max {
+            ($name:ident, $ordering:expr) => {
+                if $ordering == Ordering::Less {
+                    limits.$name = i32::MAX as _;
+                } else {
+                    limits.$name = 1;
+                }
+            };
+        }
+
+        with_limits!(set_to_max);
+
+        assert_eq!(
+            limits,
+            Limits::unlimited(),
+            "with_limits! did not replicate Limits::unlimited():\n{}",
+            side_by_side(
+                &format!("with_limits!\n------------\n{:#?}", limits),
+                &format!(
+                    "Limits::unlimited()\n-------------------\n{:#?}",
+                    Limits::unlimited()
+                ),
+            )
+        );
+    }
 }

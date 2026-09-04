@@ -3,11 +3,9 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 plugins {
+    id 'com.android.library'
     alias(libs.plugins.dependency.analysis)
 }
-
-apply plugin: 'com.android.library'
-apply plugin: 'kotlin-android'
 
 android {
     namespace = 'mozilla.components.lib.push.firebase'
@@ -25,6 +23,7 @@ dependencies {
     testImplementation project(':components:support-test')
 
     testImplementation libs.androidx.test.core
+    testImplementation libs.kotlin.test
     testImplementation libs.kotlinx.coroutines.test
     testImplementation platform(libs.junit.bom)
     testImplementation libs.junit4

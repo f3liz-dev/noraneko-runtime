@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -11,38 +10,36 @@
 // shellapi.h is needed to build with WIN32_LEAN_AND_MEAN
 #include <shellapi.h>
 
+#include "KeyboardLayout.h"
+#include "WinUtils.h"
+#include "gfxContext.h"
 #include "mozilla/RefPtr.h"
-#include "nsDragService.h"
-#include "nsITransferable.h"
-#include "nsDataObj.h"
-
-#include "nsWidgetsCID.h"
-#include "nsNativeDragTarget.h"
-#include "nsNativeDragSource.h"
-#include "nsClipboard.h"
+#include "mozilla/ScopeExit.h"
+#include "mozilla/StaticPrefs_widget.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/DocumentInlines.h"
-#include "nsDataObjCollection.h"
-
-#include "nsArrayUtils.h"
-#include "nsString.h"
-#include "nsEscape.h"
-#include "nsIScreenManager.h"
-#include "nsToolkit.h"
-#include "nsCRT.h"
-#include "nsDirectoryServiceDefs.h"
-#include "nsUnicharUtils.h"
-#include "nsRect.h"
-#include "nsMathUtils.h"
-#include "WinUtils.h"
-#include "KeyboardLayout.h"
-#include "gfxContext.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/gfx/DataSurfaceHelpers.h"
 #include "mozilla/gfx/Tools.h"
-#include "mozilla/ScopeExit.h"
-#include "mozilla/StaticPrefs_widget.h"
 #include "mozilla/widget/WidgetLogging.h"
+#include "nsArrayUtils.h"
+#include "nsCRT.h"
+#include "nsClipboard.h"
+#include "nsDataObj.h"
+#include "nsDataObjCollection.h"
+#include "nsDirectoryServiceDefs.h"
+#include "nsDragService.h"
+#include "nsEscape.h"
+#include "nsIScreenManager.h"
+#include "nsITransferable.h"
+#include "nsMathUtils.h"
+#include "nsNativeDragSource.h"
+#include "nsNativeDragTarget.h"
+#include "nsRect.h"
+#include "nsString.h"
+#include "nsToolkit.h"
+#include "nsUnicharUtils.h"
+#include "nsWidgetsCID.h"
 
 using namespace mozilla;
 using namespace mozilla::gfx;
@@ -55,7 +52,7 @@ using namespace mozilla::widget;
 nsDragSession::~nsDragSession() { NS_IF_RELEASE(mDataObject); }
 
 already_AddRefed<nsIDragSession> nsDragService::CreateDragSession() {
-  RefPtr<nsIDragSession> session = new nsDragSession();
+  auto session = MakeRefPtr<nsDragSession>();
   return session.forget();
 }
 
@@ -263,8 +260,7 @@ nsresult nsDragSession::StartInvokingDragSession(nsIWidget* aWidget,
 
   // To do the drag we need to create an object that
   // implements the IDataObject interface (for OLE)
-  RefPtr<nsNativeDragSource> nativeDragSrc =
-      new nsNativeDragSource(mDataTransfer);
+  auto nativeDragSrc = MakeRefPtr<nsNativeDragSource>(mDataTransfer);
 
   // Now figure out what the native drag effect should be
   DWORD winDropRes;
@@ -431,9 +427,12 @@ nsDragSession::GetNumDropItems(uint32_t* aNumItems) {
   STGMEDIUM stm;
 
   if (SUCCEEDED(mDataObject->GetData(&fe2, &stm))) {
+    *aNumItems = 0;
     LPFILEGROUPDESCRIPTOR pDesc =
         static_cast<LPFILEGROUPDESCRIPTOR>(GlobalLock(stm.hGlobal));
-    if (pDesc) {
+    // Validate that pDesc actualy has the contents it claims.
+    if (pDesc && nsClipboard::FileGroupDescriptorHasItems<FILEGROUPDESCRIPTORW>(
+                     stm.hGlobal, pDesc->cItems)) {
       *aNumItems = pDesc->cItems;
     }
     GlobalUnlock(stm.hGlobal);
@@ -457,6 +456,7 @@ nsDragSession::GetData(nsITransferable* aTransferable, uint32_t anItem) {
   if (IsCollectionObject(mDataObject)) {
     // multiple items, use |anItem| as an index into our collection
     nsDataObjCollection* dataObjCol = GetDataObjCollection(mDataObject);
+    NS_ENSURE_TRUE(dataObjCol, NS_ERROR_FAILURE);
     uint32_t cnt = dataObjCol->GetNumDataObjects();
     if (anItem < cnt) {
       IDataObject* dataObj = dataObjCol->GetDataObjectAt(anItem);
@@ -708,3 +708,7 @@ nsDragSession::UpdateDragImage(nsINode* aImage, int32_t aImageX,
 
   return NS_OK;
 }
+
+#undef LOGD
+#undef LOGI
+#undef LOGE

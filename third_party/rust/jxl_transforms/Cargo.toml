@@ -12,7 +12,7 @@
 [package]
 edition = "2021"
 name = "jxl_transforms"
-version = "0.3.0"
+version = "0.5.1"
 authors = ["Luca Versari <veluca93@gmail.com>"]
 build = false
 autolib = false
@@ -36,6 +36,7 @@ all-simd = ["jxl_simd/all-simd"]
 avx = ["jxl_simd/avx"]
 avx512 = ["jxl_simd/avx512"]
 neon = ["jxl_simd/neon"]
+simd128 = ["jxl_simd/simd128"]
 sse42 = ["jxl_simd/sse42"]
 
 [lib]
@@ -48,11 +49,7 @@ path = "benches/dct.rs"
 harness = false
 
 [dependencies.jxl_simd]
-version = "=0.3.0"
-
-[dev-dependencies.criterion]
-version = "0.7.0"
-features = ["html_reports"]
+version = "=0.5.1"
 
 [dev-dependencies.paste]
 version = "1.0.15"
@@ -65,6 +62,19 @@ version = "0.9.0"
 
 [dev-dependencies.test-log]
 version = "0.2.14"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies.criterion]
+version = "0.7.0"
+features = ["html_reports"]
+
+[target.'cfg(target_arch = "wasm32")'.dev-dependencies.criterion]
+version = "0.7.0"
+features = [
+    "html_reports",
+    "plotters",
+    "cargo_bench_support",
+]
+default-features = false
 
 [lints.clippy]
 missing_safety_doc = "deny"

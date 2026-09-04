@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -11,9 +9,9 @@
 #  error nsError.h no longer supports C sources
 #endif
 
-#include "mozilla/Likely.h"
-
 #include <stdint.h>
+
+#include "mozilla/Likely.h"
 
 #define NS_ERROR_SEVERITY_SUCCESS 0
 #define NS_ERROR_SEVERITY_ERROR 1
@@ -81,9 +79,9 @@ inline bool NS_ERROR_GET_SEVERITY(nsresult aErr) {
 #  pragma warning(disable : 4251) /* 'nsCOMPtr<class nsIInputStream>' needs to \
                                      have dll-interface to be used by clients  \
                                      of class 'nsInputStream' */
-#  pragma warning(                                                          \
-      disable : 4275) /* non dll-interface class 'nsISupports' used as base \
-                         for dll-interface class 'nsIRDFNode' */
+#  pragma warning(disable                                                  \
+                  : 4275) /* non dll-interface class 'nsISupports' used as \
+                             base for dll-interface class 'nsIRDFNode' */
 #endif
 
 #endif

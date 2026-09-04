@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -6,11 +5,15 @@
 #ifndef JumpListBuilder_h_
 #define JumpListBuilder_h_
 
-#include "nsIJumpListBuilder.h"
+// clang-format off
+#include <windows.h>
+#include <shobjidl.h>
+// clang-format on
 
+#include "mozilla/LazyIdleThread.h"
+#include "nsIJumpListBuilder.h"
 #include "nsIObserver.h"
 #include "nsProxyRelease.h"
-#include "mozilla/LazyIdleThread.h"
 
 namespace mozilla {
 
@@ -41,7 +44,7 @@ class JumpListBackend {
   virtual HRESULT AppendKnownCategory(KNOWNDESTCATEGORY category) = 0;
 
  protected:
-  virtual ~JumpListBackend() {}
+  virtual ~JumpListBackend() = default;
 };
 
 /**

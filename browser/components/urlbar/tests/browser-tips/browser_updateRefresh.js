@@ -4,7 +4,7 @@
 // Checks the UPDATE_REFRESH tip.
 //
 // The update parts of this test are adapted from:
-// https://searchfox.org/mozilla-central/source/toolkit/mozapps/update/tests/browser/browser_aboutDialog_fc_check_noUpdate.js
+// https://searchfox.org/firefox-main/source/toolkit/mozapps/update/tests/browser/browser_aboutDialog_fc_check_noUpdate.js
 
 "use strict";
 
@@ -28,7 +28,7 @@ add_task(async function test() {
     set: [["browser.urlbar.suggest.quickactions", false]],
   });
 
-  makeProfileResettable();
+  await makeProfileResettable();
 
   // Set up the "no updates" update state.
   await initUpdate(params);
@@ -39,7 +39,7 @@ add_task(async function test() {
   // button.
   await doUpdateTest({
     searchString: SEARCH_STRINGS.UPDATE,
-    tip: UrlbarProviderInterventions.TIP_TYPE.UPDATE_REFRESH,
+    tip: UrlbarShared.INTERVENTION_TIP_TYPE.UPDATE_REFRESH,
     title:
       /^.+ is up to date\. Trying to fix a problem\? Restore default settings and remove old add-ons for optimal performance\.$/,
     button: /^Refresh .+…$/,

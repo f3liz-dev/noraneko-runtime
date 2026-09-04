@@ -1,21 +1,22 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "gtest/gtest.h"
-#include "gmock/gmock.h"
-
-#include <string>
 #include <windows.h>
 
+#include <string>
+
+#include "gmock/gmock.h"
+#include "gtest/gtest.h"
 #include "nsLiteralString.h"
 #include "nsWindowsHelpers.h"
-#include "sandbox/win/src/sandbox.h"
 #include "sandbox/win/src/app_container.h"
 #include "sandbox/win/src/policy_engine_opcodes.h"
+#include "sandbox/win/src/sandbox.h"
+
+// clang-format off
 #include "../src/sandboxbroker/ConfigHelpers.h"
+// clang-format on
 
 using namespace sandbox;
 using mozilla::sandboxing::UserFontConfigHelper;
@@ -61,13 +62,10 @@ class MockConfig : public TargetConfig {
               (JobLevel job_level, uint32_t ui_exceptions), (override));
   MOCK_METHOD(JobLevel, GetJobLevel, (), (const, override));
   MOCK_METHOD(void, SetJobMemoryLimit, (size_t memory_limit), (override));
-  MOCK_METHOD(ResultCode, AllowNamedPipes, (const wchar_t* pattern),
-              (override));
   MOCK_METHOD(ResultCode, AllowRegistryRead, (const wchar_t* pattern),
               (override));
-  MOCK_METHOD(ResultCode, AllowExtraDlls, (const wchar_t* pattern), (override));
+  MOCK_METHOD(ResultCode, AllowExtraDll, (const wchar_t* path), (override));
   MOCK_METHOD(ResultCode, SetFakeGdiInit, (), (override));
-  MOCK_METHOD(ResultCode, AllowLineBreaking, (), (override));
   MOCK_METHOD(void, AddDllToUnload, (const wchar_t* dll_name), (override));
   MOCK_METHOD(ResultCode, SetIntegrityLevel, (IntegrityLevel level),
               (override));
@@ -84,13 +82,12 @@ class MockConfig : public TargetConfig {
               (const, override));
   MOCK_METHOD(void, AddRestrictingRandomSid, (), (override));
   MOCK_METHOD(void, SetLockdownDefaultDacl, (), (override));
-  MOCK_METHOD(ResultCode, AddAppContainerProfile,
-              (const wchar_t* package_name, bool create_profile), (override));
-  MOCK_METHOD(scoped_refptr<AppContainer>, GetAppContainer, (), (override));
-  MOCK_METHOD(ResultCode, AddKernelObjectToClose,
-              (const wchar_t* handle_type, const wchar_t* handle_name),
+  MOCK_METHOD(ResultCode, AddAppContainerProfile, (const wchar_t* package_name),
               (override));
-  MOCK_METHOD(ResultCode, SetDisconnectCsrss, (), (override));
+  MOCK_METHOD(AppContainer*, GetAppContainer, (), (override));
+  MOCK_METHOD(void, AddKernelObjectToClose, (HandleToClose handle_info),
+              (override));
+  MOCK_METHOD(void, SetDisconnectCsrss, (), (override));
   MOCK_METHOD(void, SetDesktop, (Desktop desktop), (override));
   MOCK_METHOD(void, SetFilterEnvironment, (bool filter), (override));
   MOCK_METHOD(bool, GetEnvironmentFiltered, (), (override));
@@ -313,6 +310,20 @@ TEST_F(UserFontConfigHelperTest, DirsAreIgnored) {
   SetUpPaths({LR"(C:\Users\Moz User\Fonts\)"});
 
   EXPECT_READONLY_EQ(LR"(C:\Users\Moz Us]er\Fonts\)").Times(0);
+
+  EXPECT_TRUE(CreateHelperAndCallAddRules());
+}
+
+TEST_F(UserFontConfigHelperTest, PathsWithWildcardsAreIgnored) {
+  const auto* validCharsPath1 = LR"(C:\Users\Moz User\Fonts\FontFile1.ttf)";
+  const auto* validCharsPath2 = LR"(\??\C:\Users\Moz User\Fonts\FontFile2.ttf)";
+  SetUpPaths({validCharsPath1, LR"(C:\Users\Moz User\Font/s\invalid.ttf)",
+              LR"(C:\Users\Moz User\Fonts\*)",
+              LR"(C:\Users\Moz User\Fonts\invalid*)",
+              LR"(C:\Users\Moz User\Fonts\invalid/?)", validCharsPath2});
+
+  EXPECT_READONLY_EQ(validCharsPath1).After(mWinUserFontCall);
+  EXPECT_READONLY_EQ(validCharsPath2).After(mWinUserFontCall);
 
   EXPECT_TRUE(CreateHelperAndCallAddRules());
 }

@@ -9,7 +9,10 @@ import { DiscoveryStreamFeed } from "lib/DiscoveryStreamFeed.sys.mjs";
 import { reducers } from "common/Reducers.sys.mjs";
 
 import { PersistentCache } from "lib/PersistentCache.sys.mjs";
-import { SectionsLayoutManager } from "lib/SectionsLayoutManager.sys.mjs";
+import {
+  SectionsLayoutManager,
+  maskLayoutAds,
+} from "lib/SectionsLayoutFeed.sys.mjs";
 
 const CONFIG_PREF_NAME = "discoverystream.config";
 const ENDPOINTS_PREF_NAME = "discoverystream.endpoints";
@@ -100,6 +103,21 @@ describe("DiscoveryStreamFeed", () => {
     globals.set({
       gUUIDGenerator: { generateUUID: () => FAKE_UUID },
       PersistentCache,
+      AdsClient: {
+        isEnabled: () => false,
+        getClient: () => null,
+      },
+      MozAdsPlacementRequestWithCount: class {
+        constructor(obj) {
+          this.obj = obj;
+        }
+      },
+      MozAdsIabContent: class {
+        constructor(obj) {
+          this.obj = obj;
+        }
+      },
+      MozAdsIabContentTaxonomy: {},
     });
 
     sandbox
@@ -162,11 +180,6 @@ describe("DiscoveryStreamFeed", () => {
 
   describe("#fetchFromEndpoint", () => {
     beforeEach(() => {
-      feed._prefCache = {
-        config: {
-          api_key_pref: "",
-        },
-      };
       fetchStub.resolves({
         json: () => Promise.resolve("hi"),
         ok: true,
@@ -443,16 +456,6 @@ describe("DiscoveryStreamFeed", () => {
         DEFAULT_ROW_COUNT * DEFAULT_COLUMN_COUNT
       );
     });
-    it("should use new spocs endpoint if in the config", async () => {
-      feed.config.spocs_endpoint = "https://spocs.getpocket.com/spocs2";
-
-      await feed.loadLayout(feed.store.dispatch);
-
-      assert.equal(
-        feed.store.getState().DiscoveryStream.spocs.spocs_endpoint,
-        "https://spocs.getpocket.com/spocs2"
-      );
-    });
     it("should use local basic layout with FF pref hardcoded_basic_layout", async () => {
       feed.store = createStore(combineReducers(reducers), {
         Prefs: {
@@ -692,11 +695,6 @@ describe("DiscoveryStreamFeed", () => {
     it("should send feed update events with new feed data", async () => {
       sandbox.stub(feed.cache, "get").returns(Promise.resolve(fakeCache));
       sandbox.spy(feed.store, "dispatch");
-      feed._prefCache = {
-        config: {
-          api_key_pref: "",
-        },
-      };
 
       await feed.loadComponentFeeds(feed.store.dispatch);
 
@@ -785,16 +783,90 @@ describe("DiscoveryStreamFeed", () => {
 
       assert.deepEqual(feedResp, { data: { status: "failed" } });
     });
+    it("should record surfaceId in Glean when the private ping is enabled", async () => {
+      const surfaceIdStub = sandbox.stub(
+        global.Glean.newtabContent.surfaceId,
+        "set"
+      );
+      sandbox.stub(feed.cache, "get").resolves({});
+      sandbox.stub(feed, "rotate").callsFake(val => val);
+      sandbox
+        .stub(feed, "scoreItemsInferred")
+        .callsFake(val => ({ data: val, filtered: [] }));
+      stubOutFetchFromEndpointWithRealisticData();
+      setPref("telemetry.privatePing.enabled", true);
+
+      await feed.getComponentFeed("foo.com");
+
+      assert.calledWith(surfaceIdStub, "NEW_TAB_EN_US");
+    });
+    it("should record surfaceId in Glean when the private ping is disabled", async () => {
+      const surfaceIdStub = sandbox.stub(
+        global.Glean.newtabContent.surfaceId,
+        "set"
+      );
+      sandbox.stub(feed.cache, "get").resolves({});
+      sandbox.stub(feed, "rotate").callsFake(val => val);
+      sandbox
+        .stub(feed, "scoreItemsInferred")
+        .callsFake(val => ({ data: val, filtered: [] }));
+      stubOutFetchFromEndpointWithRealisticData();
+      setPref("telemetry.privatePing.enabled", false);
+
+      await feed.getComponentFeed("foo.com");
+
+      assert.calledWith(surfaceIdStub, "NEW_TAB_EN_US");
+    });
+    it("should not update the surfaceId pref when the private ping is disabled", async () => {
+      sandbox.stub(global.Glean.newtabContent.surfaceId, "set");
+      sandbox.stub(feed.cache, "get").resolves({});
+      sandbox.stub(feed, "rotate").callsFake(val => val);
+      sandbox
+        .stub(feed, "scoreItemsInferred")
+        .callsFake(val => ({ data: val, filtered: [] }));
+      stubOutFetchFromEndpointWithRealisticData();
+      setPref("telemetry.privatePing.enabled", false);
+      const dispatchStub = sandbox.stub(feed.store, "dispatch");
+
+      await feed.getComponentFeed("foo.com");
+
+      assert.isFalse(
+        dispatchStub
+          .getCalls()
+          .some(
+            call =>
+              call.args[0]?.type === at.SET_PREF &&
+              call.args[0]?.data?.name === "telemetry.surfaceId"
+          )
+      );
+    });
+    it("should update the surfaceId pref when the private ping is enabled", async () => {
+      sandbox.stub(global.Glean.newtabContent.surfaceId, "set");
+      sandbox.stub(feed.cache, "get").resolves({});
+      sandbox.stub(feed, "rotate").callsFake(val => val);
+      sandbox
+        .stub(feed, "scoreItemsInferred")
+        .callsFake(val => ({ data: val, filtered: [] }));
+      stubOutFetchFromEndpointWithRealisticData();
+      setPref("telemetry.privatePing.enabled", true);
+      const dispatchStub = sandbox.stub(feed.store, "dispatch");
+
+      await feed.getComponentFeed("foo.com");
+
+      assert.isTrue(
+        dispatchStub
+          .getCalls()
+          .some(
+            call =>
+              call.args[0]?.type === at.SET_PREF &&
+              call.args[0]?.data?.name === "telemetry.surfaceId"
+          )
+      );
+    });
   });
 
   describe("#loadSpocs", () => {
     beforeEach(() => {
-      feed._prefCache = {
-        config: {
-          api_key_pref: "",
-        },
-      };
-
       sandbox.stub(feed, "getPlacements").returns([{ name: "spocs" }]);
       Object.defineProperty(feed, "showSponsoredStories", { get: () => true });
     });
@@ -890,7 +962,7 @@ describe("DiscoveryStreamFeed", () => {
             title: "",
             sponsor: "",
             sponsored_by_override: undefined,
-            items: [{ id: "data", score: 1, fetchTimestamp: loadTimestamp }],
+            items: [{ id: "data", score: 1 }],
           },
         },
         lastUpdated: loadTimestamp,
@@ -900,7 +972,7 @@ describe("DiscoveryStreamFeed", () => {
 
       assert.deepEqual(
         feed.store.getState().DiscoveryStream.spocs.data.spocs.items[0],
-        { id: "data", score: 1, fetchTimestamp: loadTimestamp }
+        { id: "data", score: 1 }
       );
     });
     it("should normalizeSpocsItems for older spoc data", async () => {
@@ -914,7 +986,7 @@ describe("DiscoveryStreamFeed", () => {
 
       assert.deepEqual(
         feed.store.getState().DiscoveryStream.spocs.data.spocs.items[0],
-        { id: "data", score: 1, fetchTimestamp: 0 }
+        { id: "data", score: 1 }
       );
     });
     it("should return expected data if normalizeSpocsItems returns no spoc data", async () => {
@@ -944,7 +1016,7 @@ describe("DiscoveryStreamFeed", () => {
           context: "",
           sponsor: "",
           sponsored_by_override: undefined,
-          items: [{ id: "data", score: 1, fetchTimestamp: 0 }],
+          items: [{ id: "data", score: 1 }],
         },
         placement2: {
           title: "",
@@ -982,7 +1054,7 @@ describe("DiscoveryStreamFeed", () => {
           context: "context",
           sponsor: "",
           sponsored_by_override: undefined,
-          items: [{ id: "data", score: 1, fetchTimestamp: 0 }],
+          items: [{ id: "data", score: 1 }],
         },
       });
     });
@@ -1031,6 +1103,177 @@ describe("DiscoveryStreamFeed", () => {
       assert.equal(
         feed.fetchFromEndpoint.secondCall.args[1].headers.get("X-Geo-Location"),
         "geo_location"
+      );
+    });
+    it("should fetch ads with empty flags if adsBackend flags are empty", async () => {
+      feed.store = createStore(combineReducers(reducers), {
+        Prefs: {
+          values: {
+            "unifiedAds.endpoint": "unifiedAdEndpoint/",
+            "unifiedAds.blockedAds": "",
+            "unifiedAds.spocs.enabled": true,
+            "discoverystream.placements.spocs": "newtab_stories_1",
+            "discoverystream.placements.spocs.counts": "1",
+            "unifiedAds.ohttp.enabled": true,
+          },
+        },
+      });
+
+      sandbox.stub(feed, "fetchFromEndpoint").resolves({
+        newtab_stories_1: [
+          {
+            format: "spoc",
+            title: "ad title",
+          },
+        ],
+      });
+
+      await feed.loadSpocs(feed.store.dispatch);
+
+      assert.equal(
+        feed.fetchFromEndpoint.secondCall.args[0],
+        "unifiedAdEndpoint/v1/ads"
+      );
+      assert.equal(
+        feed.fetchFromEndpoint.secondCall.args[1].body,
+        JSON.stringify({
+          context_id: "ContextId",
+          flags: {},
+          placements: [
+            {
+              placement: "newtab_stories_1",
+              count: 1,
+            },
+          ],
+          blocks: [""],
+        })
+      );
+    });
+    it("should fetch ads with adsBackend flags", async () => {
+      feed.store = createStore(combineReducers(reducers), {
+        Prefs: {
+          values: {
+            "unifiedAds.endpoint": "unifiedAdEndpoint/",
+            "unifiedAds.blockedAds": "",
+            "unifiedAds.spocs.enabled": true,
+            "discoverystream.placements.spocs": "newtab_stories_1",
+            "discoverystream.placements.spocs.counts": "1",
+            "unifiedAds.ohttp.enabled": true,
+            adsBackendConfig: {
+              feature1: true,
+              feature2: false,
+            },
+          },
+        },
+      });
+
+      sandbox.stub(feed, "fetchFromEndpoint").resolves({
+        newtab_stories_1: [
+          {
+            format: "spoc",
+            title: "ad title",
+          },
+        ],
+      });
+
+      await feed.loadSpocs(feed.store.dispatch);
+
+      assert.equal(
+        feed.fetchFromEndpoint.secondCall.args[0],
+        "unifiedAdEndpoint/v1/ads"
+      );
+      assert.equal(
+        feed.fetchFromEndpoint.secondCall.args[1].body,
+        JSON.stringify({
+          context_id: "ContextId",
+          flags: {
+            feature1: true,
+            feature2: false,
+          },
+          placements: [
+            {
+              placement: "newtab_stories_1",
+              count: 1,
+            },
+          ],
+          blocks: [""],
+        })
+      );
+    });
+    it("should use adsClient when enabled", async () => {
+      sandbox.stub(feed.cache, "get").returns(Promise.resolve());
+      sandbox.stub(feed.cache, "set").returns(Promise.resolve());
+
+      feed.store = createStore(combineReducers(reducers), {
+        Prefs: {
+          values: {
+            "unifiedAds.blockedAds": "",
+            "unifiedAds.spocs.enabled": true,
+            "discoverystream.placements.spocs": "newtab_stories_1",
+            "discoverystream.placements.spocs.counts": "1",
+          },
+        },
+      });
+
+      const ADS_CLIENT = {
+        requestSpocAds: sinon.fake.resolves(
+          new Map([
+            [
+              "newtab_stories_1",
+              [
+                {
+                  format: "spoc",
+                  url: "https://spoc.example/",
+                  imageUrl: "https://spoc.example/img.png",
+                  callbacks: { click: "https://spoc.example/click" },
+                  title: "Spoc 1",
+                  domain: "spoc.example",
+                  excerpt: "Excerpt",
+                  sponsor: "Sponsor",
+                  sponsoredByOverride: null,
+                  blockKey: "spocblock1",
+                  caps: { capKey: "cap1", day: 5 },
+                  ranking: {
+                    itemScore: 0.5,
+                    personalizationModels: new Map([
+                      ["arts_and_entertainment", 1],
+                      ["travel", 1],
+                    ]),
+                    priority: 2,
+                  },
+                },
+              ],
+            ],
+          ])
+        ),
+      };
+
+      const REQUEST_OPTIONS = {
+        flags: new Map(),
+        ohttp: true,
+      };
+
+      const AdsClient = {
+        isEnabled: sinon.fake.returns(true),
+        getClient: sinon.fake.returns(ADS_CLIENT),
+        requestOptions: sinon.fake.returns(REQUEST_OPTIONS),
+      };
+
+      globals.set({ AdsClient });
+
+      await feed.onAction({
+        type: at.INIT,
+      });
+      assert.calledOnce(AdsClient.isEnabled);
+      assert.calledOnce(AdsClient.getClient);
+
+      await feed.loadSpocs(feed.store.dispatch);
+
+      assert.calledOnce(AdsClient.requestOptions);
+      assert.calledOnceWithMatch(
+        ADS_CLIENT.requestSpocAds,
+        [sinon.match.any],
+        REQUEST_OPTIONS
       );
     });
   });
@@ -2373,6 +2616,17 @@ describe("DiscoveryStreamFeed", () => {
     });
   });
 
+  describe("#onAction: DISCOVERY_STREAM_DEV_REFRESH_CACHE", () => {
+    it("should clear the cache with DISCOVERY_STREAM_DEV_REFRESH_CACHE", async () => {
+      sandbox.stub(feed.cache, "set").returns(Promise.resolve());
+
+      sandbox.stub(feed, "resetCache").returns(Promise.resolve());
+      await feed.onAction({ type: at.DISCOVERY_STREAM_DEV_REFRESH_CACHE });
+
+      assert.calledOnce(feed.resetCache);
+    });
+  });
+
   describe("#onAction: DISCOVERY_STREAM_DEV_SYSTEM_TICK", () => {
     it("should refresh if DiscoveryStream has been loaded at least once and a cache has expired", async () => {
       sandbox.stub(feed.cache, "set").resolves();
@@ -2743,6 +2997,36 @@ describe("DiscoveryStreamFeed", () => {
     });
   });
 
+  describe("#topicSelectionMaybeLaterEvent", () => {
+    it("should use 3-day timeout for new profiles (age <= 1 day)", async () => {
+      sandbox.stub(feed, "retreiveProfileAge").resolves(0.5);
+      sandbox.spy(feed.store, "dispatch");
+      await feed.topicSelectionMaybeLaterEvent();
+      const day = 24 * 60 * 60 * 1000;
+      assert.calledWith(
+        feed.store.dispatch,
+        ac.SetPref(
+          "discoverystream.topicSelection.onboarding.displayTimeout",
+          3 * day
+        )
+      );
+    });
+
+    it("should use 7-day timeout for older profiles (age > 1 day)", async () => {
+      sandbox.stub(feed, "retreiveProfileAge").resolves(5);
+      sandbox.spy(feed.store, "dispatch");
+      await feed.topicSelectionMaybeLaterEvent();
+      const day = 24 * 60 * 60 * 1000;
+      assert.calledWith(
+        feed.store.dispatch,
+        ac.SetPref(
+          "discoverystream.topicSelection.onboarding.displayTimeout",
+          7 * day
+        )
+      );
+    });
+  });
+
   describe("new proxy feed", () => {
     beforeEach(() => {
       sandbox.stub(global.Region, "home").get(() => "DE");
@@ -2899,6 +3183,8 @@ describe("DiscoveryStreamFeed", () => {
               receivedRank: 1,
               layout: "cards",
               iab: "iab-category",
+              allowAds: true,
+              followable: true,
               visible: true,
             },
           ],
@@ -2947,152 +3233,393 @@ describe("DiscoveryStreamFeed", () => {
       // Use JSON comparison because deepEqual will error with incorrect property order message
       assert.equal(JSON.stringify(feedData), JSON.stringify(expectedData));
     });
+    it("should include allowAds and followable in section objects", async () => {
+      setPref("discoverystream.sections.enabled", true);
+      const fakeCache = {};
+      sandbox.stub(feed.cache, "get").returns(Promise.resolve(fakeCache));
+      sandbox.stub(feed, "rotate").callsFake(val => val);
+      sandbox
+        .stub(feed, "scoreItemsInferred")
+        .callsFake(val => ({ data: val, filtered: [], personalized: false }));
+      sandbox.stub(feed, "fetchFromEndpoint").resolves({
+        recommendedAt: 0,
+        surfaceId: "NEW_TAB_EN_US",
+        data: [],
+        feeds: {
+          "section-1": {
+            title: "Section 1",
+            subtitle: "",
+            receivedFeedRank: 1,
+            layout: "cards",
+            iab: null,
+            isInitiallyVisible: true,
+            allowAds: false,
+            followable: true,
+            recommendations: [],
+          },
+        },
+      });
 
-    describe("client layout for sections", () => {
-      beforeEach(() => {
-        setPref("discoverystream.sections.enabled", true);
-        setPref("discoverystream.sections.layout", "");
-        globals.set("SectionsLayoutManager", SectionsLayoutManager);
-        const fakeCache = {};
-        sandbox.stub(feed.cache, "get").returns(Promise.resolve(fakeCache));
-        sandbox.stub(feed, "rotate").callsFake(val => val);
-        sandbox.stub(feed, "fetchFromEndpoint").resolves({
-          recommendedAt: 1755834072383,
-          surfaceId: "NEW_TAB_EN_US",
-          data: [],
-          feeds: {
-            "section-1": {
-              title: "Section 1",
-              subtitle: "Subtitle 1",
-              receivedFeedRank: 1,
-              layout: { name: "original-layout" },
+      const feedData = await feed.getComponentFeed("url");
+      const [section] = feedData.data.sections;
+      assert.equal(section.allowAds, false);
+      assert.equal(section.followable, true);
+    });
+    it("should default allowAds and followable to true when absent", async () => {
+      setPref("discoverystream.sections.enabled", true);
+      const fakeCache = {};
+      sandbox.stub(feed.cache, "get").returns(Promise.resolve(fakeCache));
+      sandbox.stub(feed, "rotate").callsFake(val => val);
+      sandbox
+        .stub(feed, "scoreItemsInferred")
+        .callsFake(val => ({ data: val, filtered: [], personalized: false }));
+      sandbox.stub(feed, "fetchFromEndpoint").resolves({
+        recommendedAt: 0,
+        surfaceId: "NEW_TAB_EN_US",
+        data: [],
+        feeds: {
+          "section-1": {
+            title: "Section 1",
+            subtitle: "",
+            receivedFeedRank: 1,
+            layout: "cards",
+            iab: null,
+            isInitiallyVisible: true,
+            recommendations: [],
+          },
+        },
+      });
+
+      const feedData = await feed.getComponentFeed("url");
+      const [section] = feedData.data.sections;
+      assert.equal(section.allowAds, true);
+      assert.equal(section.followable, true);
+    });
+    it("should default allowAds and followable to true when null", async () => {
+      setPref("discoverystream.sections.enabled", true);
+      const fakeCache = {};
+      sandbox.stub(feed.cache, "get").returns(Promise.resolve(fakeCache));
+      sandbox.stub(feed, "rotate").callsFake(val => val);
+      sandbox
+        .stub(feed, "scoreItemsInferred")
+        .callsFake(val => ({ data: val, filtered: [], personalized: false }));
+      sandbox.stub(feed, "fetchFromEndpoint").resolves({
+        recommendedAt: 0,
+        surfaceId: "NEW_TAB_EN_US",
+        data: [],
+        feeds: {
+          "section-1": {
+            title: "Section 1",
+            subtitle: "",
+            receivedFeedRank: 1,
+            layout: "cards",
+            iab: null,
+            isInitiallyVisible: true,
+            allowAds: null,
+            followable: null,
+            recommendations: [],
+          },
+        },
+      });
+
+      const feedData = await feed.getComponentFeed("url");
+      const [section] = feedData.data.sections;
+      assert.equal(section.allowAds, true);
+      assert.equal(section.followable, true);
+    });
+    it("should include followable in interestPicker.sections", async () => {
+      setPref("discoverystream.sections.enabled", true);
+      const fakeCache = {};
+      sandbox.stub(feed.cache, "get").returns(Promise.resolve(fakeCache));
+      sandbox.stub(feed, "rotate").callsFake(val => val);
+      sandbox
+        .stub(feed, "scoreItemsInferred")
+        .callsFake(val => ({ data: val, filtered: [], personalized: false }));
+      sandbox.stub(feed, "fetchFromEndpoint").resolves({
+        recommendedAt: 0,
+        surfaceId: "NEW_TAB_EN_US",
+        data: [],
+        feeds: {
+          "section-1": {
+            title: "Section 1",
+            subtitle: "",
+            receivedFeedRank: 1,
+            layout: "cards",
+            iab: null,
+            isInitiallyVisible: true,
+            followable: false,
+            recommendations: [],
+          },
+        },
+        interestPicker: {
+          sections: [{ sectionId: "section-1" }],
+        },
+      });
+
+      const feedData = await feed.getComponentFeed("url");
+      const [pickerSection] = feedData.data.interestPicker.sections;
+      assert.equal(pickerSection.sectionId, "section-1");
+      assert.equal(pickerSection.title, "Section 1");
+      assert.equal(pickerSection.followable, false);
+    });
+
+    describe("section layouts", () => {
+      const CONFIGS = {
+        "custom-a": { name: "custom-a" },
+        "custom-b": { name: "custom-b" },
+        "custom-c": { name: "custom-c" },
+      };
+
+      const buildFeeds = defs =>
+        Object.fromEntries(
+          defs.map((def, i) => [
+            `section-${i}`,
+            {
+              title: `Section ${i}`,
+              subtitle: `Subtitle ${i}`,
+              receivedFeedRank: def.rank,
+              layout: def.layout,
+              allowAds: def.allowAds,
               iab: "iab-category",
               isInitiallyVisible: true,
               recommendations: [],
             },
-            "section-2": {
-              title: "Section 2",
-              subtitle: "Subtitle 2",
-              receivedFeedRank: 2,
-              layout: { name: "another-layout" },
-              iab: "iab-category-2",
-              isInitiallyVisible: true,
-              recommendations: [],
-            },
-          },
-        });
-      });
-      it("should return default layout when sections.clientLayout.enabled is false and server returns a layout object", async () => {
-        const feedData = await feed.getComponentFeed("url");
-        assert.equal(feedData.data.sections.length, 2);
-        assert.equal(
-          feedData.data.sections[0].layout.name,
-          "original-layout",
-          "First section should use original layout from server"
+          ])
         );
-        assert.equal(
-          feedData.data.sections[1].layout.name,
-          "another-layout",
-          "Second section should use second default layout"
-        );
-      });
-      it("should apply client layout when sections.clientLayout.enabled is true", async () => {
-        setPref("discoverystream.sections.clientLayout.enabled", true);
-        const feedData = await feed.getComponentFeed("url");
 
-        assert.equal(
-          feedData.data.sections[0].layout.name,
-          "6-small-medium-1-ad",
-          "First section should use first default layout"
-        );
-        assert.equal(
-          feedData.data.sections[1].layout.name,
-          "4-large-small-medium-1-ad",
-          "Second section should use second default layout"
-        );
-      });
-      it("should apply client layout when any section has a missing layout property", async () => {
+      const setFeeds = (defs, extra = {}) =>
         feed.fetchFromEndpoint.resolves({
           recommendedAt: 1755834072383,
           surfaceId: "NEW_TAB_EN_US",
           data: [],
-          feeds: {
-            "section-1": {
-              title: "Section 1",
-              subtitle: "Subtitle 1",
-              receivedFeedRank: 1,
-              iab: "iab-category",
-              isInitiallyVisible: true,
-              recommendations: [],
-            },
-            "section-2": {
-              title: "Section 2",
-              subtitle: "Subtitle 2",
-              receivedFeedRank: 2,
-              layout: { name: "another-layout" },
-              iab: "iab-category-2",
-              isInitiallyVisible: true,
-              recommendations: [],
-            },
-          },
+          feeds: buildFeeds(defs),
+          ...extra,
         });
-        const feedData = await feed.getComponentFeed("url");
 
-        assert.equal(
-          feedData.data.sections[0].layout.name,
-          "6-small-medium-1-ad",
-          "First section without layout should use client default layout"
-        );
-        assert.equal(
-          feedData.data.sections[1].layout.name,
+      const dispatchLayouts = (configs, orderings) =>
+        feed.store.dispatch({
+          type: at.SECTIONS_LAYOUT_UPDATE,
+          data: { configs, orderings },
+        });
+
+      const layoutNames = async () => {
+        const feedData = await feed.getComponentFeed("url");
+        return feedData.data.sections.map(section => section.layout?.name);
+      };
+
+      beforeEach(() => {
+        setPref("discoverystream.sections.enabled", true);
+        globals.set("SectionsLayoutManager", SectionsLayoutManager);
+        globals.set("maskLayoutAds", maskLayoutAds);
+        dispatchLayouts(CONFIGS, {});
+        sandbox.stub(feed.cache, "get").returns(Promise.resolve({}));
+        sandbox.stub(feed, "rotate").callsFake(val => val);
+        sandbox.stub(feed, "fetchFromEndpoint");
+        setFeeds([
+          { rank: 1, layout: { name: "original-layout" } },
+          { rank: 2, layout: { name: "another-layout" } },
+        ]);
+      });
+
+      it("keeps Merino layouts when nothing overrides them", async () => {
+        assert.deepEqual(await layoutNames(), [
+          "original-layout",
           "another-layout",
-          "Second section with layout should keep its original layout"
-        );
+        ]);
       });
-      it("should apply layout from sectionLayoutConfig when configured", async () => {
-        setPref("discoverystream.sections.layout", "daily-briefing");
-        setPref("discoverystream.sections.clientLayout.enabled", true);
-        const feedData = await feed.getComponentFeed("url");
 
-        assert.equal(
-          feedData.data.sections[0].layout.name,
-          "daily-briefing",
-          "First section should use daily-briefing layout from config"
-        );
-        assert.equal(
-          feedData.data.sections[1].layout.name,
-          "4-large-small-medium-1-ad",
-          "Second section should use default layout (config only has one entry)"
-        );
-      });
-      it("should fallback to 7-double-row-2-ad when sectionLayoutConfig layout name does not exist", async () => {
-        setPref("discoverystream.sections.layout", "non-existent-layout");
+      it("forces the default layout when clientLayout.enabled is true", async () => {
         setPref("discoverystream.sections.clientLayout.enabled", true);
-        const feedData = await feed.getComponentFeed("url");
-
-        assert.equal(
-          feedData.data.sections[0].layout.name,
+        assert.deepEqual(await layoutNames(), [
           "7-double-row-2-ad",
-          "First section should fallback to 7-double-row-2-ad"
-        );
+          "6-small-medium-1-ad",
+        ]);
       });
-      it("should apply multiple layouts from sectionLayoutConfig", async () => {
-        setPref(
-          "discoverystream.sections.layout",
-          "daily-briefing, 7-double-row-2-ad"
-        );
-        setPref("discoverystream.sections.clientLayout.enabled", true);
-        const feedData = await feed.getComponentFeed("url");
 
-        assert.equal(
-          feedData.data.sections[0].layout.name,
-          "daily-briefing",
-          "First section should use daily-briefing layout"
-        );
-        assert.equal(
-          feedData.data.sections[1].layout.name,
+      it("forces the default layout for the whole page when a section is missing its layout", async () => {
+        setFeeds([
+          { rank: 1, layout: undefined },
+          { rank: 2, layout: { name: "another-layout" } },
+        ]);
+        assert.deepEqual(await layoutNames(), [
           "7-double-row-2-ad",
-          "Second section should use 7-double-row-2-ad layout"
+          "6-small-medium-1-ad",
+        ]);
+      });
+
+      it("does not throw when there are no sections", async () => {
+        setFeeds([]);
+        const feedData = await feed.getComponentFeed("url");
+        assert.deepEqual(feedData.data.sections, []);
+      });
+
+      describe("RS sections ordering", () => {
+        const withServerLayout = defs =>
+          defs.map(def => ({ layout: { name: "server" }, ...def }));
+
+        const selectOrdering = (key, names) => {
+          dispatchLayouts(CONFIGS, { [key]: names });
+          setPref("discoverystream.sections.ordering", key);
+        };
+
+        it("ignores the ordering when the key pref is unset", async () => {
+          dispatchLayouts(CONFIGS, { "my-order": ["custom-a"] });
+          assert.deepEqual(await layoutNames(), [
+            "original-layout",
+            "another-layout",
+          ]);
+        });
+
+        it("falls back to Merino when an ordering names an unknown layout", async () => {
+          selectOrdering("my-order", ["does-not-exist"]);
+          assert.deepEqual(await layoutNames(), [
+            "original-layout",
+            "another-layout",
+          ]);
+        });
+
+        it("falls back to Merino when the ordering key has no matching record", async () => {
+          dispatchLayouts(CONFIGS, {});
+          setPref("discoverystream.sections.ordering", "not-published-yet");
+          assert.deepEqual(await layoutNames(), [
+            "original-layout",
+            "another-layout",
+          ]);
+        });
+
+        it("ignores the Remote Settings ordering when clientLayout.enabled is set", async () => {
+          selectOrdering("my-order", ["custom-a", "custom-b"]);
+          setPref("discoverystream.sections.clientLayout.enabled", true);
+          setFeeds(withServerLayout([{ rank: 0 }, { rank: 1 }]));
+          assert.deepEqual(await layoutNames(), [
+            "7-double-row-2-ad",
+            "6-small-medium-1-ad",
+          ]);
+        });
+
+        it("cycles a multi-entry ordering with position 0 pinned", async () => {
+          selectOrdering("my-order", ["custom-a", "custom-b", "custom-c"]);
+          setFeeds(
+            withServerLayout([
+              { rank: 0 },
+              { rank: 1 },
+              { rank: 2 },
+              { rank: 4 },
+              { rank: 6 },
+            ])
+          );
+          assert.deepEqual(await layoutNames(), [
+            "custom-a",
+            "custom-b",
+            "custom-c",
+            "custom-b",
+            "custom-c",
+          ]);
+        });
+
+        it("pins position 0 and fills the rest from the default cycle for a single-entry ordering", async () => {
+          selectOrdering("my-order", ["custom-a"]);
+          setFeeds(
+            withServerLayout([
+              { rank: 0 },
+              { rank: 1 },
+              { rank: 2 },
+              { rank: 4 },
+            ])
+          );
+          assert.deepEqual(await layoutNames(), [
+            "custom-a",
+            "6-small-medium-1-ad",
+            "4-large-small-medium-1-ad",
+            "4-medium-small-1-ad",
+          ]);
+        });
+
+        it("masks ads based on the section's rank and allowAds", async () => {
+          const adLayout = name => ({
+            name,
+            responsiveLayouts: [
+              { columnCount: 1, tiles: [{ position: 0, hasAd: true }] },
+            ],
+          });
+          dispatchLayouts(
+            { "ad-a": adLayout("ad-a"), "ad-b": adLayout("ad-b") },
+            { "my-order": ["ad-a", "ad-b"] }
+          );
+          setPref("discoverystream.sections.ordering", "my-order");
+          setFeeds([
+            { rank: 0, layout: { name: "server" }, allowAds: true },
+            { rank: 1, layout: { name: "server" }, allowAds: false },
+            { rank: 3, layout: { name: "server" }, allowAds: true },
+            { rank: 20, layout: { name: "server" }, allowAds: true },
+          ]);
+          const feedData = await feed.getComponentFeed("url");
+          const hasAd = section =>
+            section.layout.responsiveLayouts[0].tiles[0].hasAd;
+          const [rank0, rank1, rank3, rank20] = feedData.data.sections;
+          assert.isTrue(
+            hasAd(rank0),
+            "ad kept for an allowed rank when allowAds is true"
+          );
+          assert.isFalse(hasAd(rank1), "ad cleared when allowAds is false");
+          assert.isFalse(
+            hasAd(rank3),
+            "ad cleared when the rank is not in the allowed set even though allowAds is true"
+          );
+          assert.isFalse(
+            hasAd(rank20),
+            "ad cleared when the rank is past the allowed set"
+          );
+        });
+
+        it("lets a trainhopConfig override replace the default ad-rank set", async () => {
+          const adLayout = name => ({
+            name,
+            responsiveLayouts: [
+              { columnCount: 1, tiles: [{ position: 0, hasAd: true }] },
+            ],
+          });
+          dispatchLayouts(
+            { "ad-a": adLayout("ad-a"), "ad-b": adLayout("ad-b") },
+            { "my-order": ["ad-a", "ad-b"] }
+          );
+          setPref("discoverystream.sections.ordering", "my-order");
+          feed.store.dispatch({
+            type: at.PREF_CHANGED,
+            data: {
+              name: "trainhopConfig",
+              value: { sections: { adAllowedRanks: [3] } },
+            },
+          });
+          setFeeds([
+            { rank: 0, layout: { name: "server" }, allowAds: true },
+            { rank: 3, layout: { name: "server" }, allowAds: true },
+          ]);
+          const feedData = await feed.getComponentFeed("url");
+          const hasAd = section =>
+            section.layout.responsiveLayouts[0].tiles[0].hasAd;
+          const [rank0, rank3] = feedData.data.sections;
+          assert.isFalse(
+            hasAd(rank0),
+            "rank 0 masked — default-allowed but excluded by the override"
+          );
+          assert.isTrue(
+            hasAd(rank3),
+            "rank 3 kept — default-disallowed but included by the override"
+          );
+        });
+      });
+
+      it("resolves the ad-allowed ranks pref as comma-separated ranks", () => {
+        setPref("discoverystream.sections.adAllowedRanks", "0, 2, 4");
+        assert.deepEqual([...feed.sectionsAdAllowedRanks], [0, 2, 4]);
+      });
+
+      it("falls back to the default set when the pref is malformed", () => {
+        setPref("discoverystream.sections.adAllowedRanks", "0, x, 2");
+        assert.deepEqual(
+          [...feed.sectionsAdAllowedRanks],
+          [...SectionsLayoutManager.AD_ALLOWED_RANKS]
         );
       });
     });

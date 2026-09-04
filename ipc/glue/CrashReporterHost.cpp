@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -12,6 +10,7 @@
 #include "mozilla/glean/IpcMetrics.h"
 #include "nsServiceManagerUtils.h"
 #include "nsICrashService.h"
+#include "nsIDUtils.h"
 #include "nsXULAppAPI.h"
 #include "nsIFile.h"
 
@@ -24,10 +23,10 @@
 namespace mozilla::ipc {
 
 CrashReporterHost::CrashReporterHost(
-    GeckoProcessType aProcessType, base::ProcessId aPid,
+    GeckoProcessType aProcessType, GeckoChildID aChildID,
     const CrashReporter::CrashReporterInitArgs& aInitArgs)
     : mProcessType(aProcessType),
-      mPid(aPid),
+      mChildID(aChildID),
       mThreadId(aInitArgs.threadId()),
       mStartTime(::time(nullptr)),
       mFinalized(false) {
@@ -39,7 +38,7 @@ CrashReporterHost::CrashReporterHost(
   auxvInfo.program_header_address = ipdlAuxvInfo.programHeaderAddress();
   auxvInfo.linux_gate_address = ipdlAuxvInfo.linuxGateAddress();
   auxvInfo.entry_address = ipdlAuxvInfo.entryAddress();
-  CrashReporter::RegisterChildAuxvInfo(mPid, auxvInfo);
+  CrashReporter::RegisterChildAuxvInfo(mChildID, auxvInfo);
 #endif  // defined(XP_LINUX) && defined(MOZ_CRASHREPORTER) &&
         // defined(MOZ_OXIDIZED_BREAKPAD)
 }
@@ -47,7 +46,7 @@ CrashReporterHost::CrashReporterHost(
 CrashReporterHost::~CrashReporterHost() {
 #if defined(XP_LINUX) && defined(MOZ_CRASHREPORTER) && \
     defined(MOZ_OXIDIZED_BREAKPAD)
-  CrashReporter::UnregisterChildAuxvInfo(mPid);
+  CrashReporter::UnregisterChildAuxvInfo(mChildID);
 #endif  // defined(XP_LINUX) && defined(MOZ_CRASHREPORTER) &&
         // defined(MOZ_OXIDIZED_BREAKPAD)
 }
@@ -67,7 +66,7 @@ RefPtr<nsIFile> CrashReporterHost::TakeCrashedChildMinidump() {
   MOZ_ASSERT(!HasMinidump());
 
   RefPtr<nsIFile> crashDump;
-  if (!CrashReporter::TakeMinidumpForChild(mPid, getter_AddRefs(crashDump),
+  if (!CrashReporter::TakeMinidumpForChild(mChildID, getter_AddRefs(crashDump),
                                            annotations)) {
     return nullptr;
   }
@@ -92,6 +91,13 @@ void CrashReporterHost::FinalizeCrashReport() {
   MOZ_ASSERT(HasMinidump());
 
   mExtraAnnotations[CrashReporter::Annotation::ProcessType] = ProcessType();
+
+  // Add a CrashEventID in case we haven't added one yet (every crash should
+  // have one).
+  if (mExtraAnnotations[CrashReporter::Annotation::CrashEventID].IsEmpty()) {
+    NSID_TrimBracketsASCII uuidString(nsID::GenerateUUID());
+    mExtraAnnotations[CrashReporter::Annotation::CrashEventID] = uuidString;
+  }
 
   char startTime[32];
   SprintfLiteral(startTime, "%lld", static_cast<long long>(mStartTime));
@@ -196,7 +202,7 @@ void CrashReporterHost::AddAnnotationU32(CrashReporter::Annotation aKey,
              "Wrong annotation type");
   nsAutoCString valueString;
   valueString.AppendInt(aValue);
-  mExtraAnnotations[aKey] = valueString;
+  mExtraAnnotations[aKey] = std::move(valueString);
 }
 
 void CrashReporterHost::AddAnnotationNSCString(CrashReporter::Annotation aKey,

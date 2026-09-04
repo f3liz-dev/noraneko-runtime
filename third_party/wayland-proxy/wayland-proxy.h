@@ -7,14 +7,23 @@
 #define _wayland_proxy_h_
 
 #include <poll.h>
+#include <time.h>
 #include <vector>
 #include <fcntl.h>
 #include <atomic>
 #include <memory>
+#include <mutex>
+#include <string>
 
 class ProxiedConnection;
 
-typedef void (*CompositorCrashHandler)();
+typedef void (*ThreadCallback)();
+typedef void (*CompositorUnavailableHandler)();
+// Called from the proxy thread when the compositor closes a connection without
+// a Wayland protocol error while the compositor process is still alive.
+// aFailureTime is the clock() value when the connection failure was first
+// detected, for correlating with silently-ignored WlLogHandler messages.
+typedef void (*CompositorSilentDisconnectHandler)(clock_t aFailureTime);
 
 #define WAYLAND_PROXY_ENABLED                       (1 << 0)
 #define WAYLAND_PROXY_DISABLED                      (1 << 1)
@@ -44,10 +53,38 @@ class WaylandProxy {
   void RestoreWaylandDisplay();
 
   static void SetVerbose(bool aVerbose);
-  static void SetCompositorCrashHandler(CompositorCrashHandler aCrashHandler);
-  static void CompositorCrashed();
+  static void SetThreadStartCallback(ThreadCallback aCallback);
+  static void SetThreadStopCallback(ThreadCallback aCallback);
+  static void SetCompositorUnavailableHandler(
+      CompositorUnavailableHandler aHandler);
+  static void CompositorUnavailable();
+  static void SetCompositorSilentDisconnectHandler(
+      CompositorSilentDisconnectHandler aHandler);
+  static void CompositorSilentDisconnect(clock_t aFailureTime);
+  static bool IsCompositorGone() { return sCompositorGone; }
   static void AddState(unsigned aState);
   static const char* GetState();
+
+  // Keep the text of the compositor's wl_display.error messages, so the crash
+  // handler can report the real reason.
+  //
+  // Needed because libwayland throws the error text away when the error refers
+  // to a server-allocated object we have already destroyed (the "unknown
+  // object" case). See bug 2039706.
+  //
+  // Must be called before Create(): the scanner tracks Wayland message
+  // boundaries from the first byte the proxy forwards, so turning capture on
+  // later starts it in the middle of a message, and the protocol has no marker
+  // to resync on.
+  static void SetCaptureProtocolErrors(bool aEnable);
+  static bool CaptureProtocolErrors() { return sCaptureProtocolErrors; }
+  // Record the latest wl_display.error message and print it to stderr. Called
+  // on the proxy thread.
+  static void SetLastProtocolError(const char* aMessage);
+  // Return the latest captured wl_display.error message, or an empty string if
+  // none was captured. The result is strdup'd and owned by the caller. Called
+  // on the main thread from the crash handler.
+  static const char* GetLastProtocolError();
 
   ~WaylandProxy();
 
@@ -88,8 +125,20 @@ class WaylandProxy {
   // Name of Wayland display provided by us
   char mWaylandProxy[sMaxDisplayNameLen];
 
-  static CompositorCrashHandler sCompositorCrashHandler;
+  static ThreadCallback sThreadStartCallback;
+  static ThreadCallback sThreadStopCallback;
+  static CompositorUnavailableHandler sCompositorUnavailableHandler;
+  static CompositorSilentDisconnectHandler sCompositorSilentDisconnectHandler;
+  // Set when the compositor display socket has disappeared (compositor crashed
+  // or session ended). Once set, draining application sockets is the only
+  // thing WaylandProxy does, keeping them open so GTK never sees a broken pipe
+  // while graceful shutdown proceeds on the main thread.
+  static std::atomic<bool> sCompositorGone;
   static std::atomic<unsigned> sProxyStateFlags;
+
+  static bool sCaptureProtocolErrors;
+  static std::mutex sLastProtocolErrorMutex;
+  static std::string sLastProtocolError;
 };
 
 #endif  // _wayland_proxy_h_

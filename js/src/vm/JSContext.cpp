@@ -1,14 +1,10 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 /*
  * JS execution context.
  */
-
-#include "vm/JSContext-inl.h"
 
 #include "mozilla/CheckedInt.h"
 #include "mozilla/DebugOnly.h"
@@ -17,9 +13,10 @@
 #include "mozilla/Utf8.h"  // mozilla::ConvertUtf16ToUtf8
 
 #include <string.h>
+
+#include "vm/JSContext-inl.h"
 #ifdef ANDROID
 #  include <android/log.h>
-#  include <fstream>
 #endif  // ANDROID
 #ifdef XP_WIN
 #  include <processthreadsapi.h>
@@ -41,11 +38,13 @@
 #include "js/CharacterEncoding.h"
 #include "js/ContextOptions.h"        // JS::ContextOptions
 #include "js/ErrorInterceptor.h"      // JSErrorInterceptor
+#include "js/friend/DumpFunctions.h"  // for stack trace utilities
 #include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
 #include "js/friend/MicroTask.h"
 #include "js/friend/StackLimits.h"  // js::ReportOverRecursed
 #include "js/MemoryCallbacks.h"
 #include "js/Prefs.h"
+#include "js/Printer.h"  // for FixedBufferPrinter
 #include "js/Printf.h"
 #include "js/PropertyAndElement.h"  // JS_GetProperty
 #include "js/Stack.h"  // JS::NativeStackSize, JS::NativeStackLimit, JS::NativeStackLimitMin
@@ -55,9 +54,7 @@
 #include "util/NativeStack.h"
 #include "util/Text.h"
 #include "util/WindowsWrapper.h"
-#include "js/friend/DumpFunctions.h"  // for stack trace utilities
-#include "js/Printer.h"               // for FixedBufferPrinter
-#include "vm/BytecodeUtil.h"          // JSDVG_IGNORE_STACK
+#include "vm/BytecodeUtil.h"  // JSDVG_IGNORE_STACK
 #include "vm/ErrorObject.h"
 #include "vm/ErrorReporting.h"
 #include "vm/FrameIter.h"
@@ -69,6 +66,7 @@
 #include "vm/ToSource.h"    // js::ValueToSource
 
 #include "vm/Compartment-inl.h"
+#include "vm/JSObject-inl.h"
 #include "vm/Stack-inl.h"
 
 using namespace js;
@@ -331,6 +329,8 @@ static void MaybeReportOverRecursedForDifferentialTesting() {
 }
 
 void JSContext::onOverRecursed() {
+  AutoSuppressAllocationMetadataBuilder suppressMetadata(this);
+
   // Try to construct an over-recursed error and then update the exception
   // status to `OverRecursed`. Creating the error can fail, so check there
   // is a reasonable looking exception pending before updating status.
@@ -517,7 +517,7 @@ static void PrintSingleError(FILE* file, JS::ConstUTF8CharsZ toStringResult,
 
   /* embedded newlines -- argh! */
   const char* ctmp;
-  while ((ctmp = strchr(message, '\n')) != 0) {
+  while ((ctmp = strchr(message, '\n')) != nullptr) {
     ctmp++;
     if (prefix) {
       fputs(prefix.get(), file);
@@ -844,8 +844,10 @@ bool InternalJobQueue::getHostDefinedGlobal(
 }
 
 bool InternalJobQueue::getHostDefinedData(
-    JSContext* cx, JS::MutableHandle<JSObject*> data) const {
-  data.set(nullptr);
+    JSContext* cx, JS::MutableHandle<JSObject*> incumbentGlobal,
+    JS::MutableHandle<JSObject*> optionalHostDefinedData) const {
+  incumbentGlobal.set(nullptr);
+  optionalHostDefinedData.set(nullptr);
   return true;
 }
 
@@ -998,6 +1000,18 @@ JS::GenericMicroTask js::MicroTaskQueueSet::popFront() {
   return JS::NullValue();
 }
 
+JS::GenericMicroTask js::MicroTaskQueueSet::peekFront() {
+  JS_LOG(mtq, Info, "JS Peek Queue");
+  if (!debugMicroTaskQueue.empty()) {
+    return debugMicroTaskQueue.front();
+  }
+  if (!microTaskQueue.empty()) {
+    return microTaskQueue.front();
+  }
+
+  return JS::NullValue();
+}
+
 bool js::MicroTaskQueueSet::enqueueRegularMicroTask(
     JSContext* cx, const JS::GenericMicroTask& entry) {
   JS_LOG(mtq, Verbose, "JS: Enqueue Regular MT");
@@ -1046,6 +1060,10 @@ JS_PUBLIC_API JS::GenericMicroTask JS::DequeueNextMicroTask(JSContext* cx) {
 JS_PUBLIC_API JS::GenericMicroTask JS::DequeueNextDebuggerMicroTask(
     JSContext* cx) {
   return cx->microTaskQueues->popDebugFront();
+}
+
+JS_PUBLIC_API JS::GenericMicroTask JS::PeekNextMicroTask(JSContext* cx) {
+  return cx->microTaskQueues->peekFront();
 }
 
 JS_PUBLIC_API bool JS::HasAnyMicroTasks(JSContext* cx) {
@@ -1158,6 +1176,7 @@ JSContext::JSContext(JSRuntime* runtime, const JS::ContextOptions& options)
       isEvaluatingModule(this, 0),
       frontendCollectionPool_(this),
       suppressProfilerSampling(false),
+      allowProfilerScriptAccess_(false),
       tempLifoAlloc_(this, (size_t)TEMP_LIFO_ALLOC_PRIMARY_CHUNK_SIZE,
                      js::MallocArena),
       debuggerMutations(this, 0),
@@ -1332,7 +1351,7 @@ void JSContext::setPendingException(HandleValue value,
   if (captureStack == ShouldCaptureStack::Always ||
       realm()->shouldCaptureStackForThrow()) {
     RootedObject stack(this);
-    if (!CaptureStack(this, &stack)) {
+    if (!CaptureStack(this, &stack, js::MAX_REPORTED_STACK_DEPTH)) {
       clearPendingException();
     }
     if (stack) {
@@ -1475,9 +1494,6 @@ void JSContext::trace(JSTracer* trc) {
   if (isolate) {
     irregexp::TraceIsolate(trc, isolate.ref());
   }
-#ifdef ENABLE_WASM_JSPI
-  wasm().trace(trc);
-#endif
 }
 
 JS::NativeStackLimit JSContext::stackLimitForJitCode(JS::StackKind kind) {
@@ -1486,6 +1502,10 @@ JS::NativeStackLimit JSContext::stackLimitForJitCode(JS::StackKind kind) {
 #else
   return stackLimit(kind);
 #endif
+}
+
+bool JSContext::stackContainsAddress(uintptr_t address, JS::StackKind kind) {
+  return address <= nativeStackBase() && address > stackLimit(kind);
 }
 
 void JSContext::resetJitStackLimit() {

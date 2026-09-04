@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -189,8 +187,12 @@ bool AssemblerMIPSShared::oom() const {
          dataRelocations_.oom();
 }
 
-// Size of the instruction stream, in bytes.
+// Size of the instruction stream, in bytes. Note this doesn't take
+// into account the size of any un-flushed constant pools.
 size_t AssemblerMIPSShared::size() const { return m_buffer.size(); }
+// Returns the size of the buffer we can currently read, hence ignoring any
+// un-flushed data in currently-under-construction constant pool(s).
+size_t AssemblerMIPSShared::readableSize() const { return m_buffer.size(); }
 
 // Size of the relocation table, in bytes.
 size_t AssemblerMIPSShared::jumpRelocationTableBytes() const {

@@ -1,22 +1,20 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set sw=2 ts=8 et tw=80 : */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 // HttpLog.h should generally be included first
-#include "HttpLog.h"
-
 #include "Http2Stream.h"
+
+#include "Http2Session.h"
+#include "HttpLog.h"
+#include "mozilla/glean/NetwerkProtocolHttpMetrics.h"
 #include "nsHttp.h"
 #include "nsHttpConnectionInfo.h"
 #include "nsHttpRequestHead.h"
-#include "nsISocketTransport.h"
-#include "Http2Session.h"
-#include "nsIRequestContext.h"
 #include "nsHttpTransaction.h"
+#include "nsIRequestContext.h"
+#include "nsISocketTransport.h"
 #include "nsSocketTransportService2.h"
-#include "mozilla/glean/NetwerkProtocolHttpMetrics.h"
 
 namespace mozilla::net {
 
@@ -30,7 +28,7 @@ Http2Stream::Http2Stream(nsAHttpTransaction* httpTransaction,
   LOG1(("Http2Stream::Http2Stream %p trans=%p", this, httpTransaction));
 }
 
-Http2Stream::~Http2Stream() {}
+Http2Stream::~Http2Stream() = default;
 
 void Http2Stream::CloseStream(nsresult reason) {
   if (reason == NS_ERROR_NET_RESET &&
@@ -82,7 +80,7 @@ nsresult Http2Stream::CallToWriteData(uint32_t count, uint32_t* countWritten) {
 // This is really a headers frame, but open is pretty clear from a workflow pov
 nsresult Http2Stream::GenerateHeaders(nsCString& aCompressedData,
                                       uint8_t& firstFrameFlags) {
-  nsHttpRequestHead* head = mTransaction->RequestHead();
+  const nsHttpRequestHead* head = mTransaction->RequestHead();
   nsAutoCString requestURI;
   head->RequestURI(requestURI);
   RefPtr<Http2Session> session = Session();

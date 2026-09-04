@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -6,15 +5,17 @@
 #ifndef WidgetUtilsGtk_h_
 #define WidgetUtilsGtk_h_
 
+#include <stdint.h>
+
+#include "mozilla/MozPromise.h"
 #include "nsString.h"
 #include "nsTArray.h"
-#include "mozilla/MozPromise.h"
-#include <stdint.h>
 
 typedef struct _GdkDisplay GdkDisplay;
 typedef struct _GdkDevice GdkDevice;
 typedef struct _GError GError;
 typedef union _GdkEvent GdkEvent;
+typedef struct _GdkSeat GdkSeat;
 class nsWindow;
 
 namespace mozilla::widget {
@@ -36,6 +37,9 @@ bool GdkIsX11Display();
 bool IsXWaylandProtocol();
 
 GdkDevice* GdkGetPointer();
+
+GdkSeat* GdkDeviceGetSeat(GdkDevice* device);
+void GdkSeatUngrab(GdkSeat* seat);
 
 // Sets / returns the last mouse button press/touch begin event we processed.
 void SetLastPointerDownEvent(GdkEvent*);
@@ -85,7 +89,7 @@ bool IsCancelledGError(GError* aGError);
 // Used by startup notifications
 nsCString SynthesizeStartupToken();
 void FindLatestUserTime(GdkDisplay* aDisplay, uintptr_t aWindow,
-                        unsigned long* aLatestTime);
+                        uint32_t* aLatestTime);
 #endif
 
 }  // namespace mozilla::widget

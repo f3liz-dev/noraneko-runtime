@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -167,14 +165,15 @@ void IDBRequest::Reset() {
   mError = nullptr;
 }
 
-void IDBRequest::SetError(nsresult aRv) {
+void IDBRequest::SetError(nsresult aRv, const nsACString& aMessage) {
   AssertIsOnOwningThread();
   MOZ_ASSERT(NS_FAILED(aRv));
   MOZ_ASSERT(NS_ERROR_GET_MODULE(aRv) == NS_ERROR_MODULE_DOM_INDEXEDDB);
   MOZ_ASSERT(!mError);
 
   mHaveResultOrErrorCode = true;
-  mError = DOMException::Create(aRv);
+  mError = aMessage.IsEmpty() ? DOMException::Create(aRv)
+                              : DOMException::Create(aRv, aMessage);
   mErrorCode = aRv;
 
   mResultVal.setUndefined();

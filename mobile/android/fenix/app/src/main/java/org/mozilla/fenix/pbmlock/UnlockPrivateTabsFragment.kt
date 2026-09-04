@@ -27,18 +27,18 @@ import org.mozilla.fenix.GleanMetrics.PrivateBrowsingLocked
 import org.mozilla.fenix.HomeActivity
 import org.mozilla.fenix.R
 import org.mozilla.fenix.browser.browsingmode.BrowsingMode
-import org.mozilla.fenix.components.appstate.AppAction
+import org.mozilla.fenix.e2e.SystemInsetsPaddedFragment
 import org.mozilla.fenix.ext.registerForActivityResult
 import org.mozilla.fenix.ext.requireComponents
 import org.mozilla.fenix.home.HomeFragmentDirections
 import org.mozilla.fenix.settings.biometric.DefaultBiometricUtils
-import org.mozilla.fenix.tabstray.Page
+import org.mozilla.fenix.tabstray.redux.state.Page
 import org.mozilla.fenix.theme.FirefoxTheme
 
 /**
  * Fragment used to display biometric authentication when the app is locked.
  */
-class UnlockPrivateTabsFragment : Fragment(), UserInteractionHandler {
+class UnlockPrivateTabsFragment : Fragment(), UserInteractionHandler, SystemInsetsPaddedFragment {
     private lateinit var startForResult: ActivityResultLauncher<Intent>
     private val args: UnlockPrivateTabsFragmentArgs by navArgs()
     private val navigationOrigin by lazy { args.navigationOrigin }
@@ -125,7 +125,7 @@ class UnlockPrivateTabsFragment : Fragment(), UserInteractionHandler {
             // home page, then, when leaving without authentication, we want to navigate user back
             // to normal mode. If they have opened regular tabs, we open the tabs tray as well.
             NavigationOrigin.TAB, NavigationOrigin.HOME_PAGE -> {
-                requireComponents.appStore.dispatch(AppAction.BrowsingModeManagerModeChanged(BrowsingMode.Normal))
+                (activity as HomeActivity).browsingModeManager.mode = BrowsingMode.Normal
                 findNavController().navigate(UnlockPrivateTabsFragmentDirections.actionGlobalHome())
 
                 val hasNormalTabs = requireComponents.core.store.state.normalTabs.isNotEmpty()

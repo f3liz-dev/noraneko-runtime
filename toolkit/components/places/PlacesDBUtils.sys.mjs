@@ -1,6 +1,4 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*-
- * vim: sw=2 ts=2 sts=2 expandtab filetype=javascript
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -1226,28 +1224,30 @@ export var PlacesDBUtils = {
     );
     let re = /places\.sqlite(-\d)?\.corrupt$/;
     let currentTime = Date.now();
-    let children = await IOUtils.getChildren(PathUtils.profileDir);
-    try {
-      for (let entry of children) {
-        let fileInfo = await IOUtils.stat(entry);
-        let lastModificationDate;
-        if (fileInfo.type == "regular" && re.test(entry)) {
-          lastModificationDate = fileInfo.lastModified;
-          try {
-            // Convert milliseconds to days.
-            let days = Math.ceil(
-              (currentTime - lastModificationDate) / MS_PER_DAY
-            );
-            if (days >= CORRUPT_DB_RETAIN_DAYS || days < 0) {
-              await IOUtils.remove(entry);
-            }
-          } catch (error) {
-            logs.push("Could not remove file: " + entry, error);
+    let children = (await IOUtils.getChildren(PathUtils.profileDir)).filter(
+      entry => re.test(entry)
+    );
+    for (let entry of children) {
+      let fileInfo;
+      try {
+        fileInfo = await IOUtils.stat(entry);
+      } catch (error) {
+        logs.push("Could not stat file: " + entry, error);
+        continue;
+      }
+      if (fileInfo.type == "regular") {
+        try {
+          // Convert milliseconds to days.
+          let days = Math.ceil(
+            (currentTime - fileInfo.lastModified) / MS_PER_DAY
+          );
+          if (days >= CORRUPT_DB_RETAIN_DAYS || days < 0) {
+            await IOUtils.remove(entry);
           }
+        } catch (error) {
+          logs.push("Could not remove file: " + entry, error);
         }
       }
-    } catch (error) {
-      logs.push("removeOldCorruptDBs failed", error);
     }
     return logs;
   },

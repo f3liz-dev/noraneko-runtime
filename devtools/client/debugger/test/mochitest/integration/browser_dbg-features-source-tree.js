@@ -124,7 +124,7 @@ add_task(async function testSimpleSourcesWithManualClickExpand() {
   info("Test the download file context menu");
   // Before trigerring the menu, mock the file picker
   const MockFilePicker = SpecialPowers.MockFilePicker;
-  MockFilePicker.init(window.browsingContext);
+  MockFilePicker.init();
   const nsiFile = new FileUtils.File(
     PathUtils.join(PathUtils.tempDir, `export_source_content_${Date.now()}.log`)
   );
@@ -138,8 +138,8 @@ add_task(async function testSimpleSourcesWithManualClickExpand() {
   );
 
   info("Wait for the downloaded file to be fully saved to disk");
-  await BrowserTestUtils.waitForCondition(() => IOUtils.exists(path));
-  await BrowserTestUtils.waitForCondition(async () => {
+  await TestUtils.waitForCondition(() => IOUtils.exists(path));
+  await TestUtils.waitForCondition(async () => {
     const { size } = await IOUtils.stat(path);
     return size > 0;
   });

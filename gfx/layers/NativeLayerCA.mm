@@ -1,5 +1,4 @@
-/* -*- Mode: C++; tab-width: 20; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -15,12 +14,11 @@
 
 #include <algorithm>
 #include <fstream>
-#include <iostream>
-#include <sstream>
 #include <utility>
 
-#include "gfxUtils.h"
 #include "GLBlitHelper.h"
+#include "gfxPlatform.h"
+#include "gfxUtils.h"
 #ifdef XP_MACOSX
 #  include "GLContextCGL.h"
 #else
@@ -28,13 +26,13 @@
 #endif
 #include "GLContextProvider.h"
 #include "MozFramebuffer.h"
+#include "ScopedGLHelpers.h"
+#include "mozilla/StaticPrefs_gfx.h"
 #include "mozilla/gfx/Swizzle.h"
+#include "mozilla/glean/GfxMetrics.h"
 #include "mozilla/layers/ScreenshotGrabber.h"
 #include "mozilla/layers/SurfacePoolCA.h"
-#include "mozilla/StaticPrefs_gfx.h"
-#include "mozilla/glean/GfxMetrics.h"
 #include "mozilla/webrender/RenderMacIOSurfaceTextureHost.h"
-#include "ScopedGLHelpers.h"
 
 @interface CALayer (PrivateSetContentsOpaque)
 - (void)setContentsOpaque:(BOOL)opaque;
@@ -118,57 +116,6 @@ static void EmitTelemetryForVideoLowPower(VideoLowPowerType aVideoLowPower) {
       return;
   }
 }
-
-// Utility classes for NativeLayerRootSnapshotter (NLRS) profiler screenshots.
-
-class RenderSourceNLRS : public profiler_screenshots::RenderSource {
- public:
-  explicit RenderSourceNLRS(UniquePtr<gl::MozFramebuffer>&& aFramebuffer)
-      : RenderSource(aFramebuffer->mSize),
-        mFramebuffer(std::move(aFramebuffer)) {}
-  auto& FB() { return *mFramebuffer; }
-
- protected:
-  UniquePtr<gl::MozFramebuffer> mFramebuffer;
-};
-
-class DownscaleTargetNLRS : public profiler_screenshots::DownscaleTarget {
- public:
-  DownscaleTargetNLRS(gl::GLContext* aGL,
-                      UniquePtr<gl::MozFramebuffer>&& aFramebuffer)
-      : profiler_screenshots::DownscaleTarget(aFramebuffer->mSize),
-        mGL(aGL),
-        mRenderSource(new RenderSourceNLRS(std::move(aFramebuffer))) {}
-  already_AddRefed<profiler_screenshots::RenderSource> AsRenderSource()
-      override {
-    return do_AddRef(mRenderSource);
-  };
-  bool DownscaleFrom(profiler_screenshots::RenderSource* aSource,
-                     const IntRect& aSourceRect,
-                     const IntRect& aDestRect) override;
-
- protected:
-  RefPtr<gl::GLContext> mGL;
-  RefPtr<RenderSourceNLRS> mRenderSource;
-};
-
-class AsyncReadbackBufferNLRS
-    : public profiler_screenshots::AsyncReadbackBuffer {
- public:
-  AsyncReadbackBufferNLRS(gl::GLContext* aGL, const IntSize& aSize,
-                          GLuint aBufferHandle)
-      : profiler_screenshots::AsyncReadbackBuffer(aSize),
-        mGL(aGL),
-        mBufferHandle(aBufferHandle) {}
-  void CopyFrom(profiler_screenshots::RenderSource* aSource) override;
-  bool MapAndCopyInto(DataSourceSurface* aSurface,
-                      const IntSize& aReadSize) override;
-
- protected:
-  virtual ~AsyncReadbackBufferNLRS();
-  RefPtr<gl::GLContext> mGL;
-  GLuint mBufferHandle = 0;
-};
 
 // Needs to be on the stack whenever CALayer mutations are performed.
 // (Mutating CALayers outside of a transaction can result in permanently stuck
@@ -745,7 +692,7 @@ void NativeLayerRootSnapshotterCA::UpdateSnapshot(const IntSize& aSize) {
   bool needToRedrawEverything = false;
   if (!mSnapshot || mSnapshot->Size() != aSize) {
     mSnapshot = nullptr;
-    auto fb = gl::MozFramebuffer::Create(mGL, aSize, 0, false);
+    auto fb = gl::MozFramebuffer::Create(mGL, aSize, 0, false, false);
     if (!fb) {
       return;
     }
@@ -820,12 +767,11 @@ bool NativeLayerRootSnapshotterCA::ReadbackPixels(
 
 already_AddRefed<profiler_screenshots::DownscaleTarget>
 NativeLayerRootSnapshotterCA::CreateDownscaleTarget(const IntSize& aSize) {
-  auto fb = gl::MozFramebuffer::Create(mGL, aSize, 0, false);
+  auto fb = gl::MozFramebuffer::Create(mGL, aSize, 0, false, false);
   if (!fb) {
     return nullptr;
   }
-  RefPtr<profiler_screenshots::DownscaleTarget> dt =
-      new DownscaleTargetNLRS(mGL, std::move(fb));
+  RefPtr dt = MakeRefPtr<DownscaleTargetNLRS>(mGL, std::move(fb));
   return dt.forget();
 }
 
@@ -837,10 +783,10 @@ NativeLayerRootSnapshotterCA::CreateAsyncReadbackBuffer(const IntSize& aSize) {
 
   gl::ScopedPackState scopedPackState(mGL);
   mGL->fBindBuffer(LOCAL_GL_PIXEL_PACK_BUFFER, bufferHandle);
-  mGL->fPixelStorei(LOCAL_GL_PACK_ALIGNMENT, 1);
   mGL->fBufferData(LOCAL_GL_PIXEL_PACK_BUFFER, bufferByteCount, nullptr,
                    LOCAL_GL_STREAM_READ);
-  return MakeAndAddRef<AsyncReadbackBufferNLRS>(mGL, aSize, bufferHandle);
+  return MakeAndAddRef<AsyncReadbackBufferNLRS>(mGL, aSize, bufferHandle,
+                                                /*bool aYFlip*/ true);
 }
 #endif
 
@@ -929,19 +875,10 @@ void NativeLayerCA::AttachExternalImage(wr::RenderTextureHost* aExternalImage) {
   bool changedIsDRM = (mIsDRM != isDRM);
   mIsDRM = isDRM;
 
-  bool isHDR = false;
   MacIOSurface* macIOSurface = texture->GetSurface();
-  if (macIOSurface->GetYUVColorSpace() == gfx::YUVColorSpace::BT2020 &&
-      StaticPrefs::gfx_color_management_hdr_video_assume_rec2020_uses_pq()) {
-    // BT2020 colorSpace is a signifier of HDR.
-    isHDR = true;
-  }
-
-  if (macIOSurface->GetColorDepth() == gfx::ColorDepth::COLOR_10) {
-    // 10-bit color is a signifier of HDR.
-    isHDR = true;
-  }
-  mIsHDR = isHDR && StaticPrefs::gfx_color_management_hdr_video();
+  bool isHDR = macIOSurface->IsHDRSurface() && gfxPlatform::UseHDR();
+  bool changedIsHDR = (mIsHDR != isHDR);
+  mIsHDR = isHDR;
 
   bool specializeVideo = ShouldSpecializeVideo(lock);
   bool changedSpecializeVideo = (mSpecializeVideo != specializeVideo);
@@ -962,6 +899,7 @@ void NativeLayerCA::AttachExternalImage(wr::RenderTextureHost* aExternalImage) {
     r.mMutatedSize |= changedSizeAndDisplayRect;
     r.mMutatedSpecializeVideo |= changedSpecializeVideo;
     r.mMutatedIsDRM |= changedIsDRM;
+    r.mMutatedIsHDR |= changedIsHDR;
   });
 }
 
@@ -1274,7 +1212,9 @@ void NativeLayerCA::DumpLayer(std::ostream& aOutputStream) {
   if (surface) {
     // Attempt to render the surface as a PNG. Skia can do this for RGB
     // surfaces.
-    RefPtr<MacIOSurface> surf = new MacIOSurface(surface);
+    RefPtr<MacIOSurface> surf = new MacIOSurface(
+        surface, gfx::YUVColorSpace::Identity, gfx::TransferFunction::SRGB,
+        MacIOSurface::AllowAlpha::Yes);
     if (surf->Lock(true)) {
       SurfaceFormat format = surf->GetFormat();
       if (format == SurfaceFormat::B8G8R8A8 ||
@@ -1295,6 +1235,50 @@ void NativeLayerCA::DumpLayer(std::ostream& aOutputStream) {
   }
 
   aOutputStream << "\"/></div>\n";
+}
+
+static NSString* NSStringForOSType(OSType type) {
+  unichar c[4];
+  c[0] = (type >> 24) & 0xFF;
+  c[1] = (type >> 16) & 0xFF;
+  c[2] = (type >> 8) & 0xFF;
+  c[3] = (type >> 0) & 0xFF;
+  NSString* string = [[NSString stringWithCharacters:c length:4] autorelease];
+  return string;
+}
+
+/* static */ void NativeLayerCA::LogSurface(
+    const nsACString& aHeader, IOSurfaceRef aSurfaceRef,
+    CVPixelBufferRef aBuffer, CMVideoFormatDescriptionRef aFormat) {
+  nsCString header(aHeader);
+  NSLog(@"LogSurface(%s):\n", header.get());
+
+  // List the buffer first, because it's likely the source of aSurfaceRef.
+  if (aBuffer) {
+#ifdef XP_MACOSX
+    CGColorSpaceRef colorSpace = CVImageBufferGetColorSpace(aBuffer);
+    NSLog(@"ColorSpace is %@.\n", colorSpace);
+#endif
+
+    if (@available(macOS 12.0, *)) {
+      CFDictionaryRef bufferAttachments =
+          CVBufferCopyAttachments(aBuffer, kCVAttachmentMode_ShouldPropagate);
+      NSLog(@"Buffer attachments are %@.\n", bufferAttachments);
+      CFRelease(bufferAttachments);
+    }
+  }
+
+  CFDictionaryRef surfaceValues = IOSurfaceCopyAllValues(aSurfaceRef);
+  NSLog(@"Surface values are %@.\n", surfaceValues);
+  CFRelease(surfaceValues);
+
+  if (aFormat) {
+    OSType codec = CMFormatDescriptionGetMediaSubType(aFormat);
+    NSLog(@"Codec is %@.\n", NSStringForOSType(codec));
+
+    CFDictionaryRef extensions = CMFormatDescriptionGetExtensions(aFormat);
+    NSLog(@"Format extensions are %@.\n", extensions);
+  }
 }
 
 gfx::IntRect NativeLayerCA::CurrentSurfaceDisplayRect() {
@@ -1342,9 +1326,11 @@ void NativeLayerCA::SetSurfaceToPresent(CFTypeRefPtr<IOSurfaceRef> aSurfaceRef,
   // Figure out if the surface is a video.
   if (mSurfaceToPresent) {
     auto pixelFormat = IOSurfaceGetPixelFormat(mSurfaceToPresent.get());
-    bool hasAlpha = !mIsOpaque;
+    MacIOSurface::AllowAlpha allowAlpha = mIsOpaque
+                                              ? MacIOSurface::AllowAlpha::No
+                                              : MacIOSurface::AllowAlpha::Yes;
     auto surfaceFormat =
-        MacIOSurface::SurfaceFormatForPixelFormat(pixelFormat, hasAlpha);
+        MacIOSurface::SurfaceFormatForPixelFormat(pixelFormat, allowAlpha);
     mTextureHostIsVideo = gfx::Info(surfaceFormat)->isYuv;
   } else {
     mTextureHostIsVideo = false;
@@ -1353,6 +1339,7 @@ void NativeLayerCA::SetSurfaceToPresent(CFTypeRefPtr<IOSurfaceRef> aSurfaceRef,
   bool changedIsDRM = (mIsDRM != aIsDRM);
   mIsDRM = aIsDRM;
 
+  bool changedIsHDR = (mIsHDR != aIsHDR);
   mIsHDR = aIsHDR;
 
   bool specializeVideo = ShouldSpecializeVideo(lock);
@@ -1373,6 +1360,7 @@ void NativeLayerCA::SetSurfaceToPresent(CFTypeRefPtr<IOSurfaceRef> aSurfaceRef,
     r.mMutatedSize |= changedSize;
     r.mMutatedSpecializeVideo |= changedSpecializeVideo;
     r.mMutatedIsDRM |= changedIsDRM;
+    r.mMutatedIsHDR |= changedIsHDR;
   });
 }
 
@@ -1389,7 +1377,8 @@ NativeLayerCARepresentation::NativeLayerCARepresentation()
       mMutatedFrontSurface(true),
       mMutatedSamplingFilter(true),
       mMutatedSpecializeVideo(true),
-      mMutatedIsDRM(true) {}
+      mMutatedIsDRM(true),
+      mMutatedIsHDR(true) {}
 
 NativeLayerCARepresentation::~NativeLayerCARepresentation() {
   [mContentCALayer release];
@@ -1530,7 +1519,7 @@ bool NativeLayerCA::ApplyChanges(WhichRepresentation aRepresentation,
   bool updateSucceeded = r.ApplyChanges(
       aUpdate, size, mIsOpaque, mPosition, mTransform, displayRect, mClipRect,
       mRoundedClipRect, mBackingScale, surfaceIsFlipped, mSamplingFilter,
-      mSpecializeVideo, surface, mColor, mIsDRM, IsVideo(lock));
+      mSpecializeVideo, surface, mColor, IsVideo(lock), mIsDRM, mIsHDR);
   bool hasExtentAfterUpdate = r.UnderlyingCALayer() != nullptr;
   if (hasExtentAfterUpdate != hadExtentBeforeUpdate) {
     *aMustRebuild = true;
@@ -1543,45 +1532,8 @@ CALayer* NativeLayerCA::UnderlyingCALayer(WhichRepresentation aRepresentation) {
   return GetRepresentation(aRepresentation).UnderlyingCALayer();
 }
 
-static NSString* NSStringForOSType(OSType type) {
-  unichar c[4];
-  c[0] = (type >> 24) & 0xFF;
-  c[1] = (type >> 16) & 0xFF;
-  c[2] = (type >> 8) & 0xFF;
-  c[3] = (type >> 0) & 0xFF;
-  NSString* string = [[NSString stringWithCharacters:c length:4] autorelease];
-  return string;
-}
-
-/* static */ void LogSurface(IOSurfaceRef aSurfaceRef, CVPixelBufferRef aBuffer,
-                             CMVideoFormatDescriptionRef aFormat) {
-  NSLog(@"VIDEO_LOG: LogSurface...\n");
-
-  CFDictionaryRef surfaceValues = IOSurfaceCopyAllValues(aSurfaceRef);
-  NSLog(@"Surface values are %@.\n", surfaceValues);
-  CFRelease(surfaceValues);
-
-  if (aBuffer) {
-#ifdef XP_MACOSX
-    CGColorSpaceRef colorSpace = CVImageBufferGetColorSpace(aBuffer);
-    NSLog(@"ColorSpace is %@.\n", colorSpace);
-#endif
-
-    CFDictionaryRef bufferAttachments =
-        CVBufferGetAttachments(aBuffer, kCVAttachmentMode_ShouldPropagate);
-    NSLog(@"Buffer attachments are %@.\n", bufferAttachments);
-  }
-
-  if (aFormat) {
-    OSType codec = CMFormatDescriptionGetMediaSubType(aFormat);
-    NSLog(@"Codec is %@.\n", NSStringForOSType(codec));
-
-    CFDictionaryRef extensions = CMFormatDescriptionGetExtensions(aFormat);
-    NSLog(@"Format extensions are %@.\n", extensions);
-  }
-}
-
-bool NativeLayerCARepresentation::EnqueueSurface(IOSurfaceRef aSurfaceRef) {
+bool NativeLayerCARepresentation::EnqueueSurface(IOSurfaceRef aSurfaceRef,
+                                                 bool aIsHDR) {
   MOZ_ASSERT(
       [mContentCALayer isKindOfClass:[AVSampleBufferDisplayLayer class]]);
   AVSampleBufferDisplayLayer* videoLayer =
@@ -1671,14 +1623,6 @@ bool NativeLayerCARepresentation::EnqueueSurface(IOSurfaceRef aSurfaceRef) {
       CFTypeRefPtr<CMVideoFormatDescriptionRef>::WrapUnderCreateRule(
           formatDescription);
 
-#ifdef NIGHTLY_BUILD
-  if (mLogNextVideoSurface &&
-      StaticPrefs::gfx_core_animation_specialize_video_log()) {
-    LogSurface(aSurfaceRef, pixelBuffer, formatDescription);
-    mLogNextVideoSurface = false;
-  }
-#endif
-
   CMSampleTimingInfo timingInfo = kCMTimingInfoInvalid;
 
   bool spoofTiming = false;
@@ -1729,6 +1673,32 @@ bool NativeLayerCARepresentation::EnqueueSurface(IOSurfaceRef aSurfaceRef) {
                          kCFBooleanTrue);
   }
 
+  // Set a layer property for HDR video. We would like to set this
+  // property exactly once, at time of layer creation, but correct
+  // HDR display seems to require that it is set before every call to
+  // enqueueSampleBuffer.
+#ifdef XP_MACOSX
+  if (@available(macOS 26.0, *)) {
+    videoLayer.preferredDynamicRange =
+        aIsHDR ? CADynamicRangeHigh : CADynamicRangeStandard;
+  } else if (@available(macOS 14.0, *)) {
+    videoLayer.wantsExtendedDynamicRangeContent = aIsHDR;
+  }
+#else
+  (void)aIsHDR;
+#endif
+
+#ifdef NIGHTLY_BUILD
+  if (mLogNextVideoSurface &&
+      StaticPrefs::gfx_core_animation_specialize_video_log()) {
+    NativeLayerCA::LogSurface("EnqueueSurface"_ns, aSurfaceRef, pixelBuffer,
+                              formatDescription);
+
+    NSLog(@"%@", sampleBuffer);
+    mLogNextVideoSurface = false;
+  }
+#endif
+
   [videoLayer enqueueSampleBuffer:sampleBuffer];
 
   return true;
@@ -1741,7 +1711,8 @@ bool NativeLayerCARepresentation::ApplyChanges(
     const Maybe<gfx::RoundedRect>& aRoundedClip, float aBackingScale,
     bool aSurfaceIsFlipped, gfx::SamplingFilter aSamplingFilter,
     bool aSpecializeVideo, const CFTypeRefPtr<IOSurfaceRef>& aFrontSurface,
-    const Maybe<gfx::DeviceColor>& aColor, bool aIsDRM, bool aIsVideo) {
+    const Maybe<gfx::DeviceColor>& aColor, bool aIsVideo, bool aIsDRM,
+    bool aIsHDR) {
   // If we have an OnlyVideo update, handle it and early exit.
   if (aUpdate == UpdateType::OnlyVideo) {
     // If we don't have any updates to do, exit early with success. This is
@@ -1757,7 +1728,7 @@ bool NativeLayerCARepresentation::ApplyChanges(
     bool updateSucceeded = false;
     if (aSpecializeVideo) {
       IOSurfaceRef surface = aFrontSurface.get();
-      updateSucceeded = EnqueueSurface(surface);
+      updateSucceeded = EnqueueSurface(surface, aIsHDR);
 
       if (updateSucceeded) {
         mMutatedFrontSurface = false;
@@ -2068,7 +2039,7 @@ bool NativeLayerCARepresentation::ApplyChanges(
 
       // Attempt to enqueue this as a video frame. If we fail, we'll rebuild
       // our video layer in the next update.
-      bool isEnqueued = EnqueueSurface(surface);
+      bool isEnqueued = EnqueueSurface(surface, aIsHDR);
       if (!isEnqueued) {
         // Set mMutatedSpecializeVideo, which will ensure that the next update
         // will rebuild the video layer.
@@ -2084,7 +2055,7 @@ bool NativeLayerCARepresentation::ApplyChanges(
 #ifdef NIGHTLY_BUILD
       if (mLogNextVideoSurface &&
           StaticPrefs::gfx_core_animation_specialize_video_log()) {
-        LogSurface(surface, nullptr, nullptr);
+        NativeLayerCA::LogSurface("ApplyChanges"_ns, surface, nullptr, nullptr);
         mLogNextVideoSurface = false;
       }
 #endif
@@ -2104,6 +2075,7 @@ bool NativeLayerCARepresentation::ApplyChanges(
   mMutatedSamplingFilter = false;
   mMutatedSpecializeVideo = false;
   mMutatedIsDRM = false;
+  mMutatedIsHDR = false;
 
   return true;
 }
@@ -2119,7 +2091,7 @@ NativeLayerCA::UpdateType NativeLayerCARepresentation::HasUpdate(
   if (mMutatedPosition || mMutatedTransform || mMutatedDisplayRect ||
       mMutatedClipRect || mMutatedRoundedClipRect || mMutatedBackingScale ||
       mMutatedSize || mMutatedSurfaceIsFlipped || mMutatedSamplingFilter ||
-      mMutatedSpecializeVideo || mMutatedIsDRM) {
+      mMutatedSpecializeVideo || mMutatedIsDRM || mMutatedIsHDR) {
     return UpdateType::All;
   }
 
@@ -2132,81 +2104,6 @@ NativeLayerCA::UpdateType NativeLayerCARepresentation::HasUpdate(
   }
 
   return UpdateType::None;
-}
-
-bool DownscaleTargetNLRS::DownscaleFrom(
-    profiler_screenshots::RenderSource* aSource, const IntRect& aSourceRect,
-    const IntRect& aDestRect) {
-  mGL->BlitHelper()->BlitFramebufferToFramebuffer(
-      static_cast<RenderSourceNLRS*>(aSource)->FB().mFB,
-      mRenderSource->FB().mFB, aSourceRect, aDestRect, LOCAL_GL_LINEAR);
-
-  return true;
-}
-
-void AsyncReadbackBufferNLRS::CopyFrom(
-    profiler_screenshots::RenderSource* aSource) {
-  IntSize size = aSource->Size();
-  MOZ_RELEASE_ASSERT(Size() == size);
-
-  gl::ScopedPackState scopedPackState(mGL);
-  mGL->fBindBuffer(LOCAL_GL_PIXEL_PACK_BUFFER, mBufferHandle);
-  mGL->fPixelStorei(LOCAL_GL_PACK_ALIGNMENT, 1);
-  const gl::ScopedBindFramebuffer bindFB(
-      mGL, static_cast<RenderSourceNLRS*>(aSource)->FB().mFB);
-  mGL->fReadPixels(0, 0, size.width, size.height, LOCAL_GL_RGBA,
-                   LOCAL_GL_UNSIGNED_BYTE, 0);
-}
-
-bool AsyncReadbackBufferNLRS::MapAndCopyInto(DataSourceSurface* aSurface,
-                                             const IntSize& aReadSize) {
-  MOZ_RELEASE_ASSERT(aReadSize <= aSurface->GetSize());
-
-  if (!mGL || !mGL->MakeCurrent()) {
-    return false;
-  }
-
-  gl::ScopedPackState scopedPackState(mGL);
-  mGL->fBindBuffer(LOCAL_GL_PIXEL_PACK_BUFFER, mBufferHandle);
-  mGL->fPixelStorei(LOCAL_GL_PACK_ALIGNMENT, 1);
-
-  const uint8_t* srcData = nullptr;
-  if (mGL->IsSupported(gl::GLFeature::map_buffer_range)) {
-    srcData = static_cast<uint8_t*>(mGL->fMapBufferRange(
-        LOCAL_GL_PIXEL_PACK_BUFFER, 0, aReadSize.height * aReadSize.width * 4,
-        LOCAL_GL_MAP_READ_BIT));
-  } else {
-    srcData = static_cast<uint8_t*>(
-        mGL->fMapBuffer(LOCAL_GL_PIXEL_PACK_BUFFER, LOCAL_GL_READ_ONLY));
-  }
-
-  if (!srcData) {
-    return false;
-  }
-
-  int32_t srcStride = mSize.width * 4;  // Bind() sets an alignment of 1
-  DataSourceSurface::ScopedMap map(aSurface, DataSourceSurface::WRITE);
-  uint8_t* destData = map.GetData();
-  int32_t destStride = map.GetStride();
-  SurfaceFormat destFormat = aSurface->GetFormat();
-  for (int32_t destRow = 0; destRow < aReadSize.height; destRow++) {
-    // Turn srcData upside down during the copy.
-    int32_t srcRow = aReadSize.height - 1 - destRow;
-    const uint8_t* src = &srcData[srcRow * srcStride];
-    uint8_t* dest = &destData[destRow * destStride];
-    SwizzleData(src, srcStride, SurfaceFormat::R8G8B8A8, dest, destStride,
-                destFormat, IntSize(aReadSize.width, 1));
-  }
-
-  mGL->fUnmapBuffer(LOCAL_GL_PIXEL_PACK_BUFFER);
-
-  return true;
-}
-
-AsyncReadbackBufferNLRS::~AsyncReadbackBufferNLRS() {
-  if (mGL && mGL->MakeCurrent()) {
-    mGL->fDeleteBuffers(1, &mBufferHandle);
-  }
 }
 
 }  // namespace layers

@@ -15,7 +15,7 @@ use crate::frame_builder::Frame;
 use crate::profiler::TransactionProfile;
 use crate::segment::EdgeMask;
 use crate::spatial_tree::SpatialNodeIndex;
-use crate::prim_store::PrimitiveInstanceIndex;
+use crate::visibility::PrimitiveDrawIndex;
 use crate::svg_filter::{FilterGraphNode, FilterGraphOp, FilterGraphPictureReference};
 use rustc_hash::FxHasher;
 use plane_split::BspSplitter;
@@ -181,17 +181,24 @@ impl FrameStamp {
 #[cfg_attr(feature = "capture", derive(Serialize))]
 pub struct PlaneSplitAnchor {
     pub spatial_node_index: SpatialNodeIndex,
-    pub instance_index: PrimitiveInstanceIndex,
+    /// The draw this plane composites. Both consumers (the draw header lookup
+    /// and the split-composite command) need a draw index, so the anchor carries
+    /// one rather than an instance index the consumer would have to convert.
+    pub draw_index: PrimitiveDrawIndex,
+    /// The split picture's unclipped local rect used by the shader to map plane
+    /// positions to texture coordinates.
+    pub pattern_rect: LayoutRect,
 }
 
 impl PlaneSplitAnchor {
     pub fn new(
         spatial_node_index: SpatialNodeIndex,
-        instance_index: PrimitiveInstanceIndex,
+        draw_index: PrimitiveDrawIndex,
     ) -> Self {
         PlaneSplitAnchor {
             spatial_node_index,
-            instance_index,
+            draw_index,
+            pattern_rect: LayoutRect::zero(),
         }
     }
 }
@@ -200,7 +207,8 @@ impl Default for PlaneSplitAnchor {
     fn default() -> Self {
         PlaneSplitAnchor {
             spatial_node_index: SpatialNodeIndex::INVALID,
-            instance_index: PrimitiveInstanceIndex(!0),
+            draw_index: PrimitiveDrawIndex::INVALID,
+            pattern_rect: LayoutRect::zero(),
         }
     }
 }
@@ -313,7 +321,9 @@ impl Filter {
 
 
     pub fn as_int(&self) -> i32 {
-        // Must be kept in sync with brush_blend.glsl
+        // Must be kept in sync with the FILTER_* defines in blend.glsl. Only the
+        // filters handled by that shader are defined there; the rest (blur, drop
+        // shadow, opacity, SVG graph nodes) use other shaders.
         match *self {
             Filter::Identity => 0, // matches `Contrast(1)`
             Filter::Contrast(..) => 0,
@@ -340,10 +350,10 @@ impl From<FilterOp> for Filter {
     fn from(op: FilterOp) -> Self {
         match op {
             FilterOp::Identity => Filter::Identity,
-            FilterOp::Blur(width, height) => Filter::Blur {
+            FilterOp::Blur(width, height, should_inflate) => Filter::Blur {
                 width,
                 height,
-                should_inflate: true,
+                should_inflate,
                 edge_mode: BlurEdgeMode::Duplicate,
             },
             FilterOp::Brightness(b) => Filter::Brightness(b),
@@ -804,6 +814,8 @@ pub enum ResultMsg {
     UpdateResources {
         resource_updates: ResourceUpdateList,
         memory_pressure: bool,
+        discard_active_documents: bool,
+        trim_upload_buffers: bool,
     },
     PublishPipelineInfo(PipelineInfo),
     PublishDocument(
@@ -856,15 +868,3 @@ impl LayoutPrimitiveInfo {
     }
 }
 
-// In some cases (e.g. printing) a pipeline is referenced multiple times by
-// a parent display list. This allows us to distinguish between them.
-#[cfg_attr(feature = "capture", derive(Serialize))]
-#[cfg_attr(feature = "replay", derive(Deserialize))]
-#[derive(Copy, Clone, PartialEq, Debug, Eq, Hash)]
-pub struct PipelineInstanceId(u32);
-
-impl PipelineInstanceId {
-    pub fn new(id: u32) -> Self {
-        PipelineInstanceId(id)
-    }
-}

@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -34,6 +32,7 @@
 #include "nsFlexContainerFrame.h"
 #include "nsFrameList.h"
 #include "nsGkAtoms.h"
+#include "nsGridContainerFrame.h"
 #include "nsHTMLParts.h"
 #include "nsIDOMEventListener.h"
 #include "nsLayoutUtils.h"
@@ -259,7 +258,7 @@ void nsSplitterFrame::Init(nsIContent* aContent, nsContainerFrame* aParent,
 }
 
 static bool IsValidParentBox(nsIFrame* aFrame) {
-  return aFrame->IsFlexContainerFrame();
+  return aFrame->IsFlexContainerFrame() || aFrame->IsGridContainerFrame();
 }
 
 static nsIFrame* GetValidParentBox(nsIFrame* aChild) {
@@ -280,11 +279,33 @@ void nsSplitterFrame::Reflow(nsPresContext* aPresContext,
                                     aStatus);
 }
 
-static bool SplitterIsHorizontal(const nsIFrame* aParentBox) {
-  // If our parent is horizontal, the splitter is vertical and vice-versa.
-  MOZ_ASSERT(aParentBox->IsFlexContainerFrame());
-  const FlexboxAxisInfo info(aParentBox);
-  return !info.mIsRowOriented;
+static bool SplitterIsHorizontal(const nsIFrame* aParentBox,
+                                 const Element* aSplitterElement) {
+  if (aParentBox->IsFlexContainerFrame()) {
+    // If our parent is horizontal, the splitter is vertical and vice-versa.
+    const FlexboxAxisInfo info(aParentBox);
+    return !info.mIsRowOriented;
+  }
+
+  static Element::AttrValuesArray strings[] = {nsGkAtoms::horizontal,
+                                               nsGkAtoms::vertical, nullptr};
+  switch (aSplitterElement->FindAttrValueIn(
+      kNameSpaceID_None, nsGkAtoms::orient, strings, eCaseMatters)) {
+    // When the splitter has orient=horizontal, it means that the elements to
+    // resize are on its left/right, so the splitter itself is a vertical line.
+    case 0:
+      return false;
+    // When the splitter has orient=vertical, it means that the elements to
+    // resize are on top/bottom of it, so the splitter itself is a horizontal
+    // line.
+    case 1:
+      return true;
+    default:
+      break;
+  }
+
+  MOZ_ASSERT_UNREACHABLE("Non Flex Items should have a 'orient' attribute");
+  return false;
 }
 
 NS_IMETHODIMP
@@ -591,7 +612,7 @@ bool nsSplitterFrameInner::CollectChildInfos() {
 
         // We need to check for hidden attribute too, since treecols with
         // the hidden attribute are not really hidden, just collapsed
-        if (element->GetXULBoolAttr(nsGkAtoms::fixed) ||
+        if (element->GetBoolAttr(nsGkAtoms::fixed) ||
             element->GetBoolAttr(nsGkAtoms::hidden)) {
           return false;
         }
@@ -620,6 +641,14 @@ bool nsSplitterFrameInner::CollectChildInfos() {
         case ResizeType::Farthest:
           break;
       }
+
+      // When the splitter is not in a flex container, we're only supporting
+      // sibling resize
+      if (!mParentBox->IsFlexContainerFrame() &&
+          resizeType != ResizeType::Sibling) {
+        return false;
+      }
+
       return true;
     }();
 
@@ -670,13 +699,19 @@ bool nsSplitterFrameInner::CollectChildInfos() {
   }
 
   const bool reverseDirection = [&] {
+    const bool rtl =
+        mParentBox->StyleVisibility()->mDirection == StyleDirection::Rtl;
+
+    if (mParentBox->IsGridContainerFrame()) {
+      return isHorizontal && rtl;
+    }
+
     MOZ_ASSERT(mParentBox->IsFlexContainerFrame());
     const FlexboxAxisInfo info(mParentBox);
     if (!info.mIsRowOriented) {
       return info.mIsMainAxisReversed;
     }
-    const bool rtl =
-        mParentBox->StyleVisibility()->mDirection == StyleDirection::Rtl;
+
     return info.mIsMainAxisReversed != rtl;
   }();
 
@@ -963,14 +998,14 @@ void nsSplitterFrameInner::UpdateState() {
           // CollapsedBefore -> Dragging
           // CollapsedAfter -> Open
           // CollapsedAfter -> Dragging
-          nsContentUtils::AddScriptRunner(new nsUnsetAttrRunnable(
+          nsContentUtils::AddScriptRunner(MakeAndAddRef<nsUnsetAttrRunnable>(
               sibling->AsElement(), nsGkAtoms::collapsed));
         } else if ((mState == State::Open || mState == State::Dragging) &&
                    (newState == State::CollapsedBefore ||
                     newState == State::CollapsedAfter)) {
           // Open -> CollapsedBefore / CollapsedAfter
           // Dragging -> CollapsedBefore / CollapsedAfter
-          nsContentUtils::AddScriptRunner(new nsSetAttrRunnable(
+          nsContentUtils::AddScriptRunner(MakeAndAddRef<nsSetAttrRunnable>(
               sibling->AsElement(), nsGkAtoms::collapsed, u"true"_ns));
         }
       }
@@ -980,7 +1015,7 @@ void nsSplitterFrameInner::UpdateState() {
 }
 
 void nsSplitterFrameInner::EnsureOrient() {
-  mOuter->mIsHorizontal = SplitterIsHorizontal(mParentBox);
+  mOuter->mIsHorizontal = SplitterIsHorizontal(mParentBox, SplitterElement());
 }
 
 void nsSplitterFrameInner::AdjustChildren(nsPresContext* aPresContext) {

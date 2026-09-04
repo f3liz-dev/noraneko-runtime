@@ -9,6 +9,7 @@
  * PATENTS file, you can obtain it at www.aomedia.org/license/patent.
  */
 
+#include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdarg.h>
@@ -612,24 +613,26 @@ static int main_loop(int argc, const char **argv_) {
     fprintf(stderr, "No input file specified!\n");
     usage_exit();
   }
-
-  const bool using_file = strcmp(fn, "-") != 0;
-  /* Open file */
-  infile = using_file ? fopen(fn, "rb") : set_binary_mode(stdin);
-
-  if (!infile) {
-    fatal("Failed to open input file '%s'", using_file ? fn : "stdin");
-  }
 #if CONFIG_OS_SUPPORT
   /* Make sure we don't dump to the terminal, unless forced to with -o - */
   if (!outfile_pattern && isatty(STDOUT_FILENO) && !do_md5 && !noblit) {
     fprintf(stderr,
             "Not dumping raw video to your terminal. Use '-o -' to "
             "override.\n");
+    if (framestats_file) fclose(framestats_file);
     free(argv);
     return EXIT_FAILURE;
   }
 #endif
+
+  const bool using_file = strcmp(fn, "-") != 0;
+  /* Open file */
+  infile = using_file ? fopen(fn, "rb") : set_binary_mode(stdin);
+
+  if (!infile) {
+    if (framestats_file) fclose(framestats_file);
+    fatal("Failed to open input file '%s'", using_file ? fn : "stdin");
+  }
   input.aom_input_ctx->filename = fn;
   input.aom_input_ctx->file = infile;
 
@@ -688,7 +691,7 @@ static int main_loop(int argc, const char **argv_) {
         fprintf(stderr,
                 "Failed to guess framerate -- error parsing "
                 "webm file?\n");
-        return EXIT_FAILURE;
+        goto fail2;
       }
     }
 #endif

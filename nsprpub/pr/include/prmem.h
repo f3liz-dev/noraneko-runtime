@@ -1,4 +1,3 @@
-/* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -31,13 +30,17 @@ PR_BEGIN_EXTERN_C
 ** must be freed by PR_Free.
 */
 
-NSPR_API(void *) PR_Malloc(PRUint32 size);
+NSPR_API(void*)
+PR_Malloc(PRUint32 size);
 
-NSPR_API(void *) PR_Calloc(PRUint32 nelem, PRUint32 elsize);
+NSPR_API(void*)
+PR_Calloc(PRUint32 nelem, PRUint32 elsize);
 
-NSPR_API(void *) PR_Realloc(void *ptr, PRUint32 size);
+NSPR_API(void*)
+PR_Realloc(void* ptr, PRUint32 size);
 
-NSPR_API(void) PR_Free(void *ptr);
+NSPR_API(void)
+PR_Free(void* ptr);
 
 /*
 ** The following are some convenience macros defined in terms of
@@ -62,7 +65,7 @@ NSPR_API(void) PR_Free(void *ptr);
 ** OUTPUTS: pointer to _struct
 ** RETURN:  pointer to _struct or error returns from malloc().
 ***********************************************************************/
-#define PR_NEW(_struct) ((_struct *) PR_MALLOC(sizeof(_struct)))
+#define PR_NEW(_struct) ((_struct*)PR_MALLOC(sizeof(_struct)))
 
 /***********************************************************************
 ** FUNCTION:    PR_REALLOC()
@@ -107,7 +110,11 @@ NSPR_API(void) PR_Free(void *ptr);
 ** OUTPUTS: the referenced object is returned to the heap
 ** RETURN:  void
 ***********************************************************************/
-#define PR_DELETE(_ptr) { PR_Free(_ptr); (_ptr) = NULL; }
+#define PR_DELETE(_ptr) \
+    {                   \
+        PR_Free(_ptr);  \
+        (_ptr) = NULL;  \
+    }
 
 /***********************************************************************
 ** FUNCTION:    PR_FREEIF()
@@ -119,7 +126,9 @@ NSPR_API(void) PR_Free(void *ptr);
 ** OUTPUTS: the referenced object is conditionally returned to the heap
 ** RETURN:  void
 ***********************************************************************/
-#define PR_FREEIF(_ptr) if (_ptr) PR_DELETE(_ptr)
+#define PR_FREEIF(_ptr) \
+    if (_ptr)           \
+    PR_DELETE(_ptr)
 
 PR_END_EXTERN_C
 

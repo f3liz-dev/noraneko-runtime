@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim:set ts=2 sw=2 sts=2 et cindent: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -56,7 +54,7 @@ dirent* readdir(DIR* dir) {
       if (GetLastError() != ERROR_NO_MORE_FILES) {
         errno = ENOENT;
       }
-      return 0;
+      return nullptr;
     }
   } else {
     // Reading the first directory entry
@@ -67,7 +65,7 @@ dirent* readdir(DIR* dir) {
       } else {
         errno = EBADF;
       }
-      return 0;
+      return nullptr;
     }
   }
   size_t direntBufferLength =

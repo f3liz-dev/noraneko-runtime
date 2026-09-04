@@ -375,14 +375,15 @@ nsresult BounceTrackingProtectionStorage::DeleteDBEntries(
 
   IncrementPendingWrites();
   mBackgroundThread->Dispatch(
-      NS_NewRunnableFunction("BounceTrackingProtectionStorage::DeleteEntry",
-                             [self, originAttributes, siteHost]() {
-                               nsresult rv =
-                                   DeleteData(self->mDatabaseConnection,
-                                              originAttributes, siteHost);
-                               self->DecrementPendingWrites();
-                               NS_ENSURE_SUCCESS_VOID(rv);
-                             }),
+      NS_NewRunnableFunction(
+          "BounceTrackingProtectionStorage::DeleteEntry",
+          [self, originAttributes = std::move(originAttributes),
+           siteHost = std::move(siteHost)]() {
+            nsresult rv = DeleteData(self->mDatabaseConnection,
+                                     originAttributes, siteHost);
+            self->DecrementPendingWrites();
+            NS_ENSURE_SUCCESS_VOID(rv);
+          }),
       NS_DISPATCH_EVENT_MAY_BLOCK);
 
   return NS_OK;
@@ -442,7 +443,8 @@ nsresult BounceTrackingProtectionStorage::DeleteDBEntriesInTimeRange(
   mBackgroundThread->Dispatch(
       NS_NewRunnableFunction(
           "BounceTrackingProtectionStorage::DeleteDBEntriesInTimeRange",
-          [self, originAttributes, aFrom, aTo, aEntryType]() {
+          [self, originAttributes = std::move(originAttributes), aFrom, aTo,
+           aEntryType]() {
             nsresult rv =
                 DeleteDataInTimeRange(self->mDatabaseConnection,
                                       originAttributes, aFrom, aTo, aEntryType);
@@ -477,7 +479,7 @@ nsresult BounceTrackingProtectionStorage::DeleteDBEntriesByType(
   mBackgroundThread->Dispatch(
       NS_NewRunnableFunction(
           "BounceTrackingProtectionStorage::DeleteDBEntriesByType",
-          [self, originAttributes, aEntryType]() {
+          [self, originAttributes = std::move(originAttributes), aEntryType]() {
             nsresult rv = self->DeleteDataByType(self->mDatabaseConnection,
                                                  originAttributes, aEntryType);
             self->DecrementPendingWrites();
@@ -535,7 +537,7 @@ NS_IMETHODIMP BounceTrackingProtectionStorage::BlockShutdown(
   // If init failed log a warning. This isn't an early return since we still
   // need to try to tear down, including removing the shutdown blocker. A
   // failure state shouldn't cause a shutdown hang.
-  NS_WARNING_ASSERTION(NS_FAILED(rv), "BlockShutdown: Init failed");
+  NS_WARNING_ASSERTION(NS_SUCCEEDED(rv), "BlockShutdown: Init failed");
 
   // Flush pending updates to disk before shutting down.
   // This will increment mPendingWrites which we will wait for below.
@@ -842,7 +844,7 @@ nsresult BounceTrackingProtectionStorage::LoadMemoryStateFromDisk() {
 
     // Collect entries to dispatch to main thread later.
     importEntries.AppendElement(
-        ImportEntry{oa, siteHost, entryType, timeStamp});
+        ImportEntry{std::move(oa), std::move(siteHost), entryType, timeStamp});
   }
 
   // We can only access the state map on the main thread.

@@ -11,17 +11,18 @@
  * on machines with several LSPs.
  */
 
+#include <rpc.h>
+#include <ws2spi.h>
+
 #include "nsExceptionHandler.h"
 #include "nsISupportsImpl.h"
 #include "nsThreadUtils.h"
-#include <rpc.h>
-#include <ws2spi.h>
 
 namespace mozilla {
 namespace crashreporter {
 
 class LSPAnnotationGatherer : public Runnable {
-  ~LSPAnnotationGatherer() {}
+  ~LSPAnnotationGatherer() = default;
 
  public:
   LSPAnnotationGatherer() : Runnable("crashreporter::LSPAnnotationGatherer") {}

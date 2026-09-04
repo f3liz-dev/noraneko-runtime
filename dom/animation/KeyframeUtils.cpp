@@ -1,5 +1,3 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -19,15 +17,19 @@
 #include "mozilla/ServoBindingTypes.h"
 #include "mozilla/ServoBindings.h"
 #include "mozilla/ServoCSSParser.h"
+#include "mozilla/ServoStyleSet.h"
 #include "mozilla/StaticPrefs_dom.h"
+#include "mozilla/StaticPrefs_layout.h"
 #include "mozilla/StyleAnimationValue.h"
 #include "mozilla/TimingParams.h"
 #include "mozilla/dom/BaseKeyframeTypesBinding.h"  // For FastBaseKeyframe etc.
 #include "mozilla/dom/BindingCallContext.h"
+#include "mozilla/dom/CSSUnitValue.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/KeyframeEffect.h"  // For PropertyValuesPair etc.
 #include "mozilla/dom/KeyframeEffectBinding.h"
 #include "mozilla/dom/Nullable.h"
+#include "mozilla/dom/ViewTimeline.h"
 #include "nsCSSPropertyIDSet.h"
 #include "nsCSSProps.h"
 #include "nsClassHashtable.h"
@@ -60,9 +62,9 @@ enum class ListAllowance { eDisallow, eAllow };
  * mValues.
  */
 struct PropertyValuesPair {
-  PropertyValuesPair() : mProperty(eCSSProperty_UNKNOWN) {}
+  PropertyValuesPair() = default;
 
-  CSSPropertyId mProperty;
+  CSSPropertyId mProperty{eCSSProperty_UNKNOWN};
   nsTArray<nsCString> mValues;
 };
 
@@ -221,7 +223,23 @@ static void GetKeyframeListFromPropertyIndexedKeyframe(
     JSContext* aCx, dom::Document* aDocument, JS::Handle<JS::Value> aValue,
     nsTArray<Keyframe>& aResult, ErrorResult& aRv);
 
-static void DistributeRange(const Range<Keyframe>& aRange);
+static void DistributeRange(const Range<Keyframe*>& aRange);
+
+static void DoComputeMissingKeyframeOffsets(nsTArray<Keyframe*>& aKeyframes);
+
+static Maybe<Keyframe::OffsetType> ValidateUTF8StringOffset(
+    const nsCString& aOffset, ErrorResult& aRv);
+
+static Maybe<Keyframe::OffsetType> ValidateCSSNumericValueOffset(
+    const dom::CSSNumericValue& aOffset, ErrorResult& aRv);
+
+static Maybe<Keyframe::OffsetType> ValidateTimelineRangeOffset(
+    const dom::TimelineRangeOffset& aOffset, ErrorResult& aRv);
+
+static Maybe<Keyframe::OffsetType> ValidateKeyframeOffset(
+    const dom::OwningDoubleOrCSSNumericValueOrTimelineRangeOffsetOrUTF8String&
+        aOffset,
+    ErrorResult& aRv);
 
 // ------------------------------------------------------------------
 //
@@ -270,45 +288,87 @@ nsTArray<Keyframe> KeyframeUtils::GetKeyframesFromObject(
 }
 
 /* static */
-void KeyframeUtils::DistributeKeyframes(nsTArray<Keyframe>& aKeyframes) {
+KeyframeOffsetsHasRangeOffset KeyframeUtils::ComputeMissingKeyframeOffsets(
+    nsTArray<Keyframe>& aKeyframes, const dom::AnimationTimeline* aTimeline,
+    const dom::AnimationRange* aRange) {
+  auto hasTimelineRangeOffset = KeyframeOffsetsHasRangeOffset::No;
   if (aKeyframes.IsEmpty()) {
-    return;
+    return hasTimelineRangeOffset;
   }
 
-  // If the first keyframe has an unspecified offset, fill it in with 0%.
-  // If there is only a single keyframe, then it gets 100%.
-  if (aKeyframes.Length() > 1) {
-    Keyframe& firstElement = aKeyframes[0];
-    firstElement.mComputedOffset = firstElement.mOffset.valueOr(0.0);
-    // We will fill in the last keyframe's offset below
-  } else {
-    Keyframe& lastElement = aKeyframes.LastElement();
-    lastElement.mComputedOffset = lastElement.mOffset.valueOr(1.0);
-  }
+  // We intentionally maintain a special array of keyframes with double offset
+  // or null (i.e. the keyframes without TimelineRangeOffset). We would like to
+  // use this array to distribute the keyframes with missing offsets.
+  //
+  // This part is not specced so we borrow the idea from other browsers, i.e.
+  // the missing keyframe offsets are calculated only from double offset.
+  nsTArray<Keyframe*> keyframesWithDoubleOrNullOffsets;
 
-  // Fill in remaining missing offsets.
-  const Keyframe* const last = &aKeyframes.LastElement();
-  const RangedPtr<Keyframe> begin(aKeyframes.Elements(), aKeyframes.Length());
-  RangedPtr<Keyframe> keyframeA = begin;
-  while (keyframeA != last) {
-    // Find keyframe A and keyframe B *between* which we will apply spacing.
-    RangedPtr<Keyframe> keyframeB = keyframeA + 1;
-    while (keyframeB->mOffset.isNothing() && keyframeB != last) {
-      ++keyframeB;
+  // 1. The 1st pass. We try to resolve the computed offset from offset if
+  // provided.
+  for (Keyframe& keyframe : aKeyframes) {
+    const auto& offset = keyframe.mOffset;
+    if (!offset) {
+      keyframesWithDoubleOrNullOffsets.AppendElement(&keyframe);
+      continue;
     }
-    keyframeB->mComputedOffset = keyframeB->mOffset.valueOr(1.0);
 
-    // Fill computed offsets in (keyframe A, keyframe B).
-    DistributeRange(Range<Keyframe>(keyframeA, keyframeB + 1));
-    keyframeA = keyframeB;
+    if (offset->IsPercentageOffset()) {
+      keyframesWithDoubleOrNullOffsets.AppendElement(&keyframe);
+      keyframe.mComputedOffset = offset->mPercentage;
+      continue;
+    }
+
+    hasTimelineRangeOffset = KeyframeOffsetsHasRangeOffset::Yes;
+    keyframe.mComputedOffset =
+        GetComputedOffset(offset.ref(), aTimeline, aRange);
   }
+
+  // 2. The 2nd pass. Follow the spec to compute the missing offsets.
+  DoComputeMissingKeyframeOffsets(keyframesWithDoubleOrNullOffsets);
+
+  return hasTimelineRangeOffset;
+}
+
+/* static */
+double KeyframeUtils::GetComputedOffset(const Keyframe::OffsetType& aOffset,
+                                        const dom::AnimationTimeline* aTimeline,
+                                        const dom::AnimationRange* aRange) {
+  MOZ_ASSERT(aOffset.mRangeName != StyleTimelineRangeName::None &&
+                 aOffset.mRangeName != StyleTimelineRangeName::Normal,
+             "This is only for keyframe selector with timeline range name");
+
+  if (!aTimeline || !aTimeline->IsViewTimeline()) {
+    return std::numeric_limits<double>::quiet_NaN();
+  }
+
+  const dom::ViewTimeline* vt = aTimeline->AsViewTimeline();
+  const auto offset =
+      vt->MapKeyframeOffsetToOffset(aOffset.mRangeName, aOffset.mPercentage);
+  if (!offset) {
+    return std::numeric_limits<double>::quiet_NaN();
+  }
+
+  if (!aRange) {
+    return *offset;
+  }
+
+  // Attach this keyframe offset, |*offset|, which is calculated based on the
+  // whole timeline range, i.e. [0.0, 1.0], to the animation attachment range,
+  // i.e. [range.first, range.second], to get the final computed offset.
+  //
+  // Note: [range.first, range.second] is calculated based on the whole timeline
+  // range as well.
+  const auto& range = vt->IntervalForAttachmentRange(*aRange);
+  return (*offset - range.first) / (range.second - range.first);
 }
 
 /* static */
 nsTArray<AnimationProperty> KeyframeUtils::GetAnimationPropertiesFromKeyframes(
     const nsTArray<Keyframe>& aKeyframes, dom::Element* aElement,
     const PseudoStyleRequest& aPseudoRequest, const ComputedStyle* aStyle,
-    dom::CompositeOperation aEffectComposite) {
+    dom::CompositeOperation aEffectComposite,
+    const dom::AnimationTimeline* aTimeline) {
   nsTArray<AnimationProperty> result;
 
   const nsTArray<ComputedKeyframeValues> computedValues =
@@ -327,9 +387,13 @@ nsTArray<AnimationProperty> KeyframeUtils::GetAnimationPropertiesFromKeyframes(
   const size_t len = aKeyframes.Length();
   for (size_t i = 0; i < len; ++i) {
     const Keyframe& frame = aKeyframes[i];
+    if (frame.IsRangedKeyframe() && std::isnan(frame.mComputedOffset)) {
+      // This may happen if the animation doesn't associate with a view
+      // timeline, or the timeline is inactive. We just skip this keyframe.
+      continue;
+    }
     for (auto& value : computedValues[i]) {
-      MOZ_ASSERT(frame.mComputedOffset != Keyframe::kComputedOffsetNotSet,
-                 "Invalid computed offset");
+      MOZ_ASSERT(!std::isnan(frame.mComputedOffset), "Invalid computed offset");
       KeyframeValueEntry* entry = entries.AppendElement();
       entry->mOffset = frame.mComputedOffset;
       entry->mProperty = value.mProperty;
@@ -350,10 +414,10 @@ nsTArray<AnimationProperty> KeyframeUtils::GetAnimationPropertiesFromKeyframes(
 
 /* static */
 bool KeyframeUtils::IsAnimatableProperty(const CSSPropertyId& aProperty) {
-  // Regardless of the backend type, treat the 'display' property as not
-  // animatable. (Servo will report it as being animatable, since it is
-  // in fact animatable by SMIL.)
-  if (aProperty.mId == eCSSProperty_display) {
+  // Servo considers 'display' animatable (since it's animatable by SMIL), so
+  // we keep it non-animatable unless the display animations pref is enabled.
+  if (aProperty.mId == eCSSProperty_display &&
+      !StaticPrefs::layout_css_display_animations_enabled()) {
     return false;
   }
   return Servo_Property_IsAnimatable(&aProperty);
@@ -419,7 +483,7 @@ static bool ConvertKeyframeSequence(JSContext* aCx, dom::Document* aDocument,
   // Parsing errors should only be reported after we have finished iterating
   // through all values. If we have any early returns while iterating, we should
   // ignore parsing errors.
-  IgnoredErrorResult parseEasingResult;
+  IgnoredErrorResult parseErrorResult;
 
   for (;;) {
     bool done;
@@ -456,8 +520,11 @@ static bool ConvertKeyframeSequence(JSContext* aCx, dom::Document* aDocument,
       return false;
     }
 
-    if (!keyframeDict.mOffset.IsNull()) {
-      keyframe->mOffset.emplace(keyframeDict.mOffset.Value());
+    if (!parseErrorResult.Failed() && !keyframeDict.mOffset.IsNull()) {
+      if (auto offset = ValidateKeyframeOffset(keyframeDict.mOffset.Value(),
+                                               parseErrorResult)) {
+        keyframe->mOffset = std::move(offset);
+      }
     }
 
     keyframe->mComposite = keyframeDict.mComposite;
@@ -472,14 +539,14 @@ static bool ConvertKeyframeSequence(JSContext* aCx, dom::Document* aDocument,
       }
     }
 
-    if (!parseEasingResult.Failed()) {
+    if (!parseErrorResult.Failed()) {
       keyframe->mTimingFunction =
-          TimingParams::ParseEasing(keyframeDict.mEasing, parseEasingResult);
+          TimingParams::ParseEasing(keyframeDict.mEasing, parseErrorResult);
       // Even if the above fails, we still need to continue reading off all the
-      // properties since checking the validity of easing should be treated as
-      // a separate step that happens *after* all the other processing in this
-      // loop since (since it is never likely to be handled by WebIDL unlike the
-      // rest of this loop).
+      // properties since checking the validity of easing/offset should be
+      // treated as a separate step that happens *after* all the other
+      // processing in this loop (since it is never likely to be handled by
+      // WebIDL unlike the rest of this loop).
     }
 
     for (PropertyValuesPair& pair : propertyValuePairs) {
@@ -507,8 +574,9 @@ static bool ConvertKeyframeSequence(JSContext* aCx, dom::Document* aDocument,
     }
   }
 
-  // Throw any errors we encountered while parsing 'easing' properties.
-  if (parseEasingResult.MaybeSetPendingException(aCx)) {
+  // Throw any errors we encountered while parsing 'offset' and 'easing'
+  // properties.
+  if (parseErrorResult.MaybeSetPendingException(aCx)) {
     return false;
   }
 
@@ -658,7 +726,7 @@ static void ReportInvalidPropertyValueToConsole(
   params.AppendElement(NS_ConvertUTF8toUTF16(aInvalidPropertyValue));
   aProperty.ToString(*params.AppendElement());
   nsContentUtils::ReportToConsole(nsIScriptError::warningFlag, "Animation"_ns,
-                                  aDoc, nsContentUtils::eDOM_PROPERTIES,
+                                  aDoc, PropertiesFile::DOM_PROPERTIES,
                                   "InvalidKeyframePropertyValue", params);
 }
 
@@ -696,6 +764,8 @@ static Maybe<PropertyValuePair> MakePropertyValuePair(
  * Checks that the given keyframes are loosely ordered (each keyframe's
  * offset that is not null is greater than or equal to the previous
  * non-null offset) and that all values are within the range [0.0, 1.0].
+ * Note that the loose ordering and bounds checks have been relaxed to
+ * only apply to explicit keyframe offsets (i.e. double offset).
  *
  * @return true if the keyframes' offsets are correctly ordered and
  *   within range; false otherwise.
@@ -704,7 +774,10 @@ static bool HasValidOffsets(const nsTArray<Keyframe>& aKeyframes) {
   double offset = 0.0;
   for (const Keyframe& keyframe : aKeyframes) {
     if (keyframe.mOffset) {
-      double thisOffset = keyframe.mOffset.value();
+      if (!keyframe.mOffset->IsPercentageOffset()) {
+        continue;
+      }
+      double thisOffset = keyframe.mOffset->mPercentage;
       if (thisOffset < offset || thisOffset > 1.0f) {
         return false;
       }
@@ -783,8 +856,8 @@ static void AppendFinalSegment(AnimationProperty* aAnimationProperty,
 // becase we don't support implicit keyframes).
 static AnimationProperty* HandleMissingInitialKeyframe(
     nsTArray<AnimationProperty>& aResult, const KeyframeValueEntry& aEntry) {
-  MOZ_ASSERT(aEntry.mOffset != 0.0f,
-             "The offset of the entry should not be 0.0");
+  MOZ_ASSERT(aEntry.mOffset > 0.0f,
+             "The offset of the entry should be larger than 0.0");
 
   AnimationProperty* result = aResult.AppendElement();
   result->mProperty = aEntry.mProperty;
@@ -797,8 +870,8 @@ static AnimationProperty* HandleMissingInitialKeyframe(
 static void HandleMissingFinalKeyframe(
     nsTArray<AnimationProperty>& aResult, const KeyframeValueEntry& aEntry,
     AnimationProperty* aCurrentAnimationProperty) {
-  MOZ_ASSERT(aEntry.mOffset != 1.0f,
-             "The offset of the entry should not be 1.0");
+  MOZ_ASSERT(aEntry.mOffset < 1.0f,
+             "The offset of the entry should be smaller than 1.0");
 
   // If |aCurrentAnimationProperty| is nullptr, that means this is the first
   // entry for the property, we have to append a new AnimationProperty for this
@@ -807,9 +880,9 @@ static void HandleMissingFinalKeyframe(
     aCurrentAnimationProperty = aResult.AppendElement();
     aCurrentAnimationProperty->mProperty = aEntry.mProperty;
 
-    // If we have only one entry whose offset is neither 1 nor 0 for this
+    // If we have only one entry whose offset is neither >= 1 nor <= 0 for this
     // property, we need to append the initial segment as well.
-    if (aEntry.mOffset != 0.0f) {
+    if (aEntry.mOffset > 0.0f) {
       AppendInitialSegment(aCurrentAnimationProperty, aEntry);
     }
   }
@@ -848,12 +921,12 @@ static void BuildSegmentsFromValueEntries(
   // be used for reverse and forward filling.
   //
   // Typically, for each property in |aEntries|, we expect there to be at least
-  // one KeyframeValueEntry with offset 0.0, and at least one with offset 1.0.
-  // However, since it is possible that when building |aEntries|, the call to
-  // StyleAnimationValue::ComputeValues might fail, this can't be guaranteed.
-  // Furthermore, if additive animation is disabled, the following loop takes
-  // care to identify properties that lack a value at offset 0.0/1.0 and drops
-  // those properties from |aResult|.
+  // one KeyframeValueEntry with offset <= 0.0, and at least one with offset
+  // >= 1.0. However, since it is possible that when building |aEntries|, the
+  // call to StyleAnimationValue::ComputeValues might fail, this can't be
+  // guaranteed. Furthermore, if additive animation is disabled, the following
+  // loop takes care to identify properties that lack a value at offset 0.0/1.0
+  // and drops those properties from |aResult|.
 
   CSSPropertyId lastProperty(eCSSProperty_UNKNOWN);
   AnimationProperty* animationProperty = nullptr;
@@ -864,12 +937,12 @@ static void BuildSegmentsFromValueEntries(
     // If we've reached the end of the array of entries, synthesize a final (and
     // initial) segment if necessary.
     if (i + 1 == n) {
-      if (aEntries[i].mOffset != 1.0f) {
+      if (aEntries[i].mOffset < 1.0f) {
         HandleMissingFinalKeyframe(aResult, aEntries[i], animationProperty);
-      } else if (aEntries[i].mOffset == 1.0f && !animationProperty) {
-        // If the last entry with offset 1 and no animation property, that means
-        // it is the only entry for this property so append a single segment
-        // from 0 offset to |aEntry[i].offset|.
+      } else if (aEntries[i].mOffset >= 1.0f && !animationProperty) {
+        // If the last entry with offset >= 1 and no animation property, that
+        // means it is the only entry for this property so append a single
+        // segment from 0 offset to |aEntry[i].offset|.
         (void)HandleMissingInitialKeyframe(aResult, aEntries[i]);
       }
       animationProperty = nullptr;
@@ -881,7 +954,7 @@ static void BuildSegmentsFromValueEntries(
         "Each entry should specify a valid property");
 
     // No keyframe for this property at offset 0.
-    if (aEntries[i].mProperty != lastProperty && aEntries[i].mOffset != 0.0f) {
+    if (aEntries[i].mProperty != lastProperty && aEntries[i].mOffset > 0.0f) {
       // If we don't support additive animation we can't fill in the missing
       // keyframes and we should just skip this property altogether. Since the
       // entries are sorted by offset for a given property, and since we don't
@@ -898,8 +971,9 @@ static void BuildSegmentsFromValueEntries(
     }
 
     // Skip this entry if the next entry has the same offset except for initial
-    // and final ones. We will handle missing keyframe in the next loop
-    // if the property is changed on the next entry.
+    // and final ones. (This includes offset less than 0.0 or larger than 1.0).
+    // We will handle missing keyframe in the next loop if the property is
+    // changed on the next entry.
     if (aEntries[i].mProperty == aEntries[i + 1].mProperty &&
         aEntries[i].mOffset == aEntries[i + 1].mOffset &&
         aEntries[i].mOffset != 1.0f && aEntries[i].mOffset != 0.0f) {
@@ -909,7 +983,7 @@ static void BuildSegmentsFromValueEntries(
 
     // No keyframe for this property at offset 1.
     if (aEntries[i].mProperty != aEntries[i + 1].mProperty &&
-        aEntries[i].mOffset != 1.0f) {
+        aEntries[i].mOffset < 1.0f) {
       HandleMissingFinalKeyframe(aResult, aEntries[i], animationProperty);
       // Move on to new property.
       animationProperty = nullptr;
@@ -919,10 +993,11 @@ static void BuildSegmentsFromValueEntries(
 
     // Starting from i + 1, determine the next [i, j] interval from which to
     // generate a segment. Basically, j is i + 1, but there are some special
-    // cases for offset 0 and 1, so we need to handle them specifically.
+    // cases for offset == |minCurrentPropertyOffset| and
+    // |maxCurrentPropertyOffset|, so we need to handle them specifically.
     // Note: From this moment, we make sure [i + 1] is valid and
-    //       there must be an initial entry (i.e. mOffset = 0.0) and
-    //       a final entry (i.e. mOffset = 1.0). Besides, all the entries
+    //       there must be an initial entry (i.e. mOffset <= 0.0) and
+    //       a final entry (i.e. mOffset >= 1.0). Besides, all the entries
     //       with the same offsets except for initial/final ones are filtered
     //       out already.
     size_t j = i + 1;
@@ -933,17 +1008,16 @@ static void BuildSegmentsFromValueEntries(
              aEntries[j + 1].mProperty == aEntries[j].mProperty) {
         ++j;
       }
-    } else if (aEntries[i].mOffset == 1.0f) {
-      if (aEntries[i + 1].mOffset == 1.0f &&
+    } else if (aEntries[i].mOffset >= 1.0f) {
+      if (aEntries[i].mOffset == 1.0f && aEntries[i + 1].mOffset == 1.0f &&
           aEntries[i + 1].mProperty == aEntries[i].mProperty) {
         // We need to generate a final zero-length segment.
         while (j + 1 < n && aEntries[j + 1].mOffset == 1.0f &&
                aEntries[j + 1].mProperty == aEntries[j].mProperty) {
           ++j;
         }
-      } else {
+      } else if (aEntries[i].mProperty != aEntries[i + 1].mProperty) {
         // New property.
-        MOZ_ASSERT(aEntries[i].mProperty != aEntries[i + 1].mProperty);
         animationProperty = nullptr;
         ++i;
         continue;
@@ -953,7 +1027,7 @@ static void BuildSegmentsFromValueEntries(
     // If we've moved on to a new property, create a new AnimationProperty
     // to insert segments into.
     if (aEntries[i].mProperty != lastProperty) {
-      MOZ_ASSERT(aEntries[i].mOffset == 0.0f);
+      MOZ_ASSERT(aEntries[i].mOffset <= 0.0f);
       MOZ_ASSERT(!animationProperty);
       animationProperty = aResult.AppendElement();
       animationProperty->mProperty = aEntries[i].mProperty;
@@ -1055,28 +1129,83 @@ static void GetKeyframeListFromPropertyIndexedKeyframe(
   //
   // This corresponds to step 5, "Otherwise," branch, substeps 5-6 of
   // https://drafts.csswg.org/web-animations/#processing-a-keyframes-argument
-  const FallibleTArray<Nullable<double>>* offsets = nullptr;
-  AutoTArray<Nullable<double>, 1> singleOffset;
-  auto& offset = keyframeDict.mOffset;
-  if (offset.IsDouble()) {
-    singleOffset.AppendElement(offset.GetAsDouble());
-    // dom::Sequence is a fallible but AutoTArray is infallible and we need to
-    // point to one or the other. Fortunately, fallible and infallible array
-    // types can be implicitly converted provided they are const.
-    const FallibleTArray<Nullable<double>>& asFallibleArray = singleOffset;
-    offsets = &asFallibleArray;
-  } else if (offset.IsDoubleOrNullSequence()) {
-    offsets = &offset.GetAsDoubleOrNullSequence();
+  //
+  // 5. Let offsets be a sequence of nullable double values assigned based on
+  // the type of the offset member of the property-indexed keyframe as follows:
+  // Note: Since we replace "double?" with
+  // "(CSSNumberish or TimelineRangeOffset or UTF8String)", so we tweak this
+  // step to use Nullable<Keyframe::OffsetType>.
+  nsTArray<Maybe<Keyframe::OffsetType>> offsets(1);
+  if (!keyframeDict.mOffset.IsNull()) {
+    const auto& offset = keyframeDict.mOffset.Value();
+    if (offset.IsDouble()) {
+      offsets.AppendElement(
+          Some(Keyframe::OffsetType::PercentageOffset(offset.GetAsDouble())));
+    } else if (offset.IsCSSNumericValue()) {
+      if (auto result = ValidateCSSNumericValueOffset(
+              offset.GetAsCSSNumericValue(), aRv)) {
+        offsets.AppendElement(std::move(result));
+      }
+    } else if (offset.IsTimelineRangeOffset()) {
+      if (auto result = ValidateTimelineRangeOffset(
+              offset.GetAsTimelineRangeOffset(), aRv)) {
+        offsets.AppendElement(std::move(result));
+      }
+    } else if (offset.IsUTF8String()) {
+      if (auto result =
+              ValidateUTF8StringOffset(offset.GetAsUTF8String(), aRv)) {
+        offsets.AppendElement(std::move(result));
+      }
+    } else if (
+        // Should be a sequence of nullable KeyframeOffset.
+        // i.e. sequence<(CSSNumberish or TimelineRangeOffset or UTF8String)?>
+        offset
+            .IsDoubleOrCSSNumericValueOrTimelineRangeOffsetOrUTF8StringOrNullSequence()) {
+      const auto& sequence =
+          offset
+              .GetAsDoubleOrCSSNumericValueOrTimelineRangeOffsetOrUTF8StringOrNullSequence();
+      offsets.SetCapacity(sequence.Length());
+      for (const auto& value : sequence) {
+        if (value.IsNull()) {
+          offsets.AppendElement(Nothing());
+          continue;
+        }
+        auto result = ValidateKeyframeOffset(value.Value(), aRv);
+        if (aRv.Failed()) {
+          // We got the parse error and so don't have result.
+          break;
+        }
+        MOZ_ASSERT(result);
+        offsets.AppendElement(std::move(result));
+      }
+    }
   }
-  // If offset.IsNull() is true, then we want to leave the mOffset member of
-  // each keyframe with its initialized value of null. By leaving |offsets|
-  // as nullptr here, we skip updating mOffset below.
 
+  // In the spec, TypeErrors arising from invalid offsets are thrown at the end
+  // of the procedure. However, it only mentions the loosely sorted check and
+  // the range check of the double offset (which will be done below). Therefore,
+  // we clear the result and return for parsing errors here tentatively before
+  // the check of the valid offset to avoid the redundant operations.
+  if (aRv.Failed()) {
+    // Note: We throw TypeErrors above already and come here directly so we can
+    // just clear the result (just like other places to handle TypeErrors) and
+    // return.
+    aResult.Clear();
+    return;
+  }
+
+  // 6. Assign each value in offsets to the keyframe offset of the keyframe with
+  // the corresponding position in processed keyframes until the end of either
+  // sequence is reached.
+  //
+  // If keyframeDict.mOffset.IsNull() is true, then we want to leave the mOffset
+  // member of each keyframe with its initialized value of null. By leaving
+  // |offsets| as nullptr here, we skip updating mOffset below.
   size_t offsetsToFill =
-      offsets ? std::min(offsets->Length(), aResult.Length()) : 0;
+      offsets.IsEmpty() ? 0 : std::min(offsets.Length(), aResult.Length());
   for (size_t i = 0; i < offsetsToFill; i++) {
-    if (!offsets->ElementAt(i).IsNull()) {
-      aResult[i].mOffset.emplace(offsets->ElementAt(i).Value());
+    if (offsets.ElementAt(i)) {
+      std::swap(aResult[i].mOffset, offsets.ElementAt(i));
     }
   }
 
@@ -1177,16 +1306,183 @@ static void GetKeyframeListFromPropertyIndexedKeyframe(
  * @param aRange The sequence of keyframes between whose endpoints we should
  * distribute offsets.
  */
-static void DistributeRange(const Range<Keyframe>& aRange) {
-  const Range<Keyframe> rangeToAdjust =
-      Range<Keyframe>(aRange.begin() + 1, aRange.end() - 1);
+static void DistributeRange(const Range<Keyframe*>& aRange) {
+  const Range<Keyframe*> rangeToAdjust =
+      Range<Keyframe*>(aRange.begin() + 1, aRange.end() - 1);
   const size_t n = aRange.length() - 1;
-  const double startOffset = aRange[0].mComputedOffset;
-  const double diffOffset = aRange[n].mComputedOffset - startOffset;
+  const double startOffset = aRange[0]->mComputedOffset;
+  const double diffOffset = aRange[n]->mComputedOffset - startOffset;
   for (auto iter = rangeToAdjust.begin(); iter != rangeToAdjust.end(); ++iter) {
     size_t index = iter - aRange.begin();
-    iter->mComputedOffset = startOffset + double(index) / n * diffOffset;
+    (*iter)->mComputedOffset = startOffset + double(index) / n * diffOffset;
   }
+}
+
+/**
+ * Compute the missing offsets of all keyframes. This follows the spec steps in
+ * https://drafts.csswg.org/web-animations-1/#compute-missing-keyframe-offsets.
+ * Note that we compute the missing keyframe offsets from the existing keyframes
+ * with a double offset (i.e. excluding the keyframes with timeline range
+ * names).
+ *
+ * @param aKeyframes The sequence of keyframes. Note that all of the offsets in
+ * this sequence should only be null or double.
+ */
+static void DoComputeMissingKeyframeOffsets(nsTArray<Keyframe*>& aKeyframes) {
+  if (aKeyframes.IsEmpty()) {
+    return;
+  }
+
+  // If the first keyframe has an unspecified offset, fill it in with 0%.
+  // If there is only a single keyframe, then it gets 100%.
+  if (aKeyframes.Length() > 1) {
+    Keyframe& firstElement = *aKeyframes[0];
+    MOZ_ASSERT(!firstElement.mOffset ||
+               firstElement.mOffset->IsPercentageOffset());
+    firstElement.mComputedOffset =
+        firstElement.mOffset ? firstElement.mOffset->mPercentage : 0.0;
+    // We will fill in the last keyframe's offset below
+  } else {
+    Keyframe& lastElement = *aKeyframes.LastElement();
+    MOZ_ASSERT(!lastElement.mOffset ||
+               lastElement.mOffset->IsPercentageOffset());
+    lastElement.mComputedOffset =
+        lastElement.mOffset ? lastElement.mOffset->mPercentage : 1.0;
+  }
+
+  // Fill in remaining missing offsets.
+  const Keyframe* const last = aKeyframes.LastElement();
+  const RangedPtr<Keyframe*> begin(aKeyframes.Elements(), aKeyframes.Length());
+  RangedPtr<Keyframe*> keyframeA = begin;
+  while (*keyframeA != last) {
+    // Find keyframe A and keyframe B *between* which we will apply spacing.
+    RangedPtr<Keyframe*> keyframeB = keyframeA + 1;
+    while ((*keyframeB)->mOffset.isNothing() && *keyframeB != last) {
+      ++keyframeB;
+    }
+
+    MOZ_ASSERT(!(*keyframeB)->mOffset ||
+               (*keyframeB)->mOffset->IsPercentageOffset());
+    (*keyframeB)->mComputedOffset =
+        (*keyframeB)->mOffset ? (*keyframeB)->mOffset->mPercentage : 1.0;
+
+    // Fill computed offsets in (keyframe A, keyframe B).
+    DistributeRange(Range<Keyframe*>(keyframeA, keyframeB + 1));
+    keyframeA = keyframeB;
+  }
+}
+
+/**
+ * Validate the keyframe offset as a UTF8String.
+ *
+ * @param aOffset The UTF8String from JS.
+ * @return The validated offset, or null if the offset is invalid.
+ */
+static Maybe<Keyframe::OffsetType> ValidateUTF8StringOffset(
+    const nsCString& aOffset, ErrorResult& aRv) {
+  // Parse as <keyframe-selector>:
+  //   from | to | <percentage [0,100]> | <timeline-range-name> <percentage>
+  // https://drafts.csswg.org/web-animations-2/#keyframe-offset-type
+  StyleTimelineRangeName name = StyleTimelineRangeName::None;
+  double percentage = 0.0;
+  if (!Servo_ParseKeyframeSelector(&aOffset, &name, &percentage)) {
+    aRv.ThrowTypeError("Invalid string of the keyframe offset.");
+    return Nothing();
+  }
+  return Some(Keyframe::OffsetType{name, percentage});
+}
+
+/**
+ * Validate the keyframe offset as a CSSNumericValue. Only percentage is
+ * acceptable for now.
+ *
+ * @param aOffset The CSSNumericValue object from JS.
+ * @return The validated offset, or null if the offset is invalid.
+ */
+static Maybe<Keyframe::OffsetType> ValidateCSSNumericValueOffset(
+    const dom::CSSNumericValue& aOffset, ErrorResult& aRv) {
+  if (!StaticPrefs::layout_css_typed_om_enabled() ||
+      !StaticPrefs::layout_css_scroll_driven_animations_enabled()) {
+    aRv.ThrowTypeError(
+        "CSSNumericValue is not supported for keyframe offsets.");
+    return Nothing();
+  }
+
+  RefPtr<dom::CSSUnitValue> asPercent =
+      aOffset.GetAsCSSNumericValue().To("percent"_ns, aRv);
+  return asPercent ? Some(Keyframe::OffsetType::PercentageOffset(
+                         asPercent->Value() / 100.0))
+                   : Nothing();
+}
+
+/**
+ * Validate the TimelineRangeOffset of a keyframe. The syntax of the timeline
+ * range should be the same as:
+ * "<timeline-range-name> <percentage>", defined in <keyframe-selector>.
+ * https://drafts.csswg.org/scroll-animations-1/#named-range-keyframes
+ *
+ * @param aOffset The TimelineRangeOffset object from JS.
+ * @return The validated offset, or null if the offset is invalid.
+ */
+static Maybe<Keyframe::OffsetType> ValidateTimelineRangeOffset(
+    const dom::TimelineRangeOffset& aOffset, ErrorResult& aRv) {
+  if (!StaticPrefs::layout_css_typed_om_enabled() ||
+      !StaticPrefs::layout_css_scroll_driven_animations_enabled()) {
+    aRv.ThrowTypeError(
+        "TimelineRagneOffset is not supported for keyframe offsets.");
+    return Nothing();
+  }
+
+  const auto& rangeName = aOffset.mRangeName;
+  const auto& offset = aOffset.mOffset;
+  if (!offset.WasPassed()) {
+    if (rangeName.WasPassed()) {
+      // If the <timeline-range-name> is provided, there must be a
+      // <percentage>, otherwse it's an error.
+      aRv.ThrowTypeError("Invalid syntax of the timeline range offset.");
+    }
+    // The same as null offset.
+    return Nothing();
+  }
+
+  // So now, it is an offset or a pair of range name and offset.
+  StyleTimelineRangeName name = StyleTimelineRangeName::None;
+  if (rangeName.WasPassed() &&
+      !Servo_ParseTimelineRangeName(&rangeName.Value(), &name)) {
+    aRv.ThrowTypeError("Invalid string of the timeline range name.");
+    return Nothing();
+  }
+  RefPtr<dom::CSSUnitValue> asPercent = offset.Value().To("percent"_ns, aRv);
+  return asPercent
+             ? Some(Keyframe::OffsetType{name, asPercent->Value() / 100.0})
+             : Nothing();
+}
+
+/**
+ * Validate the offset of a keyframe.
+ * https://drafts.csswg.org/web-animations-2/#keyframe-offset-type
+ *
+ * @param aOffset The sequence of keyframe offsets from JS.
+ * @return The validated offset, or null if the offset is invalid.
+ */
+static Maybe<Keyframe::OffsetType> ValidateKeyframeOffset(
+    const dom::OwningDoubleOrCSSNumericValueOrTimelineRangeOffsetOrUTF8String&
+        aOffset,
+    ErrorResult& aRv) {
+  if (aOffset.IsDouble()) {
+    return Some(Keyframe::OffsetType::PercentageOffset(aOffset.GetAsDouble()));
+  }
+
+  if (aOffset.IsUTF8String()) {
+    return ValidateUTF8StringOffset(aOffset.GetAsUTF8String(), aRv);
+  }
+
+  if (aOffset.IsCSSNumericValue()) {
+    return ValidateCSSNumericValueOffset(aOffset.GetAsCSSNumericValue(), aRv);
+  }
+
+  MOZ_ASSERT(aOffset.IsTimelineRangeOffset());
+  return ValidateTimelineRangeOffset(aOffset.GetAsTimelineRangeOffset(), aRv);
 }
 
 }  // namespace mozilla

@@ -44,7 +44,9 @@ list(APPEND AOM_TEST_DATA_FILE_NAMES
             "crowd_run_360p_10_150f.y4m"
             "wikipedia_420_360p_60f.y4m"
             "SDR_Animal_oqo7.y4m"
-            "SDR_Health_rtd0_720p.y4m")
+            "SDR_Health_rtd0_720p.y4m"
+            "SDR_Dance_ldsn_1080p.y4m"
+            "SDR_Sports_6mug_608p_30fps_90f.yuv")
 
 if(ENABLE_DECODE_PERF_TESTS AND CONFIG_AV1_ENCODER)
   list(APPEND AOM_TEST_DATA_FILE_NAMES "niklas_1280_720_30.yuv")
@@ -526,12 +528,12 @@ if(CONFIG_AV1_DECODER)
               "av1-1-b8-06-mfmv.ivf.md5"
               "av1-1-b8-16-intra_only-intrabc-extreme-dv.ivf"
               "av1-1-b8-16-intra_only-intrabc-extreme-dv.ivf.md5"
-              "av1-1-b8-22-svc-L2T1.ivf"
-              "av1-1-b8-22-svc-L2T1.ivf.md5"
+              "av1-1-b8-22-svc-L2T1-2.ivf"
+              "av1-1-b8-22-svc-L2T1-2.ivf.md5"
               "av1-1-b8-22-svc-L1T2.ivf"
               "av1-1-b8-22-svc-L1T2.ivf.md5"
-              "av1-1-b8-22-svc-L2T2.ivf"
-              "av1-1-b8-22-svc-L2T2.ivf.md5"
+              "av1-1-b8-22-svc-L2T2-2.ivf"
+              "av1-1-b8-22-svc-L2T2-2.ivf.md5"
               "av1-1-b8-23-film_grain-50.ivf"
               "av1-1-b8-23-film_grain-50.ivf.md5"
               "av1-1-b8-24-monochrome.ivf"

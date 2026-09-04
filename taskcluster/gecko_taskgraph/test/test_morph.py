@@ -100,19 +100,34 @@ def make_taskgraph():
             {"a-1": 100, "a-2": 100},
             id="rebuild 100",
         ),
+        pytest.param(
+            {
+                "try_mode": "try_task_config",
+                "try_task_config": {
+                    "rebuild": 10,
+                    "tasks": ["c-*"],
+                },
+                "project": "try",
+            },
+            {"c": 10},
+            id="duplicates single dynamic chunk",
+        ),
     ),
 )
 def test_try_task_duplicates(make_taskgraph, graph_config, params, expected):
     taskb = Task(kind="test", label="b", attributes={}, task={})
     task1 = Task(kind="test", label="a-1", attributes={}, task={})
     task2 = Task(kind="test", label="a-2", attributes={}, task={})
+    # Dynamic chunking that fits in a single chunk yields no numeric suffix.
+    taskc = Task(kind="test", label="c", attributes={}, task={})
     taskgraph, label_to_taskid = make_taskgraph({
         taskb.label: taskb,
         task1.label: task1,
         task2.label: task2,
+        taskc.label: taskc,
     })
 
-    taskgraph, label_to_taskid = morph._add_try_task_duplicates(
+    taskgraph, label_to_taskid = morph.add_try_task_duplicates(
         taskgraph, label_to_taskid, params, graph_config
     )
     for label in expected:
@@ -194,6 +209,56 @@ def test_make_index_tasks(make_taskgraph, graph_config):
 
     # check the scope summary
     assert index_task.task["scopes"] == ["index:insert-task:gecko.v2.mozilla-central.*"]
+
+
+@pytest.mark.parametrize(
+    "has_ccov,expected_task_added",
+    (
+        pytest.param(True, True, id="with ccov tasks"),
+        pytest.param(False, False, id="without ccov tasks"),
+    ),
+)
+def test_add_code_coverage_task(
+    make_taskgraph, graph_config, has_ccov, expected_task_added
+):
+    tasks = {}
+    if has_ccov:
+        tasks["ccov-test-1"] = Task(
+            kind="test",
+            label="ccov-test-1",
+            attributes={"ccov": True},
+            task={},
+        )
+        tasks["ccov-test-2"] = Task(
+            kind="test",
+            label="ccov-test-2",
+            attributes={"ccov": True},
+            task={},
+        )
+    tasks["non-ccov"] = Task(
+        kind="test",
+        label="non-ccov",
+        attributes={},
+        task={},
+    )
+
+    taskgraph, label_to_taskid = make_taskgraph(tasks)
+    params = Parameters(
+        strict=False,
+        owner="test@example.com",
+        head_repository="https://hg.mozilla.org/mozilla-central",
+    )
+
+    taskgraph, label_to_taskid = morph.add_code_coverage_task(
+        taskgraph, label_to_taskid, params, graph_config
+    )
+
+    assert ("code-coverage-artifacts" in label_to_taskid) == expected_task_added
+    if expected_task_added:
+        task = taskgraph.tasks[label_to_taskid["code-coverage-artifacts"]]
+        assert task.task["routes"] == ["project.codecoverage.v1.tasks_done"]
+        assert task.task["requires"] == "all-resolved"
+        assert set(task.dependencies.keys()) == {"ccov-test-1", "ccov-test-2"}
 
 
 if __name__ == "__main__":

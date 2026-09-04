@@ -13,7 +13,6 @@ function entryDisabled(
     isInsecureContext,
     isFennec,
     isCrossOriginIsolated,
-    isSessionHistoryInParent,
   }
 ) {
   return (
@@ -36,7 +35,6 @@ function entryDisabled(
     (isInsecureContext && !entry.insecureContext) ||
     entry.earlyBetaOrEarlier === !isEarlyBetaOrEarlier ||
     entry.crossOriginIsolated === !isCrossOriginIsolated ||
-    entry.sessionHistoryInParent === !isSessionHistoryInParent ||
     entry.disabled
   );
 }
@@ -97,7 +95,8 @@ function runTest(
         " to all webpages as a property on '" +
         parentName +
         "'? Do not make a change to this file without a " +
-        " review from a DOM peer for that specific change!!! (or a JS peer for changes to ecmaGlobals)"
+        " review from a DOM peer, via the #webidl reviewer group, for that specific change!!! " +
+        "(or a JS peer, via the #spidermonkey-reviewers reviewer group, for changes to ecmaGlobals)"
     );
 
     ok(
@@ -155,7 +154,6 @@ if (typeof window !== "undefined") {
           SpecialPowers.Ci.nsIGeckoViewBridge
         ).isFennec,
       isCrossOriginIsolated: window.crossOriginIsolated,
-      isSessionHistoryInParent: appinfo.sessionHistoryInParent,
     };
   };
 }

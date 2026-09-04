@@ -12,6 +12,7 @@ add_task(async function () {
   await pushPref(PSEUDO_PREF, true);
   await pushPref("dom.text_fragments.enabled", true);
   await pushPref("layout.css.modern-range-pseudos.enabled", true);
+  await pushPref("dom.select.customizable_select.enabled", true);
   await pushPref("full-screen-api.transition-duration.enter", "0 0");
   await pushPref("full-screen-api.transition-duration.leave", "0 0");
 
@@ -30,64 +31,35 @@ add_task(async function () {
   await testSlider(inspector, view);
   await testUrlFragmentTextDirective(inspector, view);
   await testDetailsContent(inspector, view);
+  await testCustomizableSelect(inspector, view);
   // keep this one last as it makes the browser go fullscreen and seem to impact other tests
   await testBackdrop(inspector, view);
 });
 
 async function testTopLeft(inspector, view) {
   const id = "#topleft";
-  const rules = await assertPseudoElementRulesNumbersForSelector(
-    id,
-    inspector,
-    view,
-    {
-      elementRules: 4,
-      firstLineRules: 2,
-      firstLetterRules: 1,
-      selectionRules: 1,
-      markerRules: 0,
-      afterRules: 1,
-      beforeRules: 2,
-    }
+  await assertPseudoElementRulesNumbersForSelector(id, inspector, view, {
+    elementRules: 4,
+    firstLineRules: 2,
+    firstLetterRules: 1,
+    selectionRules: 1,
+    markerRules: 0,
+    afterRules: 1,
+    beforeRules: 2,
+  });
+
+  assertHeaders(view);
+
+  const elementRuleView = getRuleViewRuleEditorAt(view, 7);
+  is(
+    elementRuleView.selectorText.textContent,
+    "element",
+    "About to modify the 'element' rule"
   );
 
-  const gutters = assertGutters(view);
-
-  info("Make sure that clicking on the twisty hides pseudo elements");
-  const expander = gutters[0].querySelector(".ruleview-expander");
-  ok(!view.element.children[1].hidden, "Pseudo Elements are expanded");
-
-  expander.click();
-  ok(
-    view.element.children[1].hidden,
-    "Pseudo Elements are collapsed by twisty"
-  );
-
-  expander.click();
-  ok(!view.element.children[1].hidden, "Pseudo Elements are expanded again");
-
-  info(
-    "Make sure that dblclicking on the header container also toggles " +
-      "the pseudo elements"
-  );
-  EventUtils.synthesizeMouseAtCenter(
-    gutters[0],
-    { clickCount: 2 },
-    view.styleWindow
-  );
-  ok(
-    view.element.children[1].hidden,
-    "Pseudo Elements are collapsed by dblclicking"
-  );
-
-  const elementRuleView = getRuleViewRuleEditor(view, 3);
-
-  const elementFirstLineRule = rules.firstLineRules[0];
-  const elementFirstLineRuleView = [
-    ...view.element.children[1].children,
-  ].filter(e => {
-    return e._ruleEditor && e._ruleEditor.rule === elementFirstLineRule;
-  })[0]._ruleEditor;
+  // Position for the ::first-line rule
+  const index = 4;
+  const elementFirstLineRule = getRuleViewRuleEditorAt(view, index).rule;
 
   is(
     convertTextPropsToString(elementFirstLineRule.textProps),
@@ -95,34 +67,16 @@ async function testTopLeft(inspector, view) {
     "TopLeft firstLine properties are correct"
   );
 
-  let onAdded = view.once("ruleview-changed");
-  let firstProp = elementFirstLineRuleView.addProperty(
+  const firstProp = await addProperty(
+    view,
+    index,
     "background-color",
     "rgb(0, 255, 0)",
     "",
     true
   );
-  await onAdded;
 
-  onAdded = view.once("ruleview-changed");
-  const secondProp = elementFirstLineRuleView.addProperty(
-    "font-style",
-    "italic",
-    "",
-    true
-  );
-  await onAdded;
-
-  is(
-    firstProp,
-    elementFirstLineRule.textProps[elementFirstLineRule.textProps.length - 2],
-    "First added property is on back of array"
-  );
-  is(
-    secondProp,
-    elementFirstLineRule.textProps[elementFirstLineRule.textProps.length - 1],
-    "Second added property is on back of array"
-  );
+  await addProperty(view, index, "font-style", "italic", "", true);
 
   is(
     await getComputedStyleProperty(id, ":first-line", "background-color"),
@@ -166,14 +120,7 @@ async function testTopLeft(inspector, view) {
     "Added property should not apply to element"
   );
 
-  onAdded = view.once("ruleview-changed");
-  firstProp = elementRuleView.addProperty(
-    "background-color",
-    "rgb(0, 0, 255)",
-    "",
-    true
-  );
-  await onAdded;
+  await addProperty(view, 7, "background-color", "rgb(0, 0, 255)");
 
   is(
     await getComputedStyleProperty(id, null, "background-color"),
@@ -184,6 +131,26 @@ async function testTopLeft(inspector, view) {
     await getComputedStyleProperty(id, ":first-line", "background-color"),
     "rgb(0, 255, 0)",
     "Added prop does not apply to pseudo"
+  );
+
+  // This will also ensure that the pseudo elements are hidden before switching to another test
+  info("Make sure that clicking on the twity re-hide the pseudo elements");
+  // Retrieve a fresh reference to the pseudo elements expander as the DOM Element may have been replaced
+  const expander = view.element.querySelector(
+    ".ruleview-header:not([hidden]) .ruleview-expander"
+  );
+
+  ok(!getPseudoElementContainer(view).hidden, "Pseudo Elements are expanded");
+
+  expander.click();
+  ok(
+    getPseudoElementContainer(view).hidden,
+    "Pseudo Elements are collapsed by twisty"
+  );
+  is(
+    expander.closest("button").ariaExpanded,
+    "false",
+    "pseudo element section is now collapsed"
   );
 }
 
@@ -203,19 +170,24 @@ async function testTopRight(inspector, view) {
     }
   );
 
-  const gutters = assertGutters(view);
+  const gutters = assertHeaders(view);
 
   const expander = gutters[0].querySelector(".ruleview-expander");
   ok(
-    !view.element.firstChild.classList.contains("show-expandable-container"),
+    getPseudoElementContainer(view).hidden,
     "Pseudo Elements remain collapsed after switching element"
   );
 
   expander.scrollIntoView();
   expander.click();
   ok(
-    !view.element.children[1].hidden,
+    !getPseudoElementContainer(view).hidden,
     "Pseudo Elements are shown again after clicking twisty"
+  );
+  expander.click();
+  ok(
+    getPseudoElementContainer(view).hidden,
+    "Pseudo Elements are hidden again after re-clicking twisty"
   );
 }
 
@@ -269,7 +241,7 @@ async function testParagraph(inspector, view) {
     }
   );
 
-  assertGutters(view);
+  assertHeaders(view);
 
   const elementFirstLineRule = rules.firstLineRules[0];
   is(
@@ -296,8 +268,7 @@ async function testParagraph(inspector, view) {
 async function testBody(inspector, view) {
   await selectNode("body", inspector);
 
-  const gutters = getGutters(view);
-  is(gutters.length, 0, "There are no gutter headings");
+  assertRuleViewHeaders(view, []);
 }
 
 async function testListAfterElement(inspector, view) {
@@ -318,16 +289,12 @@ async function testListAfterElement(inspector, view) {
     markerRules: 1,
   });
 
-  Assert.deepEqual(
-    getGutters(view).map(gutter => gutter.textContent),
-    [
-      "Pseudo-elements",
-      "This Element",
-      "Inherited from ol#list",
-      "Inherited from body",
-    ],
-    "Got expected gutter headings when selecting #list::after"
-  );
+  assertRuleViewHeaders(view, [
+    "Pseudo-elements",
+    "This Element",
+    "Inherited from ol#list",
+    "Inherited from body",
+  ]);
 }
 
 async function testListItem(inspector, view) {
@@ -346,11 +313,19 @@ async function testListItem(inspector, view) {
     }
   );
 
-  assertGutters(view);
+  assertHeaders(view);
 }
 
 async function testBackdrop(inspector, view) {
   info("Test ::backdrop for dialog element");
+  const onMarkupMutation = inspector.once("markupmutation");
+  await SpecialPowers.spawn(gBrowser.selectedBrowser, [], () => {
+    // This is the only way to have the ::backdrop style to be applied
+    content.document.querySelector("dialog").showModal();
+    content.document.querySelector("#in-dialog").showPopover();
+  });
+  await onMarkupMutation;
+
   await assertPseudoElementRulesNumbersForSelector("dialog", inspector, view, {
     elementRules: 3,
     backdropRules: 1,
@@ -367,7 +342,7 @@ async function testBackdrop(inspector, view) {
     }
   );
 
-  assertGutters(view);
+  assertHeaders(view);
 
   info("Test ::backdrop rules are displayed when elements is fullscreen");
 
@@ -402,7 +377,7 @@ async function testBackdrop(inspector, view) {
     backdropRules: 1,
   });
 
-  assertGutters(view);
+  assertHeaders(view);
 
   // Exiting fullscreen is triggering an update, wait for it so it doesn't impact
   // the rest of the test
@@ -470,7 +445,7 @@ async function testCustomHighlight(inspector, view) {
     "Got expected properties for filter highlight"
   );
 
-  assertGutters(view);
+  assertHeaders(view);
 }
 
 async function testSlider(inspector, view) {
@@ -485,7 +460,7 @@ async function testSlider(inspector, view) {
       sliderTrackRules: 1,
     }
   );
-  assertGutters(view);
+  assertHeaders(view);
 
   info(
     "Check that ::slider-* pseudo elements are not displayed for non-range inputs"
@@ -513,7 +488,7 @@ async function testUrlFragmentTextDirective(inspector, view) {
       targetTextRules: 1,
     }
   );
-  assertGutters(view);
+  assertHeaders(view);
 }
 
 async function testDetailsContent(inspector, view) {
@@ -522,7 +497,141 @@ async function testDetailsContent(inspector, view) {
     elementRules: 3,
     detailsContentRules: 1,
   });
-  assertGutters(view);
+  assertHeaders(view);
+}
+
+async function testCustomizableSelect(inspector, view) {
+  const selectNodeFront = await getNodeFront("#customizable-select", inspector);
+
+  info("Test ::picker-icon for select element");
+  await selectNode(selectNodeFront, inspector);
+  await checkRuleViewContent(view, [
+    {
+      header: "Pseudo-elements",
+    },
+    {
+      selector: `#customizable-select::picker(select)`,
+      ancestorRulesData: null,
+      declarations: [{ name: "border", value: "1px solid purple" }],
+    },
+    {
+      selector: `#customizable-select::picker-icon`,
+      ancestorRulesData: null,
+      declarations: [{ name: "color", value: "purple" }],
+    },
+    {
+      header: "This Element",
+    },
+    {
+      selector: `element`,
+      ancestorRulesData: null,
+      selectorEditable: false,
+      declarations: [],
+    },
+    {
+      selector: `#customizable-select`,
+      ancestorRulesData: null,
+      declarations: [{ name: "appearance", value: "base-select" }],
+    },
+    {
+      selector: `*`,
+      ancestorRulesData: null,
+      declarations: [{ name: "cursor", value: "default" }],
+    },
+    {
+      header: "Inherited from body",
+    },
+    {
+      selector: `body`,
+      ancestorRulesData: null,
+      inherited: true,
+      declarations: [{ name: "color", value: "#333" }],
+    },
+  ]);
+
+  info("Check Rule View content when selecting the ::picker-icon element");
+  const { nodes: selectChildren } =
+    await inspector.walker.children(selectNodeFront);
+  const selectPickerIconNodeFront = selectChildren[1];
+  await selectNode(selectPickerIconNodeFront, inspector, "test");
+  await checkRuleViewContent(view, [
+    {
+      selector: `#customizable-select::picker-icon`,
+      ancestorRulesData: null,
+      declarations: [{ name: "color", value: "purple" }],
+    },
+    {
+      header: "Inherited from select#customizable-select",
+    },
+    {
+      selector: `*`,
+      ancestorRulesData: null,
+      inherited: true,
+      declarations: [{ name: "cursor", value: "default" }],
+    },
+    {
+      header: "Inherited from body",
+    },
+    {
+      selector: `body`,
+      ancestorRulesData: null,
+      inherited: true,
+      declarations: [{ name: "color", value: "#333", overridden: true }],
+    },
+  ]);
+
+  info("Test ::checkmark for option element");
+  await assertPseudoElementRulesNumbersForSelector(
+    "#customizable-select-option",
+    inspector,
+    view,
+    {
+      elementRules: 3,
+      checkmarkRules: 1,
+    }
+  );
+  assertHeaders(view);
+
+  info("Check Rule View content when selecting the ::checkmark element");
+  const optionNodeFront = await getNodeFront(
+    "#customizable-select option",
+    inspector
+  );
+  // The ::checkmark pseudo element only exists when the select is opened, so show the
+  // picker so we can see them
+  await showCustomizableSelectPicker(inspector, "#customizable-select");
+  const { nodes: optionChildren } =
+    await inspector.walker.children(optionNodeFront);
+  const optionCheckmarkNodeFront = optionChildren[0];
+  await selectNode(optionCheckmarkNodeFront, inspector, "test");
+  await checkRuleViewContent(view, [
+    {
+      selector: `#customizable-select option::checkmark`,
+      ancestorRulesData: null,
+      declarations: [
+        { name: "color", value: "tomato" },
+        { name: "content", value: `"-"` },
+      ],
+    },
+    {
+      header: "Inherited from option#customizable-select-option",
+    },
+    {
+      selector: `*`,
+      ancestorRulesData: null,
+      inherited: true,
+      declarations: [{ name: "cursor", value: "default" }],
+    },
+    {
+      header: "Inherited from body",
+    },
+    {
+      selector: `body`,
+      ancestorRulesData: null,
+      inherited: true,
+      declarations: [{ name: "color", value: "#333", overridden: true }],
+    },
+  ]);
 }
 
 function convertTextPropsToString(textProps) {
@@ -550,6 +659,9 @@ const PSEUDO_DICT = {
   sliderTrackRules: "::slider-track",
   targetTextRules: "::target-text",
   detailsContentRules: "::details-content",
+  pickerIconRules: "::picker-icon",
+  pickerRules: "::picker",
+  checkmarkRules: "::checkmark",
 };
 
 async function assertPseudoElementRulesNumbersForSelector(
@@ -612,21 +724,19 @@ async function assertPseudoElementRulesNumbers(
   return rules;
 }
 
-function getGutters(view) {
-  return Array.from(view.element.querySelectorAll(".ruleview-header"));
+function assertHeaders(view) {
+  return assertRuleViewHeaders(view, [
+    "Pseudo-elements",
+    "This Element",
+    "Inherited from body",
+  ]);
 }
 
-function assertGutters(view) {
-  const gutters = getGutters(view);
-
-  is(gutters.length, 3, "There are 3 gutter headings");
-  is(gutters[0].textContent, "Pseudo-elements", "Gutter heading is correct");
-  is(gutters[1].textContent, "This Element", "Gutter heading is correct");
-  is(
-    gutters[2].textContent,
-    "Inherited from body",
-    "Gutter heading is correct"
-  );
-
-  return gutters;
+/**
+ * Get the DOM Element containing all pseudo element rules.
+ *
+ * @param {RuleView} view
+ */
+function getPseudoElementContainer(view) {
+  return view.element.querySelector("#pseudo-elements-container");
 }

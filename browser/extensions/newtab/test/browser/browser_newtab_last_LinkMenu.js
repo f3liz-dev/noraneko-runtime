@@ -41,11 +41,17 @@ async function resetPrefs() {
 
 let initialHeight;
 let initialWidth;
+// Sizes the content area rather than the outer window: the window decoration
+// in between varies by OS and pixel density, so a fixed outer size gives a
+// different viewport per platform. setPrimaryContentSize takes device pixels.
 function setSize(width, height) {
   initialHeight = window.innerHeight;
   initialWidth = window.innerWidth;
   let resizePromise = BrowserTestUtils.waitForEvent(window, "resize", false);
-  window.resizeTo(width, height);
+  const dpr = window.devicePixelRatio;
+  window.docShell.treeOwner
+    .QueryInterface(Ci.nsIDocShellTreeOwner)
+    .setPrimaryContentSize(Math.round(width * dpr), Math.round(height * dpr));
   return resizePromise;
 }
 
@@ -70,31 +76,43 @@ add_task(async function test_newtab_last_LinkMenu() {
   await waitForPreloaded(browser);
 
   // Wait for React to render something
-  await BrowserTestUtils.waitForCondition(
+  await TestUtils.waitForCondition(
     () =>
       SpecialPowers.spawn(
         browser,
         [],
-        () => content.document.getElementById("root").children.length
+        () => content.document.getElementById("root")?.children.length
       ),
     "Should render activity stream content"
   );
 
-  // Set the window to a small enough size to trigger menus that might overflow.
-  await setSize(600, 450);
+  // @nova-cleanup(remove-conditional): Remove novaEnabled; use 900, 740 and
+  // "6n" unconditionally.
+  const novaEnabled = Services.prefs.getBoolPref(
+    "browser.newtabpage.activity-stream.nova.enabled",
+    false
+  );
+  // Top sites and stories sit at different places in the layout, so each needs
+  // its own width to put its menu at the edge. Top sites must also clear
+  // $break-point-large (866px) for open-left to match the rendered columns.
+  const topSitesWidth = novaEnabled ? 900 : 600;
+  const storiesWidth = novaEnabled ? 740 : 600;
+  const topSiteNthChild = novaEnabled ? "6n" : "2n";
+
+  await setSize(topSitesWidth, 450);
 
   // Test context menu position for topsites.
-  await SpecialPowers.spawn(browser, [], async () => {
+  await SpecialPowers.spawn(browser, [topSiteNthChild], async nthChild => {
     // Topsites might not be ready, so wait for the button.
     await ContentTaskUtils.waitForCondition(
       () =>
         content.document.querySelector(
-          ".top-site-outer:nth-child(2n) .context-menu-button"
+          `.top-site-outer:nth-child(${nthChild}) .context-menu-button`
         ),
       "Wait for the topsite card and button"
     );
     const topsiteOuter = content.document.querySelector(
-      ".top-site-outer:nth-child(2n)"
+      `.top-site-outer:nth-child(${nthChild})`
     );
     const topsiteContextMenuButton = topsiteOuter.querySelector(
       ".context-menu-button"
@@ -112,7 +130,18 @@ add_task(async function test_newtab_last_LinkMenu() {
       0,
       "there should be no horizontal scroll bar"
     );
+
+    // Close it so it cannot overflow at the narrower stories width.
+    topsiteContextMenuButton.click();
+    await ContentTaskUtils.waitForCondition(
+      () => !topsiteOuter.classList.contains("active"),
+      "Wait for the topsite menu to close"
+    );
   });
+
+  if (storiesWidth !== topSitesWidth) {
+    await setSize(storiesWidth, 450);
+  }
 
   // Test context menu position for topstories.
   await SpecialPowers.spawn(browser, [], async () => {
