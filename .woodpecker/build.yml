@@ -37,6 +37,8 @@ steps:
           curl -fsSL "https://github.com/mozilla/sccache/releases/download/v$v/sccache-v$v-$a-unknown-linux-musl.tar.gz" | tar xz -C /tmp
           install -m 755 "/tmp/sccache-v$v-$a-unknown-linux-musl/sccache" "$HOME/bin/sccache"
         fi
+        # mozconfig は /usr/local/bin/sccache を指す(コンテナ側なので毎回置く)
+        install -m 755 "$HOME/bin/sccache" /usr/local/bin/sccache
       # 同じ pipeline の matrix 全部で BuildID を揃える(旧 CI と同じ)
       - export MOZ_BUILD_DATE=$(date -u -d @$CI_PIPELINE_CREATED +%Y%m%d%H%M%S)
       - REPO_DIR=$WORK/noraneko-runtime
