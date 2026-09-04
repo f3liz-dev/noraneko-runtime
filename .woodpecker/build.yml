@@ -30,6 +30,8 @@ steps:
       - apt-get update -qq && apt-get install -y -qq --no-install-recommends sudo git ca-certificates curl xz-utils >/dev/null
       - set -a; . /etc/ci-box/env; [ -r /etc/ci-box/sccache.env ] && . /etc/ci-box/sccache.env; set +a
       - export MOZBUILD_STATE_PATH=$HOME/.mozbuild
+      # linux と mac が同時に走るので -j は半分ずつ(32GB に cold 二本 -j16 は入らない: 空き 2.9G / swap 11G / load 34 を実測)
+      - export BUILD_JOBS=$(( $(nproc) / 2 ))
       # sccache(公式 musl バイナリ、volume に一回置けば残る)
       - |
         if [ ! -x "$HOME/bin/sccache" ]; then
