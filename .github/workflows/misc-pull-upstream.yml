@@ -42,176 +42,26 @@ jobs:
             https://github.com/mozilla-firefox/firefox \
             --depth 200 ../upstream_release
 
-      - name: Find latest released commit and get upstream version
+      # 正は release tag(FIREFOX_<v>_RELEASE)。release 枝の HEAD は次の dot release へ向かう未出荷の commit を含むので、
+      # 枝を歩いて「版が変わる直前」を拾うと tag より先の commit を掴む(2026-09-04: 155.0 は tag d065a04 に対し 3 つ先の 6c6177d を拾った)。
+      - name: Find latest release tag and its commit
         id: new_version
         run: |
+          TAG=$(git ls-remote --tags https://github.com/mozilla-firefox/firefox.git 'FIREFOX_*_RELEASE' \
+            | awk '{print $2}' | sed 's|refs/tags/||' \
+            | grep -E '^FIREFOX_[0-9]+_[0-9]+(_[0-9]+)?_RELEASE$' \
+            | sed -E 's/^FIREFOX_([0-9]+)_([0-9]+)(_([0-9]+))?_RELEASE$/\1 \2 0\4 &/' \
+            | sort -k1,1n -k2,2n -k3,3n | tail -n1 | awk '{print $4}')
+          [ -n "$TAG" ] || { echo "::error::no FIREFOX_*_RELEASE tag found"; exit 1; }
           cd ../upstream_release
-          
-          # The strategy: Firefox bumps the version immediately after release.
-          # We want to find the last commit before a version bump occurred.
-          # This is the actual release commit.
-          
-          echo "Searching for the latest released commit..."
-          PREVIOUS_VERSION=""
-          RELEASE_COMMIT=""
-          LAST_COMMIT=""
-          
-          # Walk through commits from newest to oldest
-          for commit in $(git log --format="%H" -n 200); do
-            LAST_COMMIT="$commit"
-            git checkout -q "$commit"
-            CURRENT_VERSION=$(cat browser/config/version.txt 2>/dev/null || echo "")
-            
-            if [ -z "$CURRENT_VERSION" ]; then
-              continue
-            fi
-            
-            echo "Commit $commit: version $CURRENT_VERSION"
-            
-            # If we have a previous version and it's different from current,
-            # it means the previous commit was right after a version bump
-            # So the current commit is the one we want (before the bump)
-            if [ -n "$PREVIOUS_VERSION" ] && [ "$PREVIOUS_VERSION" != "$CURRENT_VERSION" ]; then
-              RELEASE_COMMIT="$commit"
-              echo "Found release commit: $commit with version $CURRENT_VERSION"
-              break
-            fi
-            
-            PREVIOUS_VERSION="$CURRENT_VERSION"
-          done
-          
-          # If we didn't find a version change, use the last commit we checked.
-          # This happens when:
-          # 1. All commits in the history have the same version (no version bump in 200 commits)
-          # 2. We're already at a released commit and haven't seen a newer version yet
-          # In both cases, using the oldest commit we checked is the safest choice.
-          if [ -z "$RELEASE_COMMIT" ]; then
-            if [ -n "$LAST_COMMIT" ]; then
-              RELEASE_COMMIT="$LAST_COMMIT"
-              echo "No version bump found in history, using last commit: $RELEASE_COMMIT"
-            else
-              # Fallback to HEAD if no commits were found (shouldn't happen with depth 200)
-              RELEASE_COMMIT=$(git rev-parse HEAD)
-              echo "No commits found in loop, using HEAD: $RELEASE_COMMIT"
-            fi
-          fi
-          
-          git checkout -q "$RELEASE_COMMIT"
+          git fetch -q --depth=1 origin "refs/tags/$TAG:refs/tags/$TAG"
+          COMMIT=$(git rev-parse "$TAG^{commit}")
+          git checkout -q "$COMMIT"
           NEW_VERSION=$(cat browser/config/version.txt)
           echo "version=$NEW_VERSION" >> $GITHUB_OUTPUT
-          echo "commit=$RELEASE_COMMIT" >> $GITHUB_OUTPUT
-          echo "Using upstream version: $NEW_VERSION at commit $RELEASE_COMMIT"
-
-      - name: Find latest release using tag parsing
-        id: tag_version
-        run: |
-          echo "Searching for latest release by parsing tags..."
-          
-          # Get all Firefox release tags, excluding beta versions and ESR
-          # Pattern: FIREFOX_<major>_<minor>_RELEASE or FIREFOX_<major>_<minor>_<patch>_RELEASE
-          ALL_TAGS=$(git ls-remote --tags https://github.com/mozilla-firefox/firefox.git | \
-            awk '{print $1 " " $2}' | \
-            grep "RELEASE$" | \
-            grep -E "FIREFOX_[0-9]+_[0-9]+(_[0-9]+)?_RELEASE$" | \
-            grep -v "b[0-9]_RELEASE" | \
-            grep -v "esr" | \
-            sed 's|refs/tags/||')
-          
-          # Function to parse version from tag name
-          parse_version() {
-            local tag="$1"
-            # FIREFOX_146_0_RELEASE -> 146.0.0
-            # FIREFOX_146_0_1_RELEASE -> 146.0.1
-            echo "$tag" | sed -E 's/FIREFOX_([0-9]+)_([0-9]+)(_([0-9]+))?_RELEASE/\1.\2.\4/' | sed 's/\.$/\.0/'
-          }
-          
-          # Function to compare two version strings
-          compare_versions() {
-            local ver1="$1"
-            local ver2="$2"
-            
-            IFS='.' read -r v1_major v1_minor v1_patch <<< "$ver1"
-            IFS='.' read -r v2_major v2_minor v2_patch <<< "$ver2"
-            
-            v1_patch=${v1_patch:-0}
-            v2_patch=${v2_patch:-0}
-            
-            if [ "$v1_major" -gt "$v2_major" ]; then echo "1"
-            elif [ "$v1_major" -lt "$v2_major" ]; then echo "-1"
-            elif [ "$v1_minor" -gt "$v2_minor" ]; then echo "1"
-            elif [ "$v1_minor" -lt "$v2_minor" ]; then echo "-1"
-            elif [ "$v1_patch" -gt "$v2_patch" ]; then echo "1"
-            elif [ "$v1_patch" -lt "$v2_patch" ]; then echo "-1"
-            else echo "0"
-            fi
-          }
-          
-          LATEST_TAG=""
-          LATEST_VERSION=""
-          LATEST_COMMIT=""
-          
-          # Find the latest version by comparing all tags
-          while IFS=' ' read -r commit tag; do
-            version=$(parse_version "$tag")
-            
-            if [ -z "$LATEST_VERSION" ]; then
-              LATEST_TAG="$tag"
-              LATEST_VERSION="$version"
-              LATEST_COMMIT="$commit"
-            else
-              cmp_result=$(compare_versions "$version" "$LATEST_VERSION")
-              if [ "$cmp_result" = "1" ]; then
-                LATEST_TAG="$tag"
-                LATEST_VERSION="$version"
-                LATEST_COMMIT="$commit"
-              fi
-            fi
-          done <<< "$ALL_TAGS"
-          
-          echo "tag=$LATEST_TAG" >> $GITHUB_OUTPUT
-          echo "version=$LATEST_VERSION" >> $GITHUB_OUTPUT
-          echo "commit=$LATEST_COMMIT" >> $GITHUB_OUTPUT
-          echo "Found tag: $LATEST_TAG (version: $LATEST_VERSION, commit: $LATEST_COMMIT)"
-
-      - name: Compare commit detection methods
-        run: |
-          COMMIT_METHOD_VERSION="${{ steps.new_version.outputs.version }}"
-          COMMIT_METHOD_HASH="${{ steps.new_version.outputs.commit }}"
-          TAG_METHOD_VERSION="${{ steps.tag_version.outputs.version }}"
-          TAG_METHOD_TAG="${{ steps.tag_version.outputs.tag }}"
-          TAG_METHOD_HASH="${{ steps.tag_version.outputs.commit }}"
-          
-          echo "================================"
-          echo "Comparing Release Detection Methods"
-          echo "================================"
-          echo ""
-          echo "Commit-walking method (current):"
-          echo "  Version: $COMMIT_METHOD_VERSION"
-          echo "  Commit:  $COMMIT_METHOD_HASH"
-          echo ""
-          echo "Tag-parsing method (new):"
-          echo "  Tag:     $TAG_METHOD_TAG"
-          echo "  Version: $TAG_METHOD_VERSION"
-          echo "  Commit:  $TAG_METHOD_HASH"
-          echo ""
-          
-          if [ "$COMMIT_METHOD_HASH" = "$TAG_METHOD_HASH" ]; then
-            echo "✅ SUCCESS: Both methods found the same commit!"
-            echo "Both methods agree on commit: $COMMIT_METHOD_HASH"
-          else
-            echo "❌ ERROR: Methods found different commits"
-            echo "This indicates a mismatch between the two detection methods:"
-            echo "  - Commit-walking method: $COMMIT_METHOD_HASH"
-            echo "  - Tag-parsing method:    $TAG_METHOD_HASH"
-            echo ""
-            echo "Possible causes:"
-            echo "  - Release tag hasn't been created yet for the latest version"
-            echo "  - There's a delay between release branch update and tag creation"
-            echo "  - One of the detection methods is incorrect"
-            echo ""
-            echo "The workflow must be fixed before continuing."
-            exit 1
-          fi
+          echo "commit=$COMMIT" >> $GITHUB_OUTPUT
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "Using upstream $TAG ($NEW_VERSION) at $COMMIT"
 
       - name: Compare versions
         id: version_diff
