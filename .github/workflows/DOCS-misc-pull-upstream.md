@@ -25,14 +25,9 @@ Sync upstream Firefox changes daily, create/update PR.
 
 ## Release Commit Detection
 
-Firefox bumps the version immediately after release. For example, if 146.0.2 is released, the HEAD of the release branch is updated to 146.0.3.
+The latest `FIREFOX_<major>_<minor>[_<patch>]_RELEASE` tag (betas and ESR excluded) is the source of truth. The tag is fetched into the shallow `release` clone and checked out; `browser/config/version.txt` at that commit is the new version.
 
-To get the actual release commit:
-- Clone with `--depth 200` to have history
-- Walk through commits from newest to oldest
-- Find the first version change (where version differs from the previous commit)
-- The commit before the version bump is the release commit
-- Use that commit for syncing
+Walking the `release` branch for "the last commit before a version bump" is wrong: after a release the branch keeps receiving unshipped commits for the next dot release while `version.txt` still says the old version (2026-09-04: 155.0 tag = `d065a04`, the walk picked `6c6177d`, three commits later).
 
 ## Version Detection
 
