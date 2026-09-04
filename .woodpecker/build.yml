@@ -1,6 +1,7 @@
 # noraneko-ci: OCI の箱の agent(docker backend = rootless podman + crun)で bsys6 を回す。
 # workflow ごとに素の ubuntu コンテナが一つ立ち、道具は中で `bsys6 prepare` が入れる(host 直走のときと同じ手順)。
-# 木・objdir・~/.mozbuild・rust は target ごとの host volume(/srv/ci/work/<target>)に住むので、二回目からは速い。
+# 木・objdir・~/.mozbuild・rust は箱の /srv/ci/work/<target> に住むので、箱が生きている間は二回目から速い。
+# mount は agent 側の設定(WOODPECKER_BACKEND_DOCKER_VOLUMES)で全コンテナに付く。yaml に volumes: は書かない。
 # linux と mac は同時に走る(agent は MAX_WORKFLOWS=2)。コンテナが別なので取り合いは無い。
 # gecko が 2GB あるので Woodpecker には clone させず、volume の持続 clone に fetch して使う。
 skip_clone: true
@@ -20,14 +21,9 @@ when:
 steps:
   build:
     image: docker.io/library/ubuntu:24.04
-    volumes:
-      - /srv/ci/work/${BUILD_TARGET}:/work
-      - /srv/ci/telemetry:/srv/ci/telemetry
-      - /usr/local/bin/ci-record:/usr/local/bin/ci-record:ro
-      - /etc/ci-box:/etc/ci-box:ro
     commands:
-      # 中では root(rootless podman なので host から見れば ci)。HOME は volume 側(~/.mozbuild と rust を持続させる)
-      - export HOME=/work/home; mkdir -p "$HOME/bin"
+      # 中では root(rootless podman なので host から見れば ci)。HOME は箱側(~/.mozbuild と rust を持続させる)
+      - export WORK=/srv/ci/work/$BUILD_TARGET HOME=/srv/ci/work/$BUILD_TARGET/home; mkdir -p "$HOME/bin"
       - export PATH=$HOME/.cargo/bin:$HOME/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
       - export DEBIAN_FRONTEND=noninteractive
       # clone と prepare.sh(sudo apt)に要る最小限。残りは bsys6 prepare が入れる
@@ -43,7 +39,7 @@ steps:
         fi
       # 同じ pipeline の matrix 全部で BuildID を揃える(旧 CI と同じ)
       - export MOZ_BUILD_DATE=$(date -u -d @$CI_PIPELINE_CREATED +%Y%m%d%H%M%S)
-      - REPO_DIR=/work/noraneko-runtime
+      - REPO_DIR=$WORK/noraneko-runtime
       - |
         if [ ! -d "$REPO_DIR/.git" ]; then
           git clone --recurse-submodules https://github.com/f3liz-casa/noraneko-runtime "$REPO_DIR"
